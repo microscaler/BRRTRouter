@@ -1,0 +1,116 @@
+openapi: 3.1.0
+info:
+  title: Pet Store
+  version: "1.0.0"
+
+paths:
+  /pets:
+    get:
+      summary: List pets
+      x-handler-list: list_pets
+      responses:
+        "200":
+          description: A list of pets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    name:
+                      type: string
+
+    post:
+      summary: Add a pet
+      x-handler-add: add_pet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+      responses:
+        "200":
+          description: Pet added
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  name:
+                    type: string
+  /pets/{id}:
+    get:
+      summary: Get a specific pet
+      x-handler-get: get_pet
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: A pet
+  /users:
+    get:
+      summary: List users
+      x-handler-list: list_users
+      responses:
+        "200": { description: OK }
+
+  /users/{user_id}:
+    get:
+      summary: Get user by ID
+      x-handler-get: get_user
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: OK }
+
+  /users/{user_id}/posts:
+    get:
+      summary: List posts by user
+      x-handler-list: list_user_posts
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: OK }
+
+  /users/{user_id}/posts/{post_id}:
+    get:
+      summary: Get specific post
+      x-handler-get: get_post
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: post_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: OK }
+
+  /admin/settings:
+    get:
+      summary: Admin settings
+      x-handler-admin: admin_settings
+      responses:
+        "200": { description: OK }

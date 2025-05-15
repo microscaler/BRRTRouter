@@ -1,0 +1,31 @@
+[package]
+name = "brrrouter"
+version = "0.1.0"
+edition = "2021"
+authors = ["Your Name <you@example.com>"]
+description = "A blazing-fast, OpenAPI 3.1 driven Rust request router powered by coroutines and may_minihttp."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/microscaler/brrrouter"
+keywords = ["router", "openapi", "a10", "coroutine", "may"]
+categories = ["web-programming", "api-bindings", "asynchronous"]
+readme = "README.md"
+exclude = [".github/"]
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+# Do not update to newer version
+http = "1.0"
+anyhow = "1.0"
+oas3 = { version = "0.16.1", features = ["yaml-spec"] }            # update if newer version exists
+may = "0.3"             # coroutine runtime
+may_minihttp = "0.1"    # coroutine-based HTTP server
+regex = "1.11.1"
+
+[dev-dependencies]
+pretty_assertions = "1.4"
+
+[[bin]]
+name = "brrrouter"
+path = "src/main.rs"
