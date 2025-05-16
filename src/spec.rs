@@ -1,6 +1,7 @@
 use http::Method;
 use oas3::OpenApiV3Spec;
 use serde_json::Value;
+use crate::validator::{ValidationIssue, fail_if_issues};
 
 #[derive(Debug, Clone)]
 pub struct RouteMeta {
@@ -37,6 +38,7 @@ pub fn load_spec_from_spec(spec: OpenApiV3Spec, verbose: bool) -> anyhow::Result
 
 fn build_routes(spec: &OpenApiV3Spec, verbose: bool) -> anyhow::Result<Vec<RouteMeta>> {
     let mut routes = Vec::new();
+    let mut issues = Vec::new();
 
     if let Some(paths_map) = spec.paths.as_ref() {
         for (path, item) in paths_map {
@@ -47,18 +49,16 @@ fn build_routes(spec: &OpenApiV3Spec, verbose: bool) -> anyhow::Result<Vec<Route
                 }
 
                 let method = method_str.clone();
+                let location = format!("{} → {}", path, method);
 
-                let handler_name: String = operation
+                let handler_name = operation
                     .extensions
                     .iter()
                     .find_map(|(key, val)| {
                         if key.starts_with("handler") {
                             if verbose {
                                 println!("  → Found handler extension: {} = {}", key, val);
-                                println!(
-                                    "Extensions on {} {}: {:?}",
-                                    method, path, operation.extensions
-                                );
+                                println!("Extensions on {} {}: {:?}", method, path, operation.extensions);
                             }
                             match val {
                                 serde_json::Value::String(s) => Some(s.clone()),
@@ -67,14 +67,19 @@ fn build_routes(spec: &OpenApiV3Spec, verbose: bool) -> anyhow::Result<Vec<Route
                         } else {
                             None
                         }
-                    })
-                    .unwrap_or_else(|| {
-                        let fallback = format!("{}_{}", method_str, path.replace("/", "_"));
-                        if verbose {
-                            println!("  → No handler extension, using fallback: {}", fallback);
-                        }
-                        fallback
                     });
+
+                let handler_name = match handler_name {
+                    Some(name) => name,
+                    None => {
+                        issues.push(ValidationIssue::new(
+                            &location,
+                            "MissingHandler",
+                            "Missing x-handler-* extension",
+                        ));
+                        continue;
+                    }
+                };
 
                 if verbose {
                     println!("  → Final route: {} {} -> {}", method, path, handler_name);
@@ -84,7 +89,7 @@ fn build_routes(spec: &OpenApiV3Spec, verbose: bool) -> anyhow::Result<Vec<Route
                     method,
                     path_pattern: path.clone(),
                     handler_name,
-                    parameters: vec![], // fill in as before
+                    parameters: vec![],
                     request_schema: None,
                     response_schema: None,
                 });
@@ -92,5 +97,6 @@ fn build_routes(spec: &OpenApiV3Spec, verbose: bool) -> anyhow::Result<Vec<Route
         }
     }
 
+    fail_if_issues(issues);
     Ok(routes)
 }
