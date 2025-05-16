@@ -7,10 +7,15 @@ use std::collections::HashMap;
 pub struct RouteMatch {
     pub route: RouteMeta,
     pub path_params: HashMap<String, String>,
+    pub handler_name: String,
+    pub query_params: HashMap<String, String>,
 }
 
+/// Router to match HTTP requests to handlers
+/// method, compiled regex, meta, param names
+#[derive(Clone)]
 pub struct Router {
-    routes: Vec<(Method, Regex, RouteMeta, Vec<String>)>, // method, compiled regex, meta, param names
+    routes: Vec<(Method, Regex, RouteMeta, Vec<String>)>,
 }
 
 impl Router {
@@ -41,6 +46,8 @@ impl Router {
                 return Some(RouteMatch {
                     route: route.clone(),
                     path_params: params,
+                    handler_name: route.handler_name.clone(),
+                    query_params: Default::default(),
                 });
             }
         }

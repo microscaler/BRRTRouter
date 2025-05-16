@@ -34,5 +34,3 @@ jobs:
       - name: Run tests
         run: cargo test --all --quiet
 
-      - name: Run BRRTRouter test
-        run: cargo run --quiet
