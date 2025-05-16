@@ -2,6 +2,9 @@ use http::Method;
 use oas3::OpenApiV3Spec;
 use serde_json::Value;
 use crate::validator::{ValidationIssue, fail_if_issues};
+use oas3::spec::{ObjectOrReference, Parameter, ParameterIn};
+#[allow(unused_imports)]
+use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub struct RouteMeta {
@@ -34,6 +37,21 @@ pub fn load_spec(file_path: &str, verbose: bool) -> anyhow::Result<Vec<RouteMeta
 
 pub fn load_spec_from_spec(spec: OpenApiV3Spec, verbose: bool) -> anyhow::Result<Vec<RouteMeta>> {
     build_routes(&spec, verbose)
+}
+
+fn resolve_parameter_reference(spec: &OpenApiV3Spec, ref_path: &str) -> Option<String> {
+    let ref_parts: Vec<&str> = ref_path.split('/').collect();
+    let param_name = ref_parts.last()?;
+    let components = spec.components.as_ref()?;
+    let parameters = &components.parameters;
+
+    match parameters.get(*param_name)? {
+        ObjectOrReference::Object(param) => match param {
+            Parameter { name, location: ParameterIn::Path, .. } => Some(name.clone()),
+            _ => None,
+        },
+        ObjectOrReference::Ref { .. } => None,
+    }
 }
 
 fn build_routes(spec: &OpenApiV3Spec, verbose: bool) -> anyhow::Result<Vec<RouteMeta>> {
@@ -80,6 +98,98 @@ fn build_routes(spec: &OpenApiV3Spec, verbose: bool) -> anyhow::Result<Vec<Route
                         continue;
                     }
                 };
+
+                let path_param_names: Vec<String> = path
+                    .split('/')
+                    .filter_map(|seg| {
+                        if seg.starts_with('{') && seg.ends_with('}') {
+                            Some(seg.trim_start_matches('{').trim_end_matches('}').to_string())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+
+                let mut declared_param_names = vec![];
+                for param in &operation.parameters {
+                    match param {
+                        ObjectOrReference::Object(p) => {
+                            if matches!(p.location, ParameterIn::Path) {
+                                declared_param_names.push(p.name.clone());
+                            }
+                        }
+                        ObjectOrReference::Ref { ref_path } => {
+                            if let Some(name) = resolve_parameter_reference(spec, ref_path) {
+                                declared_param_names.push(name);
+                            }
+                        }
+                    }
+                }
+
+                for param in &path_param_names {
+                    if !declared_param_names.contains(param) {
+                        issues.push(ValidationIssue::new(
+                            &location,
+                            "MissingParameter",
+                            format!("Path param '{{{}}}' not declared in parameters", param),
+                        ));
+                    }
+                }
+
+                if let Some(ObjectOrReference::Object(req_body)) = &operation.request_body {
+                    if !req_body.content.contains_key("application/json") {
+                        issues.push(ValidationIssue::new(
+                            &location,
+                            "InvalidRequestSchema",
+                            "Missing 'application/json' requestBody content",
+                        ));
+                    } else {
+                        let json_schema = req_body.content.get("application/json").unwrap();
+                        if json_schema.schema.is_none() {
+                            issues.push(ValidationIssue::new(
+                                &location,
+                                "InvalidRequestSchema",
+                                "Missing JSON schema under requestBody.content",
+                            ));
+                        }
+                    }
+                }
+
+                match &operation.responses {
+                    Some(responses) => {
+                        if let Some(ObjectOrReference::Object(resp)) = responses.get("200") {
+                            if !resp.content.contains_key("application/json") {
+                                issues.push(ValidationIssue::new(
+                                    &location,
+                                    "InvalidResponseSchema",
+                                    "Missing 'application/json' in 200 response",
+                                ));
+                            } else {
+                                let json_schema = resp.content.get("application/json").unwrap();
+                                if json_schema.schema.is_none() {
+                                    issues.push(ValidationIssue::new(
+                                        &location,
+                                        "InvalidResponseSchema",
+                                        "Missing schema in 200 response's JSON content",
+                                    ));
+                                }
+                            }
+                        } else {
+                            issues.push(ValidationIssue::new(
+                                &location,
+                                "InvalidResponseSchema",
+                                "Missing 200 response definition",
+                            ));
+                        }
+                    }
+                    None => {
+                        issues.push(ValidationIssue::new(
+                            &location,
+                            "InvalidResponseSchema",
+                            "Operation has no responses defined",
+                        ));
+                    }
+                }
 
                 if verbose {
                     println!("  → Final route: {} {} -> {}", method, path, handler_name);

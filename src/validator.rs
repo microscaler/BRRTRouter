@@ -1,5 +1,3 @@
-// validator.rs
-
 #[derive(Debug, Clone)]
 pub struct ValidationIssue {
     pub location: String,
