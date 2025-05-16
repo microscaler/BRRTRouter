@@ -61,12 +61,34 @@ paths:
       responses:
         "200":
           description: A pet
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+
   /users:
     get:
       summary: List users
       x-handler-list: list_users
       responses:
-        "200": { description: OK }
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                    name:
+                      type: string
 
   /users/{user_id}:
     get:
@@ -78,7 +100,17 @@ paths:
           required: true
           schema: { type: string }
       responses:
-        "200": { description: OK }
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
 
   /users/{user_id}/posts:
     get:
@@ -90,7 +122,19 @@ paths:
           required: true
           schema: { type: string }
       responses:
-        "200": { description: OK }
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                    title:
+                      type: string
 
   /users/{user_id}/posts/{post_id}:
     get:
@@ -106,14 +150,33 @@ paths:
           required: true
           schema: { type: string }
       responses:
-        "200": { description: OK }
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  title:
+                    type: string
 
   /admin/settings:
     get:
       summary: Admin settings
       x-handler-admin: admin_settings
       responses:
-        "200": { description: OK }
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled:
+                    type: boolean
+
   /items/{id}:
     get:
       x-handler-get: get_item
@@ -126,6 +189,16 @@ paths:
       responses:
         "200":
           description: Get an item
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+
     post:
       summary: Update or create item by ID
       x-handler-post: post_item
@@ -147,3 +220,12 @@ paths:
       responses:
         "200":
           description: Item upserted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
