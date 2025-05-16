@@ -2,7 +2,7 @@
 name = "brrrouter"
 version = "0.1.0"
 edition = "2021"
-authors = ["Your Name <you@example.com>"]
+authors = ["Charles Sibbald <casibbald@gmail.com>"]
 description = "A blazing-fast, OpenAPI 3.1 driven Rust request router powered by coroutines and may_minihttp."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/microscaler/brrrouter"
@@ -16,12 +16,13 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
 # Do not update to newer version
-http = "1.0"
+oas3 = { version = "0.16.1", features = ["yaml-spec"] }
 anyhow = "1.0"
-oas3 = { version = "0.16.1", features = ["yaml-spec"] }            # update if newer version exists
-may = "0.3"             # coroutine runtime
-may_minihttp = "0.1"    # coroutine-based HTTP server
+http = "1.0"  # Do not update to newer version, it that is not compatible with may_minihttp
+may = "0.3"
+may_minihttp = "0.1"
 regex = "1.11.1"
+url = "2.5.4"
 
 [dev-dependencies]
 pretty_assertions = "1.4"
