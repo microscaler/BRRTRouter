@@ -1,6 +1,6 @@
 use brrrouter::{
     router::{RouteMatch, Router},
-    spec::{ RouteMeta},
+    spec::RouteMeta,
 };
 
 use http::Method;
@@ -61,46 +61,102 @@ fn parse_spec(yaml: &str) -> Vec<RouteMeta> {
     brrrouter::spec::load_spec_from_spec(spec, false).expect("failed to load spec")
 }
 
-// Internal version of load_spec that takes a spec object directly
-// Add this to `spec.rs` if not already present
-#[allow(dead_code)]
 pub fn load_spec_from_spec(spec_wrapper: oas3::OpenApiV3Spec) -> anyhow::Result<Vec<RouteMeta>> {
     brrrouter::spec::load_spec_from_spec(spec_wrapper, false)
 }
 
-#[test]
-fn test_router_with_all_http_verbs() {
-    let routes = parse_spec(example_spec());
-    let router = Router::new(routes);
-
-    let cases = vec![
-        (Method::GET, "/zoo/animals", "get_animals"),
-        (Method::POST, "/zoo/animals", "create_animal"),
-        (Method::GET, "/zoo/animals/123", "get_animal"),
-        (Method::PUT, "/zoo/animals/123", "update_animal"),
-        (Method::PATCH, "/zoo/animals/123", "patch_animal"),
-        (Method::DELETE, "/zoo/animals/123", "delete_animal"),
-        (Method::HEAD, "/zoo/health", "health_check"),
-        (Method::OPTIONS, "/zoo/health", "supported_ops"),
-        (Method::TRACE, "/zoo/health", "trace_route"),
-        (Method::GET, "/unknown", "<none>"),
-    ];
-
-    for (method, path, expected_handler) in cases {
-        let result = router.route(method.clone(), path);
-        match result {
-            Some(RouteMatch { route, path_params: _ }) => {
-                println!("✅ {} {} → {}", method, path, route.handler_name);
-                assert_eq!(
-                    route.handler_name, expected_handler,
-                    "Handler mismatch for {} {}: expected '{}', got '{}'",
-                    method, path, expected_handler, route.handler_name
-                );
-            }
-            None => {
-                println!("❌ {} {} → no match", method, path);
-                assert_eq!(expected_handler, "<none>");
-            }
+fn assert_route_match(router: &Router, method: Method, path: &str, expected_handler: &str) {
+    let result = router.route(method.clone(), path);
+    match result {
+        Some(RouteMatch {
+            route,
+            path_params: _,
+            ..
+        }) => {
+            println!("✅ {} {} → {}", method, path, route.handler_name);
+            assert_eq!(
+                route.handler_name, expected_handler,
+                "Handler mismatch for {} {}: expected '{}', got '{}'",
+                method, path, expected_handler, route.handler_name
+            );
+        }
+        None => {
+            println!("❌ {} {} → no match", method, path);
+            assert_eq!(
+                expected_handler, "<none>",
+                "Expected route to match for {} {}",
+                method, path
+            );
         }
     }
+}
+
+#[test]
+fn test_router_get_animals() {
+    let routes = parse_spec(example_spec());
+    let router = Router::new(routes);
+    assert_route_match(&router, Method::GET, "/zoo/animals", "get_animals");
+}
+
+#[test]
+fn test_router_post_animals() {
+    let routes = parse_spec(example_spec());
+    let router = Router::new(routes);
+    assert_route_match(&router, Method::POST, "/zoo/animals", "create_animal");
+}
+
+#[test]
+fn test_router_get_animal_by_id() {
+    let routes = parse_spec(example_spec());
+    let router = Router::new(routes);
+    assert_route_match(&router, Method::GET, "/zoo/animals/123", "get_animal");
+}
+
+#[test]
+fn test_router_put_animal() {
+    let routes = parse_spec(example_spec());
+    let router = Router::new(routes);
+    assert_route_match(&router, Method::PUT, "/zoo/animals/123", "update_animal");
+}
+
+#[test]
+fn test_router_patch_animal() {
+    let routes = parse_spec(example_spec());
+    let router = Router::new(routes);
+    assert_route_match(&router, Method::PATCH, "/zoo/animals/123", "patch_animal");
+}
+
+#[test]
+fn test_router_delete_animal() {
+    let routes = parse_spec(example_spec());
+    let router = Router::new(routes);
+    assert_route_match(&router, Method::DELETE, "/zoo/animals/123", "delete_animal");
+}
+
+#[test]
+fn test_router_head_health() {
+    let routes = parse_spec(example_spec());
+    let router = Router::new(routes);
+    assert_route_match(&router, Method::HEAD, "/zoo/health", "health_check");
+}
+
+#[test]
+fn test_router_options_health() {
+    let routes = parse_spec(example_spec());
+    let router = Router::new(routes);
+    assert_route_match(&router, Method::OPTIONS, "/zoo/health", "supported_ops");
+}
+
+#[test]
+fn test_router_trace_health() {
+    let routes = parse_spec(example_spec());
+    let router = Router::new(routes);
+    assert_route_match(&router, Method::TRACE, "/zoo/health", "trace_route");
+}
+
+#[test]
+fn test_router_unknown_path() {
+    let routes = parse_spec(example_spec());
+    let router = Router::new(routes);
+    assert_route_match(&router, Method::GET, "/unknown", "<none>");
 }

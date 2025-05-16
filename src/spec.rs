@@ -2,7 +2,6 @@ use http::Method;
 use oas3::OpenApiV3Spec;
 use serde_json::Value;
 
-
 #[derive(Debug, Clone)]
 pub struct RouteMeta {
     pub method: Method,
@@ -56,6 +55,10 @@ fn build_routes(spec: &OpenApiV3Spec, verbose: bool) -> anyhow::Result<Vec<Route
                         if key.starts_with("handler") {
                             if verbose {
                                 println!("  → Found handler extension: {} = {}", key, val);
+                                println!(
+                                    "Extensions on {} {}: {:?}",
+                                    method, path, operation.extensions
+                                );
                             }
                             match val {
                                 serde_json::Value::String(s) => Some(s.clone()),
@@ -76,7 +79,7 @@ fn build_routes(spec: &OpenApiV3Spec, verbose: bool) -> anyhow::Result<Vec<Route
                 if verbose {
                     println!("  → Final route: {} {} -> {}", method, path, handler_name);
                 }
-                
+
                 routes.push(RouteMeta {
                     method,
                     path_pattern: path.clone(),

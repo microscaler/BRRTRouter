@@ -22,6 +22,7 @@ oas3 = { version = "0.16.1", features = ["yaml-spec"] }            # update if n
 may = "0.3"             # coroutine runtime
 may_minihttp = "0.1"    # coroutine-based HTTP server
 regex = "1.11.1"
+url = "2.5.4"
 
 [dev-dependencies]
 pretty_assertions = "1.4"
