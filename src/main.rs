@@ -1,5 +1,7 @@
 use brrrouter::server::AppService;
-use brrrouter::{dispatcher::echo_handler, dispatcher::Dispatcher, load_spec, router::Router};
+use brrrouter::{load_spec, router::Router};
+use brrrouter::registry;
+use brrrouter::dispatcher::Dispatcher;
 use may_minihttp::HttpServer;
 use std::io;
 
@@ -8,19 +10,10 @@ fn main() -> io::Result<()> {
     let spec = load_spec("examples/openapi.yaml", false).expect("failed to load spec");
     let router = Router::new(spec);
 
-    // Create the service instance
+    // Create dispatcher and register handlers
     let mut dispatcher = Dispatcher::new();
     unsafe {
-        dispatcher.register_handler("list_pets", echo_handler);
-        dispatcher.register_handler("add_pet", echo_handler);
-        dispatcher.register_handler("get_pet", echo_handler);
-        dispatcher.register_handler("list_users", echo_handler);
-        dispatcher.register_handler("get_user", echo_handler);
-        dispatcher.register_handler("list_user_posts", echo_handler);
-        dispatcher.register_handler("get_post", echo_handler);
-        dispatcher.register_handler("admin_settings", echo_handler);
-        dispatcher.register_handler("get_item", echo_handler);
-        dispatcher.register_handler("post_item", echo_handler);
+        registry::register_all(&mut dispatcher);
     }
 
     // Start the HTTP server on port 8080 (0.0.0.0:8080) under the may runtime
