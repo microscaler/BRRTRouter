@@ -23,10 +23,11 @@ may = "0.3"
 may_minihttp = "0.1"
 regex = "1.11.1"
 url = "2.5.4"
+clap = { version = "4.5.38", features = ["cargo", "env", "derive"] }
 
 [dev-dependencies]
 pretty_assertions = "1.4"
 
 [[bin]]
-name = "brrrouter"
-path = "src/main.rs"
+name = "brrrouter-gen"
+path = "src/bin/brrrouter_gen.rs"
