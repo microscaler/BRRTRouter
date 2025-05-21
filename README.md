@@ -120,11 +120,23 @@ Each handler runs in its own coroutine, receiving requests via a channel and sen
 ---
 ## 📈 Contributing & Benchmarks
 We welcome contributions that improve:
+- 🧵 Typed handler deserialization
+- ✨ Auto-generation of impl `From<HandlerRequest>` for `TypedHandlerRequest<T>` based on schema
+- 🚧 Dynamic dispatcher route registration
+- 🚧 Hot reload
+- 🚧 Header parsing and extraction
+- 🚧 Cookie parsing and extraction
+- 🚧 WebSocket support
+- 🚧 Server-side events
 - 🧪 Test coverage and spec validation
 - 🧠 Coroutine handler ergonomics
 - 📊 Benchmarks for match throughput (goal: 1M+ matches/sec/core)
-- 🔐 Middleware hooks (auth, CORS, metrics, tracing)
-- 🧵 Typed handler deserialization
+- 🔐 Middleware hooks 
+  - Metrics
+  - Tracing
+  - Auth (JWT, OAuth, etc.) - routed to Sesame-IDAM or similar
+  - CORS
+- 💥 Reusable SDK packaging and publising to crates.io
 
 Benchmark goal:
 - Raspberry Pi 5, single core
