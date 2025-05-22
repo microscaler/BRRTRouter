@@ -2,7 +2,6 @@ openapi: 3.1.0
 info:
   title: Pet Store
   version: "1.0.0"
-
 paths:
   /pets:
     get:
@@ -17,11 +16,22 @@ paths:
                 type: array
                 items:
                   type: object
+                  required: [ id, name, breed, age, vaccinated, tags ]
                   properties:
                     id:
                       type: integer
                     name:
                       type: string
+                    breed:
+                      type: string
+                    age:
+                      type: integer
+                    vaccinated:
+                      type: boolean
+                    tags:
+                      type: array
+                      items:
+                        type: string
 
     post:
       summary: Add a pet
@@ -32,7 +42,7 @@ paths:
           application/json:
             schema:
               type: object
-              required: [name]
+              required: [ name ]
               properties:
                 name:
                   type: string
@@ -61,6 +71,15 @@ paths:
       responses:
         "200":
           description: A pet
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
   /users:
     get:
       summary: List users
@@ -126,6 +145,16 @@ paths:
       responses:
         "200":
           description: Get an item
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+
     post:
       summary: Update or create item by ID
       x-handler-post: post_item
@@ -147,3 +176,12 @@ paths:
       responses:
         "200":
           description: Item upserted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string

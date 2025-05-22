@@ -1,0 +1,10 @@
+// Auto-generated handler registry
+
+use crate::dispatcher::Dispatcher;
+use crate::handlers::*;
+
+pub unsafe fn register_all(dispatcher: &mut Dispatcher) {
+    {% for entry in entries -%}
+    dispatcher.register_handler("{{ entry.name }}", |req| { {{ entry.name }}::handler(req.into()); });
+    {% endfor %}
+}

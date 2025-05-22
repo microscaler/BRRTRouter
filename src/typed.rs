@@ -1,10 +1,10 @@
 // typed.rs
+#[allow(unused_imports)]
+use crate::dispatcher::{Dispatcher, HandlerRequest, HandlerResponse};
+use http::Method;
+use may::sync::mpsc;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::collections::HashMap;
-#[allow(unused_imports)]
-use crate::dispatcher::{HandlerRequest, HandlerResponse, Dispatcher};
-use may::sync::mpsc;
-use http::Method;
 
 #[derive(Debug, Clone)]
 pub struct TypedHandlerRequest<T> {
@@ -15,8 +15,6 @@ pub struct TypedHandlerRequest<T> {
     pub query_params: HashMap<String, String>,
     pub data: T,
 }
-
-
 
 #[derive(Debug, Clone, Serialize)]
 pub struct TypedHandlerResponse<T: Serialize> {
@@ -75,9 +73,11 @@ impl Dispatcher {
 
                 let _ = req.reply_tx.send(HandlerResponse {
                     status: 200,
-                    body: serde_json::to_value(result).unwrap_or_else(|_| serde_json::json!({
-                        "error": "Failed to serialize response"
-                    })),
+                    body: serde_json::to_value(result).unwrap_or_else(|_| {
+                        serde_json::json!({
+                            "error": "Failed to serialize response"
+                        })
+                    }),
                 });
             }
         });

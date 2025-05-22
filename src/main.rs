@@ -1,7 +1,7 @@
+use brrrouter::dispatcher::Dispatcher;
+use brrrouter::registry;
 use brrrouter::server::AppService;
 use brrrouter::{load_spec, router::Router};
-use brrrouter::registry;
-use brrrouter::dispatcher::Dispatcher;
 use may_minihttp::HttpServer;
 use std::io;
 

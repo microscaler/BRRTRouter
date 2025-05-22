@@ -1,0 +1,13 @@
+{# controller.rs.txt - Askama template #}
+// User-owned controller for handler '{{ handler_name }}'.
+
+use crate::typed::TypedHandlerRequest;
+use crate::handlers::{{ handler_name }}::{ Request, Response };
+
+pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
+    Response {
+        {% for field in response_fields %}
+        {{ field.name }}: Default::default(),
+        {% endfor %}
+    }
+}

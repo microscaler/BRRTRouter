@@ -14,4 +14,5 @@ pub unsafe fn register_all(dispatcher: &mut Dispatcher) {
     dispatcher.register_handler("get_user", |req| { get_user::handler(req.into()); });
     dispatcher.register_handler("list_user_posts", |req| { list_user_posts::handler(req.into()); });
     dispatcher.register_handler("get_post", |req| { get_post::handler(req.into()); });
+    
 }

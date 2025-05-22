@@ -19,7 +19,6 @@ pub struct HandlerRequest {
     pub reply_tx: mpsc::Sender<HandlerResponse>,
 }
 
-
 #[derive(Debug, Clone, Serialize)]
 pub struct HandlerResponse {
     pub status: u16,
