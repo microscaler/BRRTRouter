@@ -1,7 +1,7 @@
 use crate::validator::{fail_if_issues, ValidationIssue};
 use http::Method;
-use oas3::spec::{ObjectOrReference, Parameter};
-use oas3::OpenApiV3Spec;
+use oas3::spec::{ObjectOrReference, Parameter, Schema};
+use oas3::{OpenApiV3Spec, Spec};
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -34,7 +34,22 @@ pub fn load_spec(file_path: &str, verbose: bool) -> anyhow::Result<Vec<RouteMeta
     build_routes(&spec, verbose)
 }
 
-fn build_routes(spec: &OpenApiV3Spec, verbose: bool) -> anyhow::Result<Vec<RouteMeta>> {
+fn resolve_schema_ref<'a>(spec: &'a Spec, ref_path: &str) -> Option<&'a oas3::spec::ObjectSchema> {
+    if let Some(name) = ref_path.strip_prefix("#/components/schemas/") {
+        spec.components
+            .as_ref()?
+            .schemas
+            .get(name)
+            .and_then(|schema_ref| match schema_ref {
+                ObjectOrReference::Object(schema) => Some(schema),
+                _ => None,
+            })
+    } else {
+        None
+    }
+}
+
+pub(crate) fn build_routes(spec: &OpenApiV3Spec, verbose: bool) -> anyhow::Result<Vec<RouteMeta>> {
     let mut routes = Vec::new();
     let mut issues = Vec::new();
 
@@ -80,53 +95,36 @@ fn build_routes(spec: &OpenApiV3Spec, verbose: bool) -> anyhow::Result<Vec<Route
                             return None;
                         }
                         let media = req_body.content.get("application/json").unwrap();
-                        if let Some(ObjectOrReference::Object(schema_obj)) = media.schema.as_ref() {
-                            let val = serde_json::to_value(schema_obj).ok();
-                            if let Some(v) = &val {
-                                if v.get("type").is_none() {
-                                    issues.push(ValidationIssue::new(
-                                        &location,
-                                        "InvalidRequestSchema",
-                                        "Request schema is missing 'type' field",
-                                    ));
+                        match media.schema.as_ref()? {
+                            ObjectOrReference::Object(schema_obj) => {
+                                let val = serde_json::to_value(schema_obj).ok();
+                                if let Some(v) = &val {
+                                    if v.get("type").is_none() {
+                                        issues.push(ValidationIssue::new(
+                                            &location,
+                                            "InvalidRequestSchema",
+                                            "Request schema is missing 'type' field",
+                                        ));
+                                    }
                                 }
+                                val
                             }
-                            val
-                        } else {
-                            issues.push(ValidationIssue::new(
-                                &location,
-                                "InvalidRequestSchema",
-                                "Request schema is not an object",
-                            ));
-                            None
+                            ObjectOrReference::Ref { ref_path } => {
+                                resolve_schema_ref(spec, ref_path)
+                                    .and_then(|schema| serde_json::to_value(schema).ok())
+                            }
                         }
                     }
-                    _ => {
-                        issues.push(ValidationIssue::new(
-                            &location,
-                            "InvalidRequestSchema",
-                            "Request body is a reference or not supported",
-                        ));
-                        None
-                    }
+                    _ => None,
                 });
 
                 let response_schema = operation.responses.as_ref().and_then(|responses_map| {
-                    if let Some(resp) = responses_map.get("200") {
-                        match resp {
-                            ObjectOrReference::Object(resp_obj) => {
-                                if !resp_obj.content.contains_key("application/json") {
-                                    issues.push(ValidationIssue::new(
-                                        &location,
-                                        "InvalidResponseSchema",
-                                        "Missing 'application/json' in 200 response",
-                                    ));
-                                    return None;
-                                }
-                                let media = resp_obj.content.get("application/json").unwrap();
-                                if let Some(ObjectOrReference::Object(schema_obj)) =
-                                    media.schema.as_ref()
-                                {
+                    let resp = responses_map.get("200")?;
+                    match resp {
+                        ObjectOrReference::Object(resp_obj) => {
+                            let media = resp_obj.content.get("application/json")?;
+                            match media.schema.as_ref()? {
+                                ObjectOrReference::Object(schema_obj) => {
                                     let val = serde_json::to_value(schema_obj).ok();
                                     if let Some(v) = &val {
                                         if v.get("type").is_none() {
@@ -138,31 +136,14 @@ fn build_routes(spec: &OpenApiV3Spec, verbose: bool) -> anyhow::Result<Vec<Route
                                         }
                                     }
                                     val
-                                } else {
-                                    issues.push(ValidationIssue::new(
-                                        &location,
-                                        "InvalidResponseSchema",
-                                        "Response schema is not an object",
-                                    ));
-                                    None
+                                }
+                                ObjectOrReference::Ref { ref_path } => {
+                                    resolve_schema_ref(spec, ref_path)
+                                        .and_then(|schema| serde_json::to_value(schema).ok())
                                 }
                             }
-                            _ => {
-                                issues.push(ValidationIssue::new(
-                                    &location,
-                                    "InvalidResponseSchema",
-                                    "Response is a reference or not supported",
-                                ));
-                                None
-                            }
                         }
-                    } else {
-                        issues.push(ValidationIssue::new(
-                            &location,
-                            "InvalidResponseSchema",
-                            "Missing 200 response definition",
-                        ));
-                        None
+                        _ => None,
                     }
                 });
 

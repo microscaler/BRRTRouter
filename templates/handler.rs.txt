@@ -6,24 +6,28 @@ use serde_json::Value;
 use crate::dispatcher::HandlerRequest;
 use crate::typed::{ TypedHandlerRequest, TypedHandlerResponse };
 
+{% for import in imports -%}
+use crate::handlers::types::{{ import }};
+{% endfor -%}
+
 #[derive(Debug, Deserialize)]
 pub struct Request {
-    {% for field in request_fields %}
+    {% for field in request_fields -%}
     {% if field.optional %}#[serde(skip_serializing_if = "Option::is_none")]
     pub {{ field.name }}: Option<{{ field.ty }}>,
     {% else %}pub {{ field.name }}: {{ field.ty }},
     {% endif %}
-    {% endfor %}
+    {% endfor -%}
 }
 
 #[derive(Debug, Serialize)]
 pub struct Response {
-    {% for field in response_fields %}
+    {% for field in response_fields -%}
     {% if field.optional %}#[serde(skip_serializing_if = "Option::is_none")]
     pub {{ field.name }}: Option<{{ field.ty }}>,
     {% else %}pub {{ field.name }}: {{ field.ty }},
     {% endif %}
-    {% endfor %}
+    {% endfor -%}
 }
 
 pub fn handler(req: TypedHandlerRequest<Request>) -> Response {

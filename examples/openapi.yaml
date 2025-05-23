@@ -16,23 +16,7 @@ paths:
               schema:
                 type: array
                 items:
-                  type: object
-                  required: [ id, name, breed, age, vaccinated, tags ]
-                  properties:
-                    id:
-                      type: integer
-                    name:
-                      type: string
-                    breed:
-                      type: string
-                    age:
-                      type: integer
-                    vaccinated:
-                      type: boolean
-                    tags:
-                      type: array
-                      items:
-                        type: string
+                  $ref: "#/components/schemas/Pet"
 
     post:
       summary: Add a pet
@@ -42,23 +26,14 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required: [ name ]
-              properties:
-                name:
-                  type: string
+              $ref: "#/components/schemas/CreatePetRequest"
       responses:
         "200":
           description: Pet added
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  id:
-                    type: integer
-                  name:
-                    type: string
+                $ref: "#/components/schemas/Pet"
 
   /pets/{id}:
     get:
@@ -76,12 +51,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  id:
-                    type: string
-                  name:
-                    type: string
+                $ref: "#/components/schemas/Pet"
 
   /users:
     get:
@@ -93,17 +63,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  users:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        id:
-                          type: string
-                        name:
-                          type: string
+                $ref: "#/components/schemas/UserList"
 
   /users/{user_id}:
     get:
@@ -120,12 +80,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  id:
-                    type: string
-                  name:
-                    type: string
+                $ref: "#/components/schemas/User"
 
   /users/{user_id}/posts:
     get:
@@ -144,12 +99,7 @@ paths:
               schema:
                 type: array
                 items:
-                  type: object
-                  properties:
-                    id:
-                      type: string
-                    title:
-                      type: string
+                  $ref: "#/components/schemas/Post"
 
   /users/{user_id}/posts/{post_id}:
     get:
@@ -170,14 +120,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  id:
-                    type: string
-                  title:
-                    type: string
-                  body:
-                    type: string
+                $ref: "#/components/schemas/Post"
 
   /admin/settings:
     get:
@@ -189,12 +132,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  feature_flags:
-                    type: object
-                    additionalProperties:
-                      type: boolean
+                $ref: "#/components/schemas/AdminSettings"
 
   /items/{id}:
     get:
@@ -211,12 +149,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  id:
-                    type: string
-                  name:
-                    type: string
+                $ref: "#/components/schemas/Item"
 
     post:
       summary: Update or create item by ID
@@ -232,19 +165,87 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                name:
-                  type: string
+              $ref: "#/components/schemas/CreateItemRequest"
       responses:
         "200":
           description: Item upserted
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  id:
-                    type: string
-                  name:
-                    type: string
+                $ref: "#/components/schemas/Item"
+
+components:
+  schemas:
+    Pet:
+      type: object
+      required: [id, name, breed, age, vaccinated, tags]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        breed:
+          type: string
+        age:
+          type: integer
+        vaccinated:
+          type: boolean
+        tags:
+          type: array
+          items:
+            type: string
+
+    CreatePetRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+
+    UserList:
+      type: object
+      properties:
+        users:
+          type: array
+          items:
+            $ref: "#/components/schemas/User"
+
+    Post:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        body:
+          type: string
+
+    AdminSettings:
+      type: object
+      properties:
+        feature_flags:
+          type: object
+          additionalProperties:
+            type: boolean
+
+    Item:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+
+    CreateItemRequest:
+      type: object
+      properties:
+        name:
+          type: string
