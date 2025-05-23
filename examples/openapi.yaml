@@ -2,11 +2,12 @@ openapi: 3.1.0
 info:
   title: Pet Store
   version: "1.0.0"
+
 paths:
   /pets:
     get:
       summary: List pets
-      x-handler-list: list_pets
+      operationId: list_pets
       responses:
         "200":
           description: A list of pets
@@ -15,53 +16,76 @@ paths:
               schema:
                 type: array
                 items:
-                  type: object
-                  required: [ id, name, breed, age, vaccinated, tags ]
-                  properties:
-                    id:
-                      type: integer
-                    name:
-                      type: string
-                    breed:
-                      type: string
-                    age:
-                      type: integer
-                    vaccinated:
-                      type: boolean
-                    tags:
-                      type: array
-                      items:
-                        type: string
+                  $ref: "#/components/schemas/Pet"
+              examples:
+                petListExample:
+                  summary: Example list of pets
+                  value:
+                    - id: 12345
+                      name: "Max"
+                      breed: "Golden Retriever"
+                      age: 3
+                      vaccinated: true
+                      tags:
+                        - "friendly"
+                        - "trained"
+                    - id: 67890
+                      name: "Bella"
+                      breed: "Labrador"
+                      age: 2
+                      vaccinated: true
+                      tags:
+                        - "puppy"
+                        - "playful"
+                    - id: 54321
+                      name: "Rocky"
+                      breed: "German Shepherd"
+                      age: 4
+                      vaccinated: true
+                      tags:
+                        - "guard dog"
+                        - "intelligent"
 
     post:
       summary: Add a pet
-      x-handler-add: add_pet
+      operationId: add_pet
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              required: [ name ]
-              properties:
-                name:
-                  type: string
+              $ref: "#/components/schemas/CreatePetRequest"
+            examples:
+              createPetExample:
+                summary: Example pet creation request
+                value:
+                  id: 67890
+                  name: "Bella"
+                  breed: "Labrador"
+                  age: 2
+                  vaccinated: true
+                  tags:
+                    - "puppy"
+                    - "friendly"
+                    - "playful"
       responses:
         "200":
-          description: Pet added
+          description: Pet added successfully
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  id:
-                    type: integer
-                  name:
-                    type: string
+                $ref: "#/components/schemas/PetCreationResponse"
+              examples:
+                addPetExample:
+                  summary: Example pet creation response
+                  value:
+                    id: 67890
+                    status: "success"
+
   /pets/{id}:
     get:
       summary: Get a specific pet
-      x-handler-get: get_pet
+      operationId: get_pet
       parameters:
         - name: id
           in: path
@@ -74,47 +98,101 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  id:
-                    type: string
-                  name:
-                    type: string
+                $ref: "#/components/schemas/Pet"
+              examples:
+                petExample:
+                  summary: Example pet response
+                  value:
+                    id: 12345
+                    name: "Max"
+                    breed: "Golden Retriever"
+                    age: 3
+                    vaccinated: true
+                    tags:
+                      - "friendly"
+                      - "trained"
+                      - "family pet"
+
   /users:
     get:
       summary: List users
-      x-handler-list: list_users
+      operationId: list_users
       responses:
-        "200": { description: OK }
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserList"
+              examples:
+                userListExample:
+                  summary: Example list of users
+                  value:
+                    users:
+                      - id: "123e4567-e89b-12d3-a456-426614174000"
+                        name: "John Doe"
+                      - id: "223e4567-e89b-12d3-a456-426614174001"
+                        name: "Jane Smith"
+                      - id: "323e4567-e89b-12d3-a456-426614174002"
+                        name: "Alex Johnson"
 
   /users/{user_id}:
     get:
       summary: Get user by ID
-      x-handler-get: get_user
+      operationId: get_user
       parameters:
         - name: user_id
           in: path
           required: true
           schema: { type: string }
       responses:
-        "200": { description: OK }
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+              examples:
+                userExample:
+                  summary: Example user response
+                  value:
+                    id: "123e4567-e89b-12d3-a456-426614174000"
+                    name: "John Doe"
+                    email: "john.doe@example.com"
 
   /users/{user_id}/posts:
     get:
       summary: List posts by user
-      x-handler-list: list_user_posts
+      operationId: list_user_posts
       parameters:
         - name: user_id
           in: path
           required: true
           schema: { type: string }
       responses:
-        "200": { description: OK }
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Post"
+              examples:
+                userPostsExample:
+                  summary: Example posts for a user
+                  value:
+                    - id: "550e8400-e29b-41d4-a716-446655440000"
+                      title: "My First Post"
+                      body: "This is the content of my first post."
+                    - id: "550e8400-e29b-41d4-a716-446655440001"
+                      title: "My Second Post"
+                      body: "This is the content of my second post."
 
   /users/{user_id}/posts/{post_id}:
     get:
       summary: Get specific post
-      x-handler-get: get_post
+      operationId: get_post
       parameters:
         - name: user_id
           in: path
@@ -125,63 +203,179 @@ paths:
           required: true
           schema: { type: string }
       responses:
-        "200": { description: OK }
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Post"
+              examples:
+                postExample:
+                  summary: Example post response
+                  value:
+                    id: "550e8400-e29b-41d4-a716-446655440000"
+                    title: "My First Post"
+                    body: "This is the content of my first post."
 
   /admin/settings:
     get:
       summary: Admin settings
-      x-handler-admin: admin_settings
+      operationId: admin_settings
       responses:
-        "200": { description: OK }
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminSettings"
+              examples:
+                adminSettingsExample:
+                  summary: Example admin settings response
+                  value:
+                    feature_flags:
+                      enable_dark_mode: true
+                      beta_features: false
+                      analytics_enabled: true
+                      maintenance_mode: false
+
   /items/{id}:
     get:
-      x-handler-get: get_item
+      operationId: get_item
       parameters:
         - name: id
           in: path
           required: true
           schema:
             type: string
+            format: uuid
       responses:
         "200":
           description: Get an item
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  id:
-                    type: string
-                  name:
-                    type: string
+                $ref: "#/components/schemas/Item"
+              examples:
+                itemExample:
+                  summary: Example item response
+                  value:
+                    id: "123e4567-e89b-12d3-a456-426614174000"
+                    name: "Sample Item"
 
     post:
       summary: Update or create item by ID
-      x-handler-post: post_item
+      operationId: post_item
       parameters:
         - name: id
           in: path
           required: true
           schema:
             type: string
+            format: uuid
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                name:
-                  type: string
+              $ref: "#/components/schemas/CreateItemRequest"
       responses:
         "200":
           description: Item upserted
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  id:
-                    type: string
-                  name:
-                    type: string
+                $ref: "#/components/schemas/Item"
+              examples:
+                createItemResponse:
+                  summary: Minimal response example
+                  value:
+                    id: "123e4567-e89b-12d3-a456-426614174000"
+                    status: "ok"
+
+components:
+  schemas:
+    Pet:
+      type: object
+      required: [id, name, breed, age, vaccinated, tags]
+      properties:
+        id:
+          type: integer
+          format: uuid
+        name:
+          type: string
+        breed:
+          type: string
+        age:
+          type: integer
+        vaccinated:
+          type: boolean
+        tags:
+          type: array
+          items:
+            type: string
+            
+    PetCreationResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        status:
+          type: string
+          
+    CreatePetRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+
+    UserList:
+      type: object
+      properties:
+        users:
+          type: array
+          items:
+            $ref: "#/components/schemas/User"
+
+    Post:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        body:
+          type: string
+
+    AdminSettings:
+      type: object
+      properties:
+        feature_flags:
+          type: object
+          additionalProperties:
+            type: boolean
+
+    Item:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+
+    CreateItemRequest:
+      type: object
+      properties:
+        name:
+          type: string

@@ -1,0 +1,12 @@
+{# handler_types.rs.txt - Askama template #}
+// Auto-generated reusable types for handler schemas
+use serde::{Deserialize, Serialize};
+
+{% for (type_name, type_def) in types %}
+#[derive(Debug, Serialize, Deserialize)]
+pub struct {{ type_name }} {
+    {% for field in type_def.fields %}
+    pub {{ field.name }}: {{ field.ty }},
+    {% endfor %}
+}
+{% endfor %}
