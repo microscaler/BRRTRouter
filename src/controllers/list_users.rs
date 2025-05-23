@@ -7,5 +7,7 @@ use crate::handlers::list_users::{ Request, Response };
 pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     Response {
         
+        users: Default::default(),
+        
     }
 }

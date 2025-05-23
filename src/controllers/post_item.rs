@@ -7,5 +7,9 @@ use crate::handlers::post_item::{ Request, Response };
 pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     Response {
         
+        id: Default::default(),
+        
+        name: Default::default(),
+        
     }
 }

@@ -1,6 +1,6 @@
 // generator.rs
-use crate::spec::load_spec;
 use crate::dummy_value;
+use crate::spec::load_spec;
 use askama::Template;
 use serde_json::Value;
 use std::collections::HashSet;
@@ -142,9 +142,15 @@ fn extract_fields(schema: &Value) -> Vec<FieldDef> {
         }
     }
 
-    let required = schema.get("required").and_then(|v| v.as_array()).map(|arr| {
-        arr.iter().filter_map(|v| v.as_str().map(String::from)).collect::<Vec<_>>()
-    }).unwrap_or_default();
+    let required = schema
+        .get("required")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
 
     if let Some(props) = schema.get("properties") {
         if let Some(map) = props.as_object() {
@@ -157,10 +163,12 @@ fn extract_fields(schema: &Value) -> Vec<FieldDef> {
                     Some("array") => "Vec<Value>",
                     Some("object") => "serde_json::Value",
                     _ => "serde_json::Value",
-                }.to_string();
+                }
+                    .to_string();
 
-                let optional = !required.contains(name);
-                let value = dummy_value::dummy_value(&ty).unwrap_or_else(|_| "Default::default()".to_string());
+                let optional = !required.iter().any(|r| r == name);
+                let value = dummy_value::dummy_value(&ty)
+                    .unwrap_or_else(|_| "Default::default()".to_string());
 
                 fields.push(FieldDef {
                     name: name.clone(),

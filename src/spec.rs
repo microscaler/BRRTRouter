@@ -1,6 +1,9 @@
+use crate::validator::{fail_if_issues, ValidationIssue};
 use http::Method;
+use oas3::spec::{ObjectOrReference, Parameter};
 use oas3::OpenApiV3Spec;
 use serde_json::Value;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub struct RouteMeta {
@@ -31,66 +34,150 @@ pub fn load_spec(file_path: &str, verbose: bool) -> anyhow::Result<Vec<RouteMeta
     build_routes(&spec, verbose)
 }
 
-pub fn load_spec_from_spec(spec: OpenApiV3Spec, verbose: bool) -> anyhow::Result<Vec<RouteMeta>> {
-    build_routes(&spec, verbose)
-}
-
 fn build_routes(spec: &OpenApiV3Spec, verbose: bool) -> anyhow::Result<Vec<RouteMeta>> {
     let mut routes = Vec::new();
+    let mut issues = Vec::new();
 
     if let Some(paths_map) = spec.paths.as_ref() {
         for (path, item) in paths_map {
             for (method_str, operation) in item.methods() {
-                if verbose {
-                    println!("Inspecting operation: {} {}", method_str, path);
-                    println!("  Extensions: {:?}", operation.extensions);
-                }
-
                 let method = method_str.clone();
+                let location = format!("{} → {}", path, method);
 
-                let handler_name: String = operation
+                let handler_name = operation
                     .extensions
                     .iter()
                     .find_map(|(key, val)| {
-                        if key.starts_with("handler") {
-                            if verbose {
-                                println!("  → Found handler extension: {} = {}", key, val);
-                                println!(
-                                    "Extensions on {} {}: {:?}",
-                                    method, path, operation.extensions
-                                );
+                        if key.starts_with("x-handler") {
+                            if let Value::String(s) = val {
+                                return Some(s.clone());
                             }
-                            match val {
-                                serde_json::Value::String(s) => Some(s.clone()),
-                                _ => None,
+                        }
+                        None
+                    })
+                    .or_else(|| operation.operation_id.clone());
+
+                let handler_name = match handler_name {
+                    Some(name) => name,
+                    None => {
+                        issues.push(ValidationIssue::new(
+                            &location,
+                            "MissingHandler",
+                            "Missing operationId or x-handler-* extension",
+                        ));
+                        continue;
+                    }
+                };
+
+                let request_schema = operation.request_body.as_ref().and_then(|r| match r {
+                    ObjectOrReference::Object(req_body) => {
+                        if !req_body.content.contains_key("application/json") {
+                            issues.push(ValidationIssue::new(
+                                &location,
+                                "InvalidRequestSchema",
+                                "Missing 'application/json' requestBody content",
+                            ));
+                            return None;
+                        }
+                        let media = req_body.content.get("application/json").unwrap();
+                        if let Some(ObjectOrReference::Object(schema_obj)) = media.schema.as_ref() {
+                            let val = serde_json::to_value(schema_obj).ok();
+                            if let Some(v) = &val {
+                                if v.get("type").is_none() {
+                                    issues.push(ValidationIssue::new(
+                                        &location,
+                                        "InvalidRequestSchema",
+                                        "Request schema is missing 'type' field",
+                                    ));
+                                }
                             }
+                            val
                         } else {
+                            issues.push(ValidationIssue::new(
+                                &location,
+                                "InvalidRequestSchema",
+                                "Request schema is not an object",
+                            ));
                             None
                         }
-                    })
-                    .unwrap_or_else(|| {
-                        let fallback = format!("{}_{}", method_str, path.replace("/", "_"));
-                        if verbose {
-                            println!("  → No handler extension, using fallback: {}", fallback);
-                        }
-                        fallback
-                    });
+                    }
+                    _ => {
+                        issues.push(ValidationIssue::new(
+                            &location,
+                            "InvalidRequestSchema",
+                            "Request body is a reference or not supported",
+                        ));
+                        None
+                    }
+                });
 
-                if verbose {
-                    println!("  → Final route: {} {} -> {}", method, path, handler_name);
-                }
+                let response_schema = operation.responses.as_ref().and_then(|responses_map| {
+                    if let Some(resp) = responses_map.get("200") {
+                        match resp {
+                            ObjectOrReference::Object(resp_obj) => {
+                                if !resp_obj.content.contains_key("application/json") {
+                                    issues.push(ValidationIssue::new(
+                                        &location,
+                                        "InvalidResponseSchema",
+                                        "Missing 'application/json' in 200 response",
+                                    ));
+                                    return None;
+                                }
+                                let media = resp_obj.content.get("application/json").unwrap();
+                                if let Some(ObjectOrReference::Object(schema_obj)) =
+                                    media.schema.as_ref()
+                                {
+                                    let val = serde_json::to_value(schema_obj).ok();
+                                    if let Some(v) = &val {
+                                        if v.get("type").is_none() {
+                                            issues.push(ValidationIssue::new(
+                                                &location,
+                                                "InvalidResponseSchema",
+                                                "Response schema is missing 'type' field",
+                                            ));
+                                        }
+                                    }
+                                    val
+                                } else {
+                                    issues.push(ValidationIssue::new(
+                                        &location,
+                                        "InvalidResponseSchema",
+                                        "Response schema is not an object",
+                                    ));
+                                    None
+                                }
+                            }
+                            _ => {
+                                issues.push(ValidationIssue::new(
+                                    &location,
+                                    "InvalidResponseSchema",
+                                    "Response is a reference or not supported",
+                                ));
+                                None
+                            }
+                        }
+                    } else {
+                        issues.push(ValidationIssue::new(
+                            &location,
+                            "InvalidResponseSchema",
+                            "Missing 200 response definition",
+                        ));
+                        None
+                    }
+                });
 
                 routes.push(RouteMeta {
                     method,
                     path_pattern: path.clone(),
                     handler_name,
-                    parameters: vec![], // fill in as before
-                    request_schema: None,
-                    response_schema: None,
+                    parameters: vec![],
+                    request_schema,
+                    response_schema,
                 });
             }
         }
     }
 
+    fail_if_issues(issues);
     Ok(routes)
 }
