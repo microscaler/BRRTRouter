@@ -26,25 +26,13 @@ paths:
                       breed: "Golden Retriever"
                       age: 3
                       vaccinated: true
-                      tags:
-                        - "friendly"
-                        - "trained"
+                      tags: ["friendly", "trained"]
                     - id: 67890
                       name: "Bella"
                       breed: "Labrador"
                       age: 2
                       vaccinated: true
-                      tags:
-                        - "puppy"
-                        - "playful"
-                    - id: 54321
-                      name: "Rocky"
-                      breed: "German Shepherd"
-                      age: 4
-                      vaccinated: true
-                      tags:
-                        - "guard dog"
-                        - "intelligent"
+                      tags: ["puppy", "playful"]
 
     post:
       summary: Add a pet
@@ -59,15 +47,7 @@ paths:
               createPetExample:
                 summary: Example pet creation request
                 value:
-                  id: 67890
                   name: "Bella"
-                  breed: "Labrador"
-                  age: 2
-                  vaccinated: true
-                  tags:
-                    - "puppy"
-                    - "friendly"
-                    - "playful"
       responses:
         "200":
           description: Pet added successfully
@@ -77,7 +57,7 @@ paths:
                 $ref: "#/components/schemas/PetCreationResponse"
               examples:
                 addPetExample:
-                  summary: Example pet creation response
+                  summary: Example response
                   value:
                     id: 67890
                     status: "success"
@@ -101,17 +81,14 @@ paths:
                 $ref: "#/components/schemas/Pet"
               examples:
                 petExample:
-                  summary: Example pet response
+                  summary: A pet
                   value:
                     id: 12345
                     name: "Max"
                     breed: "Golden Retriever"
                     age: 3
                     vaccinated: true
-                    tags:
-                      - "friendly"
-                      - "trained"
-                      - "family pet"
+                    tags: ["friendly", "trained"]
 
   /users:
     get:
@@ -126,15 +103,13 @@ paths:
                 $ref: "#/components/schemas/UserList"
               examples:
                 userListExample:
-                  summary: Example list of users
+                  summary: List of users
                   value:
                     users:
-                      - id: "123e4567-e89b-12d3-a456-426614174000"
-                        name: "John Doe"
-                      - id: "223e4567-e89b-12d3-a456-426614174001"
-                        name: "Jane Smith"
-                      - id: "323e4567-e89b-12d3-a456-426614174002"
-                        name: "Alex Johnson"
+                      - id: "abc-123"
+                        name: "John"
+                      - id: "def-456"
+                        name: "Jane"
 
   /users/{user_id}:
     get:
@@ -154,11 +129,10 @@ paths:
                 $ref: "#/components/schemas/User"
               examples:
                 userExample:
-                  summary: Example user response
+                  summary: User
                   value:
-                    id: "123e4567-e89b-12d3-a456-426614174000"
-                    name: "John Doe"
-                    email: "john.doe@example.com"
+                    id: "abc-123"
+                    name: "John"
 
   /users/{user_id}/posts:
     get:
@@ -179,15 +153,15 @@ paths:
                 items:
                   $ref: "#/components/schemas/Post"
               examples:
-                userPostsExample:
-                  summary: Example posts for a user
+                postsExample:
+                  summary: User posts
                   value:
-                    - id: "550e8400-e29b-41d4-a716-446655440000"
-                      title: "My First Post"
-                      body: "This is the content of my first post."
-                    - id: "550e8400-e29b-41d4-a716-446655440001"
-                      title: "My Second Post"
-                      body: "This is the content of my second post."
+                    - id: "post1"
+                      title: "Intro"
+                      body: "Welcome to the blog"
+                    - id: "post2"
+                      title: "Follow-up"
+                      body: "Thanks for reading"
 
   /users/{user_id}/posts/{post_id}:
     get:
@@ -211,11 +185,11 @@ paths:
                 $ref: "#/components/schemas/Post"
               examples:
                 postExample:
-                  summary: Example post response
+                  summary: A blog post
                   value:
-                    id: "550e8400-e29b-41d4-a716-446655440000"
-                    title: "My First Post"
-                    body: "This is the content of my first post."
+                    id: "post1"
+                    title: "Intro"
+                    body: "Welcome to the blog"
 
   /admin/settings:
     get:
@@ -229,14 +203,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/AdminSettings"
               examples:
-                adminSettingsExample:
-                  summary: Example admin settings response
+                settingsExample:
+                  summary: Admin settings
                   value:
                     feature_flags:
-                      enable_dark_mode: true
-                      beta_features: false
-                      analytics_enabled: true
-                      maintenance_mode: false
+                      beta: true
+                      analytics: false
 
   /items/{id}:
     get:
@@ -257,9 +229,8 @@ paths:
                 $ref: "#/components/schemas/Item"
               examples:
                 itemExample:
-                  summary: Example item response
                   value:
-                    id: "123e4567-e89b-12d3-a456-426614174000"
+                    id: "item-001"
                     name: "Sample Item"
 
     post:
@@ -280,17 +251,16 @@ paths:
               $ref: "#/components/schemas/CreateItemRequest"
       responses:
         "200":
-          description: Item upserted
+          description: Upserted
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Item"
               examples:
-                createItemResponse:
-                  summary: Minimal response example
+                itemExample:
                   value:
-                    id: "123e4567-e89b-12d3-a456-426614174000"
-                    status: "ok"
+                    id: "item-001"
+                    name: "New Item"
 
 components:
   schemas:
@@ -298,45 +268,32 @@ components:
       type: object
       required: [id, name, breed, age, vaccinated, tags]
       properties:
-        id:
-          type: integer
-          format: uuid
-        name:
-          type: string
-        breed:
-          type: string
-        age:
-          type: integer
-        vaccinated:
-          type: boolean
+        id: { type: integer }
+        name: { type: string }
+        breed: { type: string }
+        age: { type: integer }
+        vaccinated: { type: boolean }
         tags:
           type: array
-          items:
-            type: string
-            
+          items: { type: string }
+
     PetCreationResponse:
       type: object
       properties:
-        id:
-          type: integer
-        status:
-          type: string
-          
+        id: { type: integer }
+        status: { type: string }
+
     CreatePetRequest:
       type: object
       required: [name]
       properties:
-        name:
-          type: string
+        name: { type: string }
 
     User:
       type: object
       properties:
-        id:
-          type: string
-          format: uuid
-        name:
-          type: string
+        id: { type: string }
+        name: { type: string }
 
     UserList:
       type: object
@@ -349,33 +306,24 @@ components:
     Post:
       type: object
       properties:
-        id:
-          type: string
-          format: uuid
-        title:
-          type: string
-        body:
-          type: string
+        id: { type: string }
+        title: { type: string }
+        body: { type: string }
 
     AdminSettings:
       type: object
       properties:
         feature_flags:
           type: object
-          additionalProperties:
-            type: boolean
+          additionalProperties: { type: boolean }
 
     Item:
       type: object
       properties:
-        id:
-          type: string
-          format: uuid
-        name:
-          type: string
+        id: { type: string }
+        name: { type: string }
 
     CreateItemRequest:
       type: object
       properties:
-        name:
-          type: string
+        name: { type: string }

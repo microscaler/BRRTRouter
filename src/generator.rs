@@ -24,6 +24,7 @@ pub struct ControllerTemplateData {
     pub response_fields: Vec<FieldDef>,
     pub example: String,
     pub has_example: bool,
+    pub example_json: String,
 }
 
 #[derive(Template)]
@@ -122,7 +123,7 @@ pub fn generate_handlers_from_spec(
             &imports,
             force,
         )?;
-        generate_controller_file(controller_dir, &handler, &response_fields, force)?;
+        generate_controller_file(controller_dir, &handler, &response_fields, force, route.example.clone(),)?;
 
         modules_handlers.push(handler.clone());
         modules_controllers.push(handler.clone());
@@ -225,18 +226,26 @@ fn generate_controller_file(
     handler: &str,
     response_fields: &[FieldDef],
     force: bool,
+    example: Option<Value>,
 ) -> anyhow::Result<()> {
     let file_path = out_dir.join(format!("{}.rs", handler));
     if file_path.exists() && !force {
         println!("⚠️  Skipping existing controller file: {:?}", file_path);
         return Ok(());
     }
+    let (example_json, has_example) = match example {
+        Some(val) => (serde_json::to_string_pretty(&val).unwrap_or_default(), true),
+        None => (String::new(), false),
+    };
+
     let context = ControllerTemplateData {
         handler_name: handler.to_string(),
         response_fields: response_fields.to_vec(),
-        example: "todo!()".to_string(),
-        has_example: false,
+        example_json,
+        has_example,
+        example: "".to_string(),
     };
+
     let rendered = context.render()?;
     fs::write(&file_path, rendered)?;
     println!("✅ Generated controller: {} → {:?}", handler, file_path);
