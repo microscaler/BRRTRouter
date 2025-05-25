@@ -99,9 +99,11 @@ pub fn generate_handlers_from_spec(
     fs::create_dir_all(controller_dir)?;
 
     let mut seen = HashSet::new();
-    let mut mod_lines_handlers = BTreeSet::from(["types".to_string()]);
+    let mut mod_lines_handlers = BTreeSet::new();
     let mut mod_lines_controllers = BTreeSet::new();
     let mut registry_entries = Vec::new();
+
+    mod_lines_handlers.insert("types".to_string());
 
     for route in routes {
         let handler = route.handler_name.clone();
@@ -161,11 +163,20 @@ pub fn generate_handlers_from_spec(
         }
     }
 
-    let modules: Vec<String> = mod_lines_handlers.into_iter().collect();
-
     fs::write(
         out_dir.join("mod.rs"),
-        ModRsTemplateData { modules }.render()?,
+        ModRsTemplateData {
+            modules: mod_lines_handlers.into_iter().collect(),
+        }
+        .render()?,
+    )?;
+
+    fs::write(
+        controller_dir.join("mod.rs"),
+        ModRsTemplateData {
+            modules: mod_lines_controllers.into_iter().collect(),
+        }
+        .render()?,
     )?;
 
     fs::write(
