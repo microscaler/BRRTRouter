@@ -34,19 +34,22 @@ pub fn load_spec(file_path: &str, verbose: bool) -> anyhow::Result<Vec<RouteMeta
     build_routes(&spec, verbose)
 }
 
-fn resolve_schema_ref<'a>(spec: &'a Spec, ref_path: &str) -> Option<&'a oas3::spec::ObjectSchema> {
-    if let Some(name) = ref_path.strip_prefix("#/components/schemas/") {
-        spec.components
-            .as_ref()?
-            .schemas
-            .get(name)
-            .and_then(|schema_ref| match schema_ref {
-                ObjectOrReference::Object(schema) => Some(schema),
-                _ => None,
-            })
-    } else {
-        None
-    }
+pub(crate) fn resolve_schema_ref<'a>(
+    spec: &'a oas3::OpenApiV3Spec,
+    ref_path: &str,
+) -> Option<&'a oas3::spec::ObjectSchema> {
+    ref_path
+        .strip_prefix("#/components/schemas/")
+        .and_then(|name| {
+            spec.components
+                .as_ref()?
+                .schemas
+                .get(name)
+                .and_then(|schema_ref| match schema_ref {
+                    oas3::spec::ObjectOrReference::Object(obj) => Some(obj),
+                    _ => None,
+                })
+        })
 }
 
 pub(crate) fn build_routes(spec: &OpenApiV3Spec, verbose: bool) -> anyhow::Result<Vec<RouteMeta>> {
