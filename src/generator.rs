@@ -1,11 +1,12 @@
+// generator.rs
 use crate::dummy_value;
-use crate::spec::{build_routes, resolve_schema_ref};
+use crate::spec::{load_spec, build_routes, resolve_schema_ref};
 use askama::Template;
 use serde_json::Value;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[derive(Template)]
 #[template(path = "handler.rs.txt")]
@@ -33,6 +34,12 @@ pub struct RegistryTemplateData {
 #[template(path = "handler_types.rs.txt")]
 pub struct TypesTemplateData {
     pub types: HashMap<String, TypeDefinition>,
+}
+
+#[derive(Template)]
+#[template(path = "mod.rs.txt")]
+pub struct ModRsTemplateData {
+    pub modules: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -92,32 +99,28 @@ pub fn generate_handlers_from_spec(
     fs::create_dir_all(controller_dir)?;
 
     let mut seen = HashSet::new();
-    let mut mod_lines_handlers = Vec::new();
+    let mut mod_lines_handlers = vec!["types".to_string()];
     let mut mod_lines_controllers = Vec::new();
     let mut registry_entries = Vec::new();
 
     for route in routes {
-        let handler = &route.handler_name;
+        let handler = route.handler_name.clone();
         if !seen.insert(handler.clone()) {
             continue;
         }
 
         let request_fields = route.request_schema.as_ref().map_or(vec![], extract_fields);
-        let response_fields = route
-            .response_schema
-            .as_ref()
-            .map_or(vec![], extract_fields);
+        let response_fields = route.response_schema.as_ref().map_or(vec![], extract_fields);
 
         let mut imports = BTreeSet::new();
         for field in request_fields.iter().chain(response_fields.iter()) {
             let inner = field
                 .ty
                 .strip_prefix("Vec<")
-                .and_then(|s| s.strip_suffix('>'))
+                .and_then(|s| s.strip_suffix(">"))
                 .unwrap_or(&field.ty);
-
-            if is_named_type(inner, &schema_types) {
-                imports.insert(inner.to_string());
+            if is_named_type(inner) {
+                imports.insert(to_camel_case(inner));
             }
         }
 
@@ -141,22 +144,41 @@ pub fn generate_handlers_from_spec(
             fs::write(&controller_path, context.render()?)?;
         }
 
-        mod_lines_handlers.push(format!("pub mod {};", handler));
-        mod_lines_controllers.push(format!("pub mod {};", handler));
-        registry_entries.push(RegistryEntry {
-            name: handler.clone(),
-        });
+        mod_lines_handlers.push(handler.clone());
+        mod_lines_controllers.push(handler.clone());
+        registry_entries.push(RegistryEntry { name: handler });
+
+        if let Some(schema) = &route.request_schema {
+            let request_type_name = format!("{}Request", route.handler_name);
+            process_schema_type(&request_type_name, schema, &mut schema_types);
+        }
+        if let Some(schema) = &route.response_schema {
+            let response_type_name = format!("{}Response", route.handler_name);
+            process_schema_type(&response_type_name, schema, &mut schema_types);
+        }
     }
 
-    fs::write(out_dir.join("mod.rs"), mod_lines_handlers.join("\n"))?;
-    fs::write("src/controllers/mod.rs", mod_lines_controllers.join("\n"))?;
-
     fs::write(
-        "src/registry.rs",
+        out_dir.join("mod.rs"),
+        ModRsTemplateData {
+            modules: mod_lines_handlers,
+        }
+            .render()?,
+    )?;
+
+    let mod_rs_controllers = controller_dir.join("mod.rs");
+    let mut file = fs::File::create(&mod_rs_controllers)?;
+    for module in &mod_lines_controllers {
+        writeln!(file, "pub mod {};", module)?;
+    }
+
+    let registry_path = Path::new("src/registry.rs");
+    fs::write(
+        &registry_path,
         RegistryTemplateData {
             entries: registry_entries,
         }
-        .render()?,
+            .render()?,
     )?;
 
     fs::write(
@@ -164,7 +186,7 @@ pub fn generate_handlers_from_spec(
         TypesTemplateData {
             types: schema_types,
         }
-        .render()?,
+            .render()?,
     )?;
 
     Ok(())
@@ -172,29 +194,24 @@ pub fn generate_handlers_from_spec(
 
 fn to_camel_case(s: &str) -> String {
     s.split('_')
-        .filter(|w| !w.is_empty())
-        .map(|word| {
-            let mut chars = word.chars();
+        .map(|part| {
+            let mut chars = part.chars();
             match chars.next() {
-                Some(f) => f.to_uppercase().collect::<String>() + chars.as_str(),
+                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
                 None => String::new(),
             }
         })
-        .collect()
+        .collect::<String>()
 }
 
-fn is_named_type(ty: &str, known_types: &HashMap<String, TypeDefinition>) -> bool {
+fn is_named_type(ty: &str) -> bool {
     let primitives = [
-        "String",
-        "i32",
-        "i64",
-        "f32",
-        "f64",
-        "bool",
-        "serde_json::Value",
-        "Vec<Value>",
+        "String", "i32", "i64", "f32", "f64", "bool", "Value", "serde_json::Value", "Vec<Value>",
     ];
-    !primitives.contains(&ty) && known_types.contains_key(ty)
+    !primitives.contains(&ty)
+        && !ty.starts_with("Vec<serde_json")
+        && !ty.starts_with("Vec<Value>")
+        && matches!(ty.chars().next(), Some('A'..='Z'))
 }
 
 pub fn process_schema_type(
@@ -204,13 +221,13 @@ pub fn process_schema_type(
 ) {
     let type_name = to_camel_case(name);
     if !schema_types.contains_key(&type_name) {
-        let fields = extract_fields(schema);
-        if !fields.is_empty() {
+        let type_fields = extract_fields(schema);
+        if !type_fields.is_empty() {
             schema_types.insert(
                 type_name.clone(),
                 TypeDefinition {
                     name: type_name,
-                    fields,
+                    fields: type_fields,
                 },
             );
         }
@@ -220,17 +237,18 @@ pub fn process_schema_type(
 pub fn extract_fields(schema: &Value) -> Vec<FieldDef> {
     let mut fields = vec![];
 
-    if let Some(schema_type) = schema.get("type").and_then(Value::as_str) {
+    if let Some(schema_type) = schema.get("type").and_then(|t| t.as_str()) {
         if schema_type == "array" {
             if let Some(items) = schema.get("items") {
-                if let Some(ref_path) = items.get("$ref").and_then(Value::as_str) {
+                if let Some(ref_path) = items.get("$ref").and_then(|v| v.as_str()) {
                     if let Some(name) = ref_path.strip_prefix("#/components/schemas/") {
-                        return vec![FieldDef {
+                        fields.push(FieldDef {
                             name: "items".to_string(),
                             ty: format!("Vec<{}>", to_camel_case(name)),
                             optional: false,
                             value: "vec![]".to_string(),
-                        }];
+                        });
+                        return fields;
                     }
                 }
                 return extract_fields(items);
@@ -240,55 +258,65 @@ pub fn extract_fields(schema: &Value) -> Vec<FieldDef> {
 
     let required = schema
         .get("required")
-        .and_then(Value::as_array)
-        .map(|arr| arr.iter().filter_map(Value::as_str).collect::<Vec<_>>())
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect::<Vec<_>>()
+        })
         .unwrap_or_default();
 
-    if let Some(props) = schema.get("properties").and_then(Value::as_object) {
-        for (name, prop) in props {
-            let ty = if let Some(ref_path) = prop.get("$ref").and_then(Value::as_str) {
-                ref_path
-                    .strip_prefix("#/components/schemas/")
-                    .map(to_camel_case)
-                    .unwrap_or_else(|| "serde_json::Value".to_string())
-            } else {
-                match prop.get("type").and_then(Value::as_str) {
-                    Some("string") => "String".to_string(),
-                    Some("integer") => "i32".to_string(),
-                    Some("number") => "f64".to_string(),
-                    Some("boolean") => "bool".to_string(),
-                    Some("array") => {
-                        if let Some(items) = prop.get("items") {
-                            if let Some(inner_ref) = items.get("$ref").and_then(Value::as_str) {
-                                if let Some(name) = inner_ref.strip_prefix("#/components/schemas/")
+    if let Some(props) = schema.get("properties") {
+        if let Some(map) = props.as_object() {
+            for (name, prop) in map.iter() {
+                let ty = if let Some(ref_path) = prop.get("$ref").and_then(|v| v.as_str()) {
+                    if let Some(name) = ref_path.strip_prefix("#/components/schemas/") {
+                        to_camel_case(name)
+                    } else {
+                        "serde_json::Value".to_string()
+                    }
+                } else {
+                    match prop.get("type").and_then(|t| t.as_str()) {
+                        Some("string") => "String".to_string(),
+                        Some("integer") => "i32".to_string(),
+                        Some("number") => "f64".to_string(),
+                        Some("boolean") => "bool".to_string(),
+                        Some("array") => {
+                            if let Some(items) = prop.get("items") {
+                                if let Some(item_ref) =
+                                    items.get("$ref").and_then(|v| v.as_str())
                                 {
-                                    format!("Vec<{}>", to_camel_case(name))
+                                    if let Some(name) =
+                                        item_ref.strip_prefix("#/components/schemas/")
+                                    {
+                                        format!("Vec<{}>", to_camel_case(name))
+                                    } else {
+                                        "Vec<serde_json::Value>".to_string()
+                                    }
                                 } else {
                                     "Vec<serde_json::Value>".to_string()
                                 }
                             } else {
                                 "Vec<serde_json::Value>".to_string()
                             }
-                        } else {
-                            "Vec<serde_json::Value>".to_string()
                         }
+                        Some("object") => "serde_json::Value".to_string(),
+                        _ => "serde_json::Value".to_string(),
                     }
-                    Some("object") => "serde_json::Value".to_string(),
-                    _ => "serde_json::Value".to_string(),
-                }
-            };
+                };
 
-            let optional = !required.contains(&name.as_str());
-            let value = dummy_value::dummy_value(&ty)
-                .map(|v| if optional { format!("Some({})", v) } else { v })
-                .unwrap_or_else(|_| "Default::default()".to_string());
+                let optional = !required.iter().any(|r| r == name);
+                let value = dummy_value::dummy_value(&ty)
+                    .map(|v| if optional { format!("Some({})", v) } else { v })
+                    .unwrap_or_else(|_| "Default::default()".to_string());
 
-            fields.push(FieldDef {
-                name: name.clone(),
-                ty,
-                optional,
-                value,
-            });
+                fields.push(FieldDef {
+                    name: name.clone(),
+                    ty,
+                    optional,
+                    value,
+                });
+            }
         }
     }
 
