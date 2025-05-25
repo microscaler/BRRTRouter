@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 {% for (type_name, type_def) in types %}
 #[derive(Debug, Serialize, Deserialize)]
 pub struct {{ type_name }} {
-    {% for field in type_def.fields %}
+    {% for field in type_def.fields -%}
     pub {{ field.name }}: {{ field.ty }},
-    {% endfor %}
+    {% endfor -%}
 }
 {% endfor %}
