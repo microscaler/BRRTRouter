@@ -22,6 +22,8 @@ pub struct HandlerTemplateData {
 pub struct ControllerTemplateData {
     pub handler_name: String,
     pub response_fields: Vec<FieldDef>,
+    pub example: String,
+    pub has_example: bool,
 }
 
 #[derive(Template)]
@@ -99,9 +101,11 @@ pub fn generate_handlers_from_spec(
     fs::create_dir_all(controller_dir)?;
 
     let mut seen = HashSet::new();
-    let mut mod_lines_handlers = BTreeSet::from(["types".to_string()]);
+    let mut mod_lines_handlers = BTreeSet::new();
     let mut mod_lines_controllers = BTreeSet::new();
     let mut registry_entries = Vec::new();
+
+    mod_lines_handlers.insert("types".to_string());
 
     for route in routes {
         let handler = route.handler_name.clone();
@@ -127,25 +131,36 @@ pub fn generate_handlers_from_spec(
             }
         }
 
-        let file_path = out_dir.join(format!("{}.rs", handler));
-        if !file_path.exists() || force {
-            let context = HandlerTemplateData {
+        let example_value = route
+            .response_schema
+            .as_ref()
+            .and_then(|schema| schema.get("examples"))
+            .and_then(|examples| examples.as_object())
+            .and_then(|map| map.values().next())
+            .and_then(|v| v.get("value"))
+            .map(|v| serde_json::to_string_pretty(v).unwrap_or_default());
+
+        fs::write(
+            out_dir.join(format!("{}.rs", handler)),
+            HandlerTemplateData {
                 handler_name: handler.clone(),
                 request_fields: request_fields.clone(),
                 response_fields: response_fields.clone(),
                 imports: imports.into_iter().collect(),
-            };
-            fs::write(&file_path, context.render()?)?;
-        }
+            }
+            .render()?,
+        )?;
 
-        let controller_path = controller_dir.join(format!("{}.rs", handler));
-        if !controller_path.exists() || force {
-            let context = ControllerTemplateData {
+        fs::write(
+            controller_dir.join(format!("{}.rs", handler)),
+            ControllerTemplateData {
                 handler_name: handler.clone(),
                 response_fields: response_fields.clone(),
-            };
-            fs::write(&controller_path, context.render()?)?;
-        }
+                example: example_value.clone().unwrap_or_default(),
+                has_example: example_value.is_some(),
+            }
+            .render()?,
+        )?;
 
         mod_lines_handlers.insert(handler.clone());
         mod_lines_controllers.insert(handler.clone());
@@ -161,11 +176,20 @@ pub fn generate_handlers_from_spec(
         }
     }
 
-    let modules: Vec<String> = mod_lines_handlers.into_iter().collect();
-
     fs::write(
         out_dir.join("mod.rs"),
-        ModRsTemplateData { modules }.render()?,
+        ModRsTemplateData {
+            modules: mod_lines_handlers.into_iter().collect(),
+        }
+        .render()?,
+    )?;
+
+    fs::write(
+        controller_dir.join("mod.rs"),
+        ModRsTemplateData {
+            modules: mod_lines_controllers.into_iter().collect(),
+        }
+        .render()?,
     )?;
 
     fs::write(

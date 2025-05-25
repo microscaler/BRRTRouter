@@ -5,13 +5,13 @@ use crate::typed::TypedHandlerRequest;
 use crate::handlers::{{ handler_name }}::{ Request, Response };
 
 pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
+    {% if has_example %}
+    {{ example | indent(4) }}
+    {% else %}
     Response {
-        {%- for field in response_fields %}
-            {% if field.optional -%}
-                {{ field.name }}: {{ field.value }},
-            {%- else -%}
-                {{ field.name }}: {{ field.value }},
-            {% endif -%}
-        {%- endfor -%}
+        {% for field in response_fields %}
+        {{ field.name }}: {{ field.value }},
+        {% endfor %}
     }
+    {% endif %}
 }

@@ -1,11 +1,12 @@
-
 // User-owned controller for handler 'add_pet'.
 
+use crate::handlers::add_pet::{Request, Response};
 use crate::typed::TypedHandlerRequest;
-use crate::handlers::add_pet::{ Request, Response };
 
 pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     Response {
-            id: Some(42),
-            status: Some("example".to_string()),}
+        id: Some(42),
+
+        status: Some("example".to_string()),
+    }
 }
