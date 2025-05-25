@@ -78,34 +78,16 @@ pub fn generate_handlers_from_spec(
     };
     let routes = build_routes(&spec, false)?;
 
-    let mut schema_types: HashMap<String, TypeDefinition> = HashMap::new();
-    if let Some(components) = spec.components.as_ref() {
-        for (name, schema) in &components.schemas {
-            match schema {
-                oas3::spec::ObjectOrReference::Object(obj) => {
-                    let schema_val = serde_json::to_value(obj)?;
-                    process_schema_type(name, &schema_val, &mut schema_types);
-                }
-                oas3::spec::ObjectOrReference::Ref { ref_path } => {
-                    if let Some(resolved) = resolve_schema_ref(&spec, ref_path) {
-                        let schema_val = serde_json::to_value(resolved)?;
-                        process_schema_type(name, &schema_val, &mut schema_types);
-                    }
-                }
-            }
-        }
-    }
+    let mut schema_types = collect_component_schemas(&spec);
 
     fs::create_dir_all(out_dir)?;
     let controller_dir = Path::new("src/controllers");
     fs::create_dir_all(controller_dir)?;
 
     let mut seen = HashSet::new();
-    let mut mod_lines_handlers = BTreeSet::new();
-    let mut mod_lines_controllers = BTreeSet::new();
+    let mut modules_handlers = Vec::new();
+    let mut modules_controllers = Vec::new();
     let mut registry_entries = Vec::new();
-
-    mod_lines_handlers.insert("types".to_string());
 
     for route in routes {
         let handler = route.handler_name.clone();
@@ -126,89 +108,160 @@ pub fn generate_handlers_from_spec(
                 .strip_prefix("Vec<")
                 .and_then(|s| s.strip_suffix(">"))
                 .unwrap_or(&field.ty);
+
             if is_named_type(inner) {
                 imports.insert(to_camel_case(inner));
             }
         }
 
-        let example_value = route
-            .response_schema
-            .as_ref()
-            .and_then(|schema| schema.get("examples"))
-            .and_then(|examples| examples.as_object())
-            .and_then(|map| map.values().next())
-            .and_then(|v| v.get("value"))
-            .map(|v| serde_json::to_string_pretty(v).unwrap_or_default());
-
-        fs::write(
-            out_dir.join(format!("{}.rs", handler)),
-            HandlerTemplateData {
-                handler_name: handler.clone(),
-                request_fields: request_fields.clone(),
-                response_fields: response_fields.clone(),
-                imports: imports.into_iter().collect(),
-            }
-            .render()?,
+        generate_handler_file(
+            out_dir,
+            &handler,
+            &request_fields,
+            &response_fields,
+            &imports,
+            force,
         )?;
+        generate_controller_file(controller_dir, &handler, &response_fields, force)?;
 
-        fs::write(
-            controller_dir.join(format!("{}.rs", handler)),
-            ControllerTemplateData {
-                handler_name: handler.clone(),
-                response_fields: response_fields.clone(),
-                example: example_value.clone().unwrap_or_default(),
-                has_example: example_value.is_some(),
-            }
-            .render()?,
-        )?;
-
-        mod_lines_handlers.insert(handler.clone());
-        mod_lines_controllers.insert(handler.clone());
-        registry_entries.push(RegistryEntry { name: handler });
+        modules_handlers.push(handler.clone());
+        modules_controllers.push(handler.clone());
+        registry_entries.push(RegistryEntry {
+            name: handler.clone(),
+        });
 
         if let Some(schema) = &route.request_schema {
-            let request_type_name = format!("{}Request", route.handler_name);
-            process_schema_type(&request_type_name, schema, &mut schema_types);
+            let name = format!("{}Request", handler);
+            process_schema_type(&name, schema, &mut schema_types);
         }
         if let Some(schema) = &route.response_schema {
-            let response_type_name = format!("{}Response", route.handler_name);
-            process_schema_type(&response_type_name, schema, &mut schema_types);
+            let name = format!("{}Response", handler);
+            process_schema_type(&name, schema, &mut schema_types);
         }
     }
 
-    fs::write(
-        out_dir.join("mod.rs"),
-        ModRsTemplateData {
-            modules: mod_lines_handlers.into_iter().collect(),
-        }
-        .render()?,
-    )?;
-
-    fs::write(
-        controller_dir.join("mod.rs"),
-        ModRsTemplateData {
-            modules: mod_lines_controllers.into_iter().collect(),
-        }
-        .render()?,
-    )?;
-
-    fs::write(
-        "src/registry.rs",
-        RegistryTemplateData {
-            entries: registry_entries,
-        }
-        .render()?,
-    )?;
-
-    fs::write(
-        out_dir.join("types.rs"),
-        TypesTemplateData {
-            types: schema_types,
-        }
-        .render()?,
-    )?;
+    write_mod_rs_for_handlers(out_dir, modules_handlers)?;
+    write_mod_rs_for_controllers(controller_dir, &modules_controllers)?;
+    write_registry_rs(&registry_entries)?;
+    write_types_rs(out_dir, &schema_types)?;
 
     Ok(())
+}
+
+fn write_mod_rs_for_handlers(dir: &Path, mut modules: Vec<String>) -> anyhow::Result<()> {
+    if !modules.iter().any(|m| m == "types") {
+        modules.insert(0, "types".to_string());
+    }
+    write_mod_rs(dir, &modules, "handlers")
+}
+
+fn write_mod_rs_for_controllers(dir: &Path, modules: &[String]) -> anyhow::Result<()> {
+    write_mod_rs(dir, modules, "controllers")
+}
+
+fn write_mod_rs(dir: &Path, modules: &[String], label: &str) -> anyhow::Result<()> {
+    let mod_rs_path = dir.join("mod.rs");
+    let context = ModRsTemplateData {
+        modules: modules.to_vec(),
+    };
+    let rendered = context.render()?;
+    fs::write(&mod_rs_path, rendered)?;
+    println!("✅ Updated mod.rs for {} → {:?}", label, mod_rs_path);
+    Ok(())
+}
+
+fn write_registry_rs(entries: &[RegistryEntry]) -> anyhow::Result<()> {
+    let registry_path = Path::new("src/registry.rs");
+    let context = RegistryTemplateData {
+        entries: entries.to_vec(),
+    };
+    let rendered = context.render()?;
+    fs::write(&registry_path, rendered)?;
+    println!("✅ Generated registry.rs → {:?}", registry_path);
+    Ok(())
+}
+
+fn write_types_rs(
+    out_dir: &Path,
+    schema_types: &HashMap<String, TypeDefinition>,
+) -> anyhow::Result<()> {
+    let types_rs_path = out_dir.join("types.rs");
+    let types_context = TypesTemplateData {
+        types: schema_types.clone(),
+    };
+    let rendered = types_context.render()?;
+    fs::write(&types_rs_path, rendered)?;
+    println!("✅ Generated types.rs → {:?}", types_rs_path);
+    Ok(())
+}
+
+fn generate_handler_file(
+    out_dir: &Path,
+    handler: &str,
+    request_fields: &[FieldDef],
+    response_fields: &[FieldDef],
+    imports: &BTreeSet<String>,
+    force: bool,
+) -> anyhow::Result<()> {
+    let file_path = out_dir.join(format!("{}.rs", handler));
+    if file_path.exists() && !force {
+        println!("⚠️  Skipping existing handler file: {:?}", file_path);
+        return Ok(());
+    }
+    let context = HandlerTemplateData {
+        handler_name: handler.to_string(),
+        request_fields: request_fields.to_vec(),
+        response_fields: response_fields.to_vec(),
+        imports: imports.iter().cloned().collect(),
+    };
+    let rendered = context.render()?;
+    fs::write(&file_path, rendered)?;
+    println!("✅ Generated handler: {} → {:?}", handler, file_path);
+    Ok(())
+}
+
+fn generate_controller_file(
+    out_dir: &Path,
+    handler: &str,
+    response_fields: &[FieldDef],
+    force: bool,
+) -> anyhow::Result<()> {
+    let file_path = out_dir.join(format!("{}.rs", handler));
+    if file_path.exists() && !force {
+        println!("⚠️  Skipping existing controller file: {:?}", file_path);
+        return Ok(());
+    }
+    let context = ControllerTemplateData {
+        handler_name: handler.to_string(),
+        response_fields: response_fields.to_vec(),
+        example: "todo!()".to_string(),
+        has_example: false,
+    };
+    let rendered = context.render()?;
+    fs::write(&file_path, rendered)?;
+    println!("✅ Generated controller: {} → {:?}", handler, file_path);
+    Ok(())
+}
+
+fn collect_component_schemas(spec: &oas3::OpenApiV3Spec) -> HashMap<String, TypeDefinition> {
+    let mut schema_types = HashMap::new();
+    if let Some(components) = spec.components.as_ref() {
+        for (name, schema) in &components.schemas {
+            match schema {
+                oas3::spec::ObjectOrReference::Object(obj) => {
+                    let schema_val = serde_json::to_value(obj).unwrap_or_default();
+                    process_schema_type(name, &schema_val, &mut schema_types);
+                }
+                oas3::spec::ObjectOrReference::Ref { ref_path } => {
+                    if let Some(resolved) = resolve_schema_ref(spec, ref_path) {
+                        let schema_val = serde_json::to_value(resolved).unwrap_or_default();
+                        process_schema_type(name, &schema_val, &mut schema_types);
+                    }
+                }
+            }
+        }
+    }
+    schema_types
 }
 
 fn to_camel_case(s: &str) -> String {
