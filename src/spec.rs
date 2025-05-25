@@ -1,8 +1,9 @@
 use crate::validator::{fail_if_issues, ValidationIssue};
 use http::Method;
-use oas3::spec::ObjectOrReference;
+use oas3::spec::{MediaTypeExamples, ObjectOrReference, Parameter};
 use oas3::OpenApiV3Spec;
 use serde_json::Value;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub struct RouteMeta {
@@ -12,6 +13,7 @@ pub struct RouteMeta {
     pub parameters: Vec<ParameterMeta>,
     pub request_schema: Option<Value>,
     pub response_schema: Option<Value>,
+    pub example: Option<Value>,
 }
 
 #[derive(Debug, Clone)]
@@ -33,25 +35,112 @@ pub fn load_spec(file_path: &str, verbose: bool) -> anyhow::Result<Vec<RouteMeta
     build_routes(&spec, verbose)
 }
 
-pub(crate) fn resolve_schema_ref<'a>(
-    spec: &'a oas3::OpenApiV3Spec,
+pub fn resolve_schema_ref<'a>(
+    spec: &'a OpenApiV3Spec,
     ref_path: &str,
 ) -> Option<&'a oas3::spec::ObjectSchema> {
-    ref_path
-        .strip_prefix("#/components/schemas/")
-        .and_then(|name| {
-            spec.components
-                .as_ref()?
-                .schemas
-                .get(name)
-                .and_then(|schema_ref| match schema_ref {
-                    oas3::spec::ObjectOrReference::Object(obj) => Some(obj),
-                    _ => None,
-                })
+    if let Some(name) = ref_path.strip_prefix("#/components/schemas/") {
+        spec.components
+            .as_ref()?
+            .schemas
+            .get(name)
+            .and_then(|schema_ref| match schema_ref {
+                ObjectOrReference::Object(schema) => Some(schema),
+                _ => None,
+            })
+    } else {
+        None
+    }
+}
+
+fn resolve_handler_name(
+    operation: &oas3::spec::Operation,
+    location: &str,
+    issues: &mut Vec<ValidationIssue>,
+) -> Option<String> {
+    operation
+        .extensions
+        .iter()
+        .find_map(|(key, val)| {
+            if key.starts_with("x-handler") {
+                if let Value::String(s) = val {
+                    return Some(s.clone());
+                }
+            }
+            None
+        })
+        .or_else(|| operation.operation_id.clone())
+        .or_else(|| {
+            issues.push(ValidationIssue::new(
+                location,
+                "MissingHandler",
+                "Missing operationId or x-handler-* extension",
+            ));
+            None
         })
 }
 
-pub(crate) fn build_routes(spec: &OpenApiV3Spec, verbose: bool) -> anyhow::Result<Vec<RouteMeta>> {
+fn extract_request_schema(
+    spec: &OpenApiV3Spec,
+    operation: &oas3::spec::Operation,
+) -> Option<Value> {
+    operation.request_body.as_ref().and_then(|r| match r {
+        ObjectOrReference::Object(req_body) => {
+            req_body.content.get("application/json").and_then(|media| {
+                match media.schema.as_ref()? {
+                    ObjectOrReference::Object(schema_obj) => serde_json::to_value(schema_obj).ok(),
+                    ObjectOrReference::Ref { ref_path } => resolve_schema_ref(spec, ref_path)
+                        .and_then(|s| serde_json::to_value(s).ok()),
+                }
+            })
+        }
+        _ => None,
+    })
+}
+
+fn extract_response_schema_and_example(
+    spec: &OpenApiV3Spec,
+    operation: &oas3::spec::Operation,
+) -> (Option<Value>, Option<Value>) {
+    operation
+        .responses
+        .as_ref()
+        .and_then(|responses_map| {
+            let resp = responses_map.get("200")?;
+            match resp {
+                ObjectOrReference::Object(resp_obj) => {
+                    let media = resp_obj.content.get("application/json")?;
+
+                    let example = match &media.examples {
+                        Some(oas3::spec::MediaTypeExamples::Example { example }) => {
+                            Some(example.clone())
+                        }
+                        Some(oas3::spec::MediaTypeExamples::Examples { examples }) => {
+                            examples.values().find_map(|obj| match obj {
+                                ObjectOrReference::Object(ex) => ex.value.clone(),
+                                _ => None,
+                            })
+                        }
+                        None => None,
+                    };
+
+                    let schema = match media.schema.as_ref()? {
+                        ObjectOrReference::Object(schema_obj) => {
+                            serde_json::to_value(schema_obj).ok()
+                        }
+                        ObjectOrReference::Ref { ref_path } => resolve_schema_ref(spec, ref_path)
+                            .and_then(|s| serde_json::to_value(s).ok()),
+                    };
+
+                    Some((schema, example))
+                }
+                _ => None,
+            }
+        })
+        .unwrap_or((None, None))
+}
+
+pub fn build_routes(spec: &OpenApiV3Spec, verbose: bool) -> anyhow::Result<Vec<RouteMeta>> {
     let mut routes = Vec::new();
     let mut issues = Vec::new();
 
@@ -61,93 +150,14 @@ pub(crate) fn build_routes(spec: &OpenApiV3Spec, verbose: bool) -> anyhow::Resul
                 let method = method_str.clone();
                 let location = format!("{} → {}", path, method);
 
-                let handler_name = operation
-                    .extensions
-                    .iter()
-                    .find_map(|(key, val)| {
-                        if key.starts_with("x-handler") {
-                            if let Value::String(s) = val {
-                                return Some(s.clone());
-                            }
-                        }
-                        None
-                    })
-                    .or_else(|| operation.operation_id.clone());
-
-                let handler_name = match handler_name {
+                let handler_name = match resolve_handler_name(operation, &location, &mut issues) {
                     Some(name) => name,
-                    None => {
-                        issues.push(ValidationIssue::new(
-                            &location,
-                            "MissingHandler",
-                            "Missing operationId or x-handler-* extension",
-                        ));
-                        continue;
-                    }
+                    None => continue,
                 };
 
-                let request_schema = operation.request_body.as_ref().and_then(|r| match r {
-                    ObjectOrReference::Object(req_body) => {
-                        if !req_body.content.contains_key("application/json") {
-                            issues.push(ValidationIssue::new(
-                                &location,
-                                "InvalidRequestSchema",
-                                "Missing 'application/json' requestBody content",
-                            ));
-                            return None;
-                        }
-                        let media = req_body.content.get("application/json").unwrap();
-                        match media.schema.as_ref()? {
-                            ObjectOrReference::Object(schema_obj) => {
-                                let val = serde_json::to_value(schema_obj).ok();
-                                if let Some(v) = &val {
-                                    if v.get("type").is_none() {
-                                        issues.push(ValidationIssue::new(
-                                            &location,
-                                            "InvalidRequestSchema",
-                                            "Request schema is missing 'type' field",
-                                        ));
-                                    }
-                                }
-                                val
-                            }
-                            ObjectOrReference::Ref { ref_path } => {
-                                resolve_schema_ref(spec, ref_path)
-                                    .and_then(|schema| serde_json::to_value(schema).ok())
-                            }
-                        }
-                    }
-                    _ => None,
-                });
-
-                let response_schema = operation.responses.as_ref().and_then(|responses_map| {
-                    let resp = responses_map.get("200")?;
-                    match resp {
-                        ObjectOrReference::Object(resp_obj) => {
-                            let media = resp_obj.content.get("application/json")?;
-                            match media.schema.as_ref()? {
-                                ObjectOrReference::Object(schema_obj) => {
-                                    let val = serde_json::to_value(schema_obj).ok();
-                                    if let Some(v) = &val {
-                                        if v.get("type").is_none() {
-                                            issues.push(ValidationIssue::new(
-                                                &location,
-                                                "InvalidResponseSchema",
-                                                "Response schema is missing 'type' field",
-                                            ));
-                                        }
-                                    }
-                                    val
-                                }
-                                ObjectOrReference::Ref { ref_path } => {
-                                    resolve_schema_ref(spec, ref_path)
-                                        .and_then(|schema| serde_json::to_value(schema).ok())
-                                }
-                            }
-                        }
-                        _ => None,
-                    }
-                });
+                let request_schema = extract_request_schema(spec, operation);
+                let (response_schema, example) =
+                    extract_response_schema_and_example(spec, operation);
 
                 routes.push(RouteMeta {
                     method,
@@ -156,6 +166,7 @@ pub(crate) fn build_routes(spec: &OpenApiV3Spec, verbose: bool) -> anyhow::Resul
                     parameters: vec![],
                     request_schema,
                     response_schema,
+                    example,
                 });
             }
         }
