@@ -1,5 +1,4 @@
 // dummy_value.rs
-use askama::Template;
 
 pub fn dummy_value(ty: &str) -> askama::Result<String> {
     let value = match ty {

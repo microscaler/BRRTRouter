@@ -1,9 +1,8 @@
 use crate::validator::{fail_if_issues, ValidationIssue};
 use http::Method;
-use oas3::spec::{ObjectOrReference, Parameter, Schema};
-use oas3::{OpenApiV3Spec, Spec};
+use oas3::spec::ObjectOrReference;
+use oas3::OpenApiV3Spec;
 use serde_json::Value;
-use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub struct RouteMeta {
