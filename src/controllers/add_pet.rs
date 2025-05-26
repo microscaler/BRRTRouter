@@ -5,16 +5,15 @@ use crate::typed::TypedHandlerRequest;
 use crate::handlers::add_pet::{ Request, Response };
 
 pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
-    // Example response:
-    // {
-    //   "id": 67890,
-    //   "status": "success"
-    // }
     
-
+    // Example response:
+    // 
+    
     Response {
-        id: Some(42),
-        status: Some("example".to_string()),
+        
+        id: 67890,
+        
+        status: "success".to_string(),
         
     }
 }

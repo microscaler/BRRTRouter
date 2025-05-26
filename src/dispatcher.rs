@@ -9,7 +9,6 @@ use std::collections::HashMap;
 #[allow(unused_imports)]
 use std::sync::Arc;
 
-
 #[derive(Debug, Clone)]
 pub struct HandlerRequest {
     pub method: Method,
@@ -113,4 +112,3 @@ impl Dispatcher {
         reply_rx.recv().ok()
     }
 }
-

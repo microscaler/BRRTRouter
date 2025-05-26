@@ -112,12 +112,10 @@ fn extract_response_schema_and_example(
                     let media = resp_obj.content.get("application/json")?;
 
                     let example = match &media.examples {
-                        Some(oas3::spec::MediaTypeExamples::Example { example }) => {
-                            Some(example.clone())
-                        }
-                        Some(oas3::spec::MediaTypeExamples::Examples { examples }) => {
-                            examples.values().find_map(|obj| match obj {
-                                ObjectOrReference::Object(ex) => ex.value.clone(),
+                        Some(MediaTypeExamples::Example { example }) => Some(example.clone()),
+                        Some(MediaTypeExamples::Examples { examples }) => {
+                            examples.values().find_map(|v| match v {
+                                ObjectOrReference::Object(obj) => obj.value.clone(),
                                 _ => None,
                             })
                         }

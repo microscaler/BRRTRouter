@@ -1,7 +1,6 @@
 // Auto-generated handler registry
 
 use crate::dispatcher::Dispatcher;
-use crate::echo::echo_handler; // Import the echo handler for demonstration purposes
 use crate::handlers::*;
 
 pub unsafe fn register_all(dispatcher: &mut Dispatcher) {
