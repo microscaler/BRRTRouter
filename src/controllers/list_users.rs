@@ -5,23 +5,13 @@ use crate::typed::TypedHandlerRequest;
 use crate::handlers::list_users::{ Request, Response };
 
 pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
-    // Example response:
-    // {
-    //   "users": [
-    //     {
-    //       "id": "abc-123",
-    //       "name": "John"
-    //     },
-    //     {
-    //       "id": "def-456",
-    //       "name": "Jane"
-    //     }
-    //   ]
-    // }
     
-
+    // Example response:
+    // 
+    
     Response {
-        users: Some(Default::default()),
+        
+        users: Some(vec![Default::default(), Default::default()]),
         
     }
 }

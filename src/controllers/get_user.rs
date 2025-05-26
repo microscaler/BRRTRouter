@@ -5,16 +5,15 @@ use crate::typed::TypedHandlerRequest;
 use crate::handlers::get_user::{ Request, Response };
 
 pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
-    // Example response:
-    // {
-    //   "id": "abc-123",
-    //   "name": "John"
-    // }
     
-
+    // Example response:
+    // 
+    
     Response {
-        id: Some("example".to_string()),
-        name: Some("example".to_string()),
+        
+        id: Some("abc-123".to_string()),
+        
+        name: Some("John".to_string()),
         
     }
 }

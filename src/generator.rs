@@ -123,7 +123,13 @@ pub fn generate_handlers_from_spec(
             &imports,
             force,
         )?;
-        generate_controller_file(controller_dir, &handler, &response_fields, force, route.example.clone(),)?;
+        generate_controller_file(
+            controller_dir,
+            &handler,
+            &response_fields,
+            force,
+            route.example.clone(),
+        )?;
 
         modules_handlers.push(handler.clone());
         modules_controllers.push(handler.clone());
@@ -233,17 +239,40 @@ fn generate_controller_file(
         println!("⚠️  Skipping existing controller file: {:?}", file_path);
         return Ok(());
     }
-    let (example_json, has_example) = match example {
-        Some(val) => (serde_json::to_string_pretty(&val).unwrap_or_default(), true),
-        None => (String::new(), false),
-    };
+
+    let example_map = example
+        .as_ref()
+        .and_then(|v| match v {
+            Value::Object(map) => Some(map.clone()),
+            _ => None,
+        })
+        .unwrap_or_default();
+
+    let enriched_fields = response_fields
+        .iter()
+        .map(|field| {
+            let value = example_map
+                .get(&field.name)
+                .map(|val| rust_literal_for_example(field, val))
+                .unwrap_or_else(|| field.value.clone());
+            FieldDef {
+                name: field.name.clone(),
+                ty: field.ty.clone(),
+                optional: field.optional,
+                value,
+            }
+        })
+        .collect::<Vec<_>>();
 
     let context = ControllerTemplateData {
         handler_name: handler.to_string(),
-        response_fields: response_fields.to_vec(),
-        example_json,
-        has_example,
-        example: "".to_string(),
+        response_fields: enriched_fields,
+        example: example
+            .as_ref()
+            .and_then(|v| serde_json::to_string_pretty(v).ok())
+            .unwrap_or_default(),
+        has_example: example.is_some(),
+        example_json: "".to_string(), // TODO: unify or drop if unused
     };
 
     let rendered = context.render()?;
@@ -302,6 +331,62 @@ fn is_named_type(ty: &str) -> bool {
         && !ty.starts_with("Vec<Value>")
         && matches!(ty.chars().next(), Some('A'..='Z'))
 }
+
+fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
+    let literal = match example {
+        Value::String(s) => format!("{:?}.to_string()", s),
+        Value::Number(n) => n.to_string(),
+        Value::Bool(b) => b.to_string(),
+        Value::Array(items) => {
+            let inner = items
+                .iter()
+                .map(|item| match item {
+                    Value::String(s) => format!("{:?}.to_string().parse().unwrap()", s),
+                    Value::Number(n) => n.to_string(),
+                    Value::Bool(b) => b.to_string(),
+                    _ => "Default::default()".to_string(),
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("vec![{}]", inner)
+        }
+        _ => "Default::default()".to_string(),
+    };
+
+    if field.optional {
+        format!("Some({})", literal)
+    } else {
+        literal
+    }
+}
+
+
+fn value_to_rust_literal(value: &Value, wrap_in_option: bool) -> String {
+    let raw = match value {
+        Value::String(s) => format!("{:?}.to_string()", s),
+        Value::Bool(b) => b.to_string(),
+        Value::Number(n) => n.to_string(),
+        Value::Array(arr) => {
+            let elems = arr
+                .iter()
+                .map(|v| match v {
+                    Value::String(s) => format!("{:?}.to_string().parse().unwrap()", s),
+                    _ => value_to_rust_literal(v, false),
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("vec![{}]", elems)
+        }
+        Value::Object(_) | Value::Null => "Default::default()".to_string(),
+    };
+
+    if wrap_in_option {
+        format!("Some({})", raw)
+    } else {
+        raw
+    }
+}
+
 
 pub fn process_schema_type(
     name: &str,

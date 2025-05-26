@@ -5,16 +5,12 @@ use crate::typed::TypedHandlerRequest;
 use crate::handlers::admin_settings::{ Request, Response };
 
 pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
-    // Example response:
-    // {
-    //   "feature_flags": {
-    //     "analytics": false,
-    //     "beta": true
-    //   }
-    // }
     
-
+    // Example response:
+    // 
+    
     Response {
+        
         feature_flags: Some(Default::default()),
         
     }

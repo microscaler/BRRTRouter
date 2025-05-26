@@ -5,16 +5,15 @@ use crate::typed::TypedHandlerRequest;
 use crate::handlers::post_item::{ Request, Response };
 
 pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
-    // Example response:
-    // {
-    //   "id": "item-001",
-    //   "name": "New Item"
-    // }
     
-
+    // Example response:
+    // 
+    
     Response {
-        id: Some("example".to_string()),
-        name: Some("example".to_string()),
+        
+        id: Some("item-001".to_string()),
+        
+        name: Some("New Item".to_string()),
         
     }
 }
