@@ -232,6 +232,28 @@ paths:
                   value:
                     id: "item-001"
                     name: "Sample Item"
+  /echo/{id}:
+    get:
+      operationId: get_item
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Get an item
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Item"
+              examples:
+                itemExample:
+                  value:
+                    id: "item-001"
+                    name: "Sample Item"
 
     post:
       summary: Update or create item by ID
