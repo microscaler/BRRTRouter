@@ -4,6 +4,7 @@ use oas3::spec::{MediaTypeExamples, ObjectOrReference, Parameter};
 use oas3::OpenApiV3Spec;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 #[derive(Debug, Clone)]
 pub struct RouteMeta {
@@ -14,6 +15,9 @@ pub struct RouteMeta {
     pub request_schema: Option<Value>,
     pub response_schema: Option<Value>,
     pub example: Option<Value>,
+    pub example_name: String,
+    pub project_slug: String,
+    pub output_dir: PathBuf,
 }
 
 #[derive(Debug, Clone)]
@@ -24,7 +28,7 @@ pub struct ParameterMeta {
     pub schema: Option<Value>,
 }
 
-pub fn load_spec(file_path: &str, verbose: bool) -> anyhow::Result<Vec<RouteMeta>> {
+pub fn load_spec(file_path: &str, verbose: bool) -> anyhow::Result<(Vec<RouteMeta>, String)> {
     let content = std::fs::read_to_string(file_path)?;
     let spec: OpenApiV3Spec = if file_path.ends_with(".yaml") || file_path.ends_with(".yml") {
         serde_yaml::from_str(&content)?
@@ -32,7 +36,16 @@ pub fn load_spec(file_path: &str, verbose: bool) -> anyhow::Result<Vec<RouteMeta
         serde_json::from_str(&content)?
     };
 
-    build_routes(&spec, verbose)
+    let title = spec
+        .info
+        .title
+        .to_lowercase()
+        .replace(|c: char| !c.is_ascii_alphanumeric(), "_")
+        .trim_matches('_')
+        .to_string();
+
+    let routes = build_routes(&spec, verbose, &title)?;
+    Ok((routes, title))
 }
 
 pub fn resolve_schema_ref<'a>(
@@ -52,7 +65,6 @@ pub fn resolve_schema_ref<'a>(
         None
     }
 }
-
 fn resolve_handler_name(
     operation: &oas3::spec::Operation,
     location: &str,
@@ -114,7 +126,7 @@ fn extract_response_schema_and_example(
                     let example = match &media.examples {
                         Some(MediaTypeExamples::Example { example }) => Some(example.clone()),
                         Some(MediaTypeExamples::Examples { examples }) => {
-                            examples.values().find_map(|v| match v {
+                            examples.iter().find_map(|(_, v)| match v {
                                 ObjectOrReference::Object(obj) => obj.value.clone(),
                                 _ => None,
                             })
@@ -138,7 +150,11 @@ fn extract_response_schema_and_example(
         .unwrap_or((None, None))
 }
 
-pub fn build_routes(spec: &OpenApiV3Spec, verbose: bool) -> anyhow::Result<Vec<RouteMeta>> {
+pub fn build_routes(
+    spec: &OpenApiV3Spec,
+    verbose: bool,
+    slug: &str,
+) -> anyhow::Result<Vec<RouteMeta>> {
     let mut routes = Vec::new();
     let mut issues = Vec::new();
 
@@ -165,6 +181,9 @@ pub fn build_routes(spec: &OpenApiV3Spec, verbose: bool) -> anyhow::Result<Vec<R
                     request_schema,
                     response_schema,
                     example,
+                    example_name: format!("{}_example", slug),
+                    project_slug: slug.to_string(),
+                    output_dir: PathBuf::from("examples").join(slug).join("src"),
                 });
             }
         }
