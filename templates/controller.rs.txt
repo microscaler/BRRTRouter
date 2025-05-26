@@ -1,19 +1,16 @@
-{# controller.rs.txt - Askama template #}
+{# controller.rs.txt #}
 // User-owned controller for handler '{{ handler_name }}'.
 
 use crate::typed::TypedHandlerRequest;
 use crate::handlers::{{ handler_name }}::{ Request, Response };
 
 pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
-    {% if has_example -%}
+    {% if has_example %}
     // Example response:
-    {%- for line in example_json.split("\n") %}
-    // {{ line }}
-    {%- endfor %}
+    // {{ example_json | indent(4) }}
     {% endif %}
-
     Response {
-        {% for field in response_fields -%}
+        {% for field in response_fields %}
         {{ field.name }}: {{ field.value }},
         {% endfor %}
     }

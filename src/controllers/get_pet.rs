@@ -5,26 +5,22 @@ use crate::typed::TypedHandlerRequest;
 use crate::handlers::get_pet::{ Request, Response };
 
 pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
-    // Example response:
-    // {
-    //   "age": 3,
-    //   "breed": "Golden Retriever",
-    //   "id": 12345,
-    //   "name": "Max",
-    //   "tags": [
-    //     "friendly",
-    //     "trained"
-    //   ],
-    //   "vaccinated": true
-    // }
     
-
+    // Example response:
+    // 
+    
     Response {
-        age: 42,
-        breed: "example".to_string(),
-        id: 42,
-        name: "example".to_string(),
-        tags: Default::default(),
+        
+        age: 3,
+        
+        breed: "Golden Retriever".to_string(),
+        
+        id: 12345,
+        
+        name: "Max".to_string(),
+        
+        tags: vec!["friendly".to_string().parse().unwrap(), "trained".to_string().parse().unwrap()],
+        
         vaccinated: true,
         
     }
