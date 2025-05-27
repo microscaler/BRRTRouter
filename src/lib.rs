@@ -10,5 +10,6 @@ pub mod server;
 pub mod spec;
 pub mod typed;
 mod validator;
+mod helpers;
 
 pub use spec::{load_spec, ParameterMeta, RouteMeta};
