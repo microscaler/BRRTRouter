@@ -309,7 +309,7 @@ pub fn write_main_rs(dir: &Path, slug: &str, routes: Vec<RouteMeta>) -> anyhow::
         name: slug.to_string(),
         routes,
     }
-        .render()?;
+    .render()?;
     fs::write(dir.join("main.rs"), rendered)?;
     println!("✅ Wrote main.rs");
     Ok(())

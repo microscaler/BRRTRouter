@@ -1,6 +1,6 @@
 // Auto-generated handler registry
 
-use crate::dispatcher::Dispatcher;
+use brrtrouter::dispatcher::Dispatcher;
 use crate::handlers::*;
 
 pub unsafe fn register_all(dispatcher: &mut Dispatcher) {

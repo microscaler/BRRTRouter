@@ -132,7 +132,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1b8e56985ec62d17e9c1001dc89c88ecd7dc08e47eba5ec7c29c7b5eeecde967"
 
 [[package]]
-name = "brrrouter"
+name = "brrtrouter"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -699,6 +699,19 @@ name = "percent-encoding"
 version = "2.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3148f5046208a5d56bcfc03053e3ca6334e51da8dfb19b6cdc8b306fae3283e"
+
+[[package]]
+name = "pet_store"
+version = "0.1.0"
+dependencies = [
+ "brrtrouter",
+ "http",
+ "may",
+ "may_minihttp",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+]
 
 [[package]]
 name = "potential_utf"

@@ -1,121 +1,32 @@
-use brrrouter::dispatcher::Dispatcher;
-use brrrouter::router::Router;
-use brrrouter::spec::RouteMeta;
-use registry::register_all;
-use std::sync::Arc;
 
-fn main() {
+use brrtrouter::{
+    dispatcher::Dispatcher,
+    router::Router,
+    server::AppService,
+};
+use registry::register_all;
+use may_minihttp::HttpServer;
+use std::io;
+
+fn main() -> io::Result<()> {
+    let (routes, _slug) = brrtrouter::spec::load_spec("examples/pet_store/openapi.yaml", false)
+        .expect("failed to load OpenAPI spec");
+
+    let router = Router::new((routes, String::new()));
     let mut dispatcher = Dispatcher::new();
     unsafe {
-        register_all(&mut dispatcher);
+        registry::register_all(&mut dispatcher);
     }
 
-    let router = Router::new((
-        vec![
-            
-            RouteMeta {
-                method: Method::GET,
-                path_pattern: "/admin/settings".to_string(),
-                handler_name: "admin_settings".to_string(),
-                parameters: vec![],
-                request_schema: None,
-                response_schema: None,
-                example: None,
-            },
-            
-            RouteMeta {
-                method: Method::GET,
-                path_pattern: "/items/{id}".to_string(),
-                handler_name: "get_item".to_string(),
-                parameters: vec![],
-                request_schema: None,
-                response_schema: None,
-                example: None,
-            },
-            
-            RouteMeta {
-                method: Method::POST,
-                path_pattern: "/items/{id}".to_string(),
-                handler_name: "post_item".to_string(),
-                parameters: vec![],
-                request_schema: None,
-                response_schema: None,
-                example: None,
-            },
-            
-            RouteMeta {
-                method: Method::GET,
-                path_pattern: "/pets".to_string(),
-                handler_name: "list_pets".to_string(),
-                parameters: vec![],
-                request_schema: None,
-                response_schema: None,
-                example: None,
-            },
-            
-            RouteMeta {
-                method: Method::POST,
-                path_pattern: "/pets".to_string(),
-                handler_name: "add_pet".to_string(),
-                parameters: vec![],
-                request_schema: None,
-                response_schema: None,
-                example: None,
-            },
-            
-            RouteMeta {
-                method: Method::GET,
-                path_pattern: "/pets/{id}".to_string(),
-                handler_name: "get_pet".to_string(),
-                parameters: vec![],
-                request_schema: None,
-                response_schema: None,
-                example: None,
-            },
-            
-            RouteMeta {
-                method: Method::GET,
-                path_pattern: "/users".to_string(),
-                handler_name: "list_users".to_string(),
-                parameters: vec![],
-                request_schema: None,
-                response_schema: None,
-                example: None,
-            },
-            
-            RouteMeta {
-                method: Method::GET,
-                path_pattern: "/users/{user_id}".to_string(),
-                handler_name: "get_user".to_string(),
-                parameters: vec![],
-                request_schema: None,
-                response_schema: None,
-                example: None,
-            },
-            
-            RouteMeta {
-                method: Method::GET,
-                path_pattern: "/users/{user_id}/posts".to_string(),
-                handler_name: "list_user_posts".to_string(),
-                parameters: vec![],
-                request_schema: None,
-                response_schema: None,
-                example: None,
-            },
-            
-            RouteMeta {
-                method: Method::GET,
-                path_pattern: "/users/{user_id}/posts/{post_id}".to_string(),
-                handler_name: "get_post".to_string(),
-                parameters: vec![],
-                request_schema: None,
-                response_schema: None,
-                example: None,
-            },
-            
-        ],
-        String::from(""),
-    ));
+    let service = AppService { router, dispatcher };
 
-    println!("Router initialized with 10 routes.");
+    println!("🚀 pet_store example server listening on 0.0.0.0:8080");
+    let server = HttpServer(service)
+        .start("0.0.0.0:8080")
+        .map_err(io::Error::other)?;
+
+    server
+        .join()
+        .map_err(|e| io::Error::other(format!("Server failed: {:?}", e)))?;
+    Ok(())
 }

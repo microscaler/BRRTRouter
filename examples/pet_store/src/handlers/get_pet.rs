@@ -3,8 +3,8 @@
 
 use serde::{ Deserialize, Serialize };
 use serde_json::Value;
-use crate::dispatcher::HandlerRequest;
-use crate::typed::{ TypedHandlerRequest, TypedHandlerResponse };
+use crate::brrtrouter::dispatcher::HandlerRequest;
+use crate::brrtrouter::typed::{ TypedHandlerRequest, TypedHandlerResponse };
 
 #[derive(Debug, Deserialize)]
 pub struct Request {
@@ -30,15 +30,24 @@ pub fn handler(req: TypedHandlerRequest<Request>) -> Response {
     crate::controllers::get_pet::handle(req)
 }
 
-impl From<HandlerRequest> for TypedHandlerRequest<Request> {
-    fn from(_req: HandlerRequest) -> Self {
+pub trait IntoTypedRequest {
+    fn into_typed_request(self) -> TypedHandlerRequest<Request>;
+}
+
+impl IntoTypedRequest for HandlerRequest {
+    fn into_typed_request(self) -> TypedHandlerRequest<Request> {
         // TODO: convert HandlerRequest to TypedHandlerRequest<Request>
         unimplemented!()
     }
 }
 
-impl From<TypedHandlerRequest<Request>> for HandlerRequest {
-    fn from(_req: TypedHandlerRequest<Request>) -> Self {
+/// Custom trait to convert from typed request back to HandlerRequest
+pub trait FromTypedRequest {
+    fn from_typed_request(typed_req: TypedHandlerRequest<Request>) -> Self;
+}
+
+impl FromTypedRequest for HandlerRequest {
+    fn from_typed_request(typed_req: TypedHandlerRequest<Request>) -> Self {
         // TODO: convert TypedHandlerRequest<Request> to HandlerRequest
         unimplemented!()
     }
