@@ -162,7 +162,7 @@ pub fn generate_project_from_spec(spec_path: &Path, force: bool) -> anyhow::Resu
 
     write_cargo_toml(&base_dir, &slug)?;
     write_main_rs(&src_dir, &slug, routes)?;
-    write_types_rs(&src_dir, &schema_types)?;
+    write_types_rs(&handler_dir, &schema_types)?;
     write_registry_rs(&src_dir, &registry_entries)?;
     write_mod_rs(
         &handler_dir,
