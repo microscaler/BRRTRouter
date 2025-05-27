@@ -1,7 +1,7 @@
 {# controller.rs.txt #}
 // User-owned controller for handler '{{ handler_name }}'.
 
-use crate::typed::TypedHandlerRequest;
+use crate::brrtrouter::typed::TypedHandlerRequest;
 use crate::handlers::{{ handler_name }}::{ Request, Response };
 
 pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {

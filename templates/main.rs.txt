@@ -1,32 +1,32 @@
-use brrrouter::dispatcher::Dispatcher;
-use brrrouter::router::Router;
-use brrrouter::spec::RouteMeta;
+{# templates/main.rs.txt #}
+use brrtrouter::{
+    dispatcher::Dispatcher,
+    router::Router,
+    server::AppService,
+};
 use registry::register_all;
-use std::sync::Arc;
+use may_minihttp::HttpServer;
+use std::io;
 
-fn main() {
+fn main() -> io::Result<()> {
+    let (routes, _slug) = brrtrouter::spec::load_spec("examples/{{ name }}/openapi.yaml", false)
+        .expect("failed to load OpenAPI spec");
+
+    let router = Router::new((routes, String::new()));
     let mut dispatcher = Dispatcher::new();
     unsafe {
-        register_all(&mut dispatcher);
+        registry::register_all(&mut dispatcher);
     }
 
-    let router = Router::new((
-        vec![
-            {% for route in routes %}
-            RouteMeta {
-                method: Method::{{ route.method }},
-                path_pattern: "{{ route.path }}".to_string(),
-                handler_name: "{{ route.handler }}".to_string(),
-                parameters: vec![],
-                request_schema: None,
-                response_schema: None,
-                example: None,
-            },
-            {% endfor %}
-        ],
-        String::from(""),
-    ));
+    let service = AppService { router, dispatcher };
 
-    println!("Router initialized with {{ routes.len() }} routes.");
+    println!("🚀 {{ name }} example server listening on 0.0.0.0:8080");
+    let server = HttpServer(service)
+        .start("0.0.0.0:8080")
+        .map_err(io::Error::other)?;
+
+    server
+        .join()
+        .map_err(|e| io::Error::other(format!("Server failed: {:?}", e)))?;
+    Ok(())
 }
-
