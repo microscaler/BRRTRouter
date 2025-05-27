@@ -1,4 +1,4 @@
-use brrrouter::{
+use brrtrouter::{
     router::{RouteMatch, Router},
     spec::RouteMeta,
 };
@@ -14,48 +14,48 @@ info:
 paths:
   "/":
     get:
-      x-handler-root: root_handler
+      operationId: root_handler
       responses:
         "200": { description: OK }
   /zoo/animals:
     get:
-      x-handler-get: get_animals
+      operationId: get_animals
       responses:
         "200": { description: OK }
     post:
-      x-handler-create: create_animal
+      operationId: create_animal
       responses:
         "200": { description: OK }
 
   /zoo/animals/{id}:
     get:
-      x-handler-get: get_animal
+      operationId: get_animal
       responses:
         "200": { description: OK }
     put:
-      x-handler-update: update_animal
+      operationId: update_animal
       responses:
         "200": { description: OK }
     patch:
-      x-handler-patch: patch_animal
+      operationId: patch_animal
       responses:
         "200": { description: OK }
     delete:
-      x-handler-delete: delete_animal
+      operationId: delete_animal
       responses:
         "200": { description: OK }
 
   /zoo/health:
     head:
-      x-handler-head: health_check
+      operationId: health_check
       responses:
         "200": { description: OK }
     options:
-      x-handler-options: supported_ops
+      operationId: supported_ops
       responses:
         "200": { description: OK }
     trace:
-      x-handler-trace: trace_route
+      operationId: trace_route
       responses:
         "200": { description: OK }
 "#
@@ -63,11 +63,11 @@ paths:
 
 fn parse_spec(yaml: &str) -> Vec<RouteMeta> {
     let spec = serde_yaml::from_str(yaml).expect("failed to parse YAML spec");
-    brrrouter::spec::load_spec_from_spec(spec, false).expect("failed to load spec")
+    brrtrouter::spec::load_spec_from_spec(spec, false).expect("failed to load spec")
 }
 
 pub fn load_spec_from_spec(spec_wrapper: oas3::OpenApiV3Spec) -> anyhow::Result<Vec<RouteMeta>> {
-    brrrouter::spec::load_spec_from_spec(spec_wrapper, false)
+    brrtrouter::spec::load_spec_from_spec(spec_wrapper, false)
 }
 
 fn assert_route_match(router: &Router, method: Method, path: &str, expected_handler: &str) {

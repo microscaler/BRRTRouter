@@ -1,11 +1,11 @@
 [package]
-name = "brrrouter"
+name = "brrtrouter"
 version = "0.1.0"
 edition = "2021"
 authors = ["Charles Sibbald <casibbald@gmail.com>"]
 description = "A blazing-fast, OpenAPI 3.1 driven Rust request router powered by coroutines and may_minihttp."
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/microscaler/brrrouter"
+repository = "https://github.com/microscaler/brrtrouter"
 keywords = ["router", "openapi", "a10", "coroutine", "may"]
 categories = ["web-programming", "api-bindings", "asynchronous"]
 readme = "README.md"
@@ -30,5 +30,10 @@ askama = { version = "0.14.0", features = ["full"] }
 pretty_assertions = "1.4"
 
 [[bin]]
-name = "brrrouter-gen"
-path = "src/bin/brrrouter_gen.rs"
+name = "brrtrouter-gen"
+path = "src/bin/brrtrouter_gen.rs"
+
+[workspace]
+members = [
+    "examples/pet_store"
+]

@@ -19,7 +19,40 @@ pub struct Router {
 }
 
 impl Router {
-    pub fn new((routes, _handler_prefix): (Vec<RouteMeta>, String)) -> Self {
+    pub fn new(routes: Vec<RouteMeta>) -> Self {
+        // Filter out routes that are not HTTP methods we care about
+        // We only support GET, POST, PUT, DELETE, PATCH, and OPTIONS
+        let supported_methods = vec![
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::DELETE,
+            Method::PATCH,
+            Method::OPTIONS,
+            Method::HEAD,
+            Method::TRACE, // TRACE is included but filtered out later
+        ];
+
+        let routes: Vec<RouteMeta> = routes
+            .into_iter()
+            .filter(|r| supported_methods.contains(&r.method))
+            .collect();
+        // // Filter out routes that are not valid HTTP methods
+        // let routes: Vec<RouteMeta> = routes
+        //     .into_iter()
+        //     .filter(|r| r.method != Method::TRACE && r.method != Method::CONNECT)
+        //     .collect();
+
+        if routes.is_empty() {
+            return Self { routes: Vec::new() };
+        }
+        // Ensure routes are sorted by path length (longest first) to optimize matching
+        // This is useful for cases where paths may overlap, e.g. "/pets" and "/pets/{id}"
+        let mut routes = routes;
+        routes.sort_by_key(|r| r.path_pattern.len());
+        routes.reverse();
+        // Convert each route's path pattern to a regex and collect param names
+        // Each route is represented as (method, compiled regex, RouteMeta, param names)
         let routes = routes
             .into_iter()
             .map(|route| {

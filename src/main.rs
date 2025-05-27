@@ -1,17 +1,17 @@
-use brrrouter::dispatcher::Dispatcher;
+use brrtrouter::dispatcher::Dispatcher;
 // use brrrouter::registry;
-use brrrouter::server::AppService;
-use brrrouter::{load_spec, router::Router};
+use brrtrouter::server::AppService;
+use brrtrouter::{load_spec, router::Router};
 use may_minihttp::HttpServer;
 use std::io;
 
 fn main() -> io::Result<()> {
     // Load OpenAPI spec and create router
-    let spec = load_spec("examples/openapi.yaml", false).expect("failed to load spec");
-    let router = Router::new(spec);
+    let (routes, _slug) = load_spec("examples/openapi.yaml", false).expect("failed to load spec");
+    let router = Router::new(routes);
 
     // Create dispatcher and register handlers
-    let mut dispatcher = Dispatcher::new();
+    let dispatcher = Dispatcher::new();
     // unsafe {
     //     registry::register_all(&mut dispatcher);
     // }

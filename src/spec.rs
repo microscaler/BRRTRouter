@@ -1,9 +1,8 @@
 use crate::validator::{fail_if_issues, ValidationIssue};
 use http::Method;
-use oas3::spec::{MediaTypeExamples, ObjectOrReference, Parameter};
+use oas3::spec::{MediaTypeExamples, ObjectOrReference};
 use oas3::OpenApiV3Spec;
 use serde_json::Value;
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone)]
@@ -46,6 +45,20 @@ pub fn load_spec(file_path: &str, verbose: bool) -> anyhow::Result<(Vec<RouteMet
 
     let routes = build_routes(&spec, verbose, &title)?;
     Ok((routes, title))
+}
+
+/// Build route metadata from an already parsed [`OpenApiV3Spec`].
+pub fn load_spec_from_spec(spec: OpenApiV3Spec, verbose: bool) -> anyhow::Result<Vec<RouteMeta>> {
+    let slug = spec
+        .info
+        .title
+        .to_lowercase()
+        .replace(|c: char| !c.is_ascii_alphanumeric(), "_")
+        .trim_matches('_')
+        .to_string();
+
+    let routes = build_routes(&spec, verbose, &slug)?;
+    Ok(routes)
 }
 
 pub fn resolve_schema_ref<'a>(
