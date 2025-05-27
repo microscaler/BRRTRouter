@@ -1,5 +1,5 @@
 use brrrouter::dispatcher::Dispatcher;
-use brrrouter::registry;
+// use brrrouter::registry;
 use brrrouter::server::AppService;
 use brrrouter::{load_spec, router::Router};
 use may_minihttp::HttpServer;
@@ -12,9 +12,9 @@ fn main() -> io::Result<()> {
 
     // Create dispatcher and register handlers
     let mut dispatcher = Dispatcher::new();
-    unsafe {
-        registry::register_all(&mut dispatcher);
-    }
+    // unsafe {
+    //     registry::register_all(&mut dispatcher);
+    // }
 
     // Start the HTTP server on port 8080 (0.0.0.0:8080) under the may runtime
     // This returns a coroutine JoinHandle; we join on it to keep the server running

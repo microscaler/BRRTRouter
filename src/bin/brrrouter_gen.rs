@@ -1,3 +1,3 @@
 fn main() {
-    brrrouter::cli::run_cli();
+    let _ = brrrouter::cli::run_cli();
 }

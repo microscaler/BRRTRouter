@@ -289,12 +289,6 @@ components:
       properties:
         name: { type: string }
 
-    User:
-      type: object
-      properties:
-        id: { type: string }
-        name: { type: string }
-
     UserList:
       type: object
       properties:
@@ -302,6 +296,12 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/User"
+
+    User:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
 
     Post:
       type: object

@@ -11,7 +11,7 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     
     Response {
         
-        items: vec![],
+        items: vec![Default::default()],
         
     }
 }

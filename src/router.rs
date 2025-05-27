@@ -19,7 +19,7 @@ pub struct Router {
 }
 
 impl Router {
-    pub fn new(routes: Vec<RouteMeta>) -> Self {
+    pub fn new((routes, _handler_prefix): (Vec<RouteMeta>, String)) -> Self {
         let routes = routes
             .into_iter()
             .map(|route| {

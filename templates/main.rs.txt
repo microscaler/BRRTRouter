@@ -1,0 +1,32 @@
+use brrrouter::dispatcher::Dispatcher;
+use brrrouter::router::Router;
+use brrrouter::spec::RouteMeta;
+use registry::register_all;
+use std::sync::Arc;
+
+fn main() {
+    let mut dispatcher = Dispatcher::new();
+    unsafe {
+        register_all(&mut dispatcher);
+    }
+
+    let router = Router::new((
+        vec![
+            {% for route in routes %}
+            RouteMeta {
+                method: Method::{{ route.method }},
+                path_pattern: "{{ route.path }}".to_string(),
+                handler_name: "{{ route.handler }}".to_string(),
+                parameters: vec![],
+                request_schema: None,
+                response_schema: None,
+                example: None,
+            },
+            {% endfor %}
+        ],
+        String::from(""),
+    ));
+
+    println!("Router initialized with {{ routes.len() }} routes.");
+}
+
