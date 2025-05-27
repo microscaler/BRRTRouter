@@ -4,7 +4,8 @@ use askama::Template;
 use serde_json::Value;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs;
-use std::path::{Path};
+use std::io::Write;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
 pub struct TypeDefinition {
@@ -295,7 +296,7 @@ fn write_cargo_toml(base: &Path, slug: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn write_main_rs(dir: &Path, slug: &str, routes: Vec<RouteMeta>) -> anyhow::Result<()> {
+pub fn write_main_rs(dir: &Path, slug: &str, routes: Vec<RouteMeta>) -> anyhow::Result<()> {
     let routes = routes
         .into_iter()
         .map(|r| RouteDisplay {
@@ -308,7 +309,7 @@ fn write_main_rs(dir: &Path, slug: &str, routes: Vec<RouteMeta>) -> anyhow::Resu
         name: slug.to_string(),
         routes,
     }
-    .render()?;
+        .render()?;
     fs::write(dir.join("main.rs"), rendered)?;
     println!("✅ Wrote main.rs");
     Ok(())
