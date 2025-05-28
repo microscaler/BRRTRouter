@@ -4,10 +4,9 @@ use brrtrouter::{
     router::Router,
     server::AppService,
 };
-use registry::register_all;
+use pet_store::registry;
 use may_minihttp::HttpServer;
 use std::io;
-use pet_store::registry;
 
 fn main() -> io::Result<()> {
     let (routes, _slug) = brrtrouter::spec::load_spec("examples/pet_store/openapi.yaml")
