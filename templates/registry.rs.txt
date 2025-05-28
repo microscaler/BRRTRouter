@@ -2,21 +2,14 @@
 // Auto-generated handler registry
 
 use brrtrouter::dispatcher::Dispatcher;
+use crate::controllers::*;
 use crate::handlers::*;
-
-{% for entry in entries -%}
-use crate::handlers::{{ entry.name }}::IntoTypedRequest;
-use crate::handlers::{{ entry.name }}::{{ entry.request_type }};
-{% endfor %}
 
 pub unsafe fn register_all(dispatcher: &mut Dispatcher) {
     {% for entry in entries -%}
-    dispatcher.register_handler("{{ entry.name }}", |req| {
-        {{ entry.name }}::handler(
-            brrtrouter::typed::TypedHandlerRequest::<{{ entry.request_type }}>::from(
-                req.into_typed_request(),
-            ),
-        );
-    });
+    dispatcher.register_typed(
+        "{{ entry.name }}",
+        crate::controllers::{{ entry.name }}::{{ entry.controller_struct }},
+    );
     {% endfor %}
 }
