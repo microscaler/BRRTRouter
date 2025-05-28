@@ -21,3 +21,7 @@ impl Handler<Request, Response> for GetUserController {
         }
     }
 }
+pub fn handle(req: TypedHandlerRequest<Request>) -> Response {
+    GetUserController.handle(req)
+}
+

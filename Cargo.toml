@@ -28,6 +28,7 @@ askama = { version = "0.14.0", features = ["full"] }
 
 [dev-dependencies]
 pretty_assertions = "1.4"
+pet_store = { path = "examples/pet_store" }
 
 [[bin]]
 name = "brrtrouter-gen"
