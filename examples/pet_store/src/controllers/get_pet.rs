@@ -19,7 +19,10 @@ impl Handler<Request, Response> for GetPetController {
             
             name: "Max".to_string(),
             
-            tags: vec!["friendly".to_string(), "trained".to_string()],
+            tags: vec![
+                serde_json::Value::String("friendly".to_string()),
+                serde_json::Value::String("trained".to_string()),
+            ],
             
             vaccinated: true,
             
