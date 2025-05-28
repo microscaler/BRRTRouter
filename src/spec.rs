@@ -163,6 +163,56 @@ fn extract_response_schema_and_example(
         .unwrap_or((None, None))
 }
 
+fn resolve_parameter_ref<'a>(
+    spec: &'a OpenApiV3Spec,
+    ref_path: &str,
+) -> Option<&'a oas3::spec::Parameter> {
+    if let Some(name) = ref_path.strip_prefix("#/components/parameters/") {
+        spec.components
+            .as_ref()?
+            .parameters
+            .get(name)
+            .and_then(|p| match p {
+                ObjectOrReference::Object(param) => Some(param),
+                _ => None,
+            })
+    } else {
+        None
+    }
+}
+
+fn extract_parameters(
+    spec: &OpenApiV3Spec,
+    params: &Option<Vec<oas3::spec::ObjectOrReference<oas3::spec::Parameter>>>,
+) -> Vec<ParameterMeta> {
+    let mut out = Vec::new();
+    if let Some(list) = params {
+        for param_ref in list {
+            let param = match param_ref {
+                ObjectOrReference::Object(obj) => Some(obj),
+                ObjectOrReference::Ref { ref_path } => resolve_parameter_ref(spec, ref_path),
+            };
+
+            if let Some(p) = param {
+                let schema = p.schema.as_ref().and_then(|schema_ref| match schema_ref {
+                    ObjectOrReference::Object(obj) => serde_json::to_value(obj).ok(),
+                    ObjectOrReference::Ref { ref_path } => {
+                        resolve_schema_ref(spec, ref_path).and_then(|s| serde_json::to_value(s).ok())
+                    }
+                });
+
+                out.push(ParameterMeta {
+                    name: p.name.clone(),
+                    location: format!("{:?}", p.location),
+                    required: p.required.unwrap_or(false),
+                    schema,
+                });
+            }
+        }
+    }
+    out
+}
+
 pub fn build_routes(
     spec: &OpenApiV3Spec,
     verbose: bool,
@@ -186,11 +236,15 @@ pub fn build_routes(
                 let (response_schema, example) =
                     extract_response_schema_and_example(spec, operation);
 
+                let mut parameters = Vec::new();
+                parameters.extend(extract_parameters(spec, &item.parameters));
+                parameters.extend(extract_parameters(spec, &operation.parameters));
+
                 routes.push(RouteMeta {
                     method,
                     path_pattern: path.clone(),
                     handler_name,
-                    parameters: vec![],
+                    parameters,
                     request_schema,
                     response_schema,
                     example,
