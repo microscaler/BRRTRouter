@@ -11,4 +11,3 @@ serde_yaml = "0.9"
 http = "1.0"  # Do not update to newer version, it that is not compatible with may_minihttp
 may = "0.3"
 may_minihttp = "0.1"
-

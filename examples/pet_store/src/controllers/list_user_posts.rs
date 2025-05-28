@@ -1,6 +1,4 @@
-
 // User-owned controller for handler 'list_user_posts'.
-
 use crate::brrtrouter::typed::{TypedHandlerRequest, Handler};
 use crate::handlers::list_user_posts::{ Request, Response };
 

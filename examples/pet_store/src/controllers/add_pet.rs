@@ -1,6 +1,4 @@
-
 // User-owned controller for handler 'add_pet'.
-
 use crate::brrtrouter::typed::{TypedHandlerRequest, Handler};
 use crate::handlers::add_pet::{ Request, Response };
 

@@ -1,6 +1,4 @@
-
 // User-owned controller for handler 'admin_settings'.
-
 use crate::brrtrouter::typed::{TypedHandlerRequest, Handler};
 use crate::handlers::admin_settings::{ Request, Response };
 
