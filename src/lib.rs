@@ -12,4 +12,4 @@ pub mod spec;
 pub mod typed;
 mod validator;
 
-pub use spec::{load_spec, load_spec_from_spec, ParameterMeta, RouteMeta};
+pub use spec::{load_spec, load_spec_from_spec, ParameterMeta, ParameterLocation, RouteMeta};

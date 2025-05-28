@@ -1,4 +1,4 @@
-use brrtrouter::{load_spec, router::{Router, RouteMatch}, dispatcher::{Dispatcher, HandlerRequest}, typed::{Handler, TypedHandlerRequest}, spec::ParameterMeta};
+use brrtrouter::{load_spec, router::{Router, RouteMatch}, dispatcher::{Dispatcher, HandlerRequest}, typed::{Handler, TypedHandlerRequest}, spec::{ParameterMeta, ParameterLocation}};
 use http::Method;
 use may::sync::mpsc;
 use serde_json::json;
@@ -112,13 +112,13 @@ fn test_typed_controller_params() {
             vec![
                 ParameterMeta {
                     name: "id".to_string(),
-                    location: "Path".to_string(),
+                    location: ParameterLocation::Path,
                     required: true,
                     schema: Some(json!({"type": "integer"})),
                 },
                 ParameterMeta {
                     name: "debug".to_string(),
-                    location: "Query".to_string(),
+                    location: ParameterLocation::Query,
                     required: false,
                     schema: Some(json!({"type": "boolean"})),
                 },

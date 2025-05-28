@@ -5,6 +5,36 @@ use oas3::OpenApiV3Spec;
 use serde_json::Value;
 use std::path::PathBuf;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ParameterLocation {
+    Path,
+    Query,
+    Header,
+    Cookie,
+}
+
+impl std::fmt::Display for ParameterLocation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ParameterLocation::Path => write!(f, "Path"),
+            ParameterLocation::Query => write!(f, "Query"),
+            ParameterLocation::Header => write!(f, "Header"),
+            ParameterLocation::Cookie => write!(f, "Cookie"),
+        }
+    }
+}
+
+impl From<OasParameterLocation> for ParameterLocation {
+    fn from(loc: OasParameterLocation) -> Self {
+        match loc {
+            OasParameterLocation::Path => ParameterLocation::Path,
+            OasParameterLocation::Query => ParameterLocation::Query,
+            OasParameterLocation::Header => ParameterLocation::Header,
+            OasParameterLocation::Cookie => ParameterLocation::Cookie,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct RouteMeta {
     pub method: Method,
@@ -22,7 +52,7 @@ pub struct RouteMeta {
 #[derive(Debug, Clone)]
 pub struct ParameterMeta {
     pub name: String,
-    pub location: String,
+    pub location: ParameterLocation,
     pub required: bool,
     pub schema: Option<Value>,
 }
@@ -203,7 +233,7 @@ fn extract_parameters(
 
             out.push(ParameterMeta {
                 name: param.name.clone(),
-                location: format!("{:?}", param.location),
+                location: ParameterLocation::from(param.location.clone()),
                 required: param.required.is_some(),
                 schema,
             });

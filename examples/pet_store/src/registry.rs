@@ -1,6 +1,6 @@
 
 // Auto-generated handler registry
-use brrtrouter::{dispatcher::Dispatcher, spec::ParameterMeta};
+use brrtrouter::{dispatcher::Dispatcher, spec::{ParameterMeta, ParameterLocation}};
 use crate::controllers::*;
 use crate::handlers::*;
 
@@ -18,7 +18,7 @@ pub unsafe fn register_all(dispatcher: &mut Dispatcher) {
         vec![
             ParameterMeta {
                 name: "id".to_string(),
-                location: "Path".to_string(),
+                location: ParameterLocation::Path,
                 required: true,
                 schema: {
                     
@@ -35,7 +35,7 @@ pub unsafe fn register_all(dispatcher: &mut Dispatcher) {
         vec![
             ParameterMeta {
                 name: "id".to_string(),
-                location: "Path".to_string(),
+                location: ParameterLocation::Path,
                 required: true,
                 schema: {
                     
@@ -66,7 +66,7 @@ pub unsafe fn register_all(dispatcher: &mut Dispatcher) {
         vec![
             ParameterMeta {
                 name: "id".to_string(),
-                location: "Path".to_string(),
+                location: ParameterLocation::Path,
                 required: true,
                 schema: {
                     
@@ -90,7 +90,7 @@ pub unsafe fn register_all(dispatcher: &mut Dispatcher) {
         vec![
             ParameterMeta {
                 name: "user_id".to_string(),
-                location: "Path".to_string(),
+                location: ParameterLocation::Path,
                 required: true,
                 schema: {
                     
@@ -107,7 +107,7 @@ pub unsafe fn register_all(dispatcher: &mut Dispatcher) {
         vec![
             ParameterMeta {
                 name: "user_id".to_string(),
-                location: "Path".to_string(),
+                location: ParameterLocation::Path,
                 required: true,
                 schema: {
                     
@@ -124,7 +124,7 @@ pub unsafe fn register_all(dispatcher: &mut Dispatcher) {
         vec![
             ParameterMeta {
                 name: "user_id".to_string(),
-                location: "Path".to_string(),
+                location: ParameterLocation::Path,
                 required: true,
                 schema: {
                     
@@ -134,7 +134,7 @@ pub unsafe fn register_all(dispatcher: &mut Dispatcher) {
             },
             ParameterMeta {
                 name: "post_id".to_string(),
-                location: "Path".to_string(),
+                location: ParameterLocation::Path,
                 required: true,
                 schema: {
                     
