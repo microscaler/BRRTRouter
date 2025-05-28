@@ -87,7 +87,7 @@ pub struct ControllerTemplateData {
 }
 
 pub fn generate_project_from_spec(spec_path: &Path, force: bool) -> anyhow::Result<()> {
-    let (routes, slug) = load_spec(spec_path.to_str().unwrap(), false)?;
+    let (mut routes, slug) = load_spec(spec_path.to_str().unwrap(), false)?;
     let base_dir = Path::new("examples").join(&slug);
     let src_dir = base_dir.join("src");
     let handler_dir = src_dir.join("handlers");
@@ -104,11 +104,9 @@ pub fn generate_project_from_spec(spec_path: &Path, force: bool) -> anyhow::Resu
     let mut modules_controllers = Vec::new();
     let mut registry_entries = Vec::new();
 
-    for route in routes.iter() {
-        let handler = route.handler_name.clone();
-        if !seen.insert(handler.clone()) {
-            continue;
-        }
+    for route in routes.iter_mut() {
+        let handler = unique_handler_name(&mut seen, &route.handler_name);
+        route.handler_name = handler.clone();
 
         let request_fields = route.request_schema.as_ref().map_or(vec![], extract_fields);
         let response_fields = route
@@ -379,6 +377,40 @@ fn is_named_type(ty: &str) -> bool {
         && !ty.starts_with("Vec<serde_json")
         && !ty.starts_with("Vec<Value>")
         && matches!(ty.chars().next(), Some('A'..='Z'))
+}
+
+fn unique_handler_name(seen: &mut HashSet<String>, name: &str) -> String {
+    if !seen.contains(name) {
+        seen.insert(name.to_string());
+        return name.to_string();
+    }
+
+    let mut counter = 1;
+    loop {
+        let candidate = format!("{}_{}", name, counter);
+        if !seen.contains(&candidate) {
+            println!("⚠️  Duplicate handler name '{}' → using '{}'", name, candidate);
+            seen.insert(candidate.clone());
+            return candidate;
+        }
+        counter += 1;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_unique_handler_name() {
+        let mut seen = HashSet::new();
+        let a = unique_handler_name(&mut seen, "foo");
+        assert_eq!(a, "foo");
+        let b = unique_handler_name(&mut seen, "foo");
+        assert_eq!(b, "foo_1");
+        let c = unique_handler_name(&mut seen, "foo");
+        assert_eq!(c, "foo_2");
+    }
 }
 
 fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
