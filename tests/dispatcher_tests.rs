@@ -152,3 +152,93 @@ fn test_typed_controller_params() {
     assert_eq!(resp.status, 200);
     assert_eq!(resp.body, json!({"ok": true}));
 }
+
+#[test]
+fn test_dispatch_all_registry_handlers() {
+    let (routes, _slug) = load_spec("examples/openapi.yaml").expect("load spec");
+    let router = Router::new(routes);
+    let mut dispatcher = Dispatcher::new();
+    unsafe { registry::register_all(&mut dispatcher); }
+
+    let handlers: Vec<String> = dispatcher.handlers.keys().cloned().collect();
+    for name in handlers {
+        let (method, path, body, expected) = match name.as_str() {
+            "admin_settings" => (
+                Method::GET,
+                "/admin/settings",
+                None,
+                json!({"feature_flags": null}),
+            ),
+            "get_item" => (
+                Method::GET,
+                "/items/item-001",
+                None,
+                json!({"id": "item-001", "name": "Sample Item"}),
+            ),
+            "post_item" => (
+                Method::POST,
+                "/items/item-001",
+                Some(json!({"name": "New Item"})),
+                json!({"id": "item-001", "name": "New Item"}),
+            ),
+            "list_pets" => (
+                Method::GET,
+                "/pets",
+                None,
+                json!({"items": [{"age": 0, "breed": "", "id": 0, "name": "", "tags": [], "vaccinated": false}]}),
+            ),
+            "add_pet" => (
+                Method::POST,
+                "/pets",
+                Some(json!({"name": "Bella"})),
+                json!({"id": 67890, "status": "success"}),
+            ),
+            "get_pet" => (
+                Method::GET,
+                "/pets/12345",
+                None,
+                json!({
+                    "age": 3,
+                    "breed": "Golden Retriever",
+                    "id": 12345,
+                    "name": "Max",
+                    "tags": ["friendly", "trained"],
+                    "vaccinated": true
+                }),
+            ),
+            "list_users" => (
+                Method::GET,
+                "/users",
+                None,
+                json!({"users": [{"id": "", "name": ""}, {"id": "", "name": ""}]}),
+            ),
+            "get_user" => (
+                Method::GET,
+                "/users/abc-123",
+                None,
+                json!({"id": "abc-123", "name": "John"}),
+            ),
+            "list_user_posts" => (
+                Method::GET,
+                "/users/abc-123/posts",
+                None,
+                json!({"items": [{"body": "", "id": "", "title": ""}]}),
+            ),
+            "get_post" => (
+                Method::GET,
+                "/users/abc-123/posts/post1",
+                None,
+                json!({"body": "Welcome to the blog", "id": "post1", "title": "Intro"}),
+            ),
+            other => panic!("unexpected handler {}", other),
+        };
+
+        let route_match = router.route(method.clone(), path).expect("route match");
+        assert_eq!(route_match.handler_name, name);
+        let resp = dispatcher
+            .dispatch(route_match, body.clone())
+            .expect("dispatch");
+        assert_eq!(resp.status, 200, "handler {}", name);
+        assert_eq!(resp.body, expected, "handler {}", name);
+    }
+}
