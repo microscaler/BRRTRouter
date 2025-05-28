@@ -25,9 +25,7 @@ fn main() -> io::Result<()> {
     } else {
         "0.0.0.0:8080"
     };
-    let server = HttpServer(service)
-        .start(addr)
-        .map_err(io::Error::other)?;
+    let server = HttpServer(service).start(addr).map_err(io::Error::other)?;
     println!("Server started successfully on {addr}");
     server
         .join()

@@ -3,12 +3,23 @@
 use crate::brrtrouter::typed::{TypedHandlerRequest, Handler};
 use crate::handlers::get_pet::{ Request, Response };
 
+
 pub struct GetPetController;
 
 impl Handler<Request, Response> for GetPetController {
     fn handle(&self, _req: TypedHandlerRequest<Request>) -> Response {
         // Example response:
-        // 
+        // {
+        //   "age": 3,
+        //   "breed": "Golden Retriever",
+        //   "id": 12345,
+        //   "name": "Max",
+        //   "tags": [
+        //     "friendly",
+        //     "trained"
+        //   ],
+        //   "vaccinated": true
+        // }
         Response {
             
             age: 3,

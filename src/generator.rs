@@ -1,5 +1,5 @@
 use crate::dummy_value;
-use crate::spec::{load_spec, resolve_schema_ref, RouteMeta, ParameterMeta};
+use crate::spec::{load_spec, resolve_schema_ref, ParameterMeta, RouteMeta};
 use askama::Template;
 use serde_json::Value;
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -84,6 +84,7 @@ pub struct ControllerTemplateData {
     pub example: String,
     pub has_example: bool,
     pub example_json: String,
+    pub imports: Vec<String>,
 }
 
 pub fn generate_project_from_spec(spec_path: &Path, force: bool) -> anyhow::Result<()> {
@@ -114,10 +115,7 @@ pub fn generate_project_from_spec(spec_path: &Path, force: bool) -> anyhow::Resu
         let handler = unique_handler_name(&mut seen, &route.handler_name);
         route.handler_name = handler.clone();
 
-        let mut request_fields = route
-            .request_schema
-            .as_ref()
-            .map_or(vec![], extract_fields);
+        let mut request_fields = route.request_schema.as_ref().map_or(vec![], extract_fields);
 
         for param in &route.parameters {
             request_fields.push(parameter_to_field(param));
@@ -257,16 +255,40 @@ fn write_controller(
         })
         .collect::<Vec<_>>();
 
+    let mut imports = BTreeSet::new();
+    for field in res {
+        let inner = field
+            .ty
+            .strip_prefix("Vec<")
+            .and_then(|s| s.strip_suffix(">"))
+            .unwrap_or(&field.ty);
+        if is_named_type(inner) {
+            imports.insert(to_camel_case(inner));
+        }
+    }
+
+    let example_pretty = example
+        .as_ref()
+        .and_then(|v| serde_json::to_string_pretty(v).ok())
+        .unwrap_or_default();
+    let example_json = if example_pretty.is_empty() {
+        String::new()
+    } else {
+        example_pretty
+            .lines()
+            .map(|l| format!("        // {}", l))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+
     let context = ControllerTemplateData {
         handler_name: handler.to_string(),
         struct_name: struct_name.to_string(),
         response_fields: enriched_fields,
-        example: example
-            .as_ref()
-            .and_then(|v| serde_json::to_string_pretty(v).ok())
-            .unwrap_or_default(),
+        example: example_pretty,
         has_example: example.is_some(),
-        example_json: "".to_string(),
+        example_json,
+        imports: imports.iter().cloned().collect(),
     };
 
     fs::write(path, context.render()?)?;
@@ -377,7 +399,14 @@ fn to_camel_case(s: &str) -> String {
 
 fn is_named_type(ty: &str) -> bool {
     let primitives = [
-        "String", "i32", "i64", "f32", "f64", "bool", "Value", "serde_json::Value",
+        "String",
+        "i32",
+        "i64",
+        "f32",
+        "f64",
+        "bool",
+        "Value",
+        "serde_json::Value",
     ];
 
     if let Some(inner) = ty.strip_prefix("Vec<").and_then(|s| s.strip_suffix(">")) {
@@ -399,7 +428,10 @@ fn unique_handler_name(seen: &mut HashSet<String>, name: &str) -> String {
     loop {
         let candidate = format!("{}_{}", name, counter);
         if !seen.contains(&candidate) {
-            println!("⚠️  Duplicate handler name '{}' → using '{}'", name, candidate);
+            println!(
+                "⚠️  Duplicate handler name '{}' → using '{}'",
+                name, candidate
+            );
             seen.insert(candidate.clone());
             return candidate;
         }
@@ -429,8 +461,13 @@ fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
         Value::Number(n) => n.to_string(),
         Value::Bool(b) => b.to_string(),
         Value::Array(items) => {
-            let is_vec_string = field.ty == "Vec<String>";
-            let is_vec_json_value = field.ty == "Vec<serde_json::Value>";
+            let inner_ty_opt = field
+                .ty
+                .strip_prefix("Vec<")
+                .and_then(|s| s.strip_suffix(">"));
+            let is_vec_string = inner_ty_opt == Some("String");
+            let is_vec_json_value =
+                inner_ty_opt == Some("serde_json::Value") || inner_ty_opt == Some("Value");
             let inner = items
                 .iter()
                 .map(|item| match item {
@@ -445,11 +482,42 @@ fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
                     }
                     Value::Number(n) => n.to_string(),
                     Value::Bool(b) => b.to_string(),
+                    Value::Object(_) => {
+                        if let Some(inner_ty) = inner_ty_opt {
+                            if inner_ty == "serde_json::Value" || inner_ty == "Value" {
+                                let json = serde_json::to_string(item).unwrap();
+                                format!("serde_json::json!({})", json)
+                            } else if is_named_type(inner_ty) {
+                                let json = serde_json::to_string(item).unwrap();
+                                format!(
+                                    "serde_json::from_value::<{}>(serde_json::json!({})).unwrap()",
+                                    inner_ty, json
+                                )
+                            } else {
+                                "Default::default()".to_string()
+                            }
+                        } else {
+                            "Default::default()".to_string()
+                        }
+                    }
                     _ => "Default::default()".to_string(),
                 })
                 .collect::<Vec<_>>()
                 .join(", ");
             format!("vec![{}]", inner)
+        }
+        Value::Object(_) => {
+            let json = serde_json::to_string(example).unwrap();
+            if field.ty == "serde_json::Value" || field.ty == "Value" {
+                format!("serde_json::json!({})", json)
+            } else if is_named_type(&field.ty) {
+                format!(
+                    "serde_json::from_value::<{}>(serde_json::json!({})).unwrap()",
+                    field.ty, json
+                )
+            } else {
+                format!("serde_json::json!({})", json)
+            }
         }
         _ => "Default::default()".to_string(),
     };
