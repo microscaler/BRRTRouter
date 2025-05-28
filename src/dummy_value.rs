@@ -6,7 +6,7 @@ pub fn dummy_value(ty: &str) -> askama::Result<String> {
         "i32" => "42",
         "f64" => "3.14",
         "bool" => "true",
-        "Vec<Value>" => "vec![]",
+        "Vec<Value>" | "Vec<String>" | "Vec<i32>" | "Vec<f64>" | "Vec<bool>" => "vec![]",
         _ => "Default::default()",
     };
     Ok(value.to_string())

@@ -377,20 +377,16 @@ fn to_camel_case(s: &str) -> String {
 
 fn is_named_type(ty: &str) -> bool {
     let primitives = [
-        "String",
-        "i32",
-        "i64",
-        "f32",
-        "f64",
-        "bool",
-        "Value",
-        "serde_json::Value",
-        "Vec<Value>",
+        "String", "i32", "i64", "f32", "f64", "bool", "Value", "serde_json::Value",
     ];
-    !primitives.contains(&ty)
-        && !ty.starts_with("Vec<serde_json")
-        && !ty.starts_with("Vec<Value>")
-        && matches!(ty.chars().next(), Some('A'..='Z'))
+
+    if let Some(inner) = ty.strip_prefix("Vec<").and_then(|s| s.strip_suffix(">")) {
+        return !primitives.contains(&inner)
+            && !inner.starts_with("serde_json")
+            && matches!(inner.chars().next(), Some('A'..='Z'));
+    }
+
+    !primitives.contains(&ty) && matches!(ty.chars().next(), Some('A'..='Z'))
 }
 
 fn unique_handler_name(seen: &mut HashSet<String>, name: &str) -> String {
@@ -485,14 +481,7 @@ pub fn extract_fields(schema: &Value) -> Vec<FieldDef> {
     if let Some(schema_type) = schema.get("type").and_then(|t| t.as_str()) {
         if schema_type == "array" {
             if let Some(items) = schema.get("items") {
-                let ty = if let Some(ref_path) = items.get("$ref").and_then(|v| v.as_str()) {
-                    ref_path
-                        .strip_prefix("#/components/schemas/")
-                        .map(to_camel_case)
-                        .unwrap_or_else(|| "serde_json::Value".to_string())
-                } else {
-                    "serde_json::Value".to_string()
-                };
+                let ty = schema_to_type(items);
 
                 fields.push(FieldDef {
                     name: "items".to_string(),
@@ -532,15 +521,7 @@ pub fn extract_fields(schema: &Value) -> Vec<FieldDef> {
                     Some("boolean") => "bool".to_string(),
                     Some("array") => {
                         if let Some(items) = prop.get("items") {
-                            if let Some(item_ref) = items.get("$ref").and_then(|v| v.as_str()) {
-                                if let Some(name) = item_ref.strip_prefix("#/components/schemas/") {
-                                    format!("Vec<{}>", to_camel_case(name))
-                                } else {
-                                    "Vec<serde_json::Value>".to_string()
-                                }
-                            } else {
-                                "Vec<serde_json::Value>".to_string()
-                            }
+                            format!("Vec<{}>", schema_to_type(items))
                         } else {
                             "Vec<serde_json::Value>".to_string()
                         }
@@ -581,11 +562,24 @@ fn schema_to_type(schema: &Value) -> String {
         Some("boolean") => "bool".to_string(),
         Some("array") => {
             if let Some(items) = schema.get("items") {
+                if let Some(item_ty) = items.get("type").and_then(|v| v.as_str()) {
+                    let inner = match item_ty {
+                        "string" => "String".to_string(),
+                        "integer" => "i32".to_string(),
+                        "number" => "f64".to_string(),
+                        "boolean" => "bool".to_string(),
+                        _ => schema_to_type(items),
+                    };
+                    return format!("Vec<{}>", inner);
+                }
+
                 if let Some(item_ref) = items.get("$ref").and_then(|v| v.as_str()) {
                     if let Some(name) = item_ref.strip_prefix("#/components/schemas/") {
                         return format!("Vec<{}>", to_camel_case(name));
                     }
                 }
+
+                return format!("Vec<{}>", schema_to_type(items));
             }
             "Vec<serde_json::Value>".to_string()
         }
