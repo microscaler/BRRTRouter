@@ -4,7 +4,7 @@ use brrtrouter::{
     router::Router,
     server::AppService,
 };
-use registry::register_all;
+use pet_store::registry;
 use may_minihttp::HttpServer;
 use std::io;
 
