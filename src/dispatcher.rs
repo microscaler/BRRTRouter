@@ -9,6 +9,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 #[allow(unused_imports)]
 use std::sync::Arc;
+use crate::typed::TypedHandlerRequest;
 
 #[derive(Debug, Clone)]
 pub struct HandlerRequest {
@@ -20,6 +21,7 @@ pub struct HandlerRequest {
     pub body: Option<Value>,
     pub reply_tx: mpsc::Sender<HandlerResponse>,
 }
+
 
 #[derive(Debug, Clone, Serialize)]
 pub struct HandlerResponse {
