@@ -19,3 +19,7 @@ impl Handler<Request, Response> for AdminSettingsController {
         }
     }
 }
+
+pub fn handle(req: TypedHandlerRequest<Request>) -> Response {
+    AdminSettingsController.handle(req)
+}

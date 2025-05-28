@@ -19,3 +19,7 @@ impl Handler<Request, Response> for ListUserPostsController {
         }
     }
 }
+
+pub fn handle(req: TypedHandlerRequest<Request>) -> Response {
+    ListUserPostsController.handle(req)
+}

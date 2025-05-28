@@ -21,3 +21,7 @@ impl Handler<Request, Response> for PostItemController {
         }
     }
 }
+
+pub fn handle(req: TypedHandlerRequest<Request>) -> Response {
+    PostItemController.handle(req)
+}

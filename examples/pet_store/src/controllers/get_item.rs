@@ -21,3 +21,7 @@ impl Handler<Request, Response> for GetItemController {
         }
     }
 }
+
+pub fn handle(req: TypedHandlerRequest<Request>) -> Response {
+    GetItemController.handle(req)
+}
