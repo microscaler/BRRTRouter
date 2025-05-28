@@ -10,7 +10,9 @@ use crate::brrtrouter::typed::{ TypedHandlerRequest, TypedHandlerResponse, Typed
 pub struct Request {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    
+
+    pub id: String,
+
     }
 
 #[derive(Debug, Serialize)]

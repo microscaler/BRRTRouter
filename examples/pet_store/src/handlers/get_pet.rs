@@ -8,6 +8,7 @@ use crate::brrtrouter::typed::{ TypedHandlerRequest, TypedHandlerResponse, Typed
 
 #[derive(Debug, Deserialize)]
 pub struct Request {
+    pub id: String,
     }
 
 #[derive(Debug, Serialize)]

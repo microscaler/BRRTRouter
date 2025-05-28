@@ -9,6 +9,7 @@ use crate::brrtrouter::typed::{ TypedHandlerRequest, TypedHandlerResponse, Typed
 use crate::handlers::types::Post;
 #[derive(Debug, Deserialize)]
 pub struct Request {
+    pub user_id: String,
     }
 
 #[derive(Debug, Serialize)]
