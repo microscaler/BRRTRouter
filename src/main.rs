@@ -16,13 +16,19 @@ fn main() -> io::Result<()> {
     //     registry::register_all(&mut dispatcher);
     // }
 
-    // Start the HTTP server on port 8080 (0.0.0.0:8080) under the may runtime
+    // Start the HTTP server on port 8080, binding to 127.0.0.1 if BRRTR_LOCAL is
+    // set for local testing.
     // This returns a coroutine JoinHandle; we join on it to keep the server running
     let service = AppService { router, dispatcher };
+    let addr = if std::env::var("BRRTR_LOCAL").is_ok() {
+        "127.0.0.1:8080"
+    } else {
+        "0.0.0.0:8080"
+    };
     let server = HttpServer(service)
-        .start("0.0.0.0:8080")
+        .start(addr)
         .map_err(io::Error::other)?;
-    println!("Server started successfully on 0.0.0.0:8080");
+    println!("Server started successfully on {addr}");
     server
         .join()
         .map_err(|e| io::Error::other(format!("Server encountered an error: {:?}", e)))?;

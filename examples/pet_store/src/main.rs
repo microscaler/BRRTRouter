@@ -20,9 +20,14 @@ fn main() -> io::Result<()> {
 
     let service = AppService { router, dispatcher };
 
-    println!("🚀 pet_store example server listening on 0.0.0.0:8080");
+    let addr = if std::env::var("BRRTR_LOCAL").is_ok() {
+        "127.0.0.1:8080"
+    } else {
+        "0.0.0.0:8080"
+    };
+    println!("🚀 pet_store example server listening on {addr}");
     let server = HttpServer(service)
-        .start("0.0.0.0:8080")
+        .start(addr)
         .map_err(io::Error::other)?;
 
     server
