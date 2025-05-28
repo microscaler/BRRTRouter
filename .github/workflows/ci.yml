@@ -9,6 +9,8 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    env:
+      BRRTR_LOCAL: "1"
 
     steps:
       - name: Checkout code

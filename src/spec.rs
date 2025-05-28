@@ -1,6 +1,6 @@
 use crate::validator::{fail_if_issues, ValidationIssue};
 use http::Method;
-use oas3::spec::{MediaTypeExamples, ObjectOrReference};
+use oas3::spec::{MediaTypeExamples, ObjectOrReference, Parameter};
 use oas3::OpenApiV3Spec;
 use serde_json::Value;
 use std::path::PathBuf;
@@ -27,7 +27,7 @@ pub struct ParameterMeta {
     pub schema: Option<Value>,
 }
 
-pub fn load_spec(file_path: &str, verbose: bool) -> anyhow::Result<(Vec<RouteMeta>, String)> {
+pub fn load_spec(file_path: &str, ) -> anyhow::Result<(Vec<RouteMeta>, String)> {
     let content = std::fs::read_to_string(file_path)?;
     let spec: OpenApiV3Spec = if file_path.ends_with(".yaml") || file_path.ends_with(".yml") {
         serde_yaml::from_str(&content)?
@@ -43,12 +43,12 @@ pub fn load_spec(file_path: &str, verbose: bool) -> anyhow::Result<(Vec<RouteMet
         .trim_matches('_')
         .to_string();
 
-    let routes = build_routes(&spec, verbose, &title)?;
+    let routes = build_routes(&spec, &title)?;
     Ok((routes, title))
 }
 
 /// Build route metadata from an already parsed [`OpenApiV3Spec`].
-pub fn load_spec_from_spec(spec: OpenApiV3Spec, verbose: bool) -> anyhow::Result<Vec<RouteMeta>> {
+pub fn load_spec_from_spec(spec: OpenApiV3Spec, ) -> anyhow::Result<Vec<RouteMeta>> {
     let slug = spec
         .info
         .title
@@ -57,7 +57,7 @@ pub fn load_spec_from_spec(spec: OpenApiV3Spec, verbose: bool) -> anyhow::Result
         .trim_matches('_')
         .to_string();
 
-    let routes = build_routes(&spec, verbose, &slug)?;
+    let routes = build_routes(&spec, &slug)?;
     Ok(routes)
 }
 
@@ -163,9 +163,57 @@ fn extract_response_schema_and_example(
         .unwrap_or((None, None))
 }
 
+fn resolve_parameter_ref<'a>(
+    spec: &'a OpenApiV3Spec,
+    ref_path: &str,
+) -> Option<&'a oas3::spec::Parameter> {
+    if let Some(name) = ref_path.strip_prefix("#/components/parameters/") {
+        spec.components
+            .as_ref()?
+            .parameters
+            .get(name)
+            .and_then(|param_ref| match param_ref {
+                ObjectOrReference::Object(param) => Some(param),
+                _ => None,
+            })
+    } else {
+        None
+    }
+}
+
+fn extract_parameters(
+    spec: &OpenApiV3Spec,
+    params: &Vec<ObjectOrReference<Parameter>>,
+) -> Vec<ParameterMeta> {
+    let mut out = Vec::new();
+    for p in params {
+            let param = match p {
+                ObjectOrReference::Object(obj) => Some(obj),
+                ObjectOrReference::Ref { ref_path } => resolve_parameter_ref(spec, &ref_path),
+            };
+
+        if let Some(param) = param {
+            let schema = param.schema.as_ref().and_then(|s| match s {
+                ObjectOrReference::Object(obj) => serde_json::to_value(obj).ok(),
+                ObjectOrReference::Ref { ref_path } => {
+                    resolve_schema_ref(spec, ref_path)
+                        .and_then(|sch| serde_json::to_value(sch).ok())
+                }
+            });
+
+            out.push(ParameterMeta {
+                name: param.name.clone(),
+                location: format!("{:?}", param.location),
+                required: param.required.is_some(),
+                schema,
+            });
+        }
+    }
+    out
+}
+
 pub fn build_routes(
     spec: &OpenApiV3Spec,
-    verbose: bool,
     slug: &str,
 ) -> anyhow::Result<Vec<RouteMeta>> {
     let mut routes = Vec::new();
@@ -186,11 +234,15 @@ pub fn build_routes(
                 let (response_schema, example) =
                     extract_response_schema_and_example(spec, operation);
 
+                let mut parameters = Vec::new();
+                parameters.extend(extract_parameters(spec, &item.parameters));
+                parameters.extend(extract_parameters(spec, &operation.parameters));
+
                 routes.push(RouteMeta {
                     method,
                     path_pattern: path.clone(),
                     handler_name,
-                    parameters: vec![],
+                    parameters,
                     request_schema,
                     response_schema,
                     example,

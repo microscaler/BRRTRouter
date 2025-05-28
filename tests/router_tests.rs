@@ -63,11 +63,11 @@ paths:
 
 fn parse_spec(yaml: &str) -> Vec<RouteMeta> {
     let spec = serde_yaml::from_str(yaml).expect("failed to parse YAML spec");
-    brrtrouter::spec::load_spec_from_spec(spec, false).expect("failed to load spec")
+    brrtrouter::spec::load_spec_from_spec(spec).expect("failed to load spec")
 }
 
 pub fn load_spec_from_spec(spec_wrapper: oas3::OpenApiV3Spec) -> anyhow::Result<Vec<RouteMeta>> {
-    brrtrouter::spec::load_spec_from_spec(spec_wrapper, false)
+    brrtrouter::spec::load_spec_from_spec(spec_wrapper)
 }
 
 fn assert_route_match(router: &Router, method: Method, path: &str, expected_handler: &str) {

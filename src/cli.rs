@@ -26,7 +26,7 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     match &cli.command {
         Commands::Generate { spec, force } => {
-            let (routes, slug) = load_spec(spec.to_str().unwrap(), false)?;
+            let (_routes, _slug) = load_spec(spec.to_str().unwrap())?;
             crate::generator::generate_project_from_spec(spec.as_path(), *force)
                 .expect("failed to generate example project");
             Ok(())
