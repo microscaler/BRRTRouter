@@ -1,19 +1,23 @@
 
 // User-owned controller for handler 'add_pet'.
 
-use crate::brrtrouter::typed::TypedHandlerRequest;
+use crate::brrtrouter::typed::{TypedHandlerRequest, Handler};
 use crate::handlers::add_pet::{ Request, Response };
 
-pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
-    
-    // Example response:
-    // 
-    
-    Response {
+pub struct AddPetController;
+
+impl Handler<Request, Response> for AddPetController {
+    fn handle(&self, _req: TypedHandlerRequest<Request>) -> Response {
         
-        id: Some(67890),
+        // Example response:
+        // 
         
-        status: Some("success".to_string()),
-        
+        Response {
+            
+            id: Some(67890),
+            
+            status: Some("success".to_string()),
+            
+        }
     }
 }

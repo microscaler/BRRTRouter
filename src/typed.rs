@@ -3,9 +3,9 @@
 use crate::dispatcher::{Dispatcher, HandlerRequest, HandlerResponse};
 use http::Method;
 use may::sync::mpsc;
+use may_minihttp::Request;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::collections::HashMap;
-use may_minihttp::Request;
 
 /// Trait implemented by typed coroutine handlers.
 ///
@@ -23,7 +23,6 @@ where
     }
 }
 
-
 pub trait TypedHandlerFor<T>: Sized {
     fn from_handler(req: HandlerRequest) -> TypedHandlerRequest<T>;
     fn into_handler(self) -> HandlerRequest;
@@ -38,7 +37,6 @@ pub struct TypedHandlerRequest<T> {
     pub query_params: HashMap<String, String>,
     pub data: T,
 }
-
 
 #[derive(Debug, Clone, Serialize)]
 pub struct TypedHandlerResponse<T: Serialize> {

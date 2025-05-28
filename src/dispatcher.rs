@@ -1,6 +1,7 @@
 #[allow(unused_imports)]
 use crate::echo::echo_handler;
 use crate::router::RouteMatch;
+use crate::typed::TypedHandlerRequest;
 use http::Method;
 use may::coroutine;
 use may::sync::mpsc;
@@ -9,7 +10,6 @@ use serde_json::Value;
 use std::collections::HashMap;
 #[allow(unused_imports)]
 use std::sync::Arc;
-use crate::typed::TypedHandlerRequest;
 
 #[derive(Debug, Clone)]
 pub struct HandlerRequest {
@@ -21,7 +21,6 @@ pub struct HandlerRequest {
     pub body: Option<Value>,
     pub reply_tx: mpsc::Sender<HandlerResponse>,
 }
-
 
 #[derive(Debug, Clone, Serialize)]
 pub struct HandlerResponse {
