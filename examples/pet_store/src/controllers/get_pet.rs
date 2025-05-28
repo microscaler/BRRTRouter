@@ -29,7 +29,7 @@ impl Handler<Request, Response> for GetPetController {
         }
     }
 }
-
 pub fn handle(req: TypedHandlerRequest<Request>) -> Response {
     GetPetController.handle(req)
 }
+
