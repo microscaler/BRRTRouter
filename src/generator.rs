@@ -1,5 +1,5 @@
 use crate::dummy_value;
-use crate::spec::{load_spec, resolve_schema_ref, RouteMeta};
+use crate::spec::{load_spec, resolve_schema_ref, RouteMeta, ParameterMeta};
 use askama::Template;
 use serde_json::Value;
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -107,7 +107,14 @@ pub fn generate_project_from_spec(spec_path: &Path, force: bool) -> anyhow::Resu
         let handler = unique_handler_name(&mut seen, &route.handler_name);
         route.handler_name = handler.clone();
 
-        let request_fields = route.request_schema.as_ref().map_or(vec![], extract_fields);
+        let mut request_fields = route
+            .request_schema
+            .as_ref()
+            .map_or(vec![], extract_fields);
+
+        for param in &route.parameters {
+            request_fields.push(parameter_to_field(param));
+        }
         let response_fields = route
             .response_schema
             .as_ref()
@@ -539,4 +546,50 @@ pub fn extract_fields(schema: &Value) -> Vec<FieldDef> {
     }
 
     fields
+}
+
+fn schema_to_type(schema: &Value) -> String {
+    if let Some(r) = schema.get("$ref").and_then(|v| v.as_str()) {
+        if let Some(name) = r.strip_prefix("#/components/schemas/") {
+            return to_camel_case(name);
+        }
+        return "serde_json::Value".to_string();
+    }
+
+    match schema.get("type").and_then(|t| t.as_str()) {
+        Some("string") => "String".to_string(),
+        Some("integer") => "i32".to_string(),
+        Some("number") => "f64".to_string(),
+        Some("boolean") => "bool".to_string(),
+        Some("array") => {
+            if let Some(items) = schema.get("items") {
+                if let Some(item_ref) = items.get("$ref").and_then(|v| v.as_str()) {
+                    if let Some(name) = item_ref.strip_prefix("#/components/schemas/") {
+                        return format!("Vec<{}>", to_camel_case(name));
+                    }
+                }
+            }
+            "Vec<serde_json::Value>".to_string()
+        }
+        _ => "serde_json::Value".to_string(),
+    }
+}
+
+pub fn parameter_to_field(param: &ParameterMeta) -> FieldDef {
+    let ty = param
+        .schema
+        .as_ref()
+        .map(schema_to_type)
+        .unwrap_or_else(|| "String".to_string());
+    let optional = !param.required;
+    let value = dummy_value::dummy_value(&ty)
+        .map(|v| if optional { format!("Some({})", v) } else { v })
+        .unwrap_or_else(|_| "Default::default()".to_string());
+
+    FieldDef {
+        name: param.name.clone(),
+        ty,
+        optional,
+        value,
+    }
 }

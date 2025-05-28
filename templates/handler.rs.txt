@@ -12,6 +12,7 @@ use crate::handlers::types::{{ import }};
 
 #[derive(Debug, Deserialize)]
 pub struct Request {
+    // Parameters and body fields
     {% for field in request_fields -%}
     {% if field.optional %}#[serde(skip_serializing_if = "Option::is_none")]
     pub {{ field.name }}: Option<{{ field.ty }}>,
