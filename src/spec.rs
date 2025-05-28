@@ -183,7 +183,7 @@ fn resolve_parameter_ref<'a>(
 
 fn extract_parameters(
     spec: &OpenApiV3Spec,
-    params: &Vec<ObjectOrReference<Parameter>>,
+    params: &Option<Vec<ObjectOrReference<Parameter>>>,
 ) -> Vec<ParameterMeta> {
     let mut out = Vec::new();
     if let Some(list) = params {
@@ -204,7 +204,7 @@ fn extract_parameters(
 
                 out.push(ParameterMeta {
                     name: param.name.clone(),
-                    location: String::from(param.location.to_owned()),
+                    location: format!("{:?}", param.location),
                     required: param.required.is_some(),
                     schema,
                 });
