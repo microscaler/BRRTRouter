@@ -79,20 +79,31 @@ curl "http://localhost:8080/items/123?debug=true" \
 ```
 
 ## 🏗 Building the Pet Store Example
-Run the provided script to build the example crate:
+Run:
 
 ```bash
-./scripts/build_pet_store.sh
+just build-pet-store
 ```
 
-You can pass additional cargo flags after the script name.
+This wraps `./scripts/build_pet_store.sh` so you can pass cargo flags after the task.
 
 ## 🧪 Running Tests
 
 ```bash
-cargo test -- --nocapture
-
+just test
 ```
+
+### 📈 Measuring Coverage
+
+Install [cargo-tarpaulin](https://github.com/xd009642/tarpaulin):
+
+```bash
+cargo install cargo-tarpaulin
+just coverage
+```
+
+The command fails if total coverage drops below 80%.
+
 
 Unit tests validate:
 
@@ -104,10 +115,6 @@ Unit tests validate:
 
 
 
-```bash
-cargo test -- --nocapture
-```
----
 
 ## 🔧 Handler Registration Example
 
