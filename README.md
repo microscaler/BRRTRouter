@@ -78,6 +78,14 @@ curl "http://localhost:8080/items/123?debug=true" \
 }
 ```
 
+## 🏗 Building the Pet Store Example
+Run the provided script to build the example crate:
+
+```bash
+./scripts/build_pet_store.sh
+```
+
+You can pass additional cargo flags after the script name.
 
 ## 🧪 Running Tests
 
