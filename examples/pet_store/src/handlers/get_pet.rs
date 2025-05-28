@@ -21,6 +21,7 @@ pub struct Response {
     
     pub name: String,
     
+    pub tags: Vec<serde_json::Value>,
     
     pub vaccinated: bool,
     
