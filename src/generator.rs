@@ -24,6 +24,7 @@ pub struct FieldDef {
 #[derive(Debug, Clone)]
 pub struct RegistryEntry {
     pub name: String,
+    pub request_type: String,
 }
 
 #[derive(Debug, Clone)]
@@ -148,6 +149,7 @@ pub fn generate_project_from_spec(spec_path: &Path, force: bool) -> anyhow::Resu
         modules_controllers.push(handler.clone());
         registry_entries.push(RegistryEntry {
             name: handler.clone(),
+            request_type: format!("{}::Request", handler),
         });
 
         if let Some(schema) = &route.request_schema {

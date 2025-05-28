@@ -4,7 +4,7 @@
 use serde::{ Deserialize, Serialize };
 use serde_json::Value;
 use crate::brrtrouter::dispatcher::HandlerRequest;
-use crate::brrtrouter::typed::{ TypedHandlerRequest, TypedHandlerResponse };
+use crate::brrtrouter::typed::{ TypedHandlerRequest, TypedHandlerResponse, TypedHandlerFor };
 
 use crate::handlers::types::User;
 #[derive(Debug, Deserialize)]
@@ -22,13 +22,13 @@ pub fn handler(req: TypedHandlerRequest<Request>) -> Response {
     crate::controllers::list_users::handle(req)
 }
 
-pub trait IntoTypedRequest {
-    fn into_typed_request(self) -> TypedHandlerRequest<Request>;
-}
+impl TypedHandlerFor<Request> for Request {
+    fn from_handler(req: HandlerRequest) -> TypedHandlerRequest<Self> {
+        // fill from req.body, req.path_params, etc
+        unimplemented!()
+    }
 
-impl IntoTypedRequest for HandlerRequest {
-    fn into_typed_request(self) -> TypedHandlerRequest<Request> {
-        // TODO: convert HandlerRequest to TypedHandlerRequest<Request>
+    fn into_handler(self) -> HandlerRequest {
         unimplemented!()
     }
 }
