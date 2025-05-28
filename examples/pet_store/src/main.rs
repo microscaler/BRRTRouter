@@ -7,9 +7,10 @@ use brrtrouter::{
 use registry::register_all;
 use may_minihttp::HttpServer;
 use std::io;
+use pet_store::registry;
 
 fn main() -> io::Result<()> {
-    let (routes, _slug) = brrtrouter::spec::load_spec("examples/pet_store/openapi.yaml", false)
+    let (routes, _slug) = brrtrouter::spec::load_spec("examples/pet_store/openapi.yaml")
         .expect("failed to load OpenAPI spec");
 
     let router = Router::new(routes);
