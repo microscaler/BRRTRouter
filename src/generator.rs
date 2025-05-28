@@ -25,6 +25,7 @@ pub struct FieldDef {
 pub struct RegistryEntry {
     pub name: String,
     pub request_type: String,
+    pub controller_struct: String,
 }
 
 #[derive(Debug, Clone)]
@@ -78,6 +79,7 @@ pub struct HandlerTemplateData {
 #[template(path = "controller.rs.txt")]
 pub struct ControllerTemplateData {
     pub handler_name: String,
+    pub struct_name: String,
     pub response_fields: Vec<FieldDef>,
     pub example: String,
     pub has_example: bool,
@@ -137,9 +139,11 @@ pub fn generate_project_from_spec(spec_path: &Path, force: bool) -> anyhow::Resu
             &imports,
             force,
         )?;
+        let controller_struct = format!("{}Controller", to_camel_case(&handler));
         write_controller(
             &controller_path,
             &handler,
+            &controller_struct,
             &response_fields,
             route.example.clone(),
             force,
@@ -150,6 +154,7 @@ pub fn generate_project_from_spec(spec_path: &Path, force: bool) -> anyhow::Resu
         registry_entries.push(RegistryEntry {
             name: handler.clone(),
             request_type: format!("{}::Request", handler),
+            controller_struct: controller_struct.clone(),
         });
 
         if let Some(schema) = &route.request_schema {
@@ -206,6 +211,7 @@ fn write_handler(
 fn write_controller(
     path: &Path,
     handler: &str,
+    struct_name: &str,
     res: &[FieldDef],
     example: Option<Value>,
     force: bool,
@@ -241,6 +247,7 @@ fn write_controller(
 
     let context = ControllerTemplateData {
         handler_name: handler.to_string(),
+        struct_name: struct_name.to_string(),
         response_fields: enriched_fields,
         example: example
             .as_ref()

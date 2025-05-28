@@ -7,6 +7,22 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::collections::HashMap;
 use may_minihttp::Request;
 
+/// Trait implemented by typed coroutine handlers.
+///
+/// A handler receives a [`TypedHandlerRequest`] and returns a typed response.
+pub trait Handler<TReq, TRes>: Send + 'static {
+    fn handle(&self, req: TypedHandlerRequest<TReq>) -> TRes;
+}
+
+impl<TReq, TRes, F> Handler<TReq, TRes> for F
+where
+    F: Fn(TypedHandlerRequest<TReq>) -> TRes + Send + Sync + 'static,
+{
+    fn handle(&self, req: TypedHandlerRequest<TReq>) -> TRes {
+        (self)(req)
+    }
+}
+
 
 pub trait TypedHandlerFor<T>: Sized {
     fn from_handler(req: HandlerRequest) -> TypedHandlerRequest<T>;
@@ -31,17 +47,18 @@ pub struct TypedHandlerResponse<T: Serialize> {
 }
 
 impl Dispatcher {
-    /// Register a typed handler that deserializes the body into `TReq` and responds with `TRes`
-    pub unsafe fn register_typed<TReq, TRes, F>(&mut self, name: &str, handler_fn: F)
+    /// Register a typed handler that deserializes the body into `TReq` and responds with `TRes`.
+    pub unsafe fn register_typed<TReq, TRes, H>(&mut self, name: &str, handler: H)
     where
         TReq: DeserializeOwned + Send + 'static,
         TRes: Serialize + Send + 'static,
-        F: Fn(TypedHandlerRequest<TReq>) -> TRes + Send + 'static + Clone,
+        H: Handler<TReq, TRes> + Send + 'static,
     {
         let (tx, rx) = mpsc::channel::<HandlerRequest>();
         let name = name.to_string();
 
         may::coroutine::spawn(move || {
+            let handler = handler;
             for req in rx.iter() {
                 let data: TReq = match req.body {
                     Some(json) => match serde_json::from_value(json) {
@@ -77,7 +94,7 @@ impl Dispatcher {
                     data,
                 };
 
-                let result = handler_fn(typed_req);
+                let result = handler.handle(typed_req);
 
                 let _ = req.reply_tx.send(HandlerResponse {
                     status: 200,
