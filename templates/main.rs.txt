@@ -12,7 +12,7 @@ fn main() -> io::Result<()> {
     let (routes, _slug) = brrtrouter::spec::load_spec("examples/{{ name }}/openapi.yaml", false)
         .expect("failed to load OpenAPI spec");
 
-    let router = Router::new((routes, String::new()));
+    let router = Router::new(routes);
     let mut dispatcher = Dispatcher::new();
     unsafe {
         registry::register_all(&mut dispatcher);
