@@ -27,8 +27,12 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
     match &cli.command {
         Commands::Generate { spec, force } => {
             let (_routes, _slug) = load_spec(spec.to_str().unwrap())?;
-            crate::generator::generate_project_from_spec(spec.as_path(), *force)
+            let project_dir = crate::generator::generate_project_from_spec(spec.as_path(), *force)
                 .expect("failed to generate example project");
+            // Format the newly generated project
+            if let Err(e) = crate::generator::format_project(&project_dir) {
+                eprintln!("cargo fmt failed: {e}");
+            }
             Ok(())
         }
     }

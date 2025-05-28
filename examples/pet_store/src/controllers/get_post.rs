@@ -1,8 +1,6 @@
-
 // User-owned controller for handler 'get_post'.
-use crate::brrtrouter::typed::{TypedHandlerRequest, Handler};
-use crate::handlers::get_post::{ Request, Response };
-
+use crate::brrtrouter::typed::{Handler, TypedHandlerRequest};
+use crate::handlers::get_post::{Request, Response};
 
 pub struct GetPostController;
 
@@ -15,13 +13,9 @@ impl Handler<Request, Response> for GetPostController {
         //   "title": "Intro"
         // }
         Response {
-            
             body: Some("Welcome to the blog".to_string()),
-            
             id: Some("post1".to_string()),
-            
             title: Some("Intro".to_string()),
-            
         }
     }
 }

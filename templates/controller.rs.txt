@@ -15,7 +15,7 @@ impl Handler<Request, Response> for {{ struct_name }} {
 {{ example_json }}
         {%- endif %}
         Response {
-            {% for field in response_fields %}
+            {% for field in response_fields -%}
             {{ field.name }}: {{ field.value }},
             {% endfor %}
         }
