@@ -1,5 +1,4 @@
 use crate::dispatcher::{HandlerRequest, HandlerResponse};
-use serde_json::json;
 
 // Example handler: just echoes back input for now
 pub fn echo_handler(req: HandlerRequest) {

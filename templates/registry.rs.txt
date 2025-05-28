@@ -1,12 +1,15 @@
+{# templates/registry.rs.txt #}
 // Auto-generated handler registry
 
-use crate::dispatcher::Dispatcher;
+use brrtrouter::dispatcher::Dispatcher;
+use crate::controllers::*;
 use crate::handlers::*;
 
 pub unsafe fn register_all(dispatcher: &mut Dispatcher) {
     {% for entry in entries -%}
-    dispatcher.register_handler("{{ entry.name }}", |req| {
-        {{ entry.name }}::handler(req.into());
-    });
-    {%- endfor %}
+    dispatcher.register_typed(
+        "{{ entry.name }}",
+        crate::controllers::{{ entry.name }}::{{ entry.controller_struct }},
+    );
+    {% endfor %}
 }

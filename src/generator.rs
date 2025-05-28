@@ -1,10 +1,10 @@
 use crate::dummy_value;
-use crate::spec::{build_routes, load_spec, resolve_schema_ref, RouteMeta};
+use crate::spec::{load_spec, resolve_schema_ref, RouteMeta};
 use askama::Template;
 use serde_json::Value;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs;
-use std::path::{Path};
+use std::path::Path;
 
 #[derive(Debug, Clone)]
 pub struct TypeDefinition {
@@ -23,6 +23,8 @@ pub struct FieldDef {
 #[derive(Debug, Clone)]
 pub struct RegistryEntry {
     pub name: String,
+    pub request_type: String,
+    pub controller_struct: String,
 }
 
 #[derive(Debug, Clone)]
@@ -76,6 +78,7 @@ pub struct HandlerTemplateData {
 #[template(path = "controller.rs.txt")]
 pub struct ControllerTemplateData {
     pub handler_name: String,
+    pub struct_name: String,
     pub response_fields: Vec<FieldDef>,
     pub example: String,
     pub has_example: bool,
@@ -83,7 +86,7 @@ pub struct ControllerTemplateData {
 }
 
 pub fn generate_project_from_spec(spec_path: &Path, force: bool) -> anyhow::Result<()> {
-    let (routes, slug) = load_spec(spec_path.to_str().unwrap(), false)?;
+    let (mut routes, slug) = load_spec(spec_path.to_str().unwrap(), false)?;
     let base_dir = Path::new("examples").join(&slug);
     let src_dir = base_dir.join("src");
     let handler_dir = src_dir.join("handlers");
@@ -100,11 +103,9 @@ pub fn generate_project_from_spec(spec_path: &Path, force: bool) -> anyhow::Resu
     let mut modules_controllers = Vec::new();
     let mut registry_entries = Vec::new();
 
-    for route in routes.iter() {
-        let handler = route.handler_name.clone();
-        if !seen.insert(handler.clone()) {
-            continue;
-        }
+    for route in routes.iter_mut() {
+        let handler = unique_handler_name(&mut seen, &route.handler_name);
+        route.handler_name = handler.clone();
 
         let request_fields = route.request_schema.as_ref().map_or(vec![], extract_fields);
         let response_fields = route
@@ -135,9 +136,11 @@ pub fn generate_project_from_spec(spec_path: &Path, force: bool) -> anyhow::Resu
             &imports,
             force,
         )?;
+        let controller_struct = format!("{}Controller", to_camel_case(&handler));
         write_controller(
             &controller_path,
             &handler,
+            &controller_struct,
             &response_fields,
             route.example.clone(),
             force,
@@ -147,6 +150,8 @@ pub fn generate_project_from_spec(spec_path: &Path, force: bool) -> anyhow::Resu
         modules_controllers.push(handler.clone());
         registry_entries.push(RegistryEntry {
             name: handler.clone(),
+            request_type: format!("{}::Request", handler),
+            controller_struct: controller_struct.clone(),
         });
 
         if let Some(schema) = &route.request_schema {
@@ -161,7 +166,7 @@ pub fn generate_project_from_spec(spec_path: &Path, force: bool) -> anyhow::Resu
 
     write_cargo_toml(&base_dir, &slug)?;
     write_main_rs(&src_dir, &slug, routes)?;
-    write_types_rs(&src_dir, &schema_types)?;
+    write_types_rs(&handler_dir, &schema_types)?;
     write_registry_rs(&src_dir, &registry_entries)?;
     write_mod_rs(
         &handler_dir,
@@ -203,6 +208,7 @@ fn write_handler(
 fn write_controller(
     path: &Path,
     handler: &str,
+    struct_name: &str,
     res: &[FieldDef],
     example: Option<Value>,
     force: bool,
@@ -238,6 +244,7 @@ fn write_controller(
 
     let context = ControllerTemplateData {
         handler_name: handler.to_string(),
+        struct_name: struct_name.to_string(),
         response_fields: enriched_fields,
         example: example
             .as_ref()
@@ -295,7 +302,7 @@ fn write_cargo_toml(base: &Path, slug: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn write_main_rs(dir: &Path, slug: &str, routes: Vec<RouteMeta>) -> anyhow::Result<()> {
+pub fn write_main_rs(dir: &Path, slug: &str, routes: Vec<RouteMeta>) -> anyhow::Result<()> {
     let routes = routes
         .into_iter()
         .map(|r| RouteDisplay {
@@ -369,6 +376,40 @@ fn is_named_type(ty: &str) -> bool {
         && !ty.starts_with("Vec<serde_json")
         && !ty.starts_with("Vec<Value>")
         && matches!(ty.chars().next(), Some('A'..='Z'))
+}
+
+fn unique_handler_name(seen: &mut HashSet<String>, name: &str) -> String {
+    if !seen.contains(name) {
+        seen.insert(name.to_string());
+        return name.to_string();
+    }
+
+    let mut counter = 1;
+    loop {
+        let candidate = format!("{}_{}", name, counter);
+        if !seen.contains(&candidate) {
+            println!("⚠️  Duplicate handler name '{}' → using '{}'", name, candidate);
+            seen.insert(candidate.clone());
+            return candidate;
+        }
+        counter += 1;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_unique_handler_name() {
+        let mut seen = HashSet::new();
+        let a = unique_handler_name(&mut seen, "foo");
+        assert_eq!(a, "foo");
+        let b = unique_handler_name(&mut seen, "foo");
+        assert_eq!(b, "foo_1");
+        let c = unique_handler_name(&mut seen, "foo");
+        assert_eq!(c, "foo_2");
+    }
 }
 
 fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {

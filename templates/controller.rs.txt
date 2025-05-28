@@ -1,17 +1,21 @@
 {# controller.rs.txt #}
 // User-owned controller for handler '{{ handler_name }}'.
 
-use crate::typed::TypedHandlerRequest;
+use crate::brrtrouter::typed::{TypedHandlerRequest, Handler};
 use crate::handlers::{{ handler_name }}::{ Request, Response };
 
-pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
-    {% if has_example %}
-    // Example response:
-    // {{ example_json | indent(4) }}
-    {% endif %}
-    Response {
-        {% for field in response_fields %}
-        {{ field.name }}: {{ field.value }},
-        {% endfor %}
+pub struct {{ struct_name }};
+
+impl Handler<Request, Response> for {{ struct_name }} {
+    fn handle(&self, _req: TypedHandlerRequest<Request>) -> Response {
+        {% if has_example %}
+        // Example response:
+        // {{ example_json | indent(8) }}
+        {% endif %}
+        Response {
+            {% for field in response_fields %}
+            {{ field.name }}: {{ field.value }},
+            {% endfor %}
+        }
     }
 }
