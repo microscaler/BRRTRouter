@@ -1,6 +1,4 @@
-
 // User-owned controller for handler 'post_item'.
-
 use crate::brrtrouter::typed::{TypedHandlerRequest, Handler};
 use crate::handlers::post_item::{ Request, Response };
 

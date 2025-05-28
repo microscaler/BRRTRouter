@@ -1,6 +1,4 @@
-
 // Auto-generated handler registry
-
 use brrtrouter::{dispatcher::Dispatcher, spec::ParameterMeta};
 use crate::controllers::*;
 use crate::handlers::*;

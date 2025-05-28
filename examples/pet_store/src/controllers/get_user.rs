@@ -1,6 +1,4 @@
-
 // User-owned controller for handler 'get_user'.
-
 use crate::brrtrouter::typed::{TypedHandlerRequest, Handler};
 use crate::handlers::get_user::{ Request, Response };
 
