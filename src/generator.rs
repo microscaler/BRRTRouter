@@ -2,7 +2,7 @@ use crate::dummy_value;
 use crate::spec::{load_spec, resolve_schema_ref, ParameterMeta, RouteMeta};
 use askama::Template;
 use serde_json::Value;
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 
@@ -63,7 +63,7 @@ pub struct RegistryTemplateData {
 #[derive(Template)]
 #[template(path = "handler_types.rs.txt")]
 pub struct TypesTemplateData {
-    pub types: HashMap<String, TypeDefinition>,
+    pub types: BTreeMap<String, TypeDefinition>,
 }
 
 #[derive(Template)]
@@ -320,10 +320,11 @@ fn write_registry_rs(dir: &Path, entries: &[RegistryEntry]) -> anyhow::Result<()
 
 fn write_types_rs(dir: &Path, types: &HashMap<String, TypeDefinition>) -> anyhow::Result<()> {
     let path = dir.join("types.rs");
-    let rendered = TypesTemplateData {
-        types: types.clone(),
+    let mut sorted = BTreeMap::new();
+    for (name, def) in types {
+        sorted.insert(name.clone(), def.clone());
     }
-    .render()?;
+    let rendered = TypesTemplateData { types: sorted }.render()?;
     fs::write(path.clone(), rendered)?;
     println!("✅ Generated types.rs → {:?}", path);
     Ok(())
