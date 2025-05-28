@@ -176,6 +176,92 @@ fn test_typed_controller_params() {
 }
 
 #[test]
+fn test_typed_controller_invalid_params() {
+    let mut dispatcher = Dispatcher::new();
+    unsafe {
+        dispatcher.register_typed(
+            "assert_controller",
+            AssertController,
+            vec![
+                ParameterMeta {
+                    name: "id".to_string(),
+                    location: ParameterLocation::Path,
+                    required: true,
+                    schema: Some(json!({"type": "integer"})),
+                },
+                ParameterMeta {
+                    name: "debug".to_string(),
+                    location: ParameterLocation::Query,
+                    required: false,
+                    schema: Some(json!({"type": "boolean"})),
+                },
+            ],
+        );
+    }
+
+    let (reply_tx, reply_rx) = mpsc::channel();
+    let mut path_params = HashMap::new();
+    // invalid integer value for id
+    path_params.insert("id".to_string(), "not_an_int".to_string());
+    let mut query_params = HashMap::new();
+    query_params.insert("debug".to_string(), "true".to_string());
+
+    let request = HandlerRequest {
+        method: Method::GET,
+        path: "/items/{id}".to_string(),
+        handler_name: "assert_controller".to_string(),
+        path_params,
+        query_params,
+        body: None,
+        reply_tx,
+    };
+
+    dispatcher
+        .handlers
+        .get("assert_controller")
+        .unwrap()
+        .send(request)
+        .unwrap();
+    let resp = reply_rx.recv().unwrap();
+    assert_eq!(resp.status, 400);
+    assert!(resp.body.get("error").is_some());
+}
+
+#[test]
+fn test_panic_handler_returns_500() {
+    fn panic_handler(_req: HandlerRequest) {
+        panic!("boom");
+    }
+
+    let mut dispatcher = Dispatcher::new();
+    unsafe {
+        dispatcher.register_handler("panic", panic_handler);
+    }
+
+    let (reply_tx, reply_rx) = mpsc::channel();
+
+    let request = HandlerRequest {
+        method: Method::GET,
+        path: "/panic".to_string(),
+        handler_name: "panic".to_string(),
+        path_params: HashMap::new(),
+        query_params: HashMap::new(),
+        body: None,
+        reply_tx,
+    };
+
+    dispatcher
+        .handlers
+        .get("panic")
+        .unwrap()
+        .send(request)
+        .unwrap();
+    let resp = reply_rx.recv().unwrap();
+    assert_eq!(resp.status, 500);
+    assert!(resp.body.get("error").is_some());
+}
+
+#[test]
 fn test_dispatch_all_registry_handlers() {
     let (routes, _slug) = load_spec("examples/openapi.yaml").expect("load spec");
     let router = Router::new(routes);
