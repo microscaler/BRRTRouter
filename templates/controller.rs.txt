@@ -19,3 +19,7 @@ impl Handler<Request, Response> for {{ struct_name }} {
         }
     }
 }
+
+pub fn handle(req: TypedHandlerRequest<Request>) -> Response {
+    {{ struct_name }}.handle(req)
+}
