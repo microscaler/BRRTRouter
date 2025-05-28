@@ -48,6 +48,20 @@ pub fn load_spec(file_path: &str, verbose: bool) -> anyhow::Result<(Vec<RouteMet
     Ok((routes, title))
 }
 
+/// Build route metadata from an already parsed [`OpenApiV3Spec`].
+pub fn load_spec_from_spec(spec: OpenApiV3Spec, verbose: bool) -> anyhow::Result<Vec<RouteMeta>> {
+    let slug = spec
+        .info
+        .title
+        .to_lowercase()
+        .replace(|c: char| !c.is_ascii_alphanumeric(), "_")
+        .trim_matches('_')
+        .to_string();
+
+    let routes = build_routes(&spec, verbose, &slug)?;
+    Ok(routes)
+}
+
 pub fn resolve_schema_ref<'a>(
     spec: &'a OpenApiV3Spec,
     ref_path: &str,
