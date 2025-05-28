@@ -29,7 +29,6 @@ pub trait TypedHandlerFor<T>: Sized {
         req: HandlerRequest,
         params: &[ParameterMeta],
     ) -> anyhow::Result<TypedHandlerRequest<T>>;
-    fn into_handler(self) -> HandlerRequest;
 }
 
 #[derive(Debug, Clone)]
@@ -117,18 +116,6 @@ where
         })
     }
 
-    fn into_handler(self) -> HandlerRequest {
-        let (tx, _rx) = mpsc::channel();
-        HandlerRequest {
-            method: self.method,
-            path: self.path,
-            handler_name: self.handler_name,
-            path_params: self.path_params,
-            query_params: self.query_params,
-            body: serde_json::to_value(self.data).ok(),
-            reply_tx: tx,
-        }
-    }
 }
 
 impl Dispatcher {
