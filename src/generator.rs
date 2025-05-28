@@ -87,7 +87,12 @@ pub struct ControllerTemplateData {
     pub imports: Vec<String>,
 }
 
-pub fn generate_project_from_spec(spec_path: &Path, force: bool) -> anyhow::Result<()> {
+use std::path::PathBuf;
+
+pub fn generate_project_from_spec(
+    spec_path: &Path,
+    force: bool,
+) -> anyhow::Result<PathBuf> {
     let (mut routes, slug) = load_spec(spec_path.to_str().unwrap())?;
     let base_dir = Path::new("examples").join(&slug);
     let src_dir = base_dir.join("src");
@@ -191,6 +196,16 @@ pub fn generate_project_from_spec(spec_path: &Path, force: bool) -> anyhow::Resu
     )?;
     write_mod_rs(&controller_dir, &modules_controllers, "controllers")?;
 
+    Ok(base_dir)
+}
+
+pub fn format_project(dir: &Path) -> anyhow::Result<()> {
+    let mut cmd = std::process::Command::new("cargo");
+    cmd.arg("fmt").current_dir(dir);
+    let status = cmd.status()?;
+    if !status.success() {
+        anyhow::bail!("cargo fmt failed");
+    }
     Ok(())
 }
 
