@@ -42,11 +42,6 @@ pub struct TypedHandlerRequest<T> {
     pub data: T,
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct TypedHandlerResponse<T: Serialize> {
-    pub status: u16,
-    pub body: T,
-}
 
 impl<T> TypedHandlerFor<T> for TypedHandlerRequest<T>
 where
