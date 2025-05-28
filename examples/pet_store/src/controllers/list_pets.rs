@@ -1,7 +1,9 @@
+
 // User-owned controller for handler 'list_pets'.
-use crate::brrtrouter::typed::{Handler, TypedHandlerRequest};
-use crate::handlers::list_pets::{Request, Response};
+use crate::brrtrouter::typed::{TypedHandlerRequest, Handler};
+use crate::handlers::list_pets::{ Request, Response };
 use crate::handlers::types::Pet;
+
 
 pub struct ListPetsController;
 
@@ -34,6 +36,7 @@ impl Handler<Request, Response> for ListPetsController {
         // ]
         Response {
             items: vec![Default::default()],
+            
         }
     }
 }

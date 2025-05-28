@@ -2,7 +2,7 @@ use brrtrouter::{
     dispatcher::{Dispatcher, HandlerRequest},
     load_spec,
     router::{RouteMatch, Router},
-    spec::{ParameterLocation, ParameterMeta},
+    
     typed::{Handler, TypedHandlerRequest},
 };
 use http::Method;
@@ -10,12 +10,34 @@ use may::sync::mpsc;
 use pet_store::registry;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::convert::TryFrom;
 use std::collections::HashMap;
 
 #[derive(Debug, Deserialize, Serialize)]
 struct TypedReq {
     id: i32,
     debug: bool,
+}
+
+impl TryFrom<HandlerRequest> for TypedReq {
+    type Error = anyhow::Error;
+
+    fn try_from(req: HandlerRequest) -> Result<Self, Self::Error> {
+        let id = req
+            .path_params
+            .get("id")
+            .ok_or_else(|| anyhow::anyhow!("missing id"))?
+            .parse()?;
+        let debug = req
+            .query_params
+            .get("debug")
+            .map(|v| v.parse::<bool>())
+            .transpose()?;
+        Ok(TypedReq {
+            id,
+            debug: debug.unwrap_or(false),
+        })
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -128,24 +150,7 @@ fn test_dispatch_get_pet() {
 fn test_typed_controller_params() {
     let mut dispatcher = Dispatcher::new();
     unsafe {
-        dispatcher.register_typed(
-            "assert_controller",
-            AssertController,
-            vec![
-                ParameterMeta {
-                    name: "id".to_string(),
-                    location: ParameterLocation::Path,
-                    required: true,
-                    schema: Some(json!({"type": "integer"})),
-                },
-                ParameterMeta {
-                    name: "debug".to_string(),
-                    location: ParameterLocation::Query,
-                    required: false,
-                    schema: Some(json!({"type": "boolean"})),
-                },
-            ],
-        );
+        dispatcher.register_typed("assert_controller", AssertController);
     }
 
     let (reply_tx, reply_rx) = mpsc::channel();
@@ -179,24 +184,7 @@ fn test_typed_controller_params() {
 fn test_typed_controller_invalid_params() {
     let mut dispatcher = Dispatcher::new();
     unsafe {
-        dispatcher.register_typed(
-            "assert_controller",
-            AssertController,
-            vec![
-                ParameterMeta {
-                    name: "id".to_string(),
-                    location: ParameterLocation::Path,
-                    required: true,
-                    schema: Some(json!({"type": "integer"})),
-                },
-                ParameterMeta {
-                    name: "debug".to_string(),
-                    location: ParameterLocation::Query,
-                    required: false,
-                    schema: Some(json!({"type": "boolean"})),
-                },
-            ],
-        );
+        dispatcher.register_typed("assert_controller", AssertController);
     }
 
     let (reply_tx, reply_rx) = mpsc::channel();
