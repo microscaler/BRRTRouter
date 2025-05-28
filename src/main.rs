@@ -7,8 +7,8 @@ use std::io;
 
 fn main() -> io::Result<()> {
     // Load OpenAPI spec and create router
-    let spec = load_spec("examples/openapi.yaml", false).expect("failed to load spec");
-    let router = Router::new(spec);
+    let (routes, _slug) = load_spec("examples/openapi.yaml", false).expect("failed to load spec");
+    let router = Router::new(routes);
 
     // Create dispatcher and register handlers
     let mut dispatcher = Dispatcher::new();

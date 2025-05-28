@@ -19,7 +19,7 @@ pub struct Router {
 }
 
 impl Router {
-    pub fn new((routes, _handler_prefix): Vec<RouteMeta>) -> Self {
+    pub fn new(routes: Vec<RouteMeta>) -> Self {
         // Filter out routes that are not HTTP methods we care about
         // We only support GET, POST, PUT, DELETE, PATCH, and OPTIONS
         let supported_methods = vec![
