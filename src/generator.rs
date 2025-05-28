@@ -433,13 +433,16 @@ fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
         Value::Number(n) => n.to_string(),
         Value::Bool(b) => b.to_string(),
         Value::Array(items) => {
-            let is_vec_string = field.ty == "Vec<String>" || field.ty == "Vec<serde_json::Value>";
+            let is_vec_string = field.ty == "Vec<String>";
+            let is_vec_json_value = field.ty == "Vec<serde_json::Value>";
             let inner = items
                 .iter()
                 .map(|item| match item {
                     Value::String(s) => {
                         if is_vec_string {
                             format!("{:?}.to_string()", s)
+                        } else if is_vec_json_value {
+                            format!("serde_json::Value::String({:?}.to_string())", s)
                         } else {
                             format!("{:?}.to_string().parse().unwrap()", s)
                         }
