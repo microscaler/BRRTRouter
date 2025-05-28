@@ -119,6 +119,7 @@ Each handler runs in its own coroutine, receiving requests via a channel and sen
 
 ---
 ## 📈 Contributing & Benchmarks
+For a detailed view of completed and upcoming work, see [docs/ROADMAP.md](docs/ROADMAP.md).
 We welcome contributions that improve:
 - 🧵 Typed handler deserialization
 - ✨ Auto-generation of impl `From<HandlerRequest>` for `TypedHandlerRequest<T>` based on schema
