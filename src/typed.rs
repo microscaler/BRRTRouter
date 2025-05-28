@@ -1,7 +1,7 @@
 // typed.rs
 #[allow(unused_imports)]
 use crate::dispatcher::{Dispatcher, HandlerRequest, HandlerResponse};
-use crate::spec::ParameterMeta;
+use crate::spec::{ParameterMeta, ParameterLocation};
 use http::Method;
 use may::sync::mpsc;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -79,14 +79,14 @@ where
         for (k, v) in &req.path_params {
             let schema = params
                 .iter()
-                .find(|p| p.location == "Path" && p.name == *k)
+                .find(|p| p.location == ParameterLocation::Path && p.name == *k)
                 .and_then(|p| p.schema.as_ref());
             data_map.insert(k.clone(), convert(v, schema));
         }
         for (k, v) in &req.query_params {
             let schema = params
                 .iter()
-                .find(|p| p.location == "Query" && p.name == *k)
+                .find(|p| p.location == ParameterLocation::Query && p.name == *k)
                 .and_then(|p| p.schema.as_ref());
             data_map.insert(k.clone(), convert(v, schema));
         }

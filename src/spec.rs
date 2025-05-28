@@ -1,6 +1,6 @@
 use crate::validator::{fail_if_issues, ValidationIssue};
 use http::Method;
-use oas3::spec::{MediaTypeExamples, ObjectOrReference, Parameter};
+use oas3::spec::{MediaTypeExamples, ObjectOrReference, Parameter, ParameterLocation as OasParameterLocation};
 use oas3::OpenApiV3Spec;
 use serde_json::Value;
 use std::path::PathBuf;
@@ -19,10 +19,24 @@ pub struct RouteMeta {
     pub output_dir: PathBuf,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum ParameterLocation {
+    Path,
+    Query,
+    Header,
+    Cookie,
+}
+
+impl std::fmt::Display for ParameterLocation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ParameterMeta {
     pub name: String,
-    pub location: String,
+    pub location: ParameterLocation,
     pub required: bool,
     pub schema: Option<Value>,
 }
@@ -203,7 +217,12 @@ fn extract_parameters(
 
             out.push(ParameterMeta {
                 name: param.name.clone(),
-                location: format!("{:?}", param.location),
+                location: match param.location {
+                    OasParameterLocation::Path => ParameterLocation::Path,
+                    OasParameterLocation::Query => ParameterLocation::Query,
+                    OasParameterLocation::Header => ParameterLocation::Header,
+                    OasParameterLocation::Cookie => ParameterLocation::Cookie,
+                },
                 required: param.required.is_some(),
                 schema,
             });
