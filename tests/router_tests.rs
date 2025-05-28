@@ -12,6 +12,11 @@ info:
   title: Verb Zoo
   version: "1.0.0"
 paths:
+  "/":
+    get:
+      x-handler-root: root_handler
+      responses:
+        "200": { description: OK }
   /zoo/animals:
     get:
       x-handler-get: get_animals
@@ -159,4 +164,11 @@ fn test_router_unknown_path() {
     let routes = parse_spec(example_spec());
     let router = Router::new(routes);
     assert_route_match(&router, Method::GET, "/unknown", "<none>");
+}
+
+#[test]
+fn test_router_root_path() {
+    let routes = parse_spec(example_spec());
+    let router = Router::new(routes);
+    assert_route_match(&router, Method::GET, "/", "root_handler");
 }

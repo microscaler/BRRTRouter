@@ -55,6 +55,13 @@ impl Router {
     }
 
     fn path_to_regex(path: &str) -> (Regex, Vec<String>) {
+        if path == "/" {
+            return (
+                Regex::new(r"^/$").expect("Failed to compile path regex"),
+                Vec::new(),
+            );
+        }
+
         let mut pattern = String::from("^");
         let mut param_names = Vec::new();
 
