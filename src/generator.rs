@@ -429,8 +429,12 @@ fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
         Value::Number(n) => n.to_string(),
         Value::Bool(b) => b.to_string(),
         Value::Array(items) => {
-            let is_vec_string = field.ty == "Vec<String>";
-            let is_vec_json_value = field.ty == "Vec<serde_json::Value>";
+            let inner_ty_opt = field
+                .ty
+                .strip_prefix("Vec<")
+                .and_then(|s| s.strip_suffix(">"));
+            let is_vec_string = inner_ty_opt == Some("String");
+            let is_vec_json_value = inner_ty_opt == Some("serde_json::Value") || inner_ty_opt == Some("Value");
             let inner = items
                 .iter()
                 .map(|item| match item {
@@ -445,11 +449,36 @@ fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
                     }
                     Value::Number(n) => n.to_string(),
                     Value::Bool(b) => b.to_string(),
+                    Value::Object(_) => {
+                        if let Some(inner_ty) = inner_ty_opt {
+                            if inner_ty == "serde_json::Value" || inner_ty == "Value" {
+                                let json = serde_json::to_string(item).unwrap();
+                                format!("serde_json::json!({})", json)
+                            } else if is_named_type(inner_ty) {
+                                let json = serde_json::to_string(item).unwrap();
+                                format!("serde_json::from_value::<{}>(serde_json::json!({})).unwrap()", inner_ty, json)
+                            } else {
+                                "Default::default()".to_string()
+                            }
+                        } else {
+                            "Default::default()".to_string()
+                        }
+                    }
                     _ => "Default::default()".to_string(),
                 })
                 .collect::<Vec<_>>()
                 .join(", ");
             format!("vec![{}]", inner)
+        }
+        Value::Object(_) => {
+            let json = serde_json::to_string(example).unwrap();
+            if field.ty == "serde_json::Value" || field.ty == "Value" {
+                format!("serde_json::json!({})", json)
+            } else if is_named_type(&field.ty) {
+                format!("serde_json::from_value::<{}>(serde_json::json!({})).unwrap()", field.ty, json)
+            } else {
+                format!("serde_json::json!({})", json)
+            }
         }
         _ => "Default::default()".to_string(),
     };
