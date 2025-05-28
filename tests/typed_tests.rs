@@ -1,10 +1,14 @@
-use brrtrouter::{dispatcher::{HandlerRequest, HandlerResponse}, typed::TypedHandlerRequest, spec::{ParameterMeta, ParameterLocation}};
+use brrtrouter::typed::TypedHandlerFor;
+use brrtrouter::{
+    dispatcher::{HandlerRequest, HandlerResponse},
+    spec::{ParameterLocation, ParameterMeta},
+    typed::TypedHandlerRequest,
+};
 use http::Method;
 use may::sync::mpsc;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
-use brrtrouter::typed::TypedHandlerFor;
 
 #[derive(Debug, Deserialize, Serialize)]
 struct Req {
@@ -31,8 +35,18 @@ fn test_from_handler_non_string_params() {
     };
 
     let params = vec![
-        ParameterMeta { name: "id".to_string(), location: ParameterLocation::Path, required: true, schema: Some(json!({"type": "integer"})) },
-        ParameterMeta { name: "active".to_string(), location: ParameterLocation::Query, required: false, schema: Some(json!({"type": "boolean"})) },
+        ParameterMeta {
+            name: "id".to_string(),
+            location: ParameterLocation::Path,
+            required: true,
+            schema: Some(json!({"type": "integer"})),
+        },
+        ParameterMeta {
+            name: "active".to_string(),
+            location: ParameterLocation::Query,
+            required: false,
+            schema: Some(json!({"type": "boolean"})),
+        },
     ];
 
     let typed = TypedHandlerRequest::<Req>::from_handler(req, &params).expect("conversion failed");

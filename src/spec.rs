@@ -1,6 +1,8 @@
 use crate::validator::{fail_if_issues, ValidationIssue};
 use http::Method;
-use oas3::spec::{MediaTypeExamples, ObjectOrReference, Parameter, ParameterIn as OasParameterLocation};
+use oas3::spec::{
+    MediaTypeExamples, ObjectOrReference, Parameter, ParameterIn as OasParameterLocation,
+};
 use oas3::OpenApiV3Spec;
 use serde_json::Value;
 use std::path::PathBuf;
@@ -57,7 +59,7 @@ pub struct ParameterMeta {
     pub schema: Option<Value>,
 }
 
-pub fn load_spec(file_path: &str, ) -> anyhow::Result<(Vec<RouteMeta>, String)> {
+pub fn load_spec(file_path: &str) -> anyhow::Result<(Vec<RouteMeta>, String)> {
     let content = std::fs::read_to_string(file_path)?;
     let spec: OpenApiV3Spec = if file_path.ends_with(".yaml") || file_path.ends_with(".yml") {
         serde_yaml::from_str(&content)?
@@ -78,7 +80,7 @@ pub fn load_spec(file_path: &str, ) -> anyhow::Result<(Vec<RouteMeta>, String)> 
 }
 
 /// Build route metadata from an already parsed [`OpenApiV3Spec`].
-pub fn load_spec_from_spec(spec: OpenApiV3Spec, ) -> anyhow::Result<Vec<RouteMeta>> {
+pub fn load_spec_from_spec(spec: OpenApiV3Spec) -> anyhow::Result<Vec<RouteMeta>> {
     let slug = spec
         .info
         .title
@@ -217,18 +219,16 @@ fn extract_parameters(
 ) -> Vec<ParameterMeta> {
     let mut out = Vec::new();
     for p in params {
-            let param = match p {
-                ObjectOrReference::Object(obj) => Some(obj),
-                ObjectOrReference::Ref { ref_path } => resolve_parameter_ref(spec, &ref_path),
-            };
+        let param = match p {
+            ObjectOrReference::Object(obj) => Some(obj),
+            ObjectOrReference::Ref { ref_path } => resolve_parameter_ref(spec, &ref_path),
+        };
 
         if let Some(param) = param {
             let schema = param.schema.as_ref().and_then(|s| match s {
                 ObjectOrReference::Object(obj) => serde_json::to_value(obj).ok(),
-                ObjectOrReference::Ref { ref_path } => {
-                    resolve_schema_ref(spec, ref_path)
-                        .and_then(|sch| serde_json::to_value(sch).ok())
-                }
+                ObjectOrReference::Ref { ref_path } => resolve_schema_ref(spec, ref_path)
+                    .and_then(|sch| serde_json::to_value(sch).ok()),
             });
 
             out.push(ParameterMeta {
@@ -242,10 +242,7 @@ fn extract_parameters(
     out
 }
 
-pub fn build_routes(
-    spec: &OpenApiV3Spec,
-    slug: &str,
-) -> anyhow::Result<Vec<RouteMeta>> {
+pub fn build_routes(spec: &OpenApiV3Spec, slug: &str) -> anyhow::Result<Vec<RouteMeta>> {
     let mut routes = Vec::new();
     let mut issues = Vec::new();
 

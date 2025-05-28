@@ -1,11 +1,11 @@
 // typed.rs
 #[allow(unused_imports)]
 use crate::dispatcher::{Dispatcher, HandlerRequest, HandlerResponse};
-use crate::spec::{ParameterMeta, ParameterLocation};
+use crate::spec::{ParameterLocation, ParameterMeta};
+use anyhow::Result;
 use http::Method;
 use may::sync::mpsc;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use anyhow::Result;
 use std::collections::HashMap;
 
 /// Trait implemented by typed coroutine handlers.
@@ -40,7 +40,6 @@ pub struct TypedHandlerRequest<T> {
     pub query_params: HashMap<String, String>,
     pub data: T,
 }
-
 
 impl<T> TypedHandlerFor<T> for TypedHandlerRequest<T>
 where
@@ -115,7 +114,6 @@ where
             data,
         })
     }
-
 }
 
 impl Dispatcher {
@@ -125,8 +123,7 @@ impl Dispatcher {
         name: &str,
         handler: H,
         params: Vec<ParameterMeta>,
-    )
-    where
+    ) where
         TReq: DeserializeOwned + Serialize + Send + 'static,
         TRes: Serialize + Send + 'static,
         H: Handler<TReq, TRes> + Send + 'static,
