@@ -1,0 +1,329 @@
+openapi: 3.1.0
+info:
+  title: Pet Store
+  version: "1.0.0"
+
+paths:
+  /pets:
+    get:
+      summary: List pets
+      operationId: list_pets
+      responses:
+        "200":
+          description: A list of pets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Pet"
+              examples:
+                petListExample:
+                  summary: Example list of pets
+                  value:
+                    - id: 12345
+                      name: "Max"
+                      breed: "Golden Retriever"
+                      age: 3
+                      vaccinated: true
+                      tags: ["friendly", "trained"]
+                    - id: 67890
+                      name: "Bella"
+                      breed: "Labrador"
+                      age: 2
+                      vaccinated: true
+                      tags: ["puppy", "playful"]
+
+    post:
+      summary: Add a pet
+      operationId: add_pet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePetRequest"
+            examples:
+              createPetExample:
+                summary: Example pet creation request
+                value:
+                  name: "Bella"
+      responses:
+        "200":
+          description: Pet added successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PetCreationResponse"
+              examples:
+                addPetExample:
+                  summary: Example response
+                  value:
+                    id: 67890
+                    status: "success"
+
+  /pets/{id}:
+    get:
+      summary: Get a specific pet
+      operationId: get_pet
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: A pet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pet"
+              examples:
+                petExample:
+                  summary: A pet
+                  value:
+                    id: 12345
+                    name: "Max"
+                    breed: "Golden Retriever"
+                    age: 3
+                    vaccinated: true
+                    tags: ["friendly", "trained"]
+
+  /users:
+    get:
+      summary: List users
+      operationId: list_users
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserList"
+              examples:
+                userListExample:
+                  summary: List of users
+                  value:
+                    users:
+                      - id: "abc-123"
+                        name: "John"
+                      - id: "def-456"
+                        name: "Jane"
+
+  /users/{user_id}:
+    get:
+      summary: Get user by ID
+      operationId: get_user
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+              examples:
+                userExample:
+                  summary: User
+                  value:
+                    id: "abc-123"
+                    name: "John"
+
+  /users/{user_id}/posts:
+    get:
+      summary: List posts by user
+      operationId: list_user_posts
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Post"
+              examples:
+                postsExample:
+                  summary: User posts
+                  value:
+                    - id: "post1"
+                      title: "Intro"
+                      body: "Welcome to the blog"
+                    - id: "post2"
+                      title: "Follow-up"
+                      body: "Thanks for reading"
+
+  /users/{user_id}/posts/{post_id}:
+    get:
+      summary: Get specific post
+      operationId: get_post
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: post_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Post"
+              examples:
+                postExample:
+                  summary: A blog post
+                  value:
+                    id: "post1"
+                    title: "Intro"
+                    body: "Welcome to the blog"
+
+  /admin/settings:
+    get:
+      summary: Admin settings
+      operationId: admin_settings
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminSettings"
+              examples:
+                settingsExample:
+                  summary: Admin settings
+                  value:
+                    feature_flags:
+                      beta: true
+                      analytics: false
+
+  /items/{id}:
+    get:
+      operationId: get_item
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Get an item
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Item"
+              examples:
+                itemExample:
+                  value:
+                    id: "item-001"
+                    name: "Sample Item"
+
+    post:
+      summary: Update or create item by ID
+      operationId: post_item
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateItemRequest"
+      responses:
+        "200":
+          description: Upserted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Item"
+              examples:
+                itemExample:
+                  value:
+                    id: "item-001"
+                    name: "New Item"
+
+components:
+  schemas:
+    Pet:
+      type: object
+      required: [id, name, breed, age, vaccinated, tags]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        breed: { type: string }
+        age: { type: integer }
+        vaccinated: { type: boolean }
+        tags:
+          type: array
+          items: { type: string }
+
+    PetCreationResponse:
+      type: object
+      properties:
+        id: { type: integer }
+        status: { type: string }
+
+    CreatePetRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+
+    UserList:
+      type: object
+      properties:
+        users:
+          type: array
+          items:
+            $ref: "#/components/schemas/User"
+
+    User:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+
+    Post:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: string }
+        body: { type: string }
+
+    AdminSettings:
+      type: object
+      properties:
+        feature_flags:
+          type: object
+          additionalProperties: { type: boolean }
+
+    Item:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+
+    CreateItemRequest:
+      type: object
+      properties:
+        name: { type: string }

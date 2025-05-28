@@ -95,6 +95,12 @@ pub fn generate_project_from_spec(spec_path: &Path, force: bool) -> anyhow::Resu
     fs::create_dir_all(&handler_dir)?;
     fs::create_dir_all(&controller_dir)?;
 
+    let spec_copy_path = base_dir.join("openapi.yaml");
+    if !spec_copy_path.exists() || force {
+        fs::copy(spec_path, &spec_copy_path)?;
+        println!("✅ Copied spec to {:?}", spec_copy_path);
+    }
+
     let mut schema_types = collect_component_schemas(spec_path)?;
 
     // Shared output state
