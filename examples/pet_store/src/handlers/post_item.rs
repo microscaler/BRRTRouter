@@ -4,7 +4,7 @@
 use serde::{ Deserialize, Serialize };
 use crate::brrtrouter::typed::TypedHandlerRequest;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Request {
     // Parameters and body fields
     #[serde(skip_serializing_if = "Option::is_none")]

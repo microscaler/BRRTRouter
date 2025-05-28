@@ -19,3 +19,7 @@ impl Handler<Request, Response> for ListPetsController {
         }
     }
 }
+pub fn handle(req: TypedHandlerRequest<Request>) -> Response {
+    ListPetsController.handle(req)
+}
+

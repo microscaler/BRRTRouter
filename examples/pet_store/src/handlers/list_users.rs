@@ -5,7 +5,7 @@ use serde::{ Deserialize, Serialize };
 use crate::brrtrouter::typed::TypedHandlerRequest;
 
 use crate::handlers::types::User;
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Request {
     // Parameters and body fields
     }
