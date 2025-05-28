@@ -183,32 +183,30 @@ fn resolve_parameter_ref<'a>(
 
 fn extract_parameters(
     spec: &OpenApiV3Spec,
-    params: &Option<Vec<ObjectOrReference<Parameter>>>,
+    params: &Vec<ObjectOrReference<Parameter>>,
 ) -> Vec<ParameterMeta> {
     let mut out = Vec::new();
-    if let Some(list) = params {
-        for p in list {
+    for p in params {
             let param = match p {
                 ObjectOrReference::Object(obj) => Some(obj),
                 ObjectOrReference::Ref { ref_path } => resolve_parameter_ref(spec, &ref_path),
             };
 
-            if let Some(param) = param {
-                let schema = param.schema.as_ref().and_then(|s| match s {
-                    ObjectOrReference::Object(obj) => serde_json::to_value(obj).ok(),
-                    ObjectOrReference::Ref { ref_path } => {
-                        resolve_schema_ref(spec, ref_path)
-                            .and_then(|sch| serde_json::to_value(sch).ok())
-                    }
-                });
+        if let Some(param) = param {
+            let schema = param.schema.as_ref().and_then(|s| match s {
+                ObjectOrReference::Object(obj) => serde_json::to_value(obj).ok(),
+                ObjectOrReference::Ref { ref_path } => {
+                    resolve_schema_ref(spec, ref_path)
+                        .and_then(|sch| serde_json::to_value(sch).ok())
+                }
+            });
 
-                out.push(ParameterMeta {
-                    name: param.name.clone(),
-                    location: format!("{:?}", param.location),
-                    required: param.required.is_some(),
-                    schema,
-                });
-            }
+            out.push(ParameterMeta {
+                name: param.name.clone(),
+                location: format!("{:?}", param.location),
+                required: param.required.is_some(),
+                schema,
+            });
         }
     }
     out
