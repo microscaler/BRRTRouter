@@ -6,9 +6,11 @@ use serde_json::Value;
 use crate::brrtrouter::dispatcher::HandlerRequest;
 use crate::brrtrouter::typed::{ TypedHandlerRequest, TypedHandlerResponse, TypedHandlerFor };
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize)]
 pub struct Request {
+    // Parameters and body fields
     pub id: String,
+    
     }
 
 #[derive(Debug, Serialize)]
@@ -29,4 +31,27 @@ pub struct Response {
 
 pub fn handler(req: TypedHandlerRequest<Request>) -> Response {
     crate::controllers::get_pet::handle(req)
+}
+
+impl TypedHandlerFor<Request> for Request {
+    fn from_handler(req: HandlerRequest) -> TypedHandlerRequest<Self> {
+        // fill from req.body, req.path_params, etc
+        unimplemented!()
+    }
+
+    fn into_handler(self) -> HandlerRequest {
+        unimplemented!()
+    }
+}
+
+/// Custom trait to convert from typed request back to HandlerRequest
+pub trait FromTypedRequest {
+    fn from_typed_request(typed_req: TypedHandlerRequest<Request>) -> Self;
+}
+
+impl FromTypedRequest for HandlerRequest {
+    fn from_typed_request(typed_req: TypedHandlerRequest<Request>) -> Self {
+        // TODO: convert TypedHandlerRequest<Request> to HandlerRequest
+        unimplemented!()
+    }
 }
