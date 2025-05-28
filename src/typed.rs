@@ -168,23 +168,3 @@ impl Dispatcher {
         self.handlers.insert(name, tx);
     }
 }
-
-// Example: typed handler
-#[derive(Debug, Serialize, Deserialize)]
-pub struct CreatePetRequest {
-    pub name: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct CreatePetResponse {
-    pub id: String,
-    pub name: String,
-}
-
-pub fn create_pet_handler(req: TypedHandlerRequest<CreatePetRequest>) -> CreatePetResponse {
-    // Mock: assign static ID
-    CreatePetResponse {
-        id: "pet_1234".to_string(),
-        name: req.data.name,
-    }
-}
