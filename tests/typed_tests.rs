@@ -4,6 +4,7 @@ use may::sync::mpsc;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
+use brrtrouter::typed::TypedHandlerFor;
 
 #[derive(Debug, Deserialize, Serialize)]
 struct Req {
