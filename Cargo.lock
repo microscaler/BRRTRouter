@@ -142,6 +142,7 @@ dependencies = [
  "may",
  "may_minihttp",
  "oas3",
+ "pet_store",
  "pretty_assertions",
  "regex",
  "serde",
