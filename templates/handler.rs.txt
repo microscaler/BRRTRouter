@@ -8,7 +8,7 @@ use crate::brrtrouter::typed::TypedHandlerRequest;
 use crate::handlers::types::{{ import }};
 {% endfor -%}
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Request {
     // Parameters and body fields
     {% for field in request_fields -%}
