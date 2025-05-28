@@ -1,7 +1,7 @@
 {# templates/registry.rs.txt #}
 // Auto-generated handler registry
 
-use brrtrouter::dispatcher::Dispatcher;
+use brrtrouter::{dispatcher::Dispatcher, spec::ParameterMeta};
 use crate::controllers::*;
 use crate::handlers::*;
 
@@ -10,6 +10,22 @@ pub unsafe fn register_all(dispatcher: &mut Dispatcher) {
     dispatcher.register_typed(
         "{{ entry.name }}",
         crate::controllers::{{ entry.name }}::{{ entry.controller_struct }},
+        vec![
+            {% for p in entry.parameters -%}
+            ParameterMeta {
+                name: "{{ p.name }}".to_string(),
+                location: "{{ p.location }}".to_string(),
+                required: {{ p.required }},
+                schema: {
+                    {% if p.schema.is_some() %}
+                    Some(serde_json::json!({{ p.schema | json }}))
+                    {% else %}
+                    None
+                    {% endif %}
+                },
+            },
+            {% endfor %}
+        ],
     );
     {% endfor %}
 }

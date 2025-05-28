@@ -25,6 +25,7 @@ pub struct RegistryEntry {
     pub name: String,
     pub request_type: String,
     pub controller_struct: String,
+    pub parameters: Vec<ParameterMeta>,
 }
 
 #[derive(Debug, Clone)]
@@ -165,6 +166,7 @@ pub fn generate_project_from_spec(spec_path: &Path, force: bool) -> anyhow::Resu
             name: handler.clone(),
             request_type: format!("{}::Request", handler),
             controller_struct: controller_struct.clone(),
+            parameters: route.parameters.clone(),
         });
 
         if let Some(schema) = &route.request_schema {
