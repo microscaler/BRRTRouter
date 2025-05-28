@@ -19,7 +19,7 @@ impl Handler<Request, Response> for GetPetController {
             
             name: "Max".to_string(),
             
-            tags: vec!["friendly".to_string().parse().unwrap(), "trained".to_string().parse().unwrap()],
+            tags: vec!["friendly".to_string(), "trained".to_string()],
             
             vaccinated: true,
             
