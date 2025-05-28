@@ -1,6 +1,6 @@
 use crate::validator::{fail_if_issues, ValidationIssue};
 use http::Method;
-use oas3::spec::{MediaTypeExamples, ObjectOrReference, Parameter};
+use oas3::spec::{MediaTypeExamples, ObjectOrReference, Parameter, ParameterIn as OasParameterLocation};
 use oas3::OpenApiV3Spec;
 use serde_json::Value;
 use std::path::PathBuf;
