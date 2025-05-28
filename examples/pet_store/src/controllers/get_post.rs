@@ -23,7 +23,7 @@ impl Handler<Request, Response> for GetPostController {
         }
     }
 }
+
 pub fn handle(req: TypedHandlerRequest<Request>) -> Response {
     GetPostController.handle(req)
 }
-

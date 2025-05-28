@@ -25,7 +25,3 @@ impl Handler<Request, Response> for AddPetController {
 pub fn handle(req: TypedHandlerRequest<Request>) -> Response {
     AddPetController.handle(req)
 }
-pub fn handle(req: TypedHandlerRequest<Request>) -> Response {
-    AddPetController.handle(req)
-}
-
