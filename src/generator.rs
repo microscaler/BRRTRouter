@@ -398,7 +398,7 @@ fn collect_component_schemas(spec_path: &Path) -> anyhow::Result<HashMap<String,
     Ok(types)
 }
 
-fn to_camel_case(s: &str) -> String {
+pub fn to_camel_case(s: &str) -> String {
     s.split('_')
         .map(|w| {
             let mut chars = w.chars();
@@ -410,7 +410,7 @@ fn to_camel_case(s: &str) -> String {
         .collect()
 }
 
-fn is_named_type(ty: &str) -> bool {
+pub fn is_named_type(ty: &str) -> bool {
     let primitives = [
         "String",
         "i32",
@@ -468,7 +468,7 @@ mod tests {
     }
 }
 
-fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
+pub fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
     let literal = match example {
         Value::String(s) => format!("{:?}.to_string()", s),
         Value::Number(n) => n.to_string(),
@@ -628,7 +628,7 @@ pub fn extract_fields(schema: &Value) -> Vec<FieldDef> {
     fields
 }
 
-fn schema_to_type(schema: &Value) -> String {
+pub fn schema_to_type(schema: &Value) -> String {
     if let Some(r) = schema.get("$ref").and_then(|v| v.as_str()) {
         if let Some(name) = r.strip_prefix("#/components/schemas/") {
             return to_camel_case(name);
