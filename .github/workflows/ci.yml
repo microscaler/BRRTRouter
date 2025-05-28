@@ -49,9 +49,41 @@ jobs:
         # run: cargo test --all -- --nocapture - runs exampes as well, which are currently broken
         run: cargo test -- --nocapture
 
-      - name: Install cargo-tarpaulin
-        run: cargo install cargo-tarpaulin
+      - name: Install coverage tools
+        run: |
+          cargo install cargo-tarpaulin
+          cargo install genbadge
 
       - name: Measure coverage
-        run: cargo tarpaulin --out Xml --fail-under 40
+        run: |
+          cargo tarpaulin \
+            --out Xml --out Html \
+            --output-dir coverage \
+            --fail-under 80
+          genbadge tarpaulin --output-path coverage/badge.svg
+
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: coverage
+
+  deploy-coverage:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy coverage to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
 

@@ -13,6 +13,7 @@ Inspired by the *GAU-8/A Avenger* on the A-10 Warthog, this router is designed t
 [![CI](https://github.com/microscaler/BRRTRouter/actions/workflows/ci.yml/badge.svg)](https://github.com/microscaler/BRRTRouter/actions)
 [![Crate](https://img.shields.io/crates/v/brrrouter.svg)](https://crates.io/crates/brrrouter)
 [![Docs](https://docs.rs/brrrouter/badge.svg)](https://docs.rs/brrrouter)
+[![Coverage](https://microscaler.github.io/BRRTRouter/badge.svg)](https://microscaler.github.io/BRRTRouter/coverage/)
 
 
 ---
@@ -105,6 +106,19 @@ just coverage
 The command fails if total coverage drops below 80%.
 
 
+### 📈 Measuring Coverage
+
+Install [cargo-tarpaulin](https://github.com/xd009642/tarpaulin) and run:
+
+```bash
+cargo install cargo-tarpaulin
+cargo tarpaulin --fail-under 80
+```
+
+The command fails if total coverage drops below 80%.
+
+The CI workflow publishes a badge and HTML coverage report at [https://microscaler.github.io/BRRTRouter/coverage/](https://microscaler.github.io/BRRTRouter/coverage/).
+
 Unit tests validate:
 
 - All HTTP verbs: `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`, `OPTIONS`, `TRACE`
@@ -115,6 +129,10 @@ Unit tests validate:
 
 
 
+```bash
+cargo test -- --nocapture
+```
+---
 
 ## 🔧 Handler Registration Example
 
