@@ -86,7 +86,7 @@ pub struct ControllerTemplateData {
 }
 
 pub fn generate_project_from_spec(spec_path: &Path, force: bool) -> anyhow::Result<()> {
-    let (mut routes, slug) = load_spec(spec_path.to_str().unwrap(), false)?;
+    let (mut routes, slug) = load_spec(spec_path.to_str().unwrap())?;
     let base_dir = Path::new("examples").join(&slug);
     let src_dir = base_dir.join("src");
     let handler_dir = src_dir.join("handlers");
