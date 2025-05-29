@@ -152,15 +152,21 @@ Each handler runs in its own coroutine, receiving requests via a channel and sen
 Middlewares run before and after each handler. Register them on the dispatcher:
 
 ```rust
-use brrrouter::middleware::MetricsMiddleware;
+use brrrouter::middleware::{
+    AuthMiddleware, CorsMiddleware, MetricsMiddleware, TracingMiddleware,
+};
 use std::sync::Arc;
 
 let mut dispatcher = Dispatcher::new();
-let metrics = Arc::new(MetricsMiddleware::new());
-dispatcher.add_middleware(metrics.clone());
+dispatcher.add_middleware(Arc::new(MetricsMiddleware::new()));
+dispatcher.add_middleware(Arc::new(TracingMiddleware));
+dispatcher.add_middleware(Arc::new(AuthMiddleware::new("Bearer secret".into())));
+dispatcher.add_middleware(Arc::new(CorsMiddleware));
 ```
 
-`MetricsMiddleware` tracks request counts and average latency.
+`MetricsMiddleware` tracks request counts and average latency. `TracingMiddleware`
+creates spans for each request, `AuthMiddleware` performs a simple header token
+check, and `CorsMiddleware` adds CORS headers to responses.
 
 ---
 ## 📡 Server-Sent Events

@@ -42,6 +42,7 @@ where
                 Err(err) => {
                     let _ = reply_tx.send(HandlerResponse {
                         status: 400,
+                        headers: HashMap::new(),
                         body: serde_json::json!({
                             "error": "Invalid request data",
                             "message": err.to_string()
@@ -64,9 +65,10 @@ where
 
             let _ = reply_tx.send(HandlerResponse {
                 status: 200,
-                body: serde_json::to_value(result).unwrap_or_else(
-                    |_| serde_json::json!({"error": "Failed to serialize response"}),
-                ),
+                headers: HashMap::new(),
+                body: serde_json::to_value(result).unwrap_or_else(|_| {
+                    serde_json::json!({"error": "Failed to serialize response"})
+                }),
             });
         }
     })

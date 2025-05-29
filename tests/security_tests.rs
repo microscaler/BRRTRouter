@@ -7,6 +7,7 @@ use brrtrouter::{
 };
 use may_minihttp::HttpServer;
 use serde_json::json;
+use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::{Arc, RwLock};
@@ -77,7 +78,11 @@ paths:
     let mut dispatcher = Dispatcher::new();
     unsafe {
         dispatcher.register_handler("secret", |req: HandlerRequest| {
-            let _ = req.reply_tx.send(HandlerResponse { status: 200, body: json!({"ok": true}) });
+            let _ = req.reply_tx.send(HandlerResponse {
+                status: 200,
+                headers: HashMap::new(),
+                body: json!({"ok": true}),
+            });
         });
     }
     let mut service = AppService::new(router, Arc::new(RwLock::new(dispatcher)), schemes);
@@ -130,14 +135,18 @@ paths:
     let mut dispatcher = Dispatcher::new();
     unsafe {
         dispatcher.register_handler("one", |req: HandlerRequest| {
-            let _ = req
-                .reply_tx
-                .send(HandlerResponse { status: 200, body: json!({"one": true}) });
+            let _ = req.reply_tx.send(HandlerResponse {
+                status: 200,
+                headers: HashMap::new(),
+                body: json!({"one": true}),
+            });
         });
         dispatcher.register_handler("two", |req: HandlerRequest| {
-            let _ = req
-                .reply_tx
-                .send(HandlerResponse { status: 200, body: json!({"two": true}) });
+            let _ = req.reply_tx.send(HandlerResponse {
+                status: 200,
+                headers: HashMap::new(),
+                body: json!({"two": true}),
+            });
         });
     }
     let mut service = AppService::new(router, Arc::new(RwLock::new(dispatcher)), schemes);
