@@ -32,4 +32,20 @@ mod tests {
         env::set_var("PATH", old_path);
         assert!(res.is_ok());
     }
+
+    #[test]
+    fn test_format_project_error() {
+        let dir = std::env::temp_dir().join("fmt_test_err");
+        std::fs::create_dir_all(&dir).unwrap();
+        let stub = dir.join("cargo");
+        fs::write(&stub, "#!/bin/sh\nexit 1\n").unwrap();
+        let mut perms = fs::metadata(&stub).unwrap().permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&stub, perms).unwrap();
+        let old_path = env::var("PATH").unwrap();
+        env::set_var("PATH", format!("{}:{}", dir.display(), old_path));
+        let res = format_project(&dir);
+        env::set_var("PATH", old_path);
+        assert!(res.is_err());
+    }
 }

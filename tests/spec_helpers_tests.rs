@@ -1,6 +1,6 @@
 use brrtrouter::spec::{
     extract_parameters, extract_request_schema, extract_response_schema_and_example,
-    resolve_schema_ref, ParameterLocation,
+    resolve_schema_ref, extract_security_schemes, ParameterLocation,
 };
 use oas3::OpenApiV3Spec;
 use serde_json::json;
@@ -121,4 +121,26 @@ fn test_extract_parameters() {
     let dbg_p = params.iter().find(|p| p.name == "debug").unwrap();
     assert_eq!(dbg_p.location, ParameterLocation::Query);
     assert!(!dbg_p.required);
+}
+
+#[test]
+fn test_extract_security_schemes_only_objects() {
+    let spec_yaml = r#"openapi: 3.1.0
+info:
+  title: Auth API
+  version: '1.0'
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+    RefScheme:
+      $ref: '#/components/securitySchemes/Other'
+paths: {}
+"#;
+    let spec: OpenApiV3Spec = serde_yaml::from_str(spec_yaml).unwrap();
+    let schemes = extract_security_schemes(&spec);
+    assert_eq!(schemes.len(), 1);
+    assert!(schemes.contains_key("ApiKeyAuth"));
 }
