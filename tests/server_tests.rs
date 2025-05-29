@@ -17,6 +17,7 @@ use std::time::Duration;
 
 fn start_petstore_service() -> (may::coroutine::JoinHandle<()>, SocketAddr) {
     // ensure coroutines have enough stack for tests
+    std::env::set_var("BRRTR_STACK_SIZE", "0x8000");
     may::config().set_stack_size(0x8000);
     let (routes, _slug) = brrtrouter::load_spec("examples/openapi.yaml").unwrap();
     let router = Arc::new(RwLock::new(Router::new(routes.clone())));
@@ -112,6 +113,7 @@ fn test_route_404() {
 #[test]
 #[ignore]
 fn test_panic_recovery() {
+    std::env::set_var("BRRTR_STACK_SIZE", "0x8000");
     may::config().set_stack_size(0x8000);
     fn panic_handler(_req: HandlerRequest) {
         panic!("boom");
@@ -152,6 +154,7 @@ fn test_panic_recovery() {
 
 #[test]
 fn test_headers_and_cookies() {
+    std::env::set_var("BRRTR_STACK_SIZE", "0x8000");
     may::config().set_stack_size(0x8000);
     fn header_handler(req: HandlerRequest) {
         let response = HandlerResponse {
@@ -211,6 +214,7 @@ fn test_headers_and_cookies() {
 
 #[test]
 fn test_status_201_json() {
+    std::env::set_var("BRRTR_STACK_SIZE", "0x8000");
     may::config().set_stack_size(0x8000);
     fn create_handler(req: HandlerRequest) {
         let response = HandlerResponse {
@@ -258,6 +262,7 @@ fn test_status_201_json() {
 
 #[test]
 fn test_text_plain_error() {
+    std::env::set_var("BRRTR_STACK_SIZE", "0x8000");
     may::config().set_stack_size(0x8000);
     fn text_handler(req: HandlerRequest) {
         let response = HandlerResponse {
