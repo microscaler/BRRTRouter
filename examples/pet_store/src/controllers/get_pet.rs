@@ -1,10 +1,14 @@
+
 // User-owned controller for handler 'get_pet'.
 use crate::brrtrouter::typed::{Handler, TypedHandlerRequest};
-use crate::handlers::get_pet::{Request, Response};
+use crate::handlers::get_pet::{ Request, Response };
+
 
 pub struct GetPetController;
 
-impl Handler<Request, Response> for GetPetController {
+impl Handler for GetPetController {
+    type Request = Request;
+    type Response = Response;
     fn handle(&self, _req: TypedHandlerRequest<Request>) -> Response {
         // Example response:
         // {
@@ -25,6 +29,7 @@ impl Handler<Request, Response> for GetPetController {
             name: "Max".to_string(),
             tags: vec!["friendly".to_string(), "trained".to_string()],
             vaccinated: true,
+            
         }
     }
 }

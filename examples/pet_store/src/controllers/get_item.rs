@@ -1,10 +1,14 @@
+
 // User-owned controller for handler 'get_item'.
 use crate::brrtrouter::typed::{Handler, TypedHandlerRequest};
-use crate::handlers::get_item::{Request, Response};
+use crate::handlers::get_item::{ Request, Response };
+
 
 pub struct GetItemController;
 
-impl Handler<Request, Response> for GetItemController {
+impl Handler for GetItemController {
+    type Request = Request;
+    type Response = Response;
     fn handle(&self, _req: TypedHandlerRequest<Request>) -> Response {
         // Example response:
         // {
@@ -14,6 +18,7 @@ impl Handler<Request, Response> for GetItemController {
         Response {
             id: Some("item-001".to_string()),
             name: Some("Sample Item".to_string()),
+            
         }
     }
 }

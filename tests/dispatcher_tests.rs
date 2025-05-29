@@ -46,7 +46,9 @@ struct TypedRes {
 
 struct AssertController;
 
-impl Handler<TypedReq, TypedRes> for AssertController {
+impl Handler for AssertController {
+    type Request = TypedReq;
+    type Response = TypedRes;
     fn handle(&self, req: TypedHandlerRequest<TypedReq>) -> TypedRes {
         assert_eq!(req.data.id, 42);
         assert!(req.data.debug);
