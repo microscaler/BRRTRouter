@@ -7,10 +7,10 @@ fn main() -> io::Result<()> {
     let (routes, _slug) =
         brrtrouter::spec::load_spec("./openapi.yaml").expect("failed to load OpenAPI spec");
 
-    let router = Router::new(routes);
+    let router = Router::new(routes.clone());
     let mut dispatcher = Dispatcher::new();
     unsafe {
-        registry::register_all(&mut dispatcher);
+        registry::register_from_spec(&mut dispatcher, &routes);
     }
 
     let service = AppService { router, dispatcher };
