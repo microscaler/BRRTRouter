@@ -73,7 +73,10 @@ paths:
         '200': { description: OK }
 "#;
     let path = write_temp(SPEC);
-    let (routes, schemes, _slug) = load_spec_full(path.to_str().unwrap()).unwrap();
+    let (routes, schemes, _slug) = match load_spec_full(path.to_str().unwrap()) {
+        Ok(result) => result,
+        Err(e) => panic!("Failed to load spec: {:?}", e),
+    };
     let router = Arc::new(RwLock::new(Router::new(routes.clone())));
     let mut dispatcher = Dispatcher::new();
     unsafe {

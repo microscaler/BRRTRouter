@@ -21,7 +21,7 @@ impl Middleware for TracingMiddleware {
             handler = %req.handler_name
         );
         let guard = span.enter();
-        SPAN_GUARD.with(|g| *g.borrow_mut() = Some((span, guard)));
+        static SPAN_GUARD: std::sync::RwLock<Option<(Span, tracing::span::Entered<'static>)>> = std::sync::RwLock::new(None);
         None
     }
 

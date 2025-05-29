@@ -25,7 +25,8 @@ pub fn write_handler_response(
     let reason = status_reason(status);
     res.status_code(status as usize, reason);
     for (k, v) in headers {
-        res.header(&format!("{}: {}", k, v));
+        let header_value = format!("{}: {}", k, v).into_boxed_str();
+        res.header(Box::leak(header_value));
     }
     match body {
         Value::String(s) => {
