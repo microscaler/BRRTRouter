@@ -1,181 +1,10 @@
+use super::types::{ParameterLocation, ParameterMeta, ResponseSpec, Responses, RouteMeta};
 use crate::validator::{fail_if_issues, ValidationIssue};
 use http::Method;
-pub use oas3::spec::{SecurityRequirement, SecurityScheme};
-use oas3::spec::{
-    MediaTypeExamples, ObjectOrReference, Parameter, ParameterIn as OasParameterLocation,
-};
+use oas3::spec::{MediaTypeExamples, ObjectOrReference, Parameter};
 use oas3::OpenApiV3Spec;
 use serde_json::Value;
-use std::path::PathBuf;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ParameterLocation {
-    Path,
-    Query,
-    Header,
-    Cookie,
-}
-
-impl std::fmt::Display for ParameterLocation {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ParameterLocation::Path => write!(f, "Path"),
-            ParameterLocation::Query => write!(f, "Query"),
-            ParameterLocation::Header => write!(f, "Header"),
-            ParameterLocation::Cookie => write!(f, "Cookie"),
-        }
-    }
-}
-
-impl From<OasParameterLocation> for ParameterLocation {
-    fn from(loc: OasParameterLocation) -> Self {
-        match loc {
-            OasParameterLocation::Path => ParameterLocation::Path,
-            OasParameterLocation::Query => ParameterLocation::Query,
-            OasParameterLocation::Header => ParameterLocation::Header,
-            OasParameterLocation::Cookie => ParameterLocation::Cookie,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct RouteMeta {
-    pub method: Method,
-    pub path_pattern: String,
-    pub handler_name: String,
-    pub parameters: Vec<ParameterMeta>,
-    pub request_schema: Option<Value>,
-    pub response_schema: Option<Value>,
-    pub example: Option<Value>,
-    pub responses: Responses,
-    pub security: Vec<SecurityRequirement>,
-    pub example_name: String,
-    pub project_slug: String,
-    pub output_dir: PathBuf,
-    pub base_path: String,
-    pub sse: bool,
-}
-
-#[derive(Debug, Clone)]
-pub struct ParameterMeta {
-    pub name: String,
-    pub location: ParameterLocation,
-    pub required: bool,
-    pub schema: Option<Value>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct ResponseSpec {
-    pub schema: Option<Value>,
-    pub example: Option<Value>,
-}
-
-pub type Responses = std::collections::HashMap<u16, std::collections::HashMap<String, ResponseSpec>>;
-
-fn strip_unknown_verbs(val: &mut serde_json::Value) {
-    const METHODS: [&str; 8] = [
-        "get", "post", "put", "delete", "patch", "options", "head", "trace",
-    ];
-
-    if let Some(paths) = val.get_mut("paths") {
-        if let serde_json::Value::Object(paths_map) = paths {
-            for item in paths_map.values_mut() {
-                if let serde_json::Value::Object(obj) = item {
-                    let keys: Vec<String> = obj
-                        .keys()
-                        .cloned()
-                        .collect();
-                    for k in keys {
-                        let lk = k.to_ascii_lowercase();
-                        let keep = match lk.as_str() {
-                            "summary" | "description" | "servers" | "parameters" | "$ref" => true,
-                            m if METHODS.contains(&m) => true,
-                            _ => k.starts_with("x-"),
-                        };
-                        if !keep {
-                            obj.remove(&k);
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-pub fn load_spec(file_path: &str) -> anyhow::Result<(Vec<RouteMeta>, String)> {
-    let content = std::fs::read_to_string(file_path)?;
-    let mut value: serde_json::Value = if file_path.ends_with(".yaml") || file_path.ends_with(".yml") {
-        serde_yaml::from_str(&content)?
-    } else {
-        serde_json::from_str(&content)?
-    };
-
-    strip_unknown_verbs(&mut value);
-    let spec: OpenApiV3Spec = serde_json::from_value(value)?;
-
-    let title = spec
-        .info
-        .title
-        .to_lowercase()
-        .replace(|c: char| !c.is_ascii_alphanumeric(), "_")
-        .trim_matches('_')
-        .to_string();
-
-    let routes = build_routes(&spec, &title)?;
-    Ok((routes, title))
-}
-
-pub fn load_spec_full(
-    file_path: &str,
-) -> anyhow::Result<(Vec<RouteMeta>, std::collections::HashMap<String, SecurityScheme>, String)> {
-    let content = std::fs::read_to_string(file_path)?;
-    let spec: OpenApiV3Spec = if file_path.ends_with(".yaml") || file_path.ends_with(".yml") {
-        serde_yaml::from_str(&content)?
-    } else {
-        serde_json::from_str(&content)?
-    };
-
-    let title = spec
-        .info
-        .title
-        .to_lowercase()
-        .replace(|c: char| !c.is_ascii_alphanumeric(), "_")
-        .trim_matches('_')
-        .to_string();
-
-    let routes = build_routes(&spec, &title)?;
-    let schemes = extract_security_schemes(&spec);
-    Ok((routes, schemes, title))
-}
-
-/// Build route metadata from an already parsed [`OpenApiV3Spec`].
-pub fn load_spec_from_spec(spec: OpenApiV3Spec) -> anyhow::Result<Vec<RouteMeta>> {
-    let slug = spec
-        .info
-        .title
-        .to_lowercase()
-        .replace(|c: char| !c.is_ascii_alphanumeric(), "_")
-        .trim_matches('_')
-        .to_string();
-
-    let routes = build_routes(&spec, &slug)?;
-    Ok(routes)
-}
-
-pub fn load_spec_from_spec_full(
-    spec: OpenApiV3Spec,
-) -> anyhow::Result<(Vec<RouteMeta>, std::collections::HashMap<String, SecurityScheme>)> {
-    let slug = spec
-        .info
-        .title
-        .to_lowercase()
-        .replace(|c: char| !c.is_ascii_alphanumeric(), "_")
-        .trim_matches('_')
-        .to_string();
-    let routes = build_routes(&spec, &slug)?;
-    let schemes = extract_security_schemes(&spec);
-    Ok((routes, schemes))
-}
+use super::SecurityScheme;
 
 pub fn resolve_schema_ref<'a>(
     spec: &'a OpenApiV3Spec,
@@ -194,6 +23,7 @@ pub fn resolve_schema_ref<'a>(
         None
     }
 }
+
 fn resolve_handler_name(
     operation: &oas3::spec::Operation,
     location: &str,
@@ -227,12 +57,9 @@ pub fn extract_request_schema(
 ) -> Option<Value> {
     operation.request_body.as_ref().and_then(|r| match r {
         ObjectOrReference::Object(req_body) => {
-            req_body.content.get("application/json").and_then(|media| {
-                match media.schema.as_ref()? {
-                    ObjectOrReference::Object(schema_obj) => serde_json::to_value(schema_obj).ok(),
-                    ObjectOrReference::Ref { ref_path } => resolve_schema_ref(spec, ref_path)
-                        .and_then(|s| serde_json::to_value(s).ok()),
-                }
+            req_body.content.get("application/json").and_then(|media| match media.schema.as_ref()? {
+                ObjectOrReference::Object(schema_obj) => serde_json::to_value(schema_obj).ok(),
+                ObjectOrReference::Ref { ref_path } => resolve_schema_ref(spec, ref_path).and_then(|s| serde_json::to_value(s).ok()),
             })
         }
         _ => None,
@@ -337,7 +164,7 @@ pub fn extract_parameters(
     for p in params {
         let param = match p {
             ObjectOrReference::Object(obj) => Some(obj),
-            ObjectOrReference::Ref { ref_path } => resolve_parameter_ref(spec, &ref_path),
+            ObjectOrReference::Ref { ref_path } => resolve_parameter_ref(spec, ref_path),
         };
 
         if let Some(param) = param {
@@ -425,7 +252,7 @@ pub fn build_routes(spec: &OpenApiV3Spec, slug: &str) -> anyhow::Result<Vec<Rout
                     security,
                     example_name: format!("{}_example", slug),
                     project_slug: slug.to_string(),
-                    output_dir: PathBuf::from("examples").join(slug).join("src"),
+                    output_dir: std::path::PathBuf::from("examples").join(slug).join("src"),
                     base_path: base_path.clone(),
                     sse: extract_sse_flag(operation),
                 });

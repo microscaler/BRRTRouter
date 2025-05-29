@@ -4,11 +4,11 @@ use std::path::{Path, PathBuf};
 
 use crate::spec::load_spec;
 
-use super::schema::{
+use crate::generator::schema::{
     collect_component_schemas, extract_fields, is_named_type, parameter_to_field,
     process_schema_type, to_camel_case, unique_handler_name,
 };
-use super::templates::{
+use crate::generator::templates::{
     write_cargo_toml, write_controller, write_handler, write_main_rs, write_mod_rs,
     write_registry_rs, write_types_rs, RegistryEntry,
 };
@@ -116,14 +116,4 @@ pub fn generate_project_from_spec(spec_path: &Path, force: bool) -> anyhow::Resu
     write_mod_rs(&controller_dir, &modules_controllers, "controllers")?;
 
     Ok(base_dir)
-}
-
-pub fn format_project(dir: &Path) -> anyhow::Result<()> {
-    let mut cmd = std::process::Command::new("cargo");
-    cmd.arg("fmt").current_dir(dir);
-    let status = cmd.status()?;
-    if !status.success() {
-        anyhow::bail!("cargo fmt failed");
-    }
-    Ok(())
 }
