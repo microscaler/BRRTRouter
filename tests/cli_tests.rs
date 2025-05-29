@@ -1,6 +1,7 @@
 use std::fs;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::os::unix::fs::PermissionsExt;
 
 fn temp_dir() -> std::path::PathBuf {
     let nanos = SystemTime::now()
@@ -18,9 +19,18 @@ fn test_cli_generate_creates_project() {
     let spec_src = std::path::Path::new("examples/openapi.yaml");
     let spec_dest = dir.join("openapi.yaml");
     fs::copy(spec_src, &spec_dest).unwrap();
+    // stub cargo binary
+    let stub = dir.join("cargo");
+    fs::write(&stub, "#!/bin/sh\nexit 0\n").unwrap();
+    let mut perms = fs::metadata(&stub).unwrap().permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&stub, perms).unwrap();
+
     let exe = env!("CARGO_BIN_EXE_brrtrouter-gen");
+    let old_path = std::env::var("PATH").unwrap();
     let status = Command::new(exe)
         .current_dir(&dir)
+        .env("PATH", format!("{}:{}", dir.display(), old_path))
         .arg("generate")
         .arg("--spec")
         .arg(spec_dest.to_str().unwrap())
