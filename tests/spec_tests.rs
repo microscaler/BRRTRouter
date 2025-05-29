@@ -105,6 +105,7 @@ fn test_load_spec_yaml_and_json() {
     assert!(route_y.request_schema.is_some());
     assert!(route_y.response_schema.is_some());
     assert!(route_y.example.is_some());
+    assert!(route_y.responses.contains_key(&200));
     assert_eq!(route_y.example, route_j.example);
     assert_eq!(route_y.example_name, "test_api_example");
 }

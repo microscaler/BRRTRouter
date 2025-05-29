@@ -57,19 +57,37 @@ fn send_request(addr: &SocketAddr, req: &str) -> String {
     String::from_utf8_lossy(&buf).to_string()
 }
 
-fn parse_response(resp: &str) -> (u16, Value) {
+fn parse_response_parts(resp: &str) -> (u16, String, String) {
     let mut parts = resp.split("\r\n\r\n");
     let headers = parts.next().unwrap_or("");
-    let body = parts.next().unwrap_or("");
-    let status_line = headers.lines().next().unwrap_or("");
-    let status = status_line
-        .split_whitespace()
-        .nth(1)
-        .unwrap_or("0")
-        .parse()
-        .unwrap();
-    let json: Value = serde_json::from_str(body).unwrap_or_default();
-    (status, json)
+    let body = parts.next().unwrap_or("").to_string();
+    let mut status = 0;
+    let mut content_type = String::new();
+    for line in headers.lines() {
+        if line.starts_with("HTTP/1.1") {
+            status = line
+                .split_whitespace()
+                .nth(1)
+                .unwrap_or("0")
+                .parse()
+                .unwrap();
+        } else if let Some((name, val)) = line.split_once(':') {
+            if name.eq_ignore_ascii_case("content-type") {
+                content_type = val.trim().to_string();
+            }
+        }
+    }
+    (status, content_type, body)
+}
+
+fn parse_response(resp: &str) -> (u16, Value) {
+    let (status, content_type, body) = parse_response_parts(resp);
+    if content_type.starts_with("application/json") {
+        let json: Value = serde_json::from_str(&body).unwrap_or_default();
+        (status, json)
+    } else {
+        (status, Value::String(body))
+    }
 }
 
 #[test]
@@ -104,6 +122,7 @@ fn test_panic_recovery() {
         request_schema: None,
         response_schema: None,
         example: None,
+        responses: std::collections::HashMap::new(),
         example_name: String::new(),
         project_slug: String::new(),
         output_dir: PathBuf::new(),
@@ -151,6 +170,7 @@ fn test_headers_and_cookies() {
         request_schema: None,
         response_schema: None,
         example: None,
+        responses: std::collections::HashMap::new(),
         example_name: String::new(),
         project_slug: String::new(),
         output_dir: PathBuf::new(),
@@ -186,4 +206,99 @@ fn test_headers_and_cookies() {
     assert_eq!(body["headers"]["x-other"], "foo");
     assert_eq!(body["cookies"]["session"], "abc123");
     assert_eq!(body["cookies"]["theme"], "dark");
+}
+
+#[test]
+fn test_status_201_json() {
+    fn create_handler(req: HandlerRequest) {
+        let response = HandlerResponse {
+            status: 201,
+            body: json!({"created": true}),
+        };
+        let _ = req.reply_tx.send(response);
+    }
+
+    let route = RouteMeta {
+        method: Method::POST,
+        path_pattern: "/created".to_string(),
+        handler_name: "create".to_string(),
+        parameters: Vec::new(),
+        request_schema: None,
+        response_schema: None,
+        example: None,
+        responses: std::collections::HashMap::new(),
+        example_name: String::new(),
+        project_slug: String::new(),
+        output_dir: PathBuf::new(),
+        base_path: String::new(),
+    };
+    let router = Arc::new(RwLock::new(Router::new(vec![route])));
+    let mut dispatcher = Dispatcher::new();
+    unsafe {
+        dispatcher.register_handler("create", create_handler);
+    }
+    let service = AppService {
+        router,
+        dispatcher: Arc::new(RwLock::new(dispatcher)),
+    };
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    drop(listener);
+    let handle = HttpServer(service).start(addr).unwrap();
+
+    let resp = send_request(&addr, "POST /created HTTP/1.1\r\nHost: localhost\r\n\r\n");
+    unsafe { handle.coroutine().cancel() };
+    let (status, body) = parse_response(&resp);
+    let (_, ct, _) = parse_response_parts(&resp);
+    assert_eq!(status, 201);
+    assert_eq!(ct, "application/json");
+    assert_eq!(body["created"], true);
+}
+
+#[test]
+fn test_text_plain_error() {
+    fn text_handler(req: HandlerRequest) {
+        let response = HandlerResponse {
+            status: 400,
+            body: json!("bad request"),
+        };
+        let _ = req.reply_tx.send(response);
+    }
+
+    let route = RouteMeta {
+        method: Method::GET,
+        path_pattern: "/text".to_string(),
+        handler_name: "text".to_string(),
+        parameters: Vec::new(),
+        request_schema: None,
+        response_schema: None,
+        example: None,
+        responses: std::collections::HashMap::new(),
+        example_name: String::new(),
+        project_slug: String::new(),
+        output_dir: PathBuf::new(),
+        base_path: String::new(),
+    };
+    let router = Arc::new(RwLock::new(Router::new(vec![route])));
+    let mut dispatcher = Dispatcher::new();
+    unsafe {
+        dispatcher.register_handler("text", text_handler);
+    }
+    let service = AppService {
+        router,
+        dispatcher: Arc::new(RwLock::new(dispatcher)),
+    };
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    drop(listener);
+    let handle = HttpServer(service).start(addr).unwrap();
+
+    let resp = send_request(&addr, "GET /text HTTP/1.1\r\nHost: localhost\r\n\r\n");
+    unsafe { handle.coroutine().cancel() };
+    let (status, body) = parse_response(&resp);
+    let (_, ct, raw_body) = parse_response_parts(&resp);
+    assert_eq!(status, 400);
+    assert_eq!(ct, "text/plain");
+    assert_eq!(raw_body, "bad request");
+    assert_eq!(body, Value::String("bad request".to_string()));
 }
