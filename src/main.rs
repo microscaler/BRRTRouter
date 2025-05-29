@@ -11,7 +11,7 @@ fn main() -> io::Result<()> {
     let router = Router::new(routes.clone());
 
     // Create dispatcher and register handlers
-    let dispatcher = Dispatcher::new();
+    let mut dispatcher = Dispatcher::new();
     // unsafe {
     //     registry::register_all(&mut dispatcher);
     // }
@@ -27,8 +27,12 @@ fn main() -> io::Result<()> {
     } else {
         "0.0.0.0:8080"
     };
-    let server = HttpServer(service).start(addr).map_err(io::Error::other)?;
+    println!("🚀 {{ name }} example server listening on {addr}");
+    let server = HttpServer(service)
+        .start(addr)
+        .map_err(io::Error::other)?;
     println!("Server started successfully on {addr}");
+
     server
         .join()
         .map_err(|e| io::Error::other(format!("Server encountered an error: {:?}", e)))?;
