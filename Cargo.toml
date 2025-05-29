@@ -30,10 +30,15 @@ notify = "6"
 [dev-dependencies]
 pretty_assertions = "1.4"
 pet_store = { path = "./examples/pet_store" }
+criterion = "0.5"
 
 [[bin]]
 name = "brrtrouter-gen"
 path = "src/bin/brrtrouter_gen.rs"
+
+[[bench]]
+name = "throughput"
+harness = false
 
 [workspace]
 members = [
