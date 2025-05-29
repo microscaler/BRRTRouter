@@ -8,6 +8,6 @@ pub mod router;
 pub mod server;
 pub mod spec;
 pub mod typed;
-mod validator;
+pub mod validator;
 
 pub use spec::{load_spec, load_spec_from_spec, ParameterLocation, ParameterMeta, RouteMeta};
