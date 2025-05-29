@@ -16,6 +16,7 @@ pub struct RouteMatch {
 #[derive(Clone)]
 pub struct Router {
     routes: Vec<(Method, Regex, RouteMeta, Vec<String>)>,
+    base_path: String,
 }
 
 impl Router {
@@ -44,7 +45,7 @@ impl Router {
         //     .collect();
 
         if routes.is_empty() {
-            return Self { routes: Vec::new() };
+            return Self { routes: Vec::new(), base_path: String::new() };
         }
         // Ensure routes are sorted by path length (longest first) to optimize matching
         // This is useful for cases where paths may overlap, e.g. "/pets" and "/pets/{id}"
@@ -53,15 +54,17 @@ impl Router {
         routes.reverse();
         // Convert each route's path pattern to a regex and collect param names
         // Each route is represented as (method, compiled regex, RouteMeta, param names)
+        let base_path = routes.first().map(|r| r.base_path.clone()).unwrap_or_default();
         let routes = routes
             .into_iter()
             .map(|route| {
-                let (regex, param_names) = Self::path_to_regex(&route.path_pattern);
+                let full_path = format!("{}{}", base_path, route.path_pattern);
+                let (regex, param_names) = Self::path_to_regex(&full_path);
                 (route.method.clone(), regex, route, param_names)
             })
             .collect();
 
-        Self { routes }
+        Self { routes, base_path }
     }
 
     pub fn route(&self, method: Method, path: &str) -> Option<RouteMatch> {

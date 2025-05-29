@@ -61,6 +61,64 @@ paths:
 "#
 }
 
+fn example_spec_with_base() -> &'static str {
+    r#"
+openapi: 3.1.0
+info:
+  title: Verb Zoo
+  version: "1.0.0"
+servers:
+  - url: /api
+paths:
+  "/":
+    get:
+      operationId: root_handler
+      responses:
+        "200": { description: OK }
+  /zoo/animals:
+    get:
+      operationId: get_animals
+      responses:
+        "200": { description: OK }
+    post:
+      operationId: create_animal
+      responses:
+        "200": { description: OK }
+
+  /zoo/animals/{id}:
+    get:
+      operationId: get_animal
+      responses:
+        "200": { description: OK }
+    put:
+      operationId: update_animal
+      responses:
+        "200": { description: OK }
+    patch:
+      operationId: patch_animal
+      responses:
+        "200": { description: OK }
+    delete:
+      operationId: delete_animal
+      responses:
+        "200": { description: OK }
+
+  /zoo/health:
+    head:
+      operationId: health_check
+      responses:
+        "200": { description: OK }
+    options:
+      operationId: supported_ops
+      responses:
+        "200": { description: OK }
+    trace:
+      operationId: trace_route
+      responses:
+        "200": { description: OK }
+"#
+}
+
 fn parse_spec(yaml: &str) -> Vec<RouteMeta> {
     let spec = serde_yaml::from_str(yaml).expect("failed to parse YAML spec");
     brrtrouter::spec::load_spec_from_spec(spec).expect("failed to load spec")
@@ -171,4 +229,13 @@ fn test_router_root_path() {
     let routes = parse_spec(example_spec());
     let router = Router::new(routes);
     assert_route_match(&router, Method::GET, "/", "root_handler");
+}
+
+#[test]
+fn test_router_base_path_routing() {
+    let routes = parse_spec(example_spec_with_base());
+    let router = Router::new(routes);
+    assert_route_match(&router, Method::GET, "/api/zoo/animals", "get_animals");
+    assert_route_match(&router, Method::GET, "/api", "root_handler");
+    assert_route_match(&router, Method::GET, "/zoo/animals", "<none>");
 }
