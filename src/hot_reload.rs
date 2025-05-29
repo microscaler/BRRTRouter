@@ -22,12 +22,8 @@ where
     let mut watcher = RecommendedWatcher::new(
         move |res: Result<notify::Event, notify::Error>| match res {
             Ok(event) => {
-                if matches!(event.kind, EventKind::Modify(_)
-                    | EventKind::Create(_))
-                {
-                    if let Ok((routes, _)) =
-                        spec::load_spec(watch_path.to_str().unwrap())
-                    {
+                if matches!(event.kind, EventKind::Modify(_) | EventKind::Create(_)) {
+                    if let Ok((routes, _)) = spec::load_spec(watch_path.to_str().unwrap()) {
                         let new_router = Router::new(routes.clone());
                         if let Ok(mut r) = router.write() {
                             *r = new_router;

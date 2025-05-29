@@ -1,34 +1,26 @@
-use brrtrouter::{dispatcher::Dispatcher, router::Router, server::AppService, hot_reload};
+use brrtrouter::{dispatcher::Dispatcher, router::Router, server::AppService};
 use may_minihttp::HttpServer;
 use pet_store::registry;
 use std::io;
-use std::sync::{Arc, RwLock};
 
 fn main() -> io::Result<()> {
+    // Load OpenAPI spec and create router
     let (routes, _slug) =
         brrtrouter::spec::load_spec("./openapi.yaml").expect("failed to load OpenAPI spec");
+    let router = Router::new(routes.clone());
 
-    let router = Arc::new(RwLock::new(Router::new(routes.clone())));
-    let dispatcher = Arc::new(RwLock::new(Dispatcher::new()));
+    // Create dispatcher and register handlers
+    let mut dispatcher = Dispatcher::new();
     unsafe {
-        registry::register_from_spec(&mut dispatcher.write().unwrap(), &routes);
+        registry::register_from_spec(&mut dispatcher, &routes);
     }
-    // Watch the spec file and reload routes on changes
-    let _watcher = hot_reload::watch_spec(
-        "./openapi.yaml",
-        Arc::clone(&router),
-        {
-            let dispatcher = Arc::clone(&dispatcher);
-            move |routes| {
-                let mut d = dispatcher.write().unwrap();
-                d.handlers.clear();
-                unsafe { registry::register_from_spec(&mut d, &routes) };
-            }
-        },
-    )
-    .expect("failed to watch spec");
 
-    let service = AppService { router, dispatcher }; 
+    // Start the HTTP server on port 8080, binding to 127.0.0.1 if BRRTR_LOCAL is
+    // set for local testing.
+    // This returns a coroutine JoinHandle; we join on it to keep the server running
+    let router = std::sync::Arc::new(std::sync::RwLock::new(Router::new(routes)));
+    let dispatcher = std::sync::Arc::new(std::sync::RwLock::new(Dispatcher::new()));
+    let service = AppService { router, dispatcher };
     let addr = if std::env::var("BRRTR_LOCAL").is_ok() {
         "127.0.0.1:8080"
     } else {
@@ -40,6 +32,6 @@ fn main() -> io::Result<()> {
 
     server
         .join()
-        .map_err(|e| io::Error::other(format!("Server failed: {:?}", e)))?;
+        .map_err(|e| io::Error::other(format!("Server encountered an error: {:?}", e)))?;
     Ok(())
 }
