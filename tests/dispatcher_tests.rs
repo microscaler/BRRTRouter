@@ -339,6 +339,12 @@ fn test_dispatch_all_registry_handlers() {
                 None,
                 json!({"body": "Welcome to the blog", "id": "post1", "title": "Intro"}),
             ),
+            "stream_events" => (
+                Method::GET,
+                "/events",
+                None,
+                json!("")
+            ),
             other => panic!("unexpected handler {}", other),
         };
 

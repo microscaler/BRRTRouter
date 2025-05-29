@@ -149,11 +149,11 @@ impl HttpService for AppService {
                     return Ok(());
                 }
             }
+            let is_sse = route_match.route.sse;
             let handler_response = {
                 let dispatcher = self.dispatcher.read().unwrap();
                 dispatcher.dispatch(route_match, body, headers, cookies)
             };
-
             match handler_response {
                 Some(HandlerResponse { status, body }) => {
                     let reason = match status {
@@ -167,7 +167,11 @@ impl HttpService for AppService {
                     res.status_code(status as usize, reason);
                     match body {
                         serde_json::Value::String(s) => {
-                            res.header("Content-Type: text/plain");
+                            if is_sse {
+                                res.header("Content-Type: text/event-stream");
+                            } else {
+                                res.header("Content-Type: text/plain");
+                            }
                             res.body_vec(s.into_bytes());
                         }
                         other => {
