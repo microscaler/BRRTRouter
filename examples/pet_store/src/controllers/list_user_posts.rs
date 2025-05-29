@@ -5,7 +5,9 @@ use crate::handlers::types::Post;
 
 pub struct ListUserPostsController;
 
-impl Handler<Request, Response> for ListUserPostsController {
+impl Handler for ListUserPostsController {
+    type Request = Request;
+    type Response = Response;
     fn handle(&self, _req: TypedHandlerRequest<Request>) -> Response {
         // Example response:
         // [

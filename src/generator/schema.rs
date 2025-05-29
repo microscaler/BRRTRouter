@@ -31,7 +31,14 @@ pub fn to_camel_case(s: &str) -> String {
 
 pub fn is_named_type(ty: &str) -> bool {
     let primitives = [
-        "String", "i32", "i64", "f32", "f64", "bool", "Value", "serde_json::Value",
+        "String",
+        "i32",
+        "i64",
+        "f32",
+        "f64",
+        "bool",
+        "Value",
+        "serde_json::Value",
     ];
     if let Some(inner) = ty.strip_prefix("Vec<").and_then(|s| s.strip_suffix(">")) {
         return !primitives.contains(&inner)
@@ -50,7 +57,10 @@ pub(crate) fn unique_handler_name(seen: &mut HashSet<String>, name: &str) -> Str
     loop {
         let candidate = format!("{}_{}", name, counter);
         if !seen.contains(&candidate) {
-            println!("⚠️  Duplicate handler name '{}' → using '{}'", name, candidate);
+            println!(
+                "⚠️  Duplicate handler name '{}' → using '{}'",
+                name, candidate
+            );
             seen.insert(candidate.clone());
             return candidate;
         }
@@ -131,7 +141,11 @@ pub fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
     }
 }
 
-pub fn process_schema_type(name: &str, schema: &Value, types: &mut HashMap<String, TypeDefinition>) {
+pub fn process_schema_type(
+    name: &str,
+    schema: &Value,
+    types: &mut HashMap<String, TypeDefinition>,
+) {
     let name = to_camel_case(name);
     if types.contains_key(&name) {
         return;
@@ -161,7 +175,12 @@ pub fn extract_fields(schema: &Value) -> Vec<FieldDef> {
     let required = schema
         .get("required")
         .and_then(|v| v.as_array())
-        .map(|a| a.iter().filter_map(|v| v.as_str()).map(String::from).collect::<Vec<_>>())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str())
+                .map(String::from)
+                .collect::<Vec<_>>()
+        })
         .unwrap_or_default();
     if let Some(props) = schema.get("properties").and_then(|p| p.as_object()) {
         for (name, prop) in props {
@@ -257,7 +276,9 @@ pub fn parameter_to_field(param: &ParameterMeta) -> FieldDef {
     }
 }
 
-pub fn collect_component_schemas(spec_path: &std::path::Path) -> anyhow::Result<HashMap<String, TypeDefinition>> {
+pub fn collect_component_schemas(
+    spec_path: &std::path::Path,
+) -> anyhow::Result<HashMap<String, TypeDefinition>> {
     let spec: oas3::OpenApiV3Spec = if spec_path.extension().map(|s| s == "yaml").unwrap_or(false) {
         serde_yaml::from_str(&std::fs::read_to_string(spec_path)?)?
     } else {
@@ -282,4 +303,3 @@ pub fn collect_component_schemas(spec_path: &std::path::Path) -> anyhow::Result<
     }
     Ok(types)
 }
-

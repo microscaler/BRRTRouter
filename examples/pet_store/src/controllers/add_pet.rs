@@ -4,7 +4,9 @@ use crate::handlers::add_pet::{Request, Response};
 
 pub struct AddPetController;
 
-impl Handler<Request, Response> for AddPetController {
+impl Handler for AddPetController {
+    type Request = Request;
+    type Response = Response;
     fn handle(&self, _req: TypedHandlerRequest<Request>) -> Response {
         // Example response:
         // {

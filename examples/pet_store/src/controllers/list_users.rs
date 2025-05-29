@@ -5,7 +5,9 @@ use crate::handlers::types::User;
 
 pub struct ListUsersController;
 
-impl Handler<Request, Response> for ListUsersController {
+impl Handler for ListUsersController {
+    type Request = Request;
+    type Response = Response;
     fn handle(&self, _req: TypedHandlerRequest<Request>) -> Response {
         // Example response:
         // {

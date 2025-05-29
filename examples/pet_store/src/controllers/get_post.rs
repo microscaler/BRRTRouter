@@ -4,7 +4,9 @@ use crate::handlers::get_post::{Request, Response};
 
 pub struct GetPostController;
 
-impl Handler<Request, Response> for GetPostController {
+impl Handler for GetPostController {
+    type Request = Request;
+    type Response = Response;
     fn handle(&self, _req: TypedHandlerRequest<Request>) -> Response {
         // Example response:
         // {

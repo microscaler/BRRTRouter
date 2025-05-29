@@ -7,12 +7,12 @@ use brrtrouter::{
 use http::Method;
 use may_minihttp::HttpServer;
 use pet_store::registry;
-use serde_json::{Value, json};
-use std::sync::{Arc, RwLock};
+use serde_json::{json, Value};
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
-use std::time::Duration;
 use std::path::PathBuf;
+use std::sync::{Arc, RwLock};
+use std::time::Duration;
 
 fn start_petstore_service() -> (may::coroutine::JoinHandle<()>, SocketAddr) {
     let (routes, _slug) = brrtrouter::load_spec("examples/openapi.yaml").unwrap();
@@ -21,7 +21,10 @@ fn start_petstore_service() -> (may::coroutine::JoinHandle<()>, SocketAddr) {
     unsafe {
         registry::register_from_spec(&mut dispatcher, &routes);
     }
-    let service = AppService { router, dispatcher: Arc::new(RwLock::new(dispatcher)) };
+    let service = AppService {
+        router,
+        dispatcher: Arc::new(RwLock::new(dispatcher)),
+    };
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     drop(listener);
@@ -33,7 +36,9 @@ fn start_petstore_service() -> (may::coroutine::JoinHandle<()>, SocketAddr) {
 fn send_request(addr: &SocketAddr, req: &str) -> String {
     let mut stream = TcpStream::connect(addr).unwrap();
     stream.write_all(req.as_bytes()).unwrap();
-    stream.set_read_timeout(Some(Duration::from_millis(100))).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_millis(100)))
+        .unwrap();
     let mut buf = Vec::new();
     loop {
         let mut tmp = [0u8; 1024];
@@ -108,7 +113,10 @@ fn test_panic_recovery() {
     unsafe {
         dispatcher.register_handler("panic", panic_handler);
     }
-    let service = AppService { router, dispatcher: Arc::new(RwLock::new(dispatcher)) };
+    let service = AppService {
+        router,
+        dispatcher: Arc::new(RwLock::new(dispatcher)),
+    };
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     drop(listener);
@@ -151,7 +159,10 @@ fn test_headers_and_cookies() {
     unsafe {
         dispatcher.register_handler("header", header_handler);
     }
-    let service = AppService { router, dispatcher: Arc::new(RwLock::new(dispatcher)) };
+    let service = AppService {
+        router,
+        dispatcher: Arc::new(RwLock::new(dispatcher)),
+    };
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     drop(listener);

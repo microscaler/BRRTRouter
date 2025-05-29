@@ -4,7 +4,9 @@ use crate::handlers::admin_settings::{Request, Response};
 
 pub struct AdminSettingsController;
 
-impl Handler<Request, Response> for AdminSettingsController {
+impl Handler for AdminSettingsController {
+    type Request = Request;
+    type Response = Response;
     fn handle(&self, _req: TypedHandlerRequest<Request>) -> Response {
         // Example response:
         // {

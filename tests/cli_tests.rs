@@ -1,7 +1,7 @@
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
-use std::os::unix::fs::PermissionsExt;
 
 fn temp_dir() -> std::path::PathBuf {
     let nanos = SystemTime::now()

@@ -21,9 +21,7 @@ pub unsafe fn register_from_spec(dispatcher: &mut Dispatcher, routes: &[RouteMet
         match route.handler_name.as_str() {
             {% for entry in entries -%}
             "{{ entry.name }}" => {
-                let tx = spawn_typed::<crate::handlers::{{ entry.name }}::Request,
-                    crate::handlers::{{ entry.name }}::Response,
-                    crate::controllers::{{ entry.name }}::{{ entry.controller_struct }}>(crate::controllers::{{ entry.name }}::{{ entry.controller_struct }});
+                let tx = spawn_typed(crate::controllers::{{ entry.name }}::{{ entry.controller_struct }});
                 dispatcher.add_route(route.clone(), tx);
             }
             {% endfor %}

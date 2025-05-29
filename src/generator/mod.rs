@@ -1,9 +1,9 @@
 mod project;
-mod templates;
 mod schema;
+mod templates;
 #[cfg(test)]
 mod tests;
 
 pub use project::*;
-pub use templates::*;
 pub use schema::*;
+pub use templates::*;

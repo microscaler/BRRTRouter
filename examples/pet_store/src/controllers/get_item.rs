@@ -4,7 +4,9 @@ use crate::handlers::get_item::{Request, Response};
 
 pub struct GetItemController;
 
-impl Handler<Request, Response> for GetItemController {
+impl Handler for GetItemController {
+    type Request = Request;
+    type Response = Response;
     fn handle(&self, _req: TypedHandlerRequest<Request>) -> Response {
         // Example response:
         // {

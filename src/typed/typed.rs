@@ -12,17 +12,11 @@ use std::convert::TryFrom;
 /// Trait implemented by typed coroutine handlers.
 ///
 /// A handler receives a [`TypedHandlerRequest`] and returns a typed response.
-pub trait Handler<TReq, TRes>: Send + 'static {
-    fn handle(&self, req: TypedHandlerRequest<TReq>) -> TRes;
-}
+pub trait Handler: Send + 'static {
+    type Request: TryFrom<HandlerRequest, Error = anyhow::Error> + Send + 'static;
+    type Response: Serialize + Send + 'static;
 
-impl<TReq, TRes, F> Handler<TReq, TRes> for F
-where
-    F: Fn(TypedHandlerRequest<TReq>) -> TRes + Send + Sync + 'static,
-{
-    fn handle(&self, req: TypedHandlerRequest<TReq>) -> TRes {
-        (self)(req)
-    }
+    fn handle(&self, req: TypedHandlerRequest<Self::Request>) -> Self::Response;
 }
 
 pub trait TypedHandlerFor<T>: Sized {
@@ -30,11 +24,9 @@ pub trait TypedHandlerFor<T>: Sized {
 }
 
 /// Spawn a typed handler coroutine and return a sender to communicate with it.
-pub unsafe fn spawn_typed<TReq, TRes, H>(handler: H) -> mpsc::Sender<HandlerRequest>
+pub unsafe fn spawn_typed<H>(handler: H) -> mpsc::Sender<HandlerRequest>
 where
-    TReq: TryFrom<HandlerRequest, Error = anyhow::Error> + Send + 'static,
-    TRes: Serialize + Send + 'static,
-    H: Handler<TReq, TRes> + Send + 'static,
+    H: Handler + Send + 'static,
 {
     let (tx, rx) = mpsc::channel::<HandlerRequest>();
 
@@ -43,7 +35,7 @@ where
         for req in rx.iter() {
             let reply_tx = req.reply_tx.clone();
 
-            let typed_req = match TypedHandlerRequest::<TReq>::from_handler(req) {
+            let typed_req = match TypedHandlerRequest::<H::Request>::from_handler(req) {
                 Ok(v) => v,
                 Err(err) => {
                     let _ = reply_tx.send(HandlerResponse {
@@ -61,9 +53,9 @@ where
 
             let _ = reply_tx.send(HandlerResponse {
                 status: 200,
-                body: serde_json::to_value(result).unwrap_or_else(|_| {
-                    serde_json::json!({"error": "Failed to serialize response"})
-                }),
+                body: serde_json::to_value(result).unwrap_or_else(
+                    |_| serde_json::json!({"error": "Failed to serialize response"}),
+                ),
             });
         }
     });
@@ -100,15 +92,14 @@ where
 }
 
 impl Dispatcher {
-    /// Register a typed handler that deserializes the body into `TReq` and responds with `TRes`.
-    pub unsafe fn register_typed<TReq, TRes, H>(&mut self, name: &str, handler: H)
+    /// Register a typed handler that converts [`HandlerRequest`] into the handler's
+    /// associated request type using `TryFrom`.
+    pub unsafe fn register_typed<H>(&mut self, name: &str, handler: H)
     where
-        TReq: TryFrom<HandlerRequest, Error = anyhow::Error> + Send + 'static,
-        TRes: Serialize + Send + 'static,
-        H: Handler<TReq, TRes> + Send + 'static,
+        H: Handler + Send + 'static,
     {
         let name = name.to_string();
-        let tx = spawn_typed::<TReq, TRes, H>(handler);
+        let tx = spawn_typed(handler);
         self.handlers.insert(name, tx);
     }
 }

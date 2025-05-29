@@ -1,4 +1,7 @@
-use crate::{router::Router, spec::{self, RouteMeta}};
+use crate::{
+    router::Router,
+    spec::{self, RouteMeta},
+};
 use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
@@ -9,7 +12,7 @@ use std::sync::{Arc, RwLock};
 /// rebuild dispatcher mappings or perform additional work.
 pub fn watch_spec<P, F>(
     spec_path: P,
-    router: Arc<RwLock<Router>>, 
+    router: Arc<RwLock<Router>>,
     mut on_reload: F,
 ) -> notify::Result<RecommendedWatcher>
 where
@@ -40,4 +43,3 @@ where
     watcher.watch(&path, RecursiveMode::NonRecursive)?;
     Ok(watcher)
 }
-

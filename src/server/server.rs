@@ -1,11 +1,11 @@
 use crate::dispatcher::{Dispatcher, HandlerResponse};
 use crate::router::Router;
-use std::sync::{Arc, RwLock};
 use may_minihttp::{HttpService, Request, Response};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::io;
 use std::io::Read;
+use std::sync::{Arc, RwLock};
 
 #[derive(Serialize, Default)]
 #[allow(dead_code)]

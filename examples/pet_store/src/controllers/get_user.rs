@@ -4,7 +4,9 @@ use crate::handlers::get_user::{Request, Response};
 
 pub struct GetUserController;
 
-impl Handler<Request, Response> for GetUserController {
+impl Handler for GetUserController {
+    type Request = Request;
+    type Response = Response;
     fn handle(&self, _req: TypedHandlerRequest<Request>) -> Response {
         // Example response:
         // {
