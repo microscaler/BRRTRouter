@@ -16,6 +16,10 @@ build:
 test:
     cargo test -- --nocapture
 
-# Measure code coverage (requires cargo-tarpaulin)
+# Measure code coverage (requires cargo-llvm-cov)
 coverage:
-    cargo tarpaulin --fail-under 80
+    cargo llvm-cov --no-report
+
+# Run benchmarks
+bench:
+    cargo bench

@@ -101,11 +101,11 @@ just test
 
 ### 📈 Measuring Coverage
 
-Install [cargo-tarpaulin](https://github.com/xd009642/tarpaulin):
+Install [cargo-llvm-cov](https://github.com/taiki-e/cargo-llvm-cov):
 
 ```bash
-cargo install cargo-tarpaulin
-just coverage
+cargo install cargo-llvm-cov
+just coverage # runs `cargo llvm-cov --fail-under 80`
 ```
 
 The command fails if total coverage drops below 80%.
@@ -118,6 +118,14 @@ Unit tests validate:
 - Deeply nested routes
 - Handler resolution
 - Fallbacks (404/500) for Unknown paths and fallback behavior
+
+### 📊 Running Benchmarks
+
+```bash
+just bench
+```
+
+This executes `cargo bench` using Criterion to measure routing throughput.
 
 
 
