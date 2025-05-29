@@ -95,9 +95,11 @@ fn test_extract_request_and_response() {
     let req = extract_request_schema(&spec, bar_op).unwrap();
     assert_eq!(req["properties"]["count"]["type"], "integer");
 
-    let (resp, example) = extract_response_schema_and_example(&spec, bar_op);
+    let (resp, example, all) = extract_response_schema_and_example(&spec, bar_op);
     assert_eq!(resp.unwrap()["properties"]["id"]["type"], "string");
     assert_eq!(example.unwrap(), json!({"id": "xyz"}));
+    let meta = all.get(&200).unwrap().get("application/json").unwrap();
+    assert_eq!(meta.example.as_ref().unwrap(), &json!({"id": "xyz"}));
 }
 
 #[test]

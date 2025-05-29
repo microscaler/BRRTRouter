@@ -92,9 +92,25 @@ impl HttpService for AppService {
 
             match handler_response {
                 Some(HandlerResponse { status, body }) => {
-                    res.status_code(status as usize, "OK");
-                    res.header("Content-Type: application/json");
-                    res.body_vec(serde_json::to_vec(&body).unwrap());
+                    let reason = match status {
+                        200 => "OK",
+                        201 => "Created",
+                        400 => "Bad Request",
+                        404 => "Not Found",
+                        500 => "Internal Server Error",
+                        _ => "OK",
+                    };
+                    res.status_code(status as usize, reason);
+                    match body {
+                        serde_json::Value::String(s) => {
+                            res.header("Content-Type: text/plain");
+                            res.body_vec(s.into_bytes());
+                        }
+                        other => {
+                            res.header("Content-Type: application/json");
+                            res.body_vec(serde_json::to_vec(&other).unwrap());
+                        }
+                    }
                 }
                 None => {
                     res.status_code(500, "Internal Server Error");

@@ -46,6 +46,7 @@ pub struct RouteMeta {
     pub request_schema: Option<Value>,
     pub response_schema: Option<Value>,
     pub example: Option<Value>,
+    pub responses: Responses,
     pub example_name: String,
     pub project_slug: String,
     pub output_dir: PathBuf,
@@ -59,6 +60,14 @@ pub struct ParameterMeta {
     pub required: bool,
     pub schema: Option<Value>,
 }
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ResponseSpec {
+    pub schema: Option<Value>,
+    pub example: Option<Value>,
+}
+
+pub type Responses = std::collections::HashMap<u16, std::collections::HashMap<String, ResponseSpec>>;
 
 pub fn load_spec(file_path: &str) -> anyhow::Result<(Vec<RouteMeta>, String)> {
     let content = std::fs::read_to_string(file_path)?;
@@ -159,41 +168,55 @@ pub fn extract_request_schema(
 pub fn extract_response_schema_and_example(
     spec: &OpenApiV3Spec,
     operation: &oas3::spec::Operation,
-) -> (Option<Value>, Option<Value>) {
-    operation
-        .responses
-        .as_ref()
-        .and_then(|responses_map| {
-            let resp = responses_map.get("200")?;
-            match resp {
-                ObjectOrReference::Object(resp_obj) => {
-                    let media = resp_obj.content.get("application/json")?;
+) -> (Option<Value>, Option<Value>, Responses) {
+    let mut all: Responses = std::collections::HashMap::new();
+    let mut default_schema = None;
+    let mut default_example = None;
 
+    if let Some(responses_map) = operation.responses.as_ref() {
+        for (status_str, resp_ref) in responses_map {
+            let status: u16 = match status_str.parse() {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            if let ObjectOrReference::Object(resp_obj) = resp_ref {
+                for (mt, media) in &resp_obj.content {
                     let example = match &media.examples {
                         Some(MediaTypeExamples::Example { example }) => Some(example.clone()),
-                        Some(MediaTypeExamples::Examples { examples }) => {
-                            examples.iter().find_map(|(_, v)| match v {
+                        Some(MediaTypeExamples::Examples { examples }) => examples
+                            .iter()
+                            .find_map(|(_, v)| match v {
                                 ObjectOrReference::Object(obj) => obj.value.clone(),
                                 _ => None,
-                            })
+                            }),
+                        None => None,
+                    };
+
+                    let schema = match media.schema.as_ref() {
+                        Some(ObjectOrReference::Object(schema_obj)) => {
+                            serde_json::to_value(schema_obj).ok()
+                        }
+                        Some(ObjectOrReference::Ref { ref_path }) => {
+                            resolve_schema_ref(spec, ref_path)
+                                .and_then(|s| serde_json::to_value(s).ok())
                         }
                         None => None,
                     };
 
-                    let schema = match media.schema.as_ref()? {
-                        ObjectOrReference::Object(schema_obj) => {
-                            serde_json::to_value(schema_obj).ok()
-                        }
-                        ObjectOrReference::Ref { ref_path } => resolve_schema_ref(spec, ref_path)
-                            .and_then(|s| serde_json::to_value(s).ok()),
-                    };
+                    all.entry(status)
+                        .or_insert_with(std::collections::HashMap::new)
+                        .insert(mt.clone(), ResponseSpec { schema: schema.clone(), example: example.clone() });
 
-                    Some((schema, example))
+                    if status == 200 && mt == "application/json" {
+                        default_schema = schema;
+                        default_example = example;
+                    }
                 }
-                _ => None,
             }
-        })
-        .unwrap_or((None, None))
+        }
+    }
+
+    (default_schema, default_example, all)
 }
 
 fn resolve_parameter_ref<'a>(
@@ -276,7 +299,7 @@ pub fn build_routes(spec: &OpenApiV3Spec, slug: &str) -> anyhow::Result<Vec<Rout
                 };
 
                 let request_schema = extract_request_schema(spec, operation);
-                let (response_schema, example) =
+                let (response_schema, example, responses) =
                     extract_response_schema_and_example(spec, operation);
 
                 let mut parameters = Vec::new();
@@ -291,6 +314,7 @@ pub fn build_routes(spec: &OpenApiV3Spec, slug: &str) -> anyhow::Result<Vec<Rout
                     request_schema,
                     response_schema,
                     example,
+                    responses,
                     example_name: format!("{}_example", slug),
                     project_slug: slug.to_string(),
                     output_dir: PathBuf::from("examples").join(slug).join("src"),
