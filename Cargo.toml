@@ -42,5 +42,6 @@ harness = false
 
 [workspace]
 members = [
-    "examples/pet_store"
+    "examples/pet_store",
+    "brrtrouter_macros"
 ]

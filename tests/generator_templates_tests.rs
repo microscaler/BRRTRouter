@@ -79,8 +79,7 @@ fn test_template_writers() {
     assert!(main_content.contains("fn main()"));
 
     let handler_content = fs::read_to_string(&handler_path).unwrap();
-    assert!(handler_content.contains("pub struct Request"));
-    assert!(handler_content.contains("pub struct Response"));
+    assert!(handler_content.contains("#[handler("));
 
     let controller_content = fs::read_to_string(&controller_path).unwrap();
     assert!(controller_content.contains("pub struct TestController"));
