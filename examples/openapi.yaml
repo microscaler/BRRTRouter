@@ -262,6 +262,17 @@ paths:
                     id: "item-001"
                     name: "New Item"
 
+  /events:
+    get:
+      summary: Example event stream
+      operationId: stream_events
+      x-sse: true
+      responses:
+        "200":
+          description: Stream of events
+          content:
+            text/event-stream: {}
+
 components:
   schemas:
     Pet:
