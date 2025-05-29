@@ -20,3 +20,4 @@ pub mod get_user;
 pub mod list_user_posts;
 
 pub mod get_post;
+pub mod stream_events;

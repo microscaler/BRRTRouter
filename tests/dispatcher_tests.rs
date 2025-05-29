@@ -58,6 +58,7 @@ impl Handler for AssertController {
 
 #[test]
 fn test_dispatch_post_item() {
+    may::config().set_stack_size(0x8000);
     let (routes, _slug) = load_spec("examples/openapi.yaml").expect("load spec");
     let router = Router::new(routes);
     let mut dispatcher = Dispatcher::new();
@@ -102,6 +103,7 @@ fn test_dispatch_post_item() {
 
 #[test]
 fn test_dispatch_get_pet() {
+    may::config().set_stack_size(0x8000);
     let (routes, _slug) = load_spec("examples/openapi.yaml").unwrap();
     let router = Router::new(routes);
     let mut dispatcher = Dispatcher::new();
@@ -153,6 +155,7 @@ fn test_dispatch_get_pet() {
 
 #[test]
 fn test_typed_controller_params() {
+    may::config().set_stack_size(0x8000);
     let mut dispatcher = Dispatcher::new();
     unsafe {
         dispatcher.register_typed("assert_controller", AssertController);
@@ -189,6 +192,7 @@ fn test_typed_controller_params() {
 
 #[test]
 fn test_typed_controller_invalid_params() {
+    may::config().set_stack_size(0x8000);
     let mut dispatcher = Dispatcher::new();
     unsafe {
         dispatcher.register_typed("assert_controller", AssertController);
@@ -226,6 +230,7 @@ fn test_typed_controller_invalid_params() {
 
 #[test]
 fn test_panic_handler_returns_500() {
+    may::config().set_stack_size(0x8000);
     fn panic_handler(_req: HandlerRequest) {
         panic!("boom");
     }
@@ -262,6 +267,7 @@ fn test_panic_handler_returns_500() {
 
 #[test]
 fn test_dispatch_all_registry_handlers() {
+    may::config().set_stack_size(0x8000);
     let (routes, _slug) = load_spec("examples/openapi.yaml").expect("load spec");
     let router = Router::new(routes);
     let mut dispatcher = Dispatcher::new();
@@ -338,6 +344,12 @@ fn test_dispatch_all_registry_handlers() {
                 "/users/abc-123/posts/post1",
                 None,
                 json!({"body": "Welcome to the blog", "id": "post1", "title": "Intro"}),
+            ),
+            "stream_events" => (
+                Method::GET,
+                "/events",
+                None,
+                json!("")
             ),
             other => panic!("unexpected handler {}", other),
         };

@@ -53,6 +53,7 @@ pub struct RouteMeta {
     pub project_slug: String,
     pub output_dir: PathBuf,
     pub base_path: String,
+    pub sse: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -324,6 +325,14 @@ pub fn extract_parameters(
     out
 }
 
+pub fn extract_sse_flag(operation: &oas3::spec::Operation) -> bool {
+    operation
+        .extensions
+        .get("sse")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+}
+
 pub fn build_routes(spec: &OpenApiV3Spec, slug: &str) -> anyhow::Result<Vec<RouteMeta>> {
     let mut routes = Vec::new();
     let mut issues = Vec::new();
@@ -384,6 +393,7 @@ pub fn build_routes(spec: &OpenApiV3Spec, slug: &str) -> anyhow::Result<Vec<Rout
                     project_slug: slug.to_string(),
                     output_dir: PathBuf::from("examples").join(slug).join("src"),
                     base_path: base_path.clone(),
+                    sse: extract_sse_flag(operation),
                 });
             }
         }

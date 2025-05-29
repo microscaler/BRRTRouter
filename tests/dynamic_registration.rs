@@ -4,6 +4,7 @@ use pet_store::registry;
 
 #[test]
 fn test_dynamic_register_get_pet() {
+    may::config().set_stack_size(0x8000);
     let (routes, _slug) = load_spec("examples/openapi.yaml").expect("load spec");
     let router = Router::new(routes.clone());
     let mut dispatcher = Dispatcher::new();
@@ -22,6 +23,7 @@ fn test_dynamic_register_get_pet() {
 
 #[test]
 fn test_dynamic_register_post_item() {
+    may::config().set_stack_size(0x8000);
     let (routes, _slug) = load_spec("examples/openapi.yaml").expect("load spec");
     let router = Router::new(routes.clone());
     let mut dispatcher = Dispatcher::new();

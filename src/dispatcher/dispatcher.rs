@@ -4,6 +4,7 @@ use crate::router::RouteMatch;
 use crate::spec::RouteMeta;
 use http::Method;
 use may::coroutine;
+use may::coroutine::Builder;
 use may::sync::mpsc;
 use serde::Serialize;
 use serde_json::Value;
@@ -80,7 +81,10 @@ impl Dispatcher {
         let (tx, rx) = mpsc::channel::<HandlerRequest>();
         let name = name.to_string();
 
-        coroutine::spawn(move || {
+        coroutine::Builder::new()
+            .name(name.clone())
+            .stack_size(0x8001)
+            .spawn(move || {
             for req in rx.iter() {
                 // Extract what we need for error handling
                 let reply_tx = req.reply_tx.clone();
@@ -101,7 +105,8 @@ impl Dispatcher {
                     eprintln!("Handler '{}' panicked: {:?}", handler_name, panic);
                 }
             }
-        });
+        })
+        .expect("failed to spawn handler coroutine");
 
         self.handlers.insert(name, tx);
     }

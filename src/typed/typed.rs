@@ -24,41 +24,48 @@ pub trait TypedHandlerFor<T>: Sized {
 }
 
 /// Spawn a typed handler coroutine and return a sender to communicate with it.
-pub unsafe fn spawn_typed<H>(handler: H) -> mpsc::Sender<HandlerRequest>
+pub unsafe fn spawn_typed<H>(name: &str, handler: H) -> mpsc::Sender<HandlerRequest>
 where
     H: Handler + Send + 'static,
 {
     let (tx, rx) = mpsc::channel::<HandlerRequest>();
 
-    may::coroutine::spawn(move || {
-        let handler = handler;
-        for req in rx.iter() {
-            let reply_tx = req.reply_tx.clone();
+    may::coroutine::Builder::new()
+        .name(name.to_owned())
+        .stack_size(0x8001)
+        .spawn(move || {
+            let handler = handler;
+            for req in rx.iter() {
+                let reply_tx = req.reply_tx.clone();
 
-            let typed_req = match TypedHandlerRequest::<H::Request>::from_handler(req) {
-                Ok(v) => v,
-                Err(err) => {
-                    let _ = reply_tx.send(HandlerResponse {
-                        status: 400,
-                        body: serde_json::json!({
-                            "error": "Invalid request data",
-                            "message": err.to_string()
+                let typed_req = match TypedHandlerRequest::<H::Request>::from_handler(req) {
+                    Ok(v) => v,
+                    Err(err) => {
+                        let _ = reply_tx.send(HandlerResponse {
+                            status: 400,
+                            body: serde_json::json!({
+                                "error": "Invalid request data",
+                                "message": err.to_string()
+                            }),
+                        });
+                        continue;
+                    }
+                };
+
+                let result = handler.handle(typed_req);
+
+                let _ = reply_tx.send(HandlerResponse {
+                    status: 200,
+                    body: serde_json::to_value(result)
+                        .unwrap_or_else(|_| {
+                            serde_json::json!({
+                                "error": "Failed to serialize response"
+                            })
                         }),
-                    });
-                    continue;
-                }
-            };
-
-            let result = handler.handle(typed_req);
-
-            let _ = reply_tx.send(HandlerResponse {
-                status: 200,
-                body: serde_json::to_value(result).unwrap_or_else(
-                    |_| serde_json::json!({"error": "Failed to serialize response"}),
-                ),
-            });
-        }
-    });
+                });
+            }
+        })
+        .expect("failed to spawn handler coroutine");
 
     tx
 }
@@ -99,7 +106,7 @@ impl Dispatcher {
         H: Handler + Send + 'static,
     {
         let name = name.to_string();
-        let tx = spawn_typed(handler);
+        let tx = spawn_typed(&name, handler);
         self.handlers.insert(name, tx);
     }
 }

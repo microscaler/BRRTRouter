@@ -12,6 +12,7 @@ pub mod server;
 pub mod spec;
 pub mod typed;
 pub mod validator;
+pub mod sse;
 
 pub use spec::{
     load_spec,
