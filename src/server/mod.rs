@@ -1,3 +1,3 @@
-mod core;
+mod server;
 
-pub use core::AppService;
+pub use server::AppService;

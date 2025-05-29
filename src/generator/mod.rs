@@ -1,5 +1,5 @@
-mod core;
+mod generator;
 #[cfg(test)]
 mod tests;
 
-pub use core::*;
+pub use generator::*;

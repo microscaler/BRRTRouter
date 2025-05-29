@@ -1,3 +1,3 @@
-mod core;
+mod spec;
 
-pub use core::*;
+pub use spec::*;
