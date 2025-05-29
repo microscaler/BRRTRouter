@@ -1,5 +1,5 @@
 use brrtrouter::{
-    dispatcher::{Dispatcher, HandlerRequest},
+    dispatcher::{Dispatcher, HandlerRequest, HandlerResponse},
     router::Router,
     server::AppService,
     spec::RouteMeta,
@@ -7,7 +7,7 @@ use brrtrouter::{
 use http::Method;
 use may_minihttp::HttpServer;
 use pet_store::registry;
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::time::Duration;
@@ -118,4 +118,58 @@ fn test_panic_recovery() {
     let (status, body) = parse_response(&resp);
     assert_eq!(status, 500);
     assert!(body.get("error").is_some());
+}
+
+#[test]
+fn test_headers_and_cookies() {
+    fn header_handler(req: HandlerRequest) {
+        let response = HandlerResponse {
+            status: 200,
+            body: json!({
+                "headers": req.headers,
+                "cookies": req.cookies,
+            }),
+        };
+        let _ = req.reply_tx.send(response);
+    }
+
+    let route = RouteMeta {
+        method: Method::GET,
+        path_pattern: "/headertest".to_string(),
+        handler_name: "header".to_string(),
+        parameters: Vec::new(),
+        request_schema: None,
+        response_schema: None,
+        example: None,
+        example_name: String::new(),
+        project_slug: String::new(),
+        output_dir: PathBuf::new(),
+    };
+    let router = Router::new(vec![route]);
+    let mut dispatcher = Dispatcher::new();
+    unsafe {
+        dispatcher.register_handler("header", header_handler);
+    }
+    let service = AppService { router, dispatcher };
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    drop(listener);
+    let handle = HttpServer(service).start(addr).unwrap();
+
+    let request = concat!(
+        "GET /headertest HTTP/1.1\r\n",
+        "Host: localhost\r\n",
+        "X-Test: value\r\n",
+        "X-Other: foo\r\n",
+        "Cookie: session=abc123; theme=dark\r\n",
+        "\r\n"
+    );
+    let resp = send_request(&addr, request);
+    unsafe { handle.coroutine().cancel() };
+    let (status, body) = parse_response(&resp);
+    assert_eq!(status, 200);
+    assert_eq!(body["headers"]["x-test"], "value");
+    assert_eq!(body["headers"]["x-other"], "foo");
+    assert_eq!(body["cookies"]["session"], "abc123");
+    assert_eq!(body["cookies"]["theme"], "dark");
 }
