@@ -9,6 +9,10 @@ genpet:
     cargo run --bin brrtrouter-gen -- generate --spec examples/openapi.yaml --force
 
 # Run tests with output
+build:
+    cargo build
+
+# Run tests with output
 test:
     cargo test -- --nocapture
 
