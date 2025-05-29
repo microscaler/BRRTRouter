@@ -13,6 +13,7 @@ use std::collections::HashMap;
 use std::convert::TryFrom;
 
 fn set_stack_size() {
+    std::env::set_var("BRRTR_STACK_SIZE", "0x8000");
     may::config().set_stack_size(0x8000);
 }
 

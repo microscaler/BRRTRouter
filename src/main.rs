@@ -6,9 +6,22 @@ use std::collections::HashMap;
 use may_minihttp::HttpServer;
 use std::io;
 
+fn parse_stack_size() -> usize {
+    if let Ok(val) = std::env::var("BRRTR_STACK_SIZE") {
+        if let Some(hex) = val.strip_prefix("0x") {
+            usize::from_str_radix(hex, 16).unwrap_or(0x4000)
+        } else {
+            val.parse().unwrap_or(0x4000)
+        }
+    } else {
+        0x4000
+    }
+}
+
 fn main() -> io::Result<()> {
     // increase coroutine stack size to prevent overflows
-    may::config().set_stack_size(0x8000);
+    let stack_size = parse_stack_size();
+    may::config().set_stack_size(stack_size);
     // Load OpenAPI spec and create router
     let (routes, _slug) = load_spec("examples/openapi.yaml").expect("failed to load spec");
     let router = Router::new(routes.clone());

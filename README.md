@@ -78,6 +78,12 @@ curl "http://localhost:8080/items/123?debug=true" \
 }
 ```
 
+### Environment Variables
+
+BRRTRouter reads `BRRTR_STACK_SIZE` to determine the stack size for
+coroutines. The value can be a decimal number or a hex string like `0x8000`.
+If unset, the default stack size is `0x4000` bytes.
+
 ## 🏗 Building the Pet Store Example
 Run:
 

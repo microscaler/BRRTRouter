@@ -10,6 +10,7 @@ use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 fn start_service() -> (may::coroutine::JoinHandle<()>, SocketAddr) {
+    std::env::set_var("BRRTR_STACK_SIZE", "0x8000");
     may::config().set_stack_size(0x8000);
     let (routes, _slug) = brrtrouter::load_spec("examples/openapi.yaml").unwrap();
     let router = Arc::new(RwLock::new(Router::new(routes.clone())));
