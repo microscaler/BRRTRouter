@@ -259,7 +259,7 @@ fn test_dispatch_all_registry_handlers() {
 
     let handlers: Vec<String> = dispatcher.handlers.keys().cloned().collect();
     for name in handlers {
-        let (method, path, body, expected) = match name.as_str() {
+        let (method, path, body, _expected) = match name.as_str() {
             "admin_settings" => (
                 Method::GET,
                 "/admin/settings",
