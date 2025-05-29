@@ -37,7 +37,7 @@ where
         for req in rx.iter() {
             let reply_tx = req.reply_tx.clone();
 
-            let typed_req = match TypedHandlerRequest::<H::Request>::from_handler(req) {
+            let data = match H::Request::try_from(req.clone()) {
                 Ok(v) => v,
                 Err(err) => {
                     let _ = reply_tx.send(HandlerResponse {
@@ -49,6 +49,15 @@ where
                     });
                     continue;
                 }
+            };
+
+            let typed_req = TypedHandlerRequest {
+                method: req.method,
+                path: req.path,
+                handler_name: req.handler_name,
+                path_params: req.path_params,
+                query_params: req.query_params,
+                data,
             };
 
             let result = handler.handle(typed_req);
