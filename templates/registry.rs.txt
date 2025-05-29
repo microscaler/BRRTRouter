@@ -1,6 +1,8 @@
 {# templates/registry.rs.txt #}
 // Auto-generated handler registry
 use brrtrouter::dispatcher::Dispatcher;
+use brrtrouter::spec::RouteMeta;
+use brrtrouter::typed::spawn_typed;
 use crate::controllers::*;
 use crate::handlers::*;
 
@@ -11,4 +13,21 @@ pub unsafe fn register_all(dispatcher: &mut Dispatcher) {
         crate::controllers::{{ entry.name }}::{{ entry.controller_struct }},
     );
     {% endfor %}
+}
+
+/// Dynamically register handlers for the provided routes using their handler names.
+pub unsafe fn register_from_spec(dispatcher: &mut Dispatcher, routes: &[RouteMeta]) {
+    for route in routes {
+        match route.handler_name.as_str() {
+            {% for entry in entries -%}
+            "{{ entry.name }}" => {
+                let tx = spawn_typed::<crate::handlers::{{ entry.name }}::Request,
+                    crate::handlers::{{ entry.name }}::Response,
+                    crate::controllers::{{ entry.name }}::{{ entry.controller_struct }}>(crate::controllers::{{ entry.name }}::{{ entry.controller_struct }});
+                dispatcher.add_route(route.clone(), tx);
+            }
+            {% endfor %}
+            _ => {}
+        }
+    }
 }
