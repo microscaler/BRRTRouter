@@ -361,7 +361,8 @@ pub fn extract_parameters(
 pub fn extract_sse_flag(operation: &oas3::spec::Operation) -> bool {
     operation
         .extensions
-        .get("sse")
+        .get("x-sse")
+        .or_else(|| operation.extensions.get("sse"))
         .and_then(|v| v.as_bool())
         .unwrap_or(false)
 }

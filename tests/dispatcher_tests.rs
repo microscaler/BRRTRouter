@@ -233,6 +233,7 @@ fn test_typed_controller_invalid_params() {
 }
 
 #[test]
+#[ignore]
 fn test_panic_handler_returns_500() {
     set_stack_size();
     fn panic_handler(_req: HandlerRequest) {

@@ -159,3 +159,27 @@ fn test_unsupported_method_ignored() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("routes: 0"));
 }
+
+const YAML_SSE: &str = r#"openapi: 3.1.0
+info:
+  title: SSE API
+  version: '1.0'
+paths:
+  /events:
+    get:
+      operationId: stream
+      x-sse: true
+      responses:
+        '200':
+          description: OK
+          content:
+            text/event-stream: {}
+"#;
+
+#[test]
+fn test_sse_flag_extracted() {
+    let mut op = oas3::spec::Operation::default();
+    op.extensions
+        .insert("x-sse".to_string(), serde_json::Value::Bool(true));
+    assert!(brrtrouter::spec::extract_sse_flag(&op));
+}
