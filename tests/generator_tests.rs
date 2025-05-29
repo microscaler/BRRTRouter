@@ -101,3 +101,70 @@ fn test_rust_literal_for_example() {
     let lit = rust_literal_for_example(&field, &json!("foo"));
     assert_eq!(lit, "Some(\"foo\".to_string())");
 }
+
+#[test]
+fn test_schema_to_type_complex() {
+    assert_eq!(
+        schema_to_type(&json!({"type": "object"})),
+        "serde_json::Value"
+    );
+    let nested = json!({
+        "type": "array",
+        "items": {"type": "array", "items": {"type": "string"}}
+    });
+    assert_eq!(schema_to_type(&nested), "Vec<Vec<String>>");
+}
+
+#[test]
+fn test_extract_fields_with_arrays_and_refs() {
+    let schema = json!({
+        "type": "object",
+        "required": ["names", "pet"],
+        "properties": {
+            "names": {"type": "array", "items": {"type": "string"}},
+            "pet": {"$ref": "#/components/schemas/pet"},
+            "maybe": {"type": "integer"}
+        }
+    });
+    let fields = extract_fields(&schema);
+    assert_eq!(fields.len(), 3);
+    let names = fields.iter().find(|f| f.name == "names").unwrap();
+    assert_eq!(names.ty, "Vec<String>");
+    assert!(!names.optional);
+    assert_eq!(names.value, "vec![]");
+    let pet = fields.iter().find(|f| f.name == "pet").unwrap();
+    assert_eq!(pet.ty, "Pet");
+    assert!(!pet.optional);
+    assert_eq!(pet.value, "Default::default()");
+    let maybe = fields.iter().find(|f| f.name == "maybe").unwrap();
+    assert_eq!(maybe.ty, "i32");
+    assert!(maybe.optional);
+    assert_eq!(maybe.value, "Some(42)");
+}
+
+#[test]
+fn test_parameter_to_field_variants() {
+    let required = ParameterMeta {
+        name: "id".to_string(),
+        location: ParameterLocation::Path,
+        required: true,
+        schema: None,
+    };
+    let f1 = parameter_to_field(&required);
+    assert_eq!(f1.name, "id");
+    assert_eq!(f1.ty, "String");
+    assert!(!f1.optional);
+    assert_eq!(f1.value, "\"example\".to_string()");
+
+    let referenced = ParameterMeta {
+        name: "pet".to_string(),
+        location: ParameterLocation::Query,
+        required: false,
+        schema: Some(json!({"$ref": "#/components/schemas/pet"})),
+    };
+    let f2 = parameter_to_field(&referenced);
+    assert_eq!(f2.name, "pet");
+    assert_eq!(f2.ty, "Pet");
+    assert!(f2.optional);
+    assert_eq!(f2.value, "Some(Default::default())");
+}
