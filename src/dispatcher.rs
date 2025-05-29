@@ -6,6 +6,7 @@ use may::coroutine;
 use may::sync::mpsc;
 use serde::Serialize;
 use serde_json::Value;
+use crate::spec::RouteMeta;
 use std::collections::HashMap;
 #[allow(unused_imports)]
 use std::sync::Arc;
@@ -44,6 +45,12 @@ impl Dispatcher {
     #[allow(dead_code)]
     fn default() -> Self {
         Self::new()
+    }
+
+    /// Add a handler sender for the given route metadata. This allows handlers
+    /// to be registered after the dispatcher has been created.
+    pub fn add_route(&mut self, route: RouteMeta, sender: HandlerSender) {
+        self.handlers.insert(route.handler_name, sender);
     }
 
     /// Registers a handler function that will process incoming requests with the given name.

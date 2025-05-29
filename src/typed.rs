@@ -5,6 +5,7 @@ use anyhow::Result;
 use http::Method;
 use may::sync::mpsc;
 use serde::Serialize;
+use serde_json;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 
@@ -26,6 +27,48 @@ where
 
 pub trait TypedHandlerFor<T>: Sized {
     fn from_handler(req: HandlerRequest) -> anyhow::Result<TypedHandlerRequest<T>>;
+}
+
+/// Spawn a typed handler coroutine and return a sender to communicate with it.
+pub unsafe fn spawn_typed<TReq, TRes, H>(handler: H) -> mpsc::Sender<HandlerRequest>
+where
+    TReq: TryFrom<HandlerRequest, Error = anyhow::Error> + Send + 'static,
+    TRes: Serialize + Send + 'static,
+    H: Handler<TReq, TRes> + Send + 'static,
+{
+    let (tx, rx) = mpsc::channel::<HandlerRequest>();
+
+    may::coroutine::spawn(move || {
+        let handler = handler;
+        for req in rx.iter() {
+            let reply_tx = req.reply_tx.clone();
+
+            let typed_req = match TypedHandlerRequest::<TReq>::from_handler(req) {
+                Ok(v) => v,
+                Err(err) => {
+                    let _ = reply_tx.send(HandlerResponse {
+                        status: 400,
+                        body: serde_json::json!({
+                            "error": "Invalid request data",
+                            "message": err.to_string()
+                        }),
+                    });
+                    continue;
+                }
+            };
+
+            let result = handler.handle(typed_req);
+
+            let _ = reply_tx.send(HandlerResponse {
+                status: 200,
+                body: serde_json::to_value(result).unwrap_or_else(|_| {
+                    serde_json::json!({"error": "Failed to serialize response"})
+                }),
+            });
+        }
+    });
+
+    tx
 }
 
 #[derive(Debug, Clone)]
@@ -64,38 +107,8 @@ impl Dispatcher {
         TRes: Serialize + Send + 'static,
         H: Handler<TReq, TRes> + Send + 'static,
     {
-        let (tx, rx) = mpsc::channel::<HandlerRequest>();
         let name = name.to_string();
-
-        may::coroutine::spawn(move || {
-            let handler = handler;
-            for req in rx.iter() {
-                let reply_tx = req.reply_tx.clone();
-
-                let typed_req = match TypedHandlerRequest::<TReq>::from_handler(req) {
-                    Ok(v) => v,
-                    Err(err) => {
-                        let _ = reply_tx.send(HandlerResponse {
-                            status: 400,
-                            body: serde_json::json!({"error": "Invalid request data", "message": err.to_string()}),
-                        });
-                        continue;
-                    }
-                };
-
-                let result = handler.handle(typed_req);
-
-                let _ = reply_tx.send(HandlerResponse {
-                    status: 200,
-                    body: serde_json::to_value(result).unwrap_or_else(|_| {
-                        serde_json::json!({
-                            "error": "Failed to serialize response"
-                        })
-                    }),
-                });
-            }
-        });
-
+        let tx = spawn_typed::<TReq, TRes, H>(handler);
         self.handlers.insert(name, tx);
     }
 }
