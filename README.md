@@ -133,6 +133,22 @@ dispatcher.register_handler("post_item", echo_handler);
 Each handler runs in its own coroutine, receiving requests via a channel and sending back structured HandlerResponse.
 
 ---
+## 🔌 Middleware
+
+Middlewares run before and after each handler. Register them on the dispatcher:
+
+```rust
+use brrrouter::middleware::MetricsMiddleware;
+use std::sync::Arc;
+
+let mut dispatcher = Dispatcher::new();
+let metrics = Arc::new(MetricsMiddleware::new());
+dispatcher.add_middleware(metrics.clone());
+```
+
+`MetricsMiddleware` tracks request counts and average latency.
+
+---
 ## 📈 Contributing & Benchmarks
 For a detailed view of completed and upcoming work, see [docs/ROADMAP.md](docs/ROADMAP.md).
 We welcome contributions that improve:

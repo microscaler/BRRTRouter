@@ -10,7 +10,9 @@ use serde_json::Value;
 use std::collections::HashMap;
 #[allow(unused_imports)]
 use std::sync::Arc;
+use std::time::Instant;
 
+use crate::middleware::Middleware;
 #[derive(Debug, Clone)]
 pub struct HandlerRequest {
     pub method: Method,
@@ -35,12 +37,14 @@ pub type HandlerSender = mpsc::Sender<HandlerRequest>;
 #[derive(Clone, Default)]
 pub struct Dispatcher {
     pub handlers: HashMap<String, HandlerSender>,
+    pub middlewares: Vec<Arc<dyn Middleware>>,
 }
 
 impl Dispatcher {
     pub fn new() -> Self {
         Dispatcher {
             handlers: HashMap::new(),
+            middlewares: Vec::new(),
         }
     }
 
@@ -53,6 +57,10 @@ impl Dispatcher {
     /// to be registered after the dispatcher has been created.
     pub fn add_route(&mut self, route: RouteMeta, sender: HandlerSender) {
         self.handlers.insert(route.handler_name, sender);
+    }
+
+    pub fn add_middleware(&mut self, mw: Arc<dyn Middleware>) {
+        self.middlewares.push(mw);
     }
 
     /// Registers a handler function that will process incoming requests with the given name.
@@ -121,8 +129,19 @@ impl Dispatcher {
             body,
             reply_tx,
         };
+        for mw in &self.middlewares {
+            mw.before(&request);
+        }
 
-        tx.send(request).ok()?;
-        reply_rx.recv().ok()
+        let start = Instant::now();
+        tx.send(request.clone()).ok()?;
+        let resp = reply_rx.recv().ok()?;
+        let latency = start.elapsed();
+
+        for mw in &self.middlewares {
+            mw.after(&request, &resp, latency);
+        }
+
+        Some(resp)
     }
 }

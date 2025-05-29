@@ -6,6 +6,7 @@ mod echo;
 pub mod generator;
 pub mod hot_reload;
 pub mod security;
+pub mod middleware;
 pub mod router;
 pub mod server;
 pub mod spec;
