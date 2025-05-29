@@ -72,13 +72,46 @@ pub struct ResponseSpec {
 
 pub type Responses = std::collections::HashMap<u16, std::collections::HashMap<String, ResponseSpec>>;
 
+fn strip_unknown_verbs(val: &mut serde_json::Value) {
+    const METHODS: [&str; 8] = [
+        "get", "post", "put", "delete", "patch", "options", "head", "trace",
+    ];
+
+    if let Some(paths) = val.get_mut("paths") {
+        if let serde_json::Value::Object(paths_map) = paths {
+            for item in paths_map.values_mut() {
+                if let serde_json::Value::Object(obj) = item {
+                    let keys: Vec<String> = obj
+                        .keys()
+                        .cloned()
+                        .collect();
+                    for k in keys {
+                        let lk = k.to_ascii_lowercase();
+                        let keep = match lk.as_str() {
+                            "summary" | "description" | "servers" | "parameters" | "$ref" => true,
+                            m if METHODS.contains(&m) => true,
+                            _ => k.starts_with("x-"),
+                        };
+                        if !keep {
+                            obj.remove(&k);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 pub fn load_spec(file_path: &str) -> anyhow::Result<(Vec<RouteMeta>, String)> {
     let content = std::fs::read_to_string(file_path)?;
-    let spec: OpenApiV3Spec = if file_path.ends_with(".yaml") || file_path.ends_with(".yml") {
+    let mut value: serde_json::Value = if file_path.ends_with(".yaml") || file_path.ends_with(".yml") {
         serde_yaml::from_str(&content)?
     } else {
         serde_json::from_str(&content)?
     };
+
+    strip_unknown_verbs(&mut value);
+    let spec: OpenApiV3Spec = serde_json::from_value(value)?;
 
     let title = spec
         .info
