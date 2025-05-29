@@ -5,8 +5,8 @@ default:
     @just --list
 
 # Build the pet store example
-build-pet-store:
-    ./scripts/build_pet_store.sh
+genpet:
+    cargo run --bin brrtrouter-gen -- generate --spec examples/openapi.yaml --force
 
 # Run tests with output
 test:

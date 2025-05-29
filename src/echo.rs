@@ -1,6 +1,8 @@
 use crate::dispatcher::{HandlerRequest, HandlerResponse};
 
 // Example handler: just echoes back input for now
+// This handler is useful for testing and debugging purposes.
+#[allow(dead_code)]
 pub fn echo_handler(req: HandlerRequest) {
     let response = HandlerResponse {
         status: 200,
