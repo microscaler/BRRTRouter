@@ -8,13 +8,13 @@ use std::io;
 
 fn main() -> io::Result<()> {
     // Load OpenAPI spec and create router
-    let (routes, _slug) = load_spec("examples/openapi.yaml").expect("failed to load spec");
+    let (routes, _slug) = load_spec("examples/openapi.yaml").expect("failed to load OpenAPI spec");
     let router = Router::new(routes.clone());
 
     // Create dispatcher and register handlers
     let mut dispatcher = Dispatcher::new();
     // unsafe {
-    //     registry::register_all(&mut dispatcher);
+    //     registry::register_all(&mut dispatcher, &routes);
     // }
 
     // Start the HTTP server on port 8080, binding to 127.0.0.1 if BRRTR_LOCAL is
@@ -29,7 +29,9 @@ fn main() -> io::Result<()> {
         "0.0.0.0:8080"
     };
     println!("🚀 {{ name }} example server listening on {addr}");
-    let server = HttpServer(service).start(addr).map_err(io::Error::other)?;
+    let server = HttpServer(service)
+        .start(addr)
+        .map_err(io::Error::other)?;
     println!("Server started successfully on {addr}");
 
     server

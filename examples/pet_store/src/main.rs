@@ -1,7 +1,7 @@
 use brrtrouter::{dispatcher::Dispatcher, router::Router, server::AppService};
-use std::collections::HashMap;
 use may_minihttp::HttpServer;
 use pet_store::registry;
+use std::collections::HashMap;
 use std::io;
 
 fn main() -> io::Result<()> {
