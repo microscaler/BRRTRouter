@@ -107,6 +107,7 @@ fn test_panic_recovery() {
         example_name: String::new(),
         project_slug: String::new(),
         output_dir: PathBuf::new(),
+        base_path: String::new(),
     };
     let router = Arc::new(RwLock::new(Router::new(vec![route])));
     let mut dispatcher = Dispatcher::new();
@@ -153,6 +154,7 @@ fn test_headers_and_cookies() {
         example_name: String::new(),
         project_slug: String::new(),
         output_dir: PathBuf::new(),
+        base_path: String::new(),
     };
     let router = Arc::new(RwLock::new(Router::new(vec![route])));
     let mut dispatcher = Dispatcher::new();

@@ -49,6 +49,7 @@ pub struct RouteMeta {
     pub example_name: String,
     pub project_slug: String,
     pub output_dir: PathBuf,
+    pub base_path: String,
 }
 
 #[derive(Debug, Clone)]
@@ -246,6 +247,23 @@ pub fn build_routes(spec: &OpenApiV3Spec, slug: &str) -> anyhow::Result<Vec<Rout
     let mut routes = Vec::new();
     let mut issues = Vec::new();
 
+    let base_path = if let Some(server) = spec.servers.get(0) {
+        let url_str = &server.url;
+        url::Url::parse(url_str)
+            .or_else(|_| url::Url::parse(&format!("http://dummy{}", url_str)))
+            .map(|u| {
+                let p = u.path().trim_end_matches('/');
+                if p == "/" || p.is_empty() {
+                    String::new()
+                } else {
+                    p.to_string()
+                }
+            })
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
+
     if let Some(paths_map) = spec.paths.as_ref() {
         for (path, item) in paths_map {
             for (method_str, operation) in item.methods() {
@@ -276,6 +294,7 @@ pub fn build_routes(spec: &OpenApiV3Spec, slug: &str) -> anyhow::Result<Vec<Rout
                     example_name: format!("{}_example", slug),
                     project_slug: slug.to_string(),
                     output_dir: PathBuf::from("examples").join(slug).join("src"),
+                    base_path: base_path.clone(),
                 });
             }
         }
