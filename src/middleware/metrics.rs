@@ -43,11 +43,12 @@ impl MetricsMiddleware {
 }
 
 impl Middleware for MetricsMiddleware {
-    fn before(&self, _req: &HandlerRequest) {
+    fn before(&self, _req: &HandlerRequest) -> Option<HandlerResponse> {
         self.request_count.fetch_add(1, Ordering::Relaxed);
+        None
     }
 
-    fn after(&self, _req: &HandlerRequest, _res: &HandlerResponse, latency: Duration) {
+    fn after(&self, _req: &HandlerRequest, _res: &mut HandlerResponse, latency: Duration) {
         self.total_latency_ns
             .fetch_add(latency.as_nanos() as u64, Ordering::Relaxed);
         // record stack metrics for the current coroutine when available

@@ -1,4 +1,5 @@
 use crate::dispatcher::{HandlerRequest, HandlerResponse};
+use std::collections::HashMap;
 
 // Example handler: just echoes back input for now
 // This handler is useful for testing and debugging purposes.
@@ -6,6 +7,7 @@ use crate::dispatcher::{HandlerRequest, HandlerResponse};
 pub fn echo_handler(req: HandlerRequest) {
     let response = HandlerResponse {
         status: 200,
+        headers: HashMap::new(),
         body: serde_json::json!({
             "handler": req.handler_name,
             "method": req.method.to_string(),

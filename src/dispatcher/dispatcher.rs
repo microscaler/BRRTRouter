@@ -10,7 +10,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 #[allow(unused_imports)]
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use crate::middleware::Middleware;
 #[derive(Debug, Clone)]
@@ -29,6 +29,8 @@ pub struct HandlerRequest {
 #[derive(Debug, Clone, Serialize)]
 pub struct HandlerResponse {
     pub status: u16,
+    #[serde(skip_serializing)]
+    pub headers: HashMap<String, String>,
     pub body: Value,
 }
 
@@ -94,6 +96,7 @@ impl Dispatcher {
                     // Send an error response if the handler panicked
                     let error_response = HandlerResponse {
                         status: 500,
+                        headers: HashMap::new(),
                         body: serde_json::json!({
                             "error": "Handler panicked",
                             "details": format!("{:?}", panic)
@@ -132,17 +135,25 @@ impl Dispatcher {
             body,
             reply_tx,
         };
+        let mut early_resp: Option<HandlerResponse> = None;
         for mw in &self.middlewares {
-            mw.before(&request);
+            if early_resp.is_none() {
+                early_resp = mw.before(&request);
+            } else {
+                mw.before(&request);
+            }
         }
-
-        let start = Instant::now();
-        tx.send(request.clone()).ok()?;
-        let resp = reply_rx.recv().ok()?;
-        let latency = start.elapsed();
+        let (mut resp, latency) = if let Some(r) = early_resp {
+            (r, Duration::from_millis(0))
+        } else {
+            let start = Instant::now();
+            tx.send(request.clone()).ok()?;
+            let r = reply_rx.recv().ok()?;
+            (r, start.elapsed())
+        };
 
         for mw in &self.middlewares {
-            mw.after(&request, &resp, latency);
+            mw.after(&request, &mut resp, latency);
         }
 
         Some(resp)

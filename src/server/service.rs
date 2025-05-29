@@ -100,8 +100,8 @@ impl HttpService for AppService {
                 dispatcher.dispatch(route_match, body, headers, cookies)
             };
             match handler_response {
-                Some(HandlerResponse { status, body }) => {
-                    write_handler_response(res, status, body, is_sse);
+                Some(mut hr) => {
+                    write_handler_response(res, hr.status, hr.body, is_sse, &hr.headers);
                 }
                 None => {
                     write_json_error(

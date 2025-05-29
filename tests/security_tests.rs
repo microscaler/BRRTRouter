@@ -7,6 +7,7 @@ use brrtrouter::{
 };
 use may_minihttp::HttpServer;
 use serde_json::json;
+use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::{Arc, RwLock};
@@ -72,12 +73,19 @@ paths:
         '200': { description: OK }
 "#;
     let path = write_temp(SPEC);
-    let (routes, schemes, _slug) = load_spec_full(path.to_str().unwrap()).unwrap();
+    let (routes, schemes, _slug) = match load_spec_full(path.to_str().unwrap()) {
+        Ok(result) => result,
+        Err(e) => panic!("Failed to load spec: {:?}", e),
+    };
     let router = Arc::new(RwLock::new(Router::new(routes.clone())));
     let mut dispatcher = Dispatcher::new();
     unsafe {
         dispatcher.register_handler("secret", |req: HandlerRequest| {
-            let _ = req.reply_tx.send(HandlerResponse { status: 200, body: json!({"ok": true}) });
+            let _ = req.reply_tx.send(HandlerResponse {
+                status: 200,
+                headers: HashMap::new(),
+                body: json!({"ok": true}),
+            });
         });
     }
     let mut service = AppService::new(router, Arc::new(RwLock::new(dispatcher)), schemes);
@@ -130,14 +138,18 @@ paths:
     let mut dispatcher = Dispatcher::new();
     unsafe {
         dispatcher.register_handler("one", |req: HandlerRequest| {
-            let _ = req
-                .reply_tx
-                .send(HandlerResponse { status: 200, body: json!({"one": true}) });
+            let _ = req.reply_tx.send(HandlerResponse {
+                status: 200,
+                headers: HashMap::new(),
+                body: json!({"one": true}),
+            });
         });
         dispatcher.register_handler("two", |req: HandlerRequest| {
-            let _ = req
-                .reply_tx
-                .send(HandlerResponse { status: 200, body: json!({"two": true}) });
+            let _ = req.reply_tx.send(HandlerResponse {
+                status: 200,
+                headers: HashMap::new(),
+                body: json!({"two": true}),
+            });
         });
     }
     let mut service = AppService::new(router, Arc::new(RwLock::new(dispatcher)), schemes);

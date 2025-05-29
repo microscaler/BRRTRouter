@@ -1,12 +1,7 @@
-
-use brrtrouter::{
-    dispatcher::Dispatcher,
-    router::Router,
-    server::AppService,
-};
-use std::collections::HashMap;
-use pet_store::registry;
+use brrtrouter::{dispatcher::Dispatcher, router::Router, server::AppService};
 use may_minihttp::HttpServer;
+use pet_store::registry;
+use std::collections::HashMap;
 use std::io;
 
 fn parse_stack_size() -> usize {
@@ -26,7 +21,8 @@ fn main() -> io::Result<()> {
     let stack_size = parse_stack_size();
     may::config().set_stack_size(stack_size);
     // Load OpenAPI spec and create router
-    let (routes, _slug) = brrtrouter::spec::load_spec("./openapi.yaml").expect("failed to load OpenAPI spec");
+    let (routes, _slug) =
+        brrtrouter::spec::load_spec("./openapi.yaml").expect("failed to load OpenAPI spec");
     let router = Router::new(routes.clone());
 
     // Create dispatcher and register handlers
@@ -47,9 +43,7 @@ fn main() -> io::Result<()> {
         "0.0.0.0:8080"
     };
     println!("🚀 pet_store example server listening on {addr}");
-    let server = HttpServer(service)
-        .start(addr)
-        .map_err(io::Error::other)?;
+    let server = HttpServer(service).start(addr).map_err(io::Error::other)?;
     println!("Server started successfully on {addr}");
 
     server

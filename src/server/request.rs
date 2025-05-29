@@ -38,7 +38,7 @@ pub fn parse_query_params(path: &str) -> HashMap<String, String> {
     }
 }
 
-pub fn parse_request(mut req: Request) -> ParsedRequest {
+pub fn parse_request(req: Request) -> ParsedRequest {
     let method = req.method().to_string();
     let raw_path = req.path().to_string();
     let path = raw_path.split('?').next().unwrap_or("/").to_string();

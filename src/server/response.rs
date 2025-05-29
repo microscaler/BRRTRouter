@@ -13,9 +13,21 @@ fn status_reason(status: u16) -> &'static str {
     }
 }
 
-pub fn write_handler_response(res: &mut Response, status: u16, body: Value, is_sse: bool) {
+use std::collections::HashMap;
+
+pub fn write_handler_response(
+    res: &mut Response,
+    status: u16,
+    body: Value,
+    is_sse: bool,
+    headers: &HashMap<String, String>,
+) {
     let reason = status_reason(status);
     res.status_code(status as usize, reason);
+    for (k, v) in headers {
+        let header_value = format!("{}: {}", k, v).into_boxed_str();
+        res.header(Box::leak(header_value));
+    }
     match body {
         Value::String(s) => {
             if is_sse {
