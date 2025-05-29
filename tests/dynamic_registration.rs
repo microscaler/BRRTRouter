@@ -14,7 +14,9 @@ fn test_dynamic_register_get_pet() {
     let route_match = router
         .route(Method::GET, "/pets/12345")
         .expect("route match");
-    let resp = dispatcher.dispatch(route_match, None).expect("dispatch");
+    let resp = dispatcher
+        .dispatch(route_match, None, Default::default(), Default::default())
+        .expect("dispatch");
     assert_eq!(resp.status, 200);
 }
 
@@ -31,7 +33,12 @@ fn test_dynamic_register_post_item() {
         .route(Method::POST, "/items/item-001")
         .expect("route match");
     let resp = dispatcher
-        .dispatch(route_match, Some(serde_json::json!({"name": "New Item"})))
+        .dispatch(
+            route_match,
+            Some(serde_json::json!({"name": "New Item"})),
+            Default::default(),
+            Default::default(),
+        )
         .expect("dispatch");
     assert_eq!(resp.status, 200);
 }

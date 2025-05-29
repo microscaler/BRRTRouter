@@ -28,6 +28,31 @@ impl HttpService for AppService {
         let raw_path = req.path().to_string();
         let path = raw_path.split('?').next().unwrap_or("/").to_string();
 
+        let headers: HashMap<String, String> = req
+            .headers()
+            .iter()
+            .map(|h| {
+                (
+                    h.name.to_ascii_lowercase(),
+                    String::from_utf8_lossy(h.value).to_string(),
+                )
+            })
+            .collect();
+
+        let cookies: HashMap<String, String> = headers
+            .get("cookie")
+            .map(|c| {
+                c.split(';')
+                    .filter_map(|pair| {
+                        let mut parts = pair.trim().splitn(2, '=');
+                        let name = parts.next()?.trim().to_string();
+                        let value = parts.next().unwrap_or("").trim().to_string();
+                        Some((name, value))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
         let query_params = {
             let path_str = req.path();
             if let Some(pos) = path_str.find('?') {
@@ -55,7 +80,9 @@ impl HttpService for AppService {
 
         if let Some(mut route_match) = self.router.route(method.parse().unwrap(), &path) {
             route_match.query_params = query_params.clone();
-            let handler_response = self.dispatcher.dispatch(route_match, body);
+            let handler_response = self
+                .dispatcher
+                .dispatch(route_match, body, headers, cookies);
 
             match handler_response {
                 Some(HandlerResponse { status, body }) => {

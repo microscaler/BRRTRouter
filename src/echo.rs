@@ -43,6 +43,8 @@ mod tests {
             handler_name: "echo".to_string(),
             path_params: params.clone(),
             query_params: query.clone(),
+            headers: HashMap::new(),
+            cookies: HashMap::new(),
             body: Some(body.clone()),
             reply_tx: tx,
         };
