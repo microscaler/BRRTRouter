@@ -81,6 +81,8 @@ fn test_dispatch_post_item() {
         handler_name: handler_name.clone(),
         path_params,
         query_params,
+        headers: HashMap::new(),
+        cookies: HashMap::new(),
         body: Some(body),
         reply_tx,
     };
@@ -120,6 +122,8 @@ fn test_dispatch_get_pet() {
         handler_name: handler_name.clone(),
         path_params,
         query_params,
+        headers: HashMap::new(),
+        cookies: HashMap::new(),
         body: None,
         reply_tx,
     };
@@ -164,6 +168,8 @@ fn test_typed_controller_params() {
         handler_name: "assert_controller".to_string(),
         path_params,
         query_params,
+        headers: HashMap::new(),
+        cookies: HashMap::new(),
         body: None,
         reply_tx,
     };
@@ -199,6 +205,8 @@ fn test_typed_controller_invalid_params() {
         handler_name: "assert_controller".to_string(),
         path_params,
         query_params,
+        headers: HashMap::new(),
+        cookies: HashMap::new(),
         body: None,
         reply_tx,
     };
@@ -233,6 +241,8 @@ fn test_panic_handler_returns_500() {
         handler_name: "panic".to_string(),
         path_params: HashMap::new(),
         query_params: HashMap::new(),
+        headers: HashMap::new(),
+        cookies: HashMap::new(),
         body: None,
         reply_tx,
     };
@@ -333,7 +343,12 @@ fn test_dispatch_all_registry_handlers() {
         let route_match = router.route(method.clone(), path).expect("route match");
         assert_eq!(route_match.handler_name, name);
         let resp = dispatcher
-            .dispatch(route_match, body.clone())
+            .dispatch(
+                route_match,
+                body.clone(),
+                Default::default(),
+                Default::default(),
+            )
             .expect("dispatch");
         assert_eq!(resp.status, 200, "handler {}", name);
         // TODO: fix this assertion once the handlers return correct responses

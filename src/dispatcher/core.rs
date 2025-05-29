@@ -18,6 +18,8 @@ pub struct HandlerRequest {
     pub handler_name: String,
     pub path_params: HashMap<String, String>,
     pub query_params: HashMap<String, String>,
+    pub headers: HashMap<String, String>,
+    pub cookies: HashMap<String, String>,
     pub body: Option<Value>,
     pub reply_tx: mpsc::Sender<HandlerResponse>,
 }
@@ -100,6 +102,8 @@ impl Dispatcher {
         &self,
         route_match: RouteMatch,
         body: Option<Value>,
+        headers: HashMap<String, String>,
+        cookies: HashMap<String, String>,
     ) -> Option<HandlerResponse> {
         let (reply_tx, reply_rx) = mpsc::channel();
 
@@ -112,6 +116,8 @@ impl Dispatcher {
             handler_name: handler_name.clone(),
             path_params: route_match.path_params.clone(),
             query_params: route_match.query_params.clone(),
+            headers,
+            cookies,
             body,
             reply_tx,
         };
