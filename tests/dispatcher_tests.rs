@@ -12,6 +12,10 @@ use serde_json::json;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 
+fn set_stack_size() {
+    may::config().set_stack_size(0x8000);
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 struct TypedReq {
     id: i32,
@@ -58,6 +62,7 @@ impl Handler for AssertController {
 
 #[test]
 fn test_dispatch_post_item() {
+    set_stack_size();
     let (routes, _slug) = load_spec("examples/openapi.yaml").expect("load spec");
     let router = Router::new(routes);
     let mut dispatcher = Dispatcher::new();
@@ -102,6 +107,7 @@ fn test_dispatch_post_item() {
 
 #[test]
 fn test_dispatch_get_pet() {
+    set_stack_size();
     let (routes, _slug) = load_spec("examples/openapi.yaml").unwrap();
     let router = Router::new(routes);
     let mut dispatcher = Dispatcher::new();
@@ -153,6 +159,7 @@ fn test_dispatch_get_pet() {
 
 #[test]
 fn test_typed_controller_params() {
+    set_stack_size();
     let mut dispatcher = Dispatcher::new();
     unsafe {
         dispatcher.register_typed("assert_controller", AssertController);
@@ -189,6 +196,7 @@ fn test_typed_controller_params() {
 
 #[test]
 fn test_typed_controller_invalid_params() {
+    set_stack_size();
     let mut dispatcher = Dispatcher::new();
     unsafe {
         dispatcher.register_typed("assert_controller", AssertController);
@@ -226,6 +234,7 @@ fn test_typed_controller_invalid_params() {
 
 #[test]
 fn test_panic_handler_returns_500() {
+    set_stack_size();
     fn panic_handler(_req: HandlerRequest) {
         panic!("boom");
     }
@@ -262,6 +271,7 @@ fn test_panic_handler_returns_500() {
 
 #[test]
 fn test_dispatch_all_registry_handlers() {
+    set_stack_size();
     let (routes, _slug) = load_spec("examples/openapi.yaml").expect("load spec");
     let router = Router::new(routes);
     let mut dispatcher = Dispatcher::new();
@@ -338,6 +348,12 @@ fn test_dispatch_all_registry_handlers() {
                 "/users/abc-123/posts/post1",
                 None,
                 json!({"body": "Welcome to the blog", "id": "post1", "title": "Intro"}),
+            ),
+            "stream_events" => (
+                Method::GET,
+                "/events",
+                None,
+                json!("")
             ),
             other => panic!("unexpected handler {}", other),
         };

@@ -47,6 +47,7 @@ pub unsafe fn register_all(dispatcher: &mut Dispatcher) {
         "get_post",
         crate::controllers::get_post::GetPostController,
     );
+    dispatcher.register_handler("stream_events", stream_events::handle);
     
 }
 
@@ -94,7 +95,10 @@ pub unsafe fn register_from_spec(dispatcher: &mut Dispatcher, routes: &[RouteMet
                 let tx = spawn_typed(crate::controllers::get_post::GetPostController);
                 dispatcher.add_route(route.clone(), tx);
             }
-            
+            "stream_events" => {
+                dispatcher.register_handler("stream_events", stream_events::handle);
+            }
+
             _ => {}
         }
     }
