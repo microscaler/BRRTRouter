@@ -1,3 +1,3 @@
-mod core;
+mod cli;
 
-pub use core::{run_cli, Cli, Commands};
+pub use cli::{run_cli, Cli, Commands};

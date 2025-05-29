@@ -1,3 +1,3 @@
-mod core;
+mod dispatcher;
 
-pub use core::{Dispatcher, HandlerRequest, HandlerResponse, HandlerSender};
+pub use dispatcher::{Dispatcher, HandlerRequest, HandlerResponse, HandlerSender};

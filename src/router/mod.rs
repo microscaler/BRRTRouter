@@ -1,5 +1,5 @@
-mod core;
+mod router;
 #[cfg(test)]
 mod tests;
 
-pub use core::{RouteMatch, Router};
+pub use router::{RouteMatch, Router};
