@@ -110,3 +110,72 @@ fn test_header_cookie_params() {
     assert_eq!(typed.data.token, "secret");
     assert_eq!(typed.data.session, "abc123");
 }
+
+#[derive(Clone)]
+struct SumHandler;
+
+#[derive(Debug, Deserialize)]
+struct SumReq { a: i32, b: i32 }
+
+impl TryFrom<HandlerRequest> for SumReq {
+    type Error = anyhow::Error;
+    fn try_from(req: HandlerRequest) -> Result<Self, Self::Error> {
+        let a = req.query_params.get("a").ok_or_else(|| anyhow!("missing a"))?.parse()?;
+        let b = req.query_params.get("b").ok_or_else(|| anyhow!("missing b"))?.parse()?;
+        Ok(SumReq { a, b })
+    }
+}
+
+#[derive(Serialize)]
+struct SumResp { total: i32 }
+
+impl brrtrouter::typed::Handler for SumHandler {
+    type Request = SumReq;
+    type Response = SumResp;
+
+    fn handle(&self, req: brrtrouter::typed::TypedHandlerRequest<Self::Request>) -> Self::Response {
+        SumResp { total: req.data.a + req.data.b }
+    }
+}
+
+#[test]
+fn test_spawn_typed_success_and_error() {
+    unsafe {
+        let tx = brrtrouter::typed::spawn_typed(SumHandler);
+        let (reply_tx, reply_rx) = mpsc::channel();
+        let mut q = HashMap::new();
+        q.insert("a".to_string(), "2".to_string());
+        q.insert("b".to_string(), "3".to_string());
+        tx.send(HandlerRequest {
+            method: Method::GET,
+            path: "/sum".into(),
+            handler_name: "sum".into(),
+            path_params: HashMap::new(),
+            query_params: q.clone(),
+            headers: HashMap::new(),
+            cookies: HashMap::new(),
+            body: None,
+            reply_tx,
+        }).unwrap();
+        let resp = reply_rx.recv().unwrap();
+        assert_eq!(resp.status, 200);
+        assert_eq!(resp.body["total"], 5);
+
+        let (reply_tx, reply_rx) = mpsc::channel();
+        let mut bad_q = HashMap::new();
+        bad_q.insert("a".to_string(), "2".to_string());
+        tx.send(HandlerRequest {
+            method: Method::GET,
+            path: "/sum".into(),
+            handler_name: "sum".into(),
+            path_params: HashMap::new(),
+            query_params: bad_q,
+            headers: HashMap::new(),
+            cookies: HashMap::new(),
+            body: None,
+            reply_tx,
+        }).unwrap();
+        let resp = reply_rx.recv().unwrap();
+        assert_eq!(resp.status, 400);
+    }
+}
