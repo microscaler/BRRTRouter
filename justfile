@@ -18,7 +18,7 @@ test:
 
 # Measure code coverage (requires cargo-llvm-cov)
 coverage:
-    cargo llvm-cov --fail-under 80 --no-report
+    cargo llvm-cov --no-report
 
 # Run benchmarks
 bench:

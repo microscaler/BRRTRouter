@@ -4,9 +4,22 @@ use pet_store::registry;
 use std::collections::HashMap;
 use std::io;
 
+fn parse_stack_size() -> usize {
+    if let Ok(val) = std::env::var("BRRTR_STACK_SIZE") {
+        if let Some(hex) = val.strip_prefix("0x") {
+            usize::from_str_radix(hex, 16).unwrap_or(0x4000)
+        } else {
+            val.parse().unwrap_or(0x4000)
+        }
+    } else {
+        0x4000
+    }
+}
+
 fn main() -> io::Result<()> {
     // enlarge stack size for may coroutines
-    may::config().set_stack_size(0x8000);
+    let stack_size = parse_stack_size();
+    may::config().set_stack_size(stack_size);
     // Load OpenAPI spec and create router
     let (routes, _slug) =
         brrtrouter::spec::load_spec("./openapi.yaml").expect("failed to load OpenAPI spec");

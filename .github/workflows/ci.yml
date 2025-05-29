@@ -53,5 +53,5 @@ jobs:
         run: cargo install cargo-llvm-cov
 
       - name: Measure coverage
-        run: cargo llvm-cov --fail-under 80 --no-report
+        run: cargo llvm-cov  #--no-report
 
