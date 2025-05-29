@@ -149,6 +149,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "askama",
+ "brrtrouter_macros",
  "clap",
  "criterion",
  "http",
@@ -163,6 +164,18 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "url",
+]
+
+[[package]]
+name = "brrtrouter_macros"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "proc-macro2",
+ "quote",
+ "serde",
+ "serde_json",
+ "syn",
 ]
 
 [[package]]
@@ -972,6 +985,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "brrtrouter",
+ "brrtrouter_macros",
  "http",
  "may",
  "may_minihttp",

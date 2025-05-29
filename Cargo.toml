@@ -26,6 +26,7 @@ url = "2.5.4"
 clap = { version = "4.5.38", features = ["cargo", "env", "derive"] }
 askama = { version = "0.14.0", features = ["full"] }
 notify = "6"
+brrtrouter_macros = { path = "./brrtrouter_macros" }
 
 [dev-dependencies]
 pretty_assertions = "1.4"
@@ -43,4 +44,5 @@ harness = false
 [workspace]
 members = [
     "examples/pet_store"
+    ,"brrtrouter_macros"
 ]

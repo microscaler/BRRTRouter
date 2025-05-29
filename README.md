@@ -144,6 +144,22 @@ dispatcher.register_handler("post_item", echo_handler);
 }
 ```
 
+### Using the `#[handler]` macro
+
+```rust
+use brrtrouter_macros::handler;
+use brrrouter::typed::TypedHandlerRequest;
+
+#[handler(
+    request(name: String),
+    response(id: Option<i32>)
+)]
+fn add_pet(req: TypedHandlerRequest<Request>) -> Response {
+    // your logic
+    Response { id: Some(1) }
+}
+```
+
 Each handler runs in its own coroutine, receiving requests via a channel and sending back structured HandlerResponse.
 
 ---
