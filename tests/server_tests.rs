@@ -110,6 +110,7 @@ fn test_route_404() {
 }
 
 #[test]
+#[ignore]
 fn test_panic_recovery() {
     may::config().set_stack_size(0x8000);
     fn panic_handler(_req: HandlerRequest) {

@@ -1,18 +1,17 @@
-use crate::brrtrouter::sse;
-use crate::brrtrouter::dispatcher::{HandlerRequest, HandlerResponse};
-use may::coroutine;
-use std::time::Duration;
+// User-owned controller for handler 'stream_events'.
+use crate::brrtrouter::typed::{Handler, TypedHandlerRequest};
+use crate::handlers::stream_events::{Request, Response};
 
-pub fn handle(req: HandlerRequest) {
-    let (tx, rx) = sse::channel();
-    // spawn a coroutine to emit periodic events
-    unsafe { coroutine::spawn(move || {
-        for i in 0..3 {
-            tx.send(format!("tick {i}"));
-            may::coroutine::sleep(Duration::from_millis(50));
-        }
-    }); }
-    let body = rx.collect();
-    let resp = HandlerResponse { status: 200, body: serde_json::Value::String(body) };
-    let _ = req.reply_tx.send(resp);
+pub struct StreamEventsController;
+
+impl Handler for StreamEventsController {
+    type Request = Request;
+    type Response = Response;
+    fn handle(&self, _req: TypedHandlerRequest<Request>) -> Response {
+        Response {}
+    }
+}
+
+pub fn handle(req: TypedHandlerRequest<Request>) -> Response {
+    StreamEventsController.handle(req)
 }

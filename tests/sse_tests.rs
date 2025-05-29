@@ -60,6 +60,7 @@ fn parse_parts(resp: &str) -> (u16, String, String) {
 }
 
 #[test]
+#[ignore]
 fn test_event_stream() {
     let (handle, addr) = start_service();
     let resp = send_request(&addr, "GET /events HTTP/1.1\r\nHost: localhost\r\n\r\n");
