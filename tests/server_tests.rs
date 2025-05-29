@@ -8,6 +8,7 @@ use http::Method;
 use may_minihttp::HttpServer;
 use pet_store::registry;
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::PathBuf;
@@ -15,16 +16,15 @@ use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 fn start_petstore_service() -> (may::coroutine::JoinHandle<()>, SocketAddr) {
+    // ensure coroutines have enough stack for tests
+    may::config().set_stack_size(0x8000);
     let (routes, _slug) = brrtrouter::load_spec("examples/openapi.yaml").unwrap();
     let router = Arc::new(RwLock::new(Router::new(routes.clone())));
     let mut dispatcher = Dispatcher::new();
     unsafe {
         registry::register_from_spec(&mut dispatcher, &routes);
     }
-    let service = AppService {
-        router,
-        dispatcher: Arc::new(RwLock::new(dispatcher)),
-    };
+    let service = AppService::new(router, Arc::new(RwLock::new(dispatcher)), HashMap::new());
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     drop(listener);
@@ -111,6 +111,7 @@ fn test_route_404() {
 
 #[test]
 fn test_panic_recovery() {
+    may::config().set_stack_size(0x8000);
     fn panic_handler(_req: HandlerRequest) {
         panic!("boom");
     }
@@ -123,6 +124,7 @@ fn test_panic_recovery() {
         response_schema: None,
         example: None,
         responses: std::collections::HashMap::new(),
+        security: Vec::new(),
         example_name: String::new(),
         project_slug: String::new(),
         output_dir: PathBuf::new(),
@@ -133,10 +135,7 @@ fn test_panic_recovery() {
     unsafe {
         dispatcher.register_handler("panic", panic_handler);
     }
-    let service = AppService {
-        router,
-        dispatcher: Arc::new(RwLock::new(dispatcher)),
-    };
+    let service = AppService::new(router, Arc::new(RwLock::new(dispatcher)), HashMap::new());
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     drop(listener);
@@ -151,6 +150,7 @@ fn test_panic_recovery() {
 
 #[test]
 fn test_headers_and_cookies() {
+    may::config().set_stack_size(0x8000);
     fn header_handler(req: HandlerRequest) {
         let response = HandlerResponse {
             status: 200,
@@ -171,6 +171,7 @@ fn test_headers_and_cookies() {
         response_schema: None,
         example: None,
         responses: std::collections::HashMap::new(),
+        security: Vec::new(),
         example_name: String::new(),
         project_slug: String::new(),
         output_dir: PathBuf::new(),
@@ -181,10 +182,7 @@ fn test_headers_and_cookies() {
     unsafe {
         dispatcher.register_handler("header", header_handler);
     }
-    let service = AppService {
-        router,
-        dispatcher: Arc::new(RwLock::new(dispatcher)),
-    };
+    let service = AppService::new(router, Arc::new(RwLock::new(dispatcher)), HashMap::new());
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     drop(listener);
@@ -210,6 +208,7 @@ fn test_headers_and_cookies() {
 
 #[test]
 fn test_status_201_json() {
+    may::config().set_stack_size(0x8000);
     fn create_handler(req: HandlerRequest) {
         let response = HandlerResponse {
             status: 201,
@@ -227,6 +226,7 @@ fn test_status_201_json() {
         response_schema: None,
         example: None,
         responses: std::collections::HashMap::new(),
+        security: Vec::new(),
         example_name: String::new(),
         project_slug: String::new(),
         output_dir: PathBuf::new(),
@@ -237,10 +237,7 @@ fn test_status_201_json() {
     unsafe {
         dispatcher.register_handler("create", create_handler);
     }
-    let service = AppService {
-        router,
-        dispatcher: Arc::new(RwLock::new(dispatcher)),
-    };
+    let service = AppService::new(router, Arc::new(RwLock::new(dispatcher)), HashMap::new());
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     drop(listener);
@@ -257,6 +254,7 @@ fn test_status_201_json() {
 
 #[test]
 fn test_text_plain_error() {
+    may::config().set_stack_size(0x8000);
     fn text_handler(req: HandlerRequest) {
         let response = HandlerResponse {
             status: 400,
@@ -274,6 +272,7 @@ fn test_text_plain_error() {
         response_schema: None,
         example: None,
         responses: std::collections::HashMap::new(),
+        security: Vec::new(),
         example_name: String::new(),
         project_slug: String::new(),
         output_dir: PathBuf::new(),
@@ -284,10 +283,7 @@ fn test_text_plain_error() {
     unsafe {
         dispatcher.register_handler("text", text_handler);
     }
-    let service = AppService {
-        router,
-        dispatcher: Arc::new(RwLock::new(dispatcher)),
-    };
+    let service = AppService::new(router, Arc::new(RwLock::new(dispatcher)), HashMap::new());
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     drop(listener);
