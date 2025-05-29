@@ -1,4 +1,4 @@
-use brrtrouter::validator::{print_issues, fail_if_issues, ValidationIssue};
+use brrtrouter::validator::{fail_if_issues, print_issues, ValidationIssue};
 
 fn main() {
     let mut args = std::env::args().skip(1);

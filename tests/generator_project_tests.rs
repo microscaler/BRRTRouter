@@ -1,8 +1,8 @@
-use brrtrouter::generator::{generate_project_from_spec, format_project};
+use brrtrouter::generator::{format_project, generate_project_from_spec};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
-use std::time::{SystemTime, UNIX_EPOCH};
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 fn temp_dir() -> PathBuf {
     let nanos = SystemTime::now()
@@ -17,7 +17,9 @@ fn temp_dir() -> PathBuf {
 #[test]
 fn test_generate_project_and_format() {
     let dir = temp_dir();
-    let spec_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples").join("openapi.yaml");
+    let spec_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("examples")
+        .join("openapi.yaml");
 
     let prev_dir = std::env::current_dir().unwrap();
     std::env::set_current_dir(&dir).unwrap();

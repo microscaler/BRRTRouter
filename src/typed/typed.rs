@@ -19,7 +19,6 @@ pub trait Handler: Send + 'static {
     fn handle(&self, req: TypedHandlerRequest<Self::Request>) -> Self::Response;
 }
 
-
 pub trait TypedHandlerFor<T>: Sized {
     fn from_handler(req: HandlerRequest) -> anyhow::Result<TypedHandlerRequest<T>>;
 }
@@ -54,9 +53,9 @@ where
 
             let _ = reply_tx.send(HandlerResponse {
                 status: 200,
-                body: serde_json::to_value(result).unwrap_or_else(|_| {
-                    serde_json::json!({"error": "Failed to serialize response"})
-                }),
+                body: serde_json::to_value(result).unwrap_or_else(
+                    |_| serde_json::json!({"error": "Failed to serialize response"}),
+                ),
             });
         }
     });

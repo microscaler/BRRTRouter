@@ -28,9 +28,7 @@ fn main() -> io::Result<()> {
         "0.0.0.0:8080"
     };
     println!("🚀 {{ name }} example server listening on {addr}");
-    let server = HttpServer(service)
-        .start(addr)
-        .map_err(io::Error::other)?;
+    let server = HttpServer(service).start(addr).map_err(io::Error::other)?;
     println!("Server started successfully on {addr}");
 
     server

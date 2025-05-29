@@ -1,6 +1,7 @@
 use brrtrouter::spec::{
     extract_parameters, extract_request_schema, extract_response_schema_and_example,
-    resolve_schema_ref, ParameterLocation};
+    resolve_schema_ref, ParameterLocation,
+};
 use oas3::OpenApiV3Spec;
 use serde_json::json;
 
@@ -102,12 +103,7 @@ fn test_extract_request_and_response() {
 #[test]
 fn test_extract_parameters() {
     let spec = get_spec();
-    let item = spec
-        .paths
-        .as_ref()
-        .unwrap()
-        .get("/foo/{id}")
-        .unwrap();
+    let item = spec.paths.as_ref().unwrap().get("/foo/{id}").unwrap();
     let get_op = item.get.as_ref().unwrap();
 
     let mut params = extract_parameters(&spec, &item.parameters);

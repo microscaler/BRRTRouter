@@ -2,11 +2,11 @@ use std::collections::{BTreeSet, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::spec::{load_spec};
+use crate::spec::load_spec;
 
 use super::schema::{
-    collect_component_schemas, extract_fields, parameter_to_field, process_schema_type,
-    unique_handler_name, is_named_type, to_camel_case,
+    collect_component_schemas, extract_fields, is_named_type, parameter_to_field,
+    process_schema_type, to_camel_case, unique_handler_name,
 };
 use super::templates::{
     write_cargo_toml, write_controller, write_handler, write_main_rs, write_mod_rs,
@@ -127,4 +127,3 @@ pub fn format_project(dir: &Path) -> anyhow::Result<()> {
     }
     Ok(())
 }
-

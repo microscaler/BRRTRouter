@@ -4,8 +4,10 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::Path;
 
+use super::schema::{
+    is_named_type, rust_literal_for_example, to_camel_case, FieldDef, TypeDefinition,
+};
 use crate::spec::{ParameterMeta, RouteMeta};
-use super::schema::{FieldDef, TypeDefinition, is_named_type, rust_literal_for_example, to_camel_case};
 
 #[derive(Debug, Clone)]
 pub struct RegistryEntry {
@@ -115,7 +117,10 @@ pub(crate) fn write_controller(
     }
     let example_map = example
         .as_ref()
-        .and_then(|v| match v { Value::Object(map) => Some(map.clone()), _ => None })
+        .and_then(|v| match v {
+            Value::Object(map) => Some(map.clone()),
+            _ => None,
+        })
         .unwrap_or_default();
     let enriched_fields = res
         .iter()
@@ -172,7 +177,10 @@ pub(crate) fn write_controller(
 
 pub(crate) fn write_mod_rs(dir: &Path, modules: &[String], label: &str) -> anyhow::Result<()> {
     let path = dir.join("mod.rs");
-    let rendered = ModRsTemplateData { modules: modules.to_vec() }.render()?;
+    let rendered = ModRsTemplateData {
+        modules: modules.to_vec(),
+    }
+    .render()?;
     fs::write(path.clone(), rendered)?;
     println!("✅ Updated mod.rs for {} → {:?}", label, path);
     Ok(())
@@ -180,13 +188,19 @@ pub(crate) fn write_mod_rs(dir: &Path, modules: &[String], label: &str) -> anyho
 
 pub(crate) fn write_registry_rs(dir: &Path, entries: &[RegistryEntry]) -> anyhow::Result<()> {
     let path = dir.join("registry.rs");
-    let rendered = RegistryTemplateData { entries: entries.to_vec() }.render()?;
+    let rendered = RegistryTemplateData {
+        entries: entries.to_vec(),
+    }
+    .render()?;
     fs::write(path.clone(), rendered)?;
     println!("✅ Generated registry.rs → {:?}", path);
     Ok(())
 }
 
-pub(crate) fn write_types_rs(dir: &Path, types: &HashMap<String, TypeDefinition>) -> anyhow::Result<()> {
+pub(crate) fn write_types_rs(
+    dir: &Path,
+    types: &HashMap<String, TypeDefinition>,
+) -> anyhow::Result<()> {
     let path = dir.join("types.rs");
     let mut sorted = BTreeMap::new();
     for (name, def) in types {
@@ -199,7 +213,10 @@ pub(crate) fn write_types_rs(dir: &Path, types: &HashMap<String, TypeDefinition>
 }
 
 pub(crate) fn write_cargo_toml(base: &Path, slug: &str) -> anyhow::Result<()> {
-    let rendered = CargoTomlTemplateData { name: slug.to_string() }.render()?;
+    let rendered = CargoTomlTemplateData {
+        name: slug.to_string(),
+    }
+    .render()?;
     fs::write(base.join("Cargo.toml"), rendered)?;
     println!("✅ Wrote Cargo.toml");
     Ok(())
@@ -214,9 +231,12 @@ pub fn write_main_rs(dir: &Path, slug: &str, routes: Vec<RouteMeta>) -> anyhow::
             handler: r.handler_name,
         })
         .collect();
-    let rendered = MainRsTemplateData { name: slug.to_string(), routes }.render()?;
+    let rendered = MainRsTemplateData {
+        name: slug.to_string(),
+        routes,
+    }
+    .render()?;
     fs::write(dir.join("main.rs"), rendered)?;
     println!("✅ Wrote main.rs");
     Ok(())
 }
-
