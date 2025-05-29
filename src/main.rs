@@ -8,7 +8,7 @@ use std::io;
 
 fn main() -> io::Result<()> {
     // increase coroutine stack size to prevent overflows
-    may::config().set_stack_size(0x4000);
+    may::config().set_stack_size(0x8000);
     // Load OpenAPI spec and create router
     let (routes, _slug) = load_spec("examples/openapi.yaml").expect("failed to load spec");
     let router = Router::new(routes.clone());

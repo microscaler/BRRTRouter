@@ -1,12 +1,12 @@
 use brrtrouter::{dispatcher::Dispatcher, router::Router, server::AppService};
-use std::collections::HashMap;
 use may_minihttp::HttpServer;
 use pet_store::registry;
+use std::collections::HashMap;
 use std::io;
 
 fn main() -> io::Result<()> {
-    // increase coroutine stack size to prevent overflows
-    may::config().set_stack_size(0x4000);
+    // enlarge stack size for may coroutines
+    may::config().set_stack_size(0x8000);
     // Load OpenAPI spec and create router
     let (routes, _slug) =
         brrtrouter::spec::load_spec("./openapi.yaml").expect("failed to load OpenAPI spec");

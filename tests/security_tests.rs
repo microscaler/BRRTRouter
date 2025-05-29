@@ -52,7 +52,7 @@ fn write_temp(content: &str) -> std::path::PathBuf {
 
 fn start_service() -> (may::coroutine::JoinHandle<()>, SocketAddr) {
     // ensure coroutines have enough stack for tests
-    may::config().set_stack_size(0x4000);
+    may::config().set_stack_size(0x8000);
     const SPEC: &str = r#"openapi: 3.1.0
 info:
   title: Auth API
