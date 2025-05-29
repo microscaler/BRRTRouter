@@ -30,7 +30,9 @@ where
 {
     let (tx, rx) = mpsc::channel::<HandlerRequest>();
 
-    may::coroutine::spawn(move || {
+    may::coroutine::Builder::new()
+        .stack_size(may::config().get_stack_size())
+        .spawn(move || {
         let handler = handler;
         for req in rx.iter() {
             let reply_tx = req.reply_tx.clone();
@@ -58,7 +60,8 @@ where
                 ),
             });
         }
-    });
+    })
+    .unwrap();
 
     tx
 }

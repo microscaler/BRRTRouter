@@ -80,7 +80,9 @@ impl Dispatcher {
         let (tx, rx) = mpsc::channel::<HandlerRequest>();
         let name = name.to_string();
 
-        coroutine::spawn(move || {
+        coroutine::Builder::new()
+            .stack_size(may::config().get_stack_size())
+            .spawn(move || {
             for req in rx.iter() {
                 // Extract what we need for error handling
                 let reply_tx = req.reply_tx.clone();
@@ -101,7 +103,8 @@ impl Dispatcher {
                     eprintln!("Handler '{}' panicked: {:?}", handler_name, panic);
                 }
             }
-        });
+        })
+        .unwrap();
 
         self.handlers.insert(name, tx);
     }
