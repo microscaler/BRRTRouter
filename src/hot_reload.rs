@@ -20,7 +20,7 @@ where
     let watch_path = path.clone();
 
     let mut watcher = RecommendedWatcher::new(
-        move |res| match res {
+        move |res: Result<notify::Event, notify::Error>| match res {
             Ok(event) => {
                 if matches!(event.kind, EventKind::Modify(_) | EventKind::Create(_)) {
                     if let Ok((routes, _)) = spec::load_spec(watch_path.to_str().unwrap()) {
