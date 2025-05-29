@@ -1,5 +1,9 @@
-mod generator;
+mod project;
+mod templates;
+mod schema;
 #[cfg(test)]
 mod tests;
 
-pub use generator::*;
+pub use project::*;
+pub use templates::*;
+pub use schema::*;
