@@ -137,7 +137,7 @@ fn resolve_handler_name(
         })
 }
 
-fn extract_request_schema(
+pub fn extract_request_schema(
     spec: &OpenApiV3Spec,
     operation: &oas3::spec::Operation,
 ) -> Option<Value> {
@@ -155,7 +155,7 @@ fn extract_request_schema(
     })
 }
 
-fn extract_response_schema_and_example(
+pub fn extract_response_schema_and_example(
     spec: &OpenApiV3Spec,
     operation: &oas3::spec::Operation,
 ) -> (Option<Value>, Option<Value>) {
@@ -213,7 +213,7 @@ fn resolve_parameter_ref<'a>(
     }
 }
 
-fn extract_parameters(
+pub fn extract_parameters(
     spec: &OpenApiV3Spec,
     params: &Vec<ObjectOrReference<Parameter>>,
 ) -> Vec<ParameterMeta> {
