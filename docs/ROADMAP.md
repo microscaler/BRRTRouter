@@ -44,3 +44,14 @@ Planned or in-progress tasks include:
 - 1M route matches/sec
 - ≤1 ms latency (excluding handler execution)
 
+
+
+## links
+
+- [Describing API Security](https://learn.openapis.org/specification/security.html)
+- [API Server & Base Path](https://swagger.io/docs/specification/v3_0/api-host-and-base-path/)
+- [Data Models](https://swagger.io/docs/specification/v3_0/data-models/data-models/)
+- [Callbacks](https://swagger.io/docs/specification/v3_0/callbacks/)
+- [GraphQL](https://swagger.io/docs/specification/v3_0/graphql/)
+- [Rate limiting](https://swagger.io/docs/specification/v3_0/rate-limiting/)
+- 
