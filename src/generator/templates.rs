@@ -77,7 +77,7 @@ pub struct ControllerTemplateData {
     pub imports: Vec<String>,
 }
 
-pub(crate) fn write_handler(
+pub fn write_handler(
     path: &Path,
     handler: &str,
     req: &[FieldDef],
@@ -103,7 +103,7 @@ pub(crate) fn write_handler(
     Ok(())
 }
 
-pub(crate) fn write_controller(
+pub fn write_controller(
     path: &Path,
     handler: &str,
     struct_name: &str,
@@ -186,7 +186,7 @@ pub(crate) fn write_mod_rs(dir: &Path, modules: &[String], label: &str) -> anyho
     Ok(())
 }
 
-pub(crate) fn write_registry_rs(dir: &Path, entries: &[RegistryEntry]) -> anyhow::Result<()> {
+pub fn write_registry_rs(dir: &Path, entries: &[RegistryEntry]) -> anyhow::Result<()> {
     let path = dir.join("registry.rs");
     let rendered = RegistryTemplateData {
         entries: entries.to_vec(),
