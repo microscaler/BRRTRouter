@@ -5,10 +5,8 @@ use brrtrouter::{
     SecurityProvider, SecurityRequest,
     load_spec_full,
 };
-use http::Method;
 use may_minihttp::HttpServer;
 use serde_json::json;
-use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::{Arc, RwLock};
@@ -91,6 +89,66 @@ paths:
     (handle, addr)
 }
 
+fn start_multi_service() -> (may::coroutine::JoinHandle<()>, SocketAddr) {
+    // ensure coroutines have enough stack for tests
+    may::config().set_stack_size(0x8000);
+    const SPEC: &str = r#"openapi: 3.1.0
+info:
+  title: Multi Auth API
+  version: '1.0'
+components:
+  securitySchemes:
+    KeyOne:
+      type: apiKey
+      in: header
+      name: X-Key-One
+    KeyTwo:
+      type: apiKey
+      in: header
+      name: X-Key-Two
+paths:
+  /one:
+    get:
+      operationId: one
+      security:
+        - KeyOne: []
+      responses:
+        '200': { description: OK }
+  /two:
+    get:
+      operationId: two
+      security:
+        - KeyTwo: []
+      responses:
+        '200': { description: OK }
+"#;
+    let path = write_temp(SPEC);
+    let (routes, schemes, _slug) = load_spec_full(path.to_str().unwrap()).unwrap();
+    let router = Arc::new(RwLock::new(Router::new(routes.clone())));
+    let mut dispatcher = Dispatcher::new();
+    unsafe {
+        dispatcher.register_handler("one", |req: HandlerRequest| {
+            let _ = req
+                .reply_tx
+                .send(HandlerResponse { status: 200, body: json!({"one": true}) });
+        });
+        dispatcher.register_handler("two", |req: HandlerRequest| {
+            let _ = req
+                .reply_tx
+                .send(HandlerResponse { status: 200, body: json!({"two": true}) });
+        });
+    }
+    let mut service = AppService::new(router, Arc::new(RwLock::new(dispatcher)), schemes);
+    service.register_security_provider("KeyOne", Arc::new(ApiKeyProvider { key: "one".into() }));
+    service.register_security_provider("KeyTwo", Arc::new(ApiKeyProvider { key: "two".into() }));
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    drop(listener);
+    let handle = HttpServer(service).start(addr).unwrap();
+    std::thread::sleep(Duration::from_millis(50));
+    (handle, addr)
+}
+
 fn send_request(addr: &SocketAddr, req: &str) -> String {
     let mut stream = TcpStream::connect(addr).unwrap();
     stream.write_all(req.as_bytes()).unwrap();
@@ -128,4 +186,30 @@ fn test_api_key_auth() {
     unsafe { handle.coroutine().cancel() };
     let status = parse_status(&resp);
     assert_eq!(status, 200);
+}
+
+#[test]
+fn test_multiple_security_providers() {
+    let (handle, addr) = start_multi_service();
+    let resp = send_request(
+        &addr,
+        "GET /one HTTP/1.1\r\nHost: localhost\r\nX-Key-One: one\r\n\r\n",
+    );
+    let status = parse_status(&resp);
+    assert_eq!(status, 200);
+
+    let resp = send_request(
+        &addr,
+        "GET /two HTTP/1.1\r\nHost: localhost\r\nX-Key-Two: two\r\n\r\n",
+    );
+    let status_two = parse_status(&resp);
+    assert_eq!(status_two, 200);
+
+    let resp = send_request(
+        &addr,
+        "GET /one HTTP/1.1\r\nHost: localhost\r\nX-Key-Two: two\r\n\r\n",
+    );
+    unsafe { handle.coroutine().cancel() };
+    let status_wrong = parse_status(&resp);
+    assert_eq!(status_wrong, 401);
 }
