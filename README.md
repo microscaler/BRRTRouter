@@ -149,6 +149,14 @@ dispatcher.add_middleware(metrics.clone());
 `MetricsMiddleware` tracks request counts and average latency.
 
 ---
+## 📡 Server-Sent Events
+
+BRRTRouter can serve [Server-Sent Events](https://html.spec.whatwg.org/multipage/server-sent-events.html).
+Mark a `GET` operation in your OpenAPI spec with the custom `x-sse: true` extension and
+return `text/event-stream` content. Handlers use `brrrouter::sse::channel()` to emit events.
+See [`examples/openapi.yaml`](examples/openapi.yaml) for the sample `/events` endpoint.
+
+---
 ## 📈 Contributing & Benchmarks
 For a detailed view of completed and upcoming work, see [docs/ROADMAP.md](docs/ROADMAP.md).
 We welcome contributions that improve:
