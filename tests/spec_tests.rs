@@ -108,3 +108,53 @@ fn test_load_spec_yaml_and_json() {
     assert_eq!(route_y.example, route_j.example);
     assert_eq!(route_y.example_name, "test_api_example");
 }
+
+use std::process::Command;
+
+const YAML_NO_OPID: &str = r#"openapi: 3.1.0
+info:
+  title: Bad API
+  version: '1.0.0'
+paths:
+  /foo:
+    get:
+      responses:
+        '200': { description: OK }
+"#;
+
+const YAML_UNSUPPORTED_METHOD: &str = r#"openapi: 3.1.0
+info:
+  title: Bad API
+  version: '1.0.0'
+paths:
+  /foo:
+    connect:
+      operationId: connect_foo
+      responses:
+        '200': { description: OK }
+"#;
+
+#[test]
+fn test_missing_operation_id_exits() {
+    let path = write_temp(YAML_NO_OPID, "yaml");
+    let exe = env!("CARGO_BIN_EXE_spec_helper");
+    let output = Command::new(exe)
+        .arg(path.to_str().unwrap())
+        .output()
+        .expect("run spec_helper");
+    assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(1));
+}
+
+#[test]
+fn test_unsupported_method_ignored() {
+    let path = write_temp(YAML_UNSUPPORTED_METHOD, "yaml");
+    let exe = env!("CARGO_BIN_EXE_spec_helper");
+    let output = Command::new(exe)
+        .arg(path.to_str().unwrap())
+        .output()
+        .expect("run spec_helper");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("routes: 0"));
+}
