@@ -1,4 +1,5 @@
 use brrtrouter::{dispatcher::Dispatcher, router::Router, server::AppService};
+use std::collections::HashMap;
 use may_minihttp::HttpServer;
 use pet_store::registry;
 use std::io;
@@ -20,7 +21,7 @@ fn main() -> io::Result<()> {
     // This returns a coroutine JoinHandle; we join on it to keep the server running
     let router = std::sync::Arc::new(std::sync::RwLock::new(Router::new(routes)));
     let dispatcher = std::sync::Arc::new(std::sync::RwLock::new(Dispatcher::new()));
-    let service = AppService { router, dispatcher };
+    let service = AppService::new(router, dispatcher, HashMap::new());
     let addr = if std::env::var("BRRTR_LOCAL").is_ok() {
         "127.0.0.1:8080"
     } else {

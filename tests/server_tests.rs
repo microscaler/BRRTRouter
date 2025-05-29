@@ -8,6 +8,7 @@ use http::Method;
 use may_minihttp::HttpServer;
 use pet_store::registry;
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::PathBuf;
@@ -21,10 +22,7 @@ fn start_petstore_service() -> (may::coroutine::JoinHandle<()>, SocketAddr) {
     unsafe {
         registry::register_from_spec(&mut dispatcher, &routes);
     }
-    let service = AppService {
-        router,
-        dispatcher: Arc::new(RwLock::new(dispatcher)),
-    };
+    let service = AppService::new(router, Arc::new(RwLock::new(dispatcher)), HashMap::new());
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     drop(listener);
@@ -123,6 +121,7 @@ fn test_panic_recovery() {
         response_schema: None,
         example: None,
         responses: std::collections::HashMap::new(),
+        security: Vec::new(),
         example_name: String::new(),
         project_slug: String::new(),
         output_dir: PathBuf::new(),
@@ -133,10 +132,7 @@ fn test_panic_recovery() {
     unsafe {
         dispatcher.register_handler("panic", panic_handler);
     }
-    let service = AppService {
-        router,
-        dispatcher: Arc::new(RwLock::new(dispatcher)),
-    };
+    let service = AppService::new(router, Arc::new(RwLock::new(dispatcher)), HashMap::new());
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     drop(listener);
@@ -171,6 +167,7 @@ fn test_headers_and_cookies() {
         response_schema: None,
         example: None,
         responses: std::collections::HashMap::new(),
+        security: Vec::new(),
         example_name: String::new(),
         project_slug: String::new(),
         output_dir: PathBuf::new(),
@@ -181,10 +178,7 @@ fn test_headers_and_cookies() {
     unsafe {
         dispatcher.register_handler("header", header_handler);
     }
-    let service = AppService {
-        router,
-        dispatcher: Arc::new(RwLock::new(dispatcher)),
-    };
+    let service = AppService::new(router, Arc::new(RwLock::new(dispatcher)), HashMap::new());
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     drop(listener);
@@ -227,6 +221,7 @@ fn test_status_201_json() {
         response_schema: None,
         example: None,
         responses: std::collections::HashMap::new(),
+        security: Vec::new(),
         example_name: String::new(),
         project_slug: String::new(),
         output_dir: PathBuf::new(),
@@ -237,10 +232,7 @@ fn test_status_201_json() {
     unsafe {
         dispatcher.register_handler("create", create_handler);
     }
-    let service = AppService {
-        router,
-        dispatcher: Arc::new(RwLock::new(dispatcher)),
-    };
+    let service = AppService::new(router, Arc::new(RwLock::new(dispatcher)), HashMap::new());
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     drop(listener);
@@ -274,6 +266,7 @@ fn test_text_plain_error() {
         response_schema: None,
         example: None,
         responses: std::collections::HashMap::new(),
+        security: Vec::new(),
         example_name: String::new(),
         project_slug: String::new(),
         output_dir: PathBuf::new(),
@@ -284,10 +277,7 @@ fn test_text_plain_error() {
     unsafe {
         dispatcher.register_handler("text", text_handler);
     }
-    let service = AppService {
-        router,
-        dispatcher: Arc::new(RwLock::new(dispatcher)),
-    };
+    let service = AppService::new(router, Arc::new(RwLock::new(dispatcher)), HashMap::new());
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     drop(listener);

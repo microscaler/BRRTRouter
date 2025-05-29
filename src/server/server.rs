@@ -1,5 +1,7 @@
 use crate::dispatcher::{Dispatcher, HandlerResponse};
 use crate::router::Router;
+use crate::security::{SecurityProvider, SecurityRequest};
+use crate::spec::{SecurityScheme};
 use may_minihttp::{HttpService, Request, Response};
 use serde::Serialize;
 use std::collections::HashMap;
@@ -20,6 +22,31 @@ struct JsonResponse {
 pub struct AppService {
     pub router: Arc<RwLock<Router>>,
     pub dispatcher: Arc<RwLock<Dispatcher>>,
+    pub security_schemes: HashMap<String, SecurityScheme>,
+    pub security_providers: HashMap<String, Arc<dyn SecurityProvider>>,
+}
+
+impl AppService {
+    pub fn new(
+        router: Arc<RwLock<Router>>,
+        dispatcher: Arc<RwLock<Dispatcher>>,
+        security_schemes: HashMap<String, SecurityScheme>,
+    ) -> Self {
+        Self {
+            router,
+            dispatcher,
+            security_schemes,
+            security_providers: HashMap::new(),
+        }
+    }
+
+    pub fn register_security_provider(
+        &mut self,
+        name: &str,
+        provider: Arc<dyn SecurityProvider>,
+    ) {
+        self.security_providers.insert(name.to_string(), provider);
+    }
 }
 
 impl HttpService for AppService {
@@ -85,6 +112,43 @@ impl HttpService for AppService {
         };
         if let Some(mut route_match) = route_opt {
             route_match.query_params = query_params.clone();
+            if !route_match.route.security.is_empty() {
+                let sec_req = SecurityRequest {
+                    headers: &headers,
+                    query: &query_params,
+                    cookies: &cookies,
+                };
+                let mut authorized = false;
+                'outer: for requirement in &route_match.route.security {
+                    let mut ok = true;
+                    for (scheme_name, scopes) in &requirement.0 {
+                        let scheme = match self.security_schemes.get(scheme_name) {
+                            Some(s) => s,
+                            None => { ok = false; break; }
+                        };
+                        let provider = match self.security_providers.get(scheme_name) {
+                            Some(p) => p,
+                            None => { ok = false; break; }
+                        };
+                        if !provider.validate(scheme, scopes, &sec_req) {
+                            ok = false;
+                            break;
+                        }
+                    }
+                    if ok {
+                        authorized = true;
+                        break 'outer;
+                    }
+                }
+                if !authorized {
+                    res.status_code(401, "Unauthorized");
+                    res.header("Content-Type: application/json");
+                    res.body_vec(
+                        serde_json::json!({"error": "Unauthorized"}).to_string().into_bytes(),
+                    );
+                    return Ok(());
+                }
+            }
             let handler_response = {
                 let dispatcher = self.dispatcher.read().unwrap();
                 dispatcher.dispatch(route_match, body, headers, cookies)
