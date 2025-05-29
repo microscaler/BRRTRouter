@@ -73,6 +73,7 @@ pub struct HandlerTemplateData {
     pub request_fields: Vec<FieldDef>,
     pub response_fields: Vec<FieldDef>,
     pub imports: Vec<String>,
+    pub parameters: Vec<ParameterMeta>,
 }
 
 #[derive(Template)]
@@ -148,6 +149,7 @@ pub fn generate_project_from_spec(spec_path: &Path, force: bool) -> anyhow::Resu
             &request_fields,
             &response_fields,
             &imports,
+            &route.parameters,
             force,
         )?;
         let controller_struct = format!("{}Controller", to_camel_case(&handler));
@@ -212,6 +214,7 @@ fn write_handler(
     req: &[FieldDef],
     res: &[FieldDef],
     imports: &BTreeSet<String>,
+    params: &[ParameterMeta],
     force: bool,
 ) -> anyhow::Result<()> {
     if path.exists() && !force {
@@ -223,6 +226,7 @@ fn write_handler(
         request_fields: req.to_vec(),
         response_fields: res.to_vec(),
         imports: imports.iter().cloned().collect(),
+        parameters: params.to_vec(),
     }
     .render()?;
     fs::write(path, rendered)?;

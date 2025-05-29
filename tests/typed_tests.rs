@@ -1,19 +1,40 @@
+use anyhow::anyhow;
 use brrtrouter::typed::TypedHandlerFor;
 use brrtrouter::{
     dispatcher::{HandlerRequest, HandlerResponse},
-    spec::{ParameterLocation, ParameterMeta},
     typed::TypedHandlerRequest,
 };
 use http::Method;
 use may::sync::mpsc;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use std::collections::HashMap;
+use std::convert::TryFrom;
 
 #[derive(Debug, Deserialize, Serialize)]
 struct Req {
     id: i32,
     active: bool,
+}
+
+impl TryFrom<HandlerRequest> for Req {
+    type Error = anyhow::Error;
+
+    fn try_from(req: HandlerRequest) -> Result<Self, Self::Error> {
+        let id = req
+            .path_params
+            .get("id")
+            .ok_or_else(|| anyhow::anyhow!("missing id"))?
+            .parse()?;
+        let active = req
+            .query_params
+            .get("active")
+            .map(|v| v.parse::<bool>())
+            .transpose()?;
+        Ok(Req {
+            id,
+            active: active.unwrap_or(false),
+        })
+    }
 }
 
 #[test]
@@ -34,22 +55,7 @@ fn test_from_handler_non_string_params() {
         reply_tx: tx,
     };
 
-    let params = vec![
-        ParameterMeta {
-            name: "id".to_string(),
-            location: ParameterLocation::Path,
-            required: true,
-            schema: Some(json!({"type": "integer"})),
-        },
-        ParameterMeta {
-            name: "active".to_string(),
-            location: ParameterLocation::Query,
-            required: false,
-            schema: Some(json!({"type": "boolean"})),
-        },
-    ];
-
-    let typed = TypedHandlerRequest::<Req>::from_handler(req, &params).expect("conversion failed");
+    let typed = TypedHandlerRequest::<Req>::from_handler(req).expect("conversion failed");
     assert_eq!(typed.data.id, 42);
     assert!(typed.data.active);
 }

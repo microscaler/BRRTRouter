@@ -1,8 +1,8 @@
 use brrtrouter::generator::{
-    process_schema_type, extract_fields, parameter_to_field, rust_literal_for_example,
-    schema_to_type, to_camel_case, is_named_type, FieldDef, TypeDefinition
+    extract_fields, is_named_type, parameter_to_field, process_schema_type,
+    rust_literal_for_example, schema_to_type, to_camel_case, FieldDef, TypeDefinition,
 };
-use brrtrouter::spec::{ParameterMeta, ParameterLocation};
+use brrtrouter::spec::{ParameterLocation, ParameterMeta};
 use serde_json::json;
 use std::collections::HashMap;
 
@@ -24,9 +24,18 @@ fn test_is_named_type() {
 fn test_schema_to_type() {
     assert_eq!(schema_to_type(&json!({"type": "string"})), "String");
     assert_eq!(schema_to_type(&json!({"type": "integer"})), "i32");
-    assert_eq!(schema_to_type(&json!({"type": "array", "items": {"type": "number"}})), "Vec<f64>");
-    assert_eq!(schema_to_type(&json!({"$ref": "#/components/schemas/item"})), "Item");
-    assert_eq!(schema_to_type(&json!({"type": "array", "items": {"$ref": "#/components/schemas/item"}})), "Vec<Item>");
+    assert_eq!(
+        schema_to_type(&json!({"type": "array", "items": {"type": "number"}})),
+        "Vec<f64>"
+    );
+    assert_eq!(
+        schema_to_type(&json!({"$ref": "#/components/schemas/item"})),
+        "Item"
+    );
+    assert_eq!(
+        schema_to_type(&json!({"type": "array", "items": {"$ref": "#/components/schemas/item"}})),
+        "Vec<Item>"
+    );
 }
 
 #[test]

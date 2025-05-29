@@ -1,4 +1,4 @@
-use brrtrouter::{load_spec, spec::{ParameterLocation}};
+use brrtrouter::{load_spec, spec::ParameterLocation};
 use http::Method;
 use oas3::OpenApiV3Spec;
 
@@ -50,8 +50,16 @@ paths:
 
 fn write_temp(content: &str, ext: &str) -> std::path::PathBuf {
     use std::time::{SystemTime, UNIX_EPOCH};
-    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-    let path = std::env::temp_dir().join(format!("spec_test_{}_{}.{}", std::process::id(), nanos, ext));
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let path = std::env::temp_dir().join(format!(
+        "spec_test_{}_{}.{}",
+        std::process::id(),
+        nanos,
+        ext
+    ));
     std::fs::write(&path, content).unwrap();
     path
 }
