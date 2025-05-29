@@ -8,6 +8,7 @@ use http::Method;
 use may_minihttp::HttpServer;
 use pet_store::registry;
 use serde_json::{Value, json};
+use std::sync::{Arc, RwLock};
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::time::Duration;
@@ -15,12 +16,12 @@ use std::path::PathBuf;
 
 fn start_petstore_service() -> (may::coroutine::JoinHandle<()>, SocketAddr) {
     let (routes, _slug) = brrtrouter::load_spec("examples/openapi.yaml").unwrap();
-    let router = Router::new(routes.clone());
+    let router = Arc::new(RwLock::new(Router::new(routes.clone())));
     let mut dispatcher = Dispatcher::new();
     unsafe {
         registry::register_from_spec(&mut dispatcher, &routes);
     }
-    let service = AppService { router, dispatcher };
+    let service = AppService { router, dispatcher: Arc::new(RwLock::new(dispatcher)) };
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     drop(listener);
@@ -102,12 +103,12 @@ fn test_panic_recovery() {
         project_slug: String::new(),
         output_dir: PathBuf::new(),
     };
-    let router = Router::new(vec![route]);
+    let router = Arc::new(RwLock::new(Router::new(vec![route])));
     let mut dispatcher = Dispatcher::new();
     unsafe {
         dispatcher.register_handler("panic", panic_handler);
     }
-    let service = AppService { router, dispatcher };
+    let service = AppService { router, dispatcher: Arc::new(RwLock::new(dispatcher)) };
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     drop(listener);
@@ -145,12 +146,12 @@ fn test_headers_and_cookies() {
         project_slug: String::new(),
         output_dir: PathBuf::new(),
     };
-    let router = Router::new(vec![route]);
+    let router = Arc::new(RwLock::new(Router::new(vec![route])));
     let mut dispatcher = Dispatcher::new();
     unsafe {
         dispatcher.register_handler("header", header_handler);
     }
-    let service = AppService { router, dispatcher };
+    let service = AppService { router, dispatcher: Arc::new(RwLock::new(dispatcher)) };
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     drop(listener);

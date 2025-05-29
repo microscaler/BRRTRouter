@@ -1,5 +1,6 @@
 use crate::dispatcher::{Dispatcher, HandlerResponse};
 use crate::router::Router;
+use std::sync::{Arc, RwLock};
 use may_minihttp::{HttpService, Request, Response};
 use serde::Serialize;
 use std::collections::HashMap;
@@ -17,8 +18,8 @@ struct JsonResponse {
 
 #[derive(Clone)]
 pub struct AppService {
-    pub router: Router,
-    pub dispatcher: Dispatcher,
+    pub router: Arc<RwLock<Router>>,
+    pub dispatcher: Arc<RwLock<Dispatcher>>,
 }
 
 impl HttpService for AppService {
@@ -78,11 +79,16 @@ impl HttpService for AppService {
             }
         };
 
-        if let Some(mut route_match) = self.router.route(method.parse().unwrap(), &path) {
+        let route_opt = {
+            let router = self.router.read().unwrap();
+            router.route(method.parse().unwrap(), &path)
+        };
+        if let Some(mut route_match) = route_opt {
             route_match.query_params = query_params.clone();
-            let handler_response = self
-                .dispatcher
-                .dispatch(route_match, body, headers, cookies);
+            let handler_response = {
+                let dispatcher = self.dispatcher.read().unwrap();
+                dispatcher.dispatch(route_match, body, headers, cookies)
+            };
 
             match handler_response {
                 Some(HandlerResponse { status, body }) => {
