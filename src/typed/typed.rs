@@ -36,40 +36,57 @@ where
             let handler = handler;
             for req in rx.iter() {
                 let reply_tx = req.reply_tx.clone();
+                let handler_name = req.handler_name.clone();
 
-                let data = match H::Request::try_from(req.clone()) {
-                    Ok(v) => v,
-                    Err(err) => {
-                        let _ = reply_tx.send(HandlerResponse {
-                            status: 400,
-                            headers: HashMap::new(),
-                            body: serde_json::json!({
-                                "error": "Invalid request data",
-                                "message": err.to_string()
-                            }),
-                        });
-                        continue;
-                    }
-                };
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    let reply_tx_inner = reply_tx.clone();
 
-                let typed_req = TypedHandlerRequest {
-                    method: req.method,
-                    path: req.path,
-                    handler_name: req.handler_name,
-                    path_params: req.path_params,
-                    query_params: req.query_params,
-                    data,
-                };
+                    let data = match H::Request::try_from(req.clone()) {
+                        Ok(v) => v,
+                        Err(err) => {
+                            let _ = reply_tx_inner.send(HandlerResponse {
+                                status: 400,
+                                headers: HashMap::new(),
+                                body: serde_json::json!({
+                                    "error": "Invalid request data",
+                                    "message": err.to_string()
+                                }),
+                            });
+                            return;
+                        }
+                    };
 
-                let result = handler.handle(typed_req);
+                    let typed_req = TypedHandlerRequest {
+                        method: req.method,
+                        path: req.path,
+                        handler_name: req.handler_name,
+                        path_params: req.path_params,
+                        query_params: req.query_params,
+                        data,
+                    };
 
-                let _ = reply_tx.send(HandlerResponse {
-                    status: 200,
-                    headers: HashMap::new(),
-                    body: serde_json::to_value(result).unwrap_or_else(
-                        |_| serde_json::json!({"error": "Failed to serialize response"}),
-                    ),
-                });
+                    let result = handler.handle(typed_req);
+
+                    let _ = reply_tx_inner.send(HandlerResponse {
+                        status: 200,
+                        headers: HashMap::new(),
+                        body: serde_json::to_value(result).unwrap_or_else(|_| {
+                            serde_json::json!({"error": "Failed to serialize response"})
+                        }),
+                    });
+                }));
+
+                if let Err(panic) = result {
+                    let _ = reply_tx.send(HandlerResponse {
+                        status: 500,
+                        headers: HashMap::new(),
+                        body: serde_json::json!({
+                            "error": "Handler panicked",
+                            "details": format!("{:?}", panic)
+                        }),
+                    });
+                    eprintln!("Handler '{}' panicked: {:?}", handler_name, panic);
+                }
             }
         })
         .unwrap();
