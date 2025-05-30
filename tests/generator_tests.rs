@@ -77,6 +77,8 @@ fn test_process_schema_type_and_parameter_to_field() {
         location: ParameterLocation::Query,
         required: false,
         schema: Some(json!({"type": "boolean"})),
+        style: None,
+        explode: None,
     };
     let field = parameter_to_field(&param);
     assert_eq!(field.name, "flag");
@@ -149,6 +151,8 @@ fn test_parameter_to_field_variants() {
         location: ParameterLocation::Path,
         required: true,
         schema: None,
+        style: None,
+        explode: None,
     };
     let f1 = parameter_to_field(&required);
     assert_eq!(f1.name, "id");
@@ -161,6 +165,8 @@ fn test_parameter_to_field_variants() {
         location: ParameterLocation::Query,
         required: false,
         schema: Some(json!({"$ref": "#/components/schemas/pet"})),
+        style: None,
+        explode: None,
     };
     let f2 = parameter_to_field(&referenced);
     assert_eq!(f2.name, "pet");

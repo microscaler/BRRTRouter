@@ -2,10 +2,10 @@ use brrtrouter::dispatcher::Dispatcher;
 // use brrrouter::registry;
 use brrtrouter::server::AppService;
 use brrtrouter::{load_spec, router::Router};
-use std::path::PathBuf;
 use may_minihttp::HttpServer;
 use std::collections::HashMap;
 use std::io;
+use std::path::PathBuf;
 
 fn parse_stack_size() -> usize {
     if let Ok(val) = std::env::var("BRRTR_STACK_SIZE") {

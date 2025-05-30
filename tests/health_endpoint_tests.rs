@@ -2,9 +2,9 @@ use brrtrouter::{dispatcher::Dispatcher, router::Router, server::AppService};
 use may_minihttp::HttpServer;
 use pet_store::registry;
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 

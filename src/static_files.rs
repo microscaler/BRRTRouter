@@ -10,7 +10,9 @@ pub struct StaticFiles {
 
 impl StaticFiles {
     pub fn new<P: Into<PathBuf>>(base: P) -> Self {
-        Self { base_dir: base.into() }
+        Self {
+            base_dir: base.into(),
+        }
     }
 
     fn map_path(&self, url_path: &str) -> Option<PathBuf> {
@@ -26,7 +28,13 @@ impl StaticFiles {
     }
 
     fn content_type(path: &Path) -> &'static str {
-        match path.extension().and_then(|s| s.to_str()).unwrap_or("").to_lowercase().as_str() {
+        match path
+            .extension()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_lowercase()
+            .as_str()
+        {
             "html" => "text/html",
             "css" => "text/css",
             "js" => "application/javascript",
@@ -36,7 +44,11 @@ impl StaticFiles {
         }
     }
 
-    pub fn load(&self, url_path: &str, ctx: Option<&JsonValue>) -> io::Result<(Vec<u8>, &'static str)> {
+    pub fn load(
+        &self,
+        url_path: &str,
+        ctx: Option<&JsonValue>,
+    ) -> io::Result<(Vec<u8>, &'static str)> {
         let path = self
             .map_path(url_path)
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "invalid path"))?;
@@ -47,8 +59,11 @@ impl StaticFiles {
             if let Some(ctx_val) = ctx {
                 let source = fs::read_to_string(&path)?;
                 let mut env = Environment::new();
-                env.add_template("tpl", &source).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-                let tmpl = env.get_template("tpl").map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                env.add_template("tpl", &source)
+                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                let tmpl = env
+                    .get_template("tpl")
+                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
                 let rendered = tmpl
                     .render(ctx_val)
                     .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;

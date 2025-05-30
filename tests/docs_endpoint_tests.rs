@@ -1,8 +1,4 @@
-use brrtrouter::{
-    dispatcher::Dispatcher,
-    router::Router,
-    server::AppService,
-};
+use brrtrouter::{dispatcher::Dispatcher, router::Router, server::AppService};
 use may_minihttp::HttpServer;
 use pet_store::registry;
 use std::collections::HashMap;
@@ -44,14 +40,19 @@ fn start_service() -> (TestTracing, may::coroutine::JoinHandle<()>, SocketAddr) 
 fn send_request(addr: &SocketAddr, req: &str) -> String {
     let mut stream = TcpStream::connect(addr).unwrap();
     stream.write_all(req.as_bytes()).unwrap();
-    stream.set_read_timeout(Some(Duration::from_millis(100))).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_millis(100)))
+        .unwrap();
     let mut buf = Vec::new();
     loop {
         let mut tmp = [0u8; 1024];
         match stream.read(&mut tmp) {
             Ok(0) => break,
             Ok(n) => buf.extend_from_slice(&tmp[..n]),
-            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::TimedOut => {
+            Err(ref e)
+                if e.kind() == std::io::ErrorKind::WouldBlock
+                    || e.kind() == std::io::ErrorKind::TimedOut =>
+            {
                 break
             }
             Err(e) => panic!("read error: {:?}", e),
@@ -68,7 +69,12 @@ fn parse_parts(resp: &str) -> (u16, String, String) {
     let mut content_type = String::new();
     for line in headers.lines() {
         if line.starts_with("HTTP/1.1") {
-            status = line.split_whitespace().nth(1).unwrap_or("0").parse().unwrap();
+            status = line
+                .split_whitespace()
+                .nth(1)
+                .unwrap_or("0")
+                .parse()
+                .unwrap();
         } else if let Some((name, val)) = line.split_once(':') {
             if name.eq_ignore_ascii_case("content-type") {
                 content_type = val.trim().to_string();
@@ -81,7 +87,10 @@ fn parse_parts(resp: &str) -> (u16, String, String) {
 #[test]
 fn test_openapi_endpoint() {
     let (_tracing, handle, addr) = start_service();
-    let resp = send_request(&addr, "GET /openapi.yaml HTTP/1.1\r\nHost: localhost\r\n\r\n");
+    let resp = send_request(
+        &addr,
+        "GET /openapi.yaml HTTP/1.1\r\nHost: localhost\r\n\r\n",
+    );
     unsafe { handle.coroutine().cancel() };
     let (status, ct, body) = parse_parts(&resp);
     assert_eq!(status, 200);
