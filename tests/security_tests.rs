@@ -8,6 +8,7 @@ use brrtrouter::{
     SecurityProvider, SecurityRequest,
 };
 use may_minihttp::HttpServer;
+use std::path::PathBuf;
 use serde_json::json;
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -89,7 +90,12 @@ paths:
         });
     }
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
-    let mut service = AppService::new(router, Arc::new(RwLock::new(dispatcher)), schemes);
+    let mut service = AppService::new(
+        router,
+        Arc::new(RwLock::new(dispatcher)),
+        schemes,
+        PathBuf::from("examples/openapi.yaml"),
+    );
     service.register_security_provider(
         "ApiKeyAuth",
         Arc::new(ApiKeyProvider {
@@ -161,7 +167,12 @@ paths:
         });
     }
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
-    let mut service = AppService::new(router, Arc::new(RwLock::new(dispatcher)), schemes);
+    let mut service = AppService::new(
+        router,
+        Arc::new(RwLock::new(dispatcher)),
+        schemes,
+        PathBuf::from("examples/openapi.yaml"),
+    );
     service.register_security_provider("KeyOne", Arc::new(ApiKeyProvider { key: "one".into() }));
     service.register_security_provider("KeyTwo", Arc::new(ApiKeyProvider { key: "two".into() }));
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();

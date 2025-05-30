@@ -9,6 +9,7 @@ use pet_store::registry;
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
@@ -28,7 +29,12 @@ fn start_service() -> (TestTracing, may::coroutine::JoinHandle<()>, SocketAddr) 
     let metrics = Arc::new(MetricsMiddleware::new());
     dispatcher.add_middleware(metrics.clone());
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
-    let mut service = AppService::new(router, Arc::new(RwLock::new(dispatcher)), HashMap::new());
+    let mut service = AppService::new(
+        router,
+        Arc::new(RwLock::new(dispatcher)),
+        HashMap::new(),
+        PathBuf::from("examples/openapi.yaml"),
+    );
     service.set_metrics_middleware(metrics);
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();

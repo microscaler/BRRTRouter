@@ -2,6 +2,7 @@ use brrtrouter::{dispatcher::Dispatcher, router::Router, server::AppService};
 use may_minihttp::HttpServer;
 use pet_store::registry;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::{Arc, RwLock};
@@ -23,7 +24,12 @@ fn start_service() -> (TestTracing, may::coroutine::JoinHandle<()>, SocketAddr) 
         registry::register_from_spec(&mut dispatcher, &routes);
     }
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
-    let service = AppService::new(router, Arc::new(RwLock::new(dispatcher)), HashMap::new());
+    let service = AppService::new(
+        router,
+        Arc::new(RwLock::new(dispatcher)),
+        HashMap::new(),
+        PathBuf::from("examples/openapi.yaml"),
+    );
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     drop(listener);

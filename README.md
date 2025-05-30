@@ -81,6 +81,9 @@ curl http://localhost:8080/health
 > { "status": "ok" }
 ```
 
+Visit `http://localhost:8080/docs` to open the bundled Swagger UI powered by the
+`/openapi.yaml` specification.
+
 ### Environment Variables
 
 BRRTRouter reads `BRRTR_STACK_SIZE` to determine the stack size for
