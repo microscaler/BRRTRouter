@@ -40,10 +40,26 @@ impl AppService {
     }
 }
 
+/// Basic health check endpoint returning `{ "status": "ok" }`.
+pub fn health_endpoint(res: &mut Response) -> io::Result<()> {
+    write_handler_response(
+        res,
+        200,
+        serde_json::json!({ "status": "ok" }),
+        false,
+        &HashMap::new(),
+    );
+    Ok(())
+}
+
 impl HttpService for AppService {
     fn call(&mut self, req: Request, res: &mut Response) -> io::Result<()> {
         let ParsedRequest { method, path, headers, cookies, query_params, body } =
             parse_request(req);
+
+        if method == "GET" && path == "/health" {
+            return health_endpoint(res);
+        }
 
         let route_opt = {
             let router = self.router.read().unwrap();
