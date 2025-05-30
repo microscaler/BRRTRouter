@@ -8,8 +8,9 @@ use std::convert::TryFrom;
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Request {}
 
+/// SSE responses are represented as raw event strings.
 #[derive(Debug, Serialize)]
-pub struct Response {}
+pub struct Response(pub String);
 
 impl TryFrom<HandlerRequest> for Request {
     type Error = anyhow::Error;
