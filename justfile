@@ -23,3 +23,7 @@ coverage:
 # Run benchmarks
 bench:
     cargo bench
+
+# Profile the example server with cargo flamegraph
+flamegraph:
+    cargo flamegraph -p pet_store --bin pet_store

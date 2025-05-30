@@ -161,6 +161,26 @@ allocations as hotspots. Preallocating buffers in `Router::route` and
 `path_to_regex` trimmed roughly 5% off benchmark times on the expanded
 throughput suite.
 
+### 🔥 Generating Flamegraphs
+
+Install the `cargo-flamegraph` subcommand by adding it as a development
+dependency:
+
+```toml
+[dev-dependencies]
+flamegraph = "0.6"
+```
+
+Run the profiler against the pet store example:
+
+```bash
+just flamegraph
+```
+
+The command produces `flamegraph.svg` in `target/flamegraphs/`. Open the file in
+your browser to inspect hot code paths.
+See [docs/flamegraph.md](docs/flamegraph.md) for tips on reading the output.
+
 
 
 
