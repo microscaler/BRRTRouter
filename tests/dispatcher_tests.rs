@@ -17,7 +17,7 @@ use brrtrouter::middleware::TracingMiddleware;
 use tracing_util::TestTracing;
 
 fn set_stack_size() -> TestTracing {
-    may::config().set_stack_size(0x401);
+    may::config().set_stack_size(0x801);
     TestTracing::init()
 }
 

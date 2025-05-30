@@ -4,6 +4,7 @@ use crate::dispatcher::{Dispatcher, HandlerResponse};
 use crate::router::Router;
 use crate::security::{SecurityProvider, SecurityRequest};
 use crate::spec::SecurityScheme;
+use crate::middleware::MetricsMiddleware;
 use may_minihttp::{HttpService, Request, Response};
 use std::collections::HashMap;
 use std::io;
@@ -15,6 +16,7 @@ pub struct AppService {
     pub dispatcher: Arc<RwLock<Dispatcher>>,
     pub security_schemes: HashMap<String, SecurityScheme>,
     pub security_providers: HashMap<String, Arc<dyn SecurityProvider>>,
+    pub metrics: Option<Arc<crate::middleware::MetricsMiddleware>>,
 }
 
 impl AppService {
@@ -28,11 +30,16 @@ impl AppService {
             dispatcher,
             security_schemes,
             security_providers: HashMap::new(),
+            metrics: None,
         }
     }
 
     pub fn register_security_provider(&mut self, name: &str, provider: Arc<dyn SecurityProvider>) {
         self.security_providers.insert(name.to_string(), provider);
+    }
+
+    pub fn set_metrics_middleware(&mut self, metrics: Arc<MetricsMiddleware>) {
+        self.metrics = Some(metrics);
     }
 }
 
@@ -45,6 +52,22 @@ pub fn health_endpoint(res: &mut Response) -> io::Result<()> {
         false,
         &HashMap::new(),
     );
+    Ok(())
+}
+
+/// Metrics endpoint returning Prometheus text format statistics.
+pub fn metrics_endpoint(res: &mut Response, metrics: &MetricsMiddleware) -> io::Result<()> {
+    let body = format!(
+        "# HELP brrtrouter_requests_total Total number of handled requests\n\
+         # TYPE brrtrouter_requests_total counter\n\
+         brrtrouter_requests_total {}\n\
+         # HELP brrtrouter_request_latency_seconds Average request latency in seconds\n\
+         # TYPE brrtrouter_request_latency_seconds gauge\n\
+         brrtrouter_request_latency_seconds {}\n",
+        metrics.request_count(),
+        metrics.average_latency().as_secs_f64()
+    );
+    write_handler_response(res, 200, serde_json::Value::String(body), false, &HashMap::new());
     Ok(())
 }
 
@@ -61,6 +84,18 @@ impl HttpService for AppService {
 
         if method == "GET" && path == "/health" {
             return health_endpoint(res);
+        }
+        if method == "GET" && path == "/metrics" {
+            if let Some(metrics) = &self.metrics {
+                return metrics_endpoint(res, metrics);
+            } else {
+                write_json_error(
+                    res,
+                    404,
+                    serde_json::json!({"error": "Not Found", "method": method, "path": path}),
+                );
+                return Ok(());
+            }
         }
 
         let route_opt = {
