@@ -22,7 +22,7 @@ impl SseReceiver {
     /// properly formatted SSE frames.
     pub fn collect(self) -> String {
         let mut out = String::new();
-        let mut rx = self.rx;
+        let rx = self.rx;
         while let Ok(msg) = rx.recv() {
             out.push_str("data: ");
             out.push_str(&msg);
