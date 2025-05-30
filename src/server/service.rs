@@ -180,11 +180,17 @@ impl HttpService for AppService {
             let is_sse = route_match.route.sse;
             let handler_response = {
                 let dispatcher = self.dispatcher.read().unwrap();
-                dispatcher.dispatch(route_match, body, headers, cookies)
+                dispatcher.dispatch(route_match.clone(), body, headers, cookies)
             };
             match handler_response {
                 Some(hr) => {
-                    write_handler_response(res, hr.status, hr.body, is_sse, &hr.headers);
+                    let mut headers = hr.headers.clone();
+                    if !headers.contains_key("Content-Type") {
+                        if let Some(ct) = route_match.route.content_type_for(hr.status) {
+                            headers.insert("Content-Type".to_string(), ct);
+                        }
+                    }
+                    write_handler_response(res, hr.status, hr.body, is_sse, &headers);
                 }
                 None => {
                     write_json_error(

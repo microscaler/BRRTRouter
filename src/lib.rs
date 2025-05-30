@@ -17,6 +17,7 @@ pub mod static_files;
 
 pub use security::{SecurityProvider, SecurityRequest};
 pub use spec::{
-    load_spec, load_spec_from_spec, load_spec_full, ParameterLocation, ParameterMeta, RouteMeta,
+    load_spec, load_spec_from_spec, load_spec_full, ParameterLocation, ParameterStyle,
+    ParameterMeta, RouteMeta,
     SecurityRequirement, SecurityScheme,
 };

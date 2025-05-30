@@ -11,6 +11,47 @@ pub enum ParameterLocation {
     Cookie,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParameterStyle {
+    Matrix,
+    Label,
+    Form,
+    Simple,
+    SpaceDelimited,
+    PipeDelimited,
+    DeepObject,
+}
+
+impl From<oas3::spec::ParameterStyle> for ParameterStyle {
+    fn from(style: oas3::spec::ParameterStyle) -> Self {
+        use oas3::spec::ParameterStyle as PS;
+        match style {
+            PS::Matrix => ParameterStyle::Matrix,
+            PS::Label => ParameterStyle::Label,
+            PS::Form => ParameterStyle::Form,
+            PS::Simple => ParameterStyle::Simple,
+            PS::SpaceDelimited => ParameterStyle::SpaceDelimited,
+            PS::PipeDelimited => ParameterStyle::PipeDelimited,
+            PS::DeepObject => ParameterStyle::DeepObject,
+        }
+    }
+}
+
+impl std::fmt::Display for ParameterStyle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            ParameterStyle::Matrix => "Matrix",
+            ParameterStyle::Label => "Label",
+            ParameterStyle::Form => "Form",
+            ParameterStyle::Simple => "Simple",
+            ParameterStyle::SpaceDelimited => "SpaceDelimited",
+            ParameterStyle::PipeDelimited => "PipeDelimited",
+            ParameterStyle::DeepObject => "DeepObject",
+        };
+        write!(f, "{}", s)
+    }
+}
+
 impl std::fmt::Display for ParameterLocation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -51,12 +92,23 @@ pub struct RouteMeta {
     pub sse: bool,
 }
 
+impl RouteMeta {
+    pub fn content_type_for(&self, status: u16) -> Option<String> {
+        self.responses
+            .get(&status)
+            .and_then(|m| m.keys().next())
+            .cloned()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ParameterMeta {
     pub name: String,
     pub location: ParameterLocation,
     pub required: bool,
     pub schema: Option<Value>,
+    pub style: Option<ParameterStyle>,
+    pub explode: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

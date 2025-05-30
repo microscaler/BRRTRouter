@@ -1,4 +1,4 @@
-use super::types::{ParameterLocation, ParameterMeta, ResponseSpec, Responses, RouteMeta};
+use super::types::{ParameterLocation, ParameterMeta, ParameterStyle, ResponseSpec, Responses, RouteMeta};
 use super::SecurityScheme;
 use crate::validator::{fail_if_issues, ValidationIssue};
 use http::Method;
@@ -187,6 +187,8 @@ pub fn extract_parameters(
                 location: ParameterLocation::from(param.location.clone()),
                 required: param.required.is_some(),
                 schema,
+                style: param.style.map(ParameterStyle::from),
+                explode: param.explode,
             });
         }
     }
