@@ -19,6 +19,6 @@ pub use security::{
     BearerJwtProvider, OAuth2Provider, SecurityProvider, SecurityRequest,
 };
 pub use spec::{
-    load_spec, load_spec_from_spec, load_spec_full, ParameterLocation, ParameterMeta,
-    ParameterStyle, RouteMeta, SecurityRequirement, SecurityScheme,
+    load_spec, load_spec_from_spec, load_spec_full, ParameterLocation, ParameterMeta, RouteMeta,
+    SecurityRequirement, SecurityScheme,
 };
