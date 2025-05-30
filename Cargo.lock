@@ -271,6 +271,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "askama",
+ "base64",
  "clap",
  "criterion",
  "fake-opentelemetry-collector",

@@ -15,7 +15,9 @@ pub mod static_files;
 pub mod typed;
 pub mod validator;
 
-pub use security::{SecurityProvider, SecurityRequest};
+pub use security::{
+    BearerJwtProvider, OAuth2Provider, SecurityProvider, SecurityRequest,
+};
 pub use spec::{
     load_spec, load_spec_from_spec, load_spec_full, ParameterLocation, ParameterMeta,
     ParameterStyle, RouteMeta, SecurityRequirement, SecurityScheme,
