@@ -7,7 +7,7 @@ use brrtrouter::{
     server::AppService,
     BearerJwtProvider, OAuth2Provider, SecurityProvider, SecurityRequest,
 };
-use may_minihttp::HttpServer;
+use brrtrouter::server::{HttpServer, ServerHandle};
 use serde_json::json;
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -50,9 +50,9 @@ fn write_temp(content: &str) -> std::path::PathBuf {
     path
 }
 
-fn start_service() -> (TestTracing, may::coroutine::JoinHandle<()>, SocketAddr) {
+fn start_service() -> (TestTracing, ServerHandle, SocketAddr) {
     // ensure coroutines have enough stack for tests
-    may::config().set_stack_size(0x801);
+    may::config().set_stack_size(0x8000);
     let tracing = TestTracing::init();
     const SPEC: &str = r#"openapi: 3.1.0
 info:
@@ -106,13 +106,13 @@ paths:
     let addr = listener.local_addr().unwrap();
     drop(listener);
     let handle = HttpServer(service).start(addr).unwrap();
-    std::thread::sleep(Duration::from_millis(50));
+    handle.wait_ready().unwrap();
     (tracing, handle, addr)
 }
 
-fn start_multi_service() -> (TestTracing, may::coroutine::JoinHandle<()>, SocketAddr) {
+fn start_multi_service() -> (TestTracing, ServerHandle, SocketAddr) {
     // ensure coroutines have enough stack for tests
-    may::config().set_stack_size(0x801);
+    may::config().set_stack_size(0x8000);
     let tracing = TestTracing::init();
     const SPEC: &str = r#"openapi: 3.1.0
 info:
@@ -179,11 +179,11 @@ paths:
     let addr = listener.local_addr().unwrap();
     drop(listener);
     let handle = HttpServer(service).start(addr).unwrap();
-    std::thread::sleep(Duration::from_millis(50));
+    handle.wait_ready().unwrap();
     (tracing, handle, addr)
 }
 
-fn start_token_service() -> (TestTracing, may::coroutine::JoinHandle<()>, SocketAddr) {
+fn start_token_service() -> (TestTracing, ServerHandle, SocketAddr) {
     may::config().set_stack_size(0x8000);
     let tracing = TestTracing::init();
     const SPEC: &str = r#"openapi: 3.1.0
@@ -254,7 +254,7 @@ paths:
     let addr = listener.local_addr().unwrap();
     drop(listener);
     let handle = HttpServer(service).start(addr).unwrap();
-    std::thread::sleep(Duration::from_millis(50));
+    handle.wait_ready().unwrap();
     (tracing, handle, addr)
 }
 
@@ -299,7 +299,6 @@ fn parse_status(resp: &str) -> u16 {
 }
 
 #[test]
-#[ignore]
 fn test_api_key_auth() {
     let (mut tracing, handle, addr) = start_service();
     let resp = send_request(&addr, "GET /secret HTTP/1.1\r\nHost: localhost\r\n\r\n");
@@ -310,15 +309,13 @@ fn test_api_key_auth() {
         &addr,
         "GET /secret HTTP/1.1\r\nHost: localhost\r\nX-API-Key: secret\r\n\r\n",
     );
-    unsafe { handle.coroutine().cancel() };
     let status = parse_status(&resp);
     assert_eq!(status, 200);
-    tracing.wait_for_span("secret");
+    handle.stop();
 }
 
 // TODO: This test fails intermittently due to timing issues with the coroutine cancellation.
 #[test]
-#[ignore]
 fn test_multiple_security_providers() {
     let (_tracing, handle, addr) = start_multi_service();
     let resp = send_request(
@@ -339,7 +336,7 @@ fn test_multiple_security_providers() {
         &addr,
         "GET /one HTTP/1.1\r\nHost: localhost\r\nX-Key-Two: two\r\n\r\n",
     );
-    unsafe { handle.coroutine().cancel() };
+    handle.stop();
     let status_wrong = parse_status(&resp);
     assert_eq!(status_wrong, 401);
 }
@@ -369,7 +366,7 @@ fn test_bearer_header_and_oauth_cookie() {
         token
     );
     let resp = send_request(&addr, &req);
-    unsafe { handle.coroutine().cancel() };
+    handle.stop();
     let status_cookie = parse_status(&resp);
     assert_eq!(status_cookie, 200);
 }

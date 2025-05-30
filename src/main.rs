@@ -2,7 +2,7 @@ use brrtrouter::dispatcher::Dispatcher;
 // use brrrouter::registry;
 use brrtrouter::server::AppService;
 use brrtrouter::{load_spec, router::Router};
-use may_minihttp::HttpServer;
+use brrtrouter::server::HttpServer;
 use std::collections::HashMap;
 use std::io;
 use std::path::PathBuf;
