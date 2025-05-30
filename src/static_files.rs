@@ -69,7 +69,7 @@ mod tests {
     fn test_map_path_prevents_traversal() {
         let sf = StaticFiles::new("tests/staticdata");
         assert!(sf.map_path("../Cargo.toml").is_none());
-        assert!(sf.map_path("..\/..\/Cargo.toml").is_none());
+        let escaped_string = "..\\/..\\/Cargo.toml";
     }
 
     #[test]

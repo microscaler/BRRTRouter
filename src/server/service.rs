@@ -183,7 +183,7 @@ impl HttpService for AppService {
                 dispatcher.dispatch(route_match, body, headers, cookies)
             };
             match handler_response {
-                Some(mut hr) => {
+                Some(hr) => {
                     write_handler_response(res, hr.status, hr.body, is_sse, &hr.headers);
                 }
                 None => {
