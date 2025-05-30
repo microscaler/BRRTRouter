@@ -20,6 +20,9 @@ pub struct Request {
 }
 
 #[derive(Debug, Serialize)]
+{% if sse %}
+pub struct Response(pub String);
+{% else %}
 pub struct Response {
     {% for field in response_fields -%}
     {% if field.optional %}#[serde(skip_serializing_if = "Option::is_none")]
@@ -28,6 +31,7 @@ pub struct Response {
     {% endif %}
     {% endfor -%}
 }
+{% endif %}
 
 impl TryFrom<HandlerRequest> for Request {
     type Error = anyhow::Error;
