@@ -52,6 +52,10 @@ The logo features a stylized **A-10 Warthog nose cannon**, symbolizing BRRTRoute
 | **Regex-Based Path Matching**                    | ✅      | Path parameters are extracted using fast regex matchers                                                                                                                   |
 | **Zero I/O Testing Support**                     | ✅      | `load_spec_from_spec()` allows programmatic spec testing                                                                                                                  |
 | **Test Coverage**                                | ✅      | Minimal Unit test suite covering all HTTP verbs, paths, and fallback routing                                                                                              |
+| **Swagger UI & Spec Endpoints**                  | ✅      | Bundled Swagger UI at `/docs` and spec served from `/openapi.yaml` |
+| **Health & Metrics Endpoints**                   | ✅      | Built-in `/health` and `/metrics` for readiness and Prometheus scraping |
+| **Pluggable Security Providers**                 | ✅      | `SecurityProvider` trait enables custom authentication schemes |
+| **Server-Sent Events**                           | 🚧     | `x-sse` extension with `sse::channel` helper; streaming fixes pending |
 | **Fix flaky tests / deterministic startup**      | 🚧     | Tests use a fixed sleep to wait for server readiness and cancel the coroutine abruptly.                                                                                   |
 | **Investigate config context**                   | 🚧     | A pragmatic way to pass Configuration across the entire code base, possibly with an immutable global config that is loaded at start time                                  |
 | **Extend fake otel collector across all tests**  | 🚧     | Fake OpenTelemetry collector is used in just tests, but not all tests utilize it.                                                                                         |
