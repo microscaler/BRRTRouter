@@ -11,15 +11,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
 use std::convert::TryFrom;
-use std::sync::Arc;
-mod tracing_util;
-use brrtrouter::middleware::TracingMiddleware;
-use tracing_util::TestTracing;
 
-fn set_stack_size() -> TestTracing {
+fn set_stack_size() {
     std::env::set_var("BRRTR_STACK_SIZE", "0x8000");
     may::config().set_stack_size(0x8000);
-    TestTracing::init()
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -68,16 +63,13 @@ impl Handler for AssertController {
 
 #[test]
 fn test_dispatch_post_item() {
-    let _tracing = set_stack_size();
+    set_stack_size();
     let (routes, _slug) = load_spec("examples/openapi.yaml").expect("load spec");
     let router = Router::new(routes);
     let mut dispatcher = Dispatcher::new();
     unsafe {
         registry::register_all(&mut dispatcher);
     }
-    dispatcher.add_middleware(Arc::new(TracingMiddleware));
-    dispatcher.add_middleware(Arc::new(TracingMiddleware));
-    dispatcher.add_middleware(Arc::new(TracingMiddleware));
 
     let RouteMatch { route, .. } = router
         .route(Method::POST, "/items/item-001")
@@ -116,7 +108,7 @@ fn test_dispatch_post_item() {
 
 #[test]
 fn test_dispatch_get_pet() {
-    let _tracing = set_stack_size();
+    set_stack_size();
     let (routes, _slug) = load_spec("examples/openapi.yaml").unwrap();
     let router = Router::new(routes);
     let mut dispatcher = Dispatcher::new();
@@ -168,12 +160,11 @@ fn test_dispatch_get_pet() {
 
 #[test]
 fn test_typed_controller_params() {
-    let _tracing = set_stack_size();
+    set_stack_size();
     let mut dispatcher = Dispatcher::new();
     unsafe {
         dispatcher.register_typed("assert_controller", AssertController);
     }
-    dispatcher.add_middleware(Arc::new(TracingMiddleware));
 
     let (reply_tx, reply_rx) = mpsc::channel();
     let mut path_params = HashMap::new();
@@ -206,12 +197,11 @@ fn test_typed_controller_params() {
 
 #[test]
 fn test_typed_controller_invalid_params() {
-    let _tracing = set_stack_size();
+    set_stack_size();
     let mut dispatcher = Dispatcher::new();
     unsafe {
         dispatcher.register_typed("assert_controller", AssertController);
     }
-    dispatcher.add_middleware(Arc::new(TracingMiddleware));
 
     let (reply_tx, reply_rx) = mpsc::channel();
     let mut path_params = HashMap::new();
@@ -246,7 +236,7 @@ fn test_typed_controller_invalid_params() {
 #[test]
 #[ignore]
 fn test_panic_handler_returns_500() {
-    let _tracing = set_stack_size();
+    set_stack_size();
     fn panic_handler(_req: HandlerRequest) {
         panic!("boom");
     }
@@ -255,7 +245,6 @@ fn test_panic_handler_returns_500() {
     unsafe {
         dispatcher.register_handler("panic", panic_handler);
     }
-    dispatcher.add_middleware(Arc::new(TracingMiddleware));
 
     let (reply_tx, reply_rx) = mpsc::channel();
 
@@ -284,7 +273,7 @@ fn test_panic_handler_returns_500() {
 
 #[test]
 fn test_dispatch_all_registry_handlers() {
-    let _tracing = set_stack_size();
+    set_stack_size();
     let (routes, _slug) = load_spec("examples/openapi.yaml").expect("load spec");
     let router = Router::new(routes);
     let mut dispatcher = Dispatcher::new();
