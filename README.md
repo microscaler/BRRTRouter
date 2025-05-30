@@ -133,6 +133,11 @@ just bench
 
 This executes `cargo bench` using Criterion to measure routing throughput.
 
+Recent profiling with `flamegraph` highlighted regex capture and `HashMap`
+allocations as hotspots. Preallocating buffers in `Router::route` and
+`path_to_regex` trimmed roughly 5% off benchmark times on the expanded
+throughput suite.
+
 
 
 
