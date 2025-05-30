@@ -32,6 +32,10 @@ tracing = "0.1"
 pretty_assertions = "1.4"
 pet_store = { path = "./examples/pet_store" }
 criterion = "0.5"
+fake-opentelemetry-collector = "0.2"
+opentelemetry = { version = "0.22", features = ["rt-tokio"] }
+opentelemetry-otlp = "0.15"
+tracing-opentelemetry = "0.22"
 
 [[bin]]
 name = "brrtrouter-gen"

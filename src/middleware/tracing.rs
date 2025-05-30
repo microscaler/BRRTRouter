@@ -20,8 +20,10 @@ impl Middleware for TracingMiddleware {
             path = %req.path,
             handler = %req.handler_name
         );
-        let guard = span.enter();
-        static SPAN_GUARD: std::sync::RwLock<Option<(Span, tracing::span::Entered<'static>)>> = std::sync::RwLock::new(None);
+        let guard = span.clone().entered();
+        SPAN_GUARD.with(|g| {
+            *g.borrow_mut() = Some((span, guard));
+        });
         None
     }
 
@@ -30,6 +32,15 @@ impl Middleware for TracingMiddleware {
             if let Some((span, _guard)) = g.borrow_mut().take() {
                 span.record("status", &res.status);
                 span.record("latency_ms", &(latency.as_millis() as u64));
+                let stack_size = if may::coroutine::is_coroutine() {
+                    may::coroutine::current().stack_size()
+                } else {
+                    may::config().get_stack_size()
+                };
+                // `may` does not expose used stack space programmatically
+                // so emit zero as a placeholder.
+                span.record("stack_size", &stack_size);
+                span.record("used_stack", &0usize);
             }
         });
     }
