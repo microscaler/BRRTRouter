@@ -1,6 +1,7 @@
 // User-owned controller for handler 'list_users'.
 use crate::brrtrouter::typed::{Handler, TypedHandlerRequest};
 use crate::handlers::list_users::{Request, Response};
+
 use crate::handlers::types::User;
 
 pub struct ListUsersController;

@@ -63,6 +63,7 @@ pub struct HandlerTemplateData {
     pub response_fields: Vec<FieldDef>,
     pub imports: Vec<String>,
     pub parameters: Vec<ParameterMeta>,
+    pub sse: bool,
 }
 
 #[derive(Template)]
@@ -75,6 +76,7 @@ pub struct ControllerTemplateData {
     pub has_example: bool,
     pub example_json: String,
     pub imports: Vec<String>,
+    pub sse: bool,
 }
 
 pub fn write_handler(
@@ -84,6 +86,7 @@ pub fn write_handler(
     res: &[FieldDef],
     imports: &BTreeSet<String>,
     params: &[ParameterMeta],
+    sse: bool,
     force: bool,
 ) -> anyhow::Result<()> {
     if path.exists() && !force {
@@ -96,6 +99,7 @@ pub fn write_handler(
         response_fields: res.to_vec(),
         imports: imports.iter().cloned().collect(),
         parameters: params.to_vec(),
+        sse,
     }
     .render()?;
     fs::write(path, rendered)?;
@@ -109,6 +113,7 @@ pub fn write_controller(
     struct_name: &str,
     res: &[FieldDef],
     example: Option<Value>,
+    sse: bool,
     force: bool,
 ) -> anyhow::Result<()> {
     if path.exists() && !force {
@@ -169,6 +174,7 @@ pub fn write_controller(
         has_example: example.is_some(),
         example_json,
         imports: imports.iter().cloned().collect(),
+        sse,
     };
     fs::write(path, context.render()?)?;
     println!("✅ Generated controller: {:?}", path);

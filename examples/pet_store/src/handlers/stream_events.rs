@@ -9,7 +9,8 @@ use std::convert::TryFrom;
 pub struct Request {}
 
 #[derive(Debug, Serialize)]
-pub struct Response {}
+
+pub struct Response(pub String);
 
 impl TryFrom<HandlerRequest> for Request {
     type Error = anyhow::Error;

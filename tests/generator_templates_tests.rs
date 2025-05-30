@@ -51,6 +51,7 @@ fn test_template_writers() {
         &res_fields,
         &imports,
         &params,
+        false,
         true,
     )
     .unwrap();
@@ -62,6 +63,7 @@ fn test_template_writers() {
         "TestController",
         &res_fields,
         None,
+        false,
         true,
     )
     .unwrap();

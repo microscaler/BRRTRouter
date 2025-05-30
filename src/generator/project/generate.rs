@@ -70,6 +70,7 @@ pub fn generate_project_from_spec(spec_path: &Path, force: bool) -> anyhow::Resu
             &response_fields,
             &imports,
             &route.parameters,
+            route.sse,
             force,
         )?;
         let controller_struct = format!("{}Controller", to_camel_case(&handler));
@@ -79,6 +80,7 @@ pub fn generate_project_from_spec(spec_path: &Path, force: bool) -> anyhow::Resu
             &controller_struct,
             &response_fields,
             route.example.clone(),
+            route.sse,
             force,
         )?;
 
