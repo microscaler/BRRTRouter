@@ -1,5 +1,5 @@
-use fake_opentelemetry_collector::FakeCollector;
-use opentelemetry::{global, sdk::trace as sdktrace};
+use fake_opentelemetry_collector::FakeCollectorServer;
+use opentelemetry_sdk::{global, sdk::trace as sdktrace};
 use opentelemetry_otlp::WithExportConfig;
 use tracing_subscriber::{layer::SubscriberExt, Registry};
 

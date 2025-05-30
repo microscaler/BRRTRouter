@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
 use std::convert::TryFrom;
-
+use std::sync::Arc;
 mod tracing_util;
 use brrtrouter::middleware::TracingMiddleware;
 use tracing_util::TestTracing;
