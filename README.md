@@ -35,37 +35,44 @@ The logo features a stylized **A-10 Warthog nose cannon**, symbolizing BRRTRoute
 ## ✅ Current Foundation Status
 
 ### 🚧 Implemented Features (May 2025)
-| Feature                                          | Status | Description                                                                                                                     |
-|--------------------------------------------------|--------|---------------------------------------------------------------------------------------------------------------------------------|
-| **OpenAPI 3.1 Spec Parser**                      | ✅      | Parses `paths`, `methods`, parameters, and `x-handler-*` extensions                                                             |
-| **Routing Table Construction**                   | ✅      | Compiles OpenAPI paths into regex matchers with param tracking                                                                  |
-| **Coroutine-Based Server**                       | ✅      | Fully integrated with `may_minihttp` and `may` coroutine runtime                                                                |
-| **Dynamic Handler Dispatch**                     | ✅      | Request is dispatched to named handlers via coroutine channels                                                                  |
-| **Full Request Context Support**                 | ✅      | Request path, method, path params, query params, and JSON body all passed into the handler                                      |
-| **`echo_handler` Coroutine**                     | ✅      | Mock handler that serializes and returns all request input data                                                                 |
-| **Query Parameter Parsing**                      | ✅      | Fully extracted from the request URI and passed to handler                                                                      |
-| **Request Body Decoding (JSON)**                 | ✅      | JSON body is read and deserialized for POST/PUT/PATCH handlers                                                                  |
-| **404 and 500 Handling**                         | ✅      | Fallback responses for unknown routes or missing handlers                                                                       |
-| **Verbose Mode for CLI**                         | ✅      | `--verbose` flag enables OpenAPI parsing debug output                                                                           |
-| **Modular Design**                               | ✅      | Clean separation of `spec`, `router`, `dispatcher`, and `server` logic                                                          |
-| **Composable Handlers**                          | ✅      | Coroutine-safe handler registry for runtime dispatch                                                                            |
-| **Regex-Based Path Matching**                    | ✅      | Path parameters are extracted using fast regex matchers                                                                         |
-| **Zero I/O Testing Support**                     | ✅      | `load_spec_from_spec()` allows programmatic spec testing                                                                        |
-| **Test Coverage**                                | ✅      | Minimal Unit test suite covering all HTTP verbs, paths, and fallback routing                                                    |
-| **Fix flaky tests / deterministic startup**      | 🚧     | Tests use a fixed sleep to wait for server readiness and cancel the coroutine abruptly.                                         |
-| **Panic recovery for handlers**                  | 🚧     | Un-typed handlers recover from panics using `catch_unwind`; typed handlers do not.                                              |
-| **Multiple security provider race**              | 🚧     | Security checks run sequentially in `AppService::call` but lack explicit combination logic.                                     |
-| **Configurable stack size with instrumentation** | 🚧     | Stack size comes from `BRRTR_STACK_SIZE` environment variable and is logged in metrics; no runtime API or used-stack metrics.   |
-| **Hot reload on spec change**                    | 🚧     | `hot_reload::watch_spec` rebuilds the `Router`, but the server doesn’t automatically update the dispatcher or routes.           |
-| **Code generation for typed handlers**           | 🚧     | Implemented via templates generating `TryFrom<HandlerRequest>` impls.                                                           |
-| **Dynamic route registration**                   | 🚧     | `Dispatcher::add_route` and `register_from_spec` allow runtime insertion; tests cover this.                                     |
-| **Improved handler ergonomics**                  | 🚧     | Handlers still operate on explicit `TypedHandlerRequest` objects; no macro or higher-level abstraction.                         |
-| **Structured tracing / metrics / CORS**          | 🚧     | Tracing and metrics middleware exist (with OTEL test support); CORS middleware returns default headers but is not configurable. |
-| **Schema validation**                            | 🚧     | Request/response validation against OpenAPI schema is not implemented.                                                          |
-| **WebSocket support**                            | 🚧     | Absent. Only SSE is available via `x-sse` flag.                                                                                 |
-| **JWT/OAuth2 auth**                              | 🚧     | `BearerJwtProvider` and `OAuth2Provider` exist but examples don’t demonstrate combined schemes.                                 |
-| **Performance target**                           | 🚧     | Criterion benchmarks exist, but no explicit optimization work toward the 1 M req/sec goal.                                      |
-| **Documentation & packaging**                    | 🚧     | README and roadmap exist; crate not yet prepared for crates.io publication.                                                     |
+| Feature                                          | Status | Description                                                                                                                                                               |
+|--------------------------------------------------|--------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **OpenAPI 3.1 Spec Parser**                      | ✅      | Parses `paths`, `methods`, parameters, and `x-handler-*` extensions                                                                                                       |
+| **Routing Table Construction**                   | ✅      | Compiles OpenAPI paths into regex matchers with param tracking                                                                                                            |
+| **Coroutine-Based Server**                       | ✅      | Fully integrated with `may_minihttp` and `may` coroutine runtime                                                                                                          |
+| **Dynamic Handler Dispatch**                     | ✅      | Request is dispatched to named handlers via coroutine channels                                                                                                            |
+| **Full Request Context Support**                 | ✅      | Request path, method, path params, query params, and JSON body all passed into the handler                                                                                |
+| **`echo_handler` Coroutine**                     | ✅      | Mock handler that serializes and returns all request input data                                                                                                           |
+| **Query Parameter Parsing**                      | ✅      | Fully extracted from the request URI and passed to handler                                                                                                                |
+| **Request Body Decoding (JSON)**                 | ✅      | JSON body is read and deserialized for POST/PUT/PATCH handlers                                                                                                            |
+| **404 and 500 Handling**                         | ✅      | Fallback responses for unknown routes or missing handlers                                                                                                                 |
+| **Verbose Mode for CLI**                         | ✅      | `--verbose` flag enables OpenAPI parsing debug output                                                                                                                     |
+| **Modular Design**                               | ✅      | Clean separation of `spec`, `router`, `dispatcher`, and `server` logic                                                                                                    |
+| **Composable Handlers**                          | ✅      | Coroutine-safe handler registry for runtime dispatch                                                                                                                      |
+| **Regex-Based Path Matching**                    | ✅      | Path parameters are extracted using fast regex matchers                                                                                                                   |
+| **Zero I/O Testing Support**                     | ✅      | `load_spec_from_spec()` allows programmatic spec testing                                                                                                                  |
+| **Test Coverage**                                | ✅      | Minimal Unit test suite covering all HTTP verbs, paths, and fallback routing                                                                                              |
+| **Fix flaky tests / deterministic startup**      | 🚧     | Tests use a fixed sleep to wait for server readiness and cancel the coroutine abruptly.                                                                                   |
+| **Investigate config context**                   | 🚧     | A pragmatic way to pass Configuration across the entire code base, possibly with an immutable global config that is loaded at start time                                  |
+| **Extend fake otel collector across all tests**  | 🚧     | Fake OpenTelemetry collector is used in just tests, but not all tests utilize it.                                                                                         |
+| **handler coroutinge stack size**                | 🚧     | Coroutine stack size is set via `BRRTR_STACK_SIZE` env var, but not dynamically adjustable or measured.                                                                   |
+| **implement tracing across entire codebsase**    | 🚧     | Tracing is implemented in some places, but not consistently across the entire codebase.                                                                                   |
+| **Deep dive into OpenAPI spec**                  | 🚧     | OpenAPI spec parsing is basic; does not handle all features like `callbacks` and other functions, produce GAP analysis in order to completely support OpenAPI 3.1.0 spec. |
+| **Panic recovery for handlers**                  | 🚧     | Un-typed handlers recover from panics using `catch_unwind`; typed handlers do not.                                                                                        |
+| **Multiple security provider race**              | 🚧     | Security checks run sequentially in `AppService::call` but lack explicit combination logic.                                                                               |
+| **Configurable stack size with instrumentation** | 🚧     | Stack size comes from `BRRTR_STACK_SIZE` environment variable and is logged in metrics; no runtime API or used-stack metrics.                                             |
+| **Hot reload on spec change**                    | 🚧     | `hot_reload::watch_spec` rebuilds the `Router`, but the server doesn’t automatically update the dispatcher or routes.                                                     |
+| **Code generation for typed handlers**           | 🚧     | Implemented via templates generating `TryFrom<HandlerRequest>` impls.                                                                                                     |
+| **Dynamic route registration**                   | 🚧     | `Dispatcher::add_route` and `register_from_spec` allow runtime insertion; tests cover this.                                                                               |
+| **Improved handler ergonomics**                  | 🚧     | Handlers still operate on explicit `TypedHandlerRequest` objects; no macro or higher-level abstraction.                                                                   |
+| **Structured tracing / metrics / CORS**          | 🚧     | Tracing and metrics middleware exist (with OTEL test support); CORS middleware returns default headers but is not configurable.                                           |
+| **Schema validation**                            | 🚧     | Request/response validation against OpenAPI schema is not implemented.                                                                                                    |
+| **WebSocket support**                            | 🚧     | Absent. Only SSE is available via `x-sse` flag.                                                                                                                           |
+| **JWT/OAuth2 auth**                              | 🚧     | `BearerJwtProvider` and `OAuth2Provider` exist but examples don’t demonstrate combined schemes. Implement JWT mocking in tests                                            |
+| **SPIFFE support**                               | 🚧     | SPIFFE fetching of X.509 and JWT SVIDs, bundles and supports watch/stream updates.                                                                                        |
+| **Performance target**                           | 🚧     | Criterion benchmarks exist, but no explicit optimization work toward the 1M req/sec goal.                                                                                 |
+| **Documentation & packaging**                    | 🚧     | README and roadmap exist; crate not yet prepared for crates.io publication.                                                                                               |
+
 ---
 
 ## 🧪 Try It

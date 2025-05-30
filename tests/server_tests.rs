@@ -5,7 +5,7 @@ use brrtrouter::{
     spec::RouteMeta,
 };
 use http::Method;
-use may_minihttp::HttpServer;
+use brrtrouter::server::{HttpServer, ServerHandle};
 use pet_store::registry;
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -19,7 +19,7 @@ mod tracing_util;
 use brrtrouter::middleware::TracingMiddleware;
 use tracing_util::TestTracing;
 
-fn start_petstore_service() -> (TestTracing, may::coroutine::JoinHandle<()>, SocketAddr) {
+fn start_petstore_service() -> (TestTracing, ServerHandle, SocketAddr) {
     // ensure coroutines have enough stack for tests
     may::config().set_stack_size(0x8000);
     let tracing = TestTracing::init();
@@ -40,7 +40,7 @@ fn start_petstore_service() -> (TestTracing, may::coroutine::JoinHandle<()>, Soc
     let addr = listener.local_addr().unwrap();
     drop(listener);
     let handle = HttpServer(service).start(addr).unwrap();
-    std::thread::sleep(Duration::from_millis(50));
+    handle.wait_ready().unwrap();
     (tracing, handle, addr)
 }
 
@@ -105,8 +105,7 @@ fn parse_response(resp: &str) -> (u16, Value) {
 fn test_dispatch_success() {
     let (mut tracing, handle, addr) = start_petstore_service();
     let resp = send_request(&addr, "GET /pets HTTP/1.1\r\nHost: localhost\r\n\r\n");
-    unsafe { handle.coroutine().cancel() };
-    std::thread::sleep(Duration::from_millis(10));
+    handle.stop();
     let (status, body) = parse_response(&resp);
     assert_eq!(status, 200);
     assert!(body.get("items").is_some());
@@ -116,7 +115,7 @@ fn test_dispatch_success() {
 fn test_route_404() {
     let (_tracing, handle, addr) = start_petstore_service();
     let resp = send_request(&addr, "GET /nope HTTP/1.1\r\nHost: localhost\r\n\r\n");
-    unsafe { handle.coroutine().cancel() };
+    handle.stop();
     let (status, _body) = parse_response(&resp);
     assert_eq!(status, 404);
 }
@@ -164,7 +163,7 @@ fn test_panic_recovery() {
     let handle = HttpServer(service).start(addr).unwrap();
 
     let resp = send_request(&addr, "GET /panic HTTP/1.1\r\nHost: localhost\r\n\r\n");
-    unsafe { handle.coroutine().cancel() };
+    handle.stop();
     let (status, body) = parse_response(&resp);
     assert_eq!(status, 500);
     assert!(body.get("error").is_some());
@@ -228,7 +227,7 @@ fn test_headers_and_cookies() {
         "\r\n"
     );
     let resp = send_request(&addr, request);
-    unsafe { handle.coroutine().cancel() };
+    handle.stop();
     let (status, body) = parse_response(&resp);
     assert_eq!(status, 200);
     assert_eq!(body["headers"]["x-test"], "value");
@@ -284,7 +283,7 @@ fn test_status_201_json() {
     let handle = HttpServer(service).start(addr).unwrap();
 
     let resp = send_request(&addr, "POST /created HTTP/1.1\r\nHost: localhost\r\n\r\n");
-    unsafe { handle.coroutine().cancel() };
+    handle.stop();
     let (status, body) = parse_response(&resp);
     let (_, ct, _) = parse_response_parts(&resp);
     assert_eq!(status, 201);
@@ -339,7 +338,7 @@ fn test_text_plain_error() {
     let handle = HttpServer(service).start(addr).unwrap();
 
     let resp = send_request(&addr, "GET /text HTTP/1.1\r\nHost: localhost\r\n\r\n");
-    unsafe { handle.coroutine().cancel() };
+    handle.stop();
     let (status, body) = parse_response(&resp);
     let (_, ct, raw_body) = parse_response_parts(&resp);
     assert_eq!(status, 400);

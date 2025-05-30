@@ -5,7 +5,7 @@ use brrtrouter::{
     spec::{ResponseSpec, RouteMeta},
 };
 use http::Method;
-use may_minihttp::HttpServer;
+use brrtrouter::server::{HttpServer, ServerHandle};
 use serde_json::json;
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -114,8 +114,9 @@ fn test_select_content_type_from_spec() {
     let addr = listener.local_addr().unwrap();
     drop(listener);
     let handle = HttpServer(service).start(addr).unwrap();
+    handle.wait_ready().unwrap();
     let resp = send_request(&addr, "POST /resp HTTP/1.1\r\nHost: x\r\n\r\n");
-    unsafe { handle.coroutine().cancel() };
+    handle.stop();
     let (status, ct) = parse_parts(&resp);
     assert_eq!(status, 201);
     assert_eq!(ct, "text/plain");

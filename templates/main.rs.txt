@@ -7,7 +7,7 @@ use brrtrouter::{
 use std::collections::HashMap;
 use std::path::PathBuf;
 use {{ name }}::registry;
-use may_minihttp::HttpServer;
+use brrtrouter::server::HttpServer;
 use std::io;
 
 fn parse_stack_size() -> usize {

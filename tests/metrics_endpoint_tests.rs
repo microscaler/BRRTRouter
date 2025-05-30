@@ -4,7 +4,7 @@ use brrtrouter::{
     router::Router,
     server::AppService,
 };
-use may_minihttp::HttpServer;
+use brrtrouter::server::{HttpServer, ServerHandle};
 use pet_store::registry;
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -16,7 +16,7 @@ use std::time::Duration;
 mod tracing_util;
 use tracing_util::TestTracing;
 
-fn start_service() -> (TestTracing, may::coroutine::JoinHandle<()>, SocketAddr) {
+fn start_service() -> (TestTracing, ServerHandle, SocketAddr) {
     std::env::set_var("BRRTR_STACK_SIZE", "0x8000");
     may::config().set_stack_size(0x8000);
     let tracing = TestTracing::init();
@@ -40,7 +40,7 @@ fn start_service() -> (TestTracing, may::coroutine::JoinHandle<()>, SocketAddr) 
     let addr = listener.local_addr().unwrap();
     drop(listener);
     let handle = HttpServer(service).start(addr).unwrap();
-    std::thread::sleep(Duration::from_millis(50));
+    handle.wait_ready().unwrap();
     (tracing, handle, addr)
 }
 
@@ -96,7 +96,7 @@ fn test_metrics_endpoint() {
     let (_tracing, handle, addr) = start_service();
     let _ = send_request(&addr, "GET /pets HTTP/1.1\r\nHost: localhost\r\n\r\n");
     let resp = send_request(&addr, "GET /metrics HTTP/1.1\r\nHost: localhost\r\n\r\n");
-    unsafe { handle.coroutine().cancel() };
+    handle.stop();
     let (status, ct, body) = parse_response_parts(&resp);
     assert_eq!(status, 200);
     assert_eq!(ct, "text/plain");
