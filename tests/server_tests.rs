@@ -15,23 +15,28 @@ use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
-fn start_petstore_service() -> (may::coroutine::JoinHandle<()>, SocketAddr) {
+mod tracing_util;
+use brrtrouter::middleware::TracingMiddleware;
+use tracing_util::TestTracing;
+
+fn start_petstore_service() -> (TestTracing, may::coroutine::JoinHandle<()>, SocketAddr) {
     // ensure coroutines have enough stack for tests
-    std::env::set_var("BRRTR_STACK_SIZE", "0x8000");
-    may::config().set_stack_size(0x8000);
+    may::config().set_stack_size(0x401);
+    let tracing = TestTracing::init();
     let (routes, _slug) = brrtrouter::load_spec("examples/openapi.yaml").unwrap();
     let router = Arc::new(RwLock::new(Router::new(routes.clone())));
     let mut dispatcher = Dispatcher::new();
     unsafe {
         registry::register_from_spec(&mut dispatcher, &routes);
     }
+    dispatcher.add_middleware(Arc::new(TracingMiddleware));
     let service = AppService::new(router, Arc::new(RwLock::new(dispatcher)), HashMap::new());
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     drop(listener);
     let handle = HttpServer(service).start(addr).unwrap();
     std::thread::sleep(Duration::from_millis(50));
-    (handle, addr)
+    (tracing, handle, addr)
 }
 
 fn send_request(addr: &SocketAddr, req: &str) -> String {
@@ -93,17 +98,18 @@ fn parse_response(resp: &str) -> (u16, Value) {
 
 #[test]
 fn test_dispatch_success() {
-    let (handle, addr) = start_petstore_service();
+    let (mut tracing, handle, addr) = start_petstore_service();
     let resp = send_request(&addr, "GET /pets HTTP/1.1\r\nHost: localhost\r\n\r\n");
     unsafe { handle.coroutine().cancel() };
     let (status, body) = parse_response(&resp);
     assert_eq!(status, 200);
     assert!(body.get("items").is_some());
+    tracing.wait_for_span("list_pets");
 }
 
 #[test]
 fn test_route_404() {
-    let (handle, addr) = start_petstore_service();
+    let (_tracing, handle, addr) = start_petstore_service();
     let resp = send_request(&addr, "GET /nope HTTP/1.1\r\nHost: localhost\r\n\r\n");
     unsafe { handle.coroutine().cancel() };
     let (status, _body) = parse_response(&resp);
@@ -113,8 +119,8 @@ fn test_route_404() {
 #[test]
 #[ignore]
 fn test_panic_recovery() {
-    std::env::set_var("BRRTR_STACK_SIZE", "0x8000");
-    may::config().set_stack_size(0x8000);
+    may::config().set_stack_size(0x401);
+    let _tracing = TestTracing::init();
     fn panic_handler(_req: HandlerRequest) {
         panic!("boom");
     }
@@ -139,6 +145,7 @@ fn test_panic_recovery() {
     unsafe {
         dispatcher.register_handler("panic", panic_handler);
     }
+    dispatcher.add_middleware(Arc::new(TracingMiddleware));
     let service = AppService::new(router, Arc::new(RwLock::new(dispatcher)), HashMap::new());
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
@@ -154,8 +161,8 @@ fn test_panic_recovery() {
 
 #[test]
 fn test_headers_and_cookies() {
-    std::env::set_var("BRRTR_STACK_SIZE", "0x8000");
-    may::config().set_stack_size(0x8000);
+    may::config().set_stack_size(0x401);
+    let _tracing = TestTracing::init();
     fn header_handler(req: HandlerRequest) {
         let response = HandlerResponse {
             status: 200,
@@ -189,6 +196,7 @@ fn test_headers_and_cookies() {
     unsafe {
         dispatcher.register_handler("header", header_handler);
     }
+    dispatcher.add_middleware(Arc::new(TracingMiddleware));
     let service = AppService::new(router, Arc::new(RwLock::new(dispatcher)), HashMap::new());
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
@@ -215,8 +223,8 @@ fn test_headers_and_cookies() {
 
 #[test]
 fn test_status_201_json() {
-    std::env::set_var("BRRTR_STACK_SIZE", "0x8000");
-    may::config().set_stack_size(0x8000);
+    may::config().set_stack_size(0x401);
+    let _tracing = TestTracing::init();
     fn create_handler(req: HandlerRequest) {
         let response = HandlerResponse {
             status: 201,
@@ -247,6 +255,7 @@ fn test_status_201_json() {
     unsafe {
         dispatcher.register_handler("create", create_handler);
     }
+    dispatcher.add_middleware(Arc::new(TracingMiddleware));
     let service = AppService::new(router, Arc::new(RwLock::new(dispatcher)), HashMap::new());
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
@@ -264,8 +273,8 @@ fn test_status_201_json() {
 
 #[test]
 fn test_text_plain_error() {
-    std::env::set_var("BRRTR_STACK_SIZE", "0x8000");
-    may::config().set_stack_size(0x8000);
+    may::config().set_stack_size(0x401);
+    let _tracing = TestTracing::init();
     fn text_handler(req: HandlerRequest) {
         let response = HandlerResponse {
             status: 400,
@@ -296,6 +305,7 @@ fn test_text_plain_error() {
     unsafe {
         dispatcher.register_handler("text", text_handler);
     }
+    dispatcher.add_middleware(Arc::new(TracingMiddleware));
     let service = AppService::new(router, Arc::new(RwLock::new(dispatcher)), HashMap::new());
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();

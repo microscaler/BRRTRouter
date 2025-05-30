@@ -1,6 +1,6 @@
 use brrtrouter::spec::{
     extract_parameters, extract_request_schema, extract_response_schema_and_example,
-    resolve_schema_ref, extract_security_schemes, ParameterLocation,
+    extract_security_schemes, resolve_schema_ref, ParameterLocation,
 };
 use oas3::OpenApiV3Spec;
 use serde_json::json;

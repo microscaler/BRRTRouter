@@ -2,8 +2,8 @@ use brrtrouter::dispatcher::Dispatcher;
 // use brrrouter::registry;
 use brrtrouter::server::AppService;
 use brrtrouter::{load_spec, router::Router};
-use std::collections::HashMap;
 use may_minihttp::HttpServer;
+use std::collections::HashMap;
 use std::io;
 
 fn parse_stack_size() -> usize {

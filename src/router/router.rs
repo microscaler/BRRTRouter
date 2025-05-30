@@ -45,7 +45,10 @@ impl Router {
         //     .collect();
 
         if routes.is_empty() {
-            return Self { routes: Vec::new(), base_path: String::new() };
+            return Self {
+                routes: Vec::new(),
+                base_path: String::new(),
+            };
         }
         // Ensure routes are sorted by path length (longest first) to optimize matching
         // This is useful for cases where paths may overlap, e.g. "/pets" and "/pets/{id}"
@@ -54,7 +57,10 @@ impl Router {
         routes.reverse();
         // Convert each route's path pattern to a regex and collect param names
         // Each route is represented as (method, compiled regex, RouteMeta, param names)
-        let base_path = routes.first().map(|r| r.base_path.clone()).unwrap_or_default();
+        let base_path = routes
+            .first()
+            .map(|r| r.base_path.clone())
+            .unwrap_or_default();
         let routes = routes
             .into_iter()
             .map(|route| {

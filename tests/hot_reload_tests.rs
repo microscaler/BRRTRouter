@@ -77,4 +77,3 @@ paths:
     drop(watcher);
     std::fs::remove_file(&path).unwrap();
 }
-

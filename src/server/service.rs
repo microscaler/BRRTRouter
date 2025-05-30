@@ -31,19 +31,37 @@ impl AppService {
         }
     }
 
-    pub fn register_security_provider(
-        &mut self,
-        name: &str,
-        provider: Arc<dyn SecurityProvider>,
-    ) {
+    pub fn register_security_provider(&mut self, name: &str, provider: Arc<dyn SecurityProvider>) {
         self.security_providers.insert(name.to_string(), provider);
     }
 }
 
+/// Basic health check endpoint returning `{ "status": "ok" }`.
+pub fn health_endpoint(res: &mut Response) -> io::Result<()> {
+    write_handler_response(
+        res,
+        200,
+        serde_json::json!({ "status": "ok" }),
+        false,
+        &HashMap::new(),
+    );
+    Ok(())
+}
+
 impl HttpService for AppService {
     fn call(&mut self, req: Request, res: &mut Response) -> io::Result<()> {
-        let ParsedRequest { method, path, headers, cookies, query_params, body } =
-            parse_request(req);
+        let ParsedRequest {
+            method,
+            path,
+            headers,
+            cookies,
+            query_params,
+            body,
+        } = parse_request(req);
+
+        if method == "GET" && path == "/health" {
+            return health_endpoint(res);
+        }
 
         let route_opt = {
             let router = self.router.read().unwrap();
@@ -86,11 +104,7 @@ impl HttpService for AppService {
                     }
                 }
                 if !authorized {
-                    write_json_error(
-                        res,
-                        401,
-                        serde_json::json!({"error": "Unauthorized"}),
-                    );
+                    write_json_error(res, 401, serde_json::json!({"error": "Unauthorized"}));
                     return Ok(());
                 }
             }

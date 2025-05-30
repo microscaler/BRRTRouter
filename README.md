@@ -76,6 +76,9 @@ curl "http://localhost:8080/items/123?debug=true" \
   "query": { "debug": "true" },
   "body": { "name": "Ball" }
 }
+
+curl http://localhost:8080/health
+> { "status": "ok" }
 ```
 
 ### Environment Variables

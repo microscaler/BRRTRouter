@@ -4,7 +4,9 @@ use super::SecurityScheme;
 use oas3::OpenApiV3Spec;
 
 fn strip_unknown_verbs(val: &mut serde_json::Value) {
-    const METHODS: [&str; 8] = ["get", "post", "put", "delete", "patch", "options", "head", "trace"];
+    const METHODS: [&str; 8] = [
+        "get", "post", "put", "delete", "patch", "options", "head", "trace",
+    ];
 
     if let Some(paths) = val.get_mut("paths") {
         if let serde_json::Value::Object(paths_map) = paths {
@@ -30,11 +32,12 @@ fn strip_unknown_verbs(val: &mut serde_json::Value) {
 
 pub fn load_spec(file_path: &str) -> anyhow::Result<(Vec<RouteMeta>, String)> {
     let content = std::fs::read_to_string(file_path)?;
-    let mut value: serde_json::Value = if file_path.ends_with(".yaml") || file_path.ends_with(".yml") {
-        serde_yaml::from_str(&content)?
-    } else {
-        serde_json::from_str(&content)?
-    };
+    let mut value: serde_json::Value =
+        if file_path.ends_with(".yaml") || file_path.ends_with(".yml") {
+            serde_yaml::from_str(&content)?
+        } else {
+            serde_json::from_str(&content)?
+        };
 
     strip_unknown_verbs(&mut value);
     let spec: OpenApiV3Spec = serde_json::from_value(value)?;
@@ -53,7 +56,11 @@ pub fn load_spec(file_path: &str) -> anyhow::Result<(Vec<RouteMeta>, String)> {
 
 pub fn load_spec_full(
     file_path: &str,
-) -> anyhow::Result<(Vec<RouteMeta>, std::collections::HashMap<String, SecurityScheme>, String)> {
+) -> anyhow::Result<(
+    Vec<RouteMeta>,
+    std::collections::HashMap<String, SecurityScheme>,
+    String,
+)> {
     let content = std::fs::read_to_string(file_path)?;
     let spec: OpenApiV3Spec = if file_path.ends_with(".yaml") || file_path.ends_with(".yml") {
         serde_yaml::from_str(&content)?
@@ -90,7 +97,10 @@ pub fn load_spec_from_spec(spec: OpenApiV3Spec) -> anyhow::Result<Vec<RouteMeta>
 
 pub fn load_spec_from_spec_full(
     spec: OpenApiV3Spec,
-) -> anyhow::Result<(Vec<RouteMeta>, std::collections::HashMap<String, SecurityScheme>)> {
+) -> anyhow::Result<(
+    Vec<RouteMeta>,
+    std::collections::HashMap<String, SecurityScheme>,
+)> {
     let slug = spec
         .info
         .title

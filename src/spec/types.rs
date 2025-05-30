@@ -1,7 +1,7 @@
+use super::SecurityRequirement;
 use http::Method;
 use serde_json::Value;
 use std::path::PathBuf;
-use super::SecurityRequirement;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParameterLocation {
@@ -65,4 +65,5 @@ pub struct ResponseSpec {
     pub example: Option<Value>,
 }
 
-pub type Responses = std::collections::HashMap<u16, std::collections::HashMap<String, ResponseSpec>>;
+pub type Responses =
+    std::collections::HashMap<u16, std::collections::HashMap<String, ResponseSpec>>;

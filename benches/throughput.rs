@@ -1,5 +1,5 @@
 use brrtrouter::{router::Router, spec::RouteMeta};
-use criterion::{black_box, Criterion, criterion_group, criterion_main};
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use http::Method;
 
 fn example_spec() -> &'static str {

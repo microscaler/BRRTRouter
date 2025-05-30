@@ -33,46 +33,46 @@ where
     may::coroutine::Builder::new()
         .stack_size(may::config().get_stack_size())
         .spawn(move || {
-        let handler = handler;
-        for req in rx.iter() {
-            let reply_tx = req.reply_tx.clone();
+            let handler = handler;
+            for req in rx.iter() {
+                let reply_tx = req.reply_tx.clone();
 
-            let data = match H::Request::try_from(req.clone()) {
-                Ok(v) => v,
-                Err(err) => {
-                    let _ = reply_tx.send(HandlerResponse {
-                        status: 400,
-                        headers: HashMap::new(),
-                        body: serde_json::json!({
-                            "error": "Invalid request data",
-                            "message": err.to_string()
-                        }),
-                    });
-                    continue;
-                }
-            };
+                let data = match H::Request::try_from(req.clone()) {
+                    Ok(v) => v,
+                    Err(err) => {
+                        let _ = reply_tx.send(HandlerResponse {
+                            status: 400,
+                            headers: HashMap::new(),
+                            body: serde_json::json!({
+                                "error": "Invalid request data",
+                                "message": err.to_string()
+                            }),
+                        });
+                        continue;
+                    }
+                };
 
-            let typed_req = TypedHandlerRequest {
-                method: req.method,
-                path: req.path,
-                handler_name: req.handler_name,
-                path_params: req.path_params,
-                query_params: req.query_params,
-                data,
-            };
+                let typed_req = TypedHandlerRequest {
+                    method: req.method,
+                    path: req.path,
+                    handler_name: req.handler_name,
+                    path_params: req.path_params,
+                    query_params: req.query_params,
+                    data,
+                };
 
-            let result = handler.handle(typed_req);
+                let result = handler.handle(typed_req);
 
-            let _ = reply_tx.send(HandlerResponse {
-                status: 200,
-                headers: HashMap::new(),
-                body: serde_json::to_value(result).unwrap_or_else(|_| {
-                    serde_json::json!({"error": "Failed to serialize response"})
-                }),
-            });
-        }
-    })
-    .unwrap();
+                let _ = reply_tx.send(HandlerResponse {
+                    status: 200,
+                    headers: HashMap::new(),
+                    body: serde_json::to_value(result).unwrap_or_else(
+                        |_| serde_json::json!({"error": "Failed to serialize response"}),
+                    ),
+                });
+            }
+        })
+        .unwrap();
 
     tx
 }

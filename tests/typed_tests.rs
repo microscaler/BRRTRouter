@@ -115,26 +115,41 @@ fn test_header_cookie_params() {
 struct SumHandler;
 
 #[derive(Debug, Deserialize)]
-struct SumReq { a: i32, b: i32 }
+struct SumReq {
+    a: i32,
+    b: i32,
+}
 
 impl TryFrom<HandlerRequest> for SumReq {
     type Error = anyhow::Error;
     fn try_from(req: HandlerRequest) -> Result<Self, Self::Error> {
-        let a = req.query_params.get("a").ok_or_else(|| anyhow!("missing a"))?.parse()?;
-        let b = req.query_params.get("b").ok_or_else(|| anyhow!("missing b"))?.parse()?;
+        let a = req
+            .query_params
+            .get("a")
+            .ok_or_else(|| anyhow!("missing a"))?
+            .parse()?;
+        let b = req
+            .query_params
+            .get("b")
+            .ok_or_else(|| anyhow!("missing b"))?
+            .parse()?;
         Ok(SumReq { a, b })
     }
 }
 
 #[derive(Serialize)]
-struct SumResp { total: i32 }
+struct SumResp {
+    total: i32,
+}
 
 impl brrtrouter::typed::Handler for SumHandler {
     type Request = SumReq;
     type Response = SumResp;
 
     fn handle(&self, req: brrtrouter::typed::TypedHandlerRequest<Self::Request>) -> Self::Response {
-        SumResp { total: req.data.a + req.data.b }
+        SumResp {
+            total: req.data.a + req.data.b,
+        }
     }
 }
 
@@ -156,7 +171,8 @@ fn test_spawn_typed_success_and_error() {
             cookies: HashMap::new(),
             body: None,
             reply_tx,
-        }).unwrap();
+        })
+        .unwrap();
         let resp = reply_rx.recv().unwrap();
         assert_eq!(resp.status, 200);
         assert_eq!(resp.body["total"], 5);
@@ -174,7 +190,8 @@ fn test_spawn_typed_success_and_error() {
             cookies: HashMap::new(),
             body: None,
             reply_tx,
-        }).unwrap();
+        })
+        .unwrap();
         let resp = reply_rx.recv().unwrap();
         assert_eq!(resp.status, 400);
     }

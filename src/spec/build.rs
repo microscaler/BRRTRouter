@@ -1,10 +1,10 @@
 use super::types::{ParameterLocation, ParameterMeta, ResponseSpec, Responses, RouteMeta};
+use super::SecurityScheme;
 use crate::validator::{fail_if_issues, ValidationIssue};
 use http::Method;
 use oas3::spec::{MediaTypeExamples, ObjectOrReference, Parameter};
 use oas3::OpenApiV3Spec;
 use serde_json::Value;
-use super::SecurityScheme;
 
 pub fn resolve_schema_ref<'a>(
     spec: &'a OpenApiV3Spec,
@@ -57,9 +57,12 @@ pub fn extract_request_schema(
 ) -> Option<Value> {
     operation.request_body.as_ref().and_then(|r| match r {
         ObjectOrReference::Object(req_body) => {
-            req_body.content.get("application/json").and_then(|media| match media.schema.as_ref()? {
-                ObjectOrReference::Object(schema_obj) => serde_json::to_value(schema_obj).ok(),
-                ObjectOrReference::Ref { ref_path } => resolve_schema_ref(spec, ref_path).and_then(|s| serde_json::to_value(s).ok()),
+            req_body.content.get("application/json").and_then(|media| {
+                match media.schema.as_ref()? {
+                    ObjectOrReference::Object(schema_obj) => serde_json::to_value(schema_obj).ok(),
+                    ObjectOrReference::Ref { ref_path } => resolve_schema_ref(spec, ref_path)
+                        .and_then(|s| serde_json::to_value(s).ok()),
+                }
             })
         }
         _ => None,
@@ -84,12 +87,12 @@ pub fn extract_response_schema_and_example(
                 for (mt, media) in &resp_obj.content {
                     let example = match &media.examples {
                         Some(MediaTypeExamples::Example { example }) => Some(example.clone()),
-                        Some(MediaTypeExamples::Examples { examples }) => examples
-                            .iter()
-                            .find_map(|(_, v)| match v {
+                        Some(MediaTypeExamples::Examples { examples }) => {
+                            examples.iter().find_map(|(_, v)| match v {
                                 ObjectOrReference::Object(obj) => obj.value.clone(),
                                 _ => None,
-                            }),
+                            })
+                        }
                         None => None,
                     };
 
@@ -106,7 +109,13 @@ pub fn extract_response_schema_and_example(
 
                     all.entry(status)
                         .or_insert_with(std::collections::HashMap::new)
-                        .insert(mt.clone(), ResponseSpec { schema: schema.clone(), example: example.clone() });
+                        .insert(
+                            mt.clone(),
+                            ResponseSpec {
+                                schema: schema.clone(),
+                                example: example.clone(),
+                            },
+                        );
 
                     if status == 200 && mt == "application/json" {
                         default_schema = schema;
@@ -123,8 +132,7 @@ pub fn extract_response_schema_and_example(
 pub fn extract_security_schemes(
     spec: &OpenApiV3Spec,
 ) -> std::collections::HashMap<String, SecurityScheme> {
-    spec
-        .components
+    spec.components
         .as_ref()
         .map(|c| {
             c.security_schemes
