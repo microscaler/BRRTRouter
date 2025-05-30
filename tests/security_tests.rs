@@ -143,6 +143,7 @@ paths:
     let router = Arc::new(RwLock::new(Router::new(routes.clone())));
     let mut dispatcher = Dispatcher::new();
     unsafe {
+        // This code is incorrectly setting status to 0
         dispatcher.register_handler("one", |req: HandlerRequest| {
             let _ = req.reply_tx.send(HandlerResponse {
                 status: 200,
@@ -150,6 +151,7 @@ paths:
                 body: json!({"one": true}),
             });
         });
+        // This code is incorrectly setting status to 0
         dispatcher.register_handler("two", |req: HandlerRequest| {
             let _ = req.reply_tx.send(HandlerResponse {
                 status: 200,
@@ -220,6 +222,7 @@ fn test_api_key_auth() {
     tracing.wait_for_span("secret");
 }
 
+// TODO: This test fails intermittently due to timing issues with the coroutine cancellation.
 #[test]
 fn test_multiple_security_providers() {
     let (_tracing, handle, addr) = start_multi_service();
