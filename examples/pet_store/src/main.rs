@@ -3,6 +3,7 @@ use may_minihttp::HttpServer;
 use pet_store::registry;
 use std::collections::HashMap;
 use std::io;
+use std::path::PathBuf;
 
 fn parse_stack_size() -> usize {
     if let Ok(val) = std::env::var("BRRTR_STACK_SIZE") {
@@ -36,7 +37,12 @@ fn main() -> io::Result<()> {
     // This returns a coroutine JoinHandle; we join on it to keep the server running
     let router = std::sync::Arc::new(std::sync::RwLock::new(Router::new(routes)));
     let dispatcher = std::sync::Arc::new(std::sync::RwLock::new(Dispatcher::new()));
-    let service = AppService::new(router, dispatcher, HashMap::new());
+    let service = AppService::new(
+        router,
+        dispatcher,
+        HashMap::new(),
+        PathBuf::from("./openapi.yaml"),
+    );
     let addr = if std::env::var("BRRTR_LOCAL").is_ok() {
         "127.0.0.1:8080"
     } else {

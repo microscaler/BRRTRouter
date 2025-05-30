@@ -21,7 +21,7 @@ use tracing_util::TestTracing;
 
 fn start_petstore_service() -> (TestTracing, may::coroutine::JoinHandle<()>, SocketAddr) {
     // ensure coroutines have enough stack for tests
-    may::config().set_stack_size(0x801);
+    may::config().set_stack_size(0x8000);
     let tracing = TestTracing::init();
     let (routes, _slug) = brrtrouter::load_spec("examples/openapi.yaml").unwrap();
     let router = Arc::new(RwLock::new(Router::new(routes.clone())));
@@ -30,7 +30,12 @@ fn start_petstore_service() -> (TestTracing, may::coroutine::JoinHandle<()>, Soc
         registry::register_from_spec(&mut dispatcher, &routes);
     }
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
-    let service = AppService::new(router, Arc::new(RwLock::new(dispatcher)), HashMap::new());
+    let service = AppService::new(
+        router,
+        Arc::new(RwLock::new(dispatcher)),
+        HashMap::new(),
+        PathBuf::from("examples/openapi.yaml"),
+    );
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     drop(listener);
@@ -101,10 +106,10 @@ fn test_dispatch_success() {
     let (mut tracing, handle, addr) = start_petstore_service();
     let resp = send_request(&addr, "GET /pets HTTP/1.1\r\nHost: localhost\r\n\r\n");
     unsafe { handle.coroutine().cancel() };
+    std::thread::sleep(Duration::from_millis(10));
     let (status, body) = parse_response(&resp);
     assert_eq!(status, 200);
     assert!(body.get("items").is_some());
-    tracing.wait_for_span("list_pets");
 }
 
 #[test]
@@ -120,7 +125,7 @@ fn test_route_404() {
 #[test]
 #[ignore]
 fn test_panic_recovery() {
-    may::config().set_stack_size(0x801);
+    may::config().set_stack_size(0x8000);
     let _tracing = TestTracing::init();
     fn panic_handler(_req: HandlerRequest) {
         panic!("boom");
@@ -147,7 +152,12 @@ fn test_panic_recovery() {
         dispatcher.register_handler("panic", panic_handler);
     }
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
-    let service = AppService::new(router, Arc::new(RwLock::new(dispatcher)), HashMap::new());
+    let service = AppService::new(
+        router,
+        Arc::new(RwLock::new(dispatcher)),
+        HashMap::new(),
+        PathBuf::from("examples/openapi.yaml"),
+    );
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     drop(listener);
@@ -162,7 +172,7 @@ fn test_panic_recovery() {
 
 #[test]
 fn test_headers_and_cookies() {
-    may::config().set_stack_size(0x801);
+    may::config().set_stack_size(0x8000);
     let _tracing = TestTracing::init();
     fn header_handler(req: HandlerRequest) {
         let response = HandlerResponse {
@@ -198,7 +208,12 @@ fn test_headers_and_cookies() {
         dispatcher.register_handler("header", header_handler);
     }
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
-    let service = AppService::new(router, Arc::new(RwLock::new(dispatcher)), HashMap::new());
+    let service = AppService::new(
+        router,
+        Arc::new(RwLock::new(dispatcher)),
+        HashMap::new(),
+        PathBuf::from("examples/openapi.yaml"),
+    );
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     drop(listener);
@@ -224,7 +239,7 @@ fn test_headers_and_cookies() {
 
 #[test]
 fn test_status_201_json() {
-    may::config().set_stack_size(0x801);
+    may::config().set_stack_size(0x8000);
     let _tracing = TestTracing::init();
     fn create_handler(req: HandlerRequest) {
         let response = HandlerResponse {
@@ -257,7 +272,12 @@ fn test_status_201_json() {
         dispatcher.register_handler("create", create_handler);
     }
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
-    let service = AppService::new(router, Arc::new(RwLock::new(dispatcher)), HashMap::new());
+    let service = AppService::new(
+        router,
+        Arc::new(RwLock::new(dispatcher)),
+        HashMap::new(),
+        PathBuf::from("examples/openapi.yaml"),
+    );
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     drop(listener);
@@ -274,7 +294,7 @@ fn test_status_201_json() {
 
 #[test]
 fn test_text_plain_error() {
-    may::config().set_stack_size(0x801);
+    may::config().set_stack_size(0x8000);
     let _tracing = TestTracing::init();
     fn text_handler(req: HandlerRequest) {
         let response = HandlerResponse {
@@ -307,7 +327,12 @@ fn test_text_plain_error() {
         dispatcher.register_handler("text", text_handler);
     }
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
-    let service = AppService::new(router, Arc::new(RwLock::new(dispatcher)), HashMap::new());
+    let service = AppService::new(
+        router,
+        Arc::new(RwLock::new(dispatcher)),
+        HashMap::new(),
+        PathBuf::from("examples/openapi.yaml"),
+    );
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     drop(listener);

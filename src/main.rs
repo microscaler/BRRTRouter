@@ -2,6 +2,7 @@ use brrtrouter::dispatcher::Dispatcher;
 // use brrrouter::registry;
 use brrtrouter::server::AppService;
 use brrtrouter::{load_spec, router::Router};
+use std::path::PathBuf;
 use may_minihttp::HttpServer;
 use std::collections::HashMap;
 use std::io;
@@ -37,7 +38,12 @@ fn main() -> io::Result<()> {
     // This returns a coroutine JoinHandle; we join on it to keep the server running
     let router = std::sync::Arc::new(std::sync::RwLock::new(Router::new(routes)));
     let dispatcher = std::sync::Arc::new(std::sync::RwLock::new(Dispatcher::new()));
-    let service = AppService::new(router, dispatcher, HashMap::new());
+    let service = AppService::new(
+        router,
+        dispatcher,
+        HashMap::new(),
+        PathBuf::from("examples/openapi.yaml"),
+    );
     let addr = if std::env::var("BRRTR_LOCAL").is_ok() {
         "127.0.0.1:8080"
     } else {

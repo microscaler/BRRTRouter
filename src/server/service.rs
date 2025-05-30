@@ -8,6 +8,7 @@ use crate::middleware::MetricsMiddleware;
 use may_minihttp::{HttpService, Request, Response};
 use std::collections::HashMap;
 use std::io;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
 #[derive(Clone)]
@@ -17,6 +18,7 @@ pub struct AppService {
     pub security_schemes: HashMap<String, SecurityScheme>,
     pub security_providers: HashMap<String, Arc<dyn SecurityProvider>>,
     pub metrics: Option<Arc<crate::middleware::MetricsMiddleware>>,
+    pub spec_path: PathBuf,
 }
 
 impl AppService {
@@ -24,6 +26,7 @@ impl AppService {
         router: Arc<RwLock<Router>>,
         dispatcher: Arc<RwLock<Dispatcher>>,
         security_schemes: HashMap<String, SecurityScheme>,
+        spec_path: PathBuf,
     ) -> Self {
         Self {
             router,
@@ -31,6 +34,7 @@ impl AppService {
             security_schemes,
             security_providers: HashMap::new(),
             metrics: None,
+            spec_path,
         }
     }
 
@@ -71,6 +75,30 @@ pub fn metrics_endpoint(res: &mut Response, metrics: &MetricsMiddleware) -> io::
     Ok(())
 }
 
+/// Streams the OpenAPI specification file as `text/yaml`.
+pub fn openapi_endpoint(res: &mut Response, spec_path: &Path) -> io::Result<()> {
+    match std::fs::read(spec_path) {
+        Ok(bytes) => {
+            res.status_code(200, "OK");
+            res.header("Content-Type: text/yaml");
+            res.body_vec(bytes);
+        }
+        Err(_) => {
+            write_json_error(res, 404, serde_json::json!({ "error": "Spec not found" }));
+        }
+    }
+    Ok(())
+}
+
+/// Serves the bundled Swagger UI `index.html`.
+pub fn swagger_ui_endpoint(res: &mut Response) -> io::Result<()> {
+    const INDEX: &str = include_str!("../../static/swagger-ui/index.html");
+    res.status_code(200, "OK");
+    res.header("Content-Type: text/html");
+    res.body(INDEX);
+    Ok(())
+}
+
 impl HttpService for AppService {
     fn call(&mut self, req: Request, res: &mut Response) -> io::Result<()> {
         let ParsedRequest {
@@ -96,6 +124,12 @@ impl HttpService for AppService {
                 );
                 return Ok(());
             }
+        }
+        if method == "GET" && path == "/openapi.yaml" {
+            return openapi_endpoint(res, &self.spec_path);
+        }
+        if method == "GET" && path == "/docs" {
+            return swagger_ui_endpoint(res);
         }
 
         let route_opt = {
