@@ -1,5 +1,5 @@
-use brrtrouter::{dispatcher::Dispatcher, router::Router, server::AppService};
 use brrtrouter::server::HttpServer;
+use brrtrouter::{dispatcher::Dispatcher, router::Router, server::AppService};
 use pet_store::registry;
 use std::collections::HashMap;
 use std::io;
@@ -23,7 +23,7 @@ fn main() -> io::Result<()> {
     may::config().set_stack_size(stack_size);
     // Load OpenAPI spec and create router
     let (routes, _slug) =
-        brrtrouter::spec::load_spec("./openapi.yaml").expect("failed to load OpenAPI spec");
+        brrtrouter::spec::load_spec("../openapi.yaml").expect("failed to load OpenAPI spec");
     let router = Router::new(routes.clone());
 
     // Create dispatcher and register handlers
