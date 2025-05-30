@@ -5,7 +5,7 @@ use brrtrouter::{
     load_spec_full,
     router::Router,
     server::AppService,
-    SecurityProvider, SecurityRequest,
+    BearerJwtProvider, OAuth2Provider, SecurityProvider, SecurityRequest,
 };
 use may_minihttp::HttpServer;
 use serde_json::json;
@@ -183,6 +183,88 @@ paths:
     (tracing, handle, addr)
 }
 
+fn start_token_service() -> (TestTracing, may::coroutine::JoinHandle<()>, SocketAddr) {
+    may::config().set_stack_size(0x8000);
+    let tracing = TestTracing::init();
+    const SPEC: &str = r#"openapi: 3.1.0
+info:
+  title: Token API
+  version: '1.0'
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+    OAuth:
+      type: oauth2
+      flows:
+        implicit:
+          authorizationUrl: https://example.com/auth
+          scopes:
+            read: Read access
+paths:
+  /header:
+    get:
+      operationId: header
+      security:
+        - BearerAuth: []
+      responses:
+        '200': { description: OK }
+  /cookie:
+    get:
+      operationId: cookie
+      security:
+        - OAuth: ['read']
+      responses:
+        '200': { description: OK }
+"#;
+    let path = write_temp(SPEC);
+    let (routes, schemes, _slug) = load_spec_full(path.to_str().unwrap()).unwrap();
+    let router = Arc::new(RwLock::new(Router::new(routes.clone())));
+    let mut dispatcher = Dispatcher::new();
+    unsafe {
+        dispatcher.register_handler("header", |req: HandlerRequest| {
+            let _ = req.reply_tx.send(HandlerResponse {
+                status: 200,
+                headers: HashMap::new(),
+                body: json!({"header": true}),
+            });
+        });
+        dispatcher.register_handler("cookie", |req: HandlerRequest| {
+            let _ = req.reply_tx.send(HandlerResponse {
+                status: 200,
+                headers: HashMap::new(),
+                body: json!({"cookie": true}),
+            });
+        });
+    }
+    dispatcher.add_middleware(Arc::new(TracingMiddleware));
+    let mut service = AppService::new(
+        router,
+        Arc::new(RwLock::new(dispatcher)),
+        schemes,
+        PathBuf::from("examples/openapi.yaml"),
+    );
+    service.register_security_provider("BearerAuth", Arc::new(BearerJwtProvider::new("sig")));
+    service.register_security_provider(
+        "OAuth",
+        Arc::new(OAuth2Provider::new("sig").cookie_name("auth")),
+    );
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    drop(listener);
+    let handle = HttpServer(service).start(addr).unwrap();
+    std::thread::sleep(Duration::from_millis(50));
+    (tracing, handle, addr)
+}
+
+fn make_token(scope: &str) -> String {
+    use base64::{engine::general_purpose, Engine as _};
+    let header = general_purpose::STANDARD.encode(r#"{"alg":"HS256","typ":"JWT"}"#);
+    let payload = general_purpose::STANDARD.encode(format!(r#"{{"scope":"{}"}}"#, scope));
+    format!("{}.{}.{}", header, payload, "sig")
+}
+
 fn send_request(addr: &SocketAddr, req: &str) -> String {
     let mut stream = TcpStream::connect(addr).unwrap();
     stream.write_all(req.as_bytes()).unwrap();
@@ -260,4 +342,34 @@ fn test_multiple_security_providers() {
     unsafe { handle.coroutine().cancel() };
     let status_wrong = parse_status(&resp);
     assert_eq!(status_wrong, 401);
+}
+
+#[test]
+fn test_bearer_header_and_oauth_cookie() {
+    let (_tracing, handle, addr) = start_token_service();
+    // Missing token should fail
+    let resp = send_request(&addr, "GET /header HTTP/1.1\r\nHost: localhost\r\n\r\n");
+    let status = parse_status(&resp);
+    assert_eq!(status, 401);
+
+    // Valid bearer header
+    let token = make_token("");
+    let req = format!(
+        "GET /header HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer {}\r\n\r\n",
+        token
+    );
+    let resp = send_request(&addr, &req);
+    let status_ok = parse_status(&resp);
+    assert_eq!(status_ok, 200);
+
+    // OAuth2 cookie with required scope
+    let token = make_token("read");
+    let req = format!(
+        "GET /cookie HTTP/1.1\r\nHost: localhost\r\nCookie: auth={}\r\n\r\n",
+        token
+    );
+    let resp = send_request(&addr, &req);
+    unsafe { handle.coroutine().cancel() };
+    let status_cookie = parse_status(&resp);
+    assert_eq!(status_cookie, 200);
 }
