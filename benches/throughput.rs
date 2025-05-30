@@ -41,6 +41,30 @@ paths:
       responses:
         "200": { description: OK }
 
+  /zoo/animals/{id}/toys/{toy_id}:
+    get:
+      operationId: animal_toy
+      responses:
+        "200": { description: OK }
+
+  /zoo/{category}/animals/{id}/habitats/{habitat_id}/sections/{section_id}:
+    get:
+      operationId: habitat_section
+      responses:
+        "200": { description: OK }
+
+  /inventory/{warehouse_id}/feeds/{feed_id}/items/{item_id}/batches/{batch_id}:
+    post:
+      operationId: post_item_batch
+      responses:
+        "200": { description: OK }
+
+  /complex/{a}/{b}/{c}/{d}/{e}/{f}/{g}/{h}/{i}:
+    get:
+      operationId: complex_many_params
+      responses:
+        "200": { description: OK }
+
   /zoo/health:
     head:
       operationId: health_check
@@ -66,9 +90,24 @@ fn bench_route_throughput(c: &mut Criterion) {
     let routes = parse_spec(example_spec());
     let router = Router::new(routes);
     c.bench_function("route_match", |b| {
+        let test_paths = [
+            (Method::GET, "/zoo/animals/123"),
+            (Method::GET, "/zoo/animals/123/toys/456"),
+            (
+                Method::GET,
+                "/zoo/cats/animals/123/habitats/88/sections/5",
+            ),
+            (
+                Method::POST,
+                "/inventory/1/feeds/2/items/3/batches/4",
+            ),
+            (Method::GET, "/complex/1/2/3/4/5/6/7/8/9"),
+        ];
         b.iter(|| {
-            let res = router.route(Method::GET, "/zoo/animals/123");
-            black_box(res);
+            for (method, path) in test_paths.iter() {
+                let res = router.route(method.clone(), path);
+                black_box(&res);
+            }
         })
     });
 }

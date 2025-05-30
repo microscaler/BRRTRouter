@@ -79,7 +79,7 @@ impl Router {
                 continue;
             }
             if let Some(captures) = regex.captures(path) {
-                let mut params = HashMap::new();
+                let mut params = HashMap::with_capacity(param_names.len());
                 for (i, name) in param_names.iter().enumerate() {
                     if let Some(val) = captures.get(i + 1) {
                         params.insert(name.clone(), val.as_str().to_string());
@@ -103,8 +103,10 @@ impl Router {
             );
         }
 
-        let mut pattern = String::from("^");
-        let mut param_names = Vec::new();
+        // Reserve space for the final regex string and parameter list
+        let mut pattern = String::with_capacity(path.len() + 5);
+        pattern.push('^');
+        let mut param_names = Vec::with_capacity(path.matches('{').count());
 
         for segment in path.split('/') {
             if segment.starts_with('{') && segment.ends_with('}') {
