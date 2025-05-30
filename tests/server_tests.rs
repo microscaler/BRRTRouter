@@ -21,7 +21,7 @@ use tracing_util::TestTracing;
 
 fn start_petstore_service() -> (TestTracing, may::coroutine::JoinHandle<()>, SocketAddr) {
     // ensure coroutines have enough stack for tests
-    may::config().set_stack_size(0x401);
+    may::config().set_stack_size(0x801);
     let tracing = TestTracing::init();
     let (routes, _slug) = brrtrouter::load_spec("examples/openapi.yaml").unwrap();
     let router = Arc::new(RwLock::new(Router::new(routes.clone())));
@@ -120,7 +120,7 @@ fn test_route_404() {
 #[test]
 #[ignore]
 fn test_panic_recovery() {
-    may::config().set_stack_size(0x401);
+    may::config().set_stack_size(0x801);
     let _tracing = TestTracing::init();
     fn panic_handler(_req: HandlerRequest) {
         panic!("boom");
@@ -162,7 +162,7 @@ fn test_panic_recovery() {
 
 #[test]
 fn test_headers_and_cookies() {
-    may::config().set_stack_size(0x401);
+    may::config().set_stack_size(0x801);
     let _tracing = TestTracing::init();
     fn header_handler(req: HandlerRequest) {
         let response = HandlerResponse {
@@ -224,7 +224,7 @@ fn test_headers_and_cookies() {
 
 #[test]
 fn test_status_201_json() {
-    may::config().set_stack_size(0x401);
+    may::config().set_stack_size(0x801);
     let _tracing = TestTracing::init();
     fn create_handler(req: HandlerRequest) {
         let response = HandlerResponse {
@@ -274,7 +274,7 @@ fn test_status_201_json() {
 
 #[test]
 fn test_text_plain_error() {
-    may::config().set_stack_size(0x401);
+    may::config().set_stack_size(0x801);
     let _tracing = TestTracing::init();
     fn text_handler(req: HandlerRequest) {
         let response = HandlerResponse {
