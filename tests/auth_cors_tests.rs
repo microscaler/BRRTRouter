@@ -1,5 +1,5 @@
-use brrtrouter::middleware::{AuthMiddleware, CorsMiddleware, Middleware};
 use brrtrouter::dispatcher::{HandlerRequest, HandlerResponse};
+use brrtrouter::middleware::{AuthMiddleware, CorsMiddleware, Middleware};
 use http::Method;
 use may::sync::mpsc;
 use std::collections::HashMap;
@@ -67,7 +67,16 @@ fn test_cors_middleware_sets_headers() {
         body: serde_json::Value::Null,
     };
     mw.after(&req, &mut resp, Duration::from_millis(0));
-    assert_eq!(resp.headers.get("Access-Control-Allow-Origin"), Some(&"*".to_string()));
-    assert_eq!(resp.headers.get("Access-Control-Allow-Headers"), Some(&"Content-Type, Authorization".to_string()));
-    assert_eq!(resp.headers.get("Access-Control-Allow-Methods"), Some(&"GET, POST, PUT, DELETE, OPTIONS".to_string()));
+    assert_eq!(
+        resp.headers.get("Access-Control-Allow-Origin"),
+        Some(&"*".to_string())
+    );
+    assert_eq!(
+        resp.headers.get("Access-Control-Allow-Headers"),
+        Some(&"Content-Type, Authorization".to_string())
+    );
+    assert_eq!(
+        resp.headers.get("Access-Control-Allow-Methods"),
+        Some(&"GET, POST, PUT, DELETE, OPTIONS".to_string())
+    );
 }

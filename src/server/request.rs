@@ -1,7 +1,7 @@
+use crate::spec::ParameterStyle;
 use may_minihttp::Request;
 use std::collections::HashMap;
 use std::io::Read;
-use crate::spec::ParameterStyle;
 
 /// Parsed HTTP request data used by `AppService`.
 #[derive(Debug, PartialEq)]

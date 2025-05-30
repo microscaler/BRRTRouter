@@ -1,4 +1,9 @@
-use brrtrouter::{dispatcher::{Dispatcher, HandlerRequest, HandlerResponse}, router::Router, server::AppService, spec::{RouteMeta, ResponseSpec}};
+use brrtrouter::{
+    dispatcher::{Dispatcher, HandlerRequest, HandlerResponse},
+    router::Router,
+    server::AppService,
+    spec::{ResponseSpec, RouteMeta},
+};
 use http::Method;
 use may_minihttp::HttpServer;
 use serde_json::json;
@@ -12,14 +17,21 @@ use std::time::Duration;
 fn send_request(addr: &std::net::SocketAddr, req: &str) -> String {
     let mut stream = TcpStream::connect(addr).unwrap();
     stream.write_all(req.as_bytes()).unwrap();
-    stream.set_read_timeout(Some(Duration::from_millis(100))).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_millis(100)))
+        .unwrap();
     let mut buf = Vec::new();
     loop {
         let mut tmp = [0u8; 1024];
         match stream.read(&mut tmp) {
             Ok(0) => break,
             Ok(n) => buf.extend_from_slice(&tmp[..n]),
-            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::TimedOut => break,
+            Err(ref e)
+                if e.kind() == std::io::ErrorKind::WouldBlock
+                    || e.kind() == std::io::ErrorKind::TimedOut =>
+            {
+                break
+            }
             Err(e) => panic!("read error: {:?}", e),
         }
     }
@@ -33,8 +45,13 @@ fn parse_parts(resp: &str) -> (u16, String) {
     let mut ct = String::new();
     for line in headers.lines() {
         if line.starts_with("HTTP/1.1") {
-            status = line.split_whitespace().nth(1).unwrap_or("0").parse().unwrap();
-        } else if let Some((n,v)) = line.split_once(':') {
+            status = line
+                .split_whitespace()
+                .nth(1)
+                .unwrap_or("0")
+                .parse()
+                .unwrap();
+        } else if let Some((n, v)) = line.split_once(':') {
             if n.eq_ignore_ascii_case("content-type") {
                 ct = v.trim().to_string();
             }
@@ -49,11 +66,17 @@ fn test_select_content_type_from_spec() {
     let responses = {
         let mut m = HashMap::new();
         let mut inner = HashMap::new();
-        inner.insert("text/plain".to_string(), ResponseSpec{schema:None, example:None});
+        inner.insert(
+            "text/plain".to_string(),
+            ResponseSpec {
+                schema: None,
+                example: None,
+            },
+        );
         m.insert(201u16, inner);
         m
     };
-    let route = RouteMeta{
+    let route = RouteMeta {
         method: Method::POST,
         path_pattern: "/resp".to_string(),
         handler_name: "h".to_string(),
@@ -67,17 +90,26 @@ fn test_select_content_type_from_spec() {
         project_slug: String::new(),
         output_dir: PathBuf::new(),
         base_path: String::new(),
-        sse:false,
+        sse: false,
     };
     let router = Arc::new(RwLock::new(Router::new(vec![route.clone()])));
     let mut dispatcher = Dispatcher::new();
     unsafe {
         dispatcher.register_handler("h", |_req: HandlerRequest| {
-            let resp = HandlerResponse{status:201, headers:HashMap::new(), body: json!("ok")};
+            let resp = HandlerResponse {
+                status: 201,
+                headers: HashMap::new(),
+                body: json!("ok"),
+            };
             let _ = _req.reply_tx.send(resp);
         });
     }
-    let service = AppService::new(router, Arc::new(RwLock::new(dispatcher)), HashMap::new(), PathBuf::new());
+    let service = AppService::new(
+        router,
+        Arc::new(RwLock::new(dispatcher)),
+        HashMap::new(),
+        PathBuf::new(),
+    );
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     drop(listener);

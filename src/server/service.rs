@@ -1,10 +1,10 @@
 use super::request::{parse_request, ParsedRequest};
 use super::response::{write_handler_response, write_json_error};
 use crate::dispatcher::{Dispatcher, HandlerResponse};
+use crate::middleware::MetricsMiddleware;
 use crate::router::Router;
 use crate::security::{SecurityProvider, SecurityRequest};
 use crate::spec::SecurityScheme;
-use crate::middleware::MetricsMiddleware;
 use may_minihttp::{HttpService, Request, Response};
 use std::collections::HashMap;
 use std::io;
@@ -71,7 +71,13 @@ pub fn metrics_endpoint(res: &mut Response, metrics: &MetricsMiddleware) -> io::
         metrics.request_count(),
         metrics.average_latency().as_secs_f64()
     );
-    write_handler_response(res, 200, serde_json::Value::String(body), false, &HashMap::new());
+    write_handler_response(
+        res,
+        200,
+        serde_json::Value::String(body),
+        false,
+        &HashMap::new(),
+    );
     Ok(())
 }
 

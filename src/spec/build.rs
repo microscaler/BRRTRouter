@@ -1,4 +1,6 @@
-use super::types::{ParameterLocation, ParameterMeta, ParameterStyle, ResponseSpec, Responses, RouteMeta};
+use super::types::{
+    ParameterLocation, ParameterMeta, ParameterStyle, ResponseSpec, Responses, RouteMeta,
+};
 use super::SecurityScheme;
 use crate::validator::{fail_if_issues, ValidationIssue};
 use http::Method;

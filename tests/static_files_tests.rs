@@ -7,7 +7,10 @@ fn test_html_rendering() {
     let ctx = json!({"name": "Integration"});
     let (bytes, ct) = sf.load("hello.html", Some(&ctx)).unwrap();
     assert_eq!(ct, "text/html");
-    assert_eq!(String::from_utf8(bytes).unwrap(), "<h1>Hello Integration!</h1>");
+    assert_eq!(
+        String::from_utf8(bytes).unwrap(),
+        "<h1>Hello Integration!</h1>"
+    );
 }
 
 #[test]
