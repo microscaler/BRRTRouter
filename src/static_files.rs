@@ -85,6 +85,7 @@ mod tests {
         let sf = StaticFiles::new("tests/staticdata");
         assert!(sf.map_path("../Cargo.toml").is_none());
         let escaped_string = "..\\/..\\/Cargo.toml";
+        assert!(sf.map_path(escaped_string).is_none());
     }
 
     #[test]

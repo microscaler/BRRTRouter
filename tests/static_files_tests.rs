@@ -17,4 +17,5 @@ fn test_html_rendering() {
 fn test_traversal_prevented() {
     let sf = StaticFiles::new("tests/staticdata");
     assert!(sf.load("../Cargo.toml", None).is_err());
+    assert!(sf.load("..\\Cargo.toml", None).is_err());
 }
