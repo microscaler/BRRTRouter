@@ -3,6 +3,8 @@
 use serde::{Deserialize, Serialize};
 use crate::brrtrouter::typed::TypedHandlerRequest;
 use crate::brrtrouter::dispatcher::HandlerRequest;
+use crate::brrtrouter::server::request::decode_param_value;
+use crate::brrtrouter::spec::ParameterStyle;
 use anyhow::anyhow;
 use std::convert::TryFrom;
 {% for import in imports -%}
@@ -39,28 +41,6 @@ impl TryFrom<HandlerRequest> for Request {
     fn try_from(req: HandlerRequest) -> Result<Self, Self::Error> {
         use serde_json::{Map, Value};
 
-        fn convert(value: &str, schema: Option<&Value>) -> Value {
-            if let Some(ty) = schema.and_then(|s| s.get("type").and_then(|v| v.as_str())) {
-                match ty {
-                    "integer" => value
-                        .parse::<i64>()
-                        .map(Value::from)
-                        .unwrap_or_else(|_| Value::String(value.to_string())),
-                    "number" => value
-                        .parse::<f64>()
-                        .map(Value::from)
-                        .unwrap_or_else(|_| Value::String(value.to_string())),
-                    "boolean" => value
-                        .parse::<bool>()
-                        .map(Value::from)
-                        .unwrap_or_else(|_| Value::String(value.to_string())),
-                    _ => Value::String(value.to_string()),
-                }
-            } else {
-                Value::String(value.to_string())
-            }
-        }
-
         let mut data_map = Map::new();
 
         {% for p in parameters %}
@@ -75,7 +55,12 @@ impl TryFrom<HandlerRequest> for Request {
         {% endif %}
             data_map.insert(
                 "{{ p.name }}".to_string(),
-                convert(v, {%- if p.schema.is_some() %}Some(&serde_json::json!({{ p.schema | json }})){%- else %}None{%- endif %}),
+                decode_param_value(
+                    v,
+                    {%- if p.schema.is_some() %}Some(&serde_json::json!({{ p.schema | json }})){%- else %}None{%- endif %},
+                    {%- if p.style.is_some() %}Some(ParameterStyle::{{ p.style.as_ref().unwrap() }} ){%- else %}None{%- endif %},
+                    {%- if p.explode.is_some() %}Some({{ p.explode.unwrap() }}){%- else %}None{%- endif %},
+                ),
             );
         } else {
             {% if p.required %}

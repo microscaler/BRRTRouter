@@ -11,12 +11,12 @@ pub mod security;
 pub mod server;
 pub mod spec;
 pub mod sse;
+pub mod static_files;
 pub mod typed;
 pub mod validator;
-pub mod static_files;
 
 pub use security::{SecurityProvider, SecurityRequest};
 pub use spec::{
-    load_spec, load_spec_from_spec, load_spec_full, ParameterLocation, ParameterMeta, RouteMeta,
-    SecurityRequirement, SecurityScheme,
+    load_spec, load_spec_from_spec, load_spec_full, ParameterLocation, ParameterMeta,
+    ParameterStyle, RouteMeta, SecurityRequirement, SecurityScheme,
 };

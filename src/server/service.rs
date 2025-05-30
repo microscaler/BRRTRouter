@@ -1,10 +1,10 @@
 use super::request::{parse_request, ParsedRequest};
 use super::response::{write_handler_response, write_json_error};
 use crate::dispatcher::{Dispatcher, HandlerResponse};
+use crate::middleware::MetricsMiddleware;
 use crate::router::Router;
 use crate::security::{SecurityProvider, SecurityRequest};
 use crate::spec::SecurityScheme;
-use crate::middleware::MetricsMiddleware;
 use may_minihttp::{HttpService, Request, Response};
 use std::collections::HashMap;
 use std::io;
@@ -71,7 +71,13 @@ pub fn metrics_endpoint(res: &mut Response, metrics: &MetricsMiddleware) -> io::
         metrics.request_count(),
         metrics.average_latency().as_secs_f64()
     );
-    write_handler_response(res, 200, serde_json::Value::String(body), false, &HashMap::new());
+    write_handler_response(
+        res,
+        200,
+        serde_json::Value::String(body),
+        false,
+        &HashMap::new(),
+    );
     Ok(())
 }
 
@@ -180,11 +186,17 @@ impl HttpService for AppService {
             let is_sse = route_match.route.sse;
             let handler_response = {
                 let dispatcher = self.dispatcher.read().unwrap();
-                dispatcher.dispatch(route_match, body, headers, cookies)
+                dispatcher.dispatch(route_match.clone(), body, headers, cookies)
             };
             match handler_response {
                 Some(hr) => {
-                    write_handler_response(res, hr.status, hr.body, is_sse, &hr.headers);
+                    let mut headers = hr.headers.clone();
+                    if !headers.contains_key("Content-Type") {
+                        if let Some(ct) = route_match.route.content_type_for(hr.status) {
+                            headers.insert("Content-Type".to_string(), ct);
+                        }
+                    }
+                    write_handler_response(res, hr.status, hr.body, is_sse, &headers);
                 }
                 None => {
                     write_json_error(

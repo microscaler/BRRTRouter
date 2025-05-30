@@ -85,14 +85,21 @@ mod tests {
     fn send_request(addr: &std::net::SocketAddr, req: &str) -> String {
         let mut stream = TcpStream::connect(addr).unwrap();
         stream.write_all(req.as_bytes()).unwrap();
-        stream.set_read_timeout(Some(Duration::from_millis(100))).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_millis(100)))
+            .unwrap();
         let mut buf = Vec::new();
         loop {
             let mut tmp = [0u8; 1024];
             match stream.read(&mut tmp) {
                 Ok(0) => break,
                 Ok(n) => buf.extend_from_slice(&tmp[..n]),
-                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::TimedOut => break,
+                Err(ref e)
+                    if e.kind() == std::io::ErrorKind::WouldBlock
+                        || e.kind() == std::io::ErrorKind::TimedOut =>
+                {
+                    break
+                }
                 Err(e) => panic!("read error: {:?}", e),
             }
         }
@@ -122,11 +129,7 @@ mod tests {
                 }
             }
         }
-        let info = if x_test {
-            format!("{}|X-Test", ct)
-        } else {
-            ct
-        };
+        let info = if x_test { format!("{}|X-Test", ct) } else { ct };
         (status, info, body)
     }
 

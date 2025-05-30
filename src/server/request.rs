@@ -1,3 +1,4 @@
+use crate::spec::ParameterStyle;
 use may_minihttp::Request;
 use std::collections::HashMap;
 use std::io::Read;
@@ -38,6 +39,60 @@ pub fn parse_query_params(path: &str) -> HashMap<String, String> {
             .collect()
     } else {
         HashMap::new()
+    }
+}
+
+pub fn decode_param_value(
+    value: &str,
+    schema: Option<&serde_json::Value>,
+    style: Option<ParameterStyle>,
+    explode: Option<bool>,
+) -> serde_json::Value {
+    use serde_json::Value;
+
+    fn convert_primitive(val: &str, schema: Option<&Value>) -> Value {
+        if let Some(ty) = schema.and_then(|s| s.get("type").and_then(|v| v.as_str())) {
+            match ty {
+                "integer" => val
+                    .parse::<i64>()
+                    .map(Value::from)
+                    .unwrap_or_else(|_| Value::String(val.to_string())),
+                "number" => val
+                    .parse::<f64>()
+                    .map(Value::from)
+                    .unwrap_or_else(|_| Value::String(val.to_string())),
+                "boolean" => val
+                    .parse::<bool>()
+                    .map(Value::from)
+                    .unwrap_or_else(|_| Value::String(val.to_string())),
+                _ => Value::String(val.to_string()),
+            }
+        } else {
+            Value::String(val.to_string())
+        }
+    }
+
+    if let Some(ty) = schema.and_then(|s| s.get("type").and_then(|v| v.as_str())) {
+        match ty {
+            "array" => {
+                let items_schema = schema.and_then(|s| s.get("items"));
+                let delim = match style.unwrap_or(ParameterStyle::Form) {
+                    ParameterStyle::SpaceDelimited => ' ',
+                    ParameterStyle::PipeDelimited => '|',
+                    _ => ',',
+                };
+                let parts = value
+                    .split(delim)
+                    .filter(|s| !s.is_empty())
+                    .map(|p| convert_primitive(p.trim(), items_schema))
+                    .collect::<Vec<_>>();
+                Value::Array(parts)
+            }
+            "object" => serde_json::from_str(value).unwrap_or(Value::String(value.to_string())),
+            _ => convert_primitive(value, schema),
+        }
+    } else {
+        Value::String(value.to_string())
     }
 }
 
