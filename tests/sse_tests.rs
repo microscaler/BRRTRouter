@@ -87,7 +87,6 @@ fn parse_parts(resp: &str) -> (u16, String, String) {
 }
 
 #[test]
-#[ignore]
 fn test_event_stream() {
     let (_tracing, handle, addr) = start_service();
     let resp = send_request(&addr, "GET /events HTTP/1.1\r\nHost: localhost\r\n\r\n");
@@ -95,6 +94,10 @@ fn test_event_stream() {
     let (status, ct, body) = parse_parts(&resp);
     assert_eq!(status, 200);
     assert_eq!(ct, "text/event-stream");
-    assert!(body.contains("data: tick 0"));
-    assert!(body.contains("data: tick 2"));
+    let events: Vec<_> = body
+        .lines()
+        .filter(|l| l.starts_with("data: "))
+        .map(|l| l[6..].trim())
+        .collect();
+    assert_eq!(events, ["tick 0", "tick 1", "tick 2"]);
 }
