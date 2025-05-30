@@ -13,6 +13,7 @@ pub mod spec;
 pub mod sse;
 pub mod typed;
 pub mod validator;
+pub mod static_files;
 
 pub use security::{SecurityProvider, SecurityRequest};
 pub use spec::{
