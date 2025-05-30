@@ -13,8 +13,7 @@ use tracing_util::TestTracing;
 
 fn start_service() -> (TestTracing, may::coroutine::JoinHandle<()>, SocketAddr) {
     // ensure coroutines have enough stack for tests
-    std::env::set_var("BRRTR_STACK_SIZE", "0x8000");
-    may::config().set_stack_size(0x8000);
+    may::config().set_stack_size(0x8001);
     let tracing = TestTracing::init();
     let (routes, _slug) = brrtrouter::load_spec("examples/openapi.yaml").unwrap();
     let router = Arc::new(RwLock::new(Router::new(routes.clone())));

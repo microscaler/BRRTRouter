@@ -116,6 +116,7 @@ fn test_route_404() {
     assert_eq!(status, 404);
 }
 
+// TODO: fix this test, its mean't to test panics, but the test or code does not correctly recover from a panic
 #[test]
 #[ignore]
 fn test_panic_recovery() {
