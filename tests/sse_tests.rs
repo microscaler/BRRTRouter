@@ -9,26 +9,20 @@ use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
-mod tracing_util;
-use brrtrouter::middleware::TracingMiddleware;
-use tracing_util::TestTracing;
-
-fn start_service() -> (TestTracing, may::coroutine::JoinHandle<()>, SocketAddr) {
+fn start_service() -> (may::coroutine::JoinHandle<()>, SocketAddr) {
     std::env::set_var("BRRTR_STACK_SIZE", "0x8000");
     may::config().set_stack_size(0x8000);
-    let tracing = TestTracing::init();
     let (routes, _slug) = brrtrouter::load_spec("examples/openapi.yaml").unwrap();
     let router = Arc::new(RwLock::new(Router::new(routes.clone())));
     let mut dispatcher = Dispatcher::new();
     unsafe { registry::register_from_spec(&mut dispatcher, &routes); }
-    dispatcher.add_middleware(Arc::new(TracingMiddleware));
     let service = AppService::new(router, Arc::new(RwLock::new(dispatcher)), HashMap::new());
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     drop(listener);
     let handle = HttpServer(service).start(addr).unwrap();
     std::thread::sleep(Duration::from_millis(50));
-    (tracing, handle, addr)
+    (handle, addr)
 }
 
 fn send_request(addr: &SocketAddr, req: &str) -> String {
@@ -69,7 +63,7 @@ fn parse_parts(resp: &str) -> (u16, String, String) {
 #[test]
 #[ignore]
 fn test_event_stream() {
-    let (_tracing, handle, addr) = start_service();
+    let (handle, addr) = start_service();
     let resp = send_request(&addr, "GET /events HTTP/1.1\r\nHost: localhost\r\n\r\n");
     unsafe { handle.coroutine().cancel() };
     let (status, ct, body) = parse_parts(&resp);
