@@ -85,29 +85,31 @@ impl Dispatcher {
         coroutine::Builder::new()
             .stack_size(may::config().get_stack_size())
             .spawn(move || {
-            for req in rx.iter() {
-                // Extract what we need for error handling
-                let reply_tx = req.reply_tx.clone();
-                let handler_name = req.handler_name.clone();
+                for req in rx.iter() {
+                    // Extract what we need for error handling
+                    let reply_tx = req.reply_tx.clone();
+                    let handler_name = req.handler_name.clone();
 
-                if let Err(panic) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    handler_fn(req);
-                })) {
-                    // Send an error response if the handler panicked
-                    let error_response = HandlerResponse {
-                        status: 500,
-                        headers: HashMap::new(),
-                        body: serde_json::json!({
-                            "error": "Handler panicked",
-                            "details": format!("{:?}", panic)
-                        }),
-                    };
-                    let _ = reply_tx.send(error_response);
-                    eprintln!("Handler '{}' panicked: {:?}", handler_name, panic);
+                    if let Err(panic) =
+                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            handler_fn(req);
+                        }))
+                    {
+                        // Send an error response if the handler panicked
+                        let error_response = HandlerResponse {
+                            status: 500,
+                            headers: HashMap::new(),
+                            body: serde_json::json!({
+                                "error": "Handler panicked",
+                                "details": format!("{:?}", panic)
+                            }),
+                        };
+                        let _ = reply_tx.send(error_response);
+                        eprintln!("Handler '{}' panicked: {:?}", handler_name, panic);
+                    }
                 }
-            }
-        })
-        .unwrap();
+            })
+            .unwrap();
 
         self.handlers.insert(name, tx);
     }

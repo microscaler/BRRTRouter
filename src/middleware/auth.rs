@@ -28,4 +28,3 @@ impl Middleware for AuthMiddleware {
 
     fn after(&self, _req: &HandlerRequest, _res: &mut HandlerResponse, _latency: Duration) {}
 }
-

@@ -15,16 +15,19 @@ pub struct ParsedRequest {
 
 /// Extract useful information from a `may_minihttp::Request`.
 pub fn parse_cookies(headers: &HashMap<String, String>) -> HashMap<String, String> {
-    headers.get("cookie").map(|c| {
-        c.split(";")
-            .filter_map(|pair| {
-                let mut parts = pair.trim().splitn(2, "=");
-                let name = parts.next()?.trim().to_string();
-                let value = parts.next().unwrap_or("").trim().to_string();
-                Some((name, value))
-            })
-            .collect()
-    }).unwrap_or_default()
+    headers
+        .get("cookie")
+        .map(|c| {
+            c.split(";")
+                .filter_map(|pair| {
+                    let mut parts = pair.trim().splitn(2, "=");
+                    let name = parts.next()?.trim().to_string();
+                    let value = parts.next().unwrap_or("").trim().to_string();
+                    Some((name, value))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 pub fn parse_query_params(path: &str) -> HashMap<String, String> {
@@ -46,7 +49,12 @@ pub fn parse_request(req: Request) -> ParsedRequest {
     let headers: HashMap<String, String> = req
         .headers()
         .iter()
-        .map(|h| (h.name.to_ascii_lowercase(), String::from_utf8_lossy(h.value).to_string()))
+        .map(|h| {
+            (
+                h.name.to_ascii_lowercase(),
+                String::from_utf8_lossy(h.value).to_string(),
+            )
+        })
         .collect();
 
     let cookies = parse_cookies(&headers);
@@ -65,7 +73,14 @@ pub fn parse_request(req: Request) -> ParsedRequest {
         }
     };
 
-    ParsedRequest { method, path, headers, cookies, query_params, body }
+    ParsedRequest {
+        method,
+        path,
+        headers,
+        cookies,
+        query_params,
+        body,
+    }
 }
 #[cfg(test)]
 mod tests {

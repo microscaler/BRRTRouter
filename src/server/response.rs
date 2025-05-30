@@ -51,7 +51,6 @@ pub fn write_json_error(res: &mut Response, status: u16, body: Value) {
     res.body_vec(body.to_string().into_bytes());
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,12 +1,12 @@
-use brrtrouter::generator::{
-    write_main_rs, write_handler, write_controller, write_registry_rs, RegistryEntry,
-};
 use brrtrouter::generator::FieldDef;
+use brrtrouter::generator::{
+    write_controller, write_handler, write_main_rs, write_registry_rs, RegistryEntry,
+};
 use brrtrouter::spec::{ParameterMeta, RouteMeta};
 use http::Method;
 use std::collections::{BTreeSet, HashMap};
 use std::fs;
-use std::path::{PathBuf};
+use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 fn temp_dir() -> PathBuf {
@@ -44,10 +44,27 @@ fn test_template_writers() {
     let params: Vec<ParameterMeta> = Vec::new();
 
     let handler_path = handlers_dir.join("test.rs");
-    write_handler(&handler_path, "test", &req_fields, &res_fields, &imports, &params, true).unwrap();
+    write_handler(
+        &handler_path,
+        "test",
+        &req_fields,
+        &res_fields,
+        &imports,
+        &params,
+        true,
+    )
+    .unwrap();
 
     let controller_path = controllers_dir.join("test.rs");
-    write_controller(&controller_path, "test", "TestController", &res_fields, None, true).unwrap();
+    write_controller(
+        &controller_path,
+        "test",
+        "TestController",
+        &res_fields,
+        None,
+        true,
+    )
+    .unwrap();
 
     let entries = vec![RegistryEntry {
         name: "test".into(),

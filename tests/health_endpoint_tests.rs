@@ -35,14 +35,19 @@ fn start_service() -> (TestTracing, may::coroutine::JoinHandle<()>, SocketAddr) 
 fn send_request(addr: &SocketAddr, req: &str) -> String {
     let mut stream = TcpStream::connect(addr).unwrap();
     stream.write_all(req.as_bytes()).unwrap();
-    stream.set_read_timeout(Some(Duration::from_millis(100))).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_millis(100)))
+        .unwrap();
     let mut buf = Vec::new();
     loop {
         let mut tmp = [0u8; 1024];
         match stream.read(&mut tmp) {
             Ok(0) => break,
             Ok(n) => buf.extend_from_slice(&tmp[..n]),
-            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::TimedOut => {
+            Err(ref e)
+                if e.kind() == std::io::ErrorKind::WouldBlock
+                    || e.kind() == std::io::ErrorKind::TimedOut =>
+            {
                 break
             }
             Err(e) => panic!("read error: {:?}", e),
@@ -58,7 +63,12 @@ fn parse_response(resp: &str) -> (u16, serde_json::Value) {
     let mut status = 0;
     for line in headers.lines() {
         if line.starts_with("HTTP/1.1") {
-            status = line.split_whitespace().nth(1).unwrap_or("0").parse().unwrap();
+            status = line
+                .split_whitespace()
+                .nth(1)
+                .unwrap_or("0")
+                .parse()
+                .unwrap();
         }
     }
     let json: serde_json::Value = serde_json::from_str(body).unwrap_or_default();

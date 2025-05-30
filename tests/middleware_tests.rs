@@ -1,16 +1,18 @@
 use brrtrouter::{
-    dispatcher::Dispatcher,
-    middleware::MetricsMiddleware,
-    router::Router,
-    load_spec,
+    dispatcher::Dispatcher, load_spec, middleware::MetricsMiddleware, router::Router,
 };
 use http::Method;
 use pet_store::registry;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+mod tracing_util;
+use brrtrouter::middleware::TracingMiddleware;
+use tracing_util::TestTracing;
+
 #[test]
 fn test_metrics_middleware_counts() {
+    let _tracing = TestTracing::init();
     let (routes, _slug) = load_spec("examples/openapi.yaml").unwrap();
     let router = Router::new(routes.clone());
     let mut dispatcher = Dispatcher::new();
@@ -19,6 +21,7 @@ fn test_metrics_middleware_counts() {
     }
     let metrics = Arc::new(MetricsMiddleware::new());
     dispatcher.add_middleware(metrics.clone());
+    dispatcher.add_middleware(Arc::new(TracingMiddleware));
 
     let route_match = router.route(Method::GET, "/pets/12345").unwrap();
     let resp = dispatcher
@@ -32,8 +35,8 @@ fn test_metrics_middleware_counts() {
 #[test]
 fn test_metrics_stack_usage() {
     // set an odd stack size so may prints usage information
-    std::env::set_var("BRRTR_STACK_SIZE", "0x8001");
-    may::config().set_stack_size(0x8001);
+    may::config().set_stack_size(0x401);
+    let mut tracing = TestTracing::init();
 
     let (routes, _slug) = load_spec("examples/openapi.yaml").unwrap();
     let router = Router::new(routes.clone());
@@ -43,6 +46,7 @@ fn test_metrics_stack_usage() {
     }
     let metrics = Arc::new(MetricsMiddleware::new());
     dispatcher.add_middleware(metrics.clone());
+    dispatcher.add_middleware(Arc::new(TracingMiddleware));
 
     let route_match = router.route(Method::GET, "/pets/12345").unwrap();
     let resp = dispatcher
@@ -50,6 +54,7 @@ fn test_metrics_stack_usage() {
         .unwrap();
     assert_eq!(resp.status, 200);
     let (size, used) = metrics.stack_usage();
-    assert_eq!(size, 0x8001);
+    assert_eq!(size, 0x401);
     assert!(used >= 0);
+    tracing.wait_for_span("get_pet");
 }

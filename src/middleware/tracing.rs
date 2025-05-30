@@ -34,4 +34,3 @@ impl Middleware for TracingMiddleware {
         });
     }
 }
-

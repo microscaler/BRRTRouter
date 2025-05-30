@@ -1,4 +1,4 @@
-use crate::spec::{SecurityScheme};
+use crate::spec::SecurityScheme;
 use std::collections::HashMap;
 
 pub struct SecurityRequest<'a> {
@@ -8,12 +8,5 @@ pub struct SecurityRequest<'a> {
 }
 
 pub trait SecurityProvider: Send + Sync {
-    fn validate(
-        &self,
-        scheme: &SecurityScheme,
-        scopes: &[String],
-        req: &SecurityRequest,
-    ) -> bool;
+    fn validate(&self, scheme: &SecurityScheme, scopes: &[String], req: &SecurityRequest) -> bool;
 }
-
-

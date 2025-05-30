@@ -2,4 +2,4 @@ mod request;
 mod response;
 mod service;
 
-pub use service::{AppService, health_endpoint};
+pub use service::{health_endpoint, AppService};

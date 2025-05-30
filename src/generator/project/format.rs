@@ -28,9 +28,13 @@ mod tests {
         perms.set_mode(0o755);
         fs::set_permissions(&stub, perms).unwrap();
         let old_path = env::var("PATH").unwrap();
-        unsafe { env::set_var("PATH", format!("{}:{}", dir.display(), old_path)); }
+        unsafe {
+            env::set_var("PATH", format!("{}:{}", dir.display(), old_path));
+        }
         let res = format_project(&dir);
-        unsafe { env::set_var("PATH", old_path); }
+        unsafe {
+            env::set_var("PATH", old_path);
+        }
         assert!(res.is_ok());
     }
 
@@ -45,9 +49,13 @@ mod tests {
         perms.set_mode(0o755);
         fs::set_permissions(&stub, perms).unwrap();
         let old_path = env::var("PATH").unwrap();
-        unsafe { env::set_var("PATH", format!("{}:{}", dir.display(), old_path)); }
+        unsafe {
+            env::set_var("PATH", format!("{}:{}", dir.display(), old_path));
+        }
         let res = format_project(&dir);
-        unsafe { env::set_var("PATH", old_path); }
+        unsafe {
+            env::set_var("PATH", old_path);
+        }
         assert!(res.is_err());
     }
 }
