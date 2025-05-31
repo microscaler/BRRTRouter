@@ -27,7 +27,10 @@ pub struct BearerJwtProvider {
 
 impl BearerJwtProvider {
     pub fn new(signature: impl Into<String>) -> Self {
-        Self { signature: signature.into(), cookie_name: None }
+        Self {
+            signature: signature.into(),
+            cookie_name: None,
+        }
     }
 
     /// Configure the cookie name used to read the token.
@@ -64,14 +67,16 @@ impl BearerJwtProvider {
             Err(_) => return false,
         };
         let token_scopes = json.get("scope").and_then(|v| v.as_str()).unwrap_or("");
-        scopes.iter().all(|s| token_scopes.split_whitespace().any(|ts| ts == s))
+        scopes
+            .iter()
+            .all(|s| token_scopes.split_whitespace().any(|ts| ts == s))
     }
 }
 
 impl SecurityProvider for BearerJwtProvider {
     fn validate(&self, scheme: &SecurityScheme, scopes: &[String], req: &SecurityRequest) -> bool {
         match scheme {
-            SecurityScheme::Http { scheme, .. } if scheme.eq_ignore_ascii_case("bearer") => {},
+            SecurityScheme::Http { scheme, .. } if scheme.eq_ignore_ascii_case("bearer") => {}
             _ => return false,
         }
         let token = match self.extract_token(req) {
@@ -90,7 +95,10 @@ pub struct OAuth2Provider {
 
 impl OAuth2Provider {
     pub fn new(signature: impl Into<String>) -> Self {
-        Self { signature: signature.into(), cookie_name: None }
+        Self {
+            signature: signature.into(),
+            cookie_name: None,
+        }
     }
 
     pub fn cookie_name(mut self, name: impl Into<String>) -> Self {
@@ -113,7 +121,7 @@ impl OAuth2Provider {
 impl SecurityProvider for OAuth2Provider {
     fn validate(&self, scheme: &SecurityScheme, scopes: &[String], req: &SecurityRequest) -> bool {
         match scheme {
-            SecurityScheme::OAuth2 { .. } => {},
+            SecurityScheme::OAuth2 { .. } => {}
             _ => return false,
         }
         let token = match self.extract_token(req) {
@@ -128,4 +136,3 @@ impl SecurityProvider for OAuth2Provider {
         helper.validate_token(token, scopes)
     }
 }
-

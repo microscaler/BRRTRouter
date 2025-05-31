@@ -70,9 +70,9 @@ where
                     let _ = reply_tx_inner.send(HandlerResponse {
                         status: 200,
                         headers: HashMap::new(),
-                        body: serde_json::to_value(result).unwrap_or_else(|_| {
-                            serde_json::json!({"error": "Failed to serialize response"})
-                        }),
+                        body: serde_json::to_value(result).unwrap_or_else(
+                            |_| serde_json::json!({"error": "Failed to serialize response"}),
+                        ),
                     });
                 }));
 

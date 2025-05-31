@@ -1,10 +1,23 @@
+use brrtrouter::dispatcher::Dispatcher;
+use brrtrouter::middleware::MetricsMiddleware;
+use brrtrouter::server::AppService;
 use brrtrouter::server::HttpServer;
-use brrtrouter::{dispatcher::Dispatcher, router::Router, server::AppService};
+use brrtrouter::{load_spec, router::Router};
 use clap::Parser;
 use pet_store::registry;
 use std::collections::HashMap;
 use std::io;
 use std::path::PathBuf;
+
+#[derive(Parser)]
+struct Args {
+    #[arg(short, long, default_value = "./doc/openapi.yaml")]
+    spec: PathBuf,
+    #[arg(long)]
+    static_dir: Option<PathBuf>,
+    #[arg(long, default_value = "./doc")]
+    doc_dir: PathBuf,
+}
 
 fn parse_stack_size() -> usize {
     if let Ok(val) = std::env::var("BRRTR_STACK_SIZE") {
@@ -18,27 +31,21 @@ fn parse_stack_size() -> usize {
     }
 }
 
-#[derive(Parser)]
-struct Args {
-    #[arg(short, long, default_value = "./doc/openapi.yaml")]
-    spec: PathBuf,
-    #[arg(long)]
-    static_dir: Option<PathBuf>,
-    #[arg(long, default_value = "./doc")]
-    doc_dir: PathBuf,
-}
-
 fn main() -> io::Result<()> {
-    // enlarge stack size for may coroutines
     let args = Args::parse();
+    // increase coroutine stack size to prevent overflows
     let stack_size = parse_stack_size();
     may::config().set_stack_size(stack_size);
     // Load OpenAPI spec and create router
     let (routes, _slug) = brrtrouter::spec::load_spec(args.spec.to_str().unwrap())
         .expect("failed to load OpenAPI spec");
-    // Create router and dispatcher
     let router = Router::new(routes.clone());
+    // Create router and dispatcher
     let mut dispatcher = Dispatcher::new();
+
+    // Create dispatcher and middleware
+    let metrics = std::sync::Arc::new(MetricsMiddleware::new());
+    dispatcher.add_middleware(metrics.clone());
     unsafe {
         registry::register_from_spec(&mut dispatcher, &routes);
     }
@@ -46,9 +53,9 @@ fn main() -> io::Result<()> {
     // Start the HTTP server on port 8080, binding to 127.0.0.1 if BRRTR_LOCAL is
     // set for local testing.
     // This returns a coroutine JoinHandle; we join on it to keep the server running
-    let router = std::sync::Arc::new(std::sync::RwLock::new(router));
+    let router = std::sync::Arc::new(std::sync::RwLock::new(Router::new(routes)));
     let dispatcher = std::sync::Arc::new(std::sync::RwLock::new(dispatcher));
-    let service = AppService::new(
+    let mut service = AppService::new(
         router,
         dispatcher,
         HashMap::new(),
@@ -56,6 +63,7 @@ fn main() -> io::Result<()> {
         args.static_dir.clone(),
         Some(args.doc_dir.clone()),
     );
+    service.set_metrics_middleware(metrics);
     let addr = if std::env::var("BRRTR_LOCAL").is_ok() {
         "127.0.0.1:8080"
     } else {

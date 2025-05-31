@@ -1,13 +1,13 @@
 use super::request::{parse_request, ParsedRequest};
 use super::response::{write_handler_response, write_json_error};
 use crate::dispatcher::Dispatcher;
-use crate::static_files::StaticFiles;
 use crate::middleware::MetricsMiddleware;
-use serde_json::json;
 use crate::router::Router;
 use crate::security::{SecurityProvider, SecurityRequest};
 use crate::spec::SecurityScheme;
+use crate::static_files::StaticFiles;
 use may_minihttp::{HttpService, Request, Response};
+use serde_json::json;
 use std::collections::HashMap;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -152,7 +152,11 @@ impl HttpService for AppService {
             if let Some(docs) = &self.doc_files {
                 return swagger_ui_endpoint(res, docs);
             } else {
-                write_json_error(res, 404, serde_json::json!({ "error": "Docs not configured" }));
+                write_json_error(
+                    res,
+                    404,
+                    serde_json::json!({ "error": "Docs not configured" }),
+                );
                 return Ok(());
             }
         }

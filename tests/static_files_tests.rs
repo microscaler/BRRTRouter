@@ -18,7 +18,10 @@ fn test_js_bundle() {
     let sf = StaticFiles::new("tests/staticdata");
     let (bytes, ct) = sf.load("bundle.js", None).unwrap();
     assert_eq!(ct, "application/javascript");
-    assert_eq!(String::from_utf8(bytes).unwrap(), "console.log('bundled');\n");
+    assert_eq!(
+        String::from_utf8(bytes).unwrap(),
+        "console.log('bundled');\n"
+    );
 }
 
 #[test]

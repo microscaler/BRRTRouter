@@ -18,7 +18,11 @@ impl StaticFiles {
 
     fn map_path(&self, url_path: &str) -> Option<PathBuf> {
         let clean = url_path.trim_start_matches('/');
-        if clean.contains("../") || clean.contains("/..") || clean.contains("..\\") || clean.contains("\\..") {
+        if clean.contains("../")
+            || clean.contains("/..")
+            || clean.contains("..\\")
+            || clean.contains("\\..")
+        {
             return None;
         }
         let mut pb = self.base_dir.clone();
@@ -118,6 +122,9 @@ mod tests {
         let sf = StaticFiles::new("tests/staticdata");
         let (bytes, ct) = sf.load("bundle.js", None).unwrap();
         assert_eq!(ct, "application/javascript");
-        assert_eq!(String::from_utf8(bytes).unwrap(), "console.log('bundled');\n");
+        assert_eq!(
+            String::from_utf8(bytes).unwrap(),
+            "console.log('bundled');\n"
+        );
     }
 }

@@ -1,4 +1,5 @@
 use brrtrouter::middleware::TracingMiddleware;
+use brrtrouter::server::{HttpServer, ServerHandle};
 use brrtrouter::spec::SecurityScheme;
 use brrtrouter::{
     dispatcher::{Dispatcher, HandlerRequest, HandlerResponse},
@@ -7,7 +8,6 @@ use brrtrouter::{
     server::AppService,
     BearerJwtProvider, OAuth2Provider, SecurityProvider, SecurityRequest,
 };
-use brrtrouter::server::{HttpServer, ServerHandle};
 use serde_json::json;
 use std::collections::HashMap;
 use std::io::{Read, Write};

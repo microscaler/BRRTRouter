@@ -1,10 +1,10 @@
+use brrtrouter::server::{HttpServer, ServerHandle};
 use brrtrouter::{
     dispatcher::Dispatcher,
     middleware::{MetricsMiddleware, TracingMiddleware},
     router::Router,
     server::AppService,
 };
-use brrtrouter::server::{HttpServer, ServerHandle};
 use pet_store::registry;
 use std::collections::HashMap;
 use std::io::{Read, Write};

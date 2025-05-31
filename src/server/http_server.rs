@@ -1,7 +1,7 @@
-use may_minihttp::{HttpService, HttpServer as MiniHttpServer};
 use may::coroutine::JoinHandle;
+use may_minihttp::{HttpServer as MiniHttpServer, HttpService};
 use std::io;
-use std::net::{TcpStream, ToSocketAddrs, SocketAddr};
+use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
 use std::thread;
 use std::time::Duration;
 
@@ -24,7 +24,9 @@ impl ServerHandle {
     }
 
     pub fn stop(self) {
-        unsafe { self.handle.coroutine().cancel(); }
+        unsafe {
+            self.handle.coroutine().cancel();
+        }
         let _ = self.handle.join();
     }
 
@@ -35,7 +37,10 @@ impl ServerHandle {
 
 impl<T: HttpService + Clone + Send + Sync + 'static> HttpServer<T> {
     pub fn start<A: ToSocketAddrs>(self, addr: A) -> io::Result<ServerHandle> {
-        let addr = addr.to_socket_addrs()?.next().ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "invalid address"))?;
+        let addr = addr
+            .to_socket_addrs()?
+            .next()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "invalid address"))?;
         let handle = MiniHttpServer(self.0).start(addr)?;
         Ok(ServerHandle { addr, handle })
     }

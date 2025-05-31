@@ -93,14 +93,8 @@ fn bench_route_throughput(c: &mut Criterion) {
         let test_paths = [
             (Method::GET, "/zoo/animals/123"),
             (Method::GET, "/zoo/animals/123/toys/456"),
-            (
-                Method::GET,
-                "/zoo/cats/animals/123/habitats/88/sections/5",
-            ),
-            (
-                Method::POST,
-                "/inventory/1/feeds/2/items/3/batches/4",
-            ),
+            (Method::GET, "/zoo/cats/animals/123/habitats/88/sections/5"),
+            (Method::POST, "/inventory/1/feeds/2/items/3/batches/4"),
             (Method::GET, "/complex/1/2/3/4/5/6/7/8/9"),
         ];
         b.iter(|| {
