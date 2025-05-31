@@ -1,5 +1,6 @@
 use brrtrouter::server::HttpServer;
 use brrtrouter::{dispatcher::Dispatcher, router::Router, server::AppService};
+use clap::Parser;
 use pet_store::registry;
 use std::collections::HashMap;
 use std::io;
@@ -17,13 +18,22 @@ fn parse_stack_size() -> usize {
     }
 }
 
+#[derive(Parser)]
+struct Args {
+    #[arg(short, long, default_value = "./openapi.yaml")]
+    spec: PathBuf,
+    #[arg(long)]
+    static_dir: Option<PathBuf>,
+}
+
 fn main() -> io::Result<()> {
     // enlarge stack size for may coroutines
+    let args = Args::parse();
     let stack_size = parse_stack_size();
     may::config().set_stack_size(stack_size);
     // Load OpenAPI spec and create router
-    let (routes, _slug) =
-        brrtrouter::spec::load_spec("../openapi.yaml").expect("failed to load OpenAPI spec");
+    let (routes, _slug) = brrtrouter::spec::load_spec(args.spec.to_str().unwrap())
+        .expect("failed to load OpenAPI spec");
     let router = Router::new(routes.clone());
 
     // Create dispatcher and register handlers
@@ -41,7 +51,8 @@ fn main() -> io::Result<()> {
         router,
         dispatcher,
         HashMap::new(),
-        PathBuf::from("./openapi.yaml"),
+        args.spec.clone(),
+        args.static_dir.clone(),
     );
     let addr = if std::env::var("BRRTR_LOCAL").is_ok() {
         "127.0.0.1:8080"

@@ -1,14 +1,11 @@
 {# templates/main.rs.txt #}
-use brrtrouter::{
-    dispatcher::Dispatcher,
-    router::Router,
-    server::AppService,
-};
-use std::collections::HashMap;
-use std::path::PathBuf;
-use {{ name }}::registry;
 use brrtrouter::server::HttpServer;
+use brrtrouter::{dispatcher::Dispatcher, router::Router, server::AppService};
+use clap::Parser;
+use {{ name }}::registry;
+use std::collections::HashMap;
 use std::io;
+use std::path::PathBuf;
 
 fn parse_stack_size() -> usize {
     if let Ok(val) = std::env::var("BRRTR_STACK_SIZE") {
@@ -22,12 +19,22 @@ fn parse_stack_size() -> usize {
     }
 }
 
+#[derive(Parser)]
+struct Args {
+    #[arg(short, long, default_value = "./openapi.yaml")]
+    spec: PathBuf,
+    #[arg(long)]
+    static_dir: Option<PathBuf>,
+}
+
 fn main() -> io::Result<()> {
     // enlarge stack size for may coroutines
+    let args = Args::parse();
     let stack_size = parse_stack_size();
     may::config().set_stack_size(stack_size);
     // Load OpenAPI spec and create router
-    let (routes, _slug) = brrtrouter::spec::load_spec("./openapi.yaml").expect("failed to load OpenAPI spec");
+    let (routes, _slug) = brrtrouter::spec::load_spec(args.spec.to_str().unwrap())
+        .expect("failed to load OpenAPI spec");
     let router = Router::new(routes.clone());
 
     // Create dispatcher and register handlers
@@ -45,7 +52,8 @@ fn main() -> io::Result<()> {
         router,
         dispatcher,
         HashMap::new(),
-        PathBuf::from("./openapi.yaml"),
+        args.spec.clone(),
+        args.static_dir.clone(),
     );
     let addr = if std::env::var("BRRTR_LOCAL").is_ok() {
         "127.0.0.1:8080"
@@ -53,9 +61,7 @@ fn main() -> io::Result<()> {
         "0.0.0.0:8080"
     };
     println!("🚀 {{ name }} example server listening on {addr}");
-    let server = HttpServer(service)
-        .start(addr)
-        .map_err(io::Error::other)?;
+    let server = HttpServer(service).start(addr).map_err(io::Error::other)?;
     println!("Server started successfully on {addr}");
 
     server

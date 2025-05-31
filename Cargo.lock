@@ -2088,6 +2088,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "brrtrouter",
+ "clap",
  "http 1.3.1",
  "may",
  "may_minihttp",

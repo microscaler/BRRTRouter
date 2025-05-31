@@ -1,6 +1,7 @@
 use super::request::{parse_request, ParsedRequest};
 use super::response::{write_handler_response, write_json_error};
-use crate::dispatcher::{Dispatcher, HandlerResponse};
+use crate::dispatcher::Dispatcher;
+use crate::static_files::StaticFiles;
 use crate::middleware::MetricsMiddleware;
 use crate::router::Router;
 use crate::security::{SecurityProvider, SecurityRequest};
@@ -19,6 +20,7 @@ pub struct AppService {
     pub security_providers: HashMap<String, Arc<dyn SecurityProvider>>,
     pub metrics: Option<Arc<crate::middleware::MetricsMiddleware>>,
     pub spec_path: PathBuf,
+    pub static_files: Option<StaticFiles>,
 }
 
 impl AppService {
@@ -27,6 +29,7 @@ impl AppService {
         dispatcher: Arc<RwLock<Dispatcher>>,
         security_schemes: HashMap<String, SecurityScheme>,
         spec_path: PathBuf,
+        static_dir: Option<PathBuf>,
     ) -> Self {
         Self {
             router,
@@ -35,6 +38,7 @@ impl AppService {
             security_providers: HashMap::new(),
             metrics: None,
             spec_path,
+            static_files: static_dir.map(StaticFiles::new),
         }
     }
 
@@ -136,6 +140,18 @@ impl HttpService for AppService {
         }
         if method == "GET" && path == "/docs" {
             return swagger_ui_endpoint(res);
+        }
+
+        if method == "GET" {
+            if let Some(sf) = &self.static_files {
+                if let Ok((bytes, ct)) = sf.load(path.trim_start_matches('/'), None) {
+                    res.status_code(200, "OK");
+                    let header = format!("Content-Type: {}", ct).into_boxed_str();
+                    res.header(Box::leak(header));
+                    res.body_vec(bytes);
+                    return Ok(());
+                }
+            }
         }
 
         let route_opt = {

@@ -4,6 +4,7 @@ use std::fs;
 use std::io;
 use std::path::{Component, Path, PathBuf};
 
+#[derive(Clone)]
 pub struct StaticFiles {
     base_dir: PathBuf,
 }
@@ -16,11 +17,16 @@ impl StaticFiles {
     }
 
     fn map_path(&self, url_path: &str) -> Option<PathBuf> {
+        let clean = url_path.trim_start_matches('/');
+        if clean.contains("../") || clean.contains("/..") || clean.contains("..\\") || clean.contains("\\..") {
+            return None;
+        }
         let mut pb = self.base_dir.clone();
-        for comp in Path::new(url_path.trim_start_matches('/')).components() {
+        for comp in Path::new(clean).components() {
             match comp {
                 Component::Normal(s) => pb.push(s),
                 Component::CurDir => {}
+                Component::ParentDir => return None,
                 _ => return None,
             }
         }
@@ -105,5 +111,13 @@ mod tests {
         let (bytes, ct) = sf.load("hello.html", Some(&ctx)).unwrap();
         assert_eq!(ct, "text/html");
         assert_eq!(String::from_utf8(bytes).unwrap(), "<h1>Hello World!</h1>");
+    }
+
+    #[test]
+    fn test_load_js() {
+        let sf = StaticFiles::new("tests/staticdata");
+        let (bytes, ct) = sf.load("bundle.js", None).unwrap();
+        assert_eq!(ct, "application/javascript");
+        assert_eq!(String::from_utf8(bytes).unwrap(), "console.log('bundled');\n");
     }
 }
