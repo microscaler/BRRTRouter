@@ -37,6 +37,9 @@ fake-opentelemetry-collector = "0.28"
 tracing-subscriber = "0.3.19"
 tokio = "1.45.1"
 opentelemetry = "0.29.1"
+rustfmt = "0.10.0"
+fmt = "0.1.0"
+
 
 [dev-dependencies]
 pet_store = { path = "./examples/pet_store" }
