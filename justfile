@@ -30,8 +30,11 @@ fg:
 
 curls:
     curl -i 0.0.0.0:8080/health
+    echo ""
     curl -i 0.0.0.0:8080/metrics
+    echo ""
     curl -i "http://0.0.0.0:8080/items/123?debug=true" -X POST -H "Content-Type: application/json" -d '{"name": "Ball"}'
+    echo ""
     curl -i 0.0.0.0:8080
 
 all: gen build test curls
