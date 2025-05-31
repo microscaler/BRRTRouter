@@ -20,22 +20,29 @@ The following capabilities are already implemented in the main branch:
 - Coroutine-safe handler registry
 - Zero I/O testing utilities
 - Basic unit test coverage
+- Server-side events
+- Middleware hooks for metrics, authentication, 
 
 ## 🚧 Planned
 
 Planned or in-progress tasks include:
 
+- Investigate & implement config context
+- Extend fake otel collector across all tests
+- handler coroutinge stack size from config context
+- Docker compose for development (Otel-collector, Prometheus, Grafana, Loki)
+- Dashboards for Otel-collector, Prometheus, Grafana, Loki targeting BRRTRouter
+- implement tracing across entire codebsase
 - Typed handler deserialization
 - Auto-generation of `From<HandlerRequest>` for typed requests
 - Dynamic dispatcher route registration
 - Hot reload of specifications
 - Header and cookie extraction
 - WebSocket support
-- Server-side events
 - Expanded test coverage and spec validation
 - Improved coroutine handler ergonomics
 - Benchmark suite targeting 1M+ matches/sec/core
-- Middleware hooks for metrics, tracing, authentication, and CORS
+- Middleware hooks for tracing, and CORS, CRSF
 - Packaging reusable SDKs on crates.io
 
 ## 🎯 Benchmark Goal
