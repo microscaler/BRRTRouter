@@ -218,7 +218,7 @@ impl HttpService for AppService {
                         json!({"error": "Request validation failed", "details": details}),
                     );
                     return Ok(());
-                }
+                };
             }
             if !route_match.route.security.is_empty() {
                 let sec_req = SecurityRequest {
@@ -282,7 +282,7 @@ impl HttpService for AppService {
                                 json!({"error": "Response validation failed", "details": details}),
                             );
                             return Ok(());
-                        }
+                        };
                     }
                     write_handler_response(res, hr.status, hr.body, is_sse, &headers);
                 }
