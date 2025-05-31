@@ -42,6 +42,10 @@ pub struct MainRsTemplateData {
 pub struct OpenapiIndexTemplate;
 
 #[derive(Template)]
+#[template(path = "static.index.html", escape = "none")]
+pub struct StaticIndexTemplate;
+
+#[derive(Template)]
 #[template(path = "mod.rs.txt")]
 pub struct ModRsTemplateData {
     pub modules: Vec<String>,
@@ -255,5 +259,12 @@ pub fn write_openapi_index(dir: &Path) -> anyhow::Result<()> {
     let rendered = OpenapiIndexTemplate.render()?;
     fs::write(dir.join("index.html"), rendered)?;
     println!("✅ Wrote docs index → {:?}", dir.join("index.html"));
+    Ok(())
+}
+
+pub fn write_static_index(dir: &Path) -> anyhow::Result<()> {
+    let rendered = StaticIndexTemplate.render()?;
+    fs::write(dir.join("index.html"), rendered)?;
+    println!("✅ Wrote static index → {:?}", dir.join("index.html"));
     Ok(())
 }

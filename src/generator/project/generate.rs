@@ -10,7 +10,7 @@ use crate::generator::schema::{
 };
 use crate::generator::templates::{
     write_cargo_toml, write_controller, write_handler, write_main_rs, write_mod_rs,
-    write_openapi_index, write_registry_rs, write_types_rs, RegistryEntry,
+    write_openapi_index, write_registry_rs, write_static_index, write_types_rs, RegistryEntry,
 };
 
 pub fn generate_project_from_spec(spec_path: &Path, force: bool) -> anyhow::Result<PathBuf> {
@@ -110,6 +110,7 @@ pub fn generate_project_from_spec(spec_path: &Path, force: bool) -> anyhow::Resu
     write_cargo_toml(&base_dir, &slug)?;
     write_main_rs(&src_dir, &slug, routes)?;
     write_openapi_index(&doc_dir)?;
+    write_static_index(&static_dir)?;
     write_types_rs(&handler_dir, &schema_types)?;
     write_registry_rs(&src_dir, &registry_entries)?;
     write_mod_rs(
