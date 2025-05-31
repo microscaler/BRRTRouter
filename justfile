@@ -27,3 +27,10 @@ bench:
 # Profile the example server with cargo flamegraph
 fg:
     cargo flamegraph -p pet_store --bin pet_store
+
+curls:
+    curl -i 0.0.0.0:8080/health
+    curl -i 0.0.0.0:8080/metrics
+    curl -i "http://0.0.0.0:8080/items/123?debug=true" -X POST -H "Content-Type: application/json" -d '{"name": "Ball"}'
+
+all: gen build test curls
