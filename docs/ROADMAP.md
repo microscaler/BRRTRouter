@@ -28,11 +28,14 @@ The following capabilities are already implemented in the main branch:
 Planned or in-progress tasks include:
 
 - Investigate & implement config context
+- Registered handlers output on startup 
 - Extend fake otel collector across all tests
 - handler coroutinge stack size from config context
 - Docker compose for development (Otel-collector, Prometheus, Grafana, Loki)
 - Dashboards for Otel-collector, Prometheus, Grafana, Loki targeting BRRTRouter
 - implement tracing across entire codebsase
+- Start rust doc book
+- Start inline documentation of every public item
 - Typed handler deserialization
 - Auto-generation of `From<HandlerRequest>` for typed requests
 - Dynamic dispatcher route registration
