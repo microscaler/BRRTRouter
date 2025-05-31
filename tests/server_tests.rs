@@ -35,6 +35,7 @@ fn start_petstore_service() -> (TestTracing, ServerHandle, SocketAddr) {
         Arc::new(RwLock::new(dispatcher)),
         HashMap::new(),
         PathBuf::from("examples/openapi.yaml"),
+        None,
     );
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
@@ -154,6 +155,7 @@ fn test_panic_recovery() {
         Arc::new(RwLock::new(dispatcher)),
         HashMap::new(),
         PathBuf::from("examples/openapi.yaml"),
+        None,
     );
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
@@ -210,6 +212,7 @@ fn test_headers_and_cookies() {
         Arc::new(RwLock::new(dispatcher)),
         HashMap::new(),
         PathBuf::from("examples/openapi.yaml"),
+        None,
     );
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
@@ -274,6 +277,7 @@ fn test_status_201_json() {
         Arc::new(RwLock::new(dispatcher)),
         HashMap::new(),
         PathBuf::from("examples/openapi.yaml"),
+        None,
     );
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
@@ -329,6 +333,7 @@ fn test_text_plain_error() {
         Arc::new(RwLock::new(dispatcher)),
         HashMap::new(),
         PathBuf::from("examples/openapi.yaml"),
+        None,
     );
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();

@@ -109,6 +109,7 @@ fn test_select_content_type_from_spec() {
         Arc::new(RwLock::new(dispatcher)),
         HashMap::new(),
         PathBuf::new(),
+        None,
     );
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();

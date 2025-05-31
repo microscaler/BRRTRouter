@@ -95,6 +95,7 @@ paths:
         Arc::new(RwLock::new(dispatcher)),
         schemes,
         PathBuf::from("examples/openapi.yaml"),
+        None,
     );
     service.register_security_provider(
         "ApiKeyAuth",
@@ -172,6 +173,7 @@ paths:
         Arc::new(RwLock::new(dispatcher)),
         schemes,
         PathBuf::from("examples/openapi.yaml"),
+        None,
     );
     service.register_security_provider("KeyOne", Arc::new(ApiKeyProvider { key: "one".into() }));
     service.register_security_provider("KeyTwo", Arc::new(ApiKeyProvider { key: "two".into() }));
@@ -244,6 +246,7 @@ paths:
         Arc::new(RwLock::new(dispatcher)),
         schemes,
         PathBuf::from("examples/openapi.yaml"),
+        None,
     );
     service.register_security_provider("BearerAuth", Arc::new(BearerJwtProvider::new("sig")));
     service.register_security_provider(
