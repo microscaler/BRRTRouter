@@ -1,8 +1,9 @@
 use brrtrouter::dispatcher::Dispatcher;
+use brrtrouter::middleware::MetricsMiddleware;
 // use brrrouter::registry;
 use brrtrouter::server::AppService;
-use brrtrouter::{load_spec, router::Router};
 use brrtrouter::server::HttpServer;
+use brrtrouter::{load_spec, router::Router};
 use clap::Parser;
 use std::collections::HashMap;
 use std::io;
@@ -39,8 +40,10 @@ fn main() -> io::Result<()> {
     let (routes, _slug) = load_spec(args.spec.to_str().unwrap()).expect("failed to load spec");
     let router = Router::new(routes.clone());
 
-    // Create dispatcher and register handlers
+    // Create dispatcher and middleware
     let mut dispatcher = Dispatcher::new();
+    let metrics = std::sync::Arc::new(MetricsMiddleware::new());
+    dispatcher.add_middleware(metrics.clone());
     // unsafe {
     //     registry::register_all(&mut dispatcher);
     // }
@@ -49,8 +52,8 @@ fn main() -> io::Result<()> {
     // set for local testing.
     // This returns a coroutine JoinHandle; we join on it to keep the server running
     let router = std::sync::Arc::new(std::sync::RwLock::new(Router::new(routes)));
-    let dispatcher = std::sync::Arc::new(std::sync::RwLock::new(Dispatcher::new()));
-    let service = AppService::new(
+    let dispatcher = std::sync::Arc::new(std::sync::RwLock::new(dispatcher));
+    let mut service = AppService::new(
         router,
         dispatcher,
         HashMap::new(),
@@ -58,6 +61,7 @@ fn main() -> io::Result<()> {
         args.static_dir.clone(),
         Some(args.doc_dir.clone()),
     );
+    service.set_metrics_middleware(metrics);
     let addr = if std::env::var("BRRTR_LOCAL").is_ok() {
         "127.0.0.1:8080"
     } else {

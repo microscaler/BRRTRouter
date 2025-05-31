@@ -159,7 +159,9 @@ impl HttpService for AppService {
 
         if method == "GET" {
             if let Some(sf) = &self.static_files {
-                if let Ok((bytes, ct)) = sf.load(path.trim_start_matches('/'), None) {
+                let p = path.trim_start_matches('/');
+                let p = if p.is_empty() { "index.html" } else { p };
+                if let Ok((bytes, ct)) = sf.load(p, None) {
                     res.status_code(200, "OK");
                     let header = format!("Content-Type: {}", ct).into_boxed_str();
                     res.header(Box::leak(header));
