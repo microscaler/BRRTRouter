@@ -14,6 +14,8 @@ struct Args {
     spec: PathBuf,
     #[arg(long)]
     static_dir: Option<PathBuf>,
+    #[arg(long, default_value = "examples/pet_store/doc")]
+    doc_dir: PathBuf,
 }
 
 fn parse_stack_size() -> usize {
@@ -54,6 +56,7 @@ fn main() -> io::Result<()> {
         HashMap::new(),
         args.spec.clone(),
         args.static_dir.clone(),
+        Some(args.doc_dir.clone()),
     );
     let addr = if std::env::var("BRRTR_LOCAL").is_ok() {
         "127.0.0.1:8080"

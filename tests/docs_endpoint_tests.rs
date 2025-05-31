@@ -29,6 +29,7 @@ fn start_service() -> (TestTracing, ServerHandle, SocketAddr) {
         HashMap::new(),
         PathBuf::from("examples/openapi.yaml"),
         None,
+        Some(PathBuf::from("examples/pet_store/doc")),
     );
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
