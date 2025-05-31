@@ -35,9 +35,7 @@ impl Handler for ListPetsController {
         //     "vaccinated": true
         //   }
         // ]
-        Response {
-            items: vec![Default::default()],
-        }
+        Response(vec![Default::default()])
     }
 }
 

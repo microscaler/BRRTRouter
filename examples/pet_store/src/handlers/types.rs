@@ -68,14 +68,10 @@ pub struct Item {
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
-pub struct ListPetsResponse {
-    pub items: Vec<Pet>,
-}
+pub struct ListPetsResponse(pub Vec<Pet>);
 
 #[derive(Debug, Serialize, Deserialize, Default)]
-pub struct ListUserPostsResponse {
-    pub items: Vec<Post>,
-}
+pub struct ListUserPostsResponse(pub Vec<Post>);
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct ListUsersResponse {
