@@ -1,5 +1,6 @@
-use brrtrouter::{hot_reload::watch_spec, load_spec, router::Router};
+use brrtrouter::{hot_reload::watch_spec, load_spec, router::Router, dispatcher::Dispatcher};
 use std::sync::{Arc, Mutex, RwLock};
+use may::sync::mpsc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 fn write_temp(content: &str) -> std::path::PathBuf {
@@ -43,13 +44,18 @@ paths:
 
     let path = write_temp(SPEC_V1);
     let (routes, _slug) = load_spec(path.to_str().unwrap()).unwrap();
-    let router = Arc::new(RwLock::new(Router::new(routes)));
+    let router = Arc::new(RwLock::new(Router::new(routes.clone())));
+    let dispatcher = Arc::new(RwLock::new(Dispatcher::new()));
 
     let updates: Arc<Mutex<Vec<Vec<String>>>> = Arc::new(Mutex::new(Vec::new()));
     let updates_clone = updates.clone();
 
-    let watcher = watch_spec(&path, router, move |routes| {
-        let names = routes.iter().map(|r| r.handler_name.clone()).collect();
+    let watcher = watch_spec(&path, router, dispatcher.clone(), move |disp, new_routes| {
+        for r in &new_routes {
+            let (tx, _rx) = mpsc::channel();
+            disp.add_route(r.clone(), tx);
+        }
+        let names = new_routes.iter().map(|r| r.handler_name.clone()).collect();
         updates_clone.lock().unwrap().push(names);
     })
     .expect("watch_spec");
