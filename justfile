@@ -8,6 +8,18 @@ default:
 gen:
     cargo run --bin brrtrouter-gen -- generate --spec examples/openapi.yaml --force
 
+# Run the CLI generate command for any spec
+generate spec="examples/openapi.yaml" force="":
+    cargo run --bin brrtrouter-gen -- generate --spec {{spec}} {{force}}
+
+# Serve a spec with echo handlers
+serve spec="examples/openapi.yaml" addr="0.0.0.0:8080":
+    cargo run --bin brrtrouter-gen -- serve --spec {{spec}} --addr {{addr}}
+
+# Serve a spec and watch for changes
+watch spec="examples/openapi.yaml" addr="0.0.0.0:8080":
+    cargo run --bin brrtrouter-gen -- serve --watch --spec {{spec}} --addr {{addr}}
+
 # Run tests with output
 build:
     cargo build
