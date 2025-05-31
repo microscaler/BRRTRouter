@@ -14,7 +14,8 @@ use tracing_util::TestTracing;
 
 fn start_service() -> (TestTracing, ServerHandle, SocketAddr) {
     std::env::set_var("BRRTR_STACK_SIZE", "0x8000");
-    may::config().set_stack_size(0x8000);
+    let config = brrtrouter::runtime_config::RuntimeConfig::from_env();
+    may::config().set_stack_size(config.stack_size);
     let tracing = TestTracing::init();
     let (routes, _slug) = brrtrouter::load_spec("examples/openapi.yaml").unwrap();
     let router = Arc::new(RwLock::new(Router::new(routes.clone())));

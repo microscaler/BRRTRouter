@@ -69,15 +69,24 @@ pub fn health_endpoint(res: &mut Response) -> io::Result<()> {
 
 /// Metrics endpoint returning Prometheus text format statistics.
 pub fn metrics_endpoint(res: &mut Response, metrics: &MetricsMiddleware) -> io::Result<()> {
+    let (stack_size, used_stack) = metrics.stack_usage();
     let body = format!(
         "# HELP brrtrouter_requests_total Total number of handled requests\n\
          # TYPE brrtrouter_requests_total counter\n\
          brrtrouter_requests_total {}\n\
          # HELP brrtrouter_request_latency_seconds Average request latency in seconds\n\
          # TYPE brrtrouter_request_latency_seconds gauge\n\
-         brrtrouter_request_latency_seconds {}\n",
+         brrtrouter_request_latency_seconds {}\n\
+         # HELP brrtrouter_coroutine_stack_bytes Configured coroutine stack size\n\
+         # TYPE brrtrouter_coroutine_stack_bytes gauge\n\
+         brrtrouter_coroutine_stack_bytes {}\n\
+         # HELP brrtrouter_coroutine_stack_used_bytes Coroutine stack bytes used\n\
+         # TYPE brrtrouter_coroutine_stack_used_bytes gauge\n\
+         brrtrouter_coroutine_stack_used_bytes {}\n",
         metrics.request_count(),
-        metrics.average_latency().as_secs_f64()
+        metrics.average_latency().as_secs_f64(),
+        stack_size,
+        used_stack
     );
     write_handler_response(
         res,

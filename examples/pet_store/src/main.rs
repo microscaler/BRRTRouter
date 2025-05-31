@@ -1,5 +1,6 @@
 use brrtrouter::dispatcher::Dispatcher;
 use brrtrouter::middleware::MetricsMiddleware;
+use brrtrouter::runtime_config::RuntimeConfig;
 use brrtrouter::server::AppService;
 use brrtrouter::server::HttpServer;
 use brrtrouter::{load_spec, router::Router};
@@ -19,23 +20,11 @@ struct Args {
     doc_dir: PathBuf,
 }
 
-fn parse_stack_size() -> usize {
-    if let Ok(val) = std::env::var("BRRTR_STACK_SIZE") {
-        if let Some(hex) = val.strip_prefix("0x") {
-            usize::from_str_radix(hex, 16).unwrap_or(0x4000)
-        } else {
-            val.parse().unwrap_or(0x4000)
-        }
-    } else {
-        0x4000
-    }
-}
-
 fn main() -> io::Result<()> {
     let args = Args::parse();
-    // increase coroutine stack size to prevent overflows
-    let stack_size = parse_stack_size();
-    may::config().set_stack_size(stack_size);
+    // configure coroutine stack size
+    let config = RuntimeConfig::from_env();
+    may::config().set_stack_size(config.stack_size);
     // Load OpenAPI spec and create router
     let (routes, _slug) = brrtrouter::spec::load_spec(args.spec.to_str().unwrap())
         .expect("failed to load OpenAPI spec");

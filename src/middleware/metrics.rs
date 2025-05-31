@@ -53,15 +53,20 @@ impl Middleware for MetricsMiddleware {
             .fetch_add(latency.as_nanos() as u64, Ordering::Relaxed);
         // record stack metrics for the current coroutine when available
         if may::coroutine::is_coroutine() {
-            let size = may::coroutine::current().stack_size();
+            let co = may::coroutine::current();
+            let size = co.stack_size();
             self.stack_size.store(size, Ordering::Relaxed);
+            let mut used = 0;
+            #[cfg(feature = "stack_usage")]
+            {
+                let (_, u) = co.stack_usage();
+                used = u;
+            }
+            self.used_stack.store(used, Ordering::Relaxed);
         } else {
             self.stack_size
                 .store(may::config().get_stack_size(), Ordering::Relaxed);
+            self.used_stack.store(0, Ordering::Relaxed);
         }
-        // `may` only exposes used stack information via debug output when the
-        // stack size is odd. Capturing that output is non-trivial in this
-        // environment, so we store zero as a placeholder.
-        self.used_stack.store(0, Ordering::Relaxed);
     }
 }

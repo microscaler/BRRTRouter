@@ -14,6 +14,7 @@ pub mod sse;
 pub mod static_files;
 pub mod typed;
 pub mod validator;
+pub mod runtime_config;
 
 pub use security::{BearerJwtProvider, OAuth2Provider, SecurityProvider, SecurityRequest};
 pub use spec::{
