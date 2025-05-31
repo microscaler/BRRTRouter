@@ -1,0 +1,8 @@
+version: '3.8'
+services:
+  petstore:
+    build: ./examples/pet_store
+    ports:
+      - "8080:8080"
+    environment:
+      - BRRTR_LOCAL=1
