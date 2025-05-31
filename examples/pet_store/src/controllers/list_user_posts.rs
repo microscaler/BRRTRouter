@@ -23,9 +23,7 @@ impl Handler for ListUserPostsController {
         //     "title": "Follow-up"
         //   }
         // ]
-        Response {
-            items: vec![Default::default()],
-        }
+        Response(vec![Default::default()])
     }
 }
 

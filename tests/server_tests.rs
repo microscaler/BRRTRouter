@@ -110,7 +110,7 @@ fn test_dispatch_success() {
     handle.stop();
     let (status, body) = parse_response(&resp);
     assert_eq!(status, 200);
-    assert!(body.get("items").is_some());
+    assert!(body.is_array());
 }
 
 #[test]
@@ -353,4 +353,128 @@ fn test_text_plain_error() {
     assert_eq!(ct, "text/plain");
     assert_eq!(raw_body, "bad request");
     assert_eq!(body, Value::String("bad request".to_string()));
+}
+
+#[test]
+fn test_request_body_validation_failure() {
+    may::config().set_stack_size(0x8000);
+    let _tracing = TestTracing::init();
+    fn echo_handler(req: HandlerRequest) {
+        let response = HandlerResponse {
+            status: 200,
+            headers: HashMap::new(),
+            body: json!({"ok": true}),
+        };
+        let _ = req.reply_tx.send(response);
+    }
+
+    let route = RouteMeta {
+        method: Method::POST,
+        path_pattern: "/echo".to_string(),
+        handler_name: "echo".to_string(),
+        parameters: Vec::new(),
+        request_schema: Some(json!({
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"]
+        })),
+        response_schema: None,
+        example: None,
+        responses: std::collections::HashMap::new(),
+        security: Vec::new(),
+        example_name: String::new(),
+        project_slug: String::new(),
+        output_dir: PathBuf::new(),
+        base_path: String::new(),
+        sse: false,
+    };
+    let router = Arc::new(RwLock::new(Router::new(vec![route])));
+    let mut dispatcher = Dispatcher::new();
+    unsafe {
+        dispatcher.register_handler("echo", echo_handler);
+    }
+    dispatcher.add_middleware(Arc::new(TracingMiddleware));
+    let service = AppService::new(
+        router,
+        Arc::new(RwLock::new(dispatcher)),
+        HashMap::new(),
+        PathBuf::from("examples/openapi.yaml"),
+        None,
+        None,
+    );
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    drop(listener);
+    let handle = HttpServer(service).start(addr).unwrap();
+
+    let request = concat!(
+        "POST /echo HTTP/1.1\r\n",
+        "Host: localhost\r\n",
+        "Content-Type: application/json\r\n",
+        "Content-Length: 13\r\n",
+        "\r\n",
+        "{\"name\":123}"
+    );
+    let resp = send_request(&addr, request);
+    handle.stop();
+    let (status, _body) = parse_response(&resp);
+    assert_eq!(status, 400);
+}
+
+#[test]
+fn test_response_body_validation_failure() {
+    may::config().set_stack_size(0x8000);
+    let _tracing = TestTracing::init();
+    fn bad_handler(req: HandlerRequest) {
+        let response = HandlerResponse {
+            status: 200,
+            headers: HashMap::new(),
+            body: json!({"name": 123}),
+        };
+        let _ = req.reply_tx.send(response);
+    }
+
+    let route = RouteMeta {
+        method: Method::GET,
+        path_pattern: "/bad".to_string(),
+        handler_name: "bad".to_string(),
+        parameters: Vec::new(),
+        request_schema: None,
+        response_schema: Some(json!({
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"]
+        })),
+        example: None,
+        responses: std::collections::HashMap::new(),
+        security: Vec::new(),
+        example_name: String::new(),
+        project_slug: String::new(),
+        output_dir: PathBuf::new(),
+        base_path: String::new(),
+        sse: false,
+    };
+    let router = Arc::new(RwLock::new(Router::new(vec![route])));
+    let mut dispatcher = Dispatcher::new();
+    unsafe {
+        dispatcher.register_handler("bad", bad_handler);
+    }
+    dispatcher.add_middleware(Arc::new(TracingMiddleware));
+    let service = AppService::new(
+        router,
+        Arc::new(RwLock::new(dispatcher)),
+        HashMap::new(),
+        PathBuf::from("examples/openapi.yaml"),
+        None,
+        None,
+    );
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    drop(listener);
+    let handle = HttpServer(service).start(addr).unwrap();
+
+    let resp = send_request(&addr, "GET /bad HTTP/1.1\r\nHost: localhost\r\n\r\n");
+    handle.stop();
+    let (status, _body) = parse_response(&resp);
+    assert_eq!(status, 400);
 }

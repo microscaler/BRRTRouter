@@ -13,9 +13,7 @@ pub struct Request {}
 
 #[derive(Debug, Serialize)]
 
-pub struct Response {
-    pub items: Vec<Pet>,
-}
+pub struct Response(pub Vec<Pet>);
 
 impl TryFrom<HandlerRequest> for Request {
     type Error = anyhow::Error;

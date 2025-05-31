@@ -317,7 +317,7 @@ fn test_dispatch_all_registry_handlers() {
                 Method::GET,
                 "/pets",
                 None,
-                json!({"items": [{"age": 0, "breed": "", "id": 0, "name": "", "tags": [], "vaccinated": false}]}),
+                json!([{"age": 0, "breed": "", "id": 0, "name": "", "tags": [], "vaccinated": false}]),
             ),
             "add_pet" => (
                 Method::POST,
@@ -354,7 +354,7 @@ fn test_dispatch_all_registry_handlers() {
                 Method::GET,
                 "/users/abc-123/posts",
                 None,
-                json!({"items": [{"body": "", "id": "abc-123", "title": ""}]}),
+                json!([{"body": "", "id": "abc-123", "title": ""}]),
             ),
             "get_post" => (
                 Method::GET,
@@ -377,7 +377,6 @@ fn test_dispatch_all_registry_handlers() {
             )
             .expect("dispatch");
         assert_eq!(resp.status, 200, "handler {}", name);
-        // TODO: fix this assertion once the handlers return correct responses
-        // assert_eq!(resp.body, expected, "handler {}", name);
+        assert_eq!(resp.body, expected, "handler {}", name);
     }
 }
