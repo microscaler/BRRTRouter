@@ -139,6 +139,21 @@ just coverage # runs `cargo llvm-cov --fail-under 80`
 
 The command fails if total coverage drops below 80%.
 
+## 🐳 Pet Store Docker Image
+
+The `examples/pet_store` application can be packaged as a Docker image for
+integration testing or deployment. A `Dockerfile` and `docker-compose.yml` are
+included. Build and run the container with:
+
+```bash
+docker compose up -d --build
+```
+
+The Dockerfile automatically runs the `brrtrouter-gen` generator so the example
+code is always up to date. The generated `doc` and `static_site` directories are
+copied into the final image. The service listens on port `8080` and exposes the
+`/health` endpoint for readiness checks.
+
 
 Unit tests validate:
 
