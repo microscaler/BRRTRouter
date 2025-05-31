@@ -38,6 +38,8 @@ tracing-subscriber = "0.3.19"
 tokio = "1.45.1"
 opentelemetry = "0.29.1"
 
+
+
 [dev-dependencies]
 pet_store = { path = "./examples/pet_store" }
 criterion = "0.5"

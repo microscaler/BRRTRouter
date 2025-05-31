@@ -1,3 +1,4 @@
+use brrtrouter::server::{HttpServer, ServerHandle};
 use brrtrouter::{
     dispatcher::{Dispatcher, HandlerRequest, HandlerResponse},
     router::Router,
@@ -5,7 +6,6 @@ use brrtrouter::{
     spec::{ResponseSpec, RouteMeta},
 };
 use http::Method;
-use brrtrouter::server::{HttpServer, ServerHandle};
 use serde_json::json;
 use std::collections::HashMap;
 use std::io::{Read, Write};

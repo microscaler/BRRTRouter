@@ -1,13 +1,13 @@
 use super::request::{parse_request, ParsedRequest};
 use super::response::{write_handler_response, write_json_error};
 use crate::dispatcher::Dispatcher;
-use crate::static_files::StaticFiles;
 use crate::middleware::MetricsMiddleware;
-use serde_json::json;
 use crate::router::Router;
 use crate::security::{SecurityProvider, SecurityRequest};
 use crate::spec::SecurityScheme;
+use crate::static_files::StaticFiles;
 use may_minihttp::{HttpService, Request, Response};
+use serde_json::json;
 use std::collections::HashMap;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -152,14 +152,20 @@ impl HttpService for AppService {
             if let Some(docs) = &self.doc_files {
                 return swagger_ui_endpoint(res, docs);
             } else {
-                write_json_error(res, 404, serde_json::json!({ "error": "Docs not configured" }));
+                write_json_error(
+                    res,
+                    404,
+                    serde_json::json!({ "error": "Docs not configured" }),
+                );
                 return Ok(());
             }
         }
 
         if method == "GET" {
             if let Some(sf) = &self.static_files {
-                if let Ok((bytes, ct)) = sf.load(path.trim_start_matches('/'), None) {
+                let p = path.trim_start_matches('/');
+                let p = if p.is_empty() { "index.html" } else { p };
+                if let Ok((bytes, ct)) = sf.load(p, None) {
                     res.status_code(200, "OK");
                     let header = format!("Content-Type: {}", ct).into_boxed_str();
                     res.header(Box::leak(header));

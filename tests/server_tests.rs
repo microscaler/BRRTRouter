@@ -1,3 +1,4 @@
+use brrtrouter::server::{HttpServer, ServerHandle};
 use brrtrouter::{
     dispatcher::{Dispatcher, HandlerRequest, HandlerResponse},
     router::Router,
@@ -5,7 +6,6 @@ use brrtrouter::{
     spec::RouteMeta,
 };
 use http::Method;
-use brrtrouter::server::{HttpServer, ServerHandle};
 use pet_store::registry;
 use serde_json::{json, Value};
 use std::collections::HashMap;

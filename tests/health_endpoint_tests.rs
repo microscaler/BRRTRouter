@@ -1,5 +1,5 @@
-use brrtrouter::{dispatcher::Dispatcher, router::Router, server::AppService};
 use brrtrouter::server::{HttpServer, ServerHandle};
+use brrtrouter::{dispatcher::Dispatcher, router::Router, server::AppService};
 use pet_store::registry;
 use std::collections::HashMap;
 use std::io::{Read, Write};
