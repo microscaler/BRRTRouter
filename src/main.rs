@@ -3,9 +3,18 @@ use brrtrouter::dispatcher::Dispatcher;
 use brrtrouter::server::AppService;
 use brrtrouter::{load_spec, router::Router};
 use brrtrouter::server::HttpServer;
+use clap::Parser;
 use std::collections::HashMap;
 use std::io;
 use std::path::PathBuf;
+
+#[derive(Parser)]
+struct Args {
+    #[arg(short, long, default_value = "examples/openapi.yaml")]
+    spec: PathBuf,
+    #[arg(long)]
+    static_dir: Option<PathBuf>,
+}
 
 fn parse_stack_size() -> usize {
     if let Ok(val) = std::env::var("BRRTR_STACK_SIZE") {
@@ -21,10 +30,11 @@ fn parse_stack_size() -> usize {
 
 fn main() -> io::Result<()> {
     // increase coroutine stack size to prevent overflows
+    let args = Args::parse();
     let stack_size = parse_stack_size();
     may::config().set_stack_size(stack_size);
     // Load OpenAPI spec and create router
-    let (routes, _slug) = load_spec("examples/openapi.yaml").expect("failed to load spec");
+    let (routes, _slug) = load_spec(args.spec.to_str().unwrap()).expect("failed to load spec");
     let router = Router::new(routes.clone());
 
     // Create dispatcher and register handlers
@@ -42,7 +52,8 @@ fn main() -> io::Result<()> {
         router,
         dispatcher,
         HashMap::new(),
-        PathBuf::from("examples/openapi.yaml"),
+        args.spec.clone(),
+        args.static_dir.clone(),
     );
     let addr = if std::env::var("BRRTR_LOCAL").is_ok() {
         "127.0.0.1:8080"
