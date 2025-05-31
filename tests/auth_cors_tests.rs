@@ -48,7 +48,7 @@ fn test_auth_middleware_blocks_invalid_token() {
 
 #[test]
 fn test_cors_middleware_sets_headers() {
-    let mw = CorsMiddleware;
+    let mw = CorsMiddleware::default();
     let (tx, _rx) = mpsc::channel::<HandlerResponse>();
     let req = HandlerRequest {
         method: Method::GET,
