@@ -13,7 +13,6 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
-#[derive(Clone)]
 pub struct AppService {
     pub router: Arc<RwLock<Router>>,
     pub dispatcher: Arc<RwLock<Dispatcher>>,
@@ -23,6 +22,23 @@ pub struct AppService {
     pub spec_path: PathBuf,
     pub static_files: Option<StaticFiles>,
     pub doc_files: Option<StaticFiles>,
+    pub watcher: Option<notify::RecommendedWatcher>,
+}
+
+impl Clone for AppService {
+    fn clone(&self) -> Self {
+        Self {
+            router: self.router.clone(),
+            dispatcher: self.dispatcher.clone(),
+            security_schemes: self.security_schemes.clone(),
+            security_providers: self.security_providers.clone(),
+            metrics: self.metrics.clone(),
+            spec_path: self.spec_path.clone(),
+            static_files: self.static_files.clone(),
+            doc_files: self.doc_files.clone(),
+            watcher: None,
+        }
+    }
 }
 
 impl AppService {
@@ -43,6 +59,7 @@ impl AppService {
             spec_path,
             static_files: static_dir.map(StaticFiles::new),
             doc_files: doc_dir.map(StaticFiles::new),
+            watcher: None,
         }
     }
 

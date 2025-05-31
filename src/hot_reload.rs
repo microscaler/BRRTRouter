@@ -1,4 +1,5 @@
 use crate::{
+    dispatcher::Dispatcher,
     router::Router,
     spec::{self, RouteMeta},
 };
@@ -13,11 +14,12 @@ use std::sync::{Arc, RwLock};
 pub fn watch_spec<P, F>(
     spec_path: P,
     router: Arc<RwLock<Router>>,
+    dispatcher: Arc<RwLock<Dispatcher>>,
     mut on_reload: F,
 ) -> notify::Result<RecommendedWatcher>
 where
     P: AsRef<Path>,
-    F: FnMut(Vec<RouteMeta>) + Send + 'static,
+    F: FnMut(&mut Dispatcher, Vec<RouteMeta>) + Send + 'static,
 {
     let path: PathBuf = spec_path.as_ref().to_path_buf();
     let watch_path = path.clone();
@@ -31,7 +33,9 @@ where
                         if let Ok(mut r) = router.write() {
                             *r = new_router;
                         }
-                        on_reload(routes);
+                        if let Ok(mut d) = dispatcher.write() {
+                            on_reload(&mut d, routes);
+                        }
                     }
                 }
             }
