@@ -23,6 +23,7 @@ watch spec="examples/openapi.yaml" addr="0.0.0.0:8080":
 # Run tests with output
 build:
     cargo build
+    cargo build --release
 
 # Run tests with output
 test:
