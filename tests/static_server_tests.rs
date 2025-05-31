@@ -88,6 +88,16 @@ fn test_js_served() {
 }
 
 #[test]
+fn test_root_served() {
+    let (handle, addr) = start_service();
+    let resp = send_request(&addr, "GET / HTTP/1.1\r\nHost: x\r\n\r\n");
+    handle.stop();
+    let (status, ct) = parse_parts(&resp);
+    assert_eq!(status, 200);
+    assert_eq!(ct, "text/html");
+}
+
+#[test]
 fn test_traversal_blocked() {
     let (handle, addr) = start_service();
     let resp = send_request(&addr, "GET /../Cargo.toml HTTP/1.1\r\nHost: x\r\n\r\n");
