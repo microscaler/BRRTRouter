@@ -38,6 +38,10 @@ pub struct MainRsTemplateData {
 }
 
 #[derive(Template)]
+#[template(path = "openapi.index.html", escape = "none")]
+pub struct OpenapiIndexTemplate;
+
+#[derive(Template)]
 #[template(path = "mod.rs.txt")]
 pub struct ModRsTemplateData {
     pub modules: Vec<String>,
@@ -244,5 +248,12 @@ pub fn write_main_rs(dir: &Path, slug: &str, routes: Vec<RouteMeta>) -> anyhow::
     .render()?;
     fs::write(dir.join("main.rs"), rendered)?;
     println!("✅ Wrote main.rs");
+    Ok(())
+}
+
+pub fn write_openapi_index(dir: &Path) -> anyhow::Result<()> {
+    let rendered = OpenapiIndexTemplate.render()?;
+    fs::write(dir.join("index.html"), rendered)?;
+    println!("✅ Wrote docs index → {:?}", dir.join("index.html"));
     Ok(())
 }

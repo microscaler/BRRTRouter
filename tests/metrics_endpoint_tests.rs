@@ -35,6 +35,7 @@ fn start_service() -> (TestTracing, ServerHandle, SocketAddr) {
         HashMap::new(),
         PathBuf::from("examples/openapi.yaml"),
         None,
+        None,
     );
     service.set_metrics_middleware(metrics);
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();

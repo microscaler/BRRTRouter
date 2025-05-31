@@ -10,7 +10,7 @@ use crate::generator::schema::{
 };
 use crate::generator::templates::{
     write_cargo_toml, write_controller, write_handler, write_main_rs, write_mod_rs,
-    write_registry_rs, write_types_rs, RegistryEntry,
+    write_openapi_index, write_registry_rs, write_types_rs, RegistryEntry,
 };
 
 pub fn generate_project_from_spec(spec_path: &Path, force: bool) -> anyhow::Result<PathBuf> {
@@ -19,11 +19,15 @@ pub fn generate_project_from_spec(spec_path: &Path, force: bool) -> anyhow::Resu
     let src_dir = base_dir.join("src");
     let handler_dir = src_dir.join("handlers");
     let controller_dir = src_dir.join("controllers");
+    let doc_dir = base_dir.join("doc");
+    let static_dir = base_dir.join("static_site");
     fs::create_dir_all(&src_dir)?;
     fs::create_dir_all(&handler_dir)?;
     fs::create_dir_all(&controller_dir)?;
+    fs::create_dir_all(&doc_dir)?;
+    fs::create_dir_all(&static_dir)?;
 
-    let spec_copy_path = base_dir.join("openapi.yaml");
+    let spec_copy_path = doc_dir.join("openapi.yaml");
     if !spec_copy_path.exists() || force {
         fs::copy(spec_path, &spec_copy_path)?;
         println!("✅ Copied spec to {:?}", spec_copy_path);
@@ -105,6 +109,7 @@ pub fn generate_project_from_spec(spec_path: &Path, force: bool) -> anyhow::Resu
 
     write_cargo_toml(&base_dir, &slug)?;
     write_main_rs(&src_dir, &slug, routes)?;
+    write_openapi_index(&doc_dir)?;
     write_types_rs(&handler_dir, &schema_types)?;
     write_registry_rs(&src_dir, &registry_entries)?;
     write_mod_rs(

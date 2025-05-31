@@ -20,10 +20,12 @@ fn parse_stack_size() -> usize {
 
 #[derive(Parser)]
 struct Args {
-    #[arg(short, long, default_value = "./openapi.yaml")]
+    #[arg(short, long, default_value = "./doc/openapi.yaml")]
     spec: PathBuf,
     #[arg(long)]
     static_dir: Option<PathBuf>,
+    #[arg(long, default_value = "./doc")]
+    doc_dir: PathBuf,
 }
 
 fn main() -> io::Result<()> {
@@ -53,6 +55,7 @@ fn main() -> io::Result<()> {
         HashMap::new(),
         args.spec.clone(),
         args.static_dir.clone(),
+        Some(args.doc_dir.clone()),
     );
     let addr = if std::env::var("BRRTR_LOCAL").is_ok() {
         "127.0.0.1:8080"

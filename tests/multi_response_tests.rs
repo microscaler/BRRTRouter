@@ -110,6 +110,7 @@ fn test_select_content_type_from_spec() {
         HashMap::new(),
         PathBuf::new(),
         None,
+        None,
     );
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();

@@ -3,6 +3,7 @@ use super::response::{write_handler_response, write_json_error};
 use crate::dispatcher::Dispatcher;
 use crate::static_files::StaticFiles;
 use crate::middleware::MetricsMiddleware;
+use serde_json::json;
 use crate::router::Router;
 use crate::security::{SecurityProvider, SecurityRequest};
 use crate::spec::SecurityScheme;
@@ -21,6 +22,7 @@ pub struct AppService {
     pub metrics: Option<Arc<crate::middleware::MetricsMiddleware>>,
     pub spec_path: PathBuf,
     pub static_files: Option<StaticFiles>,
+    pub doc_files: Option<StaticFiles>,
 }
 
 impl AppService {
@@ -30,6 +32,7 @@ impl AppService {
         security_schemes: HashMap<String, SecurityScheme>,
         spec_path: PathBuf,
         static_dir: Option<PathBuf>,
+        doc_dir: Option<PathBuf>,
     ) -> Self {
         Self {
             router,
@@ -39,6 +42,7 @@ impl AppService {
             metrics: None,
             spec_path,
             static_files: static_dir.map(StaticFiles::new),
+            doc_files: doc_dir.map(StaticFiles::new),
         }
     }
 
@@ -100,12 +104,18 @@ pub fn openapi_endpoint(res: &mut Response, spec_path: &Path) -> io::Result<()> 
     Ok(())
 }
 
-/// Serves the bundled Swagger UI `index.html`.
-pub fn swagger_ui_endpoint(res: &mut Response) -> io::Result<()> {
-    const INDEX: &str = include_str!("../../static/swagger-ui/index.html");
-    res.status_code(200, "OK");
-    res.header("Content-Type: text/html");
-    res.body(INDEX);
+/// Serves the Swagger UI `index.html` from the configured docs directory.
+pub fn swagger_ui_endpoint(res: &mut Response, docs: &StaticFiles) -> io::Result<()> {
+    match docs.load("index.html", Some(&json!({ "spec_url": "/openapi.yaml" }))) {
+        Ok((bytes, _)) => {
+            res.status_code(200, "OK");
+            res.header("Content-Type: text/html");
+            res.body_vec(bytes);
+        }
+        Err(_) => {
+            write_json_error(res, 404, serde_json::json!({ "error": "Docs not found" }));
+        }
+    }
     Ok(())
 }
 
@@ -139,7 +149,12 @@ impl HttpService for AppService {
             return openapi_endpoint(res, &self.spec_path);
         }
         if method == "GET" && path == "/docs" {
-            return swagger_ui_endpoint(res);
+            if let Some(docs) = &self.doc_files {
+                return swagger_ui_endpoint(res, docs);
+            } else {
+                write_json_error(res, 404, serde_json::json!({ "error": "Docs not configured" }));
+                return Ok(());
+            }
         }
 
         if method == "GET" {
