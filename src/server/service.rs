@@ -8,6 +8,7 @@ use crate::spec::SecurityScheme;
 use crate::static_files::StaticFiles;
 use may_minihttp::{HttpService, Request, Response};
 use serde_json::json;
+use jsonschema::JSONSchema;
 use std::collections::HashMap;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -207,6 +208,19 @@ impl HttpService for AppService {
         };
         if let Some(mut route_match) = route_opt {
             route_match.query_params = query_params.clone();
+            if let (Some(schema), Some(body_val)) = (&route_match.route.request_schema, &body) {
+                let compiled = JSONSchema::compile(schema).expect("invalid request schema");
+                let validation = compiled.validate(body_val);
+                if let Err(errors) = validation {
+                    let details: Vec<String> = errors.map(|e| e.to_string()).collect();
+                    write_json_error(
+                        res,
+                        400,
+                        json!({"error": "Request validation failed", "details": details}),
+                    );
+                    return Ok(());
+                }
+            }
             if !route_match.route.security.is_empty() {
                 let sec_req = SecurityRequest {
                     headers: &headers,
@@ -257,6 +271,19 @@ impl HttpService for AppService {
                     if !headers.contains_key("Content-Type") {
                         if let Some(ct) = route_match.route.content_type_for(hr.status) {
                             headers.insert("Content-Type".to_string(), ct);
+                        }
+                    }
+                    if let Some(schema) = &route_match.route.response_schema {
+                        let compiled = JSONSchema::compile(schema).expect("invalid response schema");
+                        let validation = compiled.validate(&hr.body);
+                        if let Err(errors) = validation {
+                            let details: Vec<String> = errors.map(|e| e.to_string()).collect();
+                            write_json_error(
+                                res,
+                                400,
+                                json!({"error": "Response validation failed", "details": details}),
+                            );
+                            return Ok(());
                         }
                     }
                     write_handler_response(res, hr.status, hr.body, is_sse, &headers);
