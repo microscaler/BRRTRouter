@@ -27,7 +27,10 @@ The generator logic lives in `src/generator` and uses templates from
    ```
    *(or run `just gen`)*
 3. Commit any regenerated files as part of your change.
-   or simply run `just gen` if you have `just` installed.
+
+Direct edits to files inside `examples/pet_store` will be overwritten the
+next time the generator runs.
+
 3. Run `cargo fmt` and `cargo test` before submitting a pull request.
 
 ## Code Base Overview
@@ -46,8 +49,6 @@ The `src/` directory is organized into several modules:
 - **`runtime_config`** – loads runtime options from environment variables.
 - **`sse`** and **`static_files`** – helpers for server-sent events and serving static assets.
 
-Direct edits to files inside `examples/pet_store` will be overwritten the
-next time the generator runs.
 Key components include:
 
 - `Router` – performs regex-based path matching and extracts path parameters.
