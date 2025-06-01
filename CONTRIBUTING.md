@@ -1,4 +1,4 @@
-# Contributing to BRRTRouter
+# Contributing
 
 Thank you for your interest in contributing! This project includes a code generator and example output. Please do **not** edit files under `examples/` manually; they are generated from templates.
 
@@ -9,6 +9,24 @@ Thank you for your interest in contributing! This project includes a code genera
    ```bash
    cargo run --bin brrtrouter-gen -- generate --spec examples/openapi.yaml --force
    ```
+   or simply run `just gen` if you have `just` installed.
+
+`examples/pet_store` is automatically generated from
+`examples/openapi.yaml`.
+
+The generator logic lives in `src/generator` and uses templates from
+`templates/`.
+
+## Updating the generated examples
+
+1. Update the templates or generator code.
+2. Run the generator:
+
+   ```bash
+   cargo run --bin brrtrouter-gen -- generate --spec examples/openapi.yaml --force
+   ```
+   *(or run `just gen`)*
+3. Commit any regenerated files as part of your change.
    or simply run `just gen` if you have `just` installed.
 3. Run `cargo fmt` and `cargo test` before submitting a pull request.
 
@@ -28,6 +46,8 @@ The `src/` directory is organized into several modules:
 - **`runtime_config`** – loads runtime options from environment variables.
 - **`sse`** and **`static_files`** – helpers for server-sent events and serving static assets.
 
+Direct edits to files inside `examples/pet_store` will be overwritten the
+next time the generator runs.
 Key components include:
 
 - `Router` – performs regex-based path matching and extracts path parameters.
