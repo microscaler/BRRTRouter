@@ -1,16 +1,16 @@
+
 // User-owned controller for handler 'list_pets'.
-use crate::brrtrouter::typed::{Handler, TypedHandlerRequest};
-use crate::handlers::list_pets::{Request, Response};
+use brrtrouter_macros::handler;
+use crate::brrtrouter::typed::TypedHandlerRequest;
+use crate::handlers::list_pets::{ Request, Response };
 
 use crate::handlers::types::Pet;
 
-pub struct ListPetsController;
 
-impl Handler for ListPetsController {
-    type Request = Request;
-    type Response = Response;
-    fn handle(&self, _req: TypedHandlerRequest<Request>) -> Response {
-        // Example response:
+#[handler(ListPetsController)]
+pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
+    
+    // Example response:
         // [
         //   {
         //     "age": 3,
@@ -35,10 +35,9 @@ impl Handler for ListPetsController {
         //     "vaccinated": true
         //   }
         // ]
-        Response(vec![Default::default()])
+    Response {
+        items: vec![Default::default()],
+        
     }
-}
-
-pub fn handle(req: TypedHandlerRequest<Request>) -> Response {
-    ListPetsController.handle(req)
+    
 }

@@ -102,8 +102,7 @@ fn test_template_writers() {
     assert!(handler_content.contains("pub struct Response"));
 
     let controller_content = fs::read_to_string(&controller_path).unwrap();
-    assert!(controller_content.contains("pub struct TestController"));
-    assert!(controller_content.contains("impl Handler for TestController"));
+    assert!(controller_content.contains("#[handler(TestController)]"));
 
     let registry_content = fs::read_to_string(src_dir.join("registry.rs")).unwrap();
     assert!(registry_content.contains("pub unsafe fn register_all"));

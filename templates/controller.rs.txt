@@ -1,39 +1,31 @@
 {# controller.rs.txt #}
 // User-owned controller for handler '{{ handler_name }}'.
-use crate::brrtrouter::typed::{Handler, TypedHandlerRequest};
+use brrtrouter_macros::handler;
+use crate::brrtrouter::typed::TypedHandlerRequest;
 use crate::handlers::{{ handler_name }}::{ Request, Response };
 {% if sse %}use crate::brrtrouter::sse;{% endif %}
 {% for import in imports -%}
 use crate::handlers::types::{{ import }};
 {% endfor %}
 
-pub struct {{ struct_name }};
-
-impl Handler for {{ struct_name }} {
-    type Request = Request;
-    type Response = Response;
-    fn handle(&self, _req: TypedHandlerRequest<Request>) -> Response {
-        {% if sse %}
-        let (tx, rx) = sse::channel();
-        for i in 0..3 {
-            tx.send(format!("tick {}", i));
-        }
-        drop(tx);
-        Response(rx.collect())
-        {% else %}
-        {% if has_example -%}
-        // Example response:
-{{ example_json }}
-        {%- endif %}
-        Response {
-            {% for field in response_fields -%}
-            {{ field.name }}: {{ field.value }},
-            {% endfor %}
-        }
-        {% endif %}
+#[handler({{ struct_name }})]
+pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
+    {% if sse %}
+    let (tx, rx) = sse::channel();
+    for i in 0..3 {
+        tx.send(format!("tick {}", i));
     }
-}
-
-pub fn handle(req: TypedHandlerRequest<Request>) -> Response {
-    {{ struct_name }}.handle(req)
+    drop(tx);
+    Response(rx.collect())
+    {% else %}
+    {% if has_example -%}
+    // Example response:
+{{ example_json }}
+    {%- endif %}
+    Response {
+        {% for field in response_fields -%}
+        {{ field.name }}: {{ field.value }},
+        {% endfor %}
+    }
+    {% endif %}
 }
