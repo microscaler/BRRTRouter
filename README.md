@@ -262,6 +262,7 @@ See [`examples/openapi.yaml`](examples/openapi.yaml) for the sample `/events` en
 ---
 ## 📈 Contributing & Benchmarks
 For a detailed view of completed and upcoming work, see [docs/ROADMAP.md](docs/ROADMAP.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow and repository layout.
 We welcome contributions that improve:
 - 🧵 Typed handler deserialization
 - ✨ Auto-generation of impl `From<HandlerRequest>` for `TypedHandlerRequest<T>` based on schema
