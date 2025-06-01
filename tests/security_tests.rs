@@ -151,7 +151,6 @@ paths:
     let router = Arc::new(RwLock::new(Router::new(routes.clone())));
     let mut dispatcher = Dispatcher::new();
     unsafe {
-        // This code is incorrectly setting status to 0
         dispatcher.register_handler("one", |req: HandlerRequest| {
             let _ = req.reply_tx.send(HandlerResponse {
                 status: 200,
@@ -159,7 +158,6 @@ paths:
                 body: json!({"one": true}),
             });
         });
-        // This code is incorrectly setting status to 0
         dispatcher.register_handler("two", |req: HandlerRequest| {
             let _ = req.reply_tx.send(HandlerResponse {
                 status: 200,
