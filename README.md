@@ -68,7 +68,7 @@ The logo features a stylized **A-10 Warthog nose cannon**, symbolizing BRRTRoute
 | **Hot reload on spec change**                    | 🚧     | `hot_reload::watch_spec` rebuilds the `Router`, but the server doesn’t automatically update the dispatcher or routes.                                                     |
 | **Code generation for typed handlers**           | 🚧     | Implemented via templates generating `TryFrom<HandlerRequest>` impls.                                                                                                     |
 | **Dynamic route registration**                   | 🚧     | `Dispatcher::add_route` and `register_from_spec` allow runtime insertion; tests cover this.                                                                               |
-| **Improved handler ergonomics**                  | 🚧     | Handlers still operate on explicit `TypedHandlerRequest` objects; no macro or higher-level abstraction.                                                                   |
+| **Improved handler ergonomics**                  | ✅     | Use `#[handler]` to implement the `Handler` trait automatically. |
 | **Structured tracing / metrics / CORS**          | 🚧     | Tracing and metrics middleware exist (with OTEL test support); CORS middleware returns default headers but is not configurable.                                           |
 | **Schema validation**                            | 🚧     | Request/response validation against OpenAPI schema is not implemented.                                                                                                    |
 | **WebSocket support**                            | 🚧     | Absent. Only SSE is available via `x-sse` flag.                                                                                                                           |
@@ -214,6 +214,20 @@ dispatcher.register_handler("post_item", echo_handler);
 ```
 
 Each handler runs in its own coroutine, receiving requests via a channel and sending back structured HandlerResponse.
+
+### Using `#[handler]`
+
+Controllers can derive the `Handler` trait automatically with the procedural macro:
+
+```rust
+use brrtrouter_macros::handler;
+use brrtrouter::typed::TypedHandlerRequest;
+
+#[handler(MyController)]
+pub fn handle(req: TypedHandlerRequest<MyRequest>) -> MyResponse {
+    // ...
+}
+```
 
 ---
 ## 🔌 Middleware
