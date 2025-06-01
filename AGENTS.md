@@ -1,4 +1,3 @@
-
 # Guidance for Automated Contributors
 
 - **Do not edit files under `examples/` manually.** These are generated from templates in `templates/` using the code in `src/generator/`.

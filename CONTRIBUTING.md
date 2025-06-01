@@ -2,6 +2,12 @@
 
 Thank you for your interest in contributing! This project includes a code generator and example output. Please do **not** edit files under `examples/` manually; they are generated from templates.
 
+Thank you for helping improve **BRRTRouter**! The example application in
+`examples/pet_store` is automatically generated from `examples/openapi.yaml`.
+
+The generator logic lives in `src/generator` and uses templates from
+`templates/`.
+
 ## Development Workflow
 
 1. Modify templates under `templates/` or the generator logic in `src/generator/`.
@@ -14,8 +20,8 @@ Thank you for your interest in contributing! This project includes a code genera
 `examples/pet_store` is automatically generated from
 `examples/openapi.yaml`.
 
-The generator logic lives in `src/generator` and uses templates from
-`templates/`.
+Direct edits to files inside `examples/pet_store` will be overwritten the
+next time the generator runs.
 
 ## Updating the generated examples
 
@@ -28,10 +34,7 @@ The generator logic lives in `src/generator` and uses templates from
    *(or run `just gen`)*
 3. Commit any regenerated files as part of your change.
 
-Direct edits to files inside `examples/pet_store` will be overwritten the
-next time the generator runs.
-
-3. Run `cargo fmt` and `cargo test` before submitting a pull request.
+4. Run `cargo fmt` and `cargo test` before submitting a pull request.
 
 ## Code Base Overview
 
