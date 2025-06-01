@@ -30,6 +30,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
+      - name: Install Just
+        uses: extractions/setup-just@v3
+
       - name: Cargo build
         #run: cargo build --all --all-features # this will also build the example projects, which are currently broken
         run: cargo build
