@@ -15,11 +15,13 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
         //   "id": "post1",
         //   "title": "Intro"
         // }
+    
     Response {
         body: Some("Welcome to the blog".to_string()),
         id: Some("post1".to_string()),
         title: Some("Intro".to_string()),
         
     }
+    
     
 }

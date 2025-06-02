@@ -69,6 +69,8 @@ pub struct HandlerTemplateData {
     pub handler_name: String,
     pub request_fields: Vec<FieldDef>,
     pub response_fields: Vec<FieldDef>,
+    pub response_is_array: bool,
+    pub response_array_type: String,
     pub imports: Vec<String>,
     pub parameters: Vec<ParameterMeta>,
     pub sse: bool,
@@ -83,6 +85,8 @@ pub struct ControllerTemplateData {
     pub example: String,
     pub has_example: bool,
     pub example_json: String,
+    pub response_is_array: bool,
+    pub response_array_literal: String,
     pub imports: Vec<String>,
     pub sse: bool,
 }
@@ -105,6 +109,11 @@ pub fn write_handler(
         handler_name: handler.to_string(),
         request_fields: req.to_vec(),
         response_fields: res.to_vec(),
+        response_is_array: res.len() == 1 && res[0].name == "items",
+        response_array_type: res
+            .get(0)
+            .map(|f| f.ty.clone())
+            .unwrap_or_default(),
         imports: imports.iter().cloned().collect(),
         parameters: params.to_vec(),
         sse,
@@ -174,13 +183,20 @@ pub fn write_controller(
             .collect::<Vec<_>>()
             .join("\n")
     };
+    let response_is_array = res.len() == 1 && res[0].name == "items";
+    let array_literal = enriched_fields
+        .get(0)
+        .map(|f| f.value.clone())
+        .unwrap_or_else(|| "vec![Default::default()]".to_string());
     let context = ControllerTemplateData {
         handler_name: handler.to_string(),
         struct_name: struct_name.to_string(),
-        response_fields: enriched_fields,
+        response_fields: enriched_fields.clone(),
         example: example_pretty,
         has_example: example.is_some(),
         example_json,
+        response_is_array,
+        response_array_literal: array_literal,
         imports: imports.iter().cloned().collect(),
         sse,
     };

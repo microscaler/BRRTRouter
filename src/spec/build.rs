@@ -26,6 +26,36 @@ pub fn resolve_schema_ref<'a>(
     }
 }
 
+pub fn expand_schema_refs(spec: &OpenApiV3Spec, value: &mut Value) {
+    match value {
+        Value::Object(obj) => {
+            if let Some(ref_path) = obj.get("$ref").and_then(|v| v.as_str()) {
+                if let Some(schema) = resolve_schema_ref(spec, ref_path) {
+                    if let Ok(mut new_val) = serde_json::to_value(schema) {
+                        expand_schema_refs(spec, &mut new_val);
+                        if let Some(name) = ref_path.strip_prefix("#/components/schemas/") {
+                            if let Value::Object(o) = &mut new_val {
+                                o.insert("x-ref-name".to_string(), Value::String(name.to_string()));
+                            }
+                        }
+                        *value = new_val;
+                        return;
+                    }
+                }
+            }
+            for v in obj.values_mut() {
+                expand_schema_refs(spec, v);
+            }
+        }
+        Value::Array(arr) => {
+            for v in arr.iter_mut() {
+                expand_schema_refs(spec, v);
+            }
+        }
+        _ => {}
+    }
+}
+
 fn resolve_handler_name(
     operation: &oas3::spec::Operation,
     location: &str,
@@ -57,18 +87,20 @@ pub fn extract_request_schema(
     spec: &OpenApiV3Spec,
     operation: &oas3::spec::Operation,
 ) -> Option<Value> {
-    operation.request_body.as_ref().and_then(|r| match r {
+    let mut schema = operation.request_body.as_ref().and_then(|r| match r {
         ObjectOrReference::Object(req_body) => {
-            req_body.content.get("application/json").and_then(|media| {
-                match media.schema.as_ref()? {
-                    ObjectOrReference::Object(schema_obj) => serde_json::to_value(schema_obj).ok(),
-                    ObjectOrReference::Ref { ref_path } => resolve_schema_ref(spec, ref_path)
-                        .and_then(|s| serde_json::to_value(s).ok()),
-                }
+            req_body.content.get("application/json").and_then(|media| match media.schema.as_ref()? {
+                ObjectOrReference::Object(schema_obj) => serde_json::to_value(schema_obj).ok(),
+                ObjectOrReference::Ref { ref_path } => resolve_schema_ref(spec, ref_path)
+                    .and_then(|s| serde_json::to_value(s).ok()),
             })
         }
         _ => None,
-    })
+    });
+    if let Some(ref mut val) = schema {
+        expand_schema_refs(spec, val);
+    }
+    schema
 }
 
 pub fn extract_response_schema_and_example(
@@ -98,7 +130,7 @@ pub fn extract_response_schema_and_example(
                         None => None,
                     };
 
-                    let schema = match media.schema.as_ref() {
+                    let mut schema = match media.schema.as_ref() {
                         Some(ObjectOrReference::Object(schema_obj)) => {
                             serde_json::to_value(schema_obj).ok()
                         }
@@ -108,6 +140,9 @@ pub fn extract_response_schema_and_example(
                         }
                         None => None,
                     };
+                    if let Some(ref mut val) = schema {
+                        expand_schema_refs(spec, val);
+                    }
 
                     all.entry(status)
                         .or_insert_with(std::collections::HashMap::new)

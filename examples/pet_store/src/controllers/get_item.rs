@@ -14,10 +14,12 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
         //   "id": "item-001",
         //   "name": "Sample Item"
         // }
+    
     Response {
         id: Some("item-001".to_string()),
         name: Some("Sample Item".to_string()),
         
     }
+    
     
 }

@@ -21,6 +21,7 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
         //   ],
         //   "vaccinated": true
         // }
+    
     Response {
         age: 3,
         breed: "Golden Retriever".to_string(),
@@ -30,5 +31,6 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
         vaccinated: true,
         
     }
+    
     
 }
