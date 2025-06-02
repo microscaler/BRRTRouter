@@ -16,9 +16,11 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
         //     "beta": true
         //   }
         // }
+    
     Response {
         feature_flags: Some(serde_json::json!({"analytics":false,"beta":true})),
         
     }
+    
     
 }

@@ -22,10 +22,14 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     // Example response:
 {{ example_json }}
     {%- endif %}
+    {% if response_is_array %}
+    Response({{ response_array_literal }})
+    {% else %}
     Response {
         {% for field in response_fields -%}
         {{ field.name }}: {{ field.value }},
         {% endfor %}
     }
+    {% endif %}
     {% endif %}
 }

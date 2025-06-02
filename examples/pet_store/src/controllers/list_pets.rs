@@ -35,9 +35,8 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
         //     "vaccinated": true
         //   }
         // ]
-    Response {
-        items: vec![Default::default()],
-        
-    }
+    
+    Response(vec![Default::default()])
+    
     
 }

@@ -23,9 +23,11 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
         //     }
         //   ]
         // }
+    
     Response {
         users: Some(vec![serde_json::from_value::<User>(serde_json::json!({"id":"abc-123","name":"John"})).unwrap(), serde_json::from_value::<User>(serde_json::json!({"id":"def-456","name":"Jane"})).unwrap()]),
         
     }
+    
     
 }

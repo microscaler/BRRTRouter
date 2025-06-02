@@ -24,6 +24,8 @@ pub struct Request {
 #[derive(Debug, Serialize)]
 {% if sse %}
 pub struct Response(pub String);
+{% elif response_is_array %}
+pub struct Response(pub {{ response_array_type }});
 {% else %}
 pub struct Response {
     {% for field in response_fields -%}

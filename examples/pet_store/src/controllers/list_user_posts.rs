@@ -23,9 +23,8 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
         //     "title": "Follow-up"
         //   }
         // ]
-    Response {
-        items: vec![Default::default()],
-        
-    }
+    
+    Response(vec![Default::default()])
+    
     
 }

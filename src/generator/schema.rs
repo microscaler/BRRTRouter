@@ -184,7 +184,9 @@ pub fn extract_fields(schema: &Value) -> Vec<FieldDef> {
         .unwrap_or_default();
     if let Some(props) = schema.get("properties").and_then(|p| p.as_object()) {
         for (name, prop) in props {
-            let ty = if let Some(r) = prop.get("$ref").and_then(|v| v.as_str()) {
+            let ty = if let Some(name) = prop.get("x-ref-name").and_then(|v| v.as_str()) {
+                to_camel_case(name)
+            } else if let Some(r) = prop.get("$ref").and_then(|v| v.as_str()) {
                 if let Some(name) = r.strip_prefix("#/components/schemas/") {
                     to_camel_case(name)
                 } else {
@@ -222,6 +224,9 @@ pub fn extract_fields(schema: &Value) -> Vec<FieldDef> {
 }
 
 pub fn schema_to_type(schema: &Value) -> String {
+    if let Some(name) = schema.get("x-ref-name").and_then(|v| v.as_str()) {
+        return to_camel_case(name);
+    }
     if let Some(r) = schema.get("$ref").and_then(|v| v.as_str()) {
         if let Some(name) = r.strip_prefix("#/components/schemas/") {
             return to_camel_case(name);
