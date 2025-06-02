@@ -38,6 +38,28 @@ next time the generator runs.
 
 ## Code Base Overview
 
+### General Structure
+
+**README overview** – BRRTRouter aims to be a “high‑performance, coroutine‑powered request router for Rust” driven entirely by an OpenAPI 3.1 specification. The vision calls for “millions of requests per second” with a goal of one million route matches per second on a Raspberry Pi 5.
+
+**Crate layout** – The library is defined in `src/` and exposes modules such as `router`, `dispatcher`, `server`, `spec`, `typed`, etc. (`lib.rs` re‑exports several of them). There is a small CLI binary `src/bin/brrrouter_gen.rs` which just invokes `brrrouter::cli::run_cli()`.
+
+**OpenAPI specification parsing** – `spec.rs` reads a spec file (JSON or YAML) and produces `RouteMeta` values describing HTTP method, path, handler name, request/response schemas, and examples. The `build_routes` function walks the spec’s paths and operations to create `RouteMeta` entries and captures JSON schema info where available.
+
+**Router** – `router.rs` converts each OpenAPI path into a regular expression and stores the method + regex. At runtime `Router::route` matches a (method, path) pair to a `RouteMatch` containing path parameters and handler metadata.
+
+**Dispatcher** – `dispatcher.rs` registers handler functions under string names and spawns a coroutine (using the may runtime) for each. Incoming requests are dispatched through channels to the registered handler. If a handler panics, the dispatcher returns a 500 error response. The `dispatch` method forwards a request and waits for the handler’s reply.
+
+**HTTP server** – `server.rs` implements the `may_minihttp::HttpService` trait. It parses query parameters and JSON bodies, then uses the router and dispatcher to produce a JSON response or a 404/500 fallback.
+
+**Typed handlers** – `typed.rs` offers a higher‑level interface: `Dispatcher::register_typed` automatically deserializes request bodies into strongly typed structures and serializes responses. It defines `TypedHandlerRequest<T>` and `TypedHandlerResponse<T>` as generics for typed data.
+
+**Code generator** – `generator.rs` reads an OpenAPI spec and writes an example project under `examples/`. Templates in `templates/` define the generated `Cargo.toml`, handler stubs, controller stubs, and registry. See `generate_project_from_spec` which writes these files and creates typed structs from schema definitions.
+
+**Examples and tests** – `examples/` contains an OpenAPI spec (`openapi.yaml`) and a generated “pet_store” example. Unit tests in `tests/router_tests.rs` focus on route matching for various HTTP verbs and paths. The README demonstrates running the server with `cargo run` and hitting it via `curl`, as well as running the tests with `cargo test -- --nocapture`.
+
+### Module Overview
+
 The `src/` directory is organized into several modules:
 
 - **`cli`** – command-line interface and entry points for the generator.
@@ -57,5 +79,23 @@ Key components include:
 - `Router` – performs regex-based path matching and extracts path parameters.
 - `Dispatcher` – coordinates coroutine execution of request handlers.
 - `HttpServer` – drives the request/response loop and integrates middleware.
+
+### Important Things to Know
+
+- **OpenAPI‑driven** – The router relies entirely on the OpenAPI spec to define routes and handler names. Handler functions must be registered with exactly those names.
+- **Coroutine runtime** – The project uses the may crate for lightweight coroutines and may_minihttp for serving HTTP. The project is generally incompatible with Tokio and an async bridge will need to be implemented specifically for Otel tracing.
+- **Safety** – Handler registration uses unsafe (`register_handler` and `register_typed`) because the caller must guarantee the handler is safe in a concurrent environment.
+- **Code generation** – The CLI (`brrrouter-gen`) can generate starter projects from a spec using Askama templates. This includes request/response structs, handler stubs, and controllers.
+- **Testing focus** – Current unit tests verify the router’s matching logic for all HTTP verbs and for unknown paths.
+
+### Pointers for Next Steps
+
+- **Understand the spec module** – Learning how `spec.rs` parses the OpenAPI file and how `RouteMeta` is constructed is key to extending or validating new spec features.
+- **Explore coroutine runtimes** – Look into the may crate to understand how coroutines and channels work, since handlers are expected to run in those coroutines.
+- **Study the generator templates** – To customize generated code, review the templates under `templates/` (for example `handler.rs.txt` and `controller.rs.txt`) which show how typed handler modules are produced.
+- **Run the example** – Try `cargo run` with the provided `examples/openapi.yaml` to see the router and echo handler in action.
+- **Examine the unit tests** – `tests/router_tests.rs` illustrates how to parse a spec and check route matching; it’s a good starting point for adding more tests.
+
+This repository demonstrates a minimal but modular OpenAPI-driven router. Once comfortable with the basics, explore improving typed request/response deserialization, dynamic handler registration, and the advanced features listed in the README’s “Contributing & Benchmarks” section.
 
 For more details, consult the inline documentation in each module. Contributions that improve tests and documentation are highly appreciated!
