@@ -9,27 +9,41 @@ pub struct TracingMiddleware;
 
 impl Middleware for TracingMiddleware {
     fn before(&self, req: &HandlerRequest) -> Option<HandlerResponse> {
-        // Create and enter span for this request
-        let _span = info_span!(
-            "request",
+        // Create and immediately record a span for this request
+        let span = info_span!(
+            "http_request",
             method = ?req.method,
             path = %req.path,
             handler = %req.handler_name
-        ).entered();
+        );
         
-        // TODO: Implement proper span storage for May coroutines
-        // The current implementation is simplified due to May coroutine threading model
+        // Use the span to record the start event
+        let _guard = span.enter();
+        tracing::info!("Request started");
         
         None
     }
 
-    fn after(&self, _req: &HandlerRequest, res: &mut HandlerResponse, latency: Duration) {
-        // TODO: Record span attributes when proper span storage is implemented
-        // For now, just log the completion
+    fn after(&self, req: &HandlerRequest, res: &mut HandlerResponse, latency: Duration) {
+        // Create a completed span for the response
+        let span = info_span!(
+            "http_response",
+            method = ?req.method,
+            path = %req.path,
+            handler = %req.handler_name,
+            status = res.status,
+            latency_ms = latency.as_millis() as u64
+        );
+        
+        // Use the span to record the completion event
+        let _guard = span.enter();
         tracing::info!(
             status = res.status,
             latency_ms = latency.as_millis() as u64,
             "Request completed"
         );
+        
+        // Explicitly drop the guard to finish the span
+        drop(_guard);
     }
 }

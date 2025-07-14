@@ -82,4 +82,8 @@ impl TestTracing {
             );
         });
     }
+
+    pub fn force_flush(&self) {
+        let _ = self.tracer_provider.force_flush();
+    }
 }
