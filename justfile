@@ -51,3 +51,9 @@ curls:
     curl -i 0.0.0.0:8080
 
 all: gen build test curls
+
+# Run nextest for faster test execution
+nextest-test:
+    cargo nextest run --workspace --all-targets --fail-fast --retries 1
+
+alias nt := nextest-test
