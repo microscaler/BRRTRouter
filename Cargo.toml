@@ -46,6 +46,7 @@ pet_store = { path = "./examples/pet_store" }
 criterion = "0.5"
 fake-opentelemetry-collector = "0.28"
 flamegraph = "0.6"
+tempfile = "3.8"
 
 [[bin]]
 name = "brrtrouter-gen"

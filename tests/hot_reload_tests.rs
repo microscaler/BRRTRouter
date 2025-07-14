@@ -1,21 +1,10 @@
 use brrtrouter::{hot_reload::watch_spec, load_spec, router::Router, dispatcher::Dispatcher};
 use std::sync::{Arc, Mutex, RwLock};
 use may::sync::mpsc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
-fn write_temp(content: &str) -> std::path::PathBuf {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let path = std::env::temp_dir().join(format!(
-        "hot_reload_test_{}_{}.yaml",
-        std::process::id(),
-        nanos
-    ));
-    std::fs::write(&path, content).unwrap();
-    path
-}
+mod common;
+use common::temp_files;
 
 #[test]
 fn test_watch_spec_reload() {
@@ -42,7 +31,7 @@ paths:
         '200': { description: OK }
 "#;
 
-    let path = write_temp(SPEC_V1);
+    let path = temp_files::create_temp_yaml(SPEC_V1);
     let (routes, _slug) = load_spec(path.to_str().unwrap()).unwrap();
     let router = Arc::new(RwLock::new(Router::new(routes.clone())));
     let dispatcher = Arc::new(RwLock::new(Dispatcher::new()));

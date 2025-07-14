@@ -242,9 +242,7 @@ fn test_typed_controller_invalid_params() {
     assert!(resp.body.get("error").is_some());
 }
 
-// TODO: fix this test to correctly handle panics. It tests panicks, but the test itself panics
 #[test]
-#[ignore]
 fn test_panic_handler_returns_500() {
     let _tracing = set_stack_size();
     fn panic_handler(_req: HandlerRequest) {
