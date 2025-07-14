@@ -1,6 +1,8 @@
 use brrtrouter::{load_spec, spec::ParameterLocation};
 use http::Method;
 use oas3::OpenApiV3Spec;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
 
 const YAML_SPEC: &str = r#"openapi: 3.1.0
 info:
@@ -48,18 +50,29 @@ paths:
                     name: 'Widget'
 "#;
 
+// Thread-safe temporary file creation to prevent race conditions
+static TEMP_COUNTER: AtomicUsize = AtomicUsize::new(0);
+static TEMP_LOCK: Mutex<()> = Mutex::new(());
+
 fn write_temp(content: &str, ext: &str) -> std::path::PathBuf {
     use std::time::{SystemTime, UNIX_EPOCH};
+    
+    // Use lock and atomic counter to ensure unique filenames
+    let _lock = TEMP_LOCK.lock().unwrap();
+    let counter = TEMP_COUNTER.fetch_add(1, Ordering::SeqCst);
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
+    
     let path = std::env::temp_dir().join(format!(
-        "spec_test_{}_{}.{}",
+        "spec_test_{}_{}_{}.{}",
         std::process::id(),
+        counter,
         nanos,
         ext
     ));
+    
     std::fs::write(&path, content).unwrap();
     path
 }

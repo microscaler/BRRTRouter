@@ -18,6 +18,9 @@ use std::time::Duration;
 mod tracing_util;
 use tracing_util::TestTracing;
 
+mod common;
+use common::temp_files;
+
 struct ApiKeyProvider {
     key: String,
 }
@@ -37,17 +40,6 @@ impl SecurityProvider for ApiKeyProvider {
             _ => false,
         }
     }
-}
-
-fn write_temp(content: &str) -> std::path::PathBuf {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let path = std::env::temp_dir().join(format!("sec_spec_{}_{}.yaml", std::process::id(), nanos));
-    std::fs::write(&path, content).unwrap();
-    path
 }
 
 fn start_service() -> (TestTracing, ServerHandle, SocketAddr) {
@@ -73,7 +65,7 @@ paths:
       responses:
         '200': { description: OK }
 "#;
-    let path = write_temp(SPEC);
+    let path = temp_files::create_temp_yaml(SPEC);
     let (routes, schemes, _slug) = match load_spec_full(path.to_str().unwrap()) {
         Ok(result) => result,
         Err(e) => panic!("Failed to load spec: {:?}", e),
@@ -146,7 +138,7 @@ paths:
       responses:
         '200': { description: OK }
 "#;
-    let path = write_temp(SPEC);
+    let path = temp_files::create_temp_yaml(SPEC);
     let (routes, schemes, _slug) = load_spec_full(path.to_str().unwrap()).unwrap();
     let router = Arc::new(RwLock::new(Router::new(routes.clone())));
     let mut dispatcher = Dispatcher::new();
@@ -220,7 +212,7 @@ paths:
       responses:
         '200': { description: OK }
 "#;
-    let path = write_temp(SPEC);
+    let path = temp_files::create_temp_yaml(SPEC);
     let (routes, schemes, _slug) = load_spec_full(path.to_str().unwrap()).unwrap();
     let router = Arc::new(RwLock::new(Router::new(routes.clone())));
     let mut dispatcher = Dispatcher::new();

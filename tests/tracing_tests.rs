@@ -8,7 +8,6 @@ mod tracing_util;
 use tracing_util::TestTracing;
 
 #[test]
-#[ignore]
 fn test_tracing_middleware_emits_spans() {
     let mut tracing = TestTracing::init();
 
@@ -25,6 +24,12 @@ fn test_tracing_middleware_emits_spans() {
         .dispatch(route_match, None, Default::default(), Default::default())
         .unwrap();
     assert_eq!(resp.status, 200);
+
+    // Force flush the tracer provider to ensure spans are exported
+    tracing.force_flush();
+    
+    // Give a moment for spans to be exported
+    std::thread::sleep(std::time::Duration::from_millis(100));
 
     let spans = tracing.spans();
     assert!(!spans.is_empty());
