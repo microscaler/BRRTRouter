@@ -9,6 +9,33 @@
 - **Test code paths by using them** - CLI commands ensure all code paths are exercised and validated
 - **Fix CLI issues, don't bypass them** - If CLI commands have import errors or bugs, FIX THE CLI, don't work around it
 
+### Farm Tools Environment Setup
+
+#### Current Setup Issues
+- Farm tools venv currently in `~/Workspace/microscaler/minion-farm/.venv/`
+- This creates workspace clutter and dependency on workspace structure
+- Better approach: System-wide farm tools environment
+
+#### Recommended Environment Optimization
+```bash
+# Move farm tools venv to system location
+mkdir -p ~/.minion-farm
+mv ~/Workspace/microscaler/minion-farm/.venv ~/.minion-farm/.venv
+
+# Update farm script to reference system venv
+# The ~/bin/farm script already auto-locates minion-farm project
+# But we should ensure consistent Python environment
+```
+
+#### Environment Activation
+```bash
+# For farm tools development (when working on farm tools themselves)
+source ~/.minion-farm/.venv/bin/activate
+
+# For regular usage - farm script handles this automatically
+farm command args
+```
+
 ### Essential Farm Commands Reference
 
 #### Session Management (MANDATORY STARTUP)
