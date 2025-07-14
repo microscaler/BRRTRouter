@@ -1,6 +1,6 @@
-use brrtrouter::{hot_reload::watch_spec, load_spec, router::Router, dispatcher::Dispatcher};
-use std::sync::{Arc, Mutex, RwLock};
+use brrtrouter::{dispatcher::Dispatcher, hot_reload::watch_spec, load_spec, router::Router};
 use may::sync::mpsc;
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
 mod common;
@@ -39,14 +39,19 @@ paths:
     let updates: Arc<Mutex<Vec<Vec<String>>>> = Arc::new(Mutex::new(Vec::new()));
     let updates_clone = updates.clone();
 
-    let watcher = watch_spec(&path, router, dispatcher.clone(), move |disp, new_routes| {
-        for r in &new_routes {
-            let (tx, _rx) = mpsc::channel();
-            disp.add_route(r.clone(), tx);
-        }
-        let names = new_routes.iter().map(|r| r.handler_name.clone()).collect();
-        updates_clone.lock().unwrap().push(names);
-    })
+    let watcher = watch_spec(
+        &path,
+        router,
+        dispatcher.clone(),
+        move |disp, new_routes| {
+            for r in &new_routes {
+                let (tx, _rx) = mpsc::channel();
+                disp.add_route(r.clone(), tx);
+            }
+            let names = new_routes.iter().map(|r| r.handler_name.clone()).collect();
+            updates_clone.lock().unwrap().push(names);
+        },
+    )
     .expect("watch_spec");
 
     // allow watcher thread to start

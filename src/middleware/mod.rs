@@ -1,6 +1,6 @@
 mod auth;
-mod cors;
 mod core;
+mod cors;
 mod metrics;
 mod tracing;
 

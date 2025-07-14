@@ -111,10 +111,7 @@ pub fn write_handler(
         request_fields: req.to_vec(),
         response_fields: res.to_vec(),
         response_is_array: res.len() == 1 && res[0].name == "items",
-        response_array_type: res
-            .first()
-            .map(|f| f.ty.clone())
-            .unwrap_or_default(),
+        response_array_type: res.first().map(|f| f.ty.clone()).unwrap_or_default(),
         imports: imports.iter().cloned().collect(),
         parameters: params.to_vec(),
         sse,

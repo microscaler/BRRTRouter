@@ -1,4 +1,3 @@
-
 use brrtrouter::dispatcher::Dispatcher;
 use brrtrouter::middleware::MetricsMiddleware;
 use brrtrouter::runtime_config::RuntimeConfig;

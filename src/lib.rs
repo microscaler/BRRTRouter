@@ -7,6 +7,7 @@ pub mod generator;
 pub mod hot_reload;
 pub mod middleware;
 pub mod router;
+pub mod runtime_config;
 pub mod security;
 pub mod server;
 pub mod spec;
@@ -14,7 +15,6 @@ pub mod sse;
 pub mod static_files;
 pub mod typed;
 pub mod validator;
-pub mod runtime_config;
 
 pub use security::{BearerJwtProvider, OAuth2Provider, SecurityProvider, SecurityRequest};
 pub use spec::{

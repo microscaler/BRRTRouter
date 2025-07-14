@@ -16,11 +16,11 @@ impl Middleware for TracingMiddleware {
             path = %req.path,
             handler = %req.handler_name
         );
-        
+
         // Use the span to record the start event
         let _guard = span.enter();
         tracing::info!("Request started");
-        
+
         None
     }
 
@@ -34,7 +34,7 @@ impl Middleware for TracingMiddleware {
             status = res.status,
             latency_ms = latency.as_millis() as u64
         );
-        
+
         // Use the span to record the completion event
         let _guard = span.enter();
         tracing::info!(
@@ -42,7 +42,7 @@ impl Middleware for TracingMiddleware {
             latency_ms = latency.as_millis() as u64,
             "Request completed"
         );
-        
+
         // Explicitly drop the guard to finish the span
         drop(_guard);
     }

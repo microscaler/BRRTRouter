@@ -69,14 +69,9 @@ impl StaticFiles {
             if let Some(ctx_val) = ctx {
                 let source = fs::read_to_string(&path)?;
                 let mut env = Environment::new();
-                env.add_template("tpl", &source)
-                    .map_err(io::Error::other)?;
-                let tmpl = env
-                    .get_template("tpl")
-                    .map_err(io::Error::other)?;
-                let rendered = tmpl
-                    .render(ctx_val)
-                    .map_err(io::Error::other)?;
+                env.add_template("tpl", &source).map_err(io::Error::other)?;
+                let tmpl = env.get_template("tpl").map_err(io::Error::other)?;
+                let rendered = tmpl.render(ctx_val).map_err(io::Error::other)?;
                 return Ok((rendered.into_bytes(), Self::content_type(&path)));
             }
         }
