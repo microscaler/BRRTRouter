@@ -1,3 +1,3 @@
-mod cli;
+mod commands;
 
-pub use cli::{run_cli, Cli, Commands};
+pub use commands::{run_cli, Cli, Commands};

@@ -1,37 +1,35 @@
-use std::cell::RefCell;
 use std::time::Duration;
 
-use tracing::{info_span, span::EnteredSpan, Span};
+use tracing::info_span;
 
 use super::Middleware;
 use crate::dispatcher::{HandlerRequest, HandlerResponse};
-
-thread_local! {
-    static SPAN_GUARD: RefCell<Option<(Span, EnteredSpan)>> = RefCell::new(None);
-}
 
 pub struct TracingMiddleware;
 
 impl Middleware for TracingMiddleware {
     fn before(&self, req: &HandlerRequest) -> Option<HandlerResponse> {
-        let span = info_span!(
+        // Create and enter span for this request
+        let _span = info_span!(
             "request",
             method = ?req.method,
             path = %req.path,
             handler = %req.handler_name
-        );
-        let guard = span.enter();
-        static SPAN_GUARD: std::sync::RwLock<Option<(Span, tracing::span::Entered<'static>)>> =
-            std::sync::RwLock::new(None);
+        ).entered();
+        
+        // TODO: Implement proper span storage for May coroutines
+        // The current implementation is simplified due to May coroutine threading model
+        
         None
     }
 
     fn after(&self, _req: &HandlerRequest, res: &mut HandlerResponse, latency: Duration) {
-        SPAN_GUARD.with(|g| {
-            if let Some((span, _guard)) = g.borrow_mut().take() {
-                span.record("status", &res.status);
-                span.record("latency_ms", &(latency.as_millis() as u64));
-            }
-        });
+        // TODO: Record span attributes when proper span storage is implemented
+        // For now, just log the completion
+        tracing::info!(
+            status = res.status,
+            latency_ms = latency.as_millis() as u64,
+            "Request completed"
+        );
     }
 }

@@ -55,6 +55,10 @@ path = "src/bin/brrtrouter_gen.rs"
 name = "throughput"
 harness = false
 
+[features]
+default = []
+stack_usage = []
+
 [workspace]
 members = [
     "brrtrouter_macros",

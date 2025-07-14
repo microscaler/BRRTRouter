@@ -16,6 +16,7 @@ pub struct RouteMatch {
 #[derive(Clone)]
 pub struct Router {
     routes: Vec<(Method, Regex, RouteMeta, Vec<String>)>,
+    #[allow(dead_code)]
     base_path: String,
 }
 
@@ -23,7 +24,7 @@ impl Router {
     pub fn new(routes: Vec<RouteMeta>) -> Self {
         // Filter out routes that are not HTTP methods we care about
         // We only support GET, POST, PUT, DELETE, PATCH, and OPTIONS
-        let supported_methods = vec![
+        let supported_methods = [
             Method::GET,
             Method::POST,
             Method::PUT,

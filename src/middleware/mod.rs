@@ -1,11 +1,11 @@
 mod auth;
 mod cors;
+mod core;
 mod metrics;
-mod middleware;
 mod tracing;
 
 pub use auth::AuthMiddleware;
+pub use core::Middleware;
 pub use cors::CorsMiddleware;
 pub use metrics::MetricsMiddleware;
-pub use middleware::Middleware;
 pub use tracing::TracingMiddleware;

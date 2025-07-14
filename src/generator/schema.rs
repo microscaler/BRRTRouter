@@ -55,12 +55,9 @@ pub(crate) fn unique_handler_name(seen: &mut HashSet<String>, name: &str) -> Str
     }
     let mut counter = 1;
     loop {
-        let candidate = format!("{}_{}", name, counter);
+        let candidate = format!("{name}_{counter}");
         if !seen.contains(&candidate) {
-            println!(
-                "⚠️  Duplicate handler name '{}' → using '{}'",
-                name, candidate
-            );
+            println!("⚠️  Duplicate handler name '{name}' → using '{candidate}'");
             seen.insert(candidate.clone());
             return candidate;
         }
@@ -70,7 +67,7 @@ pub(crate) fn unique_handler_name(seen: &mut HashSet<String>, name: &str) -> Str
 
 pub fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
     let literal = match example {
-        Value::String(s) => format!("{:?}.to_string()", s),
+        Value::String(s) => format!("{s:?}.to_string()"),
         Value::Number(n) => n.to_string(),
         Value::Bool(b) => b.to_string(),
         Value::Array(items) => {
@@ -86,11 +83,11 @@ pub fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
                 .map(|item| match item {
                     Value::String(s) => {
                         if is_vec_string {
-                            format!("{:?}.to_string()", s)
+                            format!("{s:?}.to_string()")
                         } else if is_vec_json_value {
-                            format!("serde_json::Value::String({:?}.to_string())", s)
+                            format!("serde_json::Value::String({s:?}.to_string())")
                         } else {
-                            format!("{:?}.to_string().parse().unwrap()", s)
+                            format!("{s:?}.to_string().parse().unwrap()")
                         }
                     }
                     Value::Number(n) => n.to_string(),
@@ -99,13 +96,10 @@ pub fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
                         if let Some(inner_ty) = inner_ty_opt {
                             if inner_ty == "serde_json::Value" || inner_ty == "Value" {
                                 let json = serde_json::to_string(item).unwrap();
-                                format!("serde_json::json!({})", json)
+                                format!("serde_json::json!({json})")
                             } else if is_named_type(inner_ty) {
                                 let json = serde_json::to_string(item).unwrap();
-                                format!(
-                                    "serde_json::from_value::<{}>(serde_json::json!({})).unwrap()",
-                                    inner_ty, json
-                                )
+                                format!("serde_json::from_value::<{inner_ty}>(serde_json::json!({json})).unwrap()")
                             } else {
                                 "Default::default()".to_string()
                             }
@@ -117,25 +111,25 @@ pub fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
                 })
                 .collect::<Vec<_>>()
                 .join(", ");
-            format!("vec![{}]", inner)
+            format!("vec![{inner}]")
         }
         Value::Object(_) => {
             let json = serde_json::to_string(example).unwrap();
             if field.ty == "serde_json::Value" || field.ty == "Value" {
-                format!("serde_json::json!({})", json)
+                format!("serde_json::json!({json})")
             } else if is_named_type(&field.ty) {
                 format!(
-                    "serde_json::from_value::<{}>(serde_json::json!({})).unwrap()",
-                    field.ty, json
+                    "serde_json::from_value::<{}>(serde_json::json!({json})).unwrap()",
+                    field.ty
                 )
             } else {
-                format!("serde_json::json!({})", json)
+                format!("serde_json::json!({json})")
             }
         }
         _ => "Default::default()".to_string(),
     };
     if field.optional {
-        format!("Some({})", literal)
+        format!("Some({literal})")
     } else {
         literal
     }
@@ -164,7 +158,7 @@ pub fn extract_fields(schema: &Value) -> Vec<FieldDef> {
                 let ty = schema_to_type(items);
                 fields.push(FieldDef {
                     name: "items".to_string(),
-                    ty: format!("Vec<{}>", ty),
+                    ty: format!("Vec<{ty}>"),
                     optional: false,
                     value: "vec![Default::default()]".to_string(),
                 });
@@ -210,7 +204,7 @@ pub fn extract_fields(schema: &Value) -> Vec<FieldDef> {
             };
             let optional = !required.contains(name);
             let value = dummy_value::dummy_value(&ty)
-                .map(|v| if optional { format!("Some({})", v) } else { v })
+                .map(|v| if optional { format!("Some({v})") } else { v })
                 .unwrap_or_else(|_| "Default::default()".to_string());
             fields.push(FieldDef {
                 name: name.clone(),
@@ -248,7 +242,7 @@ pub fn schema_to_type(schema: &Value) -> String {
                         "boolean" => "bool".to_string(),
                         _ => schema_to_type(items),
                     };
-                    return format!("Vec<{}>", inner);
+                    return format!("Vec<{inner}>");
                 }
                 if let Some(item_ref) = items.get("$ref").and_then(|v| v.as_str()) {
                     if let Some(name) = item_ref.strip_prefix("#/components/schemas/") {
@@ -271,7 +265,7 @@ pub fn parameter_to_field(param: &ParameterMeta) -> FieldDef {
         .unwrap_or_else(|| "String".to_string());
     let optional = !param.required;
     let value = dummy_value::dummy_value(&ty)
-        .map(|v| if optional { format!("Some({})", v) } else { v })
+        .map(|v| if optional { format!("Some({v})") } else { v })
         .unwrap_or_else(|_| "Default::default()".to_string());
     FieldDef {
         name: param.name.clone(),

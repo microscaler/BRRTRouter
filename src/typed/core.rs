@@ -24,6 +24,15 @@ pub trait TypedHandlerFor<T>: Sized {
 }
 
 /// Spawn a typed handler coroutine and return a sender to communicate with it.
+///
+/// # Safety
+///
+/// This function is unsafe because it spawns a coroutine that will run indefinitely
+/// and handle requests. The caller must ensure that:
+/// - The handler is safe to execute in a concurrent context
+/// - The handler properly handles all requests without panicking
+/// - The handler sends a response for every request to avoid resource leaks
+/// - The May coroutine runtime is properly initialized
 pub unsafe fn spawn_typed<H>(handler: H) -> mpsc::Sender<HandlerRequest>
 where
     H: Handler + Send + 'static,
@@ -85,7 +94,7 @@ where
                             "details": format!("{:?}", panic)
                         }),
                     });
-                    eprintln!("Handler '{}' panicked: {:?}", handler_name, panic);
+                    eprintln!("Handler '{handler_name}' panicked: {panic:?}");
                 }
             }
         })
@@ -125,6 +134,15 @@ where
 impl Dispatcher {
     /// Register a typed handler that converts [`HandlerRequest`] into the handler's
     /// associated request type using `TryFrom`.
+    ///
+    /// # Safety
+    ///
+    /// This function is unsafe because it internally calls `spawn_typed` which spawns
+    /// a coroutine. The caller must ensure the same safety requirements as `spawn_typed`:
+    /// - The handler is safe to execute in a concurrent context
+    /// - The handler properly handles all requests without panicking
+    /// - The handler sends a response for every request to avoid resource leaks
+    /// - The May coroutine runtime is properly initialized
     pub unsafe fn register_typed<H>(&mut self, name: &str, handler: H)
     where
         H: Handler + Send + 'static,
