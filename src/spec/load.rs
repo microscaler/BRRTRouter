@@ -8,21 +8,19 @@ fn strip_unknown_verbs(val: &mut serde_json::Value) {
         "get", "post", "put", "delete", "patch", "options", "head", "trace",
     ];
 
-    if let Some(paths) = val.get_mut("paths") {
-        if let serde_json::Value::Object(paths_map) = paths {
-            for item in paths_map.values_mut() {
-                if let serde_json::Value::Object(obj) = item {
-                    let keys: Vec<String> = obj.keys().cloned().collect();
-                    for k in keys {
-                        let lk = k.to_ascii_lowercase();
-                        let keep = match lk.as_str() {
-                            "summary" | "description" | "servers" | "parameters" | "$ref" => true,
-                            m if METHODS.contains(&m) => true,
-                            _ => k.starts_with("x-"),
-                        };
-                        if !keep {
-                            obj.remove(&k);
-                        }
+    if let Some(serde_json::Value::Object(paths_map)) = val.get_mut("paths") {
+        for item in paths_map.values_mut() {
+            if let serde_json::Value::Object(obj) = item {
+                let keys: Vec<String> = obj.keys().cloned().collect();
+                for k in keys {
+                    let lk = k.to_ascii_lowercase();
+                    let keep = match lk.as_str() {
+                        "summary" | "description" | "servers" | "parameters" | "$ref" => true,
+                        m if METHODS.contains(&m) => true,
+                        _ => k.starts_with("x-"),
+                    };
+                    if !keep {
+                        obj.remove(&k);
                     }
                 }
             }

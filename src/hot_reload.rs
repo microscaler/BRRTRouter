@@ -39,7 +39,7 @@ where
                     }
                 }
             }
-            Err(e) => eprintln!("watch error: {:?}", e),
+            Err(e) => eprintln!("watch error: {e:?}"),
         },
         Config::default(),
     )?;

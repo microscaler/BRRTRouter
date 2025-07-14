@@ -91,6 +91,7 @@ pub struct ControllerTemplateData {
     pub sse: bool,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn write_handler(
     path: &Path,
     handler: &str,
@@ -102,7 +103,7 @@ pub fn write_handler(
     force: bool,
 ) -> anyhow::Result<()> {
     if path.exists() && !force {
-        println!("⚠️  Skipping existing handler file: {:?}", path);
+        println!("⚠️  Skipping existing handler file: {path:?}");
         return Ok(());
     }
     let rendered = HandlerTemplateData {
@@ -111,7 +112,7 @@ pub fn write_handler(
         response_fields: res.to_vec(),
         response_is_array: res.len() == 1 && res[0].name == "items",
         response_array_type: res
-            .get(0)
+            .first()
             .map(|f| f.ty.clone())
             .unwrap_or_default(),
         imports: imports.iter().cloned().collect(),
@@ -120,7 +121,7 @@ pub fn write_handler(
     }
     .render()?;
     fs::write(path, rendered)?;
-    println!("✅ Generated handler: {:?}", path);
+    println!("✅ Generated handler: {path:?}");
     Ok(())
 }
 
@@ -134,7 +135,7 @@ pub fn write_controller(
     force: bool,
 ) -> anyhow::Result<()> {
     if path.exists() && !force {
-        println!("⚠️  Skipping existing controller file: {:?}", path);
+        println!("⚠️  Skipping existing controller file: {path:?}");
         return Ok(());
     }
     let example_map = example
@@ -179,13 +180,13 @@ pub fn write_controller(
     } else {
         example_pretty
             .lines()
-            .map(|l| format!("        // {}", l))
+            .map(|l| format!("        // {l}"))
             .collect::<Vec<_>>()
             .join("\n")
     };
     let response_is_array = res.len() == 1 && res[0].name == "items";
     let array_literal = enriched_fields
-        .get(0)
+        .first()
         .map(|f| f.value.clone())
         .unwrap_or_else(|| "vec![Default::default()]".to_string());
     let context = ControllerTemplateData {
@@ -201,7 +202,7 @@ pub fn write_controller(
         sse,
     };
     fs::write(path, context.render()?)?;
-    println!("✅ Generated controller: {:?}", path);
+    println!("✅ Generated controller: {path:?}");
     Ok(())
 }
 
@@ -212,7 +213,7 @@ pub(crate) fn write_mod_rs(dir: &Path, modules: &[String], label: &str) -> anyho
     }
     .render()?;
     fs::write(path.clone(), rendered)?;
-    println!("✅ Updated mod.rs for {} → {:?}", label, path);
+    println!("✅ Updated mod.rs for {label} → {path:?}");
     Ok(())
 }
 
@@ -223,7 +224,7 @@ pub fn write_registry_rs(dir: &Path, entries: &[RegistryEntry]) -> anyhow::Resul
     }
     .render()?;
     fs::write(path.clone(), rendered)?;
-    println!("✅ Generated registry.rs → {:?}", path);
+    println!("✅ Generated registry.rs → {path:?}");
     Ok(())
 }
 
@@ -238,7 +239,7 @@ pub(crate) fn write_types_rs(
     }
     let rendered = TypesTemplateData { types: sorted }.render()?;
     fs::write(path.clone(), rendered)?;
-    println!("✅ Generated types.rs → {:?}", path);
+    println!("✅ Generated types.rs → {path:?}");
     Ok(())
 }
 

@@ -5,7 +5,7 @@ fn main() {
     match load_spec(&path) {
         Ok((routes, slug)) => {
             println!("routes: {}", routes.len());
-            println!("slug: {}", slug);
+            println!("slug: {slug}");
         }
         Err(err) => {
             eprintln!("error: {err}");

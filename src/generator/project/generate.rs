@@ -30,7 +30,7 @@ pub fn generate_project_from_spec(spec_path: &Path, force: bool) -> anyhow::Resu
     let spec_copy_path = doc_dir.join("openapi.yaml");
     if !spec_copy_path.exists() || force {
         fs::copy(spec_path, &spec_copy_path)?;
-        println!("✅ Copied spec to {:?}", spec_copy_path);
+        println!("✅ Copied spec to {spec_copy_path:?}");
     }
 
     let mut schema_types = collect_component_schemas(spec_path)?;
@@ -65,8 +65,8 @@ pub fn generate_project_from_spec(spec_path: &Path, force: bool) -> anyhow::Resu
             }
         }
 
-        let handler_path = handler_dir.join(format!("{}.rs", handler));
-        let controller_path = controller_dir.join(format!("{}.rs", handler));
+        let handler_path = handler_dir.join(format!("{handler}.rs"));
+        let controller_path = controller_dir.join(format!("{handler}.rs"));
         write_handler(
             &handler_path,
             &handler,
@@ -92,17 +92,17 @@ pub fn generate_project_from_spec(spec_path: &Path, force: bool) -> anyhow::Resu
         modules_controllers.push(handler.clone());
         registry_entries.push(RegistryEntry {
             name: handler.clone(),
-            request_type: format!("{}::Request", handler),
+            request_type: format!("{handler}::Request"),
             controller_struct: controller_struct.clone(),
             parameters: route.parameters.clone(),
         });
 
         if let Some(schema) = &route.request_schema {
-            let name = format!("{}Request", handler);
+            let name = format!("{handler}Request");
             process_schema_type(&name, schema, &mut schema_types);
         }
         if let Some(schema) = &route.response_schema {
-            let name = format!("{}Response", handler);
+            let name = format!("{handler}Response");
             process_schema_type(&name, schema, &mut schema_types);
         }
     }

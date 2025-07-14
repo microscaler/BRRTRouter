@@ -48,7 +48,7 @@ impl std::fmt::Display for ParameterStyle {
             ParameterStyle::PipeDelimited => "PipeDelimited",
             ParameterStyle::DeepObject => "DeepObject",
         };
-        write!(f, "{}", s)
+        write!(f, "{s}")
     }
 }
 

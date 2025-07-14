@@ -11,14 +11,20 @@ pub struct MetricsMiddleware {
     used_stack: AtomicUsize,
 }
 
-impl MetricsMiddleware {
-    pub fn new() -> Self {
+impl Default for MetricsMiddleware {
+    fn default() -> Self {
         Self {
             request_count: AtomicUsize::new(0),
             total_latency_ns: AtomicU64::new(0),
             stack_size: AtomicUsize::new(0),
             used_stack: AtomicUsize::new(0),
         }
+    }
+}
+
+impl MetricsMiddleware {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub fn request_count(&self) -> usize {
@@ -56,12 +62,7 @@ impl Middleware for MetricsMiddleware {
             let co = may::coroutine::current();
             let size = co.stack_size();
             self.stack_size.store(size, Ordering::Relaxed);
-            let mut used = 0;
-            #[cfg(feature = "stack_usage")]
-            {
-                let (_, u) = co.stack_usage();
-                used = u;
-            }
+            let used = 0; // Stack usage tracking not available in May coroutines
             self.used_stack.store(used, Ordering::Relaxed);
         } else {
             self.stack_size

@@ -46,7 +46,7 @@ pub fn decode_param_value(
     value: &str,
     schema: Option<&serde_json::Value>,
     style: Option<ParameterStyle>,
-    explode: Option<bool>,
+    _explode: Option<bool>,
 ) -> serde_json::Value {
     use serde_json::Value;
 

@@ -3,7 +3,6 @@ use super::types::{
 };
 use super::SecurityScheme;
 use crate::validator::{fail_if_issues, ValidationIssue};
-use http::Method;
 use oas3::spec::{MediaTypeExamples, ObjectOrReference, Parameter};
 use oas3::OpenApiV3Spec;
 use serde_json::Value;
@@ -145,7 +144,7 @@ pub fn extract_response_schema_and_example(
                     }
 
                     all.entry(status)
-                        .or_insert_with(std::collections::HashMap::new)
+                        .or_default()
                         .insert(
                             mt.clone(),
                             ResponseSpec {
@@ -221,7 +220,7 @@ pub fn extract_parameters(
 
             out.push(ParameterMeta {
                 name: param.name.clone(),
-                location: ParameterLocation::from(param.location.clone()),
+                location: ParameterLocation::from(param.location),
                 required: param.required.is_some(),
                 schema,
                 style: param.style.map(ParameterStyle::from),
@@ -245,10 +244,10 @@ pub fn build_routes(spec: &OpenApiV3Spec, slug: &str) -> anyhow::Result<Vec<Rout
     let mut routes = Vec::new();
     let mut issues = Vec::new();
 
-    let base_path = if let Some(server) = spec.servers.get(0) {
+    let base_path = if let Some(server) = spec.servers.first() {
         let url_str = &server.url;
         url::Url::parse(url_str)
-            .or_else(|_| url::Url::parse(&format!("http://dummy{}", url_str)))
+            .or_else(|_| url::Url::parse(&format!("http://dummy{url_str}")))
             .map(|u| {
                 let p = u.path().trim_end_matches('/');
                 if p == "/" || p.is_empty() {
@@ -266,7 +265,7 @@ pub fn build_routes(spec: &OpenApiV3Spec, slug: &str) -> anyhow::Result<Vec<Rout
         for (path, item) in paths_map {
             for (method_str, operation) in item.methods() {
                 let method = method_str.clone();
-                let location = format!("{} → {}", path, method);
+                let location = format!("{path} → {method}");
 
                 let handler_name = match resolve_handler_name(operation, &location, &mut issues) {
                     Some(name) => name,
@@ -297,7 +296,7 @@ pub fn build_routes(spec: &OpenApiV3Spec, slug: &str) -> anyhow::Result<Vec<Rout
                     example,
                     responses,
                     security,
-                    example_name: format!("{}_example", slug),
+                    example_name: format!("{slug}_example"),
                     project_slug: slug.to_string(),
                     output_dir: std::path::PathBuf::from("examples").join(slug).join("src"),
                     base_path: base_path.clone(),

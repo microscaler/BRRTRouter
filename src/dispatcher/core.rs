@@ -105,7 +105,7 @@ impl Dispatcher {
                             }),
                         };
                         let _ = reply_tx.send(error_response);
-                        eprintln!("Handler '{}' panicked: {:?}", handler_name, panic);
+                        eprintln!("Handler '{handler_name}' panicked: {panic:?}");
                     }
                 }
             })

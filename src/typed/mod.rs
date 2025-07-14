@@ -1,3 +1,3 @@
-mod typed;
+mod core;
 
-pub use typed::*;
+pub use core::*;
