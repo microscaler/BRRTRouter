@@ -88,10 +88,12 @@ pub fn extract_request_schema(
 ) -> Option<Value> {
     let mut schema = operation.request_body.as_ref().and_then(|r| match r {
         ObjectOrReference::Object(req_body) => {
-            req_body.content.get("application/json").and_then(|media| match media.schema.as_ref()? {
-                ObjectOrReference::Object(schema_obj) => serde_json::to_value(schema_obj).ok(),
-                ObjectOrReference::Ref { ref_path } => resolve_schema_ref(spec, ref_path)
-                    .and_then(|s| serde_json::to_value(s).ok()),
+            req_body.content.get("application/json").and_then(|media| {
+                match media.schema.as_ref()? {
+                    ObjectOrReference::Object(schema_obj) => serde_json::to_value(schema_obj).ok(),
+                    ObjectOrReference::Ref { ref_path } => resolve_schema_ref(spec, ref_path)
+                        .and_then(|s| serde_json::to_value(s).ok()),
+                }
             })
         }
         _ => None,
@@ -143,15 +145,13 @@ pub fn extract_response_schema_and_example(
                         expand_schema_refs(spec, val);
                     }
 
-                    all.entry(status)
-                        .or_default()
-                        .insert(
-                            mt.clone(),
-                            ResponseSpec {
-                                schema: schema.clone(),
-                                example: example.clone(),
-                            },
-                        );
+                    all.entry(status).or_default().insert(
+                        mt.clone(),
+                        ResponseSpec {
+                            schema: schema.clone(),
+                            example: example.clone(),
+                        },
+                    );
 
                     if status == 200 && mt == "application/json" {
                         default_schema = schema;

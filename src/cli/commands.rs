@@ -1,10 +1,16 @@
-use crate::{load_spec, router::Router, dispatcher::Dispatcher, hot_reload::watch_spec, server::{AppService, HttpServer}};
+use crate::{
+    dispatcher::Dispatcher,
+    hot_reload::watch_spec,
+    load_spec,
+    router::Router,
+    server::{AppService, HttpServer},
+};
 use clap::{Parser, Subcommand};
-use may::sync::mpsc;
 use may::coroutine;
-use std::sync::{Arc, RwLock};
+use may::sync::mpsc;
 use std::io;
 use std::path::PathBuf;
+use std::sync::{Arc, RwLock};
 
 #[derive(Parser)]
 #[command(name = "brrrouter")]
@@ -66,25 +72,39 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
                 dispatcher.add_route(r.clone(), tx);
             }
             let dispatcher = Arc::new(RwLock::new(dispatcher));
-            let mut service = AppService::new(router.clone(), dispatcher.clone(), schemes, spec.clone(), None, None);
+            let mut service = AppService::new(
+                router.clone(),
+                dispatcher.clone(),
+                schemes,
+                spec.clone(),
+                None,
+                None,
+            );
             if *watch {
-                let watcher = watch_spec(spec.clone(), router.clone(), dispatcher.clone(), |disp, new_routes| {
-                    for r in &new_routes {
-                        let (tx, rx) = mpsc::channel();
-                        unsafe {
-                            coroutine::spawn(move || {
-                                for req in rx.iter() {
-                                    crate::echo::echo_handler(req);
-                                }
-                            });
+                let watcher = watch_spec(
+                    spec.clone(),
+                    router.clone(),
+                    dispatcher.clone(),
+                    |disp, new_routes| {
+                        for r in &new_routes {
+                            let (tx, rx) = mpsc::channel();
+                            unsafe {
+                                coroutine::spawn(move || {
+                                    for req in rx.iter() {
+                                        crate::echo::echo_handler(req);
+                                    }
+                                });
+                            }
+                            disp.add_route(r.clone(), tx);
                         }
-                        disp.add_route(r.clone(), tx);
-                    }
-                })?;
+                    },
+                )?;
                 service.watcher = Some(watcher);
             }
             let handle = HttpServer(service).start(addr)?;
-            handle.join().map_err(|e| Box::<dyn std::error::Error>::from(io::Error::other(format!("{e:?}"))))?;
+            handle.join().map_err(|e| {
+                Box::<dyn std::error::Error>::from(io::Error::other(format!("{e:?}")))
+            })?;
             Ok(())
         }
     }

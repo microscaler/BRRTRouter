@@ -6,9 +6,9 @@ use crate::router::Router;
 use crate::security::{SecurityProvider, SecurityRequest};
 use crate::spec::SecurityScheme;
 use crate::static_files::StaticFiles;
+use jsonschema::JSONSchema;
 use may_minihttp::{HttpService, Request, Response};
 use serde_json::json;
-use jsonschema::JSONSchema;
 use std::collections::HashMap;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -274,7 +274,8 @@ impl HttpService for AppService {
                         }
                     }
                     if let Some(schema) = &route_match.route.response_schema {
-                        let compiled = JSONSchema::compile(schema).expect("invalid response schema");
+                        let compiled =
+                            JSONSchema::compile(schema).expect("invalid response schema");
                         let validation = compiled.validate(&hr.body);
                         if let Err(errors) = validation {
                             let details: Vec<String> = errors.map(|e| e.to_string()).collect();

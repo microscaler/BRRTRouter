@@ -32,12 +32,12 @@ fn test_petstore_container_health() {
         println!("Skipping test: Docker not available");
         return;
     }
-    
+
     if !is_curl_available() {
         println!("Skipping test: curl not available");
         return;
     }
-    
+
     if !is_release_binary_available() {
         println!("Skipping test: Release binary not available. Run 'cargo build --release --example pet_store' first");
         return;
@@ -50,20 +50,34 @@ fn test_petstore_container_health() {
 
     // Give the container a moment to start
     sleep(Duration::from_secs(2));
-    
+
     // Check if container is running
     let container_status = Command::new("docker")
         .args(["compose", "ps", "--format", "json"])
         .output()
         .expect("docker compose ps");
-    println!("Container status: {}", String::from_utf8_lossy(&container_status.stdout));
+    println!(
+        "Container status: {}",
+        String::from_utf8_lossy(&container_status.stdout)
+    );
 
     for i in 0..30 {
         let status = Command::new("curl")
-            .args(["-s", "-o", "/dev/null", "-w", "%{http_code}", "http://localhost:8080/health"])
+            .args([
+                "-s",
+                "-o",
+                "/dev/null",
+                "-w",
+                "%{http_code}",
+                "http://localhost:8080/health",
+            ])
             .output()
             .expect("curl");
-        println!("Attempt {}: Health check returned: {:?}", i+1, String::from_utf8_lossy(&status.stdout));
+        println!(
+            "Attempt {}: Health check returned: {:?}",
+            i + 1,
+            String::from_utf8_lossy(&status.stdout)
+        );
         if status.stdout == b"200" {
             break;
         }
@@ -71,13 +85,23 @@ fn test_petstore_container_health() {
     }
 
     let out = Command::new("curl")
-        .args(["-s", "-o", "/dev/null", "-w", "%{http_code}", "http://localhost:8080/health"])
+        .args([
+            "-s",
+            "-o",
+            "/dev/null",
+            "-w",
+            "%{http_code}",
+            "http://localhost:8080/health",
+        ])
         .output()
         .expect("curl request");
-    println!("Final health check result: {:?}", String::from_utf8_lossy(&out.stdout));
-    
+    println!(
+        "Final health check result: {:?}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+
     // Clean up before assertion to ensure containers are stopped
     let _ = Command::new("docker").args(["compose", "down"]).status();
-    
+
     assert_eq!(out.stdout, b"200");
 }

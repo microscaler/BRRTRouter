@@ -1,15 +1,15 @@
 use brrtrouter::{
     dispatcher::{Dispatcher, HandlerRequest, HandlerResponse},
     load_spec,
-    middleware::{CorsMiddleware, MetricsMiddleware},
     middleware::Middleware,
+    middleware::{CorsMiddleware, MetricsMiddleware},
     router::Router,
 };
 use http::Method;
+use may::sync::mpsc;
 use pet_store::registry;
 use std::collections::HashMap;
 use std::sync::Arc;
-use may::sync::mpsc;
 use std::time::Duration;
 
 mod tracing_util;

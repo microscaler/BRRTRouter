@@ -36,7 +36,11 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("fmt_test_noop_{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let stub = dir.join("cargo");
-        fs::write(&stub, "#!/bin/sh\nif [ \"$1\" = \"fmt\" ]; then\n    exit 0\nfi\nexit 0\n").unwrap();
+        fs::write(
+            &stub,
+            "#!/bin/sh\nif [ \"$1\" = \"fmt\" ]; then\n    exit 0\nfi\nexit 0\n",
+        )
+        .unwrap();
         let mut perms = fs::metadata(&stub).unwrap().permissions();
         perms.set_mode(0o755);
         fs::set_permissions(&stub, perms).unwrap();
@@ -62,7 +66,11 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("fmt_test_err_{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let stub = dir.join("cargo");
-        fs::write(&stub, "#!/bin/sh\nif [ \"$1\" = \"fmt\" ]; then\n    exit 1\nfi\nexit 0\n").unwrap();
+        fs::write(
+            &stub,
+            "#!/bin/sh\nif [ \"$1\" = \"fmt\" ]; then\n    exit 1\nfi\nexit 0\n",
+        )
+        .unwrap();
         let mut perms = fs::metadata(&stub).unwrap().permissions();
         perms.set_mode(0o755);
         fs::set_permissions(&stub, perms).unwrap();

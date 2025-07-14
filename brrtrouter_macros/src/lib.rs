@@ -1,7 +1,9 @@
+use heck::ToUpperCamelCase;
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
-use syn::{parse_macro_input, parse::Parse, parse::ParseStream, FnArg, Ident, ItemFn, ReturnType, Type};
-use heck::ToUpperCamelCase;
+use syn::{
+    parse::Parse, parse::ParseStream, parse_macro_input, FnArg, Ident, ItemFn, ReturnType, Type,
+};
 
 struct Attr(Option<Ident>);
 

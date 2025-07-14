@@ -56,7 +56,7 @@ static TEMP_LOCK: Mutex<()> = Mutex::new(());
 
 fn write_temp(content: &str, ext: &str) -> std::path::PathBuf {
     use std::time::{SystemTime, UNIX_EPOCH};
-    
+
     // Use lock and atomic counter to ensure unique filenames
     let _lock = TEMP_LOCK.lock().unwrap();
     let counter = TEMP_COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -64,7 +64,7 @@ fn write_temp(content: &str, ext: &str) -> std::path::PathBuf {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    
+
     let path = std::env::temp_dir().join(format!(
         "spec_test_{}_{}_{}.{}",
         std::process::id(),
@@ -72,7 +72,7 @@ fn write_temp(content: &str, ext: &str) -> std::path::PathBuf {
         nanos,
         ext
     ));
-    
+
     std::fs::write(&path, content).unwrap();
     path
 }

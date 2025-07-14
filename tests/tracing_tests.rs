@@ -27,7 +27,7 @@ fn test_tracing_middleware_emits_spans() {
 
     // Force flush the tracer provider to ensure spans are exported
     tracing.force_flush();
-    
+
     // Give a moment for spans to be exported
     std::thread::sleep(std::time::Duration::from_millis(100));
 
