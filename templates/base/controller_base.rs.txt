@@ -38,10 +38,6 @@ use crate::handlers::types::{{ import }};
 {{ example_json }}
 /// ```
 {% endif %}
-
-/// {{ struct_name }} implementation
-pub struct {{ struct_name }};
-
 #[handler({{ struct_name }})]
 pub fn handle(_req: TypedHandlerRequest<Request>) -> ValidationResult<Response> {
     {% if sse %}
@@ -74,7 +70,10 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> ValidationResult<Response> 
     
     {% if response_is_array %}
     // Array response - replace with your actual data
-    Ok(Response({{ response_array_literal }}))
+    Ok(Response(vec![
+        // TODO: Replace with actual data
+        Default::default()
+    ]))
     {% else %}
     // Object response - replace with your actual data
     Ok(Response {

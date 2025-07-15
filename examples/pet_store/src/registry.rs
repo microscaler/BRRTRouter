@@ -10,22 +10,22 @@ use brrtrouter::dispatcher::Dispatcher;
 use brrtrouter::spec::RouteMeta;
 
 // Import the controller types
-use crate::controllers::add_pet::AddPetController;
 use crate::controllers::admin_settings::AdminSettingsController;
-use crate::controllers::get_item::GetItemController;
-use crate::controllers::get_pet::GetPetController;
-use crate::controllers::get_post::GetPostController;
-use crate::controllers::get_user::GetUserController;
-use crate::controllers::list_pets::ListPetsController;
-use crate::controllers::list_user_posts::ListUserPostsController;
-use crate::controllers::list_users::ListUsersController;
-use crate::controllers::post_item::PostItemController;
 use crate::controllers::stream_events::StreamEventsController;
+use crate::controllers::get_item::GetItemController;
+use crate::controllers::post_item::PostItemController;
+use crate::controllers::list_pets::ListPetsController;
+use crate::controllers::add_pet::AddPetController;
+use crate::controllers::get_pet::GetPetController;
+use crate::controllers::list_users::ListUsersController;
+use crate::controllers::get_user::GetUserController;
+use crate::controllers::list_user_posts::ListUserPostsController;
+use crate::controllers::get_post::GetPostController;
 /// Register all predefined handlers with the dispatcher
-///
+/// 
 /// This function provides a convenient way to register all handlers
 /// that are defined at compile time. Use this for static handler registration.
-///
+/// 
 /// # Safety
 /// This function is unsafe because it registers handlers with the dispatcher
 /// which may involve raw pointer operations or other unsafe operations.
@@ -41,14 +41,14 @@ pub unsafe fn register_all(dispatcher: &mut Dispatcher) {
     dispatcher.register_typed("get_user", GetUserController);
     dispatcher.register_typed("list_user_posts", ListUserPostsController);
     dispatcher.register_typed("get_post", GetPostController);
-}
+    }
 
 /// Register all routes from OpenAPI specification with the dispatcher
-///
+/// 
 /// This function processes the routes loaded from the OpenAPI specification
 /// and registers the corresponding handlers with the dispatcher. This version
 /// uses idempotent registration to support safe hot reloading.
-///
+/// 
 /// # Safety
 /// This function is unsafe because it registers handlers with the dispatcher
 /// which may involve raw pointer operations or other unsafe operations.
@@ -64,10 +64,10 @@ pub unsafe fn register_from_spec(dispatcher: &mut Dispatcher, _routes: &[RouteMe
     dispatcher.register_or_update_typed("get_user", GetUserController);
     dispatcher.register_or_update_typed("list_user_posts", ListUserPostsController);
     dispatcher.register_or_update_typed("get_post", GetPostController);
-}
+    }
 
 /// Register or update a single route by name. This is idempotent and safe for hot reloading.
-///
+/// 
 /// # Safety
 /// This function is unsafe because it registers handlers with the dispatcher
 /// which may involve raw pointer operations or other unsafe operations.

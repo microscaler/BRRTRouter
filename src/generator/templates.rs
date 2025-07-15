@@ -5,7 +5,7 @@ use std::fs;
 use std::path::Path;
 
 use super::schema::{
-    build_complete_example_object, is_named_type, rust_literal_for_example, rust_literal_for_example_with_types, to_camel_case, FieldDef, TypeDefinition,
+    is_named_type, rust_literal_for_example, to_camel_case, FieldDef, TypeDefinition,
 };
 use crate::spec::{ParameterMeta, RouteMeta};
 
@@ -57,9 +57,9 @@ pub struct RegistryTemplateData {
     pub entries: Vec<RegistryEntry>,
 }
 
-// Temporarily disabled to focus on controller debugging
+// Temporarily disabled - HandlerTemplateData 
 // #[derive(Template)]
-// #[template(path = "handler.rs.txt")]
+// #[template(path = "base/handler_base.rs.txt")]
 // pub struct HandlerTemplateData {
 //     pub handler_name: String,
 //     pub request_fields: Vec<FieldDef>,
@@ -91,8 +91,8 @@ pub struct ControllerTemplateData {
 }
 
 pub(crate) fn write_handler(
-    _handler_dir: &Path,
-    _operation_id: &str,
+    path: &Path,
+    _handler_name: &str,
     _parameters: &[ParameterMeta],
     _request_fields: Vec<FieldDef>,
     _response_fields: Vec<FieldDef>,
@@ -100,10 +100,13 @@ pub(crate) fn write_handler(
     _response_is_array: bool,
     _response_array_type: String,
     _sse: bool,
-    _force: bool,
+    force: bool,
 ) -> anyhow::Result<()> {
-    // Temporarily disabled to fix compilation
-    println!("⚠️ Handler generation temporarily disabled");
+    println!("⚠️  Handler generation temporarily disabled - controllers should work without them");
+    if !path.exists() || force {
+        // Create a minimal handler file that just shows it was generated
+        fs::write(path, "// Handler generation temporarily disabled\n")?;
+    }
     Ok(())
 }
 
@@ -131,82 +134,11 @@ pub fn write_controller(
     let enriched_fields = res
         .iter()
         .map(|field| {
-            let value = if is_named_type(&field.ty) {
-                // For complex named types, try to get the complete schema and build a full example
-                if let Some(type_def) = schema_types.get(&field.ty) {
-                    // Use the original OpenAPI schema if available
-                    if let Some(original_schema) = &type_def.original_schema {
-                        let complete_example = build_complete_example_object(original_schema);
-                        rust_literal_for_example(field, &complete_example)
-                    } else {
-                        // Fall back to reconstructed schema
-                        let schema_json = build_complete_example_object(&type_definition_to_schema(type_def));
-                        rust_literal_for_example(field, &schema_json)
-                    }
-                } else {
-                    // Fall back to existing example or field value
-                    example_map
-                        .get(&field.name)
-                        .map(|val| rust_literal_for_example(field, val))
-                        .unwrap_or_else(|| field.value.clone())
-                }
-            } else if field.ty.starts_with("Vec<") {
-                // Handle arrays of complex types
-                if let Some(inner_ty) = field.ty.strip_prefix("Vec<").and_then(|s| s.strip_suffix(">")) {
-                    if is_named_type(inner_ty) && schema_types.contains_key(inner_ty) {
-                        // Create an array with multiple complete example objects
-                        if let Some(type_def) = schema_types.get(inner_ty) {
-                            let fallback_schema;
-                            let schema_to_use = if let Some(original_schema) = &type_def.original_schema {
-                                println!("🔍 TEMPLATE DEBUG: Using original schema for {}", inner_ty);
-                                original_schema
-                            } else {
-                                println!("🔍 TEMPLATE DEBUG: Using fallback schema for {}", inner_ty);
-                                fallback_schema = type_definition_to_schema(type_def);
-                                &fallback_schema
-                            };
-                            
-                            println!("🔍 TEMPLATE DEBUG: Schema for {} array generation: {}", inner_ty, serde_json::to_string_pretty(schema_to_use).unwrap_or("invalid".to_string()));
-                            
-                            let schema_json1 = build_complete_example_object(schema_to_use);
-                            let schema_json2 = build_complete_example_object(schema_to_use);
-                            let example1 = rust_literal_for_example(&FieldDef {
-                                name: "temp".to_string(),
-                                ty: inner_ty.to_string(),
-                                optional: false,
-                                value: String::new(),
-                                documentation: None,
-                                validation_attrs: None,
-                            }, &schema_json1);
-                            let example2 = rust_literal_for_example(&FieldDef {
-                                name: "temp".to_string(), 
-                                ty: inner_ty.to_string(),
-                                optional: false,
-                                value: String::new(),
-                                documentation: None,
-                                validation_attrs: None,
-                            }, &schema_json2);
-                            format!("vec![{example1}, {example2}]")
-                        } else {
-                            field.value.clone()
-                        }
-                    } else {
-                        example_map
-                            .get(&field.name)
-                            .map(|val| rust_literal_for_example(field, val))
-                            .unwrap_or_else(|| field.value.clone())
-                    }
-                } else {
-                    field.value.clone()
-                }
-            } else {
-                // For primitive types, use example or field value
-                example_map
-                    .get(&field.name)
-                    .map(|val| rust_literal_for_example(field, val))
-                    .unwrap_or_else(|| field.value.clone())
-            };
-            
+            let value = example_map
+                .get(&field.name)
+                .map(|val| rust_literal_for_example(field, val))
+                .unwrap_or_else(|| field.value.clone());
+                
             FieldDef {
                 name: field.name.clone(),
                 ty: field.ty.clone(),
@@ -243,30 +175,13 @@ pub fn write_controller(
     };
     let response_is_array = res.len() == 1 && res[0].name == "items";
     let array_literal = if response_is_array {
-        // For array responses, use the actual OpenAPI example data if available
-        example
-            .as_ref()
-            .and_then(|v| match v {
-                Value::Array(_arr) => {
-                    // Convert the example array to Rust literal using schema-aware generation
-                    let field = &res[0]; // This is the "items" field
-                    Some(rust_literal_for_example_with_types(field, v, schema_types))
-                }
-                _ => None,
-            })
-            .unwrap_or_else(|| {
-                // Fallback to enriched field value if no example array
-                enriched_fields
-                    .first()
-                    .map(|f| f.value.clone())
-                    .unwrap_or_else(|| "vec![Default::default()]".to_string())
-            })
-    } else {
-        // For non-array responses, use the enriched field value
+        // For array responses, use Default::default() or existing field value
         enriched_fields
             .first()
             .map(|f| f.value.clone())
             .unwrap_or_else(|| "vec![Default::default()]".to_string())
+    } else {
+        String::new()
     };
     let context = ControllerTemplateData {
         handler_name: handler.to_string(),

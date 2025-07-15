@@ -6,21 +6,21 @@
 //
 // Template: main.rs.txt
 
-use brrtrouter::dispatcher::Dispatcher;
 use brrtrouter::middleware::{ConsoleLoggingMiddleware, MetricsMiddleware, TracingMiddleware};
-use brrtrouter::router::Router;
 use brrtrouter::runtime_config::RuntimeConfig;
 use brrtrouter::security::{SecurityProvider, SecurityRequest};
-use brrtrouter::server::{AppService, HttpServer};
 use brrtrouter::spec::{load_spec, SecurityScheme};
+use brrtrouter::server::{AppService, HttpServer};
+use brrtrouter::dispatcher::Dispatcher;
+use brrtrouter::router::Router;
 use clap::Parser;
 use std::io;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
-mod controllers;
-mod handlers;
 mod registry;
+mod handlers;
+mod controllers;
 
 #[derive(Parser)]
 struct Args {
@@ -71,14 +71,13 @@ fn main() -> io::Result<()> {
     let stack_size = if runtime_config.stack_size > 0x10000 {
         runtime_config.stack_size
     } else {
-        0x20000 // Use 128KB instead of default 16KB to handle complex operations
+        0x20000  // Use 128KB instead of default 16KB to handle complex operations
     };
     may::config().set_stack_size(stack_size);
 
     let spec_path = args.spec.clone();
-    let (routes, security_schemes, _slug) =
-        brrtrouter::spec::load_spec_full(spec_path.to_str().unwrap())
-            .expect("Failed to load OpenAPI spec");
+    let (routes, security_schemes, _slug) = brrtrouter::spec::load_spec_full(spec_path.to_str().unwrap())
+        .expect("Failed to load OpenAPI spec");
 
     let router = Arc::new(RwLock::new(Router::new(routes.clone())));
     let dispatcher = Arc::new(RwLock::new(Dispatcher::new()));
@@ -90,20 +89,17 @@ fn main() -> io::Result<()> {
 
     // Create metrics middleware for monitoring
     let metrics = Arc::new(MetricsMiddleware::new());
-
+    
     // Create tracing middleware for request logging
     let tracing_middleware = Arc::new(TracingMiddleware);
-
+    
     // Create console logging middleware for development visibility
     let console_logging = Arc::new(ConsoleLoggingMiddleware);
-
+    
     // Add middleware to dispatcher
     dispatcher.write().unwrap().add_middleware(metrics.clone());
     dispatcher.write().unwrap().add_middleware(console_logging);
-    dispatcher
-        .write()
-        .unwrap()
-        .add_middleware(tracing_middleware);
+    dispatcher.write().unwrap().add_middleware(tracing_middleware);
 
     let mut service = AppService::new(
         router.clone(),
@@ -117,7 +113,7 @@ fn main() -> io::Result<()> {
     // Setup hot reload if enabled
     if args.hot_reload {
         use brrtrouter::hot_reload::watch_spec;
-
+        
         let watcher = watch_spec(
             spec_path.clone(),
             router.clone(),
@@ -127,12 +123,11 @@ fn main() -> io::Result<()> {
                 unsafe {
                     registry::register_from_spec(disp, &new_routes);
                 }
-
+                
                 println!("🔄 Hot reload: Reloaded {} routes", new_routes.len());
             },
-        )
-        .expect("Failed to setup hot reload watcher");
-
+        ).expect("Failed to setup hot reload watcher");
+        
         service.watcher = Some(watcher);
         println!("🔄 Hot reload enabled - watching spec file for changes");
         println!("🔄 Hot reload: Debouncing enabled (500ms) to prevent reload loops");
@@ -149,34 +144,18 @@ fn main() -> io::Result<()> {
         }
 
         impl SecurityProvider for TestApiKeyProvider {
-            fn validate(
-                &self,
-                scheme: &brrtrouter::SecurityScheme,
-                _scopes: &[String],
-                req: &SecurityRequest,
-            ) -> bool {
+            fn validate(&self, scheme: &brrtrouter::SecurityScheme, _scopes: &[String], req: &SecurityRequest) -> bool {
                 match scheme {
                     brrtrouter::SecurityScheme::ApiKey { name, location, .. } => {
                         match location.as_str() {
-                            "header" => req
-                                .headers
-                                .get(&name.to_lowercase())
-                                .map(|v| v == &self.key)
-                                .unwrap_or(false),
+                            "header" => req.headers.get(&name.to_lowercase()).map(|v| v == &self.key).unwrap_or(false),
                             "query" => req.query.get(name).map(|v| v == &self.key).unwrap_or(false),
-                            "cookie" => req
-                                .cookies
-                                .get(name)
-                                .map(|v| v == &self.key)
-                                .unwrap_or(false),
+                            "cookie" => req.cookies.get(name).map(|v| v == &self.key).unwrap_or(false),
                             _ => false,
                         }
                     }
-                    brrtrouter::SecurityScheme::Http { scheme, .. }
-                        if scheme.eq_ignore_ascii_case("bearer") =>
-                    {
-                        req.headers
-                            .get("authorization")
+                    brrtrouter::SecurityScheme::Http { scheme, .. } if scheme.eq_ignore_ascii_case("bearer") => {
+                        req.headers.get("authorization")
                             .and_then(|h| h.strip_prefix("Bearer "))
                             .map(|token| token == self.key)
                             .unwrap_or(false)
@@ -186,41 +165,30 @@ fn main() -> io::Result<()> {
             }
         }
 
-        let provider = Arc::new(TestApiKeyProvider {
-            key: test_key.clone(),
-        });
-
+        let provider = Arc::new(TestApiKeyProvider { key: test_key.clone() });
+        
         // Register the test provider for all security schemes
         service.register_security_provider("apiKey", provider.clone());
         service.register_security_provider("bearerAuth", provider.clone());
         service.register_security_provider("oauth2", provider.clone());
-
+        
         println!("🔑 Test API key registered: {}", test_key);
-        println!(
-            "   Use: curl -H 'X-API-Key: {}' http://localhost:{}/pets",
-            test_key, args.port
-        );
-        println!(
-            "   Use: curl -H 'Authorization: Bearer {}' http://localhost:{}/pets",
-            test_key, args.port
-        );
+        println!("   Use: curl -H 'X-API-Key: {}' http://localhost:{}/pets", test_key, args.port);
+        println!("   Use: curl -H 'Authorization: Bearer {}' http://localhost:{}/pets", test_key, args.port);
     }
 
     // Create and start HTTP server
     let server = HttpServer(service);
     let handle = server.start(("0.0.0.0", args.port))?;
-
+    
     println!("🚀 Server running on http://0.0.0.0:{}", args.port);
     println!("📖 API documentation: http://0.0.0.0:{}/docs", args.port);
     println!("🔍 Health check: http://0.0.0.0:{}/health", args.port);
-
+    
     handle.wait_ready()?;
     handle.join().map_err(|e| {
-        io::Error::new(
-            io::ErrorKind::Other,
-            format!("Server thread panicked: {:?}", e),
-        )
+        io::Error::new(io::ErrorKind::Other, format!("Server thread panicked: {:?}", e))
     })?;
-
+    
     Ok(())
 }

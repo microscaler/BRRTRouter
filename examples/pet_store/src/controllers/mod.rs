@@ -6,6 +6,7 @@
 //
 // Template: mod.rs.txt
 
+
 // Auto-generated module declarations for OpenAPI endpoints
 
 pub mod admin_settings;
