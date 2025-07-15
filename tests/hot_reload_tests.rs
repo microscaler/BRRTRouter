@@ -3,7 +3,6 @@ use may::sync::mpsc;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
-
 mod common;
 use common::temp_files;
 
@@ -90,7 +89,10 @@ paths:
     get:
       operationId: handler_"#;
 
-    let path = temp_files::create_temp_yaml(&format!("{}v1\n      responses:\n        '200': {{ description: OK }}", SPEC_BASE));
+    let path = temp_files::create_temp_yaml(&format!(
+        "{}v1\n      responses:\n        '200': {{ description: OK }}",
+        SPEC_BASE
+    ));
     let (routes, _slug) = load_spec(path.to_str().unwrap()).unwrap();
     let router = Arc::new(RwLock::new(Router::new(routes.clone())));
     let dispatcher = Arc::new(RwLock::new(Dispatcher::new()));
@@ -108,7 +110,10 @@ paths:
                 disp.add_route(r.clone(), tx);
             }
             if let Some(route) = new_routes.first() {
-                updates_clone.lock().unwrap().push(route.handler_name.clone());
+                updates_clone
+                    .lock()
+                    .unwrap()
+                    .push(route.handler_name.clone());
             }
         },
     )
@@ -118,7 +123,10 @@ paths:
 
     // Make multiple rapid changes
     for i in 2..=5 {
-        let spec_content = format!("{}v{}\n      responses:\n        '200': {{ description: OK }}", SPEC_BASE, i);
+        let spec_content = format!(
+            "{}v{}\n      responses:\n        '200': {{ description: OK }}",
+            SPEC_BASE, i
+        );
         std::fs::write(&path, spec_content).unwrap();
         std::thread::sleep(Duration::from_millis(150)); // Allow time for processing
     }
@@ -127,8 +135,15 @@ paths:
     std::thread::sleep(Duration::from_millis(500));
 
     let ups = updates.lock().unwrap();
-    assert!(ups.len() >= 3, "Should have processed multiple updates, got: {:?}", ups);
-    assert!(ups.contains(&"handler_v5".to_string()), "Should contain final version");
+    assert!(
+        ups.len() >= 3,
+        "Should have processed multiple updates, got: {:?}",
+        ups
+    );
+    assert!(
+        ups.contains(&"handler_v5".to_string()),
+        "Should contain final version"
+    );
 
     drop(watcher);
     std::fs::remove_file(&path).unwrap();
@@ -195,7 +210,11 @@ paths:
 
     let count = *update_count.lock().unwrap();
     // Should have at least 1 update (from the valid write), but may have more due to file system events
-    assert!(count >= 1, "Should process at least one valid YAML update, got: {}", count);
+    assert!(
+        count >= 1,
+        "Should process at least one valid YAML update, got: {}",
+        count
+    );
 
     drop(watcher);
     std::fs::remove_file(&path).unwrap();
@@ -207,12 +226,7 @@ fn test_watch_spec_nonexistent_file() {
     let router = Arc::new(RwLock::new(Router::new(vec![])));
     let dispatcher = Arc::new(RwLock::new(Dispatcher::new()));
 
-    let result = watch_spec(
-        &nonexistent_path,
-        router,
-        dispatcher,
-        |_, _| {},
-    );
+    let result = watch_spec(&nonexistent_path, router, dispatcher, |_, _| {});
 
     assert!(result.is_err(), "Should fail to watch nonexistent file");
 }
@@ -249,7 +263,10 @@ paths:
                 disp.add_route(r.clone(), tx);
             }
             if let Some(route) = new_routes.first() {
-                updates_clone.lock().unwrap().push(route.handler_name.clone());
+                updates_clone
+                    .lock()
+                    .unwrap()
+                    .push(route.handler_name.clone());
             }
         },
     )
@@ -266,7 +283,10 @@ paths:
     std::thread::sleep(Duration::from_millis(300));
 
     let ups = updates.lock().unwrap();
-    assert!(ups.contains(&"delete_handler".to_string()), "Should handle file recreation");
+    assert!(
+        ups.contains(&"delete_handler".to_string()),
+        "Should handle file recreation"
+    );
 
     drop(watcher);
     let _ = std::fs::remove_file(&path); // May already be deleted
@@ -300,32 +320,22 @@ paths:
     let updates2: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
     let updates2_clone = updates2.clone();
 
-    let watcher1 = watch_spec(
-        &path,
-        router1,
-        dispatcher1,
-        move |disp, new_routes| {
-            for r in &new_routes {
-                let (tx, _rx) = mpsc::channel();
-                disp.add_route(r.clone(), tx);
-            }
-            *updates1_clone.lock().unwrap() += 1;
-        },
-    )
+    let watcher1 = watch_spec(&path, router1, dispatcher1, move |disp, new_routes| {
+        for r in &new_routes {
+            let (tx, _rx) = mpsc::channel();
+            disp.add_route(r.clone(), tx);
+        }
+        *updates1_clone.lock().unwrap() += 1;
+    })
     .expect("watch_spec 1");
 
-    let watcher2 = watch_spec(
-        &path,
-        router2,
-        dispatcher2,
-        move |disp, new_routes| {
-            for r in &new_routes {
-                let (tx, _rx) = mpsc::channel();
-                disp.add_route(r.clone(), tx);
-            }
-            *updates2_clone.lock().unwrap() += 1;
-        },
-    )
+    let watcher2 = watch_spec(&path, router2, dispatcher2, move |disp, new_routes| {
+        for r in &new_routes {
+            let (tx, _rx) = mpsc::channel();
+            disp.add_route(r.clone(), tx);
+        }
+        *updates2_clone.lock().unwrap() += 1;
+    })
     .expect("watch_spec 2");
 
     std::thread::sleep(Duration::from_millis(100));
@@ -336,8 +346,16 @@ paths:
     std::thread::sleep(Duration::from_millis(300));
 
     // Both watchers should receive updates (may be more than 1 due to file system events)
-    assert!(*updates1.lock().unwrap() >= 1, "Watcher 1 should receive at least one update, got: {}", *updates1.lock().unwrap());
-    assert!(*updates2.lock().unwrap() >= 1, "Watcher 2 should receive at least one update, got: {}", *updates2.lock().unwrap());
+    assert!(
+        *updates1.lock().unwrap() >= 1,
+        "Watcher 1 should receive at least one update, got: {}",
+        *updates1.lock().unwrap()
+    );
+    assert!(
+        *updates2.lock().unwrap() >= 1,
+        "Watcher 2 should receive at least one update, got: {}",
+        *updates2.lock().unwrap()
+    );
 
     drop(watcher1);
     drop(watcher2);
@@ -386,13 +404,16 @@ paths:
     std::thread::sleep(Duration::from_millis(300));
 
     // Callback should have been called despite any internal error handling
-    assert!(*callback_called.lock().unwrap(), "Callback should have been called");
+    assert!(
+        *callback_called.lock().unwrap(),
+        "Callback should have been called"
+    );
 
     drop(watcher);
     std::fs::remove_file(&path).unwrap();
 }
 
-#[test] 
+#[test]
 fn test_watch_spec_empty_file() {
     let path = temp_files::create_temp_yaml("");
     let router = Arc::new(RwLock::new(Router::new(vec![])));
@@ -428,7 +449,10 @@ paths:
     std::fs::write(&path, VALID_CONTENT).unwrap();
     std::thread::sleep(Duration::from_millis(300));
 
-    assert!(*callback_called.lock().unwrap(), "Should handle transition from empty to valid file");
+    assert!(
+        *callback_called.lock().unwrap(),
+        "Should handle transition from empty to valid file"
+    );
 
     drop(watcher);
     std::fs::remove_file(&path).unwrap();

@@ -5,7 +5,8 @@ use std::fs;
 use std::path::Path;
 
 use super::schema::{
-    build_complete_example_object, is_named_type, rust_literal_for_example, rust_literal_for_example_with_types, to_camel_case, FieldDef, TypeDefinition,
+    build_complete_example_object, is_named_type, rust_literal_for_example,
+    rust_literal_for_example_with_types, to_camel_case, FieldDef, TypeDefinition,
 };
 use crate::spec::{ParameterMeta, RouteMeta};
 
@@ -154,7 +155,8 @@ pub fn write_controller(
                         rust_literal_for_example(field, &complete_example)
                     } else {
                         // Fall back to reconstructed schema
-                        let schema_json = build_complete_example_object(&type_definition_to_schema(type_def));
+                        let schema_json =
+                            build_complete_example_object(&type_definition_to_schema(type_def));
                         rust_literal_for_example(field, &schema_json)
                     }
                 } else {
@@ -166,40 +168,62 @@ pub fn write_controller(
                 }
             } else if field.ty.starts_with("Vec<") {
                 // Handle arrays of complex types
-                if let Some(inner_ty) = field.ty.strip_prefix("Vec<").and_then(|s| s.strip_suffix(">")) {
+                if let Some(inner_ty) = field
+                    .ty
+                    .strip_prefix("Vec<")
+                    .and_then(|s| s.strip_suffix(">"))
+                {
                     if is_named_type(inner_ty) && schema_types.contains_key(inner_ty) {
                         // Create an array with multiple complete example objects
                         if let Some(type_def) = schema_types.get(inner_ty) {
                             let fallback_schema;
-                            let schema_to_use = if let Some(original_schema) = &type_def.original_schema {
-                                println!("🔍 TEMPLATE DEBUG: Using original schema for {}", inner_ty);
-                                original_schema
-                            } else {
-                                println!("🔍 TEMPLATE DEBUG: Using fallback schema for {}", inner_ty);
-                                fallback_schema = type_definition_to_schema(type_def);
-                                &fallback_schema
-                            };
-                            
-                            println!("🔍 TEMPLATE DEBUG: Schema for {} array generation: {}", inner_ty, serde_json::to_string_pretty(schema_to_use).unwrap_or("invalid".to_string()));
-                            
+                            let schema_to_use =
+                                if let Some(original_schema) = &type_def.original_schema {
+                                    println!(
+                                        "🔍 TEMPLATE DEBUG: Using original schema for {}",
+                                        inner_ty
+                                    );
+                                    original_schema
+                                } else {
+                                    println!(
+                                        "🔍 TEMPLATE DEBUG: Using fallback schema for {}",
+                                        inner_ty
+                                    );
+                                    fallback_schema = type_definition_to_schema(type_def);
+                                    &fallback_schema
+                                };
+
+                            println!(
+                                "🔍 TEMPLATE DEBUG: Schema for {} array generation: {}",
+                                inner_ty,
+                                serde_json::to_string_pretty(schema_to_use)
+                                    .unwrap_or("invalid".to_string())
+                            );
+
                             let schema_json1 = build_complete_example_object(schema_to_use);
                             let schema_json2 = build_complete_example_object(schema_to_use);
-                            let example1 = rust_literal_for_example(&FieldDef {
-                                name: "temp".to_string(),
-                                ty: inner_ty.to_string(),
-                                optional: false,
-                                value: String::new(),
-                                documentation: None,
-                                validation_attrs: None,
-                            }, &schema_json1);
-                            let example2 = rust_literal_for_example(&FieldDef {
-                                name: "temp".to_string(), 
-                                ty: inner_ty.to_string(),
-                                optional: false,
-                                value: String::new(),
-                                documentation: None,
-                                validation_attrs: None,
-                            }, &schema_json2);
+                            let example1 = rust_literal_for_example(
+                                &FieldDef {
+                                    name: "temp".to_string(),
+                                    ty: inner_ty.to_string(),
+                                    optional: false,
+                                    value: String::new(),
+                                    documentation: None,
+                                    validation_attrs: None,
+                                },
+                                &schema_json1,
+                            );
+                            let example2 = rust_literal_for_example(
+                                &FieldDef {
+                                    name: "temp".to_string(),
+                                    ty: inner_ty.to_string(),
+                                    optional: false,
+                                    value: String::new(),
+                                    documentation: None,
+                                    validation_attrs: None,
+                                },
+                                &schema_json2,
+                            );
                             format!("vec![{example1}, {example2}]")
                         } else {
                             field.value.clone()
@@ -220,7 +244,7 @@ pub fn write_controller(
                     .map(|val| rust_literal_for_example(field, val))
                     .unwrap_or_else(|| field.value.clone())
             };
-            
+
             FieldDef {
                 name: field.name.clone(),
                 ty: field.ty.clone(),
@@ -294,7 +318,9 @@ pub fn write_controller(
         imports: imports.iter().cloned().collect(),
         sse,
         spec_path: "OpenAPI specification".to_string(),
-        generation_time: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+        generation_time: chrono::Utc::now()
+            .format("%Y-%m-%d %H:%M:%S UTC")
+            .to_string(),
     };
     fs::write(path, context.render()?)?;
     println!("✅ Generated controller: {path:?}");
@@ -305,31 +331,40 @@ pub fn write_controller(
 fn type_definition_to_schema(type_def: &TypeDefinition) -> Value {
     let mut schema = serde_json::Map::new();
     schema.insert("type".to_string(), Value::String("object".to_string()));
-    
+
     let mut properties = serde_json::Map::new();
     let mut required = Vec::new();
-    
+
     for field in &type_def.fields {
         // Create a property schema for each field
         let mut prop = serde_json::Map::new();
-        
+
         // Set the type based on the Rust type
-        let (json_type, format, example): (&str, Option<&str>, Option<Value>) = match field.ty.as_str() {
-            "String" => ("string", None, Some(Value::String("example".to_string()))),
-            "i32" | "i64" => ("integer", None, Some(Value::Number(serde_json::Number::from(42)))),
-            "f32" | "f64" => ("number", None, Some(Value::Number(serde_json::Number::from_f64(42.0).unwrap()))),
-            "bool" => ("boolean", None, Some(Value::Bool(true))),
-            _ if field.ty.starts_with("Vec<") => {
-                prop.insert("type".to_string(), Value::String("array".to_string()));
-                properties.insert(field.name.clone(), Value::Object(prop));
-                if !field.optional {
-                    required.push(Value::String(field.name.clone()));
+        let (json_type, format, example): (&str, Option<&str>, Option<Value>) =
+            match field.ty.as_str() {
+                "String" => ("string", None, Some(Value::String("example".to_string()))),
+                "i32" | "i64" => (
+                    "integer",
+                    None,
+                    Some(Value::Number(serde_json::Number::from(42))),
+                ),
+                "f32" | "f64" => (
+                    "number",
+                    None,
+                    Some(Value::Number(serde_json::Number::from_f64(42.0).unwrap())),
+                ),
+                "bool" => ("boolean", None, Some(Value::Bool(true))),
+                _ if field.ty.starts_with("Vec<") => {
+                    prop.insert("type".to_string(), Value::String("array".to_string()));
+                    properties.insert(field.name.clone(), Value::Object(prop));
+                    if !field.optional {
+                        required.push(Value::String(field.name.clone()));
+                    }
+                    continue;
                 }
-                continue;
-            }
-            _ => ("string", None, Some(Value::String("example".to_string()))),
-        };
-        
+                _ => ("string", None, Some(Value::String("example".to_string()))),
+            };
+
         prop.insert("type".to_string(), Value::String(json_type.to_string()));
         if let Some(fmt) = format {
             prop.insert("format".to_string(), Value::String(fmt.to_string()));
@@ -337,19 +372,19 @@ fn type_definition_to_schema(type_def: &TypeDefinition) -> Value {
         if let Some(ex) = example {
             prop.insert("example".to_string(), ex);
         }
-        
+
         properties.insert(field.name.clone(), Value::Object(prop));
-        
+
         if !field.optional {
             required.push(Value::String(field.name.clone()));
         }
     }
-    
+
     schema.insert("properties".to_string(), Value::Object(properties));
     if !required.is_empty() {
         schema.insert("required".to_string(), Value::Array(required));
     }
-    
+
     Value::Object(schema)
 }
 

@@ -68,14 +68,15 @@ impl ValidationConfig {
         operation_id: impl Into<String>,
         config: OperationValidationConfig,
     ) -> Self {
-        self.per_operation_overrides.insert(operation_id.into(), config);
+        self.per_operation_overrides
+            .insert(operation_id.into(), config);
         self
     }
 
     /// Get effective configuration for a specific operation
     pub fn for_operation(&self, operation_id: &str) -> ValidationConfig {
         let mut config = self.clone();
-        
+
         if let Some(override_config) = self.per_operation_overrides.get(operation_id) {
             if let Some(strict) = override_config.strict_mode {
                 config.strict_mode = strict;
@@ -90,7 +91,7 @@ impl ValidationConfig {
                 config.parameter_validation = param_config.clone();
             }
         }
-        
+
         config
     }
 }
@@ -154,4 +155,4 @@ impl ValidationConfig {
 
         config
     }
-} 
+}

@@ -1,6 +1,4 @@
-use brrtrouter::generator::{
-    TemplateValidator, ValidationConfig, ValidationError, TemplateType
-};
+use brrtrouter::generator::{TemplateType, TemplateValidator, ValidationConfig, ValidationError};
 use std::fs;
 use tempfile::TempDir;
 
@@ -62,15 +60,23 @@ impl Handler for {{ struct_name }} {
 
     let template_path = template_dir.join("handler.rs.txt");
     let result = validator.validate_template(&template_path);
-    
+
     assert!(result.is_ok(), "Rust template validation should succeed");
-    
+
     let metadata = result.unwrap();
     assert_eq!(metadata.template_type, TemplateType::Rust);
-    assert!(metadata.required_variables.contains(&"handler_name".to_string()));
-    assert!(metadata.required_variables.contains(&"struct_name".to_string()));
-    assert!(metadata.required_variables.contains(&"field_type".to_string()));
-    assert!(metadata.required_variables.contains(&"response_fields".to_string()));
+    assert!(metadata
+        .required_variables
+        .contains(&"handler_name".to_string()));
+    assert!(metadata
+        .required_variables
+        .contains(&"struct_name".to_string()));
+    assert!(metadata
+        .required_variables
+        .contains(&"field_type".to_string()));
+    assert!(metadata
+        .required_variables
+        .contains(&"response_fields".to_string()));
 }
 
 #[test]
@@ -103,9 +109,9 @@ serde = { version = "1.0", features = ["derive"] }
 
     let template_path = template_dir.join("Cargo.toml.txt");
     let result = validator.validate_template(&template_path);
-    
+
     assert!(result.is_ok(), "TOML template validation should succeed");
-    
+
     let metadata = result.unwrap();
     assert_eq!(metadata.template_type, TemplateType::Toml);
     assert!(metadata.required_variables.contains(&"name".to_string()));
@@ -145,9 +151,9 @@ fn test_template_validation_html_template() {
 
     let template_path = template_dir.join("index.html.txt");
     let result = validator.validate_template(&template_path);
-    
+
     assert!(result.is_ok(), "HTML template validation should succeed");
-    
+
     let metadata = result.unwrap();
     assert_eq!(metadata.template_type, TemplateType::Html);
     assert!(metadata.required_variables.contains(&"title".to_string()));
@@ -181,9 +187,12 @@ pub struct {{ struct_name {
 
     let template_path = template_dir.join("bad1.rs.txt");
     let result = validator.validate_template(&template_path);
-    
-    assert!(result.is_err(), "Template with syntax errors should fail validation");
-    
+
+    assert!(
+        result.is_err(),
+        "Template with syntax errors should fail validation"
+    );
+
     if let Err(ValidationError::SyntaxError(_)) = result {
         // Expected error type
     } else {
@@ -198,8 +207,11 @@ pub struct {{ struct_name {
     create_test_template(&template_dir, "bad2.rs.txt", bad_template2);
     let template_path2 = template_dir.join("bad2.rs.txt");
     let result2 = validator.validate_template(&template_path2);
-    
-    assert!(result2.is_err(), "Template with nested expressions should fail validation");
+
+    assert!(
+        result2.is_err(),
+        "Template with nested expressions should fail validation"
+    );
 }
 
 #[test]
@@ -226,13 +238,19 @@ pub struct {{ struct_name }} {
 
     let template_path = template_dir.join("no_warning.rs.txt");
     let result = validator.validate_template(&template_path);
-    
-    assert!(result.is_err(), "Rust template without DO NOT EDIT warning should fail validation");
-    
+
+    assert!(
+        result.is_err(),
+        "Rust template without DO NOT EDIT warning should fail validation"
+    );
+
     if let Err(ValidationError::InvalidOutput(msg)) = result {
         assert!(msg.contains("DO NOT EDIT warning"));
     } else {
-        panic!("Expected InvalidOutput error about DO NOT EDIT warning, got: {:?}", result);
+        panic!(
+            "Expected InvalidOutput error about DO NOT EDIT warning, got: {:?}",
+            result
+        );
     }
 }
 
@@ -279,7 +297,7 @@ pub struct {{ unclosed
     let mut validator = TemplateValidator::new(config);
 
     let report = validator.validate_all().unwrap();
-    
+
     assert_eq!(report.total_processed, 4);
     assert_eq!(report.success_count(), 3);
     assert_eq!(report.failure_count(), 1);
@@ -324,7 +342,11 @@ impl TryFrom<HandlerRequest> for {{ request_type }} {
 "#;
 
     create_test_template(&base_dir, "handler_base.rs.txt", base_template);
-    create_test_template(&components_dir, "parameter_extraction.rs.txt", component_template);
+    create_test_template(
+        &components_dir,
+        "parameter_extraction.rs.txt",
+        component_template,
+    );
 
     let config = ValidationConfig {
         template_dir: template_dir.clone(),
@@ -333,7 +355,7 @@ impl TryFrom<HandlerRequest> for {{ request_type }} {
     let mut validator = TemplateValidator::new(config);
 
     let report = validator.validate_all().unwrap();
-    
+
     assert_eq!(report.total_processed, 2);
     assert_eq!(report.success_count(), 2);
     assert!(report.all_passed());
@@ -358,24 +380,48 @@ fn test_template_validation_configuration() {
 
     let template_path = template_dir.join("large.rs.txt");
     let result = validator.validate_template(&template_path);
-    
-    assert!(result.is_err(), "Template exceeding size limit should fail validation");
-    
+
+    assert!(
+        result.is_err(),
+        "Template exceeding size limit should fail validation"
+    );
+
     if let Err(ValidationError::InvalidOutput(msg)) = result {
         assert!(msg.contains("exceeds maximum"));
     } else {
-        panic!("Expected InvalidOutput error about size limit, got: {:?}", result);
+        panic!(
+            "Expected InvalidOutput error about size limit, got: {:?}",
+            result
+        );
     }
 }
 
 #[test]
 fn test_template_type_detection() {
-    assert_eq!(TemplateType::from_path(std::path::Path::new("test.rs")), TemplateType::Rust);
-    assert_eq!(TemplateType::from_path(std::path::Path::new("test.toml")), TemplateType::Toml);
-    assert_eq!(TemplateType::from_path(std::path::Path::new("test.html")), TemplateType::Html);
-    assert_eq!(TemplateType::from_path(std::path::Path::new("handler.rs.txt")), TemplateType::Rust);
-    assert_eq!(TemplateType::from_path(std::path::Path::new("config.toml.txt")), TemplateType::Toml);
-    assert_eq!(TemplateType::from_path(std::path::Path::new("unknown.xyz")), TemplateType::Unknown);
+    assert_eq!(
+        TemplateType::from_path(std::path::Path::new("test.rs")),
+        TemplateType::Rust
+    );
+    assert_eq!(
+        TemplateType::from_path(std::path::Path::new("test.toml")),
+        TemplateType::Toml
+    );
+    assert_eq!(
+        TemplateType::from_path(std::path::Path::new("test.html")),
+        TemplateType::Html
+    );
+    assert_eq!(
+        TemplateType::from_path(std::path::Path::new("handler.rs.txt")),
+        TemplateType::Rust
+    );
+    assert_eq!(
+        TemplateType::from_path(std::path::Path::new("config.toml.txt")),
+        TemplateType::Toml
+    );
+    assert_eq!(
+        TemplateType::from_path(std::path::Path::new("unknown.xyz")),
+        TemplateType::Unknown
+    );
 }
 
 #[test]
@@ -392,7 +438,7 @@ fn test_validation_error_display() {
     for error in errors {
         let display = format!("{}", error);
         assert!(!display.is_empty(), "Error display should not be empty");
-        
+
         // Check that error type is reflected in the message
         match error {
             ValidationError::TemplateNotFound(_) => assert!(display.contains("not found")),
@@ -403,4 +449,4 @@ fn test_validation_error_display() {
             ValidationError::InvalidOutput(_) => assert!(display.contains("Invalid")),
         }
     }
-} 
+}

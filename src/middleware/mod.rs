@@ -11,8 +11,8 @@ pub use metrics::MetricsMiddleware;
 pub use tracing::TracingMiddleware;
 
 // Simple console logging middleware for development
-use std::time::Duration;
 use crate::dispatcher::{HandlerRequest, HandlerResponse};
+use std::time::Duration;
 
 pub struct ConsoleLoggingMiddleware;
 
@@ -30,11 +30,13 @@ impl Middleware for ConsoleLoggingMiddleware {
         } else {
             "🟡"
         };
-        
-        println!("← {} {} {} {}ms", 
-                status_color, 
-                res.status, 
-                req.path, 
-                latency.as_millis());
+
+        println!(
+            "← {} {} {} {}ms",
+            status_color,
+            res.status,
+            req.path,
+            latency.as_millis()
+        );
     }
 }

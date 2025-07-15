@@ -5,7 +5,7 @@ use crate::{
 };
 use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, RwLock, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 /// Hot reload state to prevent infinite loops
@@ -46,7 +46,7 @@ impl HotReloadState {
 ///
 /// The provided callback will receive the reloaded routes so the caller can
 /// rebuild dispatcher mappings or perform additional work.
-/// 
+///
 /// This implementation includes debouncing to prevent infinite reload loops
 /// that can occur when file changes trigger more file changes.
 pub fn watch_spec<P, F>(
@@ -87,7 +87,7 @@ where
                                 let new_router = Router::new(routes.clone());
                                 *r = new_router;
                             }
-                            
+
                             // Update dispatcher via callback
                             if let Ok(mut d) = dispatcher.write() {
                                 on_reload(&mut d, routes);

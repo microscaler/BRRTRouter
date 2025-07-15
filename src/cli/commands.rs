@@ -47,8 +47,9 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     match &cli.command {
         Commands::Generate { spec, force } => {
-            let project_dir = crate::generator::project::generate_project_from_spec(spec.as_path(), *force)
-                .expect("failed to generate example project");
+            let project_dir =
+                crate::generator::project::generate_project_from_spec(spec.as_path(), *force)
+                    .expect("failed to generate example project");
             // Format the newly generated project
             if let Err(e) = crate::generator::project::format_project(&project_dir) {
                 eprintln!("cargo fmt failed: {e}");
@@ -59,7 +60,7 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
             // Configure coroutine stack size
             let config = RuntimeConfig::from_env();
             may::config().set_stack_size(config.stack_size);
-            
+
             let (routes, schemes, _slug) = crate::spec::load_spec_full(spec.to_str().unwrap())?;
             let router = Arc::new(RwLock::new(Router::new(routes.clone())));
             let mut dispatcher = Dispatcher::new();

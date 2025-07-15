@@ -1,4 +1,4 @@
-use super::schema::{FieldDef, TypeDefinition, extract_fields, parameter_to_field};
+use super::schema::{extract_fields, parameter_to_field, FieldDef, TypeDefinition};
 use crate::spec::{ParameterMeta, RouteMeta};
 use chrono::{DateTime, Utc};
 use serde_json::Value;
@@ -111,12 +111,16 @@ impl EnhancedGenerator {
         for param in &route.parameters {
             request_fields.push(parameter_to_field(param));
         }
-        
-        let response_fields = route.response_schema.as_ref().map_or(vec![], extract_fields);
+
+        let response_fields = route
+            .response_schema
+            .as_ref()
+            .map_or(vec![], extract_fields);
 
         let mut imports = BTreeSet::new();
         for field in request_fields.iter().chain(response_fields.iter()) {
-            let inner: &str = field.ty
+            let inner: &str = field
+                .ty
                 .strip_prefix("Vec<")
                 .and_then(|s| s.strip_suffix(">"))
                 .unwrap_or(&field.ty);
@@ -156,8 +160,11 @@ impl EnhancedGenerator {
         struct_name: &str,
         route: &RouteMeta,
     ) -> EnhancedControllerTemplateData {
-        let response_fields = route.response_schema.as_ref().map_or(vec![], extract_fields);
-        
+        let response_fields = route
+            .response_schema
+            .as_ref()
+            .map_or(vec![], extract_fields);
+
         let enhanced_response_fields: Vec<EnhancedFieldDef> = response_fields
             .into_iter()
             .map(|field| self.enhance_field(field, &[]))
@@ -165,7 +172,8 @@ impl EnhancedGenerator {
 
         let mut imports = BTreeSet::new();
         for field in &enhanced_response_fields {
-            let inner: &str = field.ty
+            let inner: &str = field
+                .ty
                 .strip_prefix("Vec<")
                 .and_then(|s| s.strip_suffix(">"))
                 .unwrap_or(&field.ty);
@@ -174,7 +182,8 @@ impl EnhancedGenerator {
             }
         }
 
-        let example_pretty = route.example
+        let example_pretty = route
+            .example
             .as_ref()
             .and_then(|v| serde_json::to_string_pretty(v).ok())
             .unwrap_or_default();
@@ -219,9 +228,8 @@ impl EnhancedGenerator {
             .iter()
             .map(|(name, type_def)| {
                 let mut enhanced_type: EnhancedTypeDefinition = type_def.clone().into();
-                enhanced_type.documentation = Some(format!(
-                    "Generated from OpenAPI schema: {name}"
-                ));
+                enhanced_type.documentation =
+                    Some(format!("Generated from OpenAPI schema: {name}"));
                 (name.clone(), enhanced_type)
             })
             .collect();
@@ -236,15 +244,15 @@ impl EnhancedGenerator {
     /// Enhance a field with documentation and validation attributes
     fn enhance_field(&self, field: FieldDef, parameters: &[ParameterMeta]) -> EnhancedFieldDef {
         let mut enhanced = EnhancedFieldDef::from(field);
-        
+
         // Add documentation from parameter metadata
         if let Some(param) = parameters.iter().find(|p| p.name == enhanced.name) {
             enhanced.documentation = Some(format!(
-                "{} parameter ({})", 
-                enhanced.name, 
+                "{} parameter ({})",
+                enhanced.name,
                 param.location.to_string().to_lowercase()
             ));
-            
+
             // Add validation attributes based on parameter schema
             if let Some(schema) = &param.schema {
                 enhanced.validation_attrs = self.generate_validation_attrs(schema);
@@ -261,19 +269,19 @@ impl EnhancedGenerator {
         if let Some(min) = schema.get("minimum").and_then(|v| v.as_f64()) {
             attrs.push(format!("minimum = {min}"));
         }
-        
+
         if let Some(max) = schema.get("maximum").and_then(|v| v.as_f64()) {
             attrs.push(format!("maximum = {max}"));
         }
-        
+
         if let Some(min_len) = schema.get("minLength").and_then(|v| v.as_u64()) {
             attrs.push(format!("min_length = {min_len}"));
         }
-        
+
         if let Some(max_len) = schema.get("maxLength").and_then(|v| v.as_u64()) {
             attrs.push(format!("max_length = {max_len}"));
         }
-        
+
         if let Some(pattern) = schema.get("pattern").and_then(|v| v.as_str()) {
             attrs.push(format!("pattern = \"{pattern}\""));
         }
@@ -310,7 +318,14 @@ impl EnhancedGenerator {
     /// Check if a type is a named type (not a primitive)
     fn is_named_type(&self, ty: &str) -> bool {
         let primitives = [
-            "String", "i32", "i64", "f32", "f64", "bool", "Value", "serde_json::Value",
+            "String",
+            "i32",
+            "i64",
+            "f32",
+            "f64",
+            "bool",
+            "Value",
+            "serde_json::Value",
         ];
         !primitives.contains(&ty) && ty.chars().next().is_some_and(|c| c.is_uppercase())
     }
@@ -327,4 +342,4 @@ impl EnhancedGenerator {
             })
             .collect()
     }
-} 
+}

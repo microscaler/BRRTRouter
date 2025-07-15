@@ -50,4 +50,4 @@ pub fn fail_if_issues(issues: Vec<ValidationIssue>) {
         }
         std::process::exit(1);
     }
-} 
+}

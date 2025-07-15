@@ -96,7 +96,7 @@ mod tests {
     fn test_response_validator_creation() {
         let config = ValidationConfig::default();
         let validator = ResponseValidator::new(config);
-        
+
         // Basic test to ensure validator can be created
         let route = RouteMeta {
             method: Method::GET,
@@ -129,7 +129,7 @@ mod tests {
     fn test_response_validation_with_schema() {
         let config = ValidationConfig::default();
         let validator = ResponseValidator::new(config);
-        
+
         let route = RouteMeta {
             method: Method::GET,
             path_pattern: "/test".to_string(),
@@ -170,9 +170,12 @@ mod tests {
 
         let result = validator.validate_response(&route, &invalid_response);
         assert!(result.is_err());
-        
+
         let error = result.unwrap_err();
-        assert!(matches!(error.error_type, ValidationErrorType::InvalidSchema));
+        assert!(matches!(
+            error.error_type,
+            ValidationErrorType::InvalidSchema
+        ));
         assert!(error.message.contains("Response validation failed"));
     }
-} 
+}

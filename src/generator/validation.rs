@@ -30,7 +30,9 @@ impl std::fmt::Display for ValidationError {
             ValidationError::MissingVariables(vars) => {
                 write!(f, "Missing template variables: {}", vars.join(", "))
             }
-            ValidationError::CompilationError(msg) => write!(f, "Template compilation error: {msg}"),
+            ValidationError::CompilationError(msg) => {
+                write!(f, "Template compilation error: {msg}")
+            }
             ValidationError::GeneratedCodeError(msg) => write!(f, "Generated code error: {msg}"),
             ValidationError::InvalidOutput(msg) => write!(f, "Invalid template output: {msg}"),
         }
@@ -112,10 +114,11 @@ pub enum TemplateType {
 impl TemplateType {
     /// Get template type from file extension
     pub fn from_path(path: &Path) -> Self {
-        let filename = path.file_name()
+        let filename = path
+            .file_name()
             .and_then(|name| name.to_str())
             .unwrap_or("");
-        
+
         // Check for template patterns (before .txt extension)
         if filename.contains(".rs.") {
             return Self::Rust;
@@ -126,7 +129,7 @@ impl TemplateType {
         if filename.contains(".html.") || filename.contains("index.html") {
             return Self::Html;
         }
-        
+
         // Check for direct file extensions
         if filename.ends_with(".rs") {
             return Self::Rust;
@@ -137,7 +140,7 @@ impl TemplateType {
         if filename.ends_with(".html") {
             return Self::Html;
         }
-        
+
         // Fall back to extension-based detection
         match path.extension().and_then(|ext| ext.to_str()) {
             Some("rs") => Self::Rust,
@@ -183,10 +186,10 @@ impl TemplateValidator {
     /// Validate all templates in the template directory
     pub fn validate_all(&mut self) -> ValidationResult<ValidationReport> {
         let mut report = ValidationReport::new();
-        
+
         // Discover all template files
         let templates = self.discover_templates()?;
-        
+
         for template_path in &templates {
             match self.validate_template(template_path) {
                 Ok(metadata) => {
@@ -197,20 +200,25 @@ impl TemplateValidator {
                 }
             }
         }
-        
+
         Ok(report)
     }
 
     /// Validate a specific template file
-    pub fn validate_template(&mut self, template_path: &Path) -> ValidationResult<TemplateMetadata> {
+    pub fn validate_template(
+        &mut self,
+        template_path: &Path,
+    ) -> ValidationResult<TemplateMetadata> {
         // Check if template file exists
         if !template_path.exists() {
-            return Err(ValidationError::TemplateNotFound(template_path.to_path_buf()));
+            return Err(ValidationError::TemplateNotFound(
+                template_path.to_path_buf(),
+            ));
         }
 
         // Load template metadata
         let metadata = self.load_template_metadata(template_path)?;
-        
+
         // Validate template size
         if metadata.size > self.config.max_template_size {
             return Err(ValidationError::InvalidOutput(format!(
@@ -235,7 +243,8 @@ impl TemplateValidator {
         }
 
         // Cache metadata
-        self.metadata_cache.insert(template_path.to_path_buf(), metadata.clone());
+        self.metadata_cache
+            .insert(template_path.to_path_buf(), metadata.clone());
 
         Ok(metadata)
     }
@@ -243,9 +252,11 @@ impl TemplateValidator {
     /// Discover all template files in the template directory
     fn discover_templates(&self) -> ValidationResult<Vec<PathBuf>> {
         let mut templates = Vec::new();
-        
+
         if !self.config.template_dir.exists() {
-            return Err(ValidationError::TemplateNotFound(self.config.template_dir.clone()));
+            return Err(ValidationError::TemplateNotFound(
+                self.config.template_dir.clone(),
+            ));
         }
 
         self.walk_directory(&self.config.template_dir, &mut templates)?;
@@ -257,7 +268,7 @@ impl TemplateValidator {
         for entry in fs::read_dir(dir)? {
             let entry = entry?;
             let path = entry.path();
-            
+
             if path.is_dir() {
                 self.walk_directory(&path, templates)?;
             } else if self.is_template_file(&path) {
@@ -280,7 +291,7 @@ impl TemplateValidator {
     fn load_template_metadata(&self, template_path: &Path) -> ValidationResult<TemplateMetadata> {
         let content = fs::read_to_string(template_path)
             .map_err(|_| ValidationError::TemplateNotFound(template_path.to_path_buf()))?;
-        
+
         let name = template_path
             .file_name()
             .and_then(|name| name.to_str())
@@ -302,12 +313,12 @@ impl TemplateValidator {
     /// Extract template variables from content
     fn extract_template_variables(&self, content: &str) -> Vec<String> {
         let mut variables = HashSet::new();
-        
+
         // Simple pattern matching for {{ variable }} without regex for now
         let mut chars = content.chars().peekable();
         let mut current_var = String::new();
         let mut in_variable = false;
-        
+
         while let Some(ch) = chars.next() {
             if ch == '{' && chars.peek() == Some(&'{') {
                 chars.next(); // consume second '{'
@@ -317,7 +328,12 @@ impl TemplateValidator {
                 chars.next(); // consume second '}'
                 in_variable = false;
                 let var = current_var.trim();
-                if !var.is_empty() && var.chars().next().map_or(false, |c| c.is_alphabetic() || c == '_') {
+                if !var.is_empty()
+                    && var
+                        .chars()
+                        .next()
+                        .map_or(false, |c| c.is_alphabetic() || c == '_')
+                {
                     // Insert the full variable name (including dots)
                     variables.insert(var.to_string());
                     // Also insert the main variable name (before any dots) for compatibility
@@ -329,7 +345,7 @@ impl TemplateValidator {
                 current_var.push(ch);
             }
         }
-        
+
         // Also look for control structures like {% for item in items %}
         let lines: Vec<&str> = content.lines().collect();
         for line in lines {
@@ -357,7 +373,7 @@ impl TemplateValidator {
 
         // Basic Jinja2 syntax validation
         self.validate_jinja2_syntax(&content)?;
-        
+
         Ok(())
     }
 
@@ -366,10 +382,10 @@ impl TemplateValidator {
         let mut brace_stack = Vec::new();
         let mut in_variable = false;
         let mut in_control = false;
-        
+
         let chars: Vec<char> = content.chars().collect();
         let mut i = 0;
-        
+
         while i < chars.len() {
             if i + 1 < chars.len() && chars[i] == '{' && chars[i + 1] == '{' {
                 if in_variable || in_control {
@@ -423,13 +439,13 @@ impl TemplateValidator {
                 i += 1;
             }
         }
-        
+
         if !brace_stack.is_empty() {
             return Err(ValidationError::SyntaxError(
                 "Unclosed template expressions".to_string(),
             ));
         }
-        
+
         Ok(())
     }
 
@@ -442,7 +458,7 @@ impl TemplateValidator {
                 "No template variables found in non-HTML template".to_string(),
             ]));
         }
-        
+
         Ok(())
     }
 
@@ -462,7 +478,7 @@ impl TemplateValidator {
                 ));
             }
         }
-        
+
         Ok(())
     }
 
@@ -470,22 +486,24 @@ impl TemplateValidator {
     fn validate_rust_template_output(&self, content: &str) -> ValidationResult<()> {
         // Check for common Rust patterns
         let has_use_statements = content.contains("use ");
-        let has_struct_or_fn = content.contains("struct ") || content.contains("fn ") || content.contains("impl ");
-        
+        let has_struct_or_fn =
+            content.contains("struct ") || content.contains("fn ") || content.contains("impl ");
+
         // For Rust templates, we expect either imports or function/struct definitions
         if !has_use_statements && !has_struct_or_fn {
             return Err(ValidationError::InvalidOutput(
-                "Rust template should contain use statements or function/struct definitions".to_string(),
+                "Rust template should contain use statements or function/struct definitions"
+                    .to_string(),
             ));
         }
-        
+
         // Check for DO NOT EDIT warning
         if !content.contains("AUTO-GENERATED CODE - DO NOT EDIT") {
             return Err(ValidationError::InvalidOutput(
                 "Rust template missing DO NOT EDIT warning".to_string(),
             ));
         }
-        
+
         Ok(())
     }
 
@@ -497,7 +515,7 @@ impl TemplateValidator {
                 "TOML template should contain section headers".to_string(),
             ));
         }
-        
+
         Ok(())
     }
 
@@ -509,7 +527,7 @@ impl TemplateValidator {
                 "HTML template should contain DOCTYPE or html tag".to_string(),
             ));
         }
-        
+
         Ok(())
     }
 
@@ -590,9 +608,9 @@ impl ValidationReport {
     /// Display detailed report
     pub fn display_detailed(&self) -> String {
         let mut output = String::new();
-        
+
         output.push_str(&format!("=== {} ===\n", self.summary()));
-        
+
         if !self.successful.is_empty() {
             output.push_str("\n✅ Successful Templates:\n");
             for metadata in &self.successful {
@@ -605,18 +623,14 @@ impl ValidationReport {
                 ));
             }
         }
-        
+
         if !self.failed.is_empty() {
             output.push_str("\n❌ Failed Templates:\n");
             for (path, error) in &self.failed {
-                output.push_str(&format!(
-                    "  - {}: {}\n",
-                    path.display(),
-                    error
-                ));
+                output.push_str(&format!("  - {}: {}\n", path.display(), error));
             }
         }
-        
+
         output
     }
 }
@@ -641,11 +655,26 @@ mod tests {
 
     #[test]
     fn test_template_type_detection() {
-        assert_eq!(TemplateType::from_path(Path::new("test.rs")), TemplateType::Rust);
-        assert_eq!(TemplateType::from_path(Path::new("test.toml")), TemplateType::Toml);
-        assert_eq!(TemplateType::from_path(Path::new("test.html")), TemplateType::Html);
-        assert_eq!(TemplateType::from_path(Path::new("handler.rs.txt")), TemplateType::Rust);
-        assert_eq!(TemplateType::from_path(Path::new("unknown.xyz")), TemplateType::Unknown);
+        assert_eq!(
+            TemplateType::from_path(Path::new("test.rs")),
+            TemplateType::Rust
+        );
+        assert_eq!(
+            TemplateType::from_path(Path::new("test.toml")),
+            TemplateType::Toml
+        );
+        assert_eq!(
+            TemplateType::from_path(Path::new("test.html")),
+            TemplateType::Html
+        );
+        assert_eq!(
+            TemplateType::from_path(Path::new("handler.rs.txt")),
+            TemplateType::Rust
+        );
+        assert_eq!(
+            TemplateType::from_path(Path::new("unknown.xyz")),
+            TemplateType::Unknown
+        );
     }
 
     #[test]
@@ -657,7 +686,7 @@ mod tests {
             - {{ item.value }}
         {% endfor %}
         "#;
-        
+
         let variables = validator.extract_template_variables(content);
         assert!(variables.contains(&"name".to_string()));
         assert!(variables.contains(&"items".to_string()));
@@ -667,14 +696,18 @@ mod tests {
     #[test]
     fn test_jinja2_syntax_validation() {
         let validator = TemplateValidator::default();
-        
+
         // Valid syntax
         assert!(validator.validate_jinja2_syntax("{{ name }}").is_ok());
-        assert!(validator.validate_jinja2_syntax("{% for item in items %}{% endfor %}").is_ok());
-        
+        assert!(validator
+            .validate_jinja2_syntax("{% for item in items %}{% endfor %}")
+            .is_ok());
+
         // Invalid syntax
         assert!(validator.validate_jinja2_syntax("{{ name }").is_err());
-        assert!(validator.validate_jinja2_syntax("{{ {{ nested }} }}").is_err());
+        assert!(validator
+            .validate_jinja2_syntax("{{ {{ nested }} }}")
+            .is_err());
         assert!(validator.validate_jinja2_syntax("{% unclosed").is_err());
     }
 
@@ -709,7 +742,9 @@ pub struct {{ struct_name }} {
 
         let metadata = result.unwrap();
         assert_eq!(metadata.template_type, TemplateType::Rust);
-        assert!(metadata.required_variables.contains(&"struct_name".to_string()));
+        assert!(metadata
+            .required_variables
+            .contains(&"struct_name".to_string()));
     }
 
     #[test]
@@ -739,4 +774,4 @@ pub struct {{ struct_name }} {
         assert_eq!(report.success_rate(), 50.0);
         assert!(!report.all_passed());
     }
-} 
+}

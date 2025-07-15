@@ -70,11 +70,11 @@ impl Dispatcher {
         self.handlers.insert(route.handler_name.clone(), sender);
     }
 
-    /// Register or update a typed handler. This is idempotent - if a handler 
+    /// Register or update a typed handler. This is idempotent - if a handler
     /// with the same name exists, it will be replaced with the new implementation.
-    /// 
+    ///
     /// # Safety
-    /// 
+    ///
     /// This function is unsafe because it internally calls `spawn_typed` which spawns
     /// a coroutine. The caller must ensure the same safety requirements as `spawn_typed`:
     /// - The handler is safe to execute in a concurrent context

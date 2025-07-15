@@ -50,6 +50,5 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> ValidationResult<Response> 
         updated_at: Some("2023-06-10T14:45:00Z".to_string()),
         vaccinated: true,
         weight: Some(25.5),
-        
-    })
+        })
 }

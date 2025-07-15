@@ -6,7 +6,9 @@ use crate::router::Router;
 use crate::security::{SecurityProvider, SecurityRequest};
 use crate::spec::SecurityScheme;
 use crate::static_files::StaticFiles;
-use crate::validator::{RequestValidator, ResponseValidator, ValidationConfig, write_validation_error};
+use crate::validator::{
+    write_validation_error, RequestValidator, ResponseValidator, ValidationConfig,
+};
 
 use may_minihttp::{HttpService, Request, Response};
 use serde_json::json;
@@ -216,7 +218,7 @@ impl HttpService for AppService {
         };
         if let Some(mut route_match) = route_opt {
             route_match.query_params = query_params.clone();
-            
+
             // NEW: Comprehensive request validation
             let parsed_request = ParsedRequest {
                 method: method.clone(),
@@ -226,8 +228,12 @@ impl HttpService for AppService {
                 query_params: query_params.clone(),
                 body: body.clone(),
             };
-            
-            if let Err(validation_error) = self.request_validator.validate_request(&route_match.route, &parsed_request, &route_match.path_params) {
+
+            if let Err(validation_error) = self.request_validator.validate_request(
+                &route_match.route,
+                &parsed_request,
+                &route_match.path_params,
+            ) {
                 return write_validation_error(res, validation_error, &path);
             }
             if !route_match.route.security.is_empty() {
@@ -283,7 +289,10 @@ impl HttpService for AppService {
                         }
                     }
                     // NEW: Enhanced response validation
-                    if let Err(validation_error) = self.response_validator.validate_response(&route_match.route, &hr) {
+                    if let Err(validation_error) = self
+                        .response_validator
+                        .validate_response(&route_match.route, &hr)
+                    {
                         return write_validation_error(res, validation_error, &path);
                     }
                     write_handler_response(res, hr.status, hr.body, is_sse, &headers);

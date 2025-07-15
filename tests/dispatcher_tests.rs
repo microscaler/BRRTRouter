@@ -85,7 +85,10 @@ fn test_dispatch_post_item() {
 
     let (reply_tx, reply_rx) = mpsc::channel();
     let mut path_params = HashMap::new();
-    path_params.insert("id".to_string(), "550e8400-e29b-41d4-a716-446655440000".to_string());
+    path_params.insert(
+        "id".to_string(),
+        "550e8400-e29b-41d4-a716-446655440000".to_string(),
+    );
     let mut query_params = HashMap::new();
     query_params.insert("debug".to_string(), "true".to_string());
     let body = json!({"name": "New Item", "category": "toy"});
@@ -113,8 +116,14 @@ fn test_dispatch_post_item() {
     // The response now includes all Item fields from the enhanced schema
     // Generated controller returns placeholder values, not request data
     let response_obj = resp.body.as_object().unwrap();
-    assert_eq!(response_obj.get("id").unwrap().as_str().unwrap(), "item-001"); // Controller returns placeholder ID
-    assert_eq!(response_obj.get("name").unwrap().as_str().unwrap(), "New Item");
+    assert_eq!(
+        response_obj.get("id").unwrap().as_str().unwrap(),
+        "item-001"
+    ); // Controller returns placeholder ID
+    assert_eq!(
+        response_obj.get("name").unwrap().as_str().unwrap(),
+        "New Item"
+    );
 }
 
 #[test]
@@ -136,7 +145,10 @@ fn test_dispatch_get_pet() {
     let mut query_params = HashMap::new();
     query_params.insert("include".to_string(), "owner".to_string()); // Handler expects this to be present
     let mut headers = HashMap::new();
-    headers.insert("x_request_id".to_string(), "550e8400-e29b-41d4-a716-446655440000".to_string()); // Handler expects this
+    headers.insert(
+        "x_request_id".to_string(),
+        "550e8400-e29b-41d4-a716-446655440000".to_string(),
+    ); // Handler expects this
 
     let request = HandlerRequest {
         method: Method::GET,
@@ -161,7 +173,10 @@ fn test_dispatch_get_pet() {
     // Check that we get a successful response with the main pet fields
     let pet_obj = resp.body.as_object().unwrap();
     assert_eq!(pet_obj.get("age").unwrap().as_i64().unwrap(), 3);
-    assert_eq!(pet_obj.get("breed").unwrap().as_str().unwrap(), "Golden Retriever");
+    assert_eq!(
+        pet_obj.get("breed").unwrap().as_str().unwrap(),
+        "Golden Retriever"
+    );
     assert_eq!(pet_obj.get("id").unwrap().as_i64().unwrap(), 12345);
     assert_eq!(pet_obj.get("name").unwrap().as_str().unwrap(), "Max");
     assert_eq!(pet_obj.get("vaccinated").unwrap().as_bool().unwrap(), true);
@@ -372,15 +387,15 @@ fn test_dispatch_all_registry_handlers() {
 
         let route_match = router.route(method.clone(), path).expect("route match");
         assert_eq!(route_match.handler_name, name);
-        
+
         // Skip handlers that have issues with the current generated code or require special parameters
         // get_pet: requires specific query/header parameters that simple dispatch() doesn't provide
-        // list_user_posts: generated controller has invalid JSON missing required author_id field  
+        // list_user_posts: generated controller has invalid JSON missing required author_id field
         // add_pet: requires Content-Type header parameter that simple dispatch() doesn't provide
         if name == "get_pet" || name == "list_user_posts" || name == "add_pet" {
             continue;
         }
-        
+
         let resp = dispatcher
             .dispatch(
                 route_match,

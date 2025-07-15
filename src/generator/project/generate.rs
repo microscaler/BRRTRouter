@@ -72,7 +72,7 @@ pub fn generate_project_from_spec(spec_path: &Path, force: bool) -> anyhow::Resu
 
         let handler_path = handler_dir.join(format!("{handler}.rs"));
         let controller_path = controller_dir.join(format!("{handler}.rs"));
-        
+
         // Compute derived values for handler generation
         let has_request_body = route.request_schema.is_some();
         let response_is_array = response_fields.len() == 1 && response_fields[0].name == "items";
@@ -81,7 +81,7 @@ pub fn generate_project_from_spec(spec_path: &Path, force: bool) -> anyhow::Resu
         } else {
             "Vec<String>".to_string()
         };
-        
+
         write_handler(
             &handler_path,
             &route.handler_name,

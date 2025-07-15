@@ -68,8 +68,6 @@ pub struct ValidationContext {
     pub development_mode: bool,
 }
 
-
-
 /// Header metadata for response validation
 #[derive(Debug, Clone)]
 pub struct HeaderMeta {
@@ -154,4 +152,4 @@ impl ValidationErrorDetail {
         self.value = Some(value.into());
         self
     }
-} 
+}

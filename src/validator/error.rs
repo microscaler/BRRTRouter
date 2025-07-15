@@ -52,9 +52,13 @@ impl From<ValidationError> for ProblemDetails {
     fn from(error: ValidationError) -> Self {
         let status = error.to_status_code();
         let title = match error.error_type {
-            super::types::ValidationErrorType::MissingRequiredParameter => "Missing Required Parameter",
+            super::types::ValidationErrorType::MissingRequiredParameter => {
+                "Missing Required Parameter"
+            }
             super::types::ValidationErrorType::InvalidParameterType => "Invalid Parameter Type",
-            super::types::ValidationErrorType::ConstraintViolation => "Parameter Constraint Violation",
+            super::types::ValidationErrorType::ConstraintViolation => {
+                "Parameter Constraint Violation"
+            }
             super::types::ValidationErrorType::UnsupportedContentType => "Unsupported Media Type",
             super::types::ValidationErrorType::PayloadTooLarge => "Payload Too Large",
             super::types::ValidationErrorType::InvalidSchema => "Invalid Schema",
@@ -102,19 +106,21 @@ pub fn write_validation_error(
 
     let status = problem.status;
     let reason = status_reason(status);
-    
+
     res.status_code(status as usize, reason);
     res.header("Content-Type: application/problem+json");
-    
+
     let body = serde_json::to_vec(&problem).unwrap_or_else(|_| {
         json!({
             "type": "https://brrtrouter.dev/problems/internal-error",
             "title": "Internal Server Error",
             "status": 500,
             "detail": "Failed to serialize error response"
-        }).to_string().into_bytes()
+        })
+        .to_string()
+        .into_bytes()
     });
-    
+
     res.body_vec(body);
     Ok(())
 }
@@ -131,18 +137,21 @@ pub fn write_validation_errors(
 
     // Use the first error as the primary error, combine details
     let mut primary_error = errors[0].clone();
-    
+
     // Collect all validation details
     let mut all_details = primary_error.details.clone();
     for error in errors.iter().skip(1) {
         all_details.extend(error.details.clone());
     }
-    
+
     primary_error.details = all_details;
-    
+
     // Update message to indicate multiple errors
     if errors.len() > 1 {
-        primary_error.message = format!("Multiple validation errors occurred ({} errors)", errors.len());
+        primary_error.message = format!(
+            "Multiple validation errors occurred ({} errors)",
+            errors.len()
+        );
     }
 
     write_validation_error(res, primary_error, request_path)
@@ -177,7 +186,10 @@ mod tests {
             "/test/path",
         );
 
-        assert_eq!(problem.problem_type, "https://example.com/problems/validation");
+        assert_eq!(
+            problem.problem_type,
+            "https://example.com/problems/validation"
+        );
         assert_eq!(problem.title, "Validation Error");
         assert_eq!(problem.status, 400);
         assert_eq!(problem.detail, "Parameter validation failed");
@@ -204,13 +216,9 @@ mod tests {
 
     #[test]
     fn test_validation_error_detail_creation() {
-        let detail = ValidationErrorDetail::new(
-            "age",
-            "query",
-            "Value must be a positive integer",
-        )
-        .with_constraint("minimum")
-        .with_value("-5");
+        let detail = ValidationErrorDetail::new("age", "query", "Value must be a positive integer")
+            .with_constraint("minimum")
+            .with_value("-5");
 
         assert_eq!(detail.field, "age");
         assert_eq!(detail.location, "query");
@@ -218,4 +226,4 @@ mod tests {
         assert_eq!(detail.constraint, Some("minimum".to_string()));
         assert_eq!(detail.value, Some("-5".to_string()));
     }
-} 
+}

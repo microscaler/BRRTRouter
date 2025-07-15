@@ -1,16 +1,16 @@
 use std::collections::HashMap;
 
+use brrtrouter::generator::schema::{FieldDef, TypeDefinition};
 use brrtrouter::generator::templates::{
     write_controller, write_handler, write_main_rs, write_registry_rs, RegistryEntry,
 };
-use brrtrouter::generator::schema::{FieldDef, TypeDefinition};
 use brrtrouter::spec::{ParameterMeta, RouteMeta};
-use tempfile::TempDir;
 use http::Method;
 use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tempfile::TempDir;
 
 fn temp_dir() -> PathBuf {
     let nanos = SystemTime::now()

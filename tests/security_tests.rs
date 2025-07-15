@@ -347,18 +347,15 @@ fn test_bearer_header_and_oauth_cookie() {
 
     // Valid bearer header
     let token = make_token("");
-    let req = format!(
-        "GET /header HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer {token}\r\n\r\n"
-    );
+    let req =
+        format!("GET /header HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer {token}\r\n\r\n");
     let resp = send_request(&addr, &req);
     let status_ok = parse_status(&resp);
     assert_eq!(status_ok, 200);
 
     // OAuth2 cookie with required scope
     let token = make_token("read");
-    let req = format!(
-        "GET /cookie HTTP/1.1\r\nHost: localhost\r\nCookie: auth={token}\r\n\r\n"
-    );
+    let req = format!("GET /cookie HTTP/1.1\r\nHost: localhost\r\nCookie: auth={token}\r\n\r\n");
     let resp = send_request(&addr, &req);
     handle.stop();
     let status_cookie = parse_status(&resp);
@@ -369,9 +366,8 @@ fn test_bearer_header_and_oauth_cookie() {
 fn test_bearer_jwt_provider_creation() {
     let _provider = BearerJwtProvider::new("test_signature");
     // Test that provider can be created successfully - no assertion needed, creation itself is the test
-    
-    let _provider_with_cookie = BearerJwtProvider::new("test_signature")
-        .cookie_name("auth_token");
+
+    let _provider_with_cookie = BearerJwtProvider::new("test_signature").cookie_name("auth_token");
     // Test that cookie name can be set - no assertion needed, creation itself is the test
 }
 
@@ -379,9 +375,8 @@ fn test_bearer_jwt_provider_creation() {
 fn test_oauth2_provider_creation() {
     let _provider = OAuth2Provider::new("test_signature");
     // Test that provider can be created successfully - no assertion needed, creation itself is the test
-    
-    let _provider_with_cookie = OAuth2Provider::new("test_signature")
-        .cookie_name("oauth_token");
+
+    let _provider_with_cookie = OAuth2Provider::new("test_signature").cookie_name("oauth_token");
     // Test that cookie name can be set - no assertion needed, creation itself is the test
 }
 
@@ -393,7 +388,7 @@ fn test_bearer_jwt_token_validation() {
         bearer_format: None,
         description: None,
     };
-    
+
     // Test valid token with no scopes
     let token = make_token("");
     let mut headers = HashMap::new();
@@ -403,7 +398,7 @@ fn test_bearer_jwt_token_validation() {
         query: &HashMap::new(),
         cookies: &HashMap::new(),
     };
-    
+
     assert!(provider.validate(&scheme, &[], &req));
 }
 
@@ -415,7 +410,7 @@ fn test_bearer_jwt_invalid_signature() {
         bearer_format: None,
         description: None,
     };
-    
+
     let token = make_token("");
     let mut headers = HashMap::new();
     headers.insert("authorization".to_string(), format!("Bearer {token}"));
@@ -424,7 +419,7 @@ fn test_bearer_jwt_invalid_signature() {
         query: &HashMap::new(),
         cookies: &HashMap::new(),
     };
-    
+
     assert!(!provider.validate(&scheme, &[], &req));
 }
 
@@ -436,16 +431,19 @@ fn test_bearer_jwt_malformed_token() {
         bearer_format: None,
         description: None,
     };
-    
+
     // Test malformed token (missing parts)
     let mut headers = HashMap::new();
-    headers.insert("authorization".to_string(), "Bearer invalid.token".to_string());
+    headers.insert(
+        "authorization".to_string(),
+        "Bearer invalid.token".to_string(),
+    );
     let req = SecurityRequest {
         headers: &headers,
         query: &HashMap::new(),
         cookies: &HashMap::new(),
     };
-    
+
     assert!(!provider.validate(&scheme, &[], &req));
 }
 
@@ -457,16 +455,19 @@ fn test_bearer_jwt_invalid_base64() {
         bearer_format: None,
         description: None,
     };
-    
+
     // Test token with invalid base64 payload
     let mut headers = HashMap::new();
-    headers.insert("authorization".to_string(), "Bearer header.invalid_base64.sig".to_string());
+    headers.insert(
+        "authorization".to_string(),
+        "Bearer header.invalid_base64.sig".to_string(),
+    );
     let req = SecurityRequest {
         headers: &headers,
         query: &HashMap::new(),
         cookies: &HashMap::new(),
     };
-    
+
     assert!(!provider.validate(&scheme, &[], &req));
 }
 
@@ -478,12 +479,12 @@ fn test_bearer_jwt_invalid_json() {
         bearer_format: None,
         description: None,
     };
-    
+
     use base64::{engine::general_purpose, Engine as _};
     let header = "header";
     let payload = general_purpose::STANDARD.encode(b"invalid json");
     let token = format!("{header}.{payload}.sig");
-    
+
     let mut headers = HashMap::new();
     headers.insert("authorization".to_string(), format!("Bearer {token}"));
     let req = SecurityRequest {
@@ -491,7 +492,7 @@ fn test_bearer_jwt_invalid_json() {
         query: &HashMap::new(),
         cookies: &HashMap::new(),
     };
-    
+
     assert!(!provider.validate(&scheme, &[], &req));
 }
 
@@ -503,7 +504,7 @@ fn test_bearer_jwt_scope_validation() {
         bearer_format: None,
         description: None,
     };
-    
+
     // Test token with read scope
     let token = make_token("read write");
     let mut headers = HashMap::new();
@@ -513,16 +514,16 @@ fn test_bearer_jwt_scope_validation() {
         query: &HashMap::new(),
         cookies: &HashMap::new(),
     };
-    
+
     // Should pass with read scope
     assert!(provider.validate(&scheme, &["read".to_string()], &req));
-    
+
     // Should pass with write scope
     assert!(provider.validate(&scheme, &["write".to_string()], &req));
-    
+
     // Should pass with both scopes
     assert!(provider.validate(&scheme, &["read".to_string(), "write".to_string()], &req));
-    
+
     // Should fail with admin scope
     assert!(!provider.validate(&scheme, &["admin".to_string()], &req));
 }
@@ -535,7 +536,7 @@ fn test_bearer_jwt_cookie_extraction() {
         bearer_format: None,
         description: None,
     };
-    
+
     let token = make_token("");
     let mut cookies = HashMap::new();
     cookies.insert("auth_token".to_string(), token);
@@ -544,7 +545,7 @@ fn test_bearer_jwt_cookie_extraction() {
         query: &HashMap::new(),
         cookies: &cookies,
     };
-    
+
     assert!(provider.validate(&scheme, &[], &req));
 }
 
@@ -556,7 +557,7 @@ fn test_bearer_jwt_wrong_scheme() {
         location: "header".to_string(),
         description: None,
     };
-    
+
     let token = make_token("");
     let mut headers = HashMap::new();
     headers.insert("authorization".to_string(), format!("Bearer {token}"));
@@ -565,7 +566,7 @@ fn test_bearer_jwt_wrong_scheme() {
         query: &HashMap::new(),
         cookies: &HashMap::new(),
     };
-    
+
     assert!(!provider.validate(&scheme, &[], &req));
 }
 
@@ -576,7 +577,7 @@ fn test_oauth2_provider_validation() {
         flows: Default::default(),
         description: None,
     };
-    
+
     let token = make_token("read");
     let mut headers = HashMap::new();
     headers.insert("authorization".to_string(), format!("Bearer {token}"));
@@ -585,7 +586,7 @@ fn test_oauth2_provider_validation() {
         query: &HashMap::new(),
         cookies: &HashMap::new(),
     };
-    
+
     assert!(provider.validate(&scheme, &["read".to_string()], &req));
 }
 
@@ -596,7 +597,7 @@ fn test_oauth2_provider_cookie() {
         flows: Default::default(),
         description: None,
     };
-    
+
     let token = make_token("read");
     let mut cookies = HashMap::new();
     cookies.insert("oauth_token".to_string(), token);
@@ -605,7 +606,7 @@ fn test_oauth2_provider_cookie() {
         query: &HashMap::new(),
         cookies: &cookies,
     };
-    
+
     assert!(provider.validate(&scheme, &["read".to_string()], &req));
 }
 
@@ -617,7 +618,7 @@ fn test_oauth2_provider_wrong_scheme() {
         bearer_format: None,
         description: None,
     };
-    
+
     let token = make_token("");
     let mut headers = HashMap::new();
     headers.insert("authorization".to_string(), format!("Bearer {token}"));
@@ -626,7 +627,7 @@ fn test_oauth2_provider_wrong_scheme() {
         query: &HashMap::new(),
         cookies: &HashMap::new(),
     };
-    
+
     assert!(!provider.validate(&scheme, &[], &req));
 }
 
@@ -640,7 +641,7 @@ fn test_api_key_provider_header() {
         location: "header".to_string(),
         description: None,
     };
-    
+
     let mut headers = HashMap::new();
     headers.insert("x-api-key".to_string(), "test_key".to_string());
     let req = SecurityRequest {
@@ -648,7 +649,7 @@ fn test_api_key_provider_header() {
         query: &HashMap::new(),
         cookies: &HashMap::new(),
     };
-    
+
     assert!(provider.validate(&scheme, &[], &req));
 }
 
@@ -662,7 +663,7 @@ fn test_api_key_provider_query() {
         location: "query".to_string(),
         description: None,
     };
-    
+
     let mut query = HashMap::new();
     query.insert("api_key".to_string(), "test_key".to_string());
     let req = SecurityRequest {
@@ -670,7 +671,7 @@ fn test_api_key_provider_query() {
         query: &query,
         cookies: &HashMap::new(),
     };
-    
+
     assert!(provider.validate(&scheme, &[], &req));
 }
 
@@ -684,7 +685,7 @@ fn test_api_key_provider_cookie() {
         location: "cookie".to_string(),
         description: None,
     };
-    
+
     let mut cookies = HashMap::new();
     cookies.insert("api_key".to_string(), "test_key".to_string());
     let req = SecurityRequest {
@@ -692,7 +693,7 @@ fn test_api_key_provider_cookie() {
         query: &HashMap::new(),
         cookies: &cookies,
     };
-    
+
     assert!(provider.validate(&scheme, &[], &req));
 }
 
@@ -706,13 +707,13 @@ fn test_api_key_provider_invalid_location() {
         location: "invalid".to_string(),
         description: None,
     };
-    
+
     let req = SecurityRequest {
         headers: &HashMap::new(),
         query: &HashMap::new(),
         cookies: &HashMap::new(),
     };
-    
+
     assert!(!provider.validate(&scheme, &[], &req));
 }
 
@@ -724,13 +725,13 @@ fn test_missing_authorization_header() {
         bearer_format: None,
         description: None,
     };
-    
+
     let req = SecurityRequest {
         headers: &HashMap::new(),
         query: &HashMap::new(),
         cookies: &HashMap::new(),
     };
-    
+
     assert!(!provider.validate(&scheme, &[], &req));
 }
 
@@ -742,15 +743,18 @@ fn test_malformed_authorization_header() {
         bearer_format: None,
         description: None,
     };
-    
+
     let mut headers = HashMap::new();
-    headers.insert("authorization".to_string(), "Basic dXNlcjpwYXNz".to_string()); // Basic auth instead of Bearer
+    headers.insert(
+        "authorization".to_string(),
+        "Basic dXNlcjpwYXNz".to_string(),
+    ); // Basic auth instead of Bearer
     let req = SecurityRequest {
         headers: &headers,
         query: &HashMap::new(),
         cookies: &HashMap::new(),
     };
-    
+
     assert!(!provider.validate(&scheme, &[], &req));
 }
 
@@ -762,7 +766,7 @@ fn test_case_insensitive_bearer_scheme() {
         bearer_format: None,
         description: None,
     };
-    
+
     let token = make_token("");
     let mut headers = HashMap::new();
     headers.insert("authorization".to_string(), format!("Bearer {token}"));
@@ -771,7 +775,7 @@ fn test_case_insensitive_bearer_scheme() {
         query: &HashMap::new(),
         cookies: &HashMap::new(),
     };
-    
+
     assert!(provider.validate(&scheme, &[], &req));
 }
 
@@ -783,7 +787,7 @@ fn test_empty_token_scopes() {
         bearer_format: None,
         description: None,
     };
-    
+
     let token = make_token(""); // Empty scope
     let mut headers = HashMap::new();
     headers.insert("authorization".to_string(), format!("Bearer {token}"));
@@ -792,10 +796,10 @@ fn test_empty_token_scopes() {
         query: &HashMap::new(),
         cookies: &HashMap::new(),
     };
-    
+
     // Should pass with no required scopes
     assert!(provider.validate(&scheme, &[], &req));
-    
+
     // Should fail with required scopes
     assert!(!provider.validate(&scheme, &["read".to_string()], &req));
 }

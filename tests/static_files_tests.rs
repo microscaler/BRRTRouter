@@ -40,7 +40,7 @@ fn test_html_rendering_without_context() {
     let file_path = dir.path().join("test.html");
     let mut file = fs::File::create(&file_path).unwrap();
     writeln!(file, "<h1>Static Content</h1>").unwrap();
-    
+
     let sf = StaticFiles::new(dir.path());
     let (bytes, ct) = sf.load("test.html", None).unwrap();
     assert_eq!(ct, "text/html");
@@ -55,8 +55,12 @@ fn test_html_rendering_with_complex_context() {
     let dir = tempdir().unwrap();
     let file_path = dir.path().join("complex.html");
     let mut file = fs::File::create(&file_path).unwrap();
-    write!(file, "<h1>Hello {{{{ user.name }}}}!</h1><p>Age: {{{{ user.age }}}}</p>").unwrap();
-    
+    write!(
+        file,
+        "<h1>Hello {{{{ user.name }}}}!</h1><p>Age: {{{{ user.age }}}}</p>"
+    )
+    .unwrap();
+
     let sf = StaticFiles::new(dir.path());
     let ctx = json!({"user": {"name": "Alice", "age": 30}});
     let (bytes, ct) = sf.load("complex.html", Some(&ctx)).unwrap();
@@ -70,21 +74,25 @@ fn test_html_rendering_with_complex_context() {
 #[test]
 fn test_content_type_detection() {
     let dir = tempdir().unwrap();
-    
+
     // Test various file extensions
     let test_cases = vec![
         ("test.css", "text/css", "body { color: red; }"),
         ("test.json", "application/json", r#"{"key": "value"}"#),
         ("test.txt", "text/plain", "Plain text content"),
-        ("test.unknown", "application/octet-stream", "unknown content"),
+        (
+            "test.unknown",
+            "application/octet-stream",
+            "unknown content",
+        ),
         ("no_extension", "application/octet-stream", "no extension"),
     ];
-    
+
     for (filename, expected_ct, content) in test_cases {
         let file_path = dir.path().join(filename);
         let mut file = fs::File::create(&file_path).unwrap();
         write!(file, "{}", content).unwrap();
-        
+
         let sf = StaticFiles::new(dir.path());
         let (bytes, ct) = sf.load(filename, None).unwrap();
         assert_eq!(ct, expected_ct, "Failed for file: {}", filename);
@@ -95,7 +103,7 @@ fn test_content_type_detection() {
 #[test]
 fn test_directory_traversal_attacks() {
     let sf = StaticFiles::new("tests/staticdata");
-    
+
     let malicious_paths = vec![
         "../../../etc/passwd",
         "..\\..\\..\\windows\\system32\\config\\sam",
@@ -108,7 +116,7 @@ fn test_directory_traversal_attacks() {
         "./.././.././../etc/passwd",
         ".\\..\\.\\..\\.\\..\\windows\\system32\\config\\sam",
     ];
-    
+
     for path in malicious_paths {
         let result = sf.load(path, None);
         assert!(result.is_err(), "Should reject malicious path: {}", path);
@@ -154,7 +162,7 @@ fn test_path_with_leading_slash() {
 #[test]
 fn test_case_sensitive_extensions() {
     let dir = tempdir().unwrap();
-    
+
     let test_cases = vec![
         ("test.HTML", "text/html"),
         ("test.CSS", "text/css"),
@@ -162,15 +170,19 @@ fn test_case_sensitive_extensions() {
         ("test.JSON", "application/json"),
         ("test.TXT", "text/plain"),
     ];
-    
+
     for (filename, expected_ct) in test_cases {
         let file_path = dir.path().join(filename);
         let mut file = fs::File::create(&file_path).unwrap();
         write!(file, "test content").unwrap();
-        
+
         let sf = StaticFiles::new(dir.path());
         let (_, ct) = sf.load(filename, None).unwrap();
-        assert_eq!(ct, expected_ct, "Failed for uppercase extension: {}", filename);
+        assert_eq!(
+            ct, expected_ct,
+            "Failed for uppercase extension: {}",
+            filename
+        );
     }
 }
 
@@ -180,7 +192,7 @@ fn test_template_rendering_error() {
     let file_path = dir.path().join("invalid.html");
     let mut file = fs::File::create(&file_path).unwrap();
     writeln!(file, "<h1>Hello {{{{ invalid_syntax}}</h1>").unwrap();
-    
+
     let sf = StaticFiles::new(dir.path());
     let ctx = json!({"name": "Test"});
     let result = sf.load("invalid.html", Some(&ctx));
@@ -194,7 +206,7 @@ fn test_large_file_handling() {
     let large_content = "x".repeat(1024 * 1024); // 1MB file
     let mut file = fs::File::create(&file_path).unwrap();
     write!(file, "{}", large_content).unwrap();
-    
+
     let sf = StaticFiles::new(dir.path());
     let (bytes, ct) = sf.load("large.txt", None).unwrap();
     assert_eq!(ct, "text/plain");
@@ -210,7 +222,7 @@ fn test_nested_directory_access() {
     let file_path = subdir.join("nested.txt");
     let mut file = fs::File::create(&file_path).unwrap();
     write!(file, "nested content").unwrap();
-    
+
     let sf = StaticFiles::new(dir.path());
     let (bytes, ct) = sf.load("subdir/nested.txt", None).unwrap();
     assert_eq!(ct, "text/plain");
@@ -221,11 +233,11 @@ fn test_nested_directory_access() {
 fn test_staticfiles_clone() {
     let sf1 = StaticFiles::new("tests/staticdata");
     let sf2 = sf1.clone();
-    
+
     // Both should work independently
     let (bytes1, ct1) = sf1.load("hello.txt", None).unwrap();
     let (bytes2, ct2) = sf2.load("hello.txt", None).unwrap();
-    
+
     assert_eq!(ct1, ct2);
     assert_eq!(bytes1, bytes2);
     assert_eq!(String::from_utf8(bytes1).unwrap(), "Hello\n");
@@ -237,12 +249,12 @@ fn test_current_directory_components() {
     let file_path = dir.path().join("test.txt");
     let mut file = fs::File::create(&file_path).unwrap();
     write!(file, "test content").unwrap();
-    
+
     let sf = StaticFiles::new(dir.path());
-    
+
     // These should all work (current directory components should be ignored)
     let paths = vec!["./test.txt", "././test.txt", "./././test.txt"];
-    
+
     for path in paths {
         let (bytes, ct) = sf.load(path, None).unwrap();
         assert_eq!(ct, "text/plain");

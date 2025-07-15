@@ -2,8 +2,8 @@
 
 use super::config::ValidationConfig;
 use super::types::{
-    ValidationContext, ValidationError, ValidationErrorDetail,
-    ValidationErrorType, ValidationResult,
+    ValidationContext, ValidationError, ValidationErrorDetail, ValidationErrorType,
+    ValidationResult,
 };
 use crate::server::ParsedRequest;
 use crate::spec::{ParameterLocation, ParameterMeta, RouteMeta};
@@ -38,7 +38,9 @@ impl RequestValidator {
         let mut errors = Vec::new();
 
         // 1. Validate parameters
-        if let Err(param_errors) = self.validate_parameters(&route.parameters, request, path_params, &context) {
+        if let Err(param_errors) =
+            self.validate_parameters(&route.parameters, request, path_params, &context)
+        {
             errors.extend(param_errors);
         }
 
@@ -131,12 +133,7 @@ impl RequestValidator {
                     param.explode,
                 );
 
-                self.validate_parameter_schema(
-                    param,
-                    &decoded_value,
-                    schema,
-                    &value_str,
-                )?;
+                self.validate_parameter_schema(param, &decoded_value, schema, &value_str)?;
             }
         }
 
@@ -235,7 +232,7 @@ impl RequestValidator {
         // If body is present, Content-Type should be specified
         if request.body.is_some() {
             let content_type = request.headers.get("content-type");
-            
+
             if content_type.is_none() {
                 return Err(ValidationError::new(
                     ValidationErrorType::UnsupportedContentType,
@@ -244,7 +241,7 @@ impl RequestValidator {
             }
 
             let content_type = content_type.unwrap();
-            
+
             // For now, we primarily support application/json
             // This can be extended to support multiple content types from OpenAPI spec
             if !content_type.starts_with("application/json") {
@@ -332,14 +329,14 @@ impl RequestValidator {
                 Value::Array(_) => "array",
                 Value::Object(_) => "object",
             };
-            
+
             // Special case: if expected type is integer and we have a number, check if it's actually an integer
             if expected_type == "integer" && actual_type == "number" {
                 if let Some(num) = value.as_f64() {
                     return num.fract() != 0.0; // It's a type error if it has fractional part
                 }
             }
-            
+
             expected_type != actual_type
         } else {
             false
@@ -440,9 +437,12 @@ mod tests {
 
         let result = validator.validate_request(&route, &request, &path_params);
         assert!(result.is_err());
-        
+
         let error = result.unwrap_err();
-        assert!(matches!(error.error_type, ValidationErrorType::MissingRequiredParameter));
+        assert!(matches!(
+            error.error_type,
+            ValidationErrorType::MissingRequiredParameter
+        ));
         assert_eq!(error.field, Some("id".to_string()));
     }
 
@@ -450,45 +450,60 @@ mod tests {
     fn test_invalid_parameter_type() {
         let validator = RequestValidator::new(ValidationConfig::default());
         let mut request = create_test_request();
-        request.query_params.insert("limit".to_string(), "invalid".to_string());
+        request
+            .query_params
+            .insert("limit".to_string(), "invalid".to_string());
         let path_params = create_test_path_params();
         let route = create_test_route();
 
         let result = validator.validate_request(&route, &request, &path_params);
         assert!(result.is_err());
-        
+
         let error = result.unwrap_err();
-        assert!(matches!(error.error_type, ValidationErrorType::InvalidParameterType));
+        assert!(matches!(
+            error.error_type,
+            ValidationErrorType::InvalidParameterType
+        ));
     }
 
     #[test]
     fn test_constraint_violation() {
         let validator = RequestValidator::new(ValidationConfig::default());
         let mut request = create_test_request();
-        request.query_params.insert("limit".to_string(), "0".to_string()); // Below minimum
+        request
+            .query_params
+            .insert("limit".to_string(), "0".to_string()); // Below minimum
         let path_params = create_test_path_params();
         let route = create_test_route();
 
         let result = validator.validate_request(&route, &request, &path_params);
         assert!(result.is_err());
-        
+
         let error = result.unwrap_err();
-        assert!(matches!(error.error_type, ValidationErrorType::ConstraintViolation));
+        assert!(matches!(
+            error.error_type,
+            ValidationErrorType::ConstraintViolation
+        ));
     }
 
     #[test]
     fn test_unsupported_content_type() {
         let validator = RequestValidator::new(ValidationConfig::default());
         let mut request = create_test_request();
-        request.headers.insert("content-type".to_string(), "text/plain".to_string());
+        request
+            .headers
+            .insert("content-type".to_string(), "text/plain".to_string());
         let path_params = create_test_path_params();
         let route = create_test_route();
 
         let result = validator.validate_request(&route, &request, &path_params);
         assert!(result.is_err());
-        
+
         let error = result.unwrap_err();
-        assert!(matches!(error.error_type, ValidationErrorType::UnsupportedContentType));
+        assert!(matches!(
+            error.error_type,
+            ValidationErrorType::UnsupportedContentType
+        ));
     }
 
     #[test]
@@ -505,8 +520,11 @@ mod tests {
 
         let result = validator.validate_request(&route, &request, &path_params);
         assert!(result.is_err());
-        
+
         let error = result.unwrap_err();
-        assert!(matches!(error.error_type, ValidationErrorType::PayloadTooLarge));
+        assert!(matches!(
+            error.error_type,
+            ValidationErrorType::PayloadTooLarge
+        ));
     }
-} 
+}

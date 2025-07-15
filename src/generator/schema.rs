@@ -71,7 +71,11 @@ pub fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
     rust_literal_for_example_with_types(field, example, &HashMap::new())
 }
 
-pub fn rust_literal_for_example_with_types(field: &FieldDef, example: &Value, schema_types: &HashMap<String, TypeDefinition>) -> String {
+pub fn rust_literal_for_example_with_types(
+    field: &FieldDef,
+    example: &Value,
+    schema_types: &HashMap<String, TypeDefinition>,
+) -> String {
     let literal = match example {
         Value::String(s) => format!("{s:?}.to_string()"),
         Value::Number(n) => n.to_string(),
@@ -156,26 +160,26 @@ pub fn rust_literal_for_example_with_types(field: &FieldDef, example: &Value, sc
 /// Convert a primitive example value from OpenAPI to Rust literal
 pub fn rust_literal_for_primitive_example(ty: &str, example: &Value) -> String {
     match example {
-        Value::String(s) => {
-            match ty {
-                "String" => format!("{s:?}.to_string()"),
-                _ => format!("{s:?}.to_string()"),
-            }
-        }
-        Value::Number(n) => {
-            match ty {
-                "i32" => n.as_i64().unwrap_or(0).to_string(),
-                "i64" => n.as_i64().unwrap_or(0).to_string(),
-                "f32" => n.as_f64().unwrap_or(0.0).to_string(),
-                "f64" => n.as_f64().unwrap_or(0.0).to_string(),
-                _ => n.to_string(),
-            }
-        }
+        Value::String(s) => match ty {
+            "String" => format!("{s:?}.to_string()"),
+            _ => format!("{s:?}.to_string()"),
+        },
+        Value::Number(n) => match ty {
+            "i32" => n.as_i64().unwrap_or(0).to_string(),
+            "i64" => n.as_i64().unwrap_or(0).to_string(),
+            "f32" => n.as_f64().unwrap_or(0.0).to_string(),
+            "f64" => n.as_f64().unwrap_or(0.0).to_string(),
+            _ => n.to_string(),
+        },
         Value::Bool(b) => b.to_string(),
         Value::Array(arr) => {
-            // Handle array examples 
-            let inner_ty = ty.strip_prefix("Vec<").and_then(|s| s.strip_suffix(">")).unwrap_or("String");
-            let items = arr.iter()
+            // Handle array examples
+            let inner_ty = ty
+                .strip_prefix("Vec<")
+                .and_then(|s| s.strip_suffix(">"))
+                .unwrap_or("String");
+            let items = arr
+                .iter()
                 .map(|item| rust_literal_for_primitive_example(inner_ty, item))
                 .collect::<Vec<_>>()
                 .join(", ");
@@ -200,8 +204,12 @@ pub fn rust_literal_for_primitive_example(ty: &str, example: &Value) -> String {
 pub fn rust_literal_for_array_example(vec_ty: &str, example: &Value) -> String {
     match example {
         Value::Array(arr) => {
-            let inner_ty = vec_ty.strip_prefix("Vec<").and_then(|s| s.strip_suffix(">")).unwrap_or("String");
-            let items = arr.iter()
+            let inner_ty = vec_ty
+                .strip_prefix("Vec<")
+                .and_then(|s| s.strip_suffix(">"))
+                .unwrap_or("String");
+            let items = arr
+                .iter()
                 .map(|item| rust_literal_for_primitive_example(inner_ty, item))
                 .collect::<Vec<_>>()
                 .join(", ");
@@ -223,7 +231,7 @@ pub fn fallback_to_dummy_value(ty: &str, optional: bool) -> String {
         "serde_json::Value" => "serde_json::json!({})".to_string(),
         _ => "Default::default()".to_string(),
     };
-    
+
     if optional {
         format!("Some({base_value})")
     } else {
@@ -242,7 +250,14 @@ pub fn process_schema_type(
     }
     let fields = extract_fields(schema);
     if !fields.is_empty() {
-        types.insert(name.clone(), TypeDefinition { name, fields, original_schema: Some(schema.clone()) });
+        types.insert(
+            name.clone(),
+            TypeDefinition {
+                name,
+                fields,
+                original_schema: Some(schema.clone()),
+            },
+        );
     }
 }
 
@@ -252,18 +267,21 @@ pub fn extract_fields(schema: &Value) -> Vec<FieldDef> {
         if schema_type == "array" {
             if let Some(items) = schema.get("items") {
                 let ty = schema_to_type(items);
-                
+
                 // Try to get example from the array schema or items
                 let value = if let Some(example) = schema.get("example") {
                     // Use the schema-level example
                     rust_literal_for_array_example(&format!("Vec<{ty}>"), example)
                 } else if let Some(items_example) = items.get("example") {
                     // Use the items example to create a single-item array
-                    format!("vec![{}]", rust_literal_for_primitive_example(&ty, items_example))
+                    format!(
+                        "vec![{}]",
+                        rust_literal_for_primitive_example(&ty, items_example)
+                    )
                 } else {
                     "vec![Default::default()]".to_string()
                 };
-                
+
                 fields.push(FieldDef {
                     name: "items".to_string(),
                     ty: format!("Vec<{ty}>"),
@@ -313,7 +331,7 @@ pub fn extract_fields(schema: &Value) -> Vec<FieldDef> {
                 }
             };
             let optional = !required.contains(name);
-            
+
             // CRITICAL FIX: Use OpenAPI schema examples when available
             let value = if let Some(example) = prop.get("example") {
                 // Use the actual example from the OpenAPI spec
@@ -347,7 +365,7 @@ pub fn extract_fields(schema: &Value) -> Vec<FieldDef> {
                 // Fall back to dummy value as last resort
                 fallback_to_dummy_value(&ty, optional)
             };
-            
+
             fields.push(FieldDef {
                 name: name.clone(),
                 ty,
@@ -450,7 +468,7 @@ pub fn collect_component_schemas(
 /// Build a complete example object from an OpenAPI schema with all required fields
 pub fn build_complete_example_object(schema: &Value) -> Value {
     let mut example_obj = serde_json::Map::new();
-    
+
     let required = schema
         .get("required")
         .and_then(|v| v.as_array())
@@ -461,17 +479,20 @@ pub fn build_complete_example_object(schema: &Value) -> Value {
                 .collect::<std::collections::HashSet<_>>()
         })
         .unwrap_or_default();
-    
+
     if let Some(props) = schema.get("properties").and_then(|p| p.as_object()) {
         for (name, prop) in props {
             let is_required = required.contains(name);
-            
+
             // Extract example value for this property
             let example_value = if let Some(example) = prop.get("example") {
                 example.clone()
             } else if let Some(enum_values) = prop.get("enum").and_then(|v| v.as_array()) {
                 // Use first enum value
-                enum_values.first().cloned().unwrap_or_else(|| Value::String("unknown".to_string()))
+                enum_values
+                    .first()
+                    .cloned()
+                    .unwrap_or_else(|| Value::String("unknown".to_string()))
             } else if let Some(default_val) = prop.get("default") {
                 default_val.clone()
             } else {
@@ -482,7 +503,9 @@ pub fn build_complete_example_object(schema: &Value) -> Value {
                             match format {
                                 "email" => Value::String("user@example.com".to_string()),
                                 "date-time" => Value::String("2023-01-01T00:00:00Z".to_string()),
-                                "uuid" => Value::String("550e8400-e29b-41d4-a716-446655440000".to_string()),
+                                "uuid" => Value::String(
+                                    "550e8400-e29b-41d4-a716-446655440000".to_string(),
+                                ),
                                 "uri" => Value::String("https://example.com".to_string()),
                                 _ => Value::String("example".to_string()),
                             }
@@ -497,14 +520,14 @@ pub fn build_complete_example_object(schema: &Value) -> Value {
                     _ => Value::String("unknown".to_string()),
                 }
             };
-            
+
             // Include required fields and optional fields that have examples
             if is_required || prop.get("example").is_some() || prop.get("default").is_some() {
                 example_obj.insert(name.clone(), example_value);
             }
         }
     }
-    
+
     Value::Object(example_obj)
 }
 
@@ -545,22 +568,34 @@ mod tests {
         });
 
         let result = build_complete_example_object(&user_schema);
-        
+
         println!("Result: {}", serde_json::to_string_pretty(&result).unwrap());
-        
+
         // Check that ALL required fields are present
         assert!(result.get("id").is_some(), "Missing required field: id");
         assert!(result.get("name").is_some(), "Missing required field: name");
-        assert!(result.get("email").is_some(), "Missing required field: email");
-        
+        assert!(
+            result.get("email").is_some(),
+            "Missing required field: email"
+        );
+
         // Check the values are correct
         assert_eq!(result.get("id").unwrap().as_str().unwrap(), "abc-123");
         assert_eq!(result.get("name").unwrap().as_str().unwrap(), "John");
-        assert_eq!(result.get("email").unwrap().as_str().unwrap(), "john@example.com");
-        
+        assert_eq!(
+            result.get("email").unwrap().as_str().unwrap(),
+            "john@example.com"
+        );
+
         // Optional phone field should also be included since it has an example
-        assert!(result.get("phone").is_some(), "Missing optional field with example: phone");
-        assert_eq!(result.get("phone").unwrap().as_str().unwrap(), "+1-555-123-4567");
+        assert!(
+            result.get("phone").is_some(),
+            "Missing optional field with example: phone"
+        );
+        assert_eq!(
+            result.get("phone").unwrap().as_str().unwrap(),
+            "+1-555-123-4567"
+        );
     }
 
     #[test]
@@ -586,11 +621,11 @@ mod tests {
         });
 
         let result = build_complete_example_object(&minimal_schema);
-        
+
         // Should include required fields
         assert!(result.get("id").is_some());
         assert!(result.get("email").is_some());
-        
+
         // Should not include optional field without example
         assert!(result.get("optional_field").is_none());
     }
