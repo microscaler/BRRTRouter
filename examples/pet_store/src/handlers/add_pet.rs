@@ -6,15 +6,15 @@
 //
 // Generated from: OpenAPI specification
 // Template: handler.rs.txt
-// Generation time: 2025-07-15 07:34:27 UTC
+// Generation time: 2025-07-15 10:20:11 UTC
 
 #![allow(unused_imports)]
 
-use crate::brrtrouter::dispatcher::HandlerRequest;
-use crate::brrtrouter::server::request::decode_param_value;
-use crate::brrtrouter::spec::ParameterStyle;
-use crate::brrtrouter::typed::TypedHandlerRequest;
 use anyhow::anyhow;
+use brrtrouter::dispatcher::HandlerRequest;
+use brrtrouter::server::request::decode_param_value;
+use brrtrouter::spec::ParameterStyle;
+use brrtrouter::typed::TypedHandlerRequest;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 
@@ -37,8 +37,8 @@ pub struct Request {
     pub vaccinated: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub weight: Option<f64>,
-
-    pub x_request_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub x_request_id: Option<String>,
 
     pub content_type: String,
 }
@@ -72,7 +72,8 @@ impl TryFrom<HandlerRequest> for Request {
 
             data_map.insert("x_request_id".to_string(), decoded_value);
         } else {
-            return Err(anyhow!("Missing required parameter 'x_request_id'"));
+
+            // Optional parameter - skip if not present
         }
 
         if let Some(v) = req.headers.get("content_type") {

@@ -6,12 +6,12 @@
 //
 // Generated from: OpenAPI specification
 // Template: controller.rs.txt
-// Generation time: 2025-07-15 07:34:27 UTC
+// Generation time: 2025-07-15 10:20:11 UTC
 
 #![allow(unused_imports)]
 
-use crate::brrtrouter::typed::TypedHandlerRequest;
 use crate::handlers::get_user::{Request, Response};
+use brrtrouter::typed::TypedHandlerRequest;
 use brrtrouter_macros::handler;
 
 use crate::handlers::types::UserPreferences;

@@ -5,15 +5,15 @@
 // To modify this code, edit the corresponding template in templates/
 // or update the OpenAPI specification.
 //
-// Generated from: {{ spec_path | default("OpenAPI specification") }}
-// Template: controller.rs.txt
-// Generation time: {{ generation_time | default("Unknown") }}
+// Generated from: {{ spec_path }}
+// Template: controller_base.rs.txt
+// Generation time: {{ generation_time }}
 
-use brrtrouter_macros::handler;
-use crate::brrtrouter::typed::TypedHandlerRequest;
-use crate::brrtrouter::validation::{ValidationError, ValidationResult};
-use crate::handlers::{{ handler_name }}::{Request, Response};
-{% if sse %}use crate::brrtrouter::sse;{% endif %}
+use serde::{Deserialize, Serialize};
+use brrtrouter::typed::TypedHandlerRequest;
+use brrtrouter::validation::{ValidationError, ValidationResult};
+use anyhow::anyhow;
+{% if sse %}use brrtrouter::sse;{% endif %}
 {% for import in imports -%}
 use crate::handlers::types::{{ import }};
 {% endfor %}

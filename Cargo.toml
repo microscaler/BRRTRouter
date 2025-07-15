@@ -43,7 +43,7 @@ chrono = { version = "0.4", features = ["serde"] }
 
 
 [dev-dependencies]
-pet_store = { path = "./examples/pet_store" }
+
 criterion = "0.5"
 fake-opentelemetry-collector = "0.28"
 flamegraph = "0.6"
@@ -63,6 +63,6 @@ stack_usage = []
 
 [workspace]
 members = [
-    "brrtrouter_macros",
-    "examples/pet_store"
+    "brrtrouter_macros"
 ]
+exclude = ["examples/pet_store"]

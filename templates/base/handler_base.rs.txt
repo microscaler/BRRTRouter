@@ -10,7 +10,7 @@
 // Generation time: {{ generation_time | default("Unknown") }}
 
 use serde::{Deserialize, Serialize};
-use crate::brrtrouter::typed::TypedHandlerRequest;
+use brrtrouter::typed::TypedHandlerRequest;
 use anyhow::anyhow;
 {% for import in imports -%}
 use crate::handlers::types::{{ import }};

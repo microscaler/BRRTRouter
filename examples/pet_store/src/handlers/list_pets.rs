@@ -6,16 +6,16 @@
 //
 // Generated from: OpenAPI specification
 // Template: handler.rs.txt
-// Generation time: 2025-07-15 07:34:27 UTC
+// Generation time: 2025-07-15 10:20:11 UTC
 
 #![allow(unused_imports)]
 
-use crate::brrtrouter::dispatcher::HandlerRequest;
-use crate::brrtrouter::server::request::decode_param_value;
-use crate::brrtrouter::spec::ParameterStyle;
-use crate::brrtrouter::typed::TypedHandlerRequest;
 use crate::handlers::types::Pet;
 use anyhow::anyhow;
+use brrtrouter::dispatcher::HandlerRequest;
+use brrtrouter::server::request::decode_param_value;
+use brrtrouter::spec::ParameterStyle;
+use brrtrouter::typed::TypedHandlerRequest;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 
@@ -25,27 +25,28 @@ use std::convert::TryFrom;
 /// as defined in the OpenAPI specification.
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Request {
-    pub limit: i32,
-
-    pub offset: i32,
-
-    pub breed: String,
-
-    pub age_min: i32,
-
-    pub age_max: i32,
-
-    pub vaccinated: bool,
-
-    pub sort: String,
-
-    pub tags: Vec<String>,
-
-    pub x_request_id: String,
-
-    pub accept_language: String,
-
-    pub session_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub offset: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub breed: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub age_min: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub age_max: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vaccinated: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sort: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub x_request_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub accept_language: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
 }
 
 /// Response structure for list_pets handler
@@ -77,7 +78,8 @@ impl TryFrom<HandlerRequest> for Request {
 
             data_map.insert("limit".to_string(), decoded_value);
         } else {
-            return Err(anyhow!("Missing required parameter 'limit'"));
+
+            // Optional parameter - skip if not present
         }
 
         if let Some(v) = req.query_params.get("offset") {
@@ -90,7 +92,8 @@ impl TryFrom<HandlerRequest> for Request {
 
             data_map.insert("offset".to_string(), decoded_value);
         } else {
-            return Err(anyhow!("Missing required parameter 'offset'"));
+
+            // Optional parameter - skip if not present
         }
 
         if let Some(v) = req.query_params.get("breed") {
@@ -103,7 +106,8 @@ impl TryFrom<HandlerRequest> for Request {
 
             data_map.insert("breed".to_string(), decoded_value);
         } else {
-            return Err(anyhow!("Missing required parameter 'breed'"));
+
+            // Optional parameter - skip if not present
         }
 
         if let Some(v) = req.query_params.get("age_min") {
@@ -116,7 +120,8 @@ impl TryFrom<HandlerRequest> for Request {
 
             data_map.insert("age_min".to_string(), decoded_value);
         } else {
-            return Err(anyhow!("Missing required parameter 'age_min'"));
+
+            // Optional parameter - skip if not present
         }
 
         if let Some(v) = req.query_params.get("age_max") {
@@ -129,7 +134,8 @@ impl TryFrom<HandlerRequest> for Request {
 
             data_map.insert("age_max".to_string(), decoded_value);
         } else {
-            return Err(anyhow!("Missing required parameter 'age_max'"));
+
+            // Optional parameter - skip if not present
         }
 
         if let Some(v) = req.query_params.get("vaccinated") {
@@ -138,7 +144,8 @@ impl TryFrom<HandlerRequest> for Request {
 
             data_map.insert("vaccinated".to_string(), decoded_value);
         } else {
-            return Err(anyhow!("Missing required parameter 'vaccinated'"));
+
+            // Optional parameter - skip if not present
         }
 
         if let Some(v) = req.query_params.get("sort") {
@@ -153,7 +160,8 @@ impl TryFrom<HandlerRequest> for Request {
 
             data_map.insert("sort".to_string(), decoded_value);
         } else {
-            return Err(anyhow!("Missing required parameter 'sort'"));
+
+            // Optional parameter - skip if not present
         }
 
         if let Some(v) = req.query_params.get("tags") {
@@ -166,7 +174,8 @@ impl TryFrom<HandlerRequest> for Request {
 
             data_map.insert("tags".to_string(), decoded_value);
         } else {
-            return Err(anyhow!("Missing required parameter 'tags'"));
+
+            // Optional parameter - skip if not present
         }
 
         if let Some(v) = req.headers.get("x_request_id") {
@@ -179,7 +188,8 @@ impl TryFrom<HandlerRequest> for Request {
 
             data_map.insert("x_request_id".to_string(), decoded_value);
         } else {
-            return Err(anyhow!("Missing required parameter 'x_request_id'"));
+
+            // Optional parameter - skip if not present
         }
 
         if let Some(v) = req.headers.get("accept_language") {
@@ -194,7 +204,8 @@ impl TryFrom<HandlerRequest> for Request {
 
             data_map.insert("accept_language".to_string(), decoded_value);
         } else {
-            return Err(anyhow!("Missing required parameter 'accept_language'"));
+
+            // Optional parameter - skip if not present
         }
 
         if let Some(v) = req.cookies.get("session_id") {
@@ -203,7 +214,8 @@ impl TryFrom<HandlerRequest> for Request {
 
             data_map.insert("session_id".to_string(), decoded_value);
         } else {
-            return Err(anyhow!("Missing required parameter 'session_id'"));
+
+            // Optional parameter - skip if not present
         }
 
         // Extract request body if present

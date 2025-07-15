@@ -6,16 +6,16 @@
 //
 // Generated from: OpenAPI specification
 // Template: handler.rs.txt
-// Generation time: 2025-07-15 07:34:27 UTC
+// Generation time: 2025-07-15 10:20:11 UTC
 
 #![allow(unused_imports)]
 
-use crate::brrtrouter::dispatcher::HandlerRequest;
-use crate::brrtrouter::server::request::decode_param_value;
-use crate::brrtrouter::spec::ParameterStyle;
-use crate::brrtrouter::typed::TypedHandlerRequest;
 use crate::handlers::types::Post;
 use anyhow::anyhow;
+use brrtrouter::dispatcher::HandlerRequest;
+use brrtrouter::server::request::decode_param_value;
+use brrtrouter::spec::ParameterStyle;
+use brrtrouter::typed::TypedHandlerRequest;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 

@@ -6,13 +6,13 @@
 //
 // Generated from: OpenAPI specification
 // Template: controller.rs.txt
-// Generation time: 2025-07-15 07:34:27 UTC
+// Generation time: 2025-07-15 10:20:11 UTC
 
 #![allow(unused_imports)]
 
-use crate::brrtrouter::sse;
-use crate::brrtrouter::typed::TypedHandlerRequest;
 use crate::handlers::stream_events::{Request, Response};
+use brrtrouter::sse;
+use brrtrouter::typed::TypedHandlerRequest;
 use brrtrouter_macros::handler;
 
 /// Controller implementation for stream_events

@@ -11,10 +11,10 @@
 #![allow(unused_imports)]
 
 use serde::{Deserialize, Serialize};
-use crate::brrtrouter::typed::TypedHandlerRequest;
-use crate::brrtrouter::dispatcher::HandlerRequest;
-use crate::brrtrouter::server::request::decode_param_value;
-use crate::brrtrouter::spec::ParameterStyle;
+use brrtrouter::typed::TypedHandlerRequest;
+use brrtrouter::dispatcher::HandlerRequest;
+use brrtrouter::server::request::decode_param_value;
+use brrtrouter::spec::ParameterStyle;
 use anyhow::anyhow;
 use std::convert::TryFrom;
 {% for import in imports -%}

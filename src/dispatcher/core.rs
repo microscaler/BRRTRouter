@@ -2,6 +2,7 @@
 use crate::echo::echo_handler;
 use crate::router::RouteMatch;
 use crate::spec::RouteMeta;
+use crate::typed::Handler;
 use http::Method;
 use may::coroutine;
 use may::sync::mpsc;
@@ -59,6 +60,35 @@ impl Dispatcher {
     /// to be registered after the dispatcher has been created.
     pub fn add_route(&mut self, route: RouteMeta, sender: HandlerSender) {
         self.handlers.insert(route.handler_name, sender);
+    }
+
+    /// Add or update a handler sender for the given route metadata.
+    /// This is idempotent - if a handler with the same name exists, it will be replaced.
+    /// This allows for safe hot reloading without service interruption.
+    pub fn add_or_update_route(&mut self, route: RouteMeta, sender: HandlerSender) {
+        // Simply insert/replace - HashMap::insert is idempotent for replacement
+        self.handlers.insert(route.handler_name.clone(), sender);
+    }
+
+    /// Register or update a typed handler. This is idempotent - if a handler 
+    /// with the same name exists, it will be replaced with the new implementation.
+    /// 
+    /// # Safety
+    /// 
+    /// This function is unsafe because it internally calls `spawn_typed` which spawns
+    /// a coroutine. The caller must ensure the same safety requirements as `spawn_typed`:
+    /// - The handler is safe to execute in a concurrent context
+    /// - The handler properly handles all requests without panicking
+    /// - The handler sends a response for every request to avoid resource leaks
+    /// - The May coroutine runtime is properly initialized
+    pub unsafe fn register_or_update_typed<H>(&mut self, name: &str, handler: H)
+    where
+        H: Handler + Send + 'static,
+    {
+        let name = name.to_string();
+        let tx = crate::typed::spawn_typed(handler);
+        // This will replace any existing handler with the same name
+        self.handlers.insert(name, tx);
     }
 
     pub fn add_middleware(&mut self, mw: Arc<dyn Middleware>) {
