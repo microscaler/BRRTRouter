@@ -158,11 +158,15 @@ pub fn write_controller(
                         if let Some(type_def) = schema_types.get(inner_ty) {
                             let fallback_schema;
                             let schema_to_use = if let Some(original_schema) = &type_def.original_schema {
+                                println!("🔍 TEMPLATE DEBUG: Using original schema for {}", inner_ty);
                                 original_schema
                             } else {
+                                println!("🔍 TEMPLATE DEBUG: Using fallback schema for {}", inner_ty);
                                 fallback_schema = type_definition_to_schema(type_def);
                                 &fallback_schema
                             };
+                            
+                            println!("🔍 TEMPLATE DEBUG: Schema for {} array generation: {}", inner_ty, serde_json::to_string_pretty(schema_to_use).unwrap_or("invalid".to_string()));
                             
                             let schema_json1 = build_complete_example_object(schema_to_use);
                             let schema_json2 = build_complete_example_object(schema_to_use);

@@ -547,3 +547,91 @@ pub fn debug_user_schema() {
     let result = build_complete_example_object(&schema);
     println!("🧪 DEBUG: Result: {}", serde_json::to_string_pretty(&result).unwrap());
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_build_complete_example_object_user_schema() {
+        // This is the exact User schema from our OpenAPI spec
+        let user_schema = json!({
+            "type": "object",
+            "required": ["id", "name", "email"],
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "abc-123"
+                },
+                "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100,
+                    "example": "John"
+                },
+                "email": {
+                    "type": "string",
+                    "format": "email",
+                    "example": "john@example.com"
+                },
+                "phone": {
+                    "type": "string",
+                    "pattern": "^\\+?[1-9]\\d{1,14}$",
+                    "example": "+1-555-123-4567"
+                }
+            }
+        });
+
+        let result = build_complete_example_object(&user_schema);
+        
+        println!("Result: {}", serde_json::to_string_pretty(&result).unwrap());
+        
+        // Check that ALL required fields are present
+        assert!(result.get("id").is_some(), "Missing required field: id");
+        assert!(result.get("name").is_some(), "Missing required field: name");
+        assert!(result.get("email").is_some(), "Missing required field: email");
+        
+        // Check the values are correct
+        assert_eq!(result.get("id").unwrap().as_str().unwrap(), "abc-123");
+        assert_eq!(result.get("name").unwrap().as_str().unwrap(), "John");
+        assert_eq!(result.get("email").unwrap().as_str().unwrap(), "john@example.com");
+        
+        // Optional phone field should also be included since it has an example
+        assert!(result.get("phone").is_some(), "Missing optional field with example: phone");
+        assert_eq!(result.get("phone").unwrap().as_str().unwrap(), "+1-555-123-4567");
+    }
+
+    #[test]
+    fn test_build_complete_example_object_minimal_schema() {
+        // Test with minimal schema - only required fields
+        let minimal_schema = json!({
+            "type": "object",
+            "required": ["id", "email"],
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "example": "test-id"
+                },
+                "email": {
+                    "type": "string",
+                    "example": "test@example.com"
+                },
+                "optional_field": {
+                    "type": "string"
+                    // No example - should be skipped
+                }
+            }
+        });
+
+        let result = build_complete_example_object(&minimal_schema);
+        
+        // Should include required fields
+        assert!(result.get("id").is_some());
+        assert!(result.get("email").is_some());
+        
+        // Should not include optional field without example
+        assert!(result.get("optional_field").is_none());
+    }
+}
