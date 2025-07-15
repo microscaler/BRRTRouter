@@ -6,7 +6,7 @@
 //
 // Generated from: OpenAPI specification
 // Template: controller.rs.txt
-// Generation time: 2025-07-15 05:44:43 UTC
+// Generation time: 2025-07-15 06:05:06 UTC
 
 #![allow(unused_imports)]
 
@@ -72,7 +72,7 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     // }
 
     // Array response - replace with your actual data
-    Response(vec![Default::default()])
+    Response(vec![serde_json::from_value::<Pet>(serde_json::json!({"age":3,"breed":"Golden Retriever","id":12345,"name":"Max","tags":["friendly","trained"],"vaccinated":true})).unwrap(), serde_json::from_value::<Pet>(serde_json::json!({"age":2,"breed":"Labrador","id":67890,"name":"Bella","tags":["puppy","playful"],"vaccinated":true})).unwrap()])
 }
 
 // TODO: Add any helper functions for your business logic here

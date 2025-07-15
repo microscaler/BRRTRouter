@@ -6,7 +6,7 @@
 //
 // Generated from: OpenAPI specification
 // Template: controller.rs.txt
-// Generation time: 2025-07-15 05:44:43 UTC
+// Generation time: 2025-07-15 06:05:06 UTC
 
 #![allow(unused_imports)]
 
@@ -60,7 +60,16 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     // }
 
     // Array response - replace with your actual data
-    Response(vec![Default::default()])
+    Response(vec![
+        serde_json::from_value::<Post>(
+            serde_json::json!({"body":"Welcome to the blog","id":"post1","title":"Intro"}),
+        )
+        .unwrap(),
+        serde_json::from_value::<Post>(
+            serde_json::json!({"body":"Thanks for reading","id":"post2","title":"Follow-up"}),
+        )
+        .unwrap(),
+    ])
 }
 
 // TODO: Add any helper functions for your business logic here

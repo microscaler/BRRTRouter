@@ -192,10 +192,32 @@ pub fn write_controller(
             .join("\n")
     };
     let response_is_array = res.len() == 1 && res[0].name == "items";
-    let array_literal = enriched_fields
-        .first()
-        .map(|f| f.value.clone())
-        .unwrap_or_else(|| "vec![Default::default()]".to_string());
+    let array_literal = if response_is_array {
+        // For array responses, use the actual OpenAPI example data if available
+        example
+            .as_ref()
+            .and_then(|v| match v {
+                Value::Array(_arr) => {
+                    // Convert the example array to Rust literal
+                    let field = &res[0]; // This is the "items" field
+                    Some(rust_literal_for_example(field, v))
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| {
+                // Fallback to enriched field value if no example array
+                enriched_fields
+                    .first()
+                    .map(|f| f.value.clone())
+                    .unwrap_or_else(|| "vec![Default::default()]".to_string())
+            })
+    } else {
+        // For non-array responses, use the enriched field value
+        enriched_fields
+            .first()
+            .map(|f| f.value.clone())
+            .unwrap_or_else(|| "vec![Default::default()]".to_string())
+    };
     let context = ControllerTemplateData {
         handler_name: handler.to_string(),
         struct_name: struct_name.to_string(),

@@ -44,14 +44,20 @@ Transform BRRTRouter's template system into a production-grade code generator th
 
 **Validation Process**:
 1. After ANY template or generator modification, immediately run: `just gen`
-2. Compile the pet_store example: `cd examples/pet_store && cargo build`
-3. Verify zero warnings: `cd examples/pet_store && cargo clippy -- -D warnings`
-4. If compilation fails, the change is INVALID and must be reverted/fixed
-5. No exceptions - compilation success is the proof of correctness
+2. Compile the pet_store example: `just pet-build`
+3. Verify zero warnings: `just pet-check`
+4. **FUNCTIONAL TESTING**: Verify the generated application works correctly:
+   - Start the server: `just serve` (runs in background)
+   - Test endpoints: `just curls` (tests health, metrics, and API endpoints)
+   - Verify all endpoints return expected responses
+5. If compilation fails or functional tests fail, the change is INVALID and must be reverted/fixed
+6. No exceptions - compilation success AND functional correctness are the proof of correctness
 
 **Rationale**: 
 - Generated code that doesn't compile is worthless regardless of architectural improvements
+- Generated code that compiles but doesn't work functionally is equally worthless
 - Compilation validation provides immediate feedback on template correctness
+- Functional testing ensures the generated application actually works as expected
 - Zero warnings ensure production-quality code generation
 - The pet_store example serves as the canonical test case for all template changes
 
