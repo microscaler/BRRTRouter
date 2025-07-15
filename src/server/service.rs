@@ -6,7 +6,8 @@ use crate::router::Router;
 use crate::security::{SecurityProvider, SecurityRequest};
 use crate::spec::SecurityScheme;
 use crate::static_files::StaticFiles;
-use jsonschema::JSONSchema;
+use crate::validator::{RequestValidator, ResponseValidator, ValidationConfig, write_validation_error};
+
 use may_minihttp::{HttpService, Request, Response};
 use serde_json::json;
 use std::collections::HashMap;
@@ -24,6 +25,8 @@ pub struct AppService {
     pub static_files: Option<StaticFiles>,
     pub doc_files: Option<StaticFiles>,
     pub watcher: Option<notify::RecommendedWatcher>,
+    pub request_validator: Arc<RequestValidator>,
+    pub response_validator: Arc<ResponseValidator>,
 }
 
 impl Clone for AppService {
@@ -38,6 +41,8 @@ impl Clone for AppService {
             static_files: self.static_files.clone(),
             doc_files: self.doc_files.clone(),
             watcher: None,
+            request_validator: self.request_validator.clone(),
+            response_validator: self.response_validator.clone(),
         }
     }
 }
@@ -51,6 +56,7 @@ impl AppService {
         static_dir: Option<PathBuf>,
         doc_dir: Option<PathBuf>,
     ) -> Self {
+        let config = ValidationConfig::from_env();
         Self {
             router,
             dispatcher,
@@ -61,6 +67,8 @@ impl AppService {
             static_files: static_dir.map(StaticFiles::new),
             doc_files: doc_dir.map(StaticFiles::new),
             watcher: None,
+            request_validator: Arc::new(RequestValidator::new(config.clone())),
+            response_validator: Arc::new(ResponseValidator::new(config)),
         }
     }
 
@@ -208,18 +216,19 @@ impl HttpService for AppService {
         };
         if let Some(mut route_match) = route_opt {
             route_match.query_params = query_params.clone();
-            if let (Some(schema), Some(body_val)) = (&route_match.route.request_schema, &body) {
-                let compiled = JSONSchema::compile(schema).expect("invalid request schema");
-                let validation = compiled.validate(body_val);
-                if let Err(errors) = validation {
-                    let details: Vec<String> = errors.map(|e| e.to_string()).collect();
-                    write_json_error(
-                        res,
-                        400,
-                        json!({"error": "Request validation failed", "details": details}),
-                    );
-                    return Ok(());
-                }
+            
+            // NEW: Comprehensive request validation
+            let parsed_request = ParsedRequest {
+                method: method.clone(),
+                path: path.clone(),
+                headers: headers.clone(),
+                cookies: cookies.clone(),
+                query_params: query_params.clone(),
+                body: body.clone(),
+            };
+            
+            if let Err(validation_error) = self.request_validator.validate_request(&route_match.route, &parsed_request, &route_match.path_params) {
+                return write_validation_error(res, validation_error, &path);
             }
             if !route_match.route.security.is_empty() {
                 let sec_req = SecurityRequest {
@@ -273,19 +282,9 @@ impl HttpService for AppService {
                             headers.insert("Content-Type".to_string(), ct);
                         }
                     }
-                    if let Some(schema) = &route_match.route.response_schema {
-                        let compiled =
-                            JSONSchema::compile(schema).expect("invalid response schema");
-                        let validation = compiled.validate(&hr.body);
-                        if let Err(errors) = validation {
-                            let details: Vec<String> = errors.map(|e| e.to_string()).collect();
-                            write_json_error(
-                                res,
-                                400,
-                                json!({"error": "Response validation failed", "details": details}),
-                            );
-                            return Ok(());
-                        }
+                    // NEW: Enhanced response validation
+                    if let Err(validation_error) = self.response_validator.validate_response(&route_match.route, &hr) {
+                        return write_validation_error(res, validation_error, &path);
                     }
                     write_handler_response(res, hr.status, hr.body, is_sse, &headers);
                 }

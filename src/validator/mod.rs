@@ -1,3 +1,16 @@
+pub mod config;
+pub mod error;
+pub mod request;
+pub mod response;
+pub mod types;
+
+pub use config::*;
+pub use error::*;
+pub use request::*;
+pub use response::*;
+pub use types::*;
+
+// Legacy validation functions for backward compatibility
 #[derive(Debug)]
 pub struct ValidationIssue {
     pub location: String,
@@ -37,4 +50,4 @@ pub fn fail_if_issues(issues: Vec<ValidationIssue>) {
         }
         std::process::exit(1);
     }
-}
+} 

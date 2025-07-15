@@ -21,3 +21,7 @@ pub use spec::{
     load_spec, load_spec_from_spec, load_spec_full, ParameterLocation, ParameterMeta,
     ParameterStyle, RouteMeta, SecurityRequirement, SecurityScheme,
 };
+pub use validator::{
+    RequestValidator, ResponseValidator, ValidationConfig, ValidationError, ValidationErrorType,
+    ValidationResult, write_validation_error, write_validation_errors,
+};
