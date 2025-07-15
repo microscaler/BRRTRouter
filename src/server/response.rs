@@ -100,7 +100,7 @@ mod tests {
                 {
                     break
                 }
-                Err(e) => panic!("read error: {:?}", e),
+                Err(e) => panic!("read error: {e:?}"),
             }
         }
         String::from_utf8_lossy(&buf).to_string()
@@ -129,7 +129,7 @@ mod tests {
                 }
             }
         }
-        let info = if x_test { format!("{}|X-Test", ct) } else { ct };
+        let info = if x_test { format!("{ct}|X-Test") } else { ct };
         (status, info, body)
     }
 

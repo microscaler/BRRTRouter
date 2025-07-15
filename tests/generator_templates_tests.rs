@@ -33,12 +33,16 @@ fn test_template_writers() {
         ty: "String".into(),
         optional: false,
         value: "\"id\".to_string()".into(),
+        documentation: None,
+        validation_attrs: None,
     }];
     let res_fields = vec![FieldDef {
         name: "ok".into(),
         ty: "bool".into(),
         optional: false,
         value: "true".into(),
+        documentation: None,
+        validation_attrs: None,
     }];
     let imports = BTreeSet::new();
     let params: Vec<ParameterMeta> = Vec::new();

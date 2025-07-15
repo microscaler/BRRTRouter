@@ -50,6 +50,7 @@ impl TestTracing {
     }
 
     /// Retrieve exported spans from the fake collector (waits until at least `count` spans are received or `timeout`).
+    #[allow(dead_code)]
     pub async fn collected_spans(&mut self, count: usize, timeout: Duration) -> Vec<ExportedSpan> {
         self.fake_collector
             .as_mut()
@@ -58,6 +59,7 @@ impl TestTracing {
             .await
     }
 
+    #[allow(dead_code)]
     pub fn spans(&mut self) -> Vec<ExportedSpan> {
         self._runtime.block_on(async {
             self.fake_collector
@@ -67,6 +69,7 @@ impl TestTracing {
                 .await
         })
     }
+    #[allow(dead_code)]
     pub fn wait_for_span(&mut self, name: &str) {
         self._runtime.block_on(async {
             let spans = self
@@ -83,6 +86,7 @@ impl TestTracing {
         });
     }
 
+    #[allow(dead_code)]
     pub fn force_flush(&self) {
         let _ = self.tracer_provider.force_flush();
     }

@@ -6,7 +6,7 @@
 //
 // Generated from: OpenAPI specification
 // Template: controller.rs.txt
-// Generation time: 2025-07-15 06:20:56 UTC
+// Generation time: 2025-07-15 07:34:27 UTC
 
 #![allow(unused_imports)]
 

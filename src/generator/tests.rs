@@ -328,6 +328,8 @@ fn test_rust_literal_for_example_string() {
         ty: "String".to_string(),
         optional: false,
         value: "default".to_string(),
+        documentation: None,
+        validation_attrs: None,
     };
     
     let example = json!("John Doe");
@@ -342,6 +344,8 @@ fn test_rust_literal_for_example_optional_string() {
         ty: "String".to_string(),
         optional: true,
         value: "default".to_string(),
+        documentation: None,
+        validation_attrs: None,
     };
     
     let example = json!("Johnny");
@@ -356,6 +360,8 @@ fn test_rust_literal_for_example_number() {
         ty: "i32".to_string(),
         optional: false,
         value: "default".to_string(),
+        documentation: None,
+        validation_attrs: None,
     };
     
     let example = json!(25);
@@ -370,6 +376,8 @@ fn test_rust_literal_for_example_boolean() {
         ty: "bool".to_string(),
         optional: false,
         value: "default".to_string(),
+        documentation: None,
+        validation_attrs: None,
     };
     
     let example = json!(true);
@@ -384,6 +392,8 @@ fn test_rust_literal_for_example_array() {
         ty: "Vec<String>".to_string(),
         optional: false,
         value: "default".to_string(),
+        documentation: None,
+        validation_attrs: None,
     };
     
     let example = json!(["tag1", "tag2", "tag3"]);
@@ -398,6 +408,8 @@ fn test_rust_literal_for_example_array_numbers() {
         ty: "Vec<i32>".to_string(),
         optional: false,
         value: "default".to_string(),
+        documentation: None,
+        validation_attrs: None,
     };
     
     let example = json!([1, 2, 3]);
@@ -412,6 +424,8 @@ fn test_rust_literal_for_example_json_value() {
         ty: "serde_json::Value".to_string(),
         optional: false,
         value: "default".to_string(),
+        documentation: None,
+        validation_attrs: None,
     };
     
     let example = json!({"key": "value"});
@@ -426,6 +440,8 @@ fn test_rust_literal_for_example_named_type() {
         ty: "User".to_string(),
         optional: false,
         value: "default".to_string(),
+        documentation: None,
+        validation_attrs: None,
     };
     
     let example = json!({"name": "John", "age": 30});
@@ -488,6 +504,8 @@ fn test_field_def_construction() {
         ty: "String".to_string(),
         optional: true,
         value: "default_value".to_string(),
+        documentation: None,
+        validation_attrs: None,
     };
     
     assert_eq!(field.name, "test_field");
@@ -504,12 +522,16 @@ fn test_type_definition_construction() {
             ty: "i32".to_string(),
             optional: false,
             value: "0".to_string(),
+            documentation: None,
+            validation_attrs: None,
         },
         FieldDef {
             name: "name".to_string(),
             ty: "String".to_string(),
             optional: false,
             value: "String::new()".to_string(),
+            documentation: None,
+            validation_attrs: None,
         },
     ];
     

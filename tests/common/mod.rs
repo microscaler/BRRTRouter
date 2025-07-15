@@ -35,11 +35,13 @@ pub mod temp_files {
     }
 
     /// Creates a temporary file with json extension
+    #[allow(dead_code)]
     pub fn create_temp_json(content: &str) -> PathBuf {
         create_temp_spec(content, "json")
     }
 
     /// Cleanup temporary files (best effort)
+    #[allow(dead_code)]
     pub fn cleanup_temp_files(paths: &[PathBuf]) {
         for path in paths {
             let _ = std::fs::remove_file(path);
@@ -51,8 +53,10 @@ pub mod test_server {
     use std::sync::Once;
 
     /// Ensures May coroutines are configured only once
+    #[allow(dead_code)]
     static MAY_INIT: Once = Once::new();
 
+    #[allow(dead_code)]
     pub fn setup_may_runtime() {
         MAY_INIT.call_once(|| {
             may::config().set_stack_size(0x8000);

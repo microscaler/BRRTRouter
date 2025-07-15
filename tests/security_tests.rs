@@ -68,7 +68,7 @@ paths:
     let path = temp_files::create_temp_yaml(SPEC);
     let (routes, schemes, _slug) = match load_spec_full(path.to_str().unwrap()) {
         Ok(result) => result,
-        Err(e) => panic!("Failed to load spec: {:?}", e),
+        Err(e) => panic!("Failed to load spec: {e:?}"),
     };
     let router = Arc::new(RwLock::new(Router::new(routes.clone())));
     let mut dispatcher = Dispatcher::new();
@@ -257,7 +257,7 @@ paths:
 fn make_token(scope: &str) -> String {
     use base64::{engine::general_purpose, Engine as _};
     let header = general_purpose::STANDARD.encode(r#"{"alg":"HS256","typ":"JWT"}"#);
-    let payload = general_purpose::STANDARD.encode(format!(r#"{{"scope":"{}"}}"#, scope));
+    let payload = general_purpose::STANDARD.encode(format!(r#"{{"scope":"{scope}"}}"#));
     format!("{}.{}.{}", header, payload, "sig")
 }
 
@@ -279,7 +279,7 @@ fn send_request(addr: &SocketAddr, req: &str) -> String {
             {
                 break
             }
-            Err(e) => panic!("read error: {:?}", e),
+            Err(e) => panic!("read error: {e:?}"),
         }
     }
     String::from_utf8_lossy(&buf).to_string()
@@ -296,7 +296,7 @@ fn parse_status(resp: &str) -> u16 {
 
 #[test]
 fn test_api_key_auth() {
-    let (mut tracing, handle, addr) = start_service();
+    let (_tracing, handle, addr) = start_service();
     let resp = send_request(&addr, "GET /secret HTTP/1.1\r\nHost: localhost\r\n\r\n");
     let status = parse_status(&resp);
     assert_eq!(status, 401);
@@ -348,8 +348,7 @@ fn test_bearer_header_and_oauth_cookie() {
     // Valid bearer header
     let token = make_token("");
     let req = format!(
-        "GET /header HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer {}\r\n\r\n",
-        token
+        "GET /header HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer {token}\r\n\r\n"
     );
     let resp = send_request(&addr, &req);
     let status_ok = parse_status(&resp);
@@ -358,8 +357,7 @@ fn test_bearer_header_and_oauth_cookie() {
     // OAuth2 cookie with required scope
     let token = make_token("read");
     let req = format!(
-        "GET /cookie HTTP/1.1\r\nHost: localhost\r\nCookie: auth={}\r\n\r\n",
-        token
+        "GET /cookie HTTP/1.1\r\nHost: localhost\r\nCookie: auth={token}\r\n\r\n"
     );
     let resp = send_request(&addr, &req);
     handle.stop();
@@ -369,26 +367,22 @@ fn test_bearer_header_and_oauth_cookie() {
 
 #[test]
 fn test_bearer_jwt_provider_creation() {
-    let provider = BearerJwtProvider::new("test_signature");
-    // Test that provider can be created successfully
-    assert!(true); // Basic creation test
+    let _provider = BearerJwtProvider::new("test_signature");
+    // Test that provider can be created successfully - no assertion needed, creation itself is the test
     
-    let provider_with_cookie = BearerJwtProvider::new("test_signature")
+    let _provider_with_cookie = BearerJwtProvider::new("test_signature")
         .cookie_name("auth_token");
-    // Test that cookie name can be set
-    assert!(true);
+    // Test that cookie name can be set - no assertion needed, creation itself is the test
 }
 
 #[test]
 fn test_oauth2_provider_creation() {
-    let provider = OAuth2Provider::new("test_signature");
-    // Test that provider can be created successfully
-    assert!(true);
+    let _provider = OAuth2Provider::new("test_signature");
+    // Test that provider can be created successfully - no assertion needed, creation itself is the test
     
-    let provider_with_cookie = OAuth2Provider::new("test_signature")
+    let _provider_with_cookie = OAuth2Provider::new("test_signature")
         .cookie_name("oauth_token");
-    // Test that cookie name can be set
-    assert!(true);
+    // Test that cookie name can be set - no assertion needed, creation itself is the test
 }
 
 #[test]
@@ -403,7 +397,7 @@ fn test_bearer_jwt_token_validation() {
     // Test valid token with no scopes
     let token = make_token("");
     let mut headers = HashMap::new();
-    headers.insert("authorization".to_string(), format!("Bearer {}", token));
+    headers.insert("authorization".to_string(), format!("Bearer {token}"));
     let req = SecurityRequest {
         headers: &headers,
         query: &HashMap::new(),
@@ -424,7 +418,7 @@ fn test_bearer_jwt_invalid_signature() {
     
     let token = make_token("");
     let mut headers = HashMap::new();
-    headers.insert("authorization".to_string(), format!("Bearer {}", token));
+    headers.insert("authorization".to_string(), format!("Bearer {token}"));
     let req = SecurityRequest {
         headers: &headers,
         query: &HashMap::new(),
@@ -488,10 +482,10 @@ fn test_bearer_jwt_invalid_json() {
     use base64::{engine::general_purpose, Engine as _};
     let header = "header";
     let payload = general_purpose::STANDARD.encode(b"invalid json");
-    let token = format!("{}.{}.sig", header, payload);
+    let token = format!("{header}.{payload}.sig");
     
     let mut headers = HashMap::new();
-    headers.insert("authorization".to_string(), format!("Bearer {}", token));
+    headers.insert("authorization".to_string(), format!("Bearer {token}"));
     let req = SecurityRequest {
         headers: &headers,
         query: &HashMap::new(),
@@ -513,7 +507,7 @@ fn test_bearer_jwt_scope_validation() {
     // Test token with read scope
     let token = make_token("read write");
     let mut headers = HashMap::new();
-    headers.insert("authorization".to_string(), format!("Bearer {}", token));
+    headers.insert("authorization".to_string(), format!("Bearer {token}"));
     let req = SecurityRequest {
         headers: &headers,
         query: &HashMap::new(),
@@ -565,7 +559,7 @@ fn test_bearer_jwt_wrong_scheme() {
     
     let token = make_token("");
     let mut headers = HashMap::new();
-    headers.insert("authorization".to_string(), format!("Bearer {}", token));
+    headers.insert("authorization".to_string(), format!("Bearer {token}"));
     let req = SecurityRequest {
         headers: &headers,
         query: &HashMap::new(),
@@ -585,7 +579,7 @@ fn test_oauth2_provider_validation() {
     
     let token = make_token("read");
     let mut headers = HashMap::new();
-    headers.insert("authorization".to_string(), format!("Bearer {}", token));
+    headers.insert("authorization".to_string(), format!("Bearer {token}"));
     let req = SecurityRequest {
         headers: &headers,
         query: &HashMap::new(),
@@ -626,7 +620,7 @@ fn test_oauth2_provider_wrong_scheme() {
     
     let token = make_token("");
     let mut headers = HashMap::new();
-    headers.insert("authorization".to_string(), format!("Bearer {}", token));
+    headers.insert("authorization".to_string(), format!("Bearer {token}"));
     let req = SecurityRequest {
         headers: &headers,
         query: &HashMap::new(),
@@ -771,7 +765,7 @@ fn test_case_insensitive_bearer_scheme() {
     
     let token = make_token("");
     let mut headers = HashMap::new();
-    headers.insert("authorization".to_string(), format!("Bearer {}", token));
+    headers.insert("authorization".to_string(), format!("Bearer {token}"));
     let req = SecurityRequest {
         headers: &headers,
         query: &HashMap::new(),
@@ -792,7 +786,7 @@ fn test_empty_token_scopes() {
     
     let token = make_token(""); // Empty scope
     let mut headers = HashMap::new();
-    headers.insert("authorization".to_string(), format!("Bearer {}", token));
+    headers.insert("authorization".to_string(), format!("Bearer {token}"));
     let req = SecurityRequest {
         headers: &headers,
         query: &HashMap::new(),

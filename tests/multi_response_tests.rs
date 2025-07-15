@@ -1,4 +1,4 @@
-use brrtrouter::server::{HttpServer, ServerHandle};
+use brrtrouter::server::HttpServer;
 use brrtrouter::{
     dispatcher::{Dispatcher, HandlerRequest, HandlerResponse},
     router::Router,
@@ -32,7 +32,7 @@ fn send_request(addr: &std::net::SocketAddr, req: &str) -> String {
             {
                 break
             }
-            Err(e) => panic!("read error: {:?}", e),
+            Err(e) => panic!("read error: {e:?}"),
         }
     }
     String::from_utf8_lossy(&buf).to_string()

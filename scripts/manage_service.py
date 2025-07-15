@@ -121,9 +121,8 @@ class BRRTRouterService:
                 "launchctl", "unload", str(self.plist_path)
             ], capture_output=True, text=True)
             
-            # Restore original spec if we used a test spec
-            if self.current_spec:
-                self.restore_original_spec()
+            # Note: We don't restore the spec here to allow testing
+            # Call restore_original_spec() manually when done testing
             
             print("✅ Service stopped")
             return True
@@ -258,8 +257,12 @@ def main():
         service.stop()
         time.sleep(1)
         service.start()
+    elif command == "restore":
+        service.restore_original_spec()
+        print("✅ Original spec restored")
     else:
         print(f"Unknown command: {command}")
+        print("Available commands: start, stop, status, logs, test, follow-logs, restart, restore")
         sys.exit(1)
 
 if __name__ == "__main__":

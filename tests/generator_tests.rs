@@ -94,6 +94,8 @@ fn test_rust_literal_for_example() {
         ty: "i32".to_string(),
         optional: false,
         value: "0".to_string(),
+        documentation: None,
+        validation_attrs: None,
     };
     let lit = rust_literal_for_example(&field, &json!(3));
     assert_eq!(lit, "3");

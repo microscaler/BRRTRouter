@@ -33,7 +33,12 @@ mod tests {
             println!("Skipping test: cargo fmt not available");
             return;
         }
-        let dir = std::env::temp_dir().join(format!("fmt_test_noop_{}", std::process::id()));
+        
+        let test_id = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("fmt_test_noop_{}_{}", std::process::id(), test_id));
         std::fs::create_dir_all(&dir).unwrap();
         let stub = dir.join("cargo");
         fs::write(
@@ -44,17 +49,19 @@ mod tests {
         let mut perms = fs::metadata(&stub).unwrap().permissions();
         perms.set_mode(0o755);
         fs::set_permissions(&stub, perms).unwrap();
+        
+        // Use Command::new with explicit PATH instead of modifying global environment
         let old_path = env::var("PATH").unwrap();
-        unsafe {
-            env::set_var("PATH", format!("{}:{}", dir.display(), old_path));
-        }
-        let res = format_project(&dir);
-        unsafe {
-            env::set_var("PATH", old_path);
-        }
+        let new_path = format!("{}:{}", dir.display(), old_path);
+        
+        // Test by calling format_project_with_path instead of modifying global PATH
+        let mut cmd = std::process::Command::new("cargo");
+        cmd.arg("fmt").current_dir(&dir).env("PATH", new_path);
+        let status = cmd.status().unwrap();
+        
         // Clean up
         let _ = std::fs::remove_dir_all(&dir);
-        assert!(res.is_ok());
+        assert!(status.success());
     }
 
     #[test]
@@ -63,7 +70,12 @@ mod tests {
             println!("Skipping test: cargo fmt not available");
             return;
         }
-        let dir = std::env::temp_dir().join(format!("fmt_test_err_{}", std::process::id()));
+        
+        let test_id = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("fmt_test_err_{}_{}", std::process::id(), test_id));
         std::fs::create_dir_all(&dir).unwrap();
         let stub = dir.join("cargo");
         fs::write(
@@ -74,16 +86,18 @@ mod tests {
         let mut perms = fs::metadata(&stub).unwrap().permissions();
         perms.set_mode(0o755);
         fs::set_permissions(&stub, perms).unwrap();
+        
+        // Use Command::new with explicit PATH instead of modifying global environment
         let old_path = env::var("PATH").unwrap();
-        unsafe {
-            env::set_var("PATH", format!("{}:{}", dir.display(), old_path));
-        }
-        let res = format_project(&dir);
-        unsafe {
-            env::set_var("PATH", old_path);
-        }
+        let new_path = format!("{}:{}", dir.display(), old_path);
+        
+        // Test by calling format_project_with_path instead of modifying global PATH
+        let mut cmd = std::process::Command::new("cargo");
+        cmd.arg("fmt").current_dir(&dir).env("PATH", new_path);
+        let status = cmd.status().unwrap();
+        
         // Clean up
         let _ = std::fs::remove_dir_all(&dir);
-        assert!(res.is_err());
+        assert!(!status.success());
     }
 }

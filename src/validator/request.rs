@@ -493,8 +493,10 @@ mod tests {
 
     #[test]
     fn test_payload_too_large() {
-        let mut config = ValidationConfig::default();
-        config.max_request_size = 10; // Very small limit
+        let config = ValidationConfig {
+            max_request_size: 10, // Very small limit
+            ..Default::default()
+        };
 
         let validator = RequestValidator::new(config);
         let request = create_test_request();

@@ -173,6 +173,7 @@ fn test_unsupported_method_ignored() {
     assert!(stdout.contains("routes: 0"));
 }
 
+#[allow(dead_code)]
 const YAML_SSE: &str = r#"openapi: 3.1.0
 info:
   title: SSE API

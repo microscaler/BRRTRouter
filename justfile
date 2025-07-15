@@ -8,6 +8,34 @@ default:
 gen:
     cargo run --bin brrtrouter-gen -- generate --spec examples/openapi.yaml --force
 
+# Run comprehensive OpenAPI testing
+test-openapi:
+    python3 scripts/test_openapi_spec.py
+
+# Run full integrated test suite
+test-full:
+    python3 scripts/run_full_test_suite.py
+
+# Run test suite with specific spec
+test-spec SPEC:
+    python3 scripts/run_full_test_suite.py {{SPEC}}
+
+# Start service for manual testing
+start-service:
+    python3 scripts/manage_service.py start
+
+# Stop service
+stop-service:
+    python3 scripts/manage_service.py stop
+
+# Check service status
+service-status:
+    python3 scripts/manage_service.py status
+
+# View service logs
+service-logs:
+    python3 scripts/manage_service.py logs
+
 # Compile the pet store example
 pet-build:
     cd examples/pet_store && cargo build

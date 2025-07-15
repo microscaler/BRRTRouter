@@ -65,7 +65,7 @@ fn send_request(addr: &SocketAddr, req: &str) -> String {
             {
                 break
             }
-            Err(e) => panic!("read error: {:?}", e),
+            Err(e) => panic!("read error: {e:?}"),
         }
     }
     String::from_utf8_lossy(&buf).to_string()

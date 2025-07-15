@@ -6,7 +6,7 @@
 //
 // Generated from: OpenAPI specification
 // Template: handler_types.rs.txt
-// Generation time: 2025-07-15 06:20:56 UTC
+// Generation time: 2025-07-15 07:34:27 UTC
 
 use serde::{Deserialize, Serialize};
 

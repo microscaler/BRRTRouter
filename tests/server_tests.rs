@@ -64,7 +64,7 @@ fn send_request(addr: &SocketAddr, req: &str) -> String {
             {
                 break
             }
-            Err(e) => panic!("read error: {:?}", e),
+            Err(e) => panic!("read error: {e:?}"),
         }
     }
     String::from_utf8_lossy(&buf).to_string()
@@ -105,7 +105,7 @@ fn parse_response(resp: &str) -> (u16, Value) {
 
 #[test]
 fn test_dispatch_success() {
-    let (mut tracing, handle, addr) = start_petstore_service();
+    let (_tracing, handle, addr) = start_petstore_service();
     let resp = send_request(&addr, "GET /pets HTTP/1.1\r\nHost: localhost\r\n\r\n");
     handle.stop();
     let (status, body) = parse_response(&resp);
