@@ -1,10 +1,13 @@
 // Auto-generated handler registry
-use crate::controllers::*;
-use crate::handlers::*;
 use brrtrouter::dispatcher::Dispatcher;
 use brrtrouter::spec::RouteMeta;
 use brrtrouter::typed::spawn_typed;
 
+/// Register all handlers with the dispatcher
+///
+/// # Safety
+/// This function is unsafe because it registers handlers with the dispatcher
+/// which may involve raw pointer operations or other unsafe operations.
 pub unsafe fn register_all(dispatcher: &mut Dispatcher) {
     dispatcher.register_typed(
         "admin_settings",
@@ -38,6 +41,10 @@ pub unsafe fn register_all(dispatcher: &mut Dispatcher) {
 }
 
 /// Dynamically register handlers for the provided routes using their handler names.
+///
+/// # Safety
+/// This function is unsafe because it registers handlers with the dispatcher
+/// which may involve raw pointer operations or other unsafe operations.
 pub unsafe fn register_from_spec(dispatcher: &mut Dispatcher, routes: &[RouteMeta]) {
     for route in routes {
         match route.handler_name.as_str() {

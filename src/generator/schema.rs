@@ -15,6 +15,8 @@ pub struct FieldDef {
     pub ty: String,
     pub optional: bool,
     pub value: String,
+    pub documentation: Option<String>,
+    pub validation_attrs: Option<String>,
 }
 
 pub fn to_camel_case(s: &str) -> String {
@@ -161,6 +163,8 @@ pub fn extract_fields(schema: &Value) -> Vec<FieldDef> {
                     ty: format!("Vec<{ty}>"),
                     optional: false,
                     value: "vec![Default::default()]".to_string(),
+                    documentation: None,
+                    validation_attrs: None,
                 });
                 return fields;
             }
@@ -211,6 +215,8 @@ pub fn extract_fields(schema: &Value) -> Vec<FieldDef> {
                 ty,
                 optional,
                 value,
+                documentation: None,
+                validation_attrs: None,
             });
         }
     }
@@ -272,6 +278,8 @@ pub fn parameter_to_field(param: &ParameterMeta) -> FieldDef {
         ty,
         optional,
         value,
+        documentation: None,
+        validation_attrs: None,
     }
 }
 

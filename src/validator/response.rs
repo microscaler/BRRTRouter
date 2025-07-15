@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 use super::config::ValidationConfig;
 use super::types::{ValidationError, ValidationErrorType, ValidationResult};
 use crate::dispatcher::HandlerResponse;
@@ -43,7 +45,7 @@ impl ResponseValidator {
         let compiled_schema = JSONSchema::compile(schema).map_err(|e| {
             ValidationError::new(
                 ValidationErrorType::InvalidSchema,
-                format!("Failed to compile response schema: {}", e),
+                format!("Failed to compile response schema: {e}"),
             )
         })?;
 

@@ -8,6 +8,28 @@ default:
 gen:
     cargo run --bin brrtrouter-gen -- generate --spec examples/openapi.yaml --force
 
+# Compile the pet store example
+pet-build:
+    cd examples/pet_store && cargo build
+
+# Check pet store with clippy
+pet-check:
+    cd examples/pet_store && cargo clippy -- -D warnings
+
+# Run pet store tests
+pet-test:
+    cd examples/pet_store && cargo test
+
+# Generate and build pet store in one command
+pet-gen-build:
+    just gen
+    just pet-build
+
+# Generate and check pet store with clippy
+pet-gen-check:
+    just gen
+    just pet-check
+
 # Run the CLI generate command for any spec
 generate spec="examples/openapi.yaml" force="":
     cargo run --bin brrtrouter-gen -- generate --spec {{spec}} {{force}}

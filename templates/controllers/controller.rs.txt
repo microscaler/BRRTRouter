@@ -1,0 +1,2 @@
+{# Enhanced controller template extending base template #}
+{% extends "base/controller_base.rs.txt" %} 

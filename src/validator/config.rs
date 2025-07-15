@@ -121,6 +121,12 @@ impl OperationValidationConfig {
     }
 }
 
+impl Default for OperationValidationConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Environment-based configuration loader
 impl ValidationConfig {
     pub fn from_env() -> Self {

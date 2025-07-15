@@ -1,9 +1,9 @@
 use brrtrouter::dispatcher::Dispatcher;
 use brrtrouter::middleware::MetricsMiddleware;
+use brrtrouter::router::Router;
 use brrtrouter::runtime_config::RuntimeConfig;
 use brrtrouter::server::AppService;
 use brrtrouter::server::HttpServer;
-use brrtrouter::{load_spec, router::Router};
 use clap::Parser;
 use pet_store::registry;
 use std::collections::HashMap;
@@ -28,7 +28,7 @@ fn main() -> io::Result<()> {
     // Load OpenAPI spec and create router
     let (routes, _slug) = brrtrouter::spec::load_spec(args.spec.to_str().unwrap())
         .expect("failed to load OpenAPI spec");
-    let router = Router::new(routes.clone());
+    let _router = Router::new(routes.clone());
     // Create router and dispatcher
     let mut dispatcher = Dispatcher::new();
 
@@ -64,6 +64,6 @@ fn main() -> io::Result<()> {
 
     server
         .join()
-        .map_err(|e| io::Error::other(format!("Server encountered an error: {:?}", e)))?;
+        .map_err(|e| io::Error::other(format!("Server encountered an error: {e:?}")))?;
     Ok(())
 }

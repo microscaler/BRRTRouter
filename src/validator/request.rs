@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 use super::config::ValidationConfig;
 use super::types::{
     ValidationContext, ValidationError, ValidationErrorDetail,
@@ -109,7 +111,7 @@ impl RequestValidator {
                 format!("Required parameter '{}' is missing", param.name),
             )
             .with_field(&param.name)
-            .with_location(&param.location.to_string()));
+            .with_location(param.location.to_string()));
         }
 
         // If parameter is not present and not required, it's valid
@@ -129,14 +131,12 @@ impl RequestValidator {
                     param.explode,
                 );
 
-                if let Err(validation_error) = self.validate_parameter_schema(
+                self.validate_parameter_schema(
                     param,
                     &decoded_value,
                     schema,
                     &value_str,
-                ) {
-                    return Err(validation_error);
-                }
+                )?;
             }
         }
 
@@ -176,7 +176,7 @@ impl RequestValidator {
         let compiled_schema = JSONSchema::compile(schema).map_err(|e| {
             ValidationError::new(
                 ValidationErrorType::InvalidSchema,
-                format!("Failed to compile schema: {}", e),
+                format!("Failed to compile schema: {e}"),
             )
         })?;
 
@@ -189,7 +189,7 @@ impl RequestValidator {
                     details.push(
                         ValidationErrorDetail::new(
                             &param.name,
-                            &param.location.to_string(),
+                            param.location.to_string(),
                             error.to_string(),
                         )
                         .with_value(original_value),
@@ -207,12 +207,12 @@ impl RequestValidator {
                     format!("Parameter '{}' validation failed", param.name),
                 )
                 .with_field(&param.name)
-                .with_location(&param.location.to_string())
+                .with_location(param.location.to_string())
                 .with_value(original_value)
                 .add_detail(details.into_iter().next().unwrap_or_else(|| {
                     ValidationErrorDetail::new(
                         &param.name,
-                        &param.location.to_string(),
+                        param.location.to_string(),
                         "Validation failed",
                     )
                 })))
@@ -250,7 +250,7 @@ impl RequestValidator {
             if !content_type.starts_with("application/json") {
                 return Err(ValidationError::new(
                     ValidationErrorType::UnsupportedContentType,
-                    format!("Unsupported Content-Type: {}", content_type),
+                    format!("Unsupported Content-Type: {content_type}"),
                 )
                 .with_value(content_type));
             }
@@ -276,7 +276,7 @@ impl RequestValidator {
                         body_size, self.config.max_request_size
                     ),
                 )
-                .with_value(&body_size.to_string()));
+                .with_value(body_size.to_string()));
             }
         }
 
@@ -293,7 +293,7 @@ impl RequestValidator {
         let compiled_schema = JSONSchema::compile(schema).map_err(|e| {
             ValidationError::new(
                 ValidationErrorType::InvalidSchema,
-                format!("Failed to compile schema: {}", e),
+                format!("Failed to compile schema: {e}"),
             )
         })?;
 

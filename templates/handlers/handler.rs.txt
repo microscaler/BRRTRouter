@@ -1,0 +1,7 @@
+{# Enhanced handler template extending base template #}
+{% extends "base/handler_base.rs.txt" %}
+
+{# Override parameter extraction to use the enhanced component #}
+{% block parameter_extraction %}
+{% include "components/parameter_extraction.rs.txt" %}
+{% endblock parameter_extraction %} 

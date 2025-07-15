@@ -1,0 +1,35 @@
+{# controller.rs.txt #}
+// User-owned controller for handler '{{ handler_name }}'.
+use brrtrouter_macros::handler;
+use crate::brrtrouter::typed::TypedHandlerRequest;
+use crate::handlers::{{ handler_name }}::{ Request, Response };
+{% if sse %}use crate::brrtrouter::sse;{% endif %}
+{% for import in imports -%}
+use crate::handlers::types::{{ import }};
+{% endfor %}
+
+#[handler({{ struct_name }})]
+pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
+    {% if sse %}
+    let (tx, rx) = sse::channel();
+    for i in 0..3 {
+        tx.send(format!("tick {}", i));
+    }
+    drop(tx);
+    Response(rx.collect())
+    {% else %}
+    {% if has_example -%}
+    // Example response:
+{{ example_json }}
+    {%- endif %}
+    {% if response_is_array %}
+    Response({{ response_array_literal }})
+    {% else %}
+    Response {
+        {% for field in response_fields -%}
+        {{ field.name }}: {{ field.value }},
+        {% endfor %}
+    }
+    {% endif %}
+    {% endif %}
+}

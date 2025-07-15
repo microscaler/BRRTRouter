@@ -61,6 +61,8 @@ pub struct RegistryTemplateData {
 #[template(path = "handler_types.rs.txt")]
 pub struct TypesTemplateData {
     pub types: BTreeMap<String, TypeDefinition>,
+    pub spec_path: String,
+    pub generation_time: String,
 }
 
 #[derive(Template)]
@@ -74,6 +76,8 @@ pub struct HandlerTemplateData {
     pub imports: Vec<String>,
     pub parameters: Vec<ParameterMeta>,
     pub sse: bool,
+    pub spec_path: String,
+    pub generation_time: String,
 }
 
 #[derive(Template)]
@@ -89,6 +93,8 @@ pub struct ControllerTemplateData {
     pub response_array_literal: String,
     pub imports: Vec<String>,
     pub sse: bool,
+    pub spec_path: String,
+    pub generation_time: String,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -115,6 +121,8 @@ pub fn write_handler(
         imports: imports.iter().cloned().collect(),
         parameters: params.to_vec(),
         sse,
+        spec_path: "OpenAPI specification".to_string(),
+        generation_time: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string(),
     }
     .render()?;
     fs::write(path, rendered)?;
@@ -154,6 +162,8 @@ pub fn write_controller(
                 ty: field.ty.clone(),
                 optional: field.optional,
                 value,
+                documentation: field.documentation.clone(),
+                validation_attrs: field.validation_attrs.clone(),
             }
         })
         .collect::<Vec<_>>();
@@ -197,6 +207,8 @@ pub fn write_controller(
         response_array_literal: array_literal,
         imports: imports.iter().cloned().collect(),
         sse,
+        spec_path: "OpenAPI specification".to_string(),
+        generation_time: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string(),
     };
     fs::write(path, context.render()?)?;
     println!("✅ Generated controller: {path:?}");
@@ -234,7 +246,11 @@ pub(crate) fn write_types_rs(
     for (name, def) in types {
         sorted.insert(name.clone(), def.clone());
     }
-    let rendered = TypesTemplateData { types: sorted }.render()?;
+    let rendered = TypesTemplateData { 
+        types: sorted,
+        spec_path: "OpenAPI specification".to_string(),
+        generation_time: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+    }.render()?;
     fs::write(path.clone(), rendered)?;
     println!("✅ Generated types.rs → {path:?}");
     Ok(())

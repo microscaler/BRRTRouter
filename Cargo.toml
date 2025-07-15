@@ -38,6 +38,7 @@ fake-opentelemetry-collector = "0.28"
 tracing-subscriber = "0.3.19"
 tokio = "1.45.1"
 opentelemetry = "0.29.1"
+chrono = { version = "0.4", features = ["serde"] }
 
 
 
