@@ -1,7 +1,6 @@
 use crate::{
     dispatcher::Dispatcher,
     hot_reload::watch_spec,
-    load_spec,
     router::Router,
     runtime_config::RuntimeConfig,
     server::{AppService, HttpServer},
@@ -48,11 +47,10 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     match &cli.command {
         Commands::Generate { spec, force } => {
-            let (_routes, _slug) = load_spec(spec.to_str().unwrap())?;
-            let project_dir = crate::generator::generate_project_from_spec(spec.as_path(), *force)
+            let project_dir = crate::generator::project::generate_project_from_spec(spec.as_path(), *force)
                 .expect("failed to generate example project");
             // Format the newly generated project
-            if let Err(e) = crate::generator::format_project(&project_dir) {
+            if let Err(e) = crate::generator::project::format_project(&project_dir) {
                 eprintln!("cargo fmt failed: {e}");
             }
             Ok(())

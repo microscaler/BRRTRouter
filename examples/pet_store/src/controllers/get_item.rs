@@ -6,7 +6,7 @@
 //
 // Generated from: OpenAPI specification
 // Template: controller.rs.txt
-// Generation time: 2025-07-15 11:20:03 UTC
+// Generation time: 2025-07-15 12:05:24 UTC
 
 #![allow(unused_imports)]
 
@@ -51,15 +51,15 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
 
     // Object response - using OpenAPI example data
     Response {
-        category: "example".to_string(),
-        created_at: Some("example".to_string()),
-        currency: Some("example".to_string()),
-        description: Some("example".to_string()),
+        category: "toy".to_string(),
+        created_at: Some("2023-01-15T10:30:00Z".to_string()),
+        currency: Some("USD".to_string()),
+        description: Some("A fun toy for pets".to_string()),
         id: "item-001".to_string(),
         in_stock: Some(true),
         name: "Sample Item".to_string(),
-        price: Some(42.0),
-        stock_quantity: Some(42),
+        price: Some(19.99),
+        stock_quantity: Some(50),
     }
 }
 

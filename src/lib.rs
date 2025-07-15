@@ -1,7 +1,5 @@
 pub mod cli;
-
 pub mod dispatcher;
-mod dummy_value;
 mod echo;
 pub mod generator;
 pub mod hot_reload;

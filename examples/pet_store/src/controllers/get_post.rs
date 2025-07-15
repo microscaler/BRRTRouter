@@ -6,7 +6,7 @@
 //
 // Generated from: OpenAPI specification
 // Template: controller.rs.txt
-// Generation time: 2025-07-15 11:20:03 UTC
+// Generation time: 2025-07-15 12:05:24 UTC
 
 #![allow(unused_imports)]
 
@@ -52,17 +52,19 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
 
     // Object response - using OpenAPI example data
     Response {
-        author_id: "example".to_string(),
+        author_id: "user-123".to_string(),
         body: "Welcome to the blog".to_string(),
-        created_at: Some("example".to_string()),
+        created_at: Some("2023-01-15T10:30:00Z".to_string()),
         id: "post1".to_string(),
-        metadata: Some(Default::default()),
-        published_at: Some("example".to_string()),
-        status: Some("example".to_string()),
-        tags: Some(vec![]),
+        metadata: Some(
+            serde_json::json!({"seo_description":"An introduction to our blog","seo_title":"Welcome to Our Blog"}),
+        ),
+        published_at: Some("2023-01-15T12:00:00Z".to_string()),
+        status: Some("published".to_string()),
+        tags: Some(vec!["introduction".to_string(), "welcome".to_string()]),
         title: "Intro".to_string(),
-        updated_at: Some("example".to_string()),
-        view_count: Some(42),
+        updated_at: Some("2023-01-15T10:30:00Z".to_string()),
+        view_count: Some(125),
     }
 }
 

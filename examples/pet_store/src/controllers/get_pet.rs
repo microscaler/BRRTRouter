@@ -6,7 +6,7 @@
 //
 // Generated from: OpenAPI specification
 // Template: controller.rs.txt
-// Generation time: 2025-07-15 11:20:03 UTC
+// Generation time: 2025-07-15 12:05:24 UTC
 
 #![allow(unused_imports)]
 
@@ -77,17 +77,17 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     Response {
         age: 3,
         breed: "Golden Retriever".to_string(),
-        created_at: Some("example".to_string()),
+        created_at: Some("2023-01-15T10:30:00Z".to_string()),
         id: 12345,
         medical_records: Some(vec![serde_json::from_value::<MedicalRecord>(serde_json::json!({"date":"2023-01-15","description":"Annual vaccination","record_type":"vaccination","veterinarian":"Dr. Johnson"})).unwrap()]),
         name: "Max".to_string(),
-        owner: Some(serde_json::from_value::<PetOwner>(serde_json::json!({"email":"john@example.com","id":"user-123","name":"John Smith"})).unwrap()),
+        owner: Some(serde_json::from_value::<PetOwner>(serde_json::json!({"email":"john@example.com","id":"user-123","name":"John Smith","phone":"+1-555-123-4567"})).unwrap()),
         photos: Some(Default::default()),
-        status: Some("example".to_string()),
+        status: Some("available".to_string()),
         tags: vec!["friendly".to_string(), "trained".to_string()],
-        updated_at: Some("example".to_string()),
+        updated_at: Some("2023-06-10T14:45:00Z".to_string()),
         vaccinated: true,
-        weight: Some(42.0),
+        weight: Some(25.5),
         }
 }
 

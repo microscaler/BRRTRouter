@@ -6,7 +6,7 @@
 //
 // Generated from: OpenAPI specification
 // Template: controller.rs.txt
-// Generation time: 2025-07-15 11:20:03 UTC
+// Generation time: 2025-07-15 12:05:24 UTC
 
 #![allow(unused_imports)]
 
@@ -53,15 +53,20 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
 
     // Object response - using OpenAPI example data
     Response {
-        created_at: Some("example".to_string()),
-        email: "example".to_string(),
+        created_at: Some("2023-01-01T00:00:00Z".to_string()),
+        email: "john@example.com".to_string(),
         id: "abc-123".to_string(),
-        last_login: Some("example".to_string()),
+        last_login: Some("2023-06-15T14:30:00Z".to_string()),
         name: "John".to_string(),
-        phone: Some("example".to_string()),
-        preferences: Some(Default::default()),
-        role: Some("example".to_string()),
-        status: Some("example".to_string()),
+        phone: Some("+1-555-123-4567".to_string()),
+        preferences: Some(
+            serde_json::from_value::<UserPreferences>(
+                serde_json::json!({"language":"en","timezone":"America/New_York"}),
+            )
+            .unwrap(),
+        ),
+        role: Some("user".to_string()),
+        status: Some("active".to_string()),
     }
 }
 

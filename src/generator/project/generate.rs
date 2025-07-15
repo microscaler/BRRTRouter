@@ -10,7 +10,7 @@ use crate::generator::schema::{
 };
 use crate::generator::templates::{
     write_cargo_toml, write_controller, write_handler, write_main_rs, write_mod_rs,
-    write_openapi_index, write_registry_rs, write_static_index, write_types_rs, RegistryEntry,
+    write_openapi_index, write_registry_rs, write_static_index, RegistryEntry,
 };
 
 pub fn generate_project_from_spec(spec_path: &Path, force: bool) -> anyhow::Result<PathBuf> {
@@ -29,8 +29,13 @@ pub fn generate_project_from_spec(spec_path: &Path, force: bool) -> anyhow::Resu
 
     let spec_copy_path = doc_dir.join("openapi.yaml");
     if !spec_copy_path.exists() || force {
-        fs::copy(spec_path, &spec_copy_path)?;
-        println!("✅ Copied spec to {spec_copy_path:?}");
+        // Prevent copying a file to itself (which would create an empty file)
+        if spec_path.canonicalize()? != spec_copy_path.canonicalize().unwrap_or_default() {
+            fs::copy(spec_path, &spec_copy_path)?;
+            println!("✅ Copied spec to {spec_copy_path:?}");
+        } else {
+            println!("⚠️  Spec already exists at target location: {spec_copy_path:?}");
+        }
     }
 
     let mut schema_types = collect_component_schemas(spec_path)?;
@@ -86,6 +91,7 @@ pub fn generate_project_from_spec(spec_path: &Path, force: bool) -> anyhow::Resu
             route.example.clone(),
             route.sse,
             force,
+            &schema_types,
         )?;
 
         modules_handlers.push(handler.clone());
@@ -108,10 +114,11 @@ pub fn generate_project_from_spec(spec_path: &Path, force: bool) -> anyhow::Resu
     }
 
     write_cargo_toml(&base_dir, &slug)?;
-    write_main_rs(&src_dir, &slug, routes)?;
+    write_main_rs(&src_dir, &slug, &routes, force)?;
     write_openapi_index(&doc_dir)?;
     write_static_index(&static_dir)?;
-    write_types_rs(&handler_dir, &schema_types)?;
+    // Temporarily disabled until we fix templates
+    // write_types_rs(&handler_dir, &schema_types)?;
     write_registry_rs(&src_dir, &registry_entries)?;
     write_mod_rs(
         &handler_dir,

@@ -1,0 +1,16 @@
+#!/usr/bin/env python3
+"""
+BRRTRouter API Testing Tool
+
+A simple entry point for testing the BRRTRouter API with human-readable output.
+"""
+
+import sys
+import os
+
+# Add scripts directory to path so we can import the test module
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'scripts'))
+
+if __name__ == "__main__":
+    from test_api import main
+    main() 

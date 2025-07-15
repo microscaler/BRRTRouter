@@ -6,7 +6,7 @@
 //
 // Generated from: OpenAPI specification
 // Template: controller.rs.txt
-// Generation time: 2025-07-15 11:20:03 UTC
+// Generation time: 2025-07-15 12:05:24 UTC
 
 #![allow(unused_imports)]
 
@@ -61,10 +61,10 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
 
     // Object response - using OpenAPI example data
     Response {
-        page: 42,
-        per_page: 42,
-        total: 42,
-        total_pages: Some(42),
+        page: 1,
+        per_page: 10,
+        total: 150,
+        total_pages: Some(15),
         users: vec![
             serde_json::from_value::<User>(serde_json::json!({"id":"abc-123","name":"John"}))
                 .unwrap(),

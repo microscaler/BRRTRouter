@@ -154,16 +154,30 @@ class DynamicOpenAPITester:
         self.summary = TestSummary()
         self.parser = OpenAPISpecParser(spec_path)
         
+    def get_api_key(self) -> str:
+        """Get API key for authentication"""
+        return "test123"  # Default test API key
+        
     def run_test(self, test: TestCase) -> TestResult:
         """Execute a single test case"""
         try:
             url = f"{self.base_url}{test.path}"
             
+            # Prepare headers with authentication (unless it's an auth test)
+            if test.category == "authentication":
+                # For auth tests, use exactly the headers specified (may be empty or invalid)
+                headers = test.headers or {}
+            else:
+                # For all other tests, include API key
+                headers = {"X-API-Key": self.get_api_key()}
+                if test.headers:
+                    headers.update(test.headers)
+            
             # Prepare request
             kwargs = {
                 'method': test.method,
                 'url': url,
-                'headers': test.headers or {},
+                'headers': headers,
                 'params': test.params or {},
             }
             
@@ -228,6 +242,9 @@ class DynamicOpenAPITester:
         for path_pattern, path_obj in paths.items():
             tests.extend(self.generate_path_tests(path_pattern, path_obj))
         
+        # === AUTHENTICATION TESTS ===
+        tests.extend(self.generate_authentication_tests())
+        
         # === VALIDATION TESTS ===
         tests.extend(self.generate_validation_tests())
         
@@ -267,6 +284,36 @@ class DynamicOpenAPITester:
                 spec_source="Built-in endpoint"
             ),
         ]
+    
+    def generate_authentication_tests(self) -> List[TestCase]:
+        """Generate authentication-related tests"""
+        auth_tests = []
+        
+        # Test without API key (should get 401)
+        auth_tests.append(TestCase(
+            name="Request without API key",
+            method="GET",
+            path="/pets",
+            headers={},  # No API key
+            expected_status=401,
+            description="Should return 401 when no API key is provided",
+            category="authentication",
+            spec_source="Security validation test"
+        ))
+        
+        # Test with invalid API key (should get 401)
+        auth_tests.append(TestCase(
+            name="Request with invalid API key",
+            method="GET",
+            path="/pets",
+            headers={"X-API-Key": "invalid_key_12345"},
+            expected_status=401,
+            description="Should return 401 when invalid API key is provided",
+            category="authentication",
+            spec_source="Security validation test"
+        ))
+        
+        return auth_tests
     
     def generate_path_tests(self, path_pattern: str, path_obj: Dict[str, Any]) -> List[TestCase]:
         """Generate tests for a specific path from the OpenAPI spec"""

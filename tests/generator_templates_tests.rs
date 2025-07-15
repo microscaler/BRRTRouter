@@ -1,8 +1,11 @@
-use brrtrouter::generator::FieldDef;
-use brrtrouter::generator::{
+use std::collections::HashMap;
+
+use brrtrouter::generator::templates::{
     write_controller, write_handler, write_main_rs, write_registry_rs, RegistryEntry,
 };
+use brrtrouter::generator::schema::{FieldDef, TypeDefinition};
 use brrtrouter::spec::{ParameterMeta, RouteMeta};
+use tempfile::TempDir;
 use http::Method;
 use std::collections::{BTreeSet, HashMap};
 use std::fs;
@@ -61,6 +64,7 @@ fn test_template_writers() {
     .unwrap();
 
     let controller_path = controllers_dir.join("test.rs");
+    let empty_schema_types = HashMap::new();
     write_controller(
         &controller_path,
         "test",
@@ -69,6 +73,7 @@ fn test_template_writers() {
         None,
         false,
         true,
+        &empty_schema_types,
     )
     .unwrap();
 
