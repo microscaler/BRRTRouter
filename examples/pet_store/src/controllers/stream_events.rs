@@ -5,15 +5,14 @@
 // or update the OpenAPI specification.
 //
 // Generated from: OpenAPI specification
-// Template: controller.rs.txt
-// Generation time: 2025-07-15 12:05:24 UTC
+// Template: controller_base.rs.txt
+// Generation time: 2025-07-15 13:48:59 UTC
 
-#![allow(unused_imports)]
-
-use crate::handlers::stream_events::{Request, Response};
+use anyhow::anyhow;
 use brrtrouter::sse;
 use brrtrouter::typed::TypedHandlerRequest;
-use brrtrouter_macros::handler;
+use brrtrouter::validation::{ValidationError, ValidationResult};
+use serde::{Deserialize, Serialize};
 
 /// Controller implementation for stream_events
 ///
@@ -27,18 +26,18 @@ use brrtrouter_macros::handler;
 /// - You can focus on implementing the business logic
 
 #[handler(StreamEventsController)]
-pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
+pub fn handle(_req: TypedHandlerRequest<Request>) -> ValidationResult<Response> {
     // Server-Sent Events implementation
     let (tx, rx) = sse::channel();
 
     // TODO: Implement your SSE logic here
     // Example: Send periodic updates
     for i in 0..3 {
-        tx.send(format!("Event {i}"));
+        tx.send(format!("Event {}", i));
     }
     drop(tx);
 
-    Response(rx.collect())
+    Ok(Response(rx.collect()))
 }
 
 // TODO: Add any helper functions for your business logic here

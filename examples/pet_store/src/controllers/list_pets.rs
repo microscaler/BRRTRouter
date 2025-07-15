@@ -5,14 +5,13 @@
 // or update the OpenAPI specification.
 //
 // Generated from: OpenAPI specification
-// Template: controller.rs.txt
-// Generation time: 2025-07-15 12:05:24 UTC
+// Template: controller_base.rs.txt
+// Generation time: 2025-07-15 13:48:59 UTC
 
-#![allow(unused_imports)]
-
-use crate::handlers::list_pets::{Request, Response};
+use anyhow::anyhow;
 use brrtrouter::typed::TypedHandlerRequest;
-use brrtrouter_macros::handler;
+use brrtrouter::validation::{ValidationError, ValidationResult};
+use serde::{Deserialize, Serialize};
 
 use crate::handlers::types::Pet;
 
@@ -26,9 +25,11 @@ use crate::handlers::types::Pet;
 /// - All required parameters are guaranteed to be present
 /// - Parameter types have been validated and converted
 /// - You can focus on implementing the business logic
+
+///
 /// ## Example Response
 /// ```json
-///         // [
+// [
 //   {
 //     "age": 3,
 //     "breed": "Golden Retriever",
@@ -87,7 +88,7 @@ use crate::handlers::types::Pet;
 /// ```
 
 #[handler(ListPetsController)]
-pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
+pub fn handle(_req: TypedHandlerRequest<Request>) -> ValidationResult<Response> {
     // TODO: Implement your business logic here
     //
     // The request contains validated parameters and body data.
@@ -99,12 +100,15 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     // Example implementation:
     // let result = your_business_logic(&req.data);
     // match result {
-    //     Ok(data) => Response { /* populate fields */ },
-    //     Err(e) => panic!("Handle error appropriately"),
+    //     Ok(data) => Ok(Response { /* populate fields */ }),
+    //     Err(e) => Err(ValidationError::new(/* error details */)),
     // }
 
-    // Array response - using OpenAPI example data
-    Response(vec![serde_json::from_value::<Pet>(serde_json::json!({"age":3,"breed":"Golden Retriever","id":12345,"medical_records":[{"date":"2023-01-15","description":"Annual vaccination","record_type":"vaccination","veterinarian":"Dr. Johnson"},{"date":"2023-06-10","description":"Regular health checkup","record_type":"checkup","veterinarian":"Dr. Johnson"}],"name":"Max","owner":{"email":"john@example.com","id":"user-123","name":"John Smith"},"tags":["friendly","trained"],"vaccinated":true})).unwrap(), serde_json::from_value::<Pet>(serde_json::json!({"age":2,"breed":"Labrador","id":67890,"medical_records":[{"date":"2023-03-20","description":"Puppy vaccination series","record_type":"vaccination","veterinarian":"Dr. Smith"}],"name":"Bella","owner":{"email":"jane@example.com","id":"user-456","name":"Jane Doe"},"tags":["puppy","playful"],"vaccinated":true})).unwrap()])
+    // Array response - replace with your actual data
+    Ok(Response(vec![
+        // TODO: Replace with actual data
+        Default::default(),
+    ]))
 }
 
 // TODO: Add any helper functions for your business logic here

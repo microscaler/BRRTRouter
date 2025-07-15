@@ -5,14 +5,13 @@
 // or update the OpenAPI specification.
 //
 // Generated from: OpenAPI specification
-// Template: controller.rs.txt
-// Generation time: 2025-07-15 12:05:24 UTC
+// Template: controller_base.rs.txt
+// Generation time: 2025-07-15 13:48:59 UTC
 
-#![allow(unused_imports)]
-
-use crate::handlers::list_users::{Request, Response};
+use anyhow::anyhow;
 use brrtrouter::typed::TypedHandlerRequest;
-use brrtrouter_macros::handler;
+use brrtrouter::validation::{ValidationError, ValidationResult};
+use serde::{Deserialize, Serialize};
 
 use crate::handlers::types::User;
 
@@ -26,9 +25,11 @@ use crate::handlers::types::User;
 /// - All required parameters are guaranteed to be present
 /// - Parameter types have been validated and converted
 /// - You can focus on implementing the business logic
+
+///
 /// ## Example Response
 /// ```json
-///         // {
+// {
 //   "users": [
 //     {
 //       "id": "abc-123",
@@ -43,7 +44,7 @@ use crate::handlers::types::User;
 /// ```
 
 #[handler(ListUsersController)]
-pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
+pub fn handle(_req: TypedHandlerRequest<Request>) -> ValidationResult<Response> {
     // TODO: Implement your business logic here
     //
     // The request contains validated parameters and body data.
@@ -55,23 +56,23 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     // Example implementation:
     // let result = your_business_logic(&req.data);
     // match result {
-    //     Ok(data) => Response { /* populate fields */ },
-    //     Err(e) => panic!("Handle error appropriately"),
+    //     Ok(data) => Ok(Response { /* populate fields */ }),
+    //     Err(e) => Err(ValidationError::new(/* error details */)),
     // }
 
-    // Object response - using OpenAPI example data
-    Response {
-        page: 1,
-        per_page: 10,
-        total: 150,
-        total_pages: Some(15),
+    // Object response - replace with your actual data
+    Ok(Response {
+        page: 1,               // TODO: Replace with actual value
+        per_page: 10,          // TODO: Replace with actual value
+        total: 150,            // TODO: Replace with actual value
+        total_pages: Some(15), // TODO: Replace with actual value
         users: vec![
             serde_json::from_value::<User>(serde_json::json!({"id":"abc-123","name":"John"}))
                 .unwrap(),
             serde_json::from_value::<User>(serde_json::json!({"id":"def-456","name":"Jane"}))
                 .unwrap(),
-        ],
-    }
+        ], // TODO: Replace with actual value
+    })
 }
 
 // TODO: Add any helper functions for your business logic here

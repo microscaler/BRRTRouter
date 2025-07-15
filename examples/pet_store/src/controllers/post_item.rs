@@ -5,14 +5,13 @@
 // or update the OpenAPI specification.
 //
 // Generated from: OpenAPI specification
-// Template: controller.rs.txt
-// Generation time: 2025-07-15 12:05:24 UTC
+// Template: controller_base.rs.txt
+// Generation time: 2025-07-15 13:48:59 UTC
 
-#![allow(unused_imports)]
-
-use crate::handlers::post_item::{Request, Response};
+use anyhow::anyhow;
 use brrtrouter::typed::TypedHandlerRequest;
-use brrtrouter_macros::handler;
+use brrtrouter::validation::{ValidationError, ValidationResult};
+use serde::{Deserialize, Serialize};
 
 /// Controller implementation for post_item
 ///
@@ -24,16 +23,18 @@ use brrtrouter_macros::handler;
 /// - All required parameters are guaranteed to be present
 /// - Parameter types have been validated and converted
 /// - You can focus on implementing the business logic
+
+///
 /// ## Example Response
 /// ```json
-///         // {
+// {
 //   "id": "item-001",
 //   "name": "New Item"
 // }
 /// ```
 
 #[handler(PostItemController)]
-pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
+pub fn handle(_req: TypedHandlerRequest<Request>) -> ValidationResult<Response> {
     // TODO: Implement your business logic here
     //
     // The request contains validated parameters and body data.
@@ -45,22 +46,22 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     // Example implementation:
     // let result = your_business_logic(&req.data);
     // match result {
-    //     Ok(data) => Response { /* populate fields */ },
-    //     Err(e) => panic!("Handle error appropriately"),
+    //     Ok(data) => Ok(Response { /* populate fields */ }),
+    //     Err(e) => Err(ValidationError::new(/* error details */)),
     // }
 
-    // Object response - using OpenAPI example data
-    Response {
-        category: "toy".to_string(),
-        created_at: Some("2023-01-15T10:30:00Z".to_string()),
-        currency: Some("USD".to_string()),
-        description: Some("A fun toy for pets".to_string()),
-        id: "item-001".to_string(),
-        in_stock: Some(true),
-        name: "New Item".to_string(),
-        price: Some(19.99),
-        stock_quantity: Some(50),
-    }
+    // Object response - replace with your actual data
+    Ok(Response {
+        category: "toy".to_string(), // TODO: Replace with actual value
+        created_at: Some("2023-01-15T10:30:00Z".to_string()), // TODO: Replace with actual value
+        currency: Some("USD".to_string()), // TODO: Replace with actual value
+        description: Some("A fun toy for pets".to_string()), // TODO: Replace with actual value
+        id: "item-001".to_string(),  // TODO: Replace with actual value
+        in_stock: Some(true),        // TODO: Replace with actual value
+        name: "New Item".to_string(), // TODO: Replace with actual value
+        price: Some(19.99),          // TODO: Replace with actual value
+        stock_quantity: Some(50),    // TODO: Replace with actual value
+    })
 }
 
 // TODO: Add any helper functions for your business logic here

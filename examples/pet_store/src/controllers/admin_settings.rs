@@ -5,14 +5,13 @@
 // or update the OpenAPI specification.
 //
 // Generated from: OpenAPI specification
-// Template: controller.rs.txt
-// Generation time: 2025-07-15 12:05:24 UTC
+// Template: controller_base.rs.txt
+// Generation time: 2025-07-15 13:48:59 UTC
 
-#![allow(unused_imports)]
-
-use crate::handlers::admin_settings::{Request, Response};
+use anyhow::anyhow;
 use brrtrouter::typed::TypedHandlerRequest;
-use brrtrouter_macros::handler;
+use brrtrouter::validation::{ValidationError, ValidationResult};
+use serde::{Deserialize, Serialize};
 
 /// Controller implementation for admin_settings
 ///
@@ -24,9 +23,11 @@ use brrtrouter_macros::handler;
 /// - All required parameters are guaranteed to be present
 /// - Parameter types have been validated and converted
 /// - You can focus on implementing the business logic
+
+///
 /// ## Example Response
 /// ```json
-///         // {
+// {
 //   "feature_flags": {
 //     "analytics": false,
 //     "beta": true
@@ -35,7 +36,7 @@ use brrtrouter_macros::handler;
 /// ```
 
 #[handler(AdminSettingsController)]
-pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
+pub fn handle(_req: TypedHandlerRequest<Request>) -> ValidationResult<Response> {
     // TODO: Implement your business logic here
     //
     // The request contains validated parameters and body data.
@@ -47,16 +48,16 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     // Example implementation:
     // let result = your_business_logic(&req.data);
     // match result {
-    //     Ok(data) => Response { /* populate fields */ },
-    //     Err(e) => panic!("Handle error appropriately"),
+    //     Ok(data) => Ok(Response { /* populate fields */ }),
+    //     Err(e) => Err(ValidationError::new(/* error details */)),
     // }
 
-    // Object response - using OpenAPI example data
-    Response {
-        feature_flags: serde_json::json!({"analytics":false,"beta":true}),
-        notification_settings: Some(Default::default()),
-        system_config: Some(Default::default()),
-    }
+    // Object response - replace with your actual data
+    Ok(Response {
+        feature_flags: serde_json::json!({"analytics":false,"beta":true}), // TODO: Replace with actual value
+        notification_settings: Some(serde_json::json!({})), // TODO: Replace with actual value
+        system_config: Some(serde_json::json!({})),         // TODO: Replace with actual value
+    })
 }
 
 // TODO: Add any helper functions for your business logic here

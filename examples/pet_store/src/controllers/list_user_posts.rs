@@ -5,14 +5,13 @@
 // or update the OpenAPI specification.
 //
 // Generated from: OpenAPI specification
-// Template: controller.rs.txt
-// Generation time: 2025-07-15 12:05:24 UTC
+// Template: controller_base.rs.txt
+// Generation time: 2025-07-15 13:48:59 UTC
 
-#![allow(unused_imports)]
-
-use crate::handlers::list_user_posts::{Request, Response};
+use anyhow::anyhow;
 use brrtrouter::typed::TypedHandlerRequest;
-use brrtrouter_macros::handler;
+use brrtrouter::validation::{ValidationError, ValidationResult};
+use serde::{Deserialize, Serialize};
 
 use crate::handlers::types::Post;
 
@@ -26,9 +25,11 @@ use crate::handlers::types::Post;
 /// - All required parameters are guaranteed to be present
 /// - Parameter types have been validated and converted
 /// - You can focus on implementing the business logic
+
+///
 /// ## Example Response
 /// ```json
-///         // [
+// [
 //   {
 //     "body": "Welcome to the blog",
 //     "id": "post1",
@@ -43,7 +44,7 @@ use crate::handlers::types::Post;
 /// ```
 
 #[handler(ListUserPostsController)]
-pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
+pub fn handle(_req: TypedHandlerRequest<Request>) -> ValidationResult<Response> {
     // TODO: Implement your business logic here
     //
     // The request contains validated parameters and body data.
@@ -55,21 +56,15 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     // Example implementation:
     // let result = your_business_logic(&req.data);
     // match result {
-    //     Ok(data) => Response { /* populate fields */ },
-    //     Err(e) => panic!("Handle error appropriately"),
+    //     Ok(data) => Ok(Response { /* populate fields */ }),
+    //     Err(e) => Err(ValidationError::new(/* error details */)),
     // }
 
-    // Array response - using OpenAPI example data
-    Response(vec![
-        serde_json::from_value::<Post>(
-            serde_json::json!({"body":"Welcome to the blog","id":"post1","title":"Intro"}),
-        )
-        .unwrap(),
-        serde_json::from_value::<Post>(
-            serde_json::json!({"body":"Thanks for reading","id":"post2","title":"Follow-up"}),
-        )
-        .unwrap(),
-    ])
+    // Array response - replace with your actual data
+    Ok(Response(vec![
+        // TODO: Replace with actual data
+        Default::default(),
+    ]))
 }
 
 // TODO: Add any helper functions for your business logic here

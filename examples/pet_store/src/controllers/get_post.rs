@@ -5,14 +5,13 @@
 // or update the OpenAPI specification.
 //
 // Generated from: OpenAPI specification
-// Template: controller.rs.txt
-// Generation time: 2025-07-15 12:05:24 UTC
+// Template: controller_base.rs.txt
+// Generation time: 2025-07-15 13:48:59 UTC
 
-#![allow(unused_imports)]
-
-use crate::handlers::get_post::{Request, Response};
+use anyhow::anyhow;
 use brrtrouter::typed::TypedHandlerRequest;
-use brrtrouter_macros::handler;
+use brrtrouter::validation::{ValidationError, ValidationResult};
+use serde::{Deserialize, Serialize};
 
 /// Controller implementation for get_post
 ///
@@ -24,9 +23,11 @@ use brrtrouter_macros::handler;
 /// - All required parameters are guaranteed to be present
 /// - Parameter types have been validated and converted
 /// - You can focus on implementing the business logic
+
+///
 /// ## Example Response
 /// ```json
-///         // {
+// {
 //   "body": "Welcome to the blog",
 //   "id": "post1",
 //   "title": "Intro"
@@ -34,7 +35,7 @@ use brrtrouter_macros::handler;
 /// ```
 
 #[handler(GetPostController)]
-pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
+pub fn handle(_req: TypedHandlerRequest<Request>) -> ValidationResult<Response> {
     // TODO: Implement your business logic here
     //
     // The request contains validated parameters and body data.
@@ -46,26 +47,26 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     // Example implementation:
     // let result = your_business_logic(&req.data);
     // match result {
-    //     Ok(data) => Response { /* populate fields */ },
-    //     Err(e) => panic!("Handle error appropriately"),
+    //     Ok(data) => Ok(Response { /* populate fields */ }),
+    //     Err(e) => Err(ValidationError::new(/* error details */)),
     // }
 
-    // Object response - using OpenAPI example data
-    Response {
-        author_id: "user-123".to_string(),
-        body: "Welcome to the blog".to_string(),
-        created_at: Some("2023-01-15T10:30:00Z".to_string()),
-        id: "post1".to_string(),
+    // Object response - replace with your actual data
+    Ok(Response {
+        author_id: "user-123".to_string(), // TODO: Replace with actual value
+        body: "Welcome to the blog".to_string(), // TODO: Replace with actual value
+        created_at: Some("2023-01-15T10:30:00Z".to_string()), // TODO: Replace with actual value
+        id: "post1".to_string(),           // TODO: Replace with actual value
         metadata: Some(
             serde_json::json!({"seo_description":"An introduction to our blog","seo_title":"Welcome to Our Blog"}),
-        ),
-        published_at: Some("2023-01-15T12:00:00Z".to_string()),
-        status: Some("published".to_string()),
-        tags: Some(vec!["introduction".to_string(), "welcome".to_string()]),
-        title: "Intro".to_string(),
-        updated_at: Some("2023-01-15T10:30:00Z".to_string()),
-        view_count: Some(125),
-    }
+        ), // TODO: Replace with actual value
+        published_at: Some("2023-01-15T12:00:00Z".to_string()), // TODO: Replace with actual value
+        status: Some("published".to_string()), // TODO: Replace with actual value
+        tags: Some(vec!["introduction".to_string(), "welcome".to_string()]), // TODO: Replace with actual value
+        title: "Intro".to_string(), // TODO: Replace with actual value
+        updated_at: Some("2023-01-15T10:30:00Z".to_string()), // TODO: Replace with actual value
+        view_count: Some(125),      // TODO: Replace with actual value
+    })
 }
 
 // TODO: Add any helper functions for your business logic here

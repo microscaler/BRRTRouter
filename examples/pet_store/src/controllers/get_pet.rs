@@ -5,14 +5,13 @@
 // or update the OpenAPI specification.
 //
 // Generated from: OpenAPI specification
-// Template: controller.rs.txt
-// Generation time: 2025-07-15 12:05:24 UTC
+// Template: controller_base.rs.txt
+// Generation time: 2025-07-15 13:48:59 UTC
 
-#![allow(unused_imports)]
-
-use crate::handlers::get_pet::{Request, Response};
+use anyhow::anyhow;
 use brrtrouter::typed::TypedHandlerRequest;
-use brrtrouter_macros::handler;
+use brrtrouter::validation::{ValidationError, ValidationResult};
+use serde::{Deserialize, Serialize};
 
 use crate::handlers::types::MedicalRecord;
 use crate::handlers::types::PetOwner;
@@ -28,9 +27,11 @@ use crate::handlers::types::Photo;
 /// - All required parameters are guaranteed to be present
 /// - Parameter types have been validated and converted
 /// - You can focus on implementing the business logic
+
+///
 /// ## Example Response
 /// ```json
-///         // {
+// {
 //   "age": 3,
 //   "breed": "Golden Retriever",
 //   "id": 12345,
@@ -57,7 +58,7 @@ use crate::handlers::types::Photo;
 /// ```
 
 #[handler(GetPetController)]
-pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
+pub fn handle(_req: TypedHandlerRequest<Request>) -> ValidationResult<Response> {
     // TODO: Implement your business logic here
     //
     // The request contains validated parameters and body data.
@@ -69,26 +70,26 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     // Example implementation:
     // let result = your_business_logic(&req.data);
     // match result {
-    //     Ok(data) => Response { /* populate fields */ },
-    //     Err(e) => panic!("Handle error appropriately"),
+    //     Ok(data) => Ok(Response { /* populate fields */ }),
+    //     Err(e) => Err(ValidationError::new(/* error details */)),
     // }
 
-    // Object response - using OpenAPI example data
-    Response {
-        age: 3,
-        breed: "Golden Retriever".to_string(),
-        created_at: Some("2023-01-15T10:30:00Z".to_string()),
-        id: 12345,
-        medical_records: Some(vec![serde_json::from_value::<MedicalRecord>(serde_json::json!({"date":"2023-01-15","description":"Annual vaccination","record_type":"vaccination","veterinarian":"Dr. Johnson"})).unwrap()]),
-        name: "Max".to_string(),
-        owner: Some(serde_json::from_value::<PetOwner>(serde_json::json!({"email":"john@example.com","id":"user-123","name":"John Smith","phone":"+1-555-123-4567"})).unwrap()),
-        photos: Some(Default::default()),
-        status: Some("available".to_string()),
-        tags: vec!["friendly".to_string(), "trained".to_string()],
-        updated_at: Some("2023-06-10T14:45:00Z".to_string()),
-        vaccinated: true,
-        weight: Some(25.5),
-        }
+    // Object response - replace with your actual data
+    Ok(Response {
+        age: 3, // TODO: Replace with actual value
+        breed: "Golden Retriever".to_string(), // TODO: Replace with actual value
+        created_at: Some("2023-01-15T10:30:00Z".to_string()), // TODO: Replace with actual value
+        id: 12345, // TODO: Replace with actual value
+        medical_records: Some(vec![serde_json::from_value::<MedicalRecord>(serde_json::json!({"date":"2023-01-15","description":"Annual vaccination","record_type":"vaccination","veterinarian":"Dr. Johnson"})).unwrap()]), // TODO: Replace with actual value
+        name: "Max".to_string(), // TODO: Replace with actual value
+        owner: Some(serde_json::from_value::<PetOwner>(serde_json::json!({"email":"john@example.com","id":"user-123","name":"John Smith","phone":"+1-555-123-4567"})).unwrap()), // TODO: Replace with actual value
+        photos: Some(Default::default()), // TODO: Replace with actual value
+        status: Some("available".to_string()), // TODO: Replace with actual value
+        tags: vec!["friendly".to_string(), "trained".to_string()], // TODO: Replace with actual value
+        updated_at: Some("2023-06-10T14:45:00Z".to_string()), // TODO: Replace with actual value
+        vaccinated: true, // TODO: Replace with actual value
+        weight: Some(25.5), // TODO: Replace with actual value
+        })
 }
 
 // TODO: Add any helper functions for your business logic here

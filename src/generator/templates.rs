@@ -375,14 +375,14 @@ pub fn write_main_rs(
     base_dir: &Path,
     project_name: &str,
     routes: &[crate::spec::RouteMeta],
-    force: bool,
+    _force: bool,
 ) -> anyhow::Result<()> {
     let routes = routes
-        .into_iter()
+        .iter()
         .map(|r| RouteDisplay {
             method: r.method.to_string(),
-            path: r.path_pattern,
-            handler: r.handler_name,
+            path: r.path_pattern.clone(),
+            handler: r.handler_name.clone(),
         })
         .collect();
     let rendered = MainRsTemplateData {

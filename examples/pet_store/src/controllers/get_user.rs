@@ -5,14 +5,13 @@
 // or update the OpenAPI specification.
 //
 // Generated from: OpenAPI specification
-// Template: controller.rs.txt
-// Generation time: 2025-07-15 12:05:24 UTC
+// Template: controller_base.rs.txt
+// Generation time: 2025-07-15 13:48:59 UTC
 
-#![allow(unused_imports)]
-
-use crate::handlers::get_user::{Request, Response};
+use anyhow::anyhow;
 use brrtrouter::typed::TypedHandlerRequest;
-use brrtrouter_macros::handler;
+use brrtrouter::validation::{ValidationError, ValidationResult};
+use serde::{Deserialize, Serialize};
 
 use crate::handlers::types::UserPreferences;
 
@@ -26,16 +25,18 @@ use crate::handlers::types::UserPreferences;
 /// - All required parameters are guaranteed to be present
 /// - Parameter types have been validated and converted
 /// - You can focus on implementing the business logic
+
+///
 /// ## Example Response
 /// ```json
-///         // {
+// {
 //   "id": "abc-123",
 //   "name": "John"
 // }
 /// ```
 
 #[handler(GetUserController)]
-pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
+pub fn handle(_req: TypedHandlerRequest<Request>) -> ValidationResult<Response> {
     // TODO: Implement your business logic here
     //
     // The request contains validated parameters and body data.
@@ -47,27 +48,27 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     // Example implementation:
     // let result = your_business_logic(&req.data);
     // match result {
-    //     Ok(data) => Response { /* populate fields */ },
-    //     Err(e) => panic!("Handle error appropriately"),
+    //     Ok(data) => Ok(Response { /* populate fields */ }),
+    //     Err(e) => Err(ValidationError::new(/* error details */)),
     // }
 
-    // Object response - using OpenAPI example data
-    Response {
-        created_at: Some("2023-01-01T00:00:00Z".to_string()),
-        email: "john@example.com".to_string(),
-        id: "abc-123".to_string(),
-        last_login: Some("2023-06-15T14:30:00Z".to_string()),
-        name: "John".to_string(),
-        phone: Some("+1-555-123-4567".to_string()),
+    // Object response - replace with your actual data
+    Ok(Response {
+        created_at: Some("2023-01-01T00:00:00Z".to_string()), // TODO: Replace with actual value
+        email: "john@example.com".to_string(),                // TODO: Replace with actual value
+        id: "abc-123".to_string(),                            // TODO: Replace with actual value
+        last_login: Some("2023-06-15T14:30:00Z".to_string()), // TODO: Replace with actual value
+        name: "John".to_string(),                             // TODO: Replace with actual value
+        phone: Some("+1-555-123-4567".to_string()),           // TODO: Replace with actual value
         preferences: Some(
             serde_json::from_value::<UserPreferences>(
                 serde_json::json!({"language":"en","timezone":"America/New_York"}),
             )
             .unwrap(),
-        ),
-        role: Some("user".to_string()),
-        status: Some("active".to_string()),
-    }
+        ), // TODO: Replace with actual value
+        role: Some("user".to_string()),                       // TODO: Replace with actual value
+        status: Some("active".to_string()),                   // TODO: Replace with actual value
+    })
 }
 
 // TODO: Add any helper functions for your business logic here
