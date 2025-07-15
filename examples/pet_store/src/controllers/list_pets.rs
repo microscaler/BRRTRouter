@@ -6,13 +6,14 @@
 //
 // Generated from: OpenAPI specification
 // Template: controller_base.rs.txt
-// Generation time: 2025-07-15 13:48:59 UTC
+// Generation time: 2025-07-15 14:02:02 UTC
 
 use anyhow::anyhow;
 use brrtrouter::typed::TypedHandlerRequest;
 use brrtrouter::validation::{ValidationError, ValidationResult};
 use serde::{Deserialize, Serialize};
 
+use crate::handlers::list_pets::{Request, Response};
 use crate::handlers::types::Pet;
 
 /// Controller implementation for list_pets
@@ -105,10 +106,7 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> ValidationResult<Response> 
     // }
 
     // Array response - replace with your actual data
-    Ok(Response(vec![
-        // TODO: Replace with actual data
-        Default::default(),
-    ]))
+    Ok(Response(vec![serde_json::from_value::<Pet>(serde_json::json!({"age":3,"breed":"Golden Retriever","created_at":"2023-01-15T10:30:00Z","id":12345,"name":"Max","status":"available","tags":["friendly","trained"],"updated_at":"2023-06-10T14:45:00Z","vaccinated":true,"weight":25.5})).unwrap(), serde_json::from_value::<Pet>(serde_json::json!({"age":3,"breed":"Golden Retriever","created_at":"2023-01-15T10:30:00Z","id":12345,"name":"Max","status":"available","tags":["friendly","trained"],"updated_at":"2023-06-10T14:45:00Z","vaccinated":true,"weight":25.5})).unwrap()]))
 }
 
 // TODO: Add any helper functions for your business logic here

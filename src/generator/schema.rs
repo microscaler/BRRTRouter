@@ -68,6 +68,10 @@ pub(crate) fn unique_handler_name(seen: &mut HashSet<String>, name: &str) -> Str
 }
 
 pub fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
+    rust_literal_for_example_with_types(field, example, &HashMap::new())
+}
+
+pub fn rust_literal_for_example_with_types(field: &FieldDef, example: &Value, schema_types: &HashMap<String, TypeDefinition>) -> String {
     let literal = match example {
         Value::String(s) => format!("{s:?}.to_string()"),
         Value::Number(n) => n.to_string(),
@@ -100,8 +104,20 @@ pub fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
                                 let json = serde_json::to_string(item).unwrap();
                                 format!("serde_json::json!({json})")
                             } else if is_named_type(inner_ty) {
-                                let json = serde_json::to_string(item).unwrap();
-                                format!("serde_json::from_value::<{inner_ty}>(serde_json::json!({json})).unwrap()")
+                                // For named types in arrays, try to build complete objects from schema
+                                if let Some(type_def) = schema_types.get(inner_ty) {
+                                    if let Some(original_schema) = &type_def.original_schema {
+                                        let complete_example = build_complete_example_object(original_schema);
+                                        let json = serde_json::to_string(&complete_example).unwrap();
+                                        format!("serde_json::from_value::<{inner_ty}>(serde_json::json!({json})).unwrap()")
+                                    } else {
+                                        let json = serde_json::to_string(item).unwrap();
+                                        format!("serde_json::from_value::<{inner_ty}>(serde_json::json!({json})).unwrap()")
+                                    }
+                                } else {
+                                    let json = serde_json::to_string(item).unwrap();
+                                    format!("serde_json::from_value::<{inner_ty}>(serde_json::json!({json})).unwrap()")
+                                }
                             } else {
                                 "Default::default()".to_string()
                             }
@@ -433,8 +449,6 @@ pub fn collect_component_schemas(
 
 /// Build a complete example object from an OpenAPI schema with all required fields
 pub fn build_complete_example_object(schema: &Value) -> Value {
-    println!("🔍 DEBUG: Building complete example object from schema: {}", serde_json::to_string_pretty(schema).unwrap_or("invalid".to_string()));
-    
     let mut example_obj = serde_json::Map::new();
     
     let required = schema
@@ -448,29 +462,21 @@ pub fn build_complete_example_object(schema: &Value) -> Value {
         })
         .unwrap_or_default();
     
-    println!("🔍 DEBUG: Required fields: {:?}", required);
-    
     if let Some(props) = schema.get("properties").and_then(|p| p.as_object()) {
-        println!("🔍 DEBUG: Found {} properties", props.len());
         for (name, prop) in props {
             let is_required = required.contains(name);
-            println!("🔍 DEBUG: Processing field '{}' (required: {})", name, is_required);
             
             // Extract example value for this property
             let example_value = if let Some(example) = prop.get("example") {
-                println!("🔍 DEBUG: Using example: {}", example);
                 example.clone()
             } else if let Some(enum_values) = prop.get("enum").and_then(|v| v.as_array()) {
                 // Use first enum value
-                let first_enum = enum_values.first().cloned().unwrap_or_else(|| Value::String("unknown".to_string()));
-                println!("🔍 DEBUG: Using enum value: {}", first_enum);
-                first_enum
+                enum_values.first().cloned().unwrap_or_else(|| Value::String("unknown".to_string()))
             } else if let Some(default_val) = prop.get("default") {
-                println!("🔍 DEBUG: Using default: {}", default_val);
                 default_val.clone()
             } else {
                 // Generate a sensible default based on type
-                let fallback = match prop.get("type").and_then(|t| t.as_str()) {
+                match prop.get("type").and_then(|t| t.as_str()) {
                     Some("string") => {
                         if let Some(format) = prop.get("format").and_then(|f| f.as_str()) {
                             match format {
@@ -489,63 +495,17 @@ pub fn build_complete_example_object(schema: &Value) -> Value {
                     Some("boolean") => Value::Bool(true),
                     Some("array") => Value::Array(vec![]),
                     _ => Value::String("unknown".to_string()),
-                };
-                println!("🔍 DEBUG: Using fallback: {}", fallback);
-                fallback
+                }
             };
             
             // Include required fields and optional fields that have examples
             if is_required || prop.get("example").is_some() || prop.get("default").is_some() {
                 example_obj.insert(name.clone(), example_value);
-                println!("🔍 DEBUG: Added field '{}' to example object", name);
-            } else {
-                println!("🔍 DEBUG: Skipped optional field '{}' (no example)", name);
             }
         }
-    } else {
-        println!("🔍 DEBUG: No properties found in schema");
     }
     
-    let result = Value::Object(example_obj);
-    println!("🔍 DEBUG: Final example object: {}", serde_json::to_string_pretty(&result).unwrap_or("invalid".to_string()));
-    result
-}
-
-pub fn debug_user_schema() {
-    let user_schema_json = r#"
-    {
-      "type": "object",
-      "required": ["id", "name", "email"],
-      "properties": {
-        "id": {
-          "type": "string",
-          "format": "uuid",
-          "example": "abc-123"
-        },
-        "name": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 100,
-          "example": "John"
-        },
-        "email": {
-          "type": "string",
-          "format": "email",
-          "example": "john@example.com"
-        },
-        "phone": {
-          "type": "string",
-          "pattern": "^\\+?[1-9]\\d{1,14}$",
-          "example": "+1-555-123-4567"
-        }
-      }
-    }
-    "#;
-    
-    println!("🧪 DEBUG: Testing User schema processing...");
-    let schema: serde_json::Value = serde_json::from_str(user_schema_json).unwrap();
-    let result = build_complete_example_object(&schema);
-    println!("🧪 DEBUG: Result: {}", serde_json::to_string_pretty(&result).unwrap());
+    Value::Object(example_obj)
 }
 
 #[cfg(test)]

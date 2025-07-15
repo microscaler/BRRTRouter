@@ -6,8 +6,9 @@
 //
 // Generated from: OpenAPI specification
 // Template: controller_base.rs.txt
-// Generation time: 2025-07-15 13:48:59 UTC
+// Generation time: 2025-07-15 14:02:02 UTC
 
+use crate::handlers::stream_events::{Request, Response};
 use anyhow::anyhow;
 use brrtrouter::sse;
 use brrtrouter::typed::TypedHandlerRequest;

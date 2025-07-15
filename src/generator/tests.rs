@@ -602,3 +602,54 @@ fn test_extract_fields_complex_nested() {
     let tags_field = fields.iter().find(|f| f.name == "tags").unwrap();
     assert_eq!(tags_field.ty, "Vec<serde_json::Value>");
 }
+
+#[test]
+fn test_rust_literal_for_array_with_complete_schema_objects() {
+    use serde_json::json;
+    use std::collections::HashMap;
+    
+    // Create a Post type definition with complete schema
+    let post_schema = json!({
+        "type": "object",
+        "required": ["id", "title", "body", "author_id"],
+        "properties": {
+            "id": {"type": "string", "example": "post1"},
+            "title": {"type": "string", "example": "Test Title"},
+            "body": {"type": "string", "example": "Test Body"},
+            "author_id": {"type": "string", "example": "user-123"},
+            "status": {"type": "string", "enum": ["draft", "published"], "default": "published"}
+        }
+    });
+    
+    let mut schema_types = HashMap::new();
+    schema_types.insert("Post".to_string(), TypeDefinition {
+        name: "Post".to_string(),
+        fields: vec![], // We don't need this for the test
+        original_schema: Some(post_schema),
+    });
+    
+    // Test array field with incomplete endpoint examples (missing author_id)
+    let field = FieldDef {
+        name: "items".to_string(),
+        ty: "Vec<Post>".to_string(),
+        optional: false,
+        value: String::new(),
+        documentation: None,
+        validation_attrs: None,
+    };
+    
+    // Endpoint example that's missing required fields
+    let incomplete_example = json!([
+        {"id": "post1", "title": "Intro", "body": "Welcome"},
+        {"id": "post2", "title": "Follow-up", "body": "Thanks"}
+    ]);
+    
+    let result = rust_literal_for_example_with_types(&field, &incomplete_example, &schema_types);
+    
+    // Should generate complete Post objects with all required fields
+    assert!(result.contains("author_id"));
+    assert!(result.contains("status"));
+    assert!(result.contains("user-123"));
+    assert!(result.contains("published"));
+    assert!(result.contains("serde_json::from_value::<Post>"));
+}

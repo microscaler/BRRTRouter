@@ -6,13 +6,14 @@
 //
 // Generated from: OpenAPI specification
 // Template: controller_base.rs.txt
-// Generation time: 2025-07-15 13:48:59 UTC
+// Generation time: 2025-07-15 14:02:02 UTC
 
 use anyhow::anyhow;
 use brrtrouter::typed::TypedHandlerRequest;
 use brrtrouter::validation::{ValidationError, ValidationResult};
 use serde::{Deserialize, Serialize};
 
+use crate::handlers::list_user_posts::{Request, Response};
 use crate::handlers::types::Post;
 
 /// Controller implementation for list_user_posts
@@ -61,10 +62,7 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> ValidationResult<Response> 
     // }
 
     // Array response - replace with your actual data
-    Ok(Response(vec![
-        // TODO: Replace with actual data
-        Default::default(),
-    ]))
+    Ok(Response(vec![serde_json::from_value::<Post>(serde_json::json!({"author_id":"user-123","body":"Welcome to the blog","created_at":"2023-01-15T10:30:00Z","id":"post1","metadata":{"seo_description":"An introduction to our blog","seo_title":"Welcome to Our Blog"},"published_at":"2023-01-15T12:00:00Z","status":"published","tags":["introduction","welcome"],"title":"Intro","updated_at":"2023-01-15T10:30:00Z","view_count":125})).unwrap(), serde_json::from_value::<Post>(serde_json::json!({"author_id":"user-123","body":"Welcome to the blog","created_at":"2023-01-15T10:30:00Z","id":"post1","metadata":{"seo_description":"An introduction to our blog","seo_title":"Welcome to Our Blog"},"published_at":"2023-01-15T12:00:00Z","status":"published","tags":["introduction","welcome"],"title":"Intro","updated_at":"2023-01-15T10:30:00Z","view_count":125})).unwrap()]))
 }
 
 // TODO: Add any helper functions for your business logic here

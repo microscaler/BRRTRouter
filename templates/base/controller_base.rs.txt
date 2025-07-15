@@ -11,9 +11,11 @@
 
 use serde::{Deserialize, Serialize};
 use brrtrouter::typed::TypedHandlerRequest;
-use brrtrouter::validation::{ValidationError, ValidationResult};
+use brrtrouter::{ValidationError, ValidationResult};
+use brrtrouter_macros::handler;
 use anyhow::anyhow;
 {% if sse %}use brrtrouter::sse;{% endif %}
+use crate::handlers::{{ handler_name }}::{Request, Response};
 {% for import in imports -%}
 use crate::handlers::types::{{ import }};
 {% endfor %}
@@ -36,6 +38,10 @@ use crate::handlers::types::{{ import }};
 {{ example_json }}
 /// ```
 {% endif %}
+
+/// {{ struct_name }} implementation
+pub struct {{ struct_name }};
+
 #[handler({{ struct_name }})]
 pub fn handle(_req: TypedHandlerRequest<Request>) -> ValidationResult<Response> {
     {% if sse %}
@@ -68,10 +74,7 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> ValidationResult<Response> 
     
     {% if response_is_array %}
     // Array response - replace with your actual data
-    Ok(Response(vec![
-        // TODO: Replace with actual data
-        Default::default()
-    ]))
+    Ok(Response({{ response_array_literal }}))
     {% else %}
     // Object response - replace with your actual data
     Ok(Response {

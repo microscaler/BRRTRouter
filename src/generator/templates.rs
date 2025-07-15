@@ -5,7 +5,7 @@ use std::fs;
 use std::path::Path;
 
 use super::schema::{
-    build_complete_example_object, is_named_type, rust_literal_for_example, to_camel_case, FieldDef, TypeDefinition,
+    build_complete_example_object, is_named_type, rust_literal_for_example, rust_literal_for_example_with_types, to_camel_case, FieldDef, TypeDefinition,
 };
 use crate::spec::{ParameterMeta, RouteMeta};
 
@@ -248,9 +248,9 @@ pub fn write_controller(
             .as_ref()
             .and_then(|v| match v {
                 Value::Array(_arr) => {
-                    // Convert the example array to Rust literal
+                    // Convert the example array to Rust literal using schema-aware generation
                     let field = &res[0]; // This is the "items" field
-                    Some(rust_literal_for_example(field, v))
+                    Some(rust_literal_for_example_with_types(field, v, schema_types))
                 }
                 _ => None,
             })

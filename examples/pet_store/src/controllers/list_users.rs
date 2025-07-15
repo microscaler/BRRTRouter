@@ -6,13 +6,14 @@
 //
 // Generated from: OpenAPI specification
 // Template: controller_base.rs.txt
-// Generation time: 2025-07-15 13:48:59 UTC
+// Generation time: 2025-07-15 14:02:02 UTC
 
 use anyhow::anyhow;
 use brrtrouter::typed::TypedHandlerRequest;
 use brrtrouter::validation::{ValidationError, ValidationResult};
 use serde::{Deserialize, Serialize};
 
+use crate::handlers::list_users::{Request, Response};
 use crate::handlers::types::User;
 
 /// Controller implementation for list_users

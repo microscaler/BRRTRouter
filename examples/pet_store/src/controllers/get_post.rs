@@ -6,12 +6,14 @@
 //
 // Generated from: OpenAPI specification
 // Template: controller_base.rs.txt
-// Generation time: 2025-07-15 13:48:59 UTC
+// Generation time: 2025-07-15 14:02:02 UTC
 
 use anyhow::anyhow;
 use brrtrouter::typed::TypedHandlerRequest;
 use brrtrouter::validation::{ValidationError, ValidationResult};
 use serde::{Deserialize, Serialize};
+
+use crate::handlers::get_post::{Request, Response};
 
 /// Controller implementation for get_post
 ///
