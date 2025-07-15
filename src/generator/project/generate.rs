@@ -72,19 +72,26 @@ pub fn generate_project_from_spec(spec_path: &Path, force: bool) -> anyhow::Resu
 
         let handler_path = handler_dir.join(format!("{handler}.rs"));
         let controller_path = controller_dir.join(format!("{handler}.rs"));
-        // Temporarily disabled to fix compilation and test workflow
-        // write_handler(
-        //     &handler_path,
-        //     &route.handler_name,
-        //     &route.parameters,
-        //     request_fields,
-        //     response_fields,
-        //     route.has_request_body,
-        //     route.response_is_array,
-        //     route.response_array_type.unwrap_or_default(),
-        //     route.sse,
-        //     force,
-        // )?;
+        
+        // Compute derived values for handler generation
+        let has_request_body = route.request_schema.is_some();
+        let response_is_array = response_fields.len() == 1 && response_fields[0].name == "items";
+        let response_array_type = if response_is_array {
+            response_fields[0].ty.clone()
+        } else {
+            "Vec<String>".to_string()
+        };
+        
+        write_handler(
+            &handler_path,
+            &route.handler_name,
+            &request_fields,
+            &response_fields,
+            &imports,
+            &route.parameters,
+            route.sse,
+            force,
+        )?;
         let controller_struct = format!("{}Controller", to_camel_case(&handler));
         write_controller(
             &controller_path,

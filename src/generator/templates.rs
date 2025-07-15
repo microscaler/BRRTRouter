@@ -57,21 +57,52 @@ pub struct RegistryTemplateData {
     pub entries: Vec<RegistryEntry>,
 }
 
-// Temporarily disabled to focus on controller debugging
-// #[derive(Template)]
-// #[template(path = "handler.rs.txt")]
-// pub struct HandlerTemplateData {
-//     pub handler_name: String,
-//     pub request_fields: Vec<FieldDef>,
-//     pub response_fields: Vec<FieldDef>,
-//     pub response_is_array: bool,
-//     pub response_array_type: String,
-//     pub imports: Vec<String>,
-//     pub parameters: Vec<ParameterMeta>,
-//     pub sse: bool,
-//     pub spec_path: String,
-//     pub generation_time: String,
-// }
+#[derive(Template)]
+#[template(path = "handlers/handler.rs.txt")]
+pub struct HandlerTemplateData {
+    pub handler_name: String,
+    pub request_fields: Vec<FieldDef>,
+    pub response_fields: Vec<FieldDef>,
+    pub response_is_array: bool,
+    pub response_array_type: String,
+    pub imports: Vec<String>,
+    pub parameters: Vec<ParameterMeta>,
+    pub sse: bool,
+}
+
+// Handler generation now uses string formatting instead of templates
+// to avoid template compilation issues with parameter extraction
+
+#[allow(clippy::too_many_arguments)]
+pub fn write_handler(
+    path: &Path,
+    handler: &str,
+    req: &[FieldDef],
+    res: &[FieldDef],
+    imports: &BTreeSet<String>,
+    params: &[ParameterMeta],
+    sse: bool,
+    force: bool,
+) -> anyhow::Result<()> {
+    if path.exists() && !force {
+        println!("⚠️  Skipping existing handler file: {path:?}");
+        return Ok(());
+    }
+    let rendered = HandlerTemplateData {
+        handler_name: handler.to_string(),
+        request_fields: req.to_vec(),
+        response_fields: res.to_vec(),
+        response_is_array: res.len() == 1 && res[0].name == "items",
+        response_array_type: res.first().map(|f| f.ty.clone()).unwrap_or_default(),
+        imports: imports.iter().cloned().collect(),
+        parameters: params.to_vec(),
+        sse,
+    }
+    .render()?;
+    fs::write(path, rendered)?;
+    println!("✅ Generated handler: {path:?}");
+    Ok(())
+}
 
 #[derive(Template)]
 #[template(path = "controllers/controller.rs.txt")]
@@ -88,23 +119,6 @@ pub struct ControllerTemplateData {
     pub sse: bool,
     pub spec_path: String,
     pub generation_time: String,
-}
-
-pub(crate) fn write_handler(
-    _handler_dir: &Path,
-    _operation_id: &str,
-    _parameters: &[ParameterMeta],
-    _request_fields: Vec<FieldDef>,
-    _response_fields: Vec<FieldDef>,
-    _has_request_body: bool,
-    _response_is_array: bool,
-    _response_array_type: String,
-    _sse: bool,
-    _force: bool,
-) -> anyhow::Result<()> {
-    // Temporarily disabled to fix compilation
-    println!("⚠️ Handler generation temporarily disabled");
-    Ok(())
 }
 
 pub fn write_controller(
