@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.brrtrouter.serve</string>
+    
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/casibbald/.cargo/bin/cargo</string>
+        <string>run</string>
+        <string>--bin</string>
+        <string>brrtrouter-gen</string>
+        <string>--</string>
+        <string>serve</string>
+        <string>--spec</string>
+        <string>examples/openapi.yaml</string>
+        <string>--addr</string>
+        <string>0.0.0.0:8080</string>
+    </array>
+    
+    <key>WorkingDirectory</key>
+    <string>/Users/casibbald/Workspace/microscaler/BRRTRouter</string>
+    
+    <key>StandardOutPath</key>
+    <string>/Users/casibbald/Workspace/microscaler/BRRTRouter/logs/brrtrouter-serve.out.log</string>
+    
+    <key>StandardErrorPath</key>
+    <string>/Users/casibbald/Workspace/microscaler/BRRTRouter/logs/brrtrouter-serve.err.log</string>
+    
+    <key>RunAtLoad</key>
+    <false/>
+    
+    <key>KeepAlive</key>
+    <false/>
+    
+    <key>ProcessType</key>
+    <string>Background</string>
+    
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>RUST_LOG</key>
+        <string>debug</string>
+        <key>RUST_BACKTRACE</key>
+        <string>full</string>
+    </dict>
+</dict>
+</plist> 

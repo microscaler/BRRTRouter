@@ -6,7 +6,7 @@
 //
 // Generated from: OpenAPI specification
 // Template: handler.rs.txt
-// Generation time: 2025-07-15 06:05:06 UTC
+// Generation time: 2025-07-15 06:20:56 UTC
 
 #![allow(unused_imports)]
 
@@ -36,12 +36,27 @@ pub struct Request {
 #[derive(Debug, Serialize)]
 
 pub struct Response {
+    pub author_id: String,
+
+    pub body: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub body: Option<String>,
+    pub created_at: Option<String>,
+
+    pub id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<String>,
+    pub metadata: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
+    pub published_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<String>>,
+
+    pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub view_count: Option<i32>,
 }
 
 /// Parameter extraction implementation with enhanced validation

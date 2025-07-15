@@ -6,7 +6,7 @@
 //
 // Generated from: OpenAPI specification
 // Template: handler.rs.txt
-// Generation time: 2025-07-15 06:05:06 UTC
+// Generation time: 2025-07-15 06:20:56 UTC
 
 #![allow(unused_imports)]
 
@@ -33,8 +33,15 @@ pub struct Request {}
 #[derive(Debug, Serialize)]
 
 pub struct Response {
+    pub page: i32,
+
+    pub per_page: i32,
+
+    pub total: i32,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub users: Option<Vec<User>>,
+    pub total_pages: Option<i32>,
+
+    pub users: Vec<User>,
 }
 
 /// Parameter extraction implementation with enhanced validation

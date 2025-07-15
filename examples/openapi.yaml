@@ -2,15 +2,117 @@ openapi: 3.1.0
 info:
   title: Pet Store
   version: "1.0.0"
+  description: A comprehensive pet store API that exercises all BRRTRouter features
+
+# Security schemes for comprehensive testing
+security:
+  - apiKey: []
+  - bearerAuth: []
 
 paths:
   /pets:
     get:
-      summary: List pets
+      summary: List pets with advanced filtering and pagination
       operationId: list_pets
+      parameters:
+        - name: limit
+          in: query
+          description: Maximum number of pets to return
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+        - name: offset
+          in: query
+          description: Number of pets to skip
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: breed
+          in: query
+          description: Filter by breed
+          required: false
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 50
+        - name: age_min
+          in: query
+          description: Minimum age filter
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 30
+        - name: age_max
+          in: query
+          description: Maximum age filter
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 30
+        - name: vaccinated
+          in: query
+          description: Filter by vaccination status
+          required: false
+          schema:
+            type: boolean
+        - name: sort
+          in: query
+          description: Sort order
+          required: false
+          schema:
+            type: string
+            enum: ["name", "age", "breed", "-name", "-age", "-breed"]
+            default: "name"
+        - name: tags
+          in: query
+          description: Filter by tags (comma-separated)
+          required: false
+          style: form
+          explode: false
+          schema:
+            type: array
+            items:
+              type: string
+        - name: x_request_id
+          in: header
+          description: Unique request identifier
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: accept_language
+          in: header
+          description: Preferred language
+          required: false
+          schema:
+            type: string
+            enum: ["en", "es", "fr", "de"]
+            default: "en"
+        - name: session_id
+          in: cookie
+          description: Session identifier
+          required: false
+          schema:
+            type: string
       responses:
         "200":
           description: A list of pets
+          headers:
+            X-Total-Count:
+              description: Total number of pets
+              schema:
+                type: integer
+            X-Page-Count:
+              description: Total number of pages
+              schema:
+                type: integer
           content:
             application/json:
               schema:
@@ -27,16 +129,101 @@ paths:
                       age: 3
                       vaccinated: true
                       tags: ["friendly", "trained"]
+                      owner: 
+                        id: "user-123"
+                        name: "John Smith"
+                        email: "john@example.com"
+                      medical_records:
+                        - date: "2023-01-15"
+                          record_type: "vaccination"
+                          description: "Annual vaccination"
+                          veterinarian: "Dr. Johnson"
+                        - date: "2023-06-10"
+                          record_type: "checkup"
+                          description: "Regular health checkup"
+                          veterinarian: "Dr. Johnson"
                     - id: 67890
                       name: "Bella"
                       breed: "Labrador"
                       age: 2
                       vaccinated: true
                       tags: ["puppy", "playful"]
+                      owner:
+                        id: "user-456"
+                        name: "Jane Doe"
+                        email: "jane@example.com"
+                      medical_records:
+                        - date: "2023-03-20"
+                          record_type: "vaccination"
+                          description: "Puppy vaccination series"
+                          veterinarian: "Dr. Smith"
+        "400":
+          description: Bad request - invalid parameters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              examples:
+                invalidLimit:
+                  summary: Invalid limit parameter
+                  value:
+                    error: "Bad Request"
+                    message: "limit must be between 1 and 100"
+                    code: 400
+                    details:
+                      field: "limit"
+                      value: "150"
+        "401":
+          description: Unauthorized - invalid or missing authentication
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              examples:
+                unauthorized:
+                  summary: Missing authentication
+                  value:
+                    error: "Unauthorized"
+                    message: "Authentication required"
+                    code: 401
+        "403":
+          description: Forbidden - insufficient permissions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              examples:
+                serverError:
+                  summary: Server error
+                  value:
+                    error: "Internal Server Error"
+                    message: "An unexpected error occurred"
+                    code: 500
+                    request_id: "req-123-456"
 
     post:
       summary: Add a pet
       operationId: add_pet
+      parameters:
+        - name: x_request_id
+          in: header
+          description: Unique request identifier
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: content_type
+          in: header
+          required: true
+          schema:
+            type: string
+            enum: ["application/json"]
       requestBody:
         required: true
         content:
@@ -48,9 +235,19 @@ paths:
                 summary: Example pet creation request
                 value:
                   name: "Bella"
+                  breed: "Labrador"
+                  age: 1
+                  owner_id: "user-123"
+                  tags: ["puppy", "friendly"]
       responses:
-        "200":
-          description: Pet added successfully
+        "201":
+          description: Pet created successfully
+          headers:
+            Location:
+              description: URL of the created pet
+              schema:
+                type: string
+                format: uri
           content:
             application/json:
               schema:
@@ -60,7 +257,32 @@ paths:
                   summary: Example response
                   value:
                     id: 67890
-                    status: "success"
+                    status: "created"
+                    message: "Pet created successfully"
+        "400":
+          description: Bad request - invalid pet data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+              examples:
+                validationError:
+                  summary: Validation error
+                  value:
+                    error: "Validation Error"
+                    message: "Invalid pet data"
+                    code: 400
+                    validation_errors:
+                      - field: "name"
+                        message: "Name is required"
+                      - field: "age"
+                        message: "Age must be between 0 and 30"
+        "409":
+          description: Conflict - pet already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /pets/{id}:
     get:
@@ -72,6 +294,25 @@ paths:
           required: true
           schema:
             type: string
+            pattern: '^[0-9]+$'
+          description: Pet ID (numeric string)
+        - name: include
+          in: query
+          description: Additional data to include
+          required: false
+          style: form
+          explode: false
+          schema:
+            type: array
+            items:
+              type: string
+              enum: ["owner", "medical_records", "photos"]
+        - name: x_request_id
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
       responses:
         "200":
           description: A pet
@@ -81,7 +322,7 @@ paths:
                 $ref: "#/components/schemas/Pet"
               examples:
                 petExample:
-                  summary: A pet
+                  summary: A pet with full details
                   value:
                     id: 12345
                     name: "Max"
@@ -89,6 +330,34 @@ paths:
                     age: 3
                     vaccinated: true
                     tags: ["friendly", "trained"]
+                    owner:
+                      id: "user-123"
+                      name: "John Smith"
+                      email: "john@example.com"
+                    medical_records:
+                      - date: "2023-01-15"
+                        record_type: "vaccination"
+                        description: "Annual vaccination"
+                        veterinarian: "Dr. Johnson"
+        "404":
+          description: Pet not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              examples:
+                notFound:
+                  summary: Pet not found
+                  value:
+                    error: "Not Found"
+                    message: "Pet with ID 12345 not found"
+                    code: 404
+        "400":
+          description: Bad request - invalid ID format
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /users:
     get:
@@ -119,7 +388,8 @@ paths:
         - name: user_id
           in: path
           required: true
-          schema: { type: string }
+          schema: 
+            type: string
       responses:
         "200":
           description: OK
@@ -142,7 +412,8 @@ paths:
         - name: user_id
           in: path
           required: true
-          schema: { type: string }
+          schema: 
+            type: string
       responses:
         "200":
           description: OK
@@ -171,11 +442,13 @@ paths:
         - name: user_id
           in: path
           required: true
-          schema: { type: string }
+          schema: 
+            type: string
         - name: post_id
           in: path
           required: true
-          schema: { type: string }
+          schema: 
+            type: string
       responses:
         "200":
           description: OK
@@ -274,67 +547,625 @@ paths:
             text/event-stream: {}
 
 components:
+  # Security schemes for comprehensive testing
+  securitySchemes:
+    apiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for authentication
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token authentication
+    oauth2:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: https://example.com/oauth/authorize
+          tokenUrl: https://example.com/oauth/token
+          scopes:
+            read: Read access
+            write: Write access
+            admin: Admin access
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: sessionId
+      description: Session cookie authentication
+
   schemas:
+    # Enhanced Pet schema with comprehensive validation
     Pet:
       type: object
       required: [id, name, breed, age, vaccinated, tags]
       properties:
-        id: { type: integer }
-        name: { type: string }
-        breed: { type: string }
-        age: { type: integer }
-        vaccinated: { type: boolean }
+        id: 
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9223372036854775807
+          example: 12345
+        name: 
+          type: string
+          minLength: 1
+          maxLength: 100
+          pattern: '^[a-zA-Z0-9\s\-\.]+$'
+          example: "Max"
+        breed: 
+          type: string
+          minLength: 2
+          maxLength: 50
+          enum: ["Golden Retriever", "Labrador", "German Shepherd", "Bulldog", "Poodle", "Beagle", "Rottweiler", "Siberian Husky", "Mixed"]
+          example: "Golden Retriever"
+        age: 
+          type: integer
+          minimum: 0
+          maximum: 30
+          example: 3
+        vaccinated: 
+          type: boolean
+          example: true
         tags:
           type: array
-          items: { type: string }
+          items: 
+            type: string
+            minLength: 1
+            maxLength: 20
+          minItems: 0
+          maxItems: 10
+          uniqueItems: true
+          example: ["friendly", "trained"]
+        owner:
+          $ref: "#/components/schemas/PetOwner"
+        medical_records:
+          type: array
+          items:
+            $ref: "#/components/schemas/MedicalRecord"
+        photos:
+          type: array
+          items:
+            $ref: "#/components/schemas/Photo"
+        weight:
+          type: number
+          format: float
+          minimum: 0.1
+          maximum: 200.0
+          example: 25.5
+        status:
+          type: string
+          enum: ["available", "pending", "sold"]
+          default: "available"
+        created_at:
+          type: string
+          format: date-time
+          example: "2023-01-15T10:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          example: "2023-06-10T14:45:00Z"
 
-    PetCreationResponse:
+    # Pet Owner schema
+    PetOwner:
+      type: object
+      required: [id, name, email]
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "user-123"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: "John Smith"
+        email:
+          type: string
+          format: email
+          example: "john@example.com"
+        phone:
+          type: string
+          pattern: '^\+?[1-9]\d{1,14}$'
+          example: "+1-555-123-4567"
+        address:
+          $ref: "#/components/schemas/Address"
+
+    # Address schema
+    Address:
       type: object
       properties:
-        id: { type: integer }
-        status: { type: string }
+        street:
+          type: string
+          maxLength: 100
+          example: "123 Main St"
+        city:
+          type: string
+          maxLength: 50
+          example: "Anytown"
+        state:
+          type: string
+          maxLength: 50
+          example: "CA"
+        zip_code:
+          type: string
+          pattern: '^\d{5}(-\d{4})?$'
+          example: "12345"
+        country:
+          type: string
+          minLength: 2
+          maxLength: 2
+          pattern: '^[A-Z]{2}$'
+          example: "US"
 
+    # Medical Record schema
+    MedicalRecord:
+      type: object
+      required: [date, record_type, description]
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "med-123"
+        date:
+          type: string
+          format: date
+          example: "2023-01-15"
+        record_type:
+          type: string
+          enum: ["vaccination", "checkup", "surgery", "medication", "emergency"]
+          example: "vaccination"
+        description:
+          type: string
+          minLength: 1
+          maxLength: 500
+          example: "Annual vaccination"
+        veterinarian:
+          type: string
+          maxLength: 100
+          example: "Dr. Johnson"
+        cost:
+          type: number
+          format: float
+          minimum: 0
+          example: 75.50
+        notes:
+          type: string
+          maxLength: 1000
+          example: "Pet responded well to treatment"
+
+    # Photo schema
+    Photo:
+      type: object
+      required: [id, url]
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "photo-123"
+        url:
+          type: string
+          format: uri
+          example: "https://example.com/photos/pet-123.jpg"
+        caption:
+          type: string
+          maxLength: 200
+          example: "Max playing in the park"
+        uploaded_at:
+          type: string
+          format: date-time
+          example: "2023-01-15T10:30:00Z"
+
+    # Enhanced Pet Creation Request
     CreatePetRequest:
       type: object
-      required: [name]
+      required: [name, breed, age]
       properties:
-        name: { type: string }
+        name: 
+          type: string
+          minLength: 1
+          maxLength: 100
+          pattern: '^[a-zA-Z0-9\s\-\.]+$'
+          example: "Bella"
+        breed: 
+          type: string
+          minLength: 2
+          maxLength: 50
+          enum: ["Golden Retriever", "Labrador", "German Shepherd", "Bulldog", "Poodle", "Beagle", "Rottweiler", "Siberian Husky", "Mixed"]
+          example: "Labrador"
+        age: 
+          type: integer
+          minimum: 0
+          maximum: 30
+          example: 1
+        owner_id:
+          type: string
+          format: uuid
+          example: "user-123"
+        tags:
+          type: array
+          items: 
+            type: string
+            minLength: 1
+            maxLength: 20
+          minItems: 0
+          maxItems: 10
+          uniqueItems: true
+          example: ["puppy", "friendly"]
+        vaccinated:
+          type: boolean
+          default: false
+          example: true
+        weight:
+          type: number
+          format: float
+          minimum: 0.1
+          maximum: 200.0
+          example: 15.2
+
+    # Enhanced Pet Creation Response
+    PetCreationResponse:
+      type: object
+      required: [id, status, message]
+      properties:
+        id: 
+          type: integer
+          format: int64
+          example: 67890
+        status: 
+          type: string
+          enum: ["created", "pending", "error"]
+          example: "created"
+        message:
+          type: string
+          example: "Pet created successfully"
+        created_at:
+          type: string
+          format: date-time
+          example: "2023-01-15T10:30:00Z"
+        location:
+          type: string
+          format: uri
+          example: "/pets/67890"
+
+    # Enhanced User schemas
+    User:
+      type: object
+      required: [id, name, email]
+      properties:
+        id: 
+          type: string
+          format: uuid
+          example: "abc-123"
+        name: 
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: "John"
+        email:
+          type: string
+          format: email
+          example: "john@example.com"
+        phone:
+          type: string
+          pattern: '^\+?[1-9]\d{1,14}$'
+          example: "+1-555-123-4567"
+        role:
+          type: string
+          enum: ["user", "admin", "moderator"]
+          default: "user"
+          example: "user"
+        status:
+          type: string
+          enum: ["active", "inactive", "suspended"]
+          default: "active"
+          example: "active"
+        created_at:
+          type: string
+          format: date-time
+          example: "2023-01-01T00:00:00Z"
+        last_login:
+          type: string
+          format: date-time
+          example: "2023-06-15T14:30:00Z"
+        preferences:
+          $ref: "#/components/schemas/UserPreferences"
+
+    UserPreferences:
+      type: object
+      properties:
+        language:
+          type: string
+          enum: ["en", "es", "fr", "de"]
+          default: "en"
+          example: "en"
+        timezone:
+          type: string
+          example: "America/New_York"
+        notifications:
+          type: object
+          properties:
+            email:
+              type: boolean
+              default: true
+            sms:
+              type: boolean
+              default: false
+            push:
+              type: boolean
+              default: true
 
     UserList:
       type: object
+      required: [users, total, page, per_page]
       properties:
         users:
           type: array
           items:
             $ref: "#/components/schemas/User"
+        total:
+          type: integer
+          minimum: 0
+          example: 150
+        page:
+          type: integer
+          minimum: 1
+          example: 1
+        per_page:
+          type: integer
+          minimum: 1
+          maximum: 100
+          example: 10
+        total_pages:
+          type: integer
+          minimum: 1
+          example: 15
 
-    User:
-      type: object
-      properties:
-        id: { type: string }
-        name: { type: string }
-
+    # Enhanced Post schema
     Post:
       type: object
+      required: [id, title, body, author_id]
       properties:
-        id: { type: string }
-        title: { type: string }
-        body: { type: string }
+        id: 
+          type: string
+          format: uuid
+          example: "post1"
+        title: 
+          type: string
+          minLength: 1
+          maxLength: 200
+          example: "Intro"
+        body: 
+          type: string
+          minLength: 1
+          maxLength: 10000
+          example: "Welcome to the blog"
+        author_id:
+          type: string
+          format: uuid
+          example: "user-123"
+        status:
+          type: string
+          enum: ["draft", "published", "archived"]
+          default: "draft"
+          example: "published"
+        tags:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 30
+          uniqueItems: true
+          example: ["introduction", "welcome"]
+        created_at:
+          type: string
+          format: date-time
+          example: "2023-01-15T10:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          example: "2023-01-15T10:30:00Z"
+        published_at:
+          type: string
+          format: date-time
+          example: "2023-01-15T12:00:00Z"
+        view_count:
+          type: integer
+          minimum: 0
+          example: 125
+        metadata:
+          type: object
+          additionalProperties: true
+          example:
+            seo_title: "Welcome to Our Blog"
+            seo_description: "An introduction to our blog"
 
+    # Enhanced Admin Settings
     AdminSettings:
       type: object
+      required: [feature_flags]
       properties:
         feature_flags:
           type: object
-          additionalProperties: { type: boolean }
+          additionalProperties: 
+            type: boolean
+          example:
+            beta: true
+            analytics: false
+            new_ui: true
+        system_config:
+          type: object
+          properties:
+            max_pets_per_user:
+              type: integer
+              minimum: 1
+              maximum: 100
+              example: 10
+            maintenance_mode:
+              type: boolean
+              example: false
+            api_rate_limit:
+              type: integer
+              minimum: 1
+              example: 1000
+        notification_settings:
+          type: object
+          properties:
+            email_enabled:
+              type: boolean
+              example: true
+            sms_enabled:
+              type: boolean
+              example: false
+            webhook_url:
+              type: string
+              format: uri
+              example: "https://example.com/webhook"
 
+    # Enhanced Item schemas
     Item:
       type: object
+      required: [id, name, category]
       properties:
-        id: { type: string }
-        name: { type: string }
+        id: 
+          type: string
+          format: uuid
+          example: "item-001"
+        name: 
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: "Sample Item"
+        category:
+          type: string
+          enum: ["food", "toy", "accessory", "medication", "grooming"]
+          example: "toy"
+        description:
+          type: string
+          maxLength: 1000
+          example: "A fun toy for pets"
+        price:
+          type: number
+          format: float
+          minimum: 0
+          example: 19.99
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+          pattern: '^[A-Z]{3}$'
+          example: "USD"
+        in_stock:
+          type: boolean
+          example: true
+        stock_quantity:
+          type: integer
+          minimum: 0
+          example: 50
+        created_at:
+          type: string
+          format: date-time
+          example: "2023-01-15T10:30:00Z"
 
     CreateItemRequest:
       type: object
+      required: [name, category]
       properties:
-        name: { type: string }
+        name: 
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: "New Item"
+        category:
+          type: string
+          enum: ["food", "toy", "accessory", "medication", "grooming"]
+          example: "toy"
+        description:
+          type: string
+          maxLength: 1000
+          example: "A new item for pets"
+        price:
+          type: number
+          format: float
+          minimum: 0
+          example: 24.99
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+          pattern: '^[A-Z]{3}$'
+          default: "USD"
+          example: "USD"
+        stock_quantity:
+          type: integer
+          minimum: 0
+          example: 25
+
+    # Comprehensive Error schemas
+    Error:
+      type: object
+      required: [error, message, code]
+      properties:
+        error:
+          type: string
+          example: "Bad Request"
+        message:
+          type: string
+          example: "Invalid input provided"
+        code:
+          type: integer
+          example: 400
+        request_id:
+          type: string
+          format: uuid
+          example: "req-123-456"
+        timestamp:
+          type: string
+          format: date-time
+          example: "2023-01-15T10:30:00Z"
+        details:
+          type: object
+          additionalProperties: true
+          example:
+            field: "age"
+            value: "invalid"
+
+    ValidationError:
+      type: object
+      required: [error, message, code, validation_errors]
+      properties:
+        error:
+          type: string
+          example: "Validation Error"
+        message:
+          type: string
+          example: "One or more fields failed validation"
+        code:
+          type: integer
+          example: 400
+        request_id:
+          type: string
+          format: uuid
+          example: "req-123-456"
+        timestamp:
+          type: string
+          format: date-time
+          example: "2023-01-15T10:30:00Z"
+        validation_errors:
+          type: array
+          items:
+            type: object
+            required: [field, message]
+            properties:
+              field:
+                type: string
+                example: "name"
+              message:
+                type: string
+                example: "Name is required"
+              code:
+                type: string
+                example: "required"
+              value:
+                type: string
+                example: "" 

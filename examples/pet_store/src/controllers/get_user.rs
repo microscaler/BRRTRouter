@@ -6,13 +6,15 @@
 //
 // Generated from: OpenAPI specification
 // Template: controller.rs.txt
-// Generation time: 2025-07-15 06:05:06 UTC
+// Generation time: 2025-07-15 06:20:56 UTC
 
 #![allow(unused_imports)]
 
 use crate::brrtrouter::typed::TypedHandlerRequest;
 use crate::handlers::get_user::{Request, Response};
 use brrtrouter_macros::handler;
+
+use crate::handlers::types::UserPreferences;
 
 /// Controller implementation for get_user
 ///
@@ -51,8 +53,15 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
 
     // Object response - replace with your actual data
     Response {
-        id: Some("abc-123".to_string()), // TODO: Replace with actual value
-        name: Some("John".to_string()),  // TODO: Replace with actual value
+        created_at: Some("example".to_string()), // TODO: Replace with actual value
+        email: "example".to_string(),            // TODO: Replace with actual value
+        id: "abc-123".to_string(),               // TODO: Replace with actual value
+        last_login: Some("example".to_string()), // TODO: Replace with actual value
+        name: "John".to_string(),                // TODO: Replace with actual value
+        phone: Some("example".to_string()),      // TODO: Replace with actual value
+        preferences: Some(Default::default()),   // TODO: Replace with actual value
+        role: Some("example".to_string()),       // TODO: Replace with actual value
+        status: Some("example".to_string()),     // TODO: Replace with actual value
     }
 }
 

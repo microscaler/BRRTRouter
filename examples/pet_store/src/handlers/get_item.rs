@@ -6,7 +6,7 @@
 //
 // Generated from: OpenAPI specification
 // Template: handler.rs.txt
-// Generation time: 2025-07-15 06:05:06 UTC
+// Generation time: 2025-07-15 06:20:56 UTC
 
 #![allow(unused_imports)]
 
@@ -34,10 +34,23 @@ pub struct Request {
 #[derive(Debug, Serialize)]
 
 pub struct Response {
+    pub category: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<String>,
+    pub created_at: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
+    pub currency: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+
+    pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub in_stock: Option<bool>,
+
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub price: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stock_quantity: Option<i32>,
 }
 
 /// Parameter extraction implementation with enhanced validation

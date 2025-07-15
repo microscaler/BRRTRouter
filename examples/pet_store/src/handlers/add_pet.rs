@@ -6,7 +6,7 @@
 //
 // Generated from: OpenAPI specification
 // Template: handler.rs.txt
-// Generation time: 2025-07-15 06:05:06 UTC
+// Generation time: 2025-07-15 06:20:56 UTC
 
 #![allow(unused_imports)]
 
@@ -24,7 +24,23 @@ use std::convert::TryFrom;
 /// as defined in the OpenAPI specification.
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Request {
+    pub age: i32,
+
+    pub breed: String,
+
     pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vaccinated: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub weight: Option<f64>,
+
+    pub x_request_id: String,
+
+    pub content_type: String,
 }
 
 /// Response structure for add_pet handler
@@ -33,12 +49,7 @@ pub struct Request {
 /// in the OpenAPI specification.
 #[derive(Debug, Serialize)]
 
-pub struct Response {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<i32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub status: Option<String>,
-}
+pub struct Response {}
 
 /// Parameter extraction implementation with enhanced validation
 impl TryFrom<HandlerRequest> for Request {
@@ -50,6 +61,32 @@ impl TryFrom<HandlerRequest> for Request {
         let mut data_map = Map::new();
 
         // Extract parameters with proper validation
+
+        if let Some(v) = req.headers.get("x_request_id") {
+            let decoded_value = decode_param_value(
+                v,
+                Some(&serde_json::json!({"format":"uuid","type":"string"})),
+                None,
+                None,
+            );
+
+            data_map.insert("x_request_id".to_string(), decoded_value);
+        } else {
+            return Err(anyhow!("Missing required parameter 'x_request_id'"));
+        }
+
+        if let Some(v) = req.headers.get("content_type") {
+            let decoded_value = decode_param_value(
+                v,
+                Some(&serde_json::json!({"enum":["application/json"],"type":"string"})),
+                None,
+                None,
+            );
+
+            data_map.insert("content_type".to_string(), decoded_value);
+        } else {
+            return Err(anyhow!("Missing required parameter 'content_type'"));
+        }
 
         // Extract request body if present
         if let Some(body) = req.body {

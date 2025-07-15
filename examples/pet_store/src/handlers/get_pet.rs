@@ -6,7 +6,7 @@
 //
 // Generated from: OpenAPI specification
 // Template: handler.rs.txt
-// Generation time: 2025-07-15 06:05:06 UTC
+// Generation time: 2025-07-15 06:20:56 UTC
 
 #![allow(unused_imports)]
 
@@ -14,6 +14,9 @@ use crate::brrtrouter::dispatcher::HandlerRequest;
 use crate::brrtrouter::server::request::decode_param_value;
 use crate::brrtrouter::spec::ParameterStyle;
 use crate::brrtrouter::typed::TypedHandlerRequest;
+use crate::handlers::types::MedicalRecord;
+use crate::handlers::types::PetOwner;
+use crate::handlers::types::Photo;
 use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
@@ -25,6 +28,10 @@ use std::convert::TryFrom;
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Request {
     pub id: String,
+
+    pub include: Vec<String>,
+
+    pub x_request_id: String,
 }
 
 /// Response structure for get_pet handler
@@ -37,14 +44,28 @@ pub struct Response {
     pub age: i32,
 
     pub breed: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<String>,
 
     pub id: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub medical_records: Option<Vec<MedicalRecord>>,
 
     pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner: Option<PetOwner>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub photos: Option<Vec<Photo>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
 
     pub tags: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<String>,
 
     pub vaccinated: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub weight: Option<f64>,
 }
 
 /// Parameter extraction implementation with enhanced validation
@@ -59,12 +80,44 @@ impl TryFrom<HandlerRequest> for Request {
         // Extract parameters with proper validation
 
         if let Some(v) = req.path_params.get("id") {
-            let decoded_value =
-                decode_param_value(v, Some(&serde_json::json!({"type":"string"})), None, None);
+            let decoded_value = decode_param_value(
+                v,
+                Some(&serde_json::json!({"pattern":"^[0-9]+$","type":"string"})),
+                None,
+                None,
+            );
 
             data_map.insert("id".to_string(), decoded_value);
         } else {
             return Err(anyhow!("Missing required parameter 'id'"));
+        }
+
+        if let Some(v) = req.query_params.get("include") {
+            let decoded_value = decode_param_value(
+                v,
+                Some(
+                    &serde_json::json!({"items":{"enum":["owner","medical_records","photos"],"type":"string"},"type":"array"}),
+                ),
+                Some(ParameterStyle::Form),
+                Some(false),
+            );
+
+            data_map.insert("include".to_string(), decoded_value);
+        } else {
+            return Err(anyhow!("Missing required parameter 'include'"));
+        }
+
+        if let Some(v) = req.headers.get("x_request_id") {
+            let decoded_value = decode_param_value(
+                v,
+                Some(&serde_json::json!({"format":"uuid","type":"string"})),
+                None,
+                None,
+            );
+
+            data_map.insert("x_request_id".to_string(), decoded_value);
+        } else {
+            return Err(anyhow!("Missing required parameter 'x_request_id'"));
         }
 
         // Extract request body if present

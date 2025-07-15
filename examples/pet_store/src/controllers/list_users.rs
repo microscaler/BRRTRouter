@@ -6,7 +6,7 @@
 //
 // Generated from: OpenAPI specification
 // Template: controller.rs.txt
-// Generation time: 2025-07-15 06:05:06 UTC
+// Generation time: 2025-07-15 06:20:56 UTC
 
 #![allow(unused_imports)]
 
@@ -61,12 +61,16 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
 
     // Object response - replace with your actual data
     Response {
-        users: Some(vec![
+        page: 42,              // TODO: Replace with actual value
+        per_page: 42,          // TODO: Replace with actual value
+        total: 42,             // TODO: Replace with actual value
+        total_pages: Some(42), // TODO: Replace with actual value
+        users: vec![
             serde_json::from_value::<User>(serde_json::json!({"id":"abc-123","name":"John"}))
                 .unwrap(),
             serde_json::from_value::<User>(serde_json::json!({"id":"def-456","name":"Jane"}))
                 .unwrap(),
-        ]), // TODO: Replace with actual value
+        ], // TODO: Replace with actual value
     }
 }
 

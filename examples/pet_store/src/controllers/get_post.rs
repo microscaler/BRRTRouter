@@ -6,7 +6,7 @@
 //
 // Generated from: OpenAPI specification
 // Template: controller.rs.txt
-// Generation time: 2025-07-15 06:05:06 UTC
+// Generation time: 2025-07-15 06:20:56 UTC
 
 #![allow(unused_imports)]
 
@@ -52,9 +52,17 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
 
     // Object response - replace with your actual data
     Response {
-        body: Some("Welcome to the blog".to_string()), // TODO: Replace with actual value
-        id: Some("post1".to_string()),                 // TODO: Replace with actual value
-        title: Some("Intro".to_string()),              // TODO: Replace with actual value
+        author_id: "example".to_string(), // TODO: Replace with actual value
+        body: "Welcome to the blog".to_string(), // TODO: Replace with actual value
+        created_at: Some("example".to_string()), // TODO: Replace with actual value
+        id: "post1".to_string(),          // TODO: Replace with actual value
+        metadata: Some(Default::default()), // TODO: Replace with actual value
+        published_at: Some("example".to_string()), // TODO: Replace with actual value
+        status: Some("example".to_string()), // TODO: Replace with actual value
+        tags: Some(vec![]),               // TODO: Replace with actual value
+        title: "Intro".to_string(),       // TODO: Replace with actual value
+        updated_at: Some("example".to_string()), // TODO: Replace with actual value
+        view_count: Some(42),             // TODO: Replace with actual value
     }
 }
 

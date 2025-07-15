@@ -6,7 +6,7 @@
 //
 // Generated from: OpenAPI specification
 // Template: handler_types.rs.txt
-// Generation time: 2025-07-15 06:05:06 UTC
+// Generation time: 2025-07-15 06:20:56 UTC
 
 use serde::{Deserialize, Serialize};
 
@@ -16,22 +16,47 @@ use serde::{Deserialize, Serialize};
 /// This type represents the structure defined in the OpenAPI specification.
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct AddPetRequest {
+    /// age field
+    pub age: i32,
+    /// breed field
+    pub breed: String,
     /// name field
     pub name: String,
+    /// owner_id field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner_id: Option<String>,
+    /// tags field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<String>>,
+    /// vaccinated field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vaccinated: Option<bool>,
+    /// weight field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub weight: Option<f64>,
 }
 
-/// AddPetResponse type definition
+/// Address type definition
 ///
-/// Generated from OpenAPI schema: AddPetResponse
+/// Generated from OpenAPI schema: Address
 /// This type represents the structure defined in the OpenAPI specification.
 #[derive(Debug, Serialize, Deserialize, Default)]
-pub struct AddPetResponse {
-    /// id field
+pub struct Address {
+    /// city field
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<i32>,
-    /// status field
+    pub city: Option<String>,
+    /// country field
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub status: Option<String>,
+    pub country: Option<String>,
+    /// state field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub state: Option<String>,
+    /// street field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub street: Option<String>,
+    /// zip_code field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub zip_code: Option<String>,
 }
 
 /// AdminSettings type definition
@@ -41,8 +66,13 @@ pub struct AddPetResponse {
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct AdminSettings {
     /// feature_flags field
+    pub feature_flags: serde_json::Value,
+    /// notification_settings field
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub feature_flags: Option<serde_json::Value>,
+    pub notification_settings: Option<serde_json::Value>,
+    /// system_config field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub system_config: Option<serde_json::Value>,
 }
 
 /// AdminSettingsResponse type definition
@@ -52,8 +82,13 @@ pub struct AdminSettings {
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct AdminSettingsResponse {
     /// feature_flags field
+    pub feature_flags: serde_json::Value,
+    /// notification_settings field
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub feature_flags: Option<serde_json::Value>,
+    pub notification_settings: Option<serde_json::Value>,
+    /// system_config field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub system_config: Option<serde_json::Value>,
 }
 
 /// CreateItemRequest type definition
@@ -62,9 +97,22 @@ pub struct AdminSettingsResponse {
 /// This type represents the structure defined in the OpenAPI specification.
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct CreateItemRequest {
-    /// name field
+    /// category field
+    pub category: String,
+    /// currency field
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
+    pub currency: Option<String>,
+    /// description field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// name field
+    pub name: String,
+    /// price field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub price: Option<f64>,
+    /// stock_quantity field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stock_quantity: Option<i32>,
 }
 
 /// CreatePetRequest type definition
@@ -73,8 +121,47 @@ pub struct CreateItemRequest {
 /// This type represents the structure defined in the OpenAPI specification.
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct CreatePetRequest {
+    /// age field
+    pub age: i32,
+    /// breed field
+    pub breed: String,
     /// name field
     pub name: String,
+    /// owner_id field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner_id: Option<String>,
+    /// tags field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<String>>,
+    /// vaccinated field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vaccinated: Option<bool>,
+    /// weight field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub weight: Option<f64>,
+}
+
+/// Error type definition
+///
+/// Generated from OpenAPI schema: Error
+/// This type represents the structure defined in the OpenAPI specification.
+#[derive(Debug, Serialize, Deserialize, Default)]
+pub struct Error {
+    /// code field
+    pub code: i32,
+    /// details field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub details: Option<serde_json::Value>,
+    /// error field
+    pub error: String,
+    /// message field
+    pub message: String,
+    /// request_id field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
+    /// timestamp field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timestamp: Option<String>,
 }
 
 /// GetItemResponse type definition
@@ -83,12 +170,30 @@ pub struct CreatePetRequest {
 /// This type represents the structure defined in the OpenAPI specification.
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct GetItemResponse {
+    /// category field
+    pub category: String,
+    /// created_at field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<String>,
+    /// currency field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub currency: Option<String>,
+    /// description field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
     /// id field
+    pub id: String,
+    /// in_stock field
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<String>,
+    pub in_stock: Option<bool>,
     /// name field
+    pub name: String,
+    /// price field
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
+    pub price: Option<f64>,
+    /// stock_quantity field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stock_quantity: Option<i32>,
 }
 
 /// GetPetResponse type definition
@@ -101,14 +206,35 @@ pub struct GetPetResponse {
     pub age: i32,
     /// breed field
     pub breed: String,
+    /// created_at field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<String>,
     /// id field
     pub id: i32,
+    /// medical_records field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub medical_records: Option<Vec<MedicalRecord>>,
     /// name field
     pub name: String,
+    /// owner field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner: Option<PetOwner>,
+    /// photos field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub photos: Option<Vec<Photo>>,
+    /// status field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
     /// tags field
     pub tags: Vec<String>,
+    /// updated_at field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<String>,
     /// vaccinated field
     pub vaccinated: bool,
+    /// weight field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub weight: Option<f64>,
 }
 
 /// GetPostResponse type definition
@@ -117,15 +243,35 @@ pub struct GetPetResponse {
 /// This type represents the structure defined in the OpenAPI specification.
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct GetPostResponse {
+    /// author_id field
+    pub author_id: String,
     /// body field
+    pub body: String,
+    /// created_at field
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub body: Option<String>,
+    pub created_at: Option<String>,
     /// id field
+    pub id: String,
+    /// metadata field
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<String>,
+    pub metadata: Option<serde_json::Value>,
+    /// published_at field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub published_at: Option<String>,
+    /// status field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    /// tags field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<String>>,
     /// title field
+    pub title: String,
+    /// updated_at field
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
+    pub updated_at: Option<String>,
+    /// view_count field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub view_count: Option<i32>,
 }
 
 /// GetUserResponse type definition
@@ -134,12 +280,30 @@ pub struct GetPostResponse {
 /// This type represents the structure defined in the OpenAPI specification.
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct GetUserResponse {
+    /// created_at field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<String>,
+    /// email field
+    pub email: String,
     /// id field
+    pub id: String,
+    /// last_login field
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<String>,
+    pub last_login: Option<String>,
     /// name field
+    pub name: String,
+    /// phone field
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
+    pub phone: Option<String>,
+    /// preferences field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preferences: Option<UserPreferences>,
+    /// role field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+    /// status field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
 }
 
 /// Item type definition
@@ -148,12 +312,30 @@ pub struct GetUserResponse {
 /// This type represents the structure defined in the OpenAPI specification.
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct Item {
+    /// category field
+    pub category: String,
+    /// created_at field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<String>,
+    /// currency field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub currency: Option<String>,
+    /// description field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
     /// id field
+    pub id: String,
+    /// in_stock field
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<String>,
+    pub in_stock: Option<bool>,
     /// name field
+    pub name: String,
+    /// price field
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
+    pub price: Option<f64>,
+    /// stock_quantity field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stock_quantity: Option<i32>,
 }
 
 /// ListPetsResponse type definition
@@ -182,9 +364,43 @@ pub struct ListUserPostsResponse {
 /// This type represents the structure defined in the OpenAPI specification.
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct ListUsersResponse {
-    /// users field
+    /// page field
+    pub page: i32,
+    /// per_page field
+    pub per_page: i32,
+    /// total field
+    pub total: i32,
+    /// total_pages field
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub users: Option<Vec<User>>,
+    pub total_pages: Option<i32>,
+    /// users field
+    pub users: Vec<User>,
+}
+
+/// MedicalRecord type definition
+///
+/// Generated from OpenAPI schema: MedicalRecord
+/// This type represents the structure defined in the OpenAPI specification.
+#[derive(Debug, Serialize, Deserialize, Default)]
+pub struct MedicalRecord {
+    /// cost field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cost: Option<f64>,
+    /// date field
+    pub date: String,
+    /// description field
+    pub description: String,
+    /// id field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    /// notes field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+    /// record_type field
+    pub record_type: String,
+    /// veterinarian field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub veterinarian: Option<String>,
 }
 
 /// Pet type definition
@@ -197,14 +413,35 @@ pub struct Pet {
     pub age: i32,
     /// breed field
     pub breed: String,
+    /// created_at field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<String>,
     /// id field
     pub id: i32,
+    /// medical_records field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub medical_records: Option<Vec<MedicalRecord>>,
     /// name field
     pub name: String,
+    /// owner field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner: Option<PetOwner>,
+    /// photos field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub photos: Option<Vec<Photo>>,
+    /// status field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
     /// tags field
     pub tags: Vec<String>,
+    /// updated_at field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<String>,
     /// vaccinated field
     pub vaccinated: bool,
+    /// weight field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub weight: Option<f64>,
 }
 
 /// PetCreationResponse type definition
@@ -213,12 +450,56 @@ pub struct Pet {
 /// This type represents the structure defined in the OpenAPI specification.
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct PetCreationResponse {
+    /// created_at field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<String>,
     /// id field
+    pub id: i32,
+    /// location field
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<i32>,
+    pub location: Option<String>,
+    /// message field
+    pub message: String,
     /// status field
+    pub status: String,
+}
+
+/// PetOwner type definition
+///
+/// Generated from OpenAPI schema: PetOwner
+/// This type represents the structure defined in the OpenAPI specification.
+#[derive(Debug, Serialize, Deserialize, Default)]
+pub struct PetOwner {
+    /// address field
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub status: Option<String>,
+    pub address: Option<Address>,
+    /// email field
+    pub email: String,
+    /// id field
+    pub id: String,
+    /// name field
+    pub name: String,
+    /// phone field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phone: Option<String>,
+}
+
+/// Photo type definition
+///
+/// Generated from OpenAPI schema: Photo
+/// This type represents the structure defined in the OpenAPI specification.
+#[derive(Debug, Serialize, Deserialize, Default)]
+pub struct Photo {
+    /// caption field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub caption: Option<String>,
+    /// id field
+    pub id: String,
+    /// uploaded_at field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub uploaded_at: Option<String>,
+    /// url field
+    pub url: String,
 }
 
 /// Post type definition
@@ -227,15 +508,35 @@ pub struct PetCreationResponse {
 /// This type represents the structure defined in the OpenAPI specification.
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct Post {
+    /// author_id field
+    pub author_id: String,
     /// body field
+    pub body: String,
+    /// created_at field
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub body: Option<String>,
+    pub created_at: Option<String>,
     /// id field
+    pub id: String,
+    /// metadata field
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<String>,
+    pub metadata: Option<serde_json::Value>,
+    /// published_at field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub published_at: Option<String>,
+    /// status field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    /// tags field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<String>>,
     /// title field
+    pub title: String,
+    /// updated_at field
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
+    pub updated_at: Option<String>,
+    /// view_count field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub view_count: Option<i32>,
 }
 
 /// PostItemRequest type definition
@@ -244,9 +545,22 @@ pub struct Post {
 /// This type represents the structure defined in the OpenAPI specification.
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct PostItemRequest {
-    /// name field
+    /// category field
+    pub category: String,
+    /// currency field
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
+    pub currency: Option<String>,
+    /// description field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// name field
+    pub name: String,
+    /// price field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub price: Option<f64>,
+    /// stock_quantity field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stock_quantity: Option<i32>,
 }
 
 /// PostItemResponse type definition
@@ -255,12 +569,30 @@ pub struct PostItemRequest {
 /// This type represents the structure defined in the OpenAPI specification.
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct PostItemResponse {
+    /// category field
+    pub category: String,
+    /// created_at field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<String>,
+    /// currency field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub currency: Option<String>,
+    /// description field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
     /// id field
+    pub id: String,
+    /// in_stock field
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<String>,
+    pub in_stock: Option<bool>,
     /// name field
+    pub name: String,
+    /// price field
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
+    pub price: Option<f64>,
+    /// stock_quantity field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stock_quantity: Option<i32>,
 }
 
 /// User type definition
@@ -269,12 +601,30 @@ pub struct PostItemResponse {
 /// This type represents the structure defined in the OpenAPI specification.
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct User {
+    /// created_at field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<String>,
+    /// email field
+    pub email: String,
     /// id field
+    pub id: String,
+    /// last_login field
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<String>,
+    pub last_login: Option<String>,
     /// name field
+    pub name: String,
+    /// phone field
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
+    pub phone: Option<String>,
+    /// preferences field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preferences: Option<UserPreferences>,
+    /// role field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+    /// status field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
 }
 
 /// UserList type definition
@@ -283,7 +633,54 @@ pub struct User {
 /// This type represents the structure defined in the OpenAPI specification.
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct UserList {
-    /// users field
+    /// page field
+    pub page: i32,
+    /// per_page field
+    pub per_page: i32,
+    /// total field
+    pub total: i32,
+    /// total_pages field
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub users: Option<Vec<User>>,
+    pub total_pages: Option<i32>,
+    /// users field
+    pub users: Vec<User>,
+}
+
+/// UserPreferences type definition
+///
+/// Generated from OpenAPI schema: UserPreferences
+/// This type represents the structure defined in the OpenAPI specification.
+#[derive(Debug, Serialize, Deserialize, Default)]
+pub struct UserPreferences {
+    /// language field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    /// notifications field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notifications: Option<serde_json::Value>,
+    /// timezone field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timezone: Option<String>,
+}
+
+/// ValidationError type definition
+///
+/// Generated from OpenAPI schema: ValidationError
+/// This type represents the structure defined in the OpenAPI specification.
+#[derive(Debug, Serialize, Deserialize, Default)]
+pub struct ValidationError {
+    /// code field
+    pub code: i32,
+    /// error field
+    pub error: String,
+    /// message field
+    pub message: String,
+    /// request_id field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
+    /// timestamp field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timestamp: Option<String>,
+    /// validation_errors field
+    pub validation_errors: Vec<serde_json::Value>,
 }

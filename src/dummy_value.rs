@@ -4,7 +4,7 @@ pub fn dummy_value(ty: &str) -> askama::Result<String> {
     let value = match ty {
         "String" => "\"example\".to_string()",
         "i32" => "42",
-        "f64" => "3.14",
+        "f64" => "42.0",
         "bool" => "true",
         "Vec<Value>" | "Vec<String>" | "Vec<i32>" | "Vec<f64>" | "Vec<bool>" => "vec![]",
         _ => "Default::default()",
@@ -28,7 +28,7 @@ mod tests {
 
     #[test]
     fn test_f64() {
-        assert_eq!(dummy_value("f64").unwrap(), "3.14");
+        assert_eq!(dummy_value("f64").unwrap(), "42.0");
     }
 
     #[test]

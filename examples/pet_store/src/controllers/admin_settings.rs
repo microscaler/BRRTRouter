@@ -6,7 +6,7 @@
 //
 // Generated from: OpenAPI specification
 // Template: controller.rs.txt
-// Generation time: 2025-07-15 06:05:06 UTC
+// Generation time: 2025-07-15 06:20:56 UTC
 
 #![allow(unused_imports)]
 
@@ -53,7 +53,9 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
 
     // Object response - replace with your actual data
     Response {
-        feature_flags: Some(serde_json::json!({"analytics":false,"beta":true})), // TODO: Replace with actual value
+        feature_flags: serde_json::json!({"analytics":false,"beta":true}), // TODO: Replace with actual value
+        notification_settings: Some(Default::default()), // TODO: Replace with actual value
+        system_config: Some(Default::default()),         // TODO: Replace with actual value
     }
 }
 

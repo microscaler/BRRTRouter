@@ -6,7 +6,7 @@
 //
 // Generated from: OpenAPI specification
 // Template: controller.rs.txt
-// Generation time: 2025-07-15 06:05:06 UTC
+// Generation time: 2025-07-15 06:20:56 UTC
 
 #![allow(unused_imports)]
 
@@ -33,7 +33,26 @@ use crate::handlers::types::Pet;
 //     "age": 3,
 //     "breed": "Golden Retriever",
 //     "id": 12345,
+//     "medical_records": [
+//       {
+//         "date": "2023-01-15",
+//         "description": "Annual vaccination",
+//         "record_type": "vaccination",
+//         "veterinarian": "Dr. Johnson"
+//       },
+//       {
+//         "date": "2023-06-10",
+//         "description": "Regular health checkup",
+//         "record_type": "checkup",
+//         "veterinarian": "Dr. Johnson"
+//       }
+//     ],
 //     "name": "Max",
+//     "owner": {
+//       "email": "john@example.com",
+//       "id": "user-123",
+//       "name": "John Smith"
+//     },
 //     "tags": [
 //       "friendly",
 //       "trained"
@@ -44,7 +63,20 @@ use crate::handlers::types::Pet;
 //     "age": 2,
 //     "breed": "Labrador",
 //     "id": 67890,
+//     "medical_records": [
+//       {
+//         "date": "2023-03-20",
+//         "description": "Puppy vaccination series",
+//         "record_type": "vaccination",
+//         "veterinarian": "Dr. Smith"
+//       }
+//     ],
 //     "name": "Bella",
+//     "owner": {
+//       "email": "jane@example.com",
+//       "id": "user-456",
+//       "name": "Jane Doe"
+//     },
 //     "tags": [
 //       "puppy",
 //       "playful"
@@ -72,7 +104,7 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     // }
 
     // Array response - replace with your actual data
-    Response(vec![serde_json::from_value::<Pet>(serde_json::json!({"age":3,"breed":"Golden Retriever","id":12345,"name":"Max","tags":["friendly","trained"],"vaccinated":true})).unwrap(), serde_json::from_value::<Pet>(serde_json::json!({"age":2,"breed":"Labrador","id":67890,"name":"Bella","tags":["puppy","playful"],"vaccinated":true})).unwrap()])
+    Response(vec![serde_json::from_value::<Pet>(serde_json::json!({"age":3,"breed":"Golden Retriever","id":12345,"medical_records":[{"date":"2023-01-15","description":"Annual vaccination","record_type":"vaccination","veterinarian":"Dr. Johnson"},{"date":"2023-06-10","description":"Regular health checkup","record_type":"checkup","veterinarian":"Dr. Johnson"}],"name":"Max","owner":{"email":"john@example.com","id":"user-123","name":"John Smith"},"tags":["friendly","trained"],"vaccinated":true})).unwrap(), serde_json::from_value::<Pet>(serde_json::json!({"age":2,"breed":"Labrador","id":67890,"medical_records":[{"date":"2023-03-20","description":"Puppy vaccination series","record_type":"vaccination","veterinarian":"Dr. Smith"}],"name":"Bella","owner":{"email":"jane@example.com","id":"user-456","name":"Jane Doe"},"tags":["puppy","playful"],"vaccinated":true})).unwrap()])
 }
 
 // TODO: Add any helper functions for your business logic here

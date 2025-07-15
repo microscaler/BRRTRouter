@@ -6,7 +6,7 @@
 //
 // Generated from: OpenAPI specification
 // Template: controller.rs.txt
-// Generation time: 2025-07-15 06:05:06 UTC
+// Generation time: 2025-07-15 06:20:56 UTC
 
 #![allow(unused_imports)]
 
@@ -24,13 +24,6 @@ use brrtrouter_macros::handler;
 /// - All required parameters are guaranteed to be present
 /// - Parameter types have been validated and converted
 /// - You can focus on implementing the business logic
-/// ## Example Response
-/// ```json
-///         // {
-//   "id": 67890,
-//   "status": "success"
-// }
-/// ```
 
 #[handler(AddPetController)]
 pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
@@ -50,10 +43,7 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     // }
 
     // Object response - replace with your actual data
-    Response {
-        id: Some(67890),                     // TODO: Replace with actual value
-        status: Some("success".to_string()), // TODO: Replace with actual value
-    }
+    Response {}
 }
 
 // TODO: Add any helper functions for your business logic here

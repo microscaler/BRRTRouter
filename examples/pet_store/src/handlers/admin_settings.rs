@@ -6,7 +6,7 @@
 //
 // Generated from: OpenAPI specification
 // Template: handler.rs.txt
-// Generation time: 2025-07-15 06:05:06 UTC
+// Generation time: 2025-07-15 06:20:56 UTC
 
 #![allow(unused_imports)]
 
@@ -32,8 +32,11 @@ pub struct Request {}
 #[derive(Debug, Serialize)]
 
 pub struct Response {
+    pub feature_flags: serde_json::Value,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub feature_flags: Option<serde_json::Value>,
+    pub notification_settings: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub system_config: Option<serde_json::Value>,
 }
 
 /// Parameter extraction implementation with enhanced validation

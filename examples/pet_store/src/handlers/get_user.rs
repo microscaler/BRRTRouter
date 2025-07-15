@@ -6,7 +6,7 @@
 //
 // Generated from: OpenAPI specification
 // Template: handler.rs.txt
-// Generation time: 2025-07-15 06:05:06 UTC
+// Generation time: 2025-07-15 06:20:56 UTC
 
 #![allow(unused_imports)]
 
@@ -14,6 +14,7 @@ use crate::brrtrouter::dispatcher::HandlerRequest;
 use crate::brrtrouter::server::request::decode_param_value;
 use crate::brrtrouter::spec::ParameterStyle;
 use crate::brrtrouter::typed::TypedHandlerRequest;
+use crate::handlers::types::UserPreferences;
 use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
@@ -35,9 +36,23 @@ pub struct Request {
 
 pub struct Response {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<String>,
+    pub created_at: Option<String>,
+
+    pub email: String,
+
+    pub id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
+    pub last_login: Option<String>,
+
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phone: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preferences: Option<UserPreferences>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
 }
 
 /// Parameter extraction implementation with enhanced validation

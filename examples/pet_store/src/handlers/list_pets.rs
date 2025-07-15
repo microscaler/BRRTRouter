@@ -6,7 +6,7 @@
 //
 // Generated from: OpenAPI specification
 // Template: handler.rs.txt
-// Generation time: 2025-07-15 06:05:06 UTC
+// Generation time: 2025-07-15 06:20:56 UTC
 
 #![allow(unused_imports)]
 
@@ -24,7 +24,29 @@ use std::convert::TryFrom;
 /// This structure represents the complete request parameters and body
 /// as defined in the OpenAPI specification.
 #[derive(Debug, Deserialize, Serialize)]
-pub struct Request {}
+pub struct Request {
+    pub limit: i32,
+
+    pub offset: i32,
+
+    pub breed: String,
+
+    pub age_min: i32,
+
+    pub age_max: i32,
+
+    pub vaccinated: bool,
+
+    pub sort: String,
+
+    pub tags: Vec<String>,
+
+    pub x_request_id: String,
+
+    pub accept_language: String,
+
+    pub session_id: String,
+}
 
 /// Response structure for list_pets handler
 ///
@@ -44,6 +66,145 @@ impl TryFrom<HandlerRequest> for Request {
         let mut data_map = Map::new();
 
         // Extract parameters with proper validation
+
+        if let Some(v) = req.query_params.get("limit") {
+            let decoded_value = decode_param_value(
+                v,
+                Some(&serde_json::json!({"default":10,"maximum":100,"minimum":1,"type":"integer"})),
+                None,
+                None,
+            );
+
+            data_map.insert("limit".to_string(), decoded_value);
+        } else {
+            return Err(anyhow!("Missing required parameter 'limit'"));
+        }
+
+        if let Some(v) = req.query_params.get("offset") {
+            let decoded_value = decode_param_value(
+                v,
+                Some(&serde_json::json!({"default":0,"minimum":0,"type":"integer"})),
+                None,
+                None,
+            );
+
+            data_map.insert("offset".to_string(), decoded_value);
+        } else {
+            return Err(anyhow!("Missing required parameter 'offset'"));
+        }
+
+        if let Some(v) = req.query_params.get("breed") {
+            let decoded_value = decode_param_value(
+                v,
+                Some(&serde_json::json!({"maxLength":50,"minLength":2,"type":"string"})),
+                None,
+                None,
+            );
+
+            data_map.insert("breed".to_string(), decoded_value);
+        } else {
+            return Err(anyhow!("Missing required parameter 'breed'"));
+        }
+
+        if let Some(v) = req.query_params.get("age_min") {
+            let decoded_value = decode_param_value(
+                v,
+                Some(&serde_json::json!({"maximum":30,"minimum":0,"type":"integer"})),
+                None,
+                None,
+            );
+
+            data_map.insert("age_min".to_string(), decoded_value);
+        } else {
+            return Err(anyhow!("Missing required parameter 'age_min'"));
+        }
+
+        if let Some(v) = req.query_params.get("age_max") {
+            let decoded_value = decode_param_value(
+                v,
+                Some(&serde_json::json!({"maximum":30,"minimum":0,"type":"integer"})),
+                None,
+                None,
+            );
+
+            data_map.insert("age_max".to_string(), decoded_value);
+        } else {
+            return Err(anyhow!("Missing required parameter 'age_max'"));
+        }
+
+        if let Some(v) = req.query_params.get("vaccinated") {
+            let decoded_value =
+                decode_param_value(v, Some(&serde_json::json!({"type":"boolean"})), None, None);
+
+            data_map.insert("vaccinated".to_string(), decoded_value);
+        } else {
+            return Err(anyhow!("Missing required parameter 'vaccinated'"));
+        }
+
+        if let Some(v) = req.query_params.get("sort") {
+            let decoded_value = decode_param_value(
+                v,
+                Some(
+                    &serde_json::json!({"default":"name","enum":["name","age","breed","-name","-age","-breed"],"type":"string"}),
+                ),
+                None,
+                None,
+            );
+
+            data_map.insert("sort".to_string(), decoded_value);
+        } else {
+            return Err(anyhow!("Missing required parameter 'sort'"));
+        }
+
+        if let Some(v) = req.query_params.get("tags") {
+            let decoded_value = decode_param_value(
+                v,
+                Some(&serde_json::json!({"items":{"type":"string"},"type":"array"})),
+                Some(ParameterStyle::Form),
+                Some(false),
+            );
+
+            data_map.insert("tags".to_string(), decoded_value);
+        } else {
+            return Err(anyhow!("Missing required parameter 'tags'"));
+        }
+
+        if let Some(v) = req.headers.get("x_request_id") {
+            let decoded_value = decode_param_value(
+                v,
+                Some(&serde_json::json!({"format":"uuid","type":"string"})),
+                None,
+                None,
+            );
+
+            data_map.insert("x_request_id".to_string(), decoded_value);
+        } else {
+            return Err(anyhow!("Missing required parameter 'x_request_id'"));
+        }
+
+        if let Some(v) = req.headers.get("accept_language") {
+            let decoded_value = decode_param_value(
+                v,
+                Some(
+                    &serde_json::json!({"default":"en","enum":["en","es","fr","de"],"type":"string"}),
+                ),
+                None,
+                None,
+            );
+
+            data_map.insert("accept_language".to_string(), decoded_value);
+        } else {
+            return Err(anyhow!("Missing required parameter 'accept_language'"));
+        }
+
+        if let Some(v) = req.cookies.get("session_id") {
+            let decoded_value =
+                decode_param_value(v, Some(&serde_json::json!({"type":"string"})), None, None);
+
+            data_map.insert("session_id".to_string(), decoded_value);
+        } else {
+            return Err(anyhow!("Missing required parameter 'session_id'"));
+        }
 
         // Extract request body if present
         if let Some(body) = req.body {
