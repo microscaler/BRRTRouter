@@ -3,6 +3,7 @@ use crate::{
     hot_reload::watch_spec,
     load_spec,
     router::Router,
+    runtime_config::RuntimeConfig,
     server::{AppService, HttpServer},
 };
 use clap::{Parser, Subcommand};
@@ -57,6 +58,10 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
             Ok(())
         }
         Commands::Serve { spec, watch, addr } => {
+            // Configure coroutine stack size
+            let config = RuntimeConfig::from_env();
+            may::config().set_stack_size(config.stack_size);
+            
             let (routes, schemes, _slug) = crate::spec::load_spec_full(spec.to_str().unwrap())?;
             let router = Arc::new(RwLock::new(Router::new(routes.clone())));
             let mut dispatcher = Dispatcher::new();
