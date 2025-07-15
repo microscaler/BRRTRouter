@@ -63,6 +63,13 @@ pub struct Response {
 /// This function is called by the BRRTRouter dispatcher and handles
 /// the conversion between the raw request and the typed request structure.
 pub fn handler(req: TypedHandlerRequest<Request>) -> Response {
-    crate::controllers::{{ handler_name }}::handle(req)
+    match crate::controllers::{{ handler_name }}::handle(req) {
+        Ok(response) => response,
+        Err(validation_error) => {
+            // In a real application, you might want to log this error
+            // and return a proper error response instead of panicking
+            panic!("Controller validation error: {:?}", validation_error);
+        }
+    }
 }
 {% endblock handler_function %} 

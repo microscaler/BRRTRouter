@@ -39,9 +39,6 @@ use crate::handlers::types::{{ import }};
 /// ```
 {% endif %}
 
-/// {{ struct_name }} implementation
-pub struct {{ struct_name }};
-
 #[handler({{ struct_name }})]
 pub fn handle(_req: TypedHandlerRequest<Request>) -> ValidationResult<Response> {
     {% if sse %}
