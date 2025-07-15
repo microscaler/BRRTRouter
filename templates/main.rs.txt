@@ -6,13 +6,14 @@
 //
 // Template: main.rs.txt
 
-use brrtrouter::dispatcher::Dispatcher;
-use brrtrouter::middleware::MetricsMiddleware;
+use brrtrouter::middleware::{ConsoleLoggingMiddleware, MetricsMiddleware, TracingMiddleware};
 use brrtrouter::runtime_config::RuntimeConfig;
+use brrtrouter::security::{SecurityProvider, SecurityRequest};
+use brrtrouter::spec::{load_spec, SecurityScheme};
 use brrtrouter::server::{AppService, HttpServer};
+use brrtrouter::dispatcher::Dispatcher;
 use brrtrouter::router::Router;
 use clap::Parser;
-use std::collections::HashMap;
 use std::io;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
@@ -56,6 +57,16 @@ fn main() -> io::Result<()> {
     let args = Args::parse();
     let runtime_config = RuntimeConfig::from_env();
 
+    // Initialize basic console logging for development
+    println!("🚀 Starting {{ name }} server...");
+    println!("📋 OpenAPI spec: {}", args.spec.display());
+    println!("🌐 Server will start on http://localhost:{}", args.port);
+    if let Some(ref test_key) = args.test_api_key {
+        println!("🔑 Test API key: {}", test_key);
+    }
+    println!("📊 Request logs will be shown below:");
+    println!("{}", "=".repeat(60));
+
     // Increase stack size to handle complex JSON processing and prevent stack overflow
     let stack_size = if runtime_config.stack_size > 0x10000 {
         runtime_config.stack_size
@@ -76,11 +87,19 @@ fn main() -> io::Result<()> {
         registry::register_from_spec(&mut *dispatcher.write().unwrap(), &routes);
     }
 
-    // Add metrics middleware
-    {
-        let mut dispatcher_guard = dispatcher.write().unwrap();
-        dispatcher_guard.add_middleware(Arc::new(MetricsMiddleware::default()));
-    }
+    // Create metrics middleware for monitoring
+    let metrics = Arc::new(MetricsMiddleware::new());
+    
+    // Create tracing middleware for request logging
+    let tracing_middleware = Arc::new(TracingMiddleware);
+    
+    // Create console logging middleware for development visibility
+    let console_logging = Arc::new(ConsoleLoggingMiddleware);
+    
+    // Add middleware to dispatcher
+    dispatcher.write().unwrap().add_middleware(metrics.clone());
+    dispatcher.write().unwrap().add_middleware(console_logging);
+    dispatcher.write().unwrap().add_middleware(tracing_middleware);
 
     let mut service = AppService::new(
         router.clone(),
