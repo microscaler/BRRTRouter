@@ -1168,8 +1168,4 @@ components:
                 example: "required"
               value:
                 type: string
-                example: "" # Test change at Tue Jul 15 13:20:45 EEST 2025
-# Hot reload demo change at Tue Jul 15 13:47:10 EEST 2025
-# Change 1 at Tue Jul 15 13:47:26 EEST 2025
-# Change 2 at Tue Jul 15 13:47:27 EEST 2025
-# Change 3 at Tue Jul 15 13:47:27 EEST 2025
+                example: "" 

@@ -6,7 +6,7 @@
 //
 // Generated from: OpenAPI specification
 // Template: controller.rs.txt
-// Generation time: 2025-07-15 10:20:11 UTC
+// Generation time: 2025-07-15 11:20:03 UTC
 
 #![allow(unused_imports)]
 
@@ -73,21 +73,21 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     //     Err(e) => panic!("Handle error appropriately"),
     // }
 
-    // Object response - replace with your actual data
+    // Object response - using OpenAPI example data
     Response {
-        age: 3, // TODO: Replace with actual value
-        breed: "Golden Retriever".to_string(), // TODO: Replace with actual value
-        created_at: Some("example".to_string()), // TODO: Replace with actual value
-        id: 12345, // TODO: Replace with actual value
-        medical_records: Some(vec![serde_json::from_value::<MedicalRecord>(serde_json::json!({"date":"2023-01-15","description":"Annual vaccination","record_type":"vaccination","veterinarian":"Dr. Johnson"})).unwrap()]), // TODO: Replace with actual value
-        name: "Max".to_string(), // TODO: Replace with actual value
-        owner: Some(serde_json::from_value::<PetOwner>(serde_json::json!({"email":"john@example.com","id":"user-123","name":"John Smith"})).unwrap()), // TODO: Replace with actual value
-        photos: Some(Default::default()), // TODO: Replace with actual value
-        status: Some("example".to_string()), // TODO: Replace with actual value
-        tags: vec!["friendly".to_string(), "trained".to_string()], // TODO: Replace with actual value
-        updated_at: Some("example".to_string()), // TODO: Replace with actual value
-        vaccinated: true, // TODO: Replace with actual value
-        weight: Some(42.0), // TODO: Replace with actual value
+        age: 3,
+        breed: "Golden Retriever".to_string(),
+        created_at: Some("example".to_string()),
+        id: 12345,
+        medical_records: Some(vec![serde_json::from_value::<MedicalRecord>(serde_json::json!({"date":"2023-01-15","description":"Annual vaccination","record_type":"vaccination","veterinarian":"Dr. Johnson"})).unwrap()]),
+        name: "Max".to_string(),
+        owner: Some(serde_json::from_value::<PetOwner>(serde_json::json!({"email":"john@example.com","id":"user-123","name":"John Smith"})).unwrap()),
+        photos: Some(Default::default()),
+        status: Some("example".to_string()),
+        tags: vec!["friendly".to_string(), "trained".to_string()],
+        updated_at: Some("example".to_string()),
+        vaccinated: true,
+        weight: Some(42.0),
         }
 }
 

@@ -65,13 +65,13 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     // }
     
     {% if response_is_array %}
-    // Array response - replace with your actual data
+    // Array response - using OpenAPI example data
     Response({{ response_array_literal }})
     {% else %}
-    // Object response - replace with your actual data
+    // Object response - using OpenAPI example data
     Response {
         {% for field in response_fields -%}
-        {{ field.name }}: {{ field.value }}, // TODO: Replace with actual value
+        {{ field.name }}: {{ field.value }},
         {% endfor -%}
     }
     {% endif %}

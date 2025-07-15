@@ -6,7 +6,7 @@
 //
 // Generated from: OpenAPI specification
 // Template: controller.rs.txt
-// Generation time: 2025-07-15 10:20:11 UTC
+// Generation time: 2025-07-15 11:20:03 UTC
 
 #![allow(unused_imports)]
 
@@ -59,7 +59,7 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     //     Err(e) => panic!("Handle error appropriately"),
     // }
 
-    // Array response - replace with your actual data
+    // Array response - using OpenAPI example data
     Response(vec![
         serde_json::from_value::<Post>(
             serde_json::json!({"body":"Welcome to the blog","id":"post1","title":"Intro"}),

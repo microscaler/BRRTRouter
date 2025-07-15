@@ -6,7 +6,7 @@
 //
 // Generated from: OpenAPI specification
 // Template: handler.rs.txt
-// Generation time: 2025-07-15 10:20:11 UTC
+// Generation time: 2025-07-15 11:20:03 UTC
 
 #![allow(unused_imports)]
 
@@ -17,6 +17,7 @@ use brrtrouter::server::request::decode_param_value;
 use brrtrouter::spec::ParameterStyle;
 use brrtrouter::typed::TypedHandlerRequest;
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 use std::convert::TryFrom;
 
 /// Request structure for list_users handler
@@ -49,8 +50,6 @@ impl TryFrom<HandlerRequest> for Request {
     type Error = anyhow::Error;
 
     fn try_from(req: HandlerRequest) -> Result<Self, Self::Error> {
-        use serde_json::{Map, Value};
-
         let mut data_map = Map::new();
 
         // Extract parameters with proper validation

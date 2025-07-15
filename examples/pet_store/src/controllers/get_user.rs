@@ -6,7 +6,7 @@
 //
 // Generated from: OpenAPI specification
 // Template: controller.rs.txt
-// Generation time: 2025-07-15 10:20:11 UTC
+// Generation time: 2025-07-15 11:20:03 UTC
 
 #![allow(unused_imports)]
 
@@ -51,17 +51,17 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     //     Err(e) => panic!("Handle error appropriately"),
     // }
 
-    // Object response - replace with your actual data
+    // Object response - using OpenAPI example data
     Response {
-        created_at: Some("example".to_string()), // TODO: Replace with actual value
-        email: "example".to_string(),            // TODO: Replace with actual value
-        id: "abc-123".to_string(),               // TODO: Replace with actual value
-        last_login: Some("example".to_string()), // TODO: Replace with actual value
-        name: "John".to_string(),                // TODO: Replace with actual value
-        phone: Some("example".to_string()),      // TODO: Replace with actual value
-        preferences: Some(Default::default()),   // TODO: Replace with actual value
-        role: Some("example".to_string()),       // TODO: Replace with actual value
-        status: Some("example".to_string()),     // TODO: Replace with actual value
+        created_at: Some("example".to_string()),
+        email: "example".to_string(),
+        id: "abc-123".to_string(),
+        last_login: Some("example".to_string()),
+        name: "John".to_string(),
+        phone: Some("example".to_string()),
+        preferences: Some(Default::default()),
+        role: Some("example".to_string()),
+        status: Some("example".to_string()),
     }
 }
 

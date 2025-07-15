@@ -6,7 +6,7 @@
 //
 // Generated from: OpenAPI specification
 // Template: controller.rs.txt
-// Generation time: 2025-07-15 10:20:11 UTC
+// Generation time: 2025-07-15 11:20:03 UTC
 
 #![allow(unused_imports)]
 
@@ -49,17 +49,17 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     //     Err(e) => panic!("Handle error appropriately"),
     // }
 
-    // Object response - replace with your actual data
+    // Object response - using OpenAPI example data
     Response {
-        category: "example".to_string(), // TODO: Replace with actual value
-        created_at: Some("example".to_string()), // TODO: Replace with actual value
-        currency: Some("example".to_string()), // TODO: Replace with actual value
-        description: Some("example".to_string()), // TODO: Replace with actual value
-        id: "item-001".to_string(),      // TODO: Replace with actual value
-        in_stock: Some(true),            // TODO: Replace with actual value
-        name: "Sample Item".to_string(), // TODO: Replace with actual value
-        price: Some(42.0),               // TODO: Replace with actual value
-        stock_quantity: Some(42),        // TODO: Replace with actual value
+        category: "example".to_string(),
+        created_at: Some("example".to_string()),
+        currency: Some("example".to_string()),
+        description: Some("example".to_string()),
+        id: "item-001".to_string(),
+        in_stock: Some(true),
+        name: "Sample Item".to_string(),
+        price: Some(42.0),
+        stock_quantity: Some(42),
     }
 }
 
