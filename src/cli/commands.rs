@@ -5,7 +5,7 @@ use crate::{
     router::Router,
     server::{AppService, HttpServer},
 };
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use may::coroutine;
 use may::sync::mpsc;
 use std::io;
@@ -29,6 +29,14 @@ pub enum Commands {
 
         #[arg(short, long, default_value_t = false)]
         force: bool,
+
+        /// Perform a dry run: show what would change without writing files
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+
+        /// Limit regeneration to specific parts (comma-separated or repeated)
+        #[arg(long, value_enum, num_args = 1.., value_delimiter = ',')]
+        only: Option<Vec<OnlyPart>>,
     },
     /// Run the server for a spec using echo handlers
     Serve {
@@ -43,16 +51,39 @@ pub enum Commands {
     },
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
+pub enum OnlyPart {
+    Handlers,
+    Controllers,
+    Types,
+    Registry,
+    Main,
+    Docs,
+}
+
 pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     match &cli.command {
-        Commands::Generate { spec, force } => {
+        Commands::Generate {
+            spec,
+            force,
+            dry_run,
+            only,
+        } => {
             let (_routes, _slug) = load_spec(spec.to_str().unwrap())?;
-            let project_dir = crate::generator::generate_project_from_spec(spec.as_path(), *force)
-                .expect("failed to generate example project");
+            let scope = map_only_to_scope(only.as_deref());
+            let project_dir = crate::generator::generate_project_with_options(
+                spec.as_path(),
+                *force,
+                *dry_run,
+                &scope,
+            )
+            .expect("failed to generate example project");
             // Format the newly generated project
-            if let Err(e) = crate::generator::format_project(&project_dir) {
-                eprintln!("cargo fmt failed: {e}");
+            if !*dry_run {
+                if let Err(e) = crate::generator::format_project(&project_dir) {
+                    eprintln!("cargo fmt failed: {e}");
+                }
             }
             Ok(())
         }
@@ -108,4 +139,31 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
             Ok(())
         }
     }
+}
+
+fn map_only_to_scope(only: Option<&[OnlyPart]>) -> crate::generator::GenerationScope {
+    use crate::generator::GenerationScope as Scope;
+    let mut scope = Scope::all();
+    if let Some(parts) = only {
+        // Start with nothing, then enable selected parts
+        scope = Scope {
+            handlers: false,
+            controllers: false,
+            types: false,
+            registry: false,
+            main: false,
+            docs: false,
+        };
+        for p in parts {
+            match p {
+                OnlyPart::Handlers => scope.handlers = true,
+                OnlyPart::Controllers => scope.controllers = true,
+                OnlyPart::Types => scope.types = true,
+                OnlyPart::Registry => scope.registry = true,
+                OnlyPart::Main => scope.main = true,
+                OnlyPart::Docs => scope.docs = true,
+            }
+        }
+    }
+    scope
 }

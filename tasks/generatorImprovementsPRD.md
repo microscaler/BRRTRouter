@@ -490,9 +490,9 @@ Deliver a robust, warning-free, deterministic code generation system (Askama-bas
 - [x] Copy spec to `examples/<slug>/doc/openapi.yaml` honoring `--force`
 
 #### 3) Regeneration Controls
-- [ ] Implement `--dry-run` (no writes, summary only)
-- [ ] Implement `--only=handlers|controllers|types|registry|main|docs`
-- [ ] Human-readable summary of created/updated/skipped files
+- [x] Implement `--dry-run` (no writes, summary only)
+- [x] Implement `--only=handlers|controllers|types|registry|main|docs`
+- [x] Human-readable summary of created/updated/skipped files
 
 #### 4) Robust Example Literal Generation
 - [ ] Remove all `unwrap()` in example conversion path
