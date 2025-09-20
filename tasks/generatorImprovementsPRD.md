@@ -267,6 +267,116 @@ Deliver a robust, warning-free, deterministic code generation system (Askama-bas
 #### Acceptance Criteria
 - CLI exposes key runtime controls; hot‑reload diffing is visible; example services can be served easily.
 
+### Cross‑Cutting Operational & Observability Improvements
+
+#### Objectives
+- Unify logging, correlation, health, shutdown, and configuration for predictable ops.
+
+#### Functional Requirements
+- Request IDs & Correlation
+  - Generate a per‑request id if absent; propagate via tracing spans, logs, metrics, and include in responses (debug mode or opt‑in header).
+  - Honor incoming `X-Request-Id`/`traceparent` when present.
+
+- Structured Logging
+  - JSON logs with consistent fields (ts, level, request_id, method, path, handler, status, latency_ms, error).
+  - Redact sensitive values; configurable log level.
+
+- Readiness vs Liveness
+  - `/health/liveness` basic self‑check; `/health/readiness` ensures router and dispatcher ready, and (optionally) external deps.
+
+- Graceful Shutdown
+  - Provide a shutdown API that stops accepting new requests, waits up to timeout for in‑flight to complete, then cancels.
+
+- Configuration Unification
+  - Centralize runtime flags in `RuntimeConfig` (env + CLI override): validation debug/strict, dispatcher timeouts/capacity/policy, CORS, log level, tracing enable.
+
+- CI Quality Gates
+  - Enforce zero warnings on generated example, coverage floor, and generation determinism (lock file checksum) in CI.
+
+#### Non‑Functional Requirements
+- Low overhead for request id and logging; deterministic field ordering in logs.
+
+#### Testing & Validation
+- Unit tests for request id propagation and logging fields; integration tests for graceful shutdown window; CI checks for determinism and coverage.
+
+#### Acceptance Criteria
+- Requests carry a correlation id end‑to‑end; logs are structured and useful; dual health endpoints present; graceful shutdown works under load; CI gates enforced.
+
+### Security Scope Enforcement
+
+#### Objectives
+- Enforce OpenAPI scopes accurately with AND/OR semantics and clear errors.
+
+#### Functional Requirements
+- Interpret security requirements per OpenAPI: each array entry is an alternative (OR); within an entry, all schemes must pass (AND) and scopes must be satisfied.
+- Provide clear 401/403 responses (Problem Details) indicating missing/insufficient scopes (debug exposure gated).
+
+#### Testing & Validation
+- Unit tests for multiple providers with different scope combinations; integration tests covering 401 vs 403 behaviors.
+
+#### Acceptance Criteria
+- Security evaluation follows OpenAPI semantics; errors/logs clearly indicate which requirement failed.
+
+### Rate Limiting & Circuit Breaking (Optional)
+
+#### Objectives
+- Protect handlers and the service under load or dependency failures.
+
+#### Functional Requirements
+- Middleware for token‑bucket/leaky‑bucket per route/handler with configurable budgets.
+- Simple circuit breaker policy (open/half‑open/closed) with error rate thresholds and backoff.
+
+#### Testing & Validation
+- Unit tests for limiter counters and breaker state machine; integration tests under synthetic load.
+
+#### Acceptance Criteria
+- Optional, disabled by default; when enabled, limits and breaker behavior are measurable and predictable.
+
+### Content Negotiation Enhancements
+
+#### Objectives
+- Honor Accept headers and multiple response content‑types.
+
+#### Functional Requirements
+- Select best available content‑type per status using Accept and spec‑advertised media types; fallback policy when unsupported.
+- Ensure `write_handler_response` uses the negotiated type.
+
+#### Testing & Validation
+- Tests for Accept matching (exact, wildcard) and fallback behaviors.
+
+#### Acceptance Criteria
+- Responses respect Accept/spec; predictable fallbacks documented and tested.
+
+### Streaming & Payload Limits
+
+#### Objectives
+- Support large/streaming payloads safely; robust SSE.
+
+#### Functional Requirements
+- Configurable max request body size with 413 response when exceeded.
+- SSE: heartbeat/keepalive interval, retry guidance; document backpressure expectations.
+
+#### Testing & Validation
+- Tests for 413 behavior and SSE heartbeat; verify server stability under large payload attempts.
+
+#### Acceptance Criteria
+- Large payloads are bounded; SSE is resilient with documented behavior.
+
+### Spec‑Driven Tests & SDK Hooks (Optional)
+
+#### Objectives
+- Improve contract confidence via generated tests; enable optional SDK hooks.
+
+#### Functional Requirements
+- Generate golden request/response tests from OpenAPI examples (opt‑in), covering each operation.
+- Stub SDK hook generation (client signatures) for future integration testing (no publishing scope).
+
+#### Testing & Validation
+- Generated tests compile and pass against example service; skips when examples absent.
+
+#### Acceptance Criteria
+- Opt‑in generated tests provide quick contract checks without manual authoring.
+
 ### Dispatcher Improvements
 
 #### Objectives
@@ -492,5 +602,38 @@ Deliver a robust, warning-free, deterministic code generation system (Askama-bas
 - [ ] Serve generated controllers (`--example <slug>`) option
 - [ ] Hot-reload: log add/remove/update diffs; support route removal
 - [ ] Preserve rich error context instead of `io::Error::other`
+
+#### 19) Cross‑Cutting Ops & Observability
+- [ ] Inject/propagate request id (honor X-Request-Id/traceparent)
+- [ ] Structured JSON logs with redaction and consistent fields
+- [ ] Split liveness/readiness endpoints
+- [ ] Graceful shutdown with configurable drain timeout
+- [ ] Unify RuntimeConfig (env + CLI override)
+- [ ] CI gates: zero warnings on generated example, coverage floor, lock-file determinism
+
+#### 20) Security Scope Enforcement
+- [ ] Implement OpenAPI OR-of-AND security evaluation
+- [ ] Return 401 vs 403 appropriately with Problem Details (debug gated)
+- [ ] Tests for multi-scheme/multi-scope combinations
+
+#### 21) Rate Limiting & Circuit Breaking (Optional)
+- [ ] Token/leaky bucket middleware with per-route budgets
+- [ ] Circuit breaker with thresholds and backoff
+- [ ] Tests for limiter/breaker under load
+
+#### 22) Content Negotiation Enhancements
+- [ ] Implement Accept-driven content-type selection per status
+- [ ] Fallback policy when unsupported; document behavior
+- [ ] Ensure writer respects negotiated content-type
+
+#### 23) Streaming & Payload Limits
+- [ ] Configurable max request body size → 413
+- [ ] SSE heartbeat/keepalive and retry guidance
+- [ ] Tests for large payloads and SSE behavior
+
+#### 24) Spec‑Driven Tests & SDK Hooks (Optional)
+- [ ] Generate golden tests from OpenAPI examples (opt-in)
+- [ ] SDK stub hooks for future integration (no publish)
+- [ ] Ensure generated tests compile and pass; skip when examples absent
 
 
