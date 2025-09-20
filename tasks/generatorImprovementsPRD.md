@@ -112,6 +112,12 @@ Deliver a robust, warning-free, deterministic code generation system (Askama-bas
 - Provide `--only` scoping and `--dry-run` log with a diff‑like summary.
 - Add atomic write strategy: write to `*.tmp`, fsync, then rename.
 - Produce a deterministic lock file (e.g., `examples/<slug>/.brrtrouter-lock.json`) containing generator version, template versions, and a map of relative file paths → content hashes; avoid embedding version/hash in file headers.
+  - Lock file format (JSON):
+    - `generator_version`: string (semantic version or git hash)
+    - `template_versions`: object map `template_name -> version/hash`
+    - `files`: object map `relative_path -> { sha256: string }`
+    - `created_at`/`updated_at`: ISO8601 timestamps
+    - `spec_path`: original spec input path (for traceability)
 
 ### Validation (Request & Response) Requirements
 
@@ -167,6 +173,99 @@ Deliver a robust, warning-free, deterministic code generation system (Askama-bas
 - Invalid controller responses produce logs and 500 (or 400 in strict mode) Problem Details in debug; terse otherwise.
 - Tracing spans and metrics reflect validation failures.
 - No `expect` panics in validation paths; graceful error handling throughout.
+
+### Server Improvements
+
+#### Objectives
+- Harden server request/response handling, error reporting, and content negotiation while integrating validation and dispatcher policies.
+
+#### Functional Requirements
+- Validation integration
+  - Replace `expect` on JSONSchema compile with graceful error handling (return 500 terse; verbose in debug; log cause).
+  - Enforce OpenAPI `requestBody.required`; return 400 if missing when required.
+  - Problem Details responses for validation/auth errors; debug-mode verbosity toggle.
+
+- Content negotiation & endpoints
+  - Respect Content-Type/Accept where applicable; set Content-Type from spec when missing.
+  - Health/metrics/docs/openapi endpoints respect base_path if configured.
+  - Static files: add cache headers/ETag; support HEAD.
+
+- Dispatcher integration
+  - Honor dispatcher timeout/cancellation policies and map to appropriate HTTP statuses.
+  - Emit tracing/metrics for validation and dispatch outcomes.
+
+#### Non‑Functional Requirements
+- No panics from schema compile or content negotiation paths.
+- Minimal overhead added (<2ms p50) for negotiation and headers.
+
+#### Testing & Validation
+- Unit tests: required body enforcement; schema compile failure handling; Accept/Content‑Type behavior; ETag/HEAD for static.
+- Integration tests: problem+json errors (terse vs debug); timeout mapping to HTTP.
+
+#### Acceptance Criteria
+- Server never panics on invalid/missing schemas and returns appropriate Problem Details; content negotiation behaves predictably; base endpoints work with base_path.
+
+### Router Improvements
+
+#### Objectives
+- Improve correctness and robustness of path matching and performance.
+
+#### Functional Requirements
+- Escape regex special chars in literal path segments.
+- Normalize paths (trailing slash policy), and percent‑decode segments for param values.
+- Configurable method policy (e.g., include/exclude TRACE/HEAD) aligned with spec.
+- Performance: pre‑bucket routes by method to reduce iteration.
+
+#### Non‑Functional Requirements
+- Deterministic route ordering; unchanged behavior for existing specs by default.
+
+#### Testing & Validation
+- Unit tests: regex escaping cases; trailing slash; percent‑decoding; method policy.
+- Benchmarks: basic route matching performance pre/post change.
+
+#### Acceptance Criteria
+- Matching remains correct across edge cases; performance does not regress noticeably; tests pass.
+
+### Spec Improvements
+
+#### Objectives
+- Increase fidelity of OpenAPI ingestion for downstream generation and validation.
+
+#### Functional Requirements
+- Capture `requestBody.required` and expose on `RouteMeta`.
+- Improve response selection: map all statuses/content‑types; provide helper to choose by status/content‑type.
+- Extend schema mapping: formats (int32/int64/float/double), enums, additionalProperties.
+- Security semantics: support AND/OR evaluation guidance in route metadata.
+
+#### Non‑Functional Requirements
+- No panics; invalid refs produce actionable errors.
+
+#### Testing & Validation
+- Unit tests: required body flag; multi‑status/content‑type mapping; formats/enums/maps; parameter required logic.
+
+#### Acceptance Criteria
+- `RouteMeta` exposes required flags and richer response metadata; generator and server can rely on it without ad‑hoc logic.
+
+### CLI Improvements
+
+#### Objectives
+- Make CLI reflect runtime policies and improve dev ergonomics.
+
+#### Functional Requirements
+- Flags to control validation verbosity (`--debug-validation`) and strict response policy (`--strict-response-validation`).
+- Dispatcher controls: `--timeout-ms`, `--channel-capacity`, `--backpressure-policy`.
+- Serve command: option to run generated example controllers/handlers instead of echo (e.g., `--example <slug>`).
+- Hot‑reload: log route add/remove/update diff; support route removal; avoid leaks.
+- Error handling: preserve context instead of `io::Error::other` for joins.
+
+#### Non‑Functional Requirements
+- CLI UX remains simple; errors are descriptive.
+
+#### Testing & Validation
+- Integration tests: serve with flags; hot‑reload adds and removes routes; generated example runs.
+
+#### Acceptance Criteria
+- CLI exposes key runtime controls; hot‑reload diffing is visible; example services can be served easily.
 
 ### Dispatcher Improvements
 
@@ -244,6 +343,7 @@ Deliver a robust, warning-free, deterministic code generation system (Askama-bas
 - Generator never panics on valid OpenAPI docs; returns actionable errors.
 - Dry‑run and `--only` work as documented; atomic write prevents partial outputs.
 - Templates produce deterministic output; re-run without changes yields identical files. Only the lock file may change when appropriate (e.g., generator version bump without content deltas).
+ - Lock file contains `generator_version`, `template_versions`, and `files[rel_path].sha256` for each generated file; unchanged content preserves file mtimes and yields no diffs.
 - Unit/integration tests added to cover edge cases; coverage ≥65%.
 - The exact input spec is present at `examples/<slug>/doc/openapi.yaml` after generation (unless skipped by non-`--force` rule).
  - Generated `handlers/types.rs` correctly reflects component schemas including `enum` and `additionalProperties` maps; handlers/controllers compile using these types without warnings.
@@ -305,6 +405,7 @@ Deliver a robust, warning-free, deterministic code generation system (Askama-bas
 #### 7) Deterministic Output
 - [ ] Sorted modules and imports for stability
 - [ ] Generate lock file with generator/template versions and per-file hashes; no per-file header hashes
+ - [ ] Lock file fields present: `generator_version`, `template_versions`, `files[*].sha256`, timestamps, `spec_path`
 - [ ] Repeat runs without changes yield identical outputs
 
 #### 8) Registry & Dispatcher Integration
@@ -362,5 +463,34 @@ Deliver a robust, warning-free, deterministic code generation system (Askama-bas
 - [ ] AuthMiddleware: clarify example-only or parse Bearer; prefer server security
 - [ ] Middleware stack builder ergonomics
 - [ ] Unit/integration tests covering CORS, tracing, metrics, short-circuit
+
+#### 15) Server Improvements
+- [ ] Replace JSONSchema `expect` with graceful error handling
+- [ ] Enforce `requestBody.required` → 400 when missing
+- [ ] Problem Details responses; debug verbosity toggle
+- [ ] Content-Type/Accept handling; set from spec when missing
+- [ ] Health/metrics/docs/openapi respect base_path
+- [ ] Static files: ETag/cache headers; support HEAD
+- [ ] Map dispatcher timeout/cancel to HTTP status
+- [ ] Tracing/metrics for validation and dispatch outcomes
+
+#### 16) Router Improvements
+- [ ] Escape regex special chars in literal segments
+- [ ] Normalize trailing slash and percent-decode segments
+- [ ] Configurable method policy (TRACE/HEAD, etc.)
+- [ ] Pre-bucket routes by method for performance
+
+#### 17) Spec Improvements
+- [ ] Capture `requestBody.required` in `RouteMeta`
+- [ ] Map responses across statuses/content-types; selection helper
+- [ ] Extend schema mapping: formats, enums, additionalProperties
+- [ ] Expose security semantics guidance (AND/OR) in metadata
+
+#### 18) CLI Improvements
+- [ ] Add `--debug-validation` and `--strict-response-validation`
+- [ ] Add dispatcher flags: `--timeout-ms`, `--channel-capacity`, `--backpressure-policy`
+- [ ] Serve generated controllers (`--example <slug>`) option
+- [ ] Hot-reload: log add/remove/update diffs; support route removal
+- [ ] Preserve rich error context instead of `io::Error::other`
 
 
