@@ -22,5 +22,14 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     //   }
     // ]
 
-    Response(vec![Default::default()])
+    Response(vec![
+        serde_json::from_value::<Post>(
+            serde_json::json!({"body":"Welcome to the blog","id":"post1","title":"Intro"}),
+        )
+        .unwrap(),
+        serde_json::from_value::<Post>(
+            serde_json::json!({"body":"Thanks for reading","id":"post2","title":"Follow-up"}),
+        )
+        .unwrap(),
+    ])
 }

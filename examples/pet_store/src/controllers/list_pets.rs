@@ -34,5 +34,5 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     //   }
     // ]
 
-    Response(vec![Default::default()])
+    Response(vec![serde_json::from_value::<Pet>(serde_json::json!({"age":3,"breed":"Golden Retriever","id":12345,"name":"Max","tags":["friendly","trained"],"vaccinated":true})).unwrap(), serde_json::from_value::<Pet>(serde_json::json!({"age":2,"breed":"Labrador","id":67890,"name":"Bella","tags":["puppy","playful"],"vaccinated":true})).unwrap()])
 }

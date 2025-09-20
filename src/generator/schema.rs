@@ -101,13 +101,23 @@ pub fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
                                 let json = serde_json::to_string(item).unwrap();
                                 format!("serde_json::from_value::<{inner_ty}>(serde_json::json!({json})).unwrap()")
                             } else {
-                                "Default::default()".to_string()
+                                // Fallback to a sensible dummy for the inner type
+                                dummy_value::dummy_value(inner_ty).unwrap_or_else(|_| "Default::default()".to_string())
                             }
+                        } else {
+                            let json = serde_json::to_string(item).unwrap();
+                            format!("serde_json::json!({json})")
+                        }
+                    }
+                    _ => {
+                        if let Some(inner_ty) = inner_ty_opt {
+                            dummy_value::dummy_value(inner_ty).unwrap_or_else(|_| "Default::default()".to_string())
+                        } else if is_vec_json_value {
+                            "serde_json::Value::Null".to_string()
                         } else {
                             "Default::default()".to_string()
                         }
                     }
-                    _ => "Default::default()".to_string(),
                 })
                 .collect::<Vec<_>>()
                 .join(", ");
@@ -126,7 +136,14 @@ pub fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
                 format!("serde_json::json!({json})")
             }
         }
-        _ => "Default::default()".to_string(),
+        _ => {
+            if field.ty == "serde_json::Value" || field.ty == "Value" {
+                "serde_json::Value::Null".to_string()
+            } else {
+                dummy_value::dummy_value(&field.ty)
+                    .unwrap_or_else(|_| "Default::default()".to_string())
+            }
+        }
     };
     if field.optional {
         format!("Some({literal})")
@@ -160,7 +177,7 @@ pub fn extract_fields(schema: &Value) -> Vec<FieldDef> {
                     name: "items".to_string(),
                     ty: format!("Vec<{ty}>"),
                     optional: false,
-                    value: "vec![Default::default()]".to_string(),
+                    value: "vec![]".to_string(),
                 });
                 return fields;
             }
