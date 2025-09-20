@@ -4,9 +4,9 @@ use http::Method;
 
 // Helper function to create a basic RouteMeta for testing
 fn create_route_meta(method: Method, path: &str, handler: &str) -> RouteMeta {
-    use std::path::PathBuf;
     use std::collections::HashMap;
-    
+    use std::path::PathBuf;
+
     RouteMeta {
         method,
         path_pattern: path.to_string(),
@@ -14,6 +14,7 @@ fn create_route_meta(method: Method, path: &str, handler: &str) -> RouteMeta {
         base_path: String::new(),
         parameters: Vec::new(),
         request_schema: None,
+        request_body_required: false,
         response_schema: None,
         example: None,
         responses: HashMap::new(),
@@ -80,7 +81,7 @@ fn test_router_new_empty_routes() {
 fn test_router_new_single_route() {
     let routes = vec![create_route_meta(Method::GET, "/health", "health_check")];
     let router = Router::new(routes);
-    
+
     let route_match = router.route(Method::GET, "/health").unwrap();
     assert_eq!(route_match.handler_name, "health_check");
     assert!(route_match.path_params.is_empty());
@@ -93,12 +94,12 @@ fn test_router_route_with_parameters() {
         create_route_meta(Method::POST, "/users", "create_user"),
     ];
     let router = Router::new(routes);
-    
+
     // Test parameterized route
     let route_match = router.route(Method::GET, "/users/123").unwrap();
     assert_eq!(route_match.handler_name, "get_user");
     assert_eq!(route_match.path_params.get("id"), Some(&"123".to_string()));
-    
+
     // Test non-parameterized route
     let route_match = router.route(Method::POST, "/users").unwrap();
     assert_eq!(route_match.handler_name, "create_user");
@@ -112,14 +113,14 @@ fn test_router_method_filtering() {
         create_route_meta(Method::POST, "/items", "create_item"),
     ];
     let router = Router::new(routes);
-    
+
     // Test different methods on same path
     let get_match = router.route(Method::GET, "/items").unwrap();
     assert_eq!(get_match.handler_name, "get_items");
-    
+
     let post_match = router.route(Method::POST, "/items").unwrap();
     assert_eq!(post_match.handler_name, "create_item");
-    
+
     // Test unsupported method
     assert!(router.route(Method::PUT, "/items").is_none());
 }
@@ -128,13 +129,13 @@ fn test_router_method_filtering() {
 fn test_router_no_match() {
     let routes = vec![create_route_meta(Method::GET, "/users/{id}", "get_user")];
     let router = Router::new(routes);
-    
+
     // Test non-matching path
     assert!(router.route(Method::GET, "/posts/123").is_none());
-    
+
     // Test non-matching method
     assert!(router.route(Method::POST, "/users/123").is_none());
-    
+
     // Test malformed path
     assert!(router.route(Method::GET, "/users").is_none());
 }
@@ -148,14 +149,14 @@ fn test_router_path_priority() {
         create_route_meta(Method::GET, "/users/{id}/posts", "get_user_posts"),
     ];
     let router = Router::new(routes);
-    
+
     // Test that more specific routes match first
     let match1 = router.route(Method::GET, "/users/123/posts").unwrap();
     assert_eq!(match1.handler_name, "get_user_posts");
-    
+
     let match2 = router.route(Method::GET, "/users/123").unwrap();
     assert_eq!(match2.handler_name, "get_user");
-    
+
     let match3 = router.route(Method::GET, "/users").unwrap();
     assert_eq!(match3.handler_name, "list_users");
 }
@@ -171,14 +172,14 @@ fn test_router_supported_methods() {
         Method::OPTIONS,
         Method::HEAD,
     ];
-    
+
     let routes: Vec<RouteMeta> = methods
         .into_iter()
         .map(|m| create_route_meta(m, "/test", "test_handler"))
         .collect();
-    
+
     let router = Router::new(routes);
-    
+
     // All supported methods should work
     assert!(router.route(Method::GET, "/test").is_some());
     assert!(router.route(Method::POST, "/test").is_some());
@@ -196,28 +197,41 @@ fn test_router_unsupported_methods_filtered() {
         create_route_meta(Method::GET, "/test", "get_handler"),
         create_route_meta(Method::TRACE, "/test", "trace_handler"),
     ];
-    
+
     let router = Router::new(routes);
-    
+
     // GET should work
     assert!(router.route(Method::GET, "/test").is_some());
-    
+
     // TRACE is currently supported (though the comment suggests it might be filtered)
     assert!(router.route(Method::TRACE, "/test").is_some());
 }
 
 #[test]
 fn test_router_complex_parameter_extraction() {
-    let routes = vec![
-        create_route_meta(Method::GET, "/api/v1/users/{user_id}/posts/{post_id}/comments/{comment_id}", "get_comment"),
-    ];
+    let routes = vec![create_route_meta(
+        Method::GET,
+        "/api/v1/users/{user_id}/posts/{post_id}/comments/{comment_id}",
+        "get_comment",
+    )];
     let router = Router::new(routes);
-    
-    let route_match = router.route(Method::GET, "/api/v1/users/123/posts/456/comments/789").unwrap();
+
+    let route_match = router
+        .route(Method::GET, "/api/v1/users/123/posts/456/comments/789")
+        .unwrap();
     assert_eq!(route_match.handler_name, "get_comment");
-    assert_eq!(route_match.path_params.get("user_id"), Some(&"123".to_string()));
-    assert_eq!(route_match.path_params.get("post_id"), Some(&"456".to_string()));
-    assert_eq!(route_match.path_params.get("comment_id"), Some(&"789".to_string()));
+    assert_eq!(
+        route_match.path_params.get("user_id"),
+        Some(&"123".to_string())
+    );
+    assert_eq!(
+        route_match.path_params.get("post_id"),
+        Some(&"456".to_string())
+    );
+    assert_eq!(
+        route_match.path_params.get("comment_id"),
+        Some(&"789".to_string())
+    );
 }
 
 #[test]
@@ -226,22 +240,28 @@ fn test_router_edge_case_paths() {
     let routes = vec![
         create_route_meta(Method::GET, "/", "root"),
         create_route_meta(Method::GET, "/a", "single_char"),
-        create_route_meta(Method::GET, "/very/long/path/with/many/segments", "long_path"),
+        create_route_meta(
+            Method::GET,
+            "/very/long/path/with/many/segments",
+            "long_path",
+        ),
     ];
     let router = Router::new(routes);
-    
+
     assert!(router.route(Method::GET, "/").is_some());
     assert!(router.route(Method::GET, "/a").is_some());
-    assert!(router.route(Method::GET, "/very/long/path/with/many/segments").is_some());
+    assert!(router
+        .route(Method::GET, "/very/long/path/with/many/segments")
+        .is_some());
 }
 
 #[test]
 fn test_route_match_structure() {
     let routes = vec![create_route_meta(Method::GET, "/users/{id}", "get_user")];
     let router = Router::new(routes);
-    
+
     let route_match = router.route(Method::GET, "/users/123").unwrap();
-    
+
     // Test RouteMatch structure
     assert_eq!(route_match.handler_name, "get_user");
     assert_eq!(route_match.path_params.get("id"), Some(&"123".to_string()));

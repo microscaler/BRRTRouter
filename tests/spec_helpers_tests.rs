@@ -92,7 +92,12 @@ fn test_extract_request_and_response() {
         .as_ref()
         .unwrap();
 
-    let req = extract_request_schema(&spec, bar_op).unwrap();
+    let (req_opt, required) = extract_request_schema(&spec, bar_op);
+    let req = req_opt.unwrap();
+    assert!(
+        !required,
+        "requestBody.required should default to false when unspecified"
+    );
     assert_eq!(req["properties"]["count"]["type"], "integer");
 
     let (resp, example, all) = extract_response_schema_and_example(&spec, bar_op);

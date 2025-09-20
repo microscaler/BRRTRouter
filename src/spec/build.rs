@@ -85,9 +85,11 @@ fn resolve_handler_name(
 pub fn extract_request_schema(
     spec: &OpenApiV3Spec,
     operation: &oas3::spec::Operation,
-) -> Option<Value> {
+) -> (Option<Value>, bool) {
+    let mut required = false;
     let mut schema = operation.request_body.as_ref().and_then(|r| match r {
         ObjectOrReference::Object(req_body) => {
+            required = req_body.required.unwrap_or(false);
             req_body.content.get("application/json").and_then(|media| {
                 match media.schema.as_ref()? {
                     ObjectOrReference::Object(schema_obj) => serde_json::to_value(schema_obj).ok(),
@@ -101,7 +103,7 @@ pub fn extract_request_schema(
     if let Some(ref mut val) = schema {
         expand_schema_refs(spec, val);
     }
-    schema
+    (schema, required)
 }
 
 pub fn extract_response_schema_and_example(
@@ -272,7 +274,8 @@ pub fn build_routes(spec: &OpenApiV3Spec, slug: &str) -> anyhow::Result<Vec<Rout
                     None => continue,
                 };
 
-                let request_schema = extract_request_schema(spec, operation);
+                let (request_schema, request_body_required) =
+                    extract_request_schema(spec, operation);
                 let (response_schema, example, responses) =
                     extract_response_schema_and_example(spec, operation);
 
@@ -292,6 +295,7 @@ pub fn build_routes(spec: &OpenApiV3Spec, slug: &str) -> anyhow::Result<Vec<Rout
                     handler_name,
                     parameters,
                     request_schema,
+                    request_body_required,
                     response_schema,
                     example,
                     responses,

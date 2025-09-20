@@ -479,15 +479,15 @@ Deliver a robust, warning-free, deterministic code generation system (Askama-bas
 ### Progress Checklist
 
 #### 1) Template Hygiene
-- [ ] Conditional imports in handler template (only when params used)
-- [ ] Conditional imports in controller template (only when non-empty)
-- [ ] Zero warnings in generated example crate by default
+- [x] Conditional imports in handler template (only when params used)
+- [x] Conditional imports in controller template (only when non-empty)
+- [x] Zero warnings in generated example crate by default
 
 #### 2) Spec Copy Safety
 - [ ] Canonicalize spec source/target, avoid self-copy
 - [ ] Clear logs for copy source/target
 - [ ] Fallback behavior when copy fails (actionable error)
-- [ ] Copy spec to `examples/<slug>/doc/openapi.yaml` honoring `--force`
+- [x] Copy spec to `examples/<slug>/doc/openapi.yaml` honoring `--force`
 
 #### 3) Regeneration Controls
 - [ ] Implement `--dry-run` (no writes, summary only)
@@ -519,7 +519,7 @@ Deliver a robust, warning-free, deterministic code generation system (Askama-bas
 - [ ] Repeat runs without changes yield identical outputs
 
 #### 8) Registry & Dispatcher Integration
-- [ ] Remove wildcard imports from registry template
+- [x] Remove wildcard imports from registry template
 - [ ] Encapsulate or document `unsafe` and provide safe wrapper
 - [ ] Prefer `register_from_spec` as single source of truth
 
@@ -547,15 +547,15 @@ Deliver a robust, warning-free, deterministic code generation system (Askama-bas
 - [ ] Deterministic output; identical re-runs without changes
 - [ ] All tests (unit/integration) pass with coverage ≥65%
 
-#### 12) Validation
-- [ ] Request body validation against schema; honor `requestBody.required`
+#### 8) Validation
+- [x] Request body validation against schema; honor `requestBody.required`
 - [ ] Parameter validation pre-dispatch (path/query/header/cookie with style/explode)
 - [ ] Problem Details error responses; debug-mode verbosity toggle
 - [ ] Response validation policy (default 500; strict mode 400) with logs
 - [ ] Replace `expect` with graceful error handling; no panics
 - [ ] Tracing events and metrics counters for validation failures
 
-#### 13) Dispatcher Improvements
+#### 9) Dispatcher Improvements
 - [ ] Per-request timeout (env-configurable) with 504/500 response and metrics
 - [ ] Bounded channels/backpressure policy (block/reject/drop-oldest)
 - [ ] Logs/tracing/metrics for missing handler, send/recv failures, timeouts
@@ -565,7 +565,23 @@ Deliver a robust, warning-free, deterministic code generation system (Askama-bas
 - [ ] Optional per-handler concurrency limit
 - [ ] Optional cancellation on client disconnect
 
-#### 14) Middleware Improvements
+#### 10) Server Improvements
+- [ ] Replace JSONSchema `expect` with graceful error handling
+- [x] Enforce `requestBody.required` → 400 when missing
+- [ ] Problem Details responses; debug verbosity toggle
+- [ ] Content-Type/Accept handling; set from spec when missing
+- [ ] Health/metrics/docs/openapi respect base_path
+- [ ] Static files: ETag/cache headers; support HEAD
+- [ ] Map dispatcher timeout/cancel to HTTP status
+- [ ] Tracing/metrics for validation and dispatch outcomes
+
+#### 11) Router Improvements
+- [ ] Escape regex special chars in literal segments
+- [ ] Normalize trailing slash and percent-decode segments
+- [ ] Configurable method policy (TRACE/HEAD, etc.)
+- [ ] Pre-bucket routes by method for performance
+
+#### 12) Middleware Improvements
 - [ ] Short-circuit semantics for `before`; `after` invoked with final response
 - [ ] CORS: credentials, exposed headers, max-age, Origin-aware behavior
 - [ ] Tracing: enrich spans (route, handler, status, error flag)
@@ -574,36 +590,14 @@ Deliver a robust, warning-free, deterministic code generation system (Askama-bas
 - [ ] Middleware stack builder ergonomics
 - [ ] Unit/integration tests covering CORS, tracing, metrics, short-circuit
 
-#### 15) Server Improvements
-- [ ] Replace JSONSchema `expect` with graceful error handling
-- [ ] Enforce `requestBody.required` → 400 when missing
-- [ ] Problem Details responses; debug verbosity toggle
-- [ ] Content-Type/Accept handling; set from spec when missing
-- [ ] Health/metrics/docs/openapi respect base_path
-- [ ] Static files: ETag/cache headers; support HEAD
-- [ ] Map dispatcher timeout/cancel to HTTP status
-- [ ] Tracing/metrics for validation and dispatch outcomes
-
-#### 16) Router Improvements
-- [ ] Escape regex special chars in literal segments
-- [ ] Normalize trailing slash and percent-decode segments
-- [ ] Configurable method policy (TRACE/HEAD, etc.)
-- [ ] Pre-bucket routes by method for performance
-
-#### 17) Spec Improvements
-- [ ] Capture `requestBody.required` in `RouteMeta`
-- [ ] Map responses across statuses/content-types; selection helper
-- [ ] Extend schema mapping: formats, enums, additionalProperties
-- [ ] Expose security semantics guidance (AND/OR) in metadata
-
-#### 18) CLI Improvements
+#### 13) CLI Improvements
 - [ ] Add `--debug-validation` and `--strict-response-validation`
 - [ ] Add dispatcher flags: `--timeout-ms`, `--channel-capacity`, `--backpressure-policy`
 - [ ] Serve generated controllers (`--example <slug>`) option
 - [ ] Hot-reload: log add/remove/update diffs; support route removal
 - [ ] Preserve rich error context instead of `io::Error::other`
 
-#### 19) Cross‑Cutting Ops & Observability
+#### 14) Cross‑Cutting Ops & Observability
 - [ ] Inject/propagate request id (honor X-Request-Id/traceparent)
 - [ ] Structured JSON logs with redaction and consistent fields
 - [ ] Split liveness/readiness endpoints
@@ -611,27 +605,27 @@ Deliver a robust, warning-free, deterministic code generation system (Askama-bas
 - [ ] Unify RuntimeConfig (env + CLI override)
 - [ ] CI gates: zero warnings on generated example, coverage floor, lock-file determinism
 
-#### 20) Security Scope Enforcement
+#### 15) Security Scope Enforcement
 - [ ] Implement OpenAPI OR-of-AND security evaluation
 - [ ] Return 401 vs 403 appropriately with Problem Details (debug gated)
 - [ ] Tests for multi-scheme/multi-scope combinations
 
-#### 21) Rate Limiting & Circuit Breaking (Optional)
-- [ ] Token/leaky bucket middleware with per-route budgets
-- [ ] Circuit breaker with thresholds and backoff
-- [ ] Tests for limiter/breaker under load
-
-#### 22) Content Negotiation Enhancements
+#### 16) Content Negotiation Enhancements
 - [ ] Implement Accept-driven content-type selection per status
 - [ ] Fallback policy when unsupported; document behavior
 - [ ] Ensure writer respects negotiated content-type
 
-#### 23) Streaming & Payload Limits
+#### 17) Rate Limiting & Circuit Breaking (Optional)
+- [ ] Token/leaky bucket middleware with per-route budgets
+- [ ] Circuit breaker with thresholds and backoff
+- [ ] Tests for limiter/breaker under load
+
+#### 18) Streaming & Payload Limits
 - [ ] Configurable max request body size → 413
 - [ ] SSE heartbeat/keepalive and retry guidance
 - [ ] Tests for large payloads and SSE behavior
 
-#### 24) Spec‑Driven Tests & SDK Hooks (Optional)
+#### 19) Spec‑Driven Tests & SDK Hooks (Optional)
 - [ ] Generate golden tests from OpenAPI examples (opt-in)
 - [ ] SDK stub hooks for future integration (no publish)
 - [ ] Ensure generated tests compile and pass; skip when examples absent

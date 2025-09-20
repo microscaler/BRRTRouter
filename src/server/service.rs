@@ -208,6 +208,11 @@ impl HttpService for AppService {
         };
         if let Some(mut route_match) = route_opt {
             route_match.query_params = query_params.clone();
+            // Enforce required request body when specified in spec
+            if route_match.route.request_body_required && body.is_none() {
+                write_json_error(res, 400, json!({"error": "Request body required"}));
+                return Ok(());
+            }
             if let (Some(schema), Some(body_val)) = (&route_match.route.request_schema, &body) {
                 let compiled = JSONSchema::compile(schema).expect("invalid request schema");
                 let validation = compiled.validate(body_val);

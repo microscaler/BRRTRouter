@@ -82,6 +82,7 @@ fn test_template_writers() {
         handler_name: "test".into(),
         parameters: vec![],
         request_schema: None,
+        request_body_required: false,
         response_schema: None,
         example: None,
         responses: HashMap::new(),

@@ -8,7 +8,7 @@ use brrtrouter_macros::handler;
 pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     let (tx, rx) = sse::channel();
     for i in 0..3 {
-        tx.send(format!("tick {}", i));
+        tx.send(format!("tick {i}"));
     }
     drop(tx);
     Response(rx.collect())

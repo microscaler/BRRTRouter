@@ -3,6 +3,7 @@ use crate::brrtrouter::typed::TypedHandlerRequest;
 use crate::handlers::list_users::{Request, Response};
 use brrtrouter_macros::handler;
 
+#[allow(unused_imports)]
 use crate::handlers::types::User;
 
 #[handler(ListUsersController)]

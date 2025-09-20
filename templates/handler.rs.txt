@@ -3,9 +3,6 @@
 use serde::{Deserialize, Serialize};
 use crate::brrtrouter::typed::TypedHandlerRequest;
 use crate::brrtrouter::dispatcher::HandlerRequest;
-use crate::brrtrouter::server::request::decode_param_value;
-use crate::brrtrouter::spec::ParameterStyle;
-use anyhow::anyhow;
 use std::convert::TryFrom;
 {% for import in imports -%}
 use crate::handlers::types::{{ import }};
@@ -57,16 +54,16 @@ impl TryFrom<HandlerRequest> for Request {
         {% endif %}
             data_map.insert(
                 "{{ p.name }}".to_string(),
-                decode_param_value(
+                crate::brrtrouter::server::request::decode_param_value(
                     v,
                     {%- if p.schema.is_some() %}Some(&serde_json::json!({{ p.schema | json }})){%- else %}None{%- endif %},
-                    {%- if p.style.is_some() %}Some(ParameterStyle::{{ p.style.as_ref().unwrap() }} ){%- else %}None{%- endif %},
+                    {%- if p.style.is_some() %}Some(crate::brrtrouter::spec::ParameterStyle::{{ p.style.as_ref().unwrap() }} ){%- else %}None{%- endif %},
                     {%- if p.explode.is_some() %}Some({{ p.explode.unwrap() }}){%- else %}None{%- endif %},
                 ),
             );
         } else {
             {% if p.required %}
-            return Err(anyhow!("Missing required parameter '{{ p.name }}'"));
+            return Err(anyhow::anyhow!("Missing required parameter '{{ p.name }}'"));
             {% else %}
             // optional parameter
             {% endif %}

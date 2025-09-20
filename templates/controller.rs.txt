@@ -4,17 +4,18 @@ use brrtrouter_macros::handler;
 use crate::brrtrouter::typed::TypedHandlerRequest;
 use crate::handlers::{{ handler_name }}::{ Request, Response };
 {% if sse %}use crate::brrtrouter::sse;{% endif %}
+{% if imports.len() > 0 %}
 {% for import in imports -%}
+#[allow(unused_imports)]
 use crate::handlers::types::{{ import }};
 {% endfor %}
+{% endif %}
 
 #[handler({{ struct_name }})]
 pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     {% if sse %}
     let (tx, rx) = sse::channel();
-    for i in 0..3 {
-        tx.send(format!("tick {}", i));
-    }
+    for i in 0..3 { tx.send(format!("tick {i}")); }
     drop(tx);
     Response(rx.collect())
     {% else %}
