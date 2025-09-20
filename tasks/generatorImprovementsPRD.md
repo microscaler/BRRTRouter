@@ -484,9 +484,9 @@ Deliver a robust, warning-free, deterministic code generation system (Askama-bas
 - [x] Zero warnings in generated example crate by default
 
 #### 2) Spec Copy Safety
-- [ ] Canonicalize spec source/target, avoid self-copy
-- [ ] Clear logs for copy source/target
-- [ ] Fallback behavior when copy fails (actionable error)
+- [x] Canonicalize spec source/target, avoid self-copy
+- [x] Clear logs for copy source/target
+- [x] Fallback behavior when copy fails (actionable error)
 - [x] Copy spec to `examples/<slug>/doc/openapi.yaml` honoring `--force`
 
 #### 3) Regeneration Controls

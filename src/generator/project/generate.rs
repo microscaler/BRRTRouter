@@ -13,6 +13,8 @@ use crate::generator::templates::{
     write_openapi_index, write_registry_rs, write_static_index, write_types_rs, RegistryEntry,
 };
 
+use anyhow::Context;
+
 pub fn generate_project_from_spec(spec_path: &Path, force: bool) -> anyhow::Result<PathBuf> {
     let (mut routes, slug) = load_spec(spec_path.to_str().unwrap())?;
     let base_dir = Path::new("examples").join(&slug);
@@ -28,9 +30,35 @@ pub fn generate_project_from_spec(spec_path: &Path, force: bool) -> anyhow::Resu
     fs::create_dir_all(&static_dir)?;
 
     let spec_copy_path = doc_dir.join("openapi.yaml");
-    if !spec_copy_path.exists() || force {
-        fs::copy(spec_path, &spec_copy_path)?;
+    // Spec Copy Safety: canonicalize and avoid self-copy/truncation; clear logs; honor --force
+    let source_canon = fs::canonicalize(spec_path)
+        .with_context(|| format!("Failed to canonicalize spec source: {:?}", spec_path))?;
+    let doc_dir_canon = fs::canonicalize(&doc_dir)
+        .with_context(|| format!("Failed to canonicalize doc dir: {:?}", doc_dir))?;
+    let dest_path = doc_dir_canon.join("openapi.yaml");
+
+    if source_canon == dest_path {
+        println!(
+            "⚠️  Skipping spec copy: source and destination are the same → {:?}",
+            dest_path
+        );
+    } else if !spec_copy_path.exists() || force {
+        println!(
+            "📄 Copying spec from {:?} → {:?}",
+            source_canon, spec_copy_path
+        );
+        fs::copy(&source_canon, &spec_copy_path).with_context(|| {
+            format!(
+                "Failed to copy spec from {:?} to {:?}",
+                source_canon, spec_copy_path
+            )
+        })?;
         println!("✅ Copied spec to {spec_copy_path:?}");
+    } else {
+        println!(
+            "ℹ️  Spec already present at {:?} (use --force to overwrite)",
+            spec_copy_path
+        );
     }
 
     let mut schema_types = collect_component_schemas(spec_path)?;
