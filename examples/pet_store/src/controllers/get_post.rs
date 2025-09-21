@@ -7,14 +7,16 @@ use brrtrouter_macros::handler;
 pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     // Example response:
     // {
+    //   "author_id": "abc-123",
     //   "body": "Welcome to the blog",
     //   "id": "post1",
     //   "title": "Intro"
     // }
 
     Response {
-        body: Some("Welcome to the blog".to_string()),
-        id: Some("post1".to_string()),
-        title: Some("Intro".to_string()),
+        author_id: Some("abc-123".to_string()),
+        body: "Welcome to the blog".to_string(),
+        id: "post1".to_string(),
+        title: "Intro".to_string(),
     }
 }

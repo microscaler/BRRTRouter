@@ -1,4 +1,5 @@
 use askama::Template;
+// Remove explicit filters import; not needed and causes unresolved symbol errors
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
@@ -151,6 +152,7 @@ pub fn write_controller(
                 .unwrap_or_else(|| field.value.clone());
             FieldDef {
                 name: field.name.clone(),
+                original_name: field.original_name.clone(),
                 ty: field.ty.clone(),
                 optional: field.optional,
                 value,
@@ -188,6 +190,7 @@ pub fn write_controller(
             if ex.is_array() {
                 let items_field = FieldDef {
                     name: "items".to_string(),
+                    original_name: "items".to_string(),
                     ty: res[0].ty.clone(), // Vec<...>
                     optional: false,
                     value: String::new(),

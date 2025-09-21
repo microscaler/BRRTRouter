@@ -2,12 +2,25 @@ openapi: 3.1.0
 info:
   title: Pet Store
   version: "1.0.0"
+  description: |
+    Sample Pet Store API used to generate example services.
+    Includes pets, users, posts, items, admin settings, and SSE.
+
+servers:
+  - url: http://localhost:8080
+    description: Local dev server
+  - url: https://api.example.com
+    description: Production server (mock)
 
 paths:
   /pets:
     get:
       summary: List pets
       operationId: list_pets
+      parameters:
+        - $ref: '#/components/parameters/LimitParam'
+        - $ref: '#/components/parameters/OffsetParam'
+        - $ref: '#/components/parameters/TagsParam'
       responses:
         "200":
           description: A list of pets
@@ -33,6 +46,12 @@ paths:
                       age: 2
                       vaccinated: true
                       tags: ["puppy", "playful"]
+        "400":
+          description: Bad request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
 
     post:
       summary: Add a pet
@@ -61,6 +80,12 @@ paths:
                   value:
                     id: 67890
                     status: "success"
+        "400":
+          description: Bad request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
 
   /pets/{id}:
     get:
@@ -89,11 +114,20 @@ paths:
                     age: 3
                     vaccinated: true
                     tags: ["friendly", "trained"]
+        "404":
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
 
   /users:
     get:
       summary: List users
       operationId: list_users
+      parameters:
+        - $ref: '#/components/parameters/LimitParam'
+        - $ref: '#/components/parameters/OffsetParam'
       responses:
         "200":
           description: OK
@@ -108,8 +142,16 @@ paths:
                     users:
                       - id: "abc-123"
                         name: "John"
+                        email: "john@example.com"
                       - id: "def-456"
                         name: "Jane"
+                        email: "jane@example.com"
+        "400":
+          description: Bad request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
 
   /users/{user_id}:
     get:
@@ -133,6 +175,65 @@ paths:
                   value:
                     id: "abc-123"
                     name: "John"
+                    email: "john@example.com"
+        "404":
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        default:
+          description: Unexpected error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+      links:
+        UserPosts:
+          operationId: list_user_posts
+          parameters:
+            user_id: '$response.body#/id'
+    delete:
+      summary: Delete user
+      operationId: delete_user
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204": { description: Deleted }
+        "404":
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+    head:
+      summary: Check user exists
+      operationId: head_user
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Exists }
+        "404": { description: Not found }
+    options:
+      summary: Allowed operations
+      operationId: options_user
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: OK
+          headers:
+            Allow:
+              schema: { type: string }
 
   /users/{user_id}/posts:
     get:
@@ -143,6 +244,8 @@ paths:
           in: path
           required: true
           schema: { type: string }
+        - $ref: '#/components/parameters/LimitParam'
+        - $ref: '#/components/parameters/OffsetParam'
       responses:
         "200":
           description: OK
@@ -159,9 +262,17 @@ paths:
                     - id: "post1"
                       title: "Intro"
                       body: "Welcome to the blog"
+                      author_id: "abc-123"
                     - id: "post2"
                       title: "Follow-up"
                       body: "Thanks for reading"
+                      author_id: "abc-123"
+        "400":
+          description: Bad request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
 
   /users/{user_id}/posts/{post_id}:
     get:
@@ -190,6 +301,13 @@ paths:
                     id: "post1"
                     title: "Intro"
                     body: "Welcome to the blog"
+                    author_id: "abc-123"
+        "404":
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
 
   /admin/settings:
     get:
@@ -209,6 +327,12 @@ paths:
                     feature_flags:
                       beta: true
                       analytics: false
+        "401":
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
 
   /items/{id}:
     get:
@@ -261,6 +385,16 @@ paths:
                   value:
                     id: "item-001"
                     name: "New Item"
+        "201":
+          description: Created
+          headers:
+            Location:
+              description: URI of the created resource
+              schema: { type: string, format: uri }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Item'
 
   /events:
     get:
@@ -273,15 +407,189 @@ paths:
           content:
             text/event-stream: {}
 
+  /download/{id}:
+    get:
+      summary: Download file
+      operationId: download_file
+      servers:
+        - url: https://cdn.example.com
+          description: CDN server
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Binary file
+          content:
+            image/png: { schema: { type: string, format: binary } }
+            application/octet-stream: { schema: { type: string, format: binary } }
+
+  /form:
+    post:
+      summary: Submit form
+      operationId: submit_form
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                age: { type: integer, format: int32 }
+      responses:
+        "204": { description: Accepted }
+
+  /upload:
+    post:
+      summary: Upload file
+      operationId: upload_file
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+                metadata:
+                  type: object
+                  additionalProperties: { type: string }
+      responses:
+        "201":
+          description: Uploaded
+          headers:
+            Location:
+              schema: { type: string, format: uri }
+
+  /matrix/{coords}:
+    get:
+      summary: Matrix-style path parameter
+      operationId: get_matrix
+      parameters:
+        - name: coords
+          in: path
+          required: true
+          style: matrix
+          explode: false
+          schema: { type: array, items: { type: integer } }
+      responses:
+        "200": { description: OK }
+
+  /labels/{color}:
+    get:
+      summary: Label-style path parameter
+      operationId: get_label
+      parameters:
+        - name: color
+          in: path
+          required: true
+          style: label
+          explode: false
+          schema: { type: string }
+      responses:
+        "200": { description: OK }
+
+  /search:
+    get:
+      summary: Complex query parameters
+      operationId: search
+      parameters:
+        - name: tags
+          in: query
+          style: pipeDelimited
+          explode: false
+          schema: { type: array, items: { type: string } }
+        - name: filters
+          in: query
+          style: deepObject
+          explode: true
+          schema:
+            type: object
+            additionalProperties: { type: string }
+        - name: X-Trace-Id
+          in: header
+          schema: { type: string, format: uuid }
+        - name: session
+          in: cookie
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results: { type: array, items: { $ref: '#/components/schemas/Item' } }
+
+  /secure:
+    get:
+      summary: Protected endpoint
+      operationId: secure_endpoint
+      security:
+        - BearerAuth: []
+        - OAuth2: [read]
+      responses:
+        "200": { description: OK }
+        "401": { description: Unauthorized }
+
+  /webhooks:
+    post:
+      summary: Register webhook
+      operationId: register_webhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url]
+              properties:
+                url: { type: string, format: uri }
+      callbacks:
+        onEvent:
+          '{$request.body#/url}':
+            post:
+              requestBody:
+                content:
+                  application/json:
+                    schema:
+                      type: object
+                      required: [event]
+                      properties:
+                        event: { type: string, enum: [pet.created, pet.updated] }
+                        payload: { type: object }
+              responses:
+                "200": { description: Received }
+      responses:
+        "201": { description: Registered }
+
 components:
+  securitySchemes:
+    ApiKeyHeader: { type: apiKey, in: header, name: X-API-Key }
+    ApiKeyQuery: { type: apiKey, in: query, name: api_key }
+    ApiKeyCookie: { type: apiKey, in: cookie, name: session }
+    BearerAuth: { type: http, scheme: bearer }
+    OAuth2:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: https://example.com/auth
+          tokenUrl: https://example.com/token
+          scopes: { read: Read access, write: Write access }
   schemas:
     Pet:
       type: object
       required: [id, name, breed, age, vaccinated, tags]
       properties:
-        id: { type: integer }
+        id: { type: integer, format: int64 }
         name: { type: string }
-        breed: { type: string }
+        breed: { type: string, enum: [Golden Retriever, Labrador, Bulldog, Poodle] }
         age: { type: integer }
         vaccinated: { type: boolean }
         tags:
@@ -310,16 +618,45 @@ components:
 
     User:
       type: object
+      required: [id, name]
       properties:
-        id: { type: string }
+        id: { type: string, format: uuid }
         name: { type: string }
+        email:
+          oneOf:
+            - type: string
+              format: email
+            - type: 'null'
 
     Post:
       type: object
+      required: [id, title, body]
       properties:
         id: { type: string }
         title: { type: string }
         body: { type: string }
+        author_id: { type: string }
+    Animal:
+      oneOf:
+        - $ref: '#/components/schemas/Dog'
+        - $ref: '#/components/schemas/Cat'
+      discriminator:
+        propertyName: type
+        mapping:
+          dog: '#/components/schemas/Dog'
+          cat: '#/components/schemas/Cat'
+    Dog:
+      type: object
+      required: [type, bark]
+      properties:
+        type: { const: dog }
+        bark: { type: boolean }
+    Cat:
+      type: object
+      required: [type, meow]
+      properties:
+        type: { const: cat }
+        meow: { type: boolean }
 
     AdminSettings:
       type: object
@@ -338,3 +675,58 @@ components:
       type: object
       properties:
         name: { type: string }
+
+    ProblemDetails:
+      type: object
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        errors:
+          type: array
+          items: { type: string }
+
+  parameters:
+    LimitParam:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 0
+        maximum: 100
+        default: 20
+      description: Page size limit
+    OffsetParam:
+      name: offset
+      in: query
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+      description: Pagination offset
+    TagsParam:
+      name: tags
+      in: query
+      style: form
+      explode: true
+      schema:
+        type: array
+        items: { type: string }
+      description: Filter pets by tags
+
+security:
+  - ApiKeyHeader: []
+
+tags:
+  - name: pets
+  - name: users
+  - name: posts
+  - name: items
+  - name: admin
+  - name: util
+
+externalDocs:
+  description: API guide
+  url: https://example.com/docs

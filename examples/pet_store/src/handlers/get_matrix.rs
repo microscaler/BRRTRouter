@@ -6,21 +6,13 @@ use std::convert::TryFrom;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Request {
-    #[serde(rename = "name")]
-    pub name: String,
+    #[serde(rename = "coords")]
+    pub coords: Vec<i32>,
 }
 
 #[derive(Debug, Serialize)]
 
-pub struct Response {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "id")]
-    pub id: Option<i32>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "status")]
-    pub status: Option<String>,
-}
+pub struct Response {}
 
 impl TryFrom<HandlerRequest> for Request {
     type Error = anyhow::Error;
@@ -29,6 +21,20 @@ impl TryFrom<HandlerRequest> for Request {
         use serde_json::{Map, Value};
 
         let mut data_map = Map::new();
+
+        if let Some(v) = req.path_params.get("coords") {
+            data_map.insert(
+                "coords".to_string(),
+                crate::brrtrouter::server::request::decode_param_value(
+                    v,
+                    Some(&serde_json::json!({"items":{"type":"integer"},"type":"array"})),
+                    Some(crate::brrtrouter::spec::ParameterStyle::Matrix),
+                    Some(false),
+                ),
+            );
+        } else {
+            return Err(anyhow::anyhow!("Missing required parameter 'coords'"));
+        }
 
         if let Some(body) = req.body {
             match body {
@@ -48,5 +54,5 @@ impl TryFrom<HandlerRequest> for Request {
 }
 
 pub fn handler(req: TypedHandlerRequest<Request>) -> Response {
-    crate::controllers::add_pet::handle(req)
+    crate::controllers::get_matrix::handle(req)
 }

@@ -11,11 +11,13 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     // Example response:
     // [
     //   {
+    //     "author_id": "abc-123",
     //     "body": "Welcome to the blog",
     //     "id": "post1",
     //     "title": "Intro"
     //   },
     //   {
+    //     "author_id": "abc-123",
     //     "body": "Thanks for reading",
     //     "id": "post2",
     //     "title": "Follow-up"
@@ -23,13 +25,17 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     // ]
 
     Response(vec![
-        serde_json::from_value::<Post>(
-            serde_json::json!({"body":"Welcome to the blog","id":"post1","title":"Intro"}),
-        )
-        .unwrap(),
-        serde_json::from_value::<Post>(
-            serde_json::json!({"body":"Thanks for reading","id":"post2","title":"Follow-up"}),
-        )
-        .unwrap(),
+        match serde_json::from_value::<Post>(
+            serde_json::json!({"author_id":"abc-123","body":"Welcome to the blog","id":"post1","title":"Intro"}),
+        ) {
+            Ok(v) => v,
+            Err(_) => Default::default(),
+        },
+        match serde_json::from_value::<Post>(
+            serde_json::json!({"author_id":"abc-123","body":"Thanks for reading","id":"post2","title":"Follow-up"}),
+        ) {
+            Ok(v) => v,
+            Err(_) => Default::default(),
+        },
     ])
 }

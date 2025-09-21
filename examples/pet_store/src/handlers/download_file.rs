@@ -6,21 +6,13 @@ use std::convert::TryFrom;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Request {
-    #[serde(rename = "name")]
-    pub name: String,
+    #[serde(rename = "id")]
+    pub id: String,
 }
 
 #[derive(Debug, Serialize)]
 
-pub struct Response {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "id")]
-    pub id: Option<i32>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "status")]
-    pub status: Option<String>,
-}
+pub struct Response {}
 
 impl TryFrom<HandlerRequest> for Request {
     type Error = anyhow::Error;
@@ -29,6 +21,20 @@ impl TryFrom<HandlerRequest> for Request {
         use serde_json::{Map, Value};
 
         let mut data_map = Map::new();
+
+        if let Some(v) = req.path_params.get("id") {
+            data_map.insert(
+                "id".to_string(),
+                crate::brrtrouter::server::request::decode_param_value(
+                    v,
+                    Some(&serde_json::json!({"format":"uuid","type":"string"})),
+                    None,
+                    None,
+                ),
+            );
+        } else {
+            return Err(anyhow::anyhow!("Missing required parameter 'id'"));
+        }
 
         if let Some(body) = req.body {
             match body {
@@ -48,5 +54,5 @@ impl TryFrom<HandlerRequest> for Request {
 }
 
 pub fn handler(req: TypedHandlerRequest<Request>) -> Response {
-    crate::controllers::add_pet::handle(req)
+    crate::controllers::download_file::handle(req)
 }

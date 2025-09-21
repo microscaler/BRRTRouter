@@ -5,22 +5,11 @@ use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct Request {
-    #[serde(rename = "name")]
-    pub name: String,
-}
+pub struct Request {}
 
 #[derive(Debug, Serialize)]
 
-pub struct Response {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "id")]
-    pub id: Option<i32>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "status")]
-    pub status: Option<String>,
-}
+pub struct Response {}
 
 impl TryFrom<HandlerRequest> for Request {
     type Error = anyhow::Error;
@@ -48,5 +37,5 @@ impl TryFrom<HandlerRequest> for Request {
 }
 
 pub fn handler(req: TypedHandlerRequest<Request>) -> Response {
-    crate::controllers::add_pet::handle(req)
+    crate::controllers::submit_form::handle(req)
 }

@@ -6,22 +6,29 @@ use std::convert::TryFrom;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Request {
+    #[serde(rename = "id")]
     pub id: String,
 }
 
 #[derive(Debug, Serialize)]
 
 pub struct Response {
+    #[serde(rename = "age")]
     pub age: i32,
 
+    #[serde(rename = "breed")]
     pub breed: String,
 
+    #[serde(rename = "id")]
     pub id: i32,
 
+    #[serde(rename = "name")]
     pub name: String,
 
+    #[serde(rename = "tags")]
     pub tags: Vec<String>,
 
+    #[serde(rename = "vaccinated")]
     pub vaccinated: bool,
 }
 

@@ -2,11 +2,19 @@
 
 pub mod admin_settings;
 
+pub mod download_file;
+
 pub mod stream_events;
+
+pub mod submit_form;
 
 pub mod get_item;
 
 pub mod post_item;
+
+pub mod get_label;
+
+pub mod get_matrix;
 
 pub mod list_pets;
 
@@ -14,10 +22,24 @@ pub mod add_pet;
 
 pub mod get_pet;
 
+pub mod search;
+
+pub mod secure_endpoint;
+
+pub mod upload_file;
+
 pub mod list_users;
 
 pub mod get_user;
 
+pub mod delete_user;
+
+pub mod options_user;
+
+pub mod head_user;
+
 pub mod list_user_posts;
 
 pub mod get_post;
+
+pub mod register_webhook;

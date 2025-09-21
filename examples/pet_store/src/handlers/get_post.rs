@@ -6,8 +6,10 @@ use std::convert::TryFrom;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Request {
+    #[serde(rename = "user_id")]
     pub user_id: String,
 
+    #[serde(rename = "post_id")]
     pub post_id: String,
 }
 
@@ -15,13 +17,17 @@ pub struct Request {
 
 pub struct Response {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub body: Option<String>,
+    #[serde(rename = "author_id")]
+    pub author_id: Option<String>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<String>,
+    #[serde(rename = "body")]
+    pub body: String,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
+    #[serde(rename = "id")]
+    pub id: String,
+
+    #[serde(rename = "title")]
+    pub title: String,
 }
 
 impl TryFrom<HandlerRequest> for Request {

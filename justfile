@@ -8,6 +8,10 @@ default:
 gen:
     cargo run --bin brrtrouter-gen -- generate --spec examples/openapi.yaml --force
 
+# Force-regenerate the pet store example (explicit target)
+gen-force:
+    cargo run --bin brrtrouter-gen -- generate --spec examples/openapi.yaml --force
+
 # Run the CLI generate command for any spec
 generate spec="examples/openapi.yaml" force="":
     cargo run --bin brrtrouter-gen -- generate --spec {{spec}} {{force}}

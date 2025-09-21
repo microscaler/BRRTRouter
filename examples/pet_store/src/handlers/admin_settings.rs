@@ -11,6 +11,7 @@ pub struct Request {}
 
 pub struct Response {
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "feature_flags")]
     pub feature_flags: Option<serde_json::Value>,
 }
 
