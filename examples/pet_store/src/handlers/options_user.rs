@@ -12,7 +12,11 @@ pub struct Request {
 
 #[derive(Debug, Serialize)]
 
-pub struct Response {}
+pub struct Response {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "allow")]
+    pub allow: Option<String>,
+}
 
 impl TryFrom<HandlerRequest> for Request {
     type Error = anyhow::Error;

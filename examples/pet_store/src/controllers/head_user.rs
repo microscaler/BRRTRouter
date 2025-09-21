@@ -5,5 +5,10 @@ use brrtrouter_macros::handler;
 
 #[handler(HeadUserController)]
 pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
-    Response {}
+    // Example response:
+    // {
+    //   "exists": true
+    // }
+
+    Response { exists: Some(true) }
 }

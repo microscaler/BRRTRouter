@@ -5,5 +5,10 @@ use brrtrouter_macros::handler;
 
 #[handler(SubmitFormController)]
 pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
-    Response {}
+    // Example response:
+    // {
+    //   "ok": true
+    // }
+
+    Response { ok: Some(true) }
 }

@@ -164,6 +164,53 @@ pub fn extract_response_schema_and_example(
         }
     }
 
+    // Fallback selection if no 200 application/json found
+    if default_schema.is_none() {
+        // Prefer any 2xx with application/json
+        let mut statuses: Vec<u16> = all.keys().cloned().collect();
+        statuses.sort_unstable();
+        if let Some((schema, example)) = statuses
+            .iter()
+            .filter(|s| **s >= 200 && **s < 300)
+            .find_map(|s| all.get(s).and_then(|m| m.get("application/json")))
+            .map(|spec| (spec.schema.clone(), spec.example.clone()))
+        {
+            default_schema = schema;
+            default_example = example;
+        }
+    }
+
+    if default_schema.is_none() {
+        // Next, any 2xx with any media type
+        let mut statuses: Vec<u16> = all.keys().cloned().collect();
+        statuses.sort_unstable();
+        'outer: for s in statuses.iter().filter(|s| **s >= 200 && **s < 300) {
+            if let Some(mt_map) = all.get(s) {
+                for (_mt, spec) in mt_map {
+                    if spec.schema.is_some() || spec.example.is_some() {
+                        default_schema = spec.schema.clone();
+                        default_example = spec.example.clone();
+                        break 'outer;
+                    }
+                }
+            }
+        }
+    }
+
+    if default_schema.is_none() {
+        // Finally, any status preferring application/json
+        let mut statuses: Vec<u16> = all.keys().cloned().collect();
+        statuses.sort_unstable();
+        if let Some((schema, example)) = statuses
+            .iter()
+            .find_map(|s| all.get(s).and_then(|m| m.get("application/json")))
+            .map(|spec| (spec.schema.clone(), spec.example.clone()))
+        {
+            default_schema = schema;
+            default_example = example;
+        }
+    }
+
     (default_schema, default_example, all)
 }
 

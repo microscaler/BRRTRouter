@@ -5,5 +5,12 @@ use brrtrouter_macros::handler;
 
 #[handler(SecureEndpointController)]
 pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
-    Response {}
+    // Example response:
+    // {
+    //   "status": "ok"
+    // }
+
+    Response {
+        status: Some("ok".to_string()),
+    }
 }

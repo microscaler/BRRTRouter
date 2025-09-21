@@ -218,7 +218,17 @@ paths:
           required: true
           schema: { type: string }
       responses:
-        "200": { description: Exists }
+        "200":
+          description: Exists
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  exists: { type: boolean }
+              examples:
+                exists:
+                  value: { exists: true }
         "404": { description: Not found }
     options:
       summary: Allowed operations
@@ -234,6 +244,17 @@ paths:
           headers:
             Allow:
               schema: { type: string }
+        "200":
+          description: Allowed operations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  allow: { type: string }
+              examples:
+                allow:
+                  value: { allow: "GET,HEAD,OPTIONS" }
 
   /users/{user_id}/posts:
     get:
@@ -425,6 +446,15 @@ paths:
           content:
             image/png: { schema: { type: string, format: binary } }
             application/octet-stream: { schema: { type: string, format: binary } }
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  url: { type: string, format: uri }
+              examples:
+                meta:
+                  value: { id: "abc", url: "https://cdn.example.com/abc" }
 
   /form:
     post:
@@ -441,7 +471,17 @@ paths:
                 name: { type: string }
                 age: { type: integer, format: int32 }
       responses:
-        "204": { description: Accepted }
+        "200":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+              examples:
+                formAccepted:
+                  value: { ok: true }
 
   /upload:
     post:
@@ -462,6 +502,15 @@ paths:
       responses:
         "201":
           description: Uploaded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  location: { type: string, format: uri }
+              examples:
+                uploadOk:
+                  value: { location: "https://cdn.example.com/files/abc.png" }
           headers:
             Location:
               schema: { type: string, format: uri }
@@ -478,7 +527,17 @@ paths:
           explode: false
           schema: { type: array, items: { type: integer } }
       responses:
-        "200": { description: OK }
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  coords: { type: array, items: { type: integer } }
+              examples:
+                example:
+                  value: { coords: [1,2,3] }
 
   /labels/{color}:
     get:
@@ -492,7 +551,17 @@ paths:
           explode: false
           schema: { type: string }
       responses:
-        "200": { description: OK }
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  color: { type: string }
+              examples:
+                example:
+                  value: { color: "red" }
 
   /search:
     get:
@@ -526,6 +595,15 @@ paths:
                 type: object
                 properties:
                   results: { type: array, items: { $ref: '#/components/schemas/Item' } }
+              examples:
+                searchExample:
+                  summary: Search results
+                  value:
+                    results:
+                      - id: "item-001"
+                        name: "Sample Item"
+                      - id: "item-002"
+                        name: "Another Item"
 
   /secure:
     get:
@@ -535,7 +613,17 @@ paths:
         - BearerAuth: []
         - OAuth2: [read]
       responses:
-        "200": { description: OK }
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+              examples:
+                ok:
+                  value: { status: "ok" }
         "401": { description: Unauthorized }
 
   /webhooks:
@@ -567,7 +655,20 @@ paths:
               responses:
                 "200": { description: Received }
       responses:
-        "201": { description: Registered }
+        "201":
+          description: Registered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subscription_id: { type: string }
+                  url: { type: string, format: uri }
+              examples:
+                webhookRegistered:
+                  value:
+                    subscription_id: "sub_123"
+                    url: "https://example.com/webhook"
 
 components:
   securitySchemes:

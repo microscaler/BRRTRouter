@@ -5,5 +5,12 @@ use brrtrouter_macros::handler;
 
 #[handler(OptionsUserController)]
 pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
-    Response {}
+    // Example response:
+    // {
+    //   "allow": "GET,HEAD,OPTIONS"
+    // }
+
+    Response {
+        allow: Some("GET,HEAD,OPTIONS".to_string()),
+    }
 }

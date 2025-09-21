@@ -5,5 +5,14 @@ use brrtrouter_macros::handler;
 
 #[handler(RegisterWebhookController)]
 pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
-    Response {}
+    // Example response:
+    // {
+    //   "subscription_id": "sub_123",
+    //   "url": "https://example.com/webhook"
+    // }
+
+    Response {
+        subscription_id: Some("sub_123".to_string()),
+        url: Some("https://example.com/webhook".to_string()),
+    }
 }

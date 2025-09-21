@@ -5,5 +5,12 @@ use brrtrouter_macros::handler;
 
 #[handler(GetLabelController)]
 pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
-    Response {}
+    // Example response:
+    // {
+    //   "color": "red"
+    // }
+
+    Response {
+        color: Some("red".to_string()),
+    }
 }

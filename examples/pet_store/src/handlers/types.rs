@@ -48,10 +48,27 @@ pub struct Dog {
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
+pub struct DownloadFileResponse {
+    pub id: String,
+
+    pub url: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct GetItemResponse {
     pub id: String,
 
     pub name: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default)]
+pub struct GetLabelResponse {
+    pub color: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default)]
+pub struct GetMatrixResponse {
+    pub coords: Vec<i32>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -90,6 +107,11 @@ pub struct GetUserResponse {
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
+pub struct HeadUserResponse {
+    pub exists: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct Item {
     pub id: String,
 
@@ -109,6 +131,11 @@ pub struct ListUserPostsResponse {
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct ListUsersResponse {
     pub users: Vec<User>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default)]
+pub struct OptionsUserResponse {
+    pub allow: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -177,8 +204,30 @@ pub struct RegisterWebhookRequest {
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
+pub struct RegisterWebhookResponse {
+    pub subscription_id: String,
+
+    pub url: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct SearchResponse {
     pub results: Vec<Item>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default)]
+pub struct SecureEndpointResponse {
+    pub status: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default)]
+pub struct SubmitFormResponse {
+    pub ok: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default)]
+pub struct UploadFileResponse {
+    pub location: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
