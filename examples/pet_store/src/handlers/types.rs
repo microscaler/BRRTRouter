@@ -99,7 +99,7 @@ pub struct GetPostResponse {
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct GetUserResponse {
-    pub email: serde_json::Value,
+    pub email: String,
 
     pub id: String,
 
@@ -232,7 +232,7 @@ pub struct UploadFileResponse {
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct User {
-    pub email: serde_json::Value,
+    pub email: String,
 
     pub id: String,
 

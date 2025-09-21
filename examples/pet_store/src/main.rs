@@ -18,6 +18,11 @@ struct Args {
     static_dir: Option<PathBuf>,
     #[arg(long, default_value = "./doc")]
     doc_dir: PathBuf,
+    // Accept compatibility flags used by repo scripts; currently informational
+    #[arg(long, default_value_t = false)]
+    hot_reload: bool,
+    #[arg(long)]
+    test_api_key: Option<String>,
 }
 
 fn main() -> io::Result<()> {
@@ -26,7 +31,20 @@ fn main() -> io::Result<()> {
     let config = RuntimeConfig::from_env();
     may::config().set_stack_size(config.stack_size);
     // Load OpenAPI spec and create router
-    let (routes, _slug) = brrtrouter::spec::load_spec(args.spec.to_str().unwrap())
+    // Resolve relative specs against the crate directory so launches from other CWDs work
+    let spec_path = if args.spec.is_relative() {
+        let base = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        base.join(args.spec)
+    } else {
+        args.spec.clone()
+    };
+    if args.hot_reload {
+        println!("[info] hot-reload requested (handled internally by service watcher if enabled)");
+    }
+    if let Some(k) = &args.test_api_key {
+        println!("[info] test-api-key provided ({} chars)", k.len());
+    }
+    let (routes, _slug) = brrtrouter::spec::load_spec(spec_path.to_str().unwrap())
         .expect("failed to load OpenAPI spec");
     let _router = Router::new(routes.clone());
     // Create router and dispatcher
@@ -48,7 +66,7 @@ fn main() -> io::Result<()> {
         router,
         dispatcher,
         HashMap::new(),
-        args.spec.clone(),
+        spec_path.clone(),
         args.static_dir.clone(),
         Some(args.doc_dir.clone()),
     );

@@ -107,7 +107,13 @@ pub(crate) fn unique_handler_name(seen: &mut HashSet<String>, name: &str) -> Str
 
 pub fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
     let literal = match example {
-        Value::String(s) => format!("{s:?}.to_string()"),
+        Value::String(s) => {
+            if field.ty == "serde_json::Value" || field.ty == "Value" {
+                format!("serde_json::Value::String({s:?}.to_string())")
+            } else {
+                format!("{s:?}.to_string()")
+            }
+        }
         Value::Number(n) => n.to_string(),
         Value::Bool(b) => b.to_string(),
         Value::Array(items) => {
@@ -217,7 +223,7 @@ pub fn extract_fields(schema: &Value) -> Vec<FieldDef> {
                 fields.push(FieldDef {
                     name: "items".to_string(),
                     original_name: "items".to_string(),
-                    ty: format!("Vec<{ty}>"),
+                    ty: format!("Vec<{ty}>") ,
                     optional: false,
                     value: "vec![]".to_string(),
                 });
@@ -237,7 +243,23 @@ pub fn extract_fields(schema: &Value) -> Vec<FieldDef> {
         .unwrap_or_default();
     if let Some(props) = schema.get("properties").and_then(|p| p.as_object()) {
         for (name, prop) in props {
-            let ty = if let Some(name) = prop.get("x-ref-name").and_then(|v| v.as_str()) {
+            // Detect oneOf with null → map to Option<Inner>
+            let (mut inferred_ty, mut nullable_oneof) = if let Some(one_of) = prop.get("oneOf").and_then(|v| v.as_array()) {
+                let mut inner_ty: Option<String> = None;
+                let mut has_null = false;
+                for variant in one_of {
+                    if variant.get("type").and_then(|t| t.as_str()) == Some("null") {
+                        has_null = true;
+                    } else {
+                        inner_ty = Some(schema_to_type(variant));
+                    }
+                }
+                (inner_ty.unwrap_or_else(|| "serde_json::Value".to_string()), has_null)
+            } else { (String::new(), false) };
+
+            let ty = if !inferred_ty.is_empty() {
+                inferred_ty
+            } else if let Some(name) = prop.get("x-ref-name").and_then(|v| v.as_str()) {
                 to_camel_case(name)
             } else if let Some(r) = prop.get("$ref").and_then(|v| v.as_str()) {
                 if let Some(name) = r.strip_prefix("#/components/schemas/") {
@@ -261,7 +283,7 @@ pub fn extract_fields(schema: &Value) -> Vec<FieldDef> {
                     _ => "serde_json::Value".to_string(),
                 }
             };
-            let optional = !required.contains(name);
+            let optional = !required.contains(name) || nullable_oneof;
             let value = dummy_value::dummy_value(&ty)
                 .map(|v| if optional { format!("Some({v})") } else { v })
                 .unwrap_or_else(|_| "Default::default()".to_string());

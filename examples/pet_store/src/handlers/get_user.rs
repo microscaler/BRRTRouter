@@ -15,7 +15,7 @@ pub struct Request {
 pub struct Response {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "email")]
-    pub email: Option<serde_json::Value>,
+    pub email: Option<String>,
 
     #[serde(rename = "id")]
     pub id: String,
