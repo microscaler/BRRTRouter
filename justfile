@@ -45,88 +45,96 @@ bench:
 fg:
 	cargo flamegraph -p pet_store --bin pet_store
 
+# Start the example with a default API key and then run curls
 curls-start:
-	# Start example with test key and wait a moment
-	BRRTR_API_KEY=test123 cargo run --manifest-path examples/pet_store/Cargo.toml -- --spec doc/openapi.yaml &
-	sleep 1
-	just curls api="http://0.0.0.0:8080" key="test123"
+	@echo "Starting example server with BRRTR_API_KEY=test123..."
+	@BRRTR_API_KEY=test123 cargo run --manifest-path examples/pet_store/Cargo.toml -- --spec doc/openapi.yaml &
+	@echo "Waiting for server readiness on /health..."
+	@for i in $$(seq 1 60); do \
+		code=$$(curl -s -o /dev/null -w "%{http_code}" http://0.0.0.0:8080/health || true); \
+		[ "$$code" = "200" ] && break; \
+		sleep 0.5; \
+	done
+	@echo "Server ready. Running curls..."
+	@just curls
 
-curls api="http://0.0.0.0:8080" key="test123":
+# Self-contained curls (no parameters needed)
+curls:
 	# Infra
-	curl -i {{api}}/health
+	curl -i "http://0.0.0.0:8080/health"
 	echo ""
-	curl -i {{api}}/metrics
+	curl -i "http://0.0.0.0:8080/metrics"
 	echo ""
 
 	# Pets
-	curl -i -H "Authorization: {{key}}" "{{api}}/pets"
+	curl -i -H "X-API-Key: test123" "http://0.0.0.0:8080/pets"
 	echo ""
-	curl -i -H "Authorization: {{key}}" -H "Content-Type: application/json" -d '{"name":"Bella"}' "{{api}}/pets"
+	curl -i -H "X-API-Key: test123" -H "Content-Type: application/json" -d '{"name":"Bella"}' "http://0.0.0.0:8080/pets"
 	echo ""
-	curl -i -H "Authorization: {{key}}" "{{api}}/pets/12345"
+	curl -i -H "X-API-Key: test123" "http://0.0.0.0:8080/pets/12345"
 	echo ""
 
 	# Users
-	curl -i -H "Authorization: {{key}}" "{{api}}/users?limit=10&offset=0"
+	curl -i -H "X-API-Key: test123" "http://0.0.0.0:8080/users?limit=10&offset=0"
 	echo ""
-	curl -i -H "Authorization: {{key}}" "{{api}}/users/abc-123"
+	curl -i -H "X-API-Key: test123" "http://0.0.0.0:8080/users/abc-123"
 	echo ""
-	curl -I -H "Authorization: {{key}}" "{{api}}/users/abc-123"   # HEAD
+	curl -I -H "X-API-Key: test123" "http://0.0.0.0:8080/users/abc-123"   # HEAD
 	echo ""
-	curl -i -X OPTIONS -H "Authorization: {{key}}" "{{api}}/users/abc-123"
+	curl -i -X OPTIONS -H "X-API-Key: test123" "http://0.0.0.0:8080/users/abc-123"
 	echo ""
-	curl -i -X DELETE -H "Authorization: {{key}}" "{{api}}/users/abc-123"
+	curl -i -X DELETE -H "X-API-Key: test123" "http://0.0.0.0:8080/users/abc-123"
 	echo ""
 
 	# Posts
-	curl -i -H "Authorization: {{key}}" "{{api}}/users/abc-123/posts?limit=5&offset=0"
+	curl -i -H "X-API-Key: test123" "http://0.0.0.0:8080/users/abc-123/posts?limit=5&offset=0"
 	echo ""
-	curl -i -H "Authorization: {{key}}" "{{api}}/users/abc-123/posts/post1"
+	curl -i -H "X-API-Key: test123" "http://0.0.0.0:8080/users/abc-123/posts/post1"
 	echo ""
 
 	# Admin
-	curl -i -H "Authorization: {{key}}" "{{api}}/admin/settings"
+	curl -i -H "X-API-Key: test123" "http://0.0.0.0:8080/admin/settings"
 	echo ""
 
 	# Items
-	curl -i -H "Authorization: {{key}}" "{{api}}/items/550e8400-e29b-41d4-a716-446655440000"
+	curl -i -H "X-API-Key: test123" "http://0.0.0.0:8080/items/550e8400-e29b-41d4-a716-446655440000"
 	echo ""
-	curl -i -H "Authorization: {{key}}" -H "Content-Type: application/json" -X POST -d '{"name":"New Item"}' "{{api}}/items/550e8400-e29b-41d4-a716-446655440000"
+	curl -i -H "X-API-Key: test123" -H "Content-Type: application/json" -X POST -d '{"name":"New Item"}' "http://0.0.0.0:8080/items/550e8400-e29b-41d4-a716-446655440000"
 	echo ""
 
-	# SSE (will hang; fetch headers only)
-	curl -sS -m 2 -H "Authorization: {{key}}" "{{api}}/events" | head -n 1 || true
+	# SSE (avoid blocking)
+	curl -sS -m 2 -H "X-API-Key: test123" "http://0.0.0.0:8080/events" | head -n 1 || true
 	echo ""
 
 	# Download (JSON meta variant)
-	curl -i -H "Authorization: {{key}}" "{{api}}/download/550e8400-e29b-41d4-a716-446655440000"
+	curl -i -H "X-API-Key: test123" "http://0.0.0.0:8080/download/550e8400-e29b-41d4-a716-446655440000"
 	echo ""
 
 	# Form URL-encoded
-	curl -i -H "Authorization: {{key}}" -H "Content-Type: application/x-www-form-urlencoded" --data-urlencode "name=John" --data-urlencode "age=30" "{{api}}/form"
+	curl -i -H "X-API-Key: test123" -H "Content-Type: application/x-www-form-urlencoded" --data-urlencode "name=John" --data-urlencode "age=30" "http://0.0.0.0:8080/form"
 	echo ""
 
 	# Upload multipart (use a local file as payload)
-	curl -i -H "Authorization: {{key}}" -F "file=@Cargo.toml;type=text/plain" -F "metadata.note=example" "{{api}}/upload"
+	curl -i -H "X-API-Key: test123" -F "file=@Cargo.toml;type=text/plain" -F "metadata.note=example" "http://0.0.0.0:8080/upload"
 	echo ""
 
 	# Matrix and label style
-	curl -i -H "Authorization: {{key}}" "{{api}}/matrix/;coords=1,2,3"
+	curl -i -H "X-API-Key: test123" "http://0.0.0.0:8080/matrix/;coords=1,2,3"
 	echo ""
-	curl -i -H "Authorization: {{key}}" "{{api}}/labels/.red"
+	curl -i -H "X-API-Key: test123" "http://0.0.0.0:8080/labels/.red"
 	echo ""
 
 	# Search with complex query, header and cookie
-	curl -i -H "Authorization: {{key}}" -H "X-Trace-Id: 123e4567-e89b-12d3-a456-426614174000" --cookie "session=abc" \
-	  "{{api}}/search?tags=a%7Cb%7Cc&filters%5Bname%5D=Bella&filters%5Btag%5D=pet"
+	curl -i -H "X-API-Key: test123" -H "X-Trace-Id: 123e4567-e89b-12d3-a456-426614174000" --cookie "session=abc" \
+	  "http://0.0.0.0:8080/search?tags=a%7Cb%7Cc&filters%5Bname%5D=Bella&filters%5Btag%5D=pet"
 	echo ""
 
 	# Secure endpoint (requires API key)
-	curl -i -H "Authorization: {{key}}" "{{api}}/secure"
+	curl -i -H "X-API-Key: test123" "http://0.0.0.0:8080/secure"
 	echo ""
 
 	# Webhook registration
-	curl -i -H "Authorization: {{key}}" -H "Content-Type: application/json" -d '{"url":"https://example.com/webhook"}' "{{api}}/webhooks"
+	curl -i -H "X-API-Key: test123" -H "Content-Type: application/json" -d '{"url":"https://example.com/webhook"}' "http://0.0.0.0:8080/webhooks"
 	echo ""
 
 all: gen build test curls

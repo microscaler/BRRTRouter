@@ -4,6 +4,8 @@ use brrtrouter::router::Router;
 use brrtrouter::runtime_config::RuntimeConfig;
 use brrtrouter::server::AppService;
 use brrtrouter::server::HttpServer;
+use brrtrouter::spec::SecurityScheme;
+use brrtrouter::{BearerJwtProvider, OAuth2Provider, SecurityProvider, SecurityRequest};
 use clap::Parser;
 use pet_store::registry;
 use std::collections::HashMap;
@@ -44,7 +46,7 @@ fn main() -> io::Result<()> {
     if let Some(k) = &args.test_api_key {
         println!("[info] test-api-key provided ({} chars)", k.len());
     }
-    let (routes, _slug) = brrtrouter::spec::load_spec(spec_path.to_str().unwrap())
+    let (routes, schemes, _slug) = brrtrouter::spec::load_spec_full(spec_path.to_str().unwrap())
         .expect("failed to load OpenAPI spec");
     let _router = Router::new(routes.clone());
     // Create router and dispatcher
@@ -65,12 +67,73 @@ fn main() -> io::Result<()> {
     let mut service = AppService::new(
         router,
         dispatcher,
-        HashMap::new(),
+        schemes,
         spec_path.clone(),
         args.static_dir.clone(),
         Some(args.doc_dir.clone()),
     );
     service.set_metrics_middleware(metrics);
+
+    // Register default security providers based on the spec's security schemes
+    {
+        // Determine API key from env or CLI for ApiKey schemes
+        let default_key = std::env::var("BRRTR_API_KEY")
+            .ok()
+            .or_else(|| args.test_api_key.clone())
+            .unwrap_or_else(|| "test123".to_string());
+
+        // Simple ApiKey provider for header/query/cookie
+        struct ApiKeyProvider {
+            key: String,
+        }
+        impl SecurityProvider for ApiKeyProvider {
+            fn validate(
+                &self,
+                scheme: &SecurityScheme,
+                _scopes: &[String],
+                req: &SecurityRequest,
+            ) -> bool {
+                match scheme {
+                    SecurityScheme::ApiKey { name, location, .. } => match location.as_str() {
+                        "header" => req.headers.get(&name.to_ascii_lowercase()) == Some(&self.key),
+                        "query" => req.query.get(name) == Some(&self.key),
+                        "cookie" => req.cookies.get(name) == Some(&self.key),
+                        _ => false,
+                    },
+                    _ => false,
+                }
+            }
+        }
+
+        // Iterate spec-declared schemes and register appropriate providers
+        for (scheme_name, scheme) in service.security_schemes.clone() {
+            match scheme {
+                SecurityScheme::ApiKey { .. } => {
+                    service.register_security_provider(
+                        &scheme_name,
+                        std::sync::Arc::new(ApiKeyProvider {
+                            key: default_key.clone(),
+                        }),
+                    );
+                }
+                SecurityScheme::Http { ref scheme, .. }
+                    if scheme.eq_ignore_ascii_case("bearer") =>
+                {
+                    service.register_security_provider(
+                        &scheme_name,
+                        std::sync::Arc::new(BearerJwtProvider::new("sig")),
+                    );
+                }
+                SecurityScheme::OAuth2 { .. } => {
+                    service.register_security_provider(
+                        &scheme_name,
+                        std::sync::Arc::new(OAuth2Provider::new("sig")),
+                    );
+                }
+                _ => {}
+            }
+        }
+    }
     let addr = if std::env::var("BRRTR_LOCAL").is_ok() {
         "127.0.0.1:8080"
     } else {

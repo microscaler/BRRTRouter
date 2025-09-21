@@ -328,6 +328,7 @@ fn test_parameter_to_field_no_schema() {
 fn test_rust_literal_for_example_string() {
     let field = FieldDef {
         name: "name".to_string(),
+        original_name: "name".to_string(),
         ty: "String".to_string(),
         optional: false,
         value: "default".to_string(),
@@ -342,6 +343,7 @@ fn test_rust_literal_for_example_string() {
 fn test_rust_literal_for_example_optional_string() {
     let field = FieldDef {
         name: "nickname".to_string(),
+        original_name: "nickname".to_string(),
         ty: "String".to_string(),
         optional: true,
         value: "default".to_string(),
@@ -356,6 +358,7 @@ fn test_rust_literal_for_example_optional_string() {
 fn test_rust_literal_for_example_number() {
     let field = FieldDef {
         name: "age".to_string(),
+        original_name: "age".to_string(),
         ty: "i32".to_string(),
         optional: false,
         value: "default".to_string(),
@@ -370,6 +373,7 @@ fn test_rust_literal_for_example_number() {
 fn test_rust_literal_for_example_boolean() {
     let field = FieldDef {
         name: "active".to_string(),
+        original_name: "active".to_string(),
         ty: "bool".to_string(),
         optional: false,
         value: "default".to_string(),
@@ -384,6 +388,7 @@ fn test_rust_literal_for_example_boolean() {
 fn test_rust_literal_for_example_array() {
     let field = FieldDef {
         name: "tags".to_string(),
+        original_name: "tags".to_string(),
         ty: "Vec<String>".to_string(),
         optional: false,
         value: "default".to_string(),
@@ -401,6 +406,7 @@ fn test_rust_literal_for_example_array() {
 fn test_rust_literal_for_example_array_numbers() {
     let field = FieldDef {
         name: "scores".to_string(),
+        original_name: "scores".to_string(),
         ty: "Vec<i32>".to_string(),
         optional: false,
         value: "default".to_string(),
@@ -415,6 +421,7 @@ fn test_rust_literal_for_example_array_numbers() {
 fn test_rust_literal_for_example_json_value() {
     let field = FieldDef {
         name: "metadata".to_string(),
+        original_name: "metadata".to_string(),
         ty: "serde_json::Value".to_string(),
         optional: false,
         value: "default".to_string(),
@@ -429,6 +436,7 @@ fn test_rust_literal_for_example_json_value() {
 fn test_rust_literal_for_example_named_type() {
     let field = FieldDef {
         name: "user".to_string(),
+        original_name: "user".to_string(),
         ty: "User".to_string(),
         optional: false,
         value: "default".to_string(),
@@ -491,6 +499,7 @@ fn test_process_schema_type_duplicate() {
 fn test_field_def_construction() {
     let field = FieldDef {
         name: "test_field".to_string(),
+        original_name: "test_field".to_string(),
         ty: "String".to_string(),
         optional: true,
         value: "default_value".to_string(),
@@ -507,12 +516,14 @@ fn test_type_definition_construction() {
     let fields = vec![
         FieldDef {
             name: "id".to_string(),
+            original_name: "id".to_string(),
             ty: "i32".to_string(),
             optional: false,
             value: "0".to_string(),
         },
         FieldDef {
             name: "name".to_string(),
+            original_name: "name".to_string(),
             ty: "String".to_string(),
             optional: false,
             value: "String::new()".to_string(),
