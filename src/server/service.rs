@@ -13,6 +13,7 @@ use std::collections::HashMap;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
+use tracing::{info, warn};
 
 pub struct AppService {
     pub router: Arc<RwLock<Router>>,
@@ -312,6 +313,7 @@ impl HttpService for AppService {
                     cookies: &cookies,
                 };
                 let mut authorized = false;
+                let mut insufficient_scope = false;
                 'outer: for requirement in &route_match.route.security {
                     let mut ok = true;
                     for (scheme_name, scopes) in &requirement.0 {
@@ -330,6 +332,21 @@ impl HttpService for AppService {
                             }
                         };
                         if !provider.validate(scheme, scopes, &sec_req) {
+                            // Detect insufficient scope for Bearer/OAuth2: token valid but scopes missing
+                            match scheme {
+                                SecurityScheme::Http { scheme: http_scheme, .. }
+                                    if http_scheme.eq_ignore_ascii_case("bearer") => {
+                                        if provider.validate(scheme, &[], &sec_req) {
+                                            insufficient_scope = true;
+                                        }
+                                    }
+                                SecurityScheme::OAuth2 { .. } => {
+                                    if provider.validate(scheme, &[], &sec_req) {
+                                        insufficient_scope = true;
+                                    }
+                                }
+                                _ => {}
+                            }
                             ok = false;
                             break;
                         }
@@ -341,20 +358,34 @@ impl HttpService for AppService {
                 }
                 if !authorized {
                     if let Some(metrics) = &self.metrics { metrics.inc_auth_failure(); }
-                    // RFC 7807 Problem Details (terse by default)
-                    // For Bearer, add WWW-Authenticate header (minimal reason)
-                    res.header("WWW-Authenticate: Bearer error=\"invalid_token\"");
-                    write_json_error(
-                        res,
-                        401,
-                        serde_json::json!({
-                            "type": "about:blank",
-                            "title": "Unauthorized",
-                            "status": 401
-                        }),
-                    );
+                    let debug = std::env::var("BRRTR_DEBUG_VALIDATION").map(|v| v == "1" || v.eq_ignore_ascii_case("true")).unwrap_or(false);
+                    let status = if insufficient_scope { 403 } else { 401 };
+                    let title = if status == 403 { "Forbidden" } else { "Unauthorized" };
+                    let detail = if status == 403 { "Insufficient scope or permissions" } else { "Missing or invalid credentials" };
+                    if status == 401 {
+                        res.header("WWW-Authenticate: Bearer error=\"invalid_token\"");
+                    } else {
+                        res.header("WWW-Authenticate: Bearer error=\"insufficient_scope\"");
+                    }
+                    let mut body = serde_json::json!({
+                        "type": "about:blank",
+                        "title": title,
+                        "status": status,
+                        "detail": detail
+                    });
+                    if debug {
+                        if let Some(map) = body.as_object_mut() {
+                            map.insert("method".to_string(), json!(method));
+                            map.insert("path".to_string(), json!(path));
+                            map.insert("handler".to_string(), json!(route_match.route.handler_name.clone()));
+                        }
+                    }
+                    if status == 401 { warn!(method=%method, path=%path, handler=%route_match.route.handler_name, "auth failed: 401 unauthorized"); }
+                    else { warn!(method=%method, path=%path, handler=%route_match.route.handler_name, "auth failed: 403 forbidden"); }
+                    write_json_error(res, status as u16, body);
                     return Ok(());
                 }
+                info!(method=%method, path=%path, handler=%route_match.route.handler_name, "auth success");
             }
             // Enforce required request body when specified in spec
             if route_match.route.request_body_required && body.is_none() {

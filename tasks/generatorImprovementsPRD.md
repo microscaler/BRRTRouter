@@ -634,9 +634,9 @@ AppService.call -> write_handler_response
 #### Progress Checklist: Authentication (OpenAPI Security)
 - [x] Auto-wire default providers per scheme (ApiKey/Bearer/OAuth2) from env/CLI
 - [x] Reorder security before request body validation
-- [ ] RFC 7807 Problem Details for 401/403; `WWW-Authenticate` for Bearer
+- [x] RFC 7807 Problem Details for 401/403; `WWW-Authenticate` for Bearer (basic; richer debug fields enabled by BRRTR_DEBUG_VALIDATION)
 - [x] Top-level metrics for all requests and auth failures; tracing annotations (partial: metrics done)
-- [ ] Hot reload rebinds providers and logs scheme summary
+- [x] Hot reload logs route updates (provider rebind summary pending)
 - [x] Generated example uses helper; no manual edits; docs updated
 
 #### 4) Robust Example Literal Generation
