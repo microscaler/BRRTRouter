@@ -494,6 +494,151 @@ Deliver a robust, warning-free, deterministic code generation system (Askama-bas
 - [x] Implement `--only=handlers|controllers|types|registry|main|docs`
 - [x] Human-readable summary of created/updated/skipped files
 
+### Authentication (OpenAPI Security) Component
+
+#### Objectives
+- Make OpenAPI security the single source of truth for request authentication/authorization.
+- Provide out-of-the-box provider wiring for ApiKey (header/query/cookie), HTTP Bearer, and OAuth2, driven by environment/CLI, with clear metrics and tracing.
+- Ensure security decisions are enforced early (before expensive validation/handler work) and consistently across hot reloads.
+
+#### Functional Requirements
+- Security scheme ingestion
+  - Load `components.securitySchemes` from the OpenAPI spec (ApiKey, Http Bearer, OAuth2) and expose them on the service.
+  - Evaluate security per OpenAPI semantics: OR across requirement objects; AND within a single requirement object.
+
+- Default provider wiring
+  - Auto-register providers for discovered schemes at startup and after hot reload.
+  - ApiKey provider:
+    - Header: compare lowercased header name to configured key.
+    - Query: compare query parameter value to configured key.
+    - Cookie: compare cookie value to configured key.
+  - Bearer provider (dev default): validate a simple signature or static token (configurable), pluggable real JWT in future.
+  - OAuth2 provider (dev default): accept tokens per signature/scope rules (placeholder for future real flows).
+
+- Configuration
+  - Environment-first with CLI overrides; per-scheme and global fallbacks.
+    - ApiKey: `BRRTR_API_KEY__<SCHEME_NAME>` → `BRRTR_API_KEY` → `--test-api-key` → default `test123`.
+    - Bearer: `BRRTR_BEARER_SIGNATURE__<SCHEME_NAME>` → `BRRTR_BEARER_SIGNATURE` → default `sig`.
+    - OAuth2: `BRRTR_OAUTH2_SIGNATURE__<SCHEME_NAME>` → `BRRTR_OAUTH2_SIGNATURE` → default `sig`.
+  - Document env-name normalization: scheme name uppercased, non-alphanumeric → `_`.
+
+- Enforcement order
+  - Perform security validation before request-body JSON schema validation and before dispatch.
+  - Built-in endpoints (health/metrics/docs/static) may bypass security per spec; secured routes must pass.
+
+- Error responses
+  - On failure: 401 (or 403 for insufficient scopes when implemented) with RFC 7807 Problem Details in debug mode; always log cause.
+  - For Bearer, include `WWW-Authenticate` header with reason (when applicable).
+
+- Metrics & tracing
+  - Count ALL requests (including built-ins and pre-dispatch failures) in top-level metrics.
+  - Counters: `auth_requests_total`, `auth_failures_total{scheme,reason}`, plus overall `requests_total`.
+  - Tracing spans tagged with route/handler/scheme/outcome; avoid logging secrets.
+
+- Hot reload
+  - On spec reload, reconcile `security_schemes` and re-register default providers using current env/CLI.
+  - Log a summary of active schemes and binding sources.
+
+- Developer ergonomics
+  - Generated `main.rs` uses a helper/builder to register default providers; no manual edits required.
+  - Remove demo `AuthMiddleware` from generated runtime path; keep only as a documented example/test.
+
+#### Non‑Functional Requirements
+- No secret leakage in logs; only lengths or masked values.
+- Minimal overhead (<1ms p50) for auth checks under normal load.
+- Deterministic behavior given the same spec and configuration.
+
+#### Sequence Diagram (Request Path with Security)
+
+```
+Client -> HttpServer -> AppService.call
+AppService.call -> parse_request (method, path, headers, cookies, query, body?)
+AppService.call -> Router: route(method, path) => RouteMatch
+AppService.call -> Security: evaluate OR-of-AND requirements
+Security -> Providers: validate(req) per scheme
+Security --> AppService.call: authorized? (true/false)
+AppService.call -> if unauthorized: 401 Problem Details (end)
+AppService.call -> if authorized: (optional) request body JSON schema validation
+AppService.call -> Dispatcher: dispatch(route_match, body, headers, cookies)
+Dispatcher -> Middleware.before chain (short-circuit allowed)
+Dispatcher -> Handler (coroutine)
+Handler --> Dispatcher: HandlerResponse
+Dispatcher -> Middleware.after
+Dispatcher --> AppService.call: HandlerResponse
+AppService.call -> (optional) response schema validation
+AppService.call -> write_handler_response
+```
+
+#### Story Subcomponents
+- Provider registry helper
+  - Implement `register_default_security_providers_from_env(test_api_key: Option<String>)` on the service builder or service itself.
+  - Map schemes to providers; support per-scheme and global env fallback resolution.
+
+- Enforcement order change
+  - Reorder `AppService::call` to perform security checks before request body validation.
+  - Update tests to reflect new order (e.g., 401 preferred over 400 for secured routes).
+
+- Metrics & tracing integration
+  - Add counters for auth requests/failures; tag spans with scheme/outcome.
+  - Ensure built-in endpoints and pre-dispatch outcomes are counted by a top-level metric.
+
+- Error format alignment
+  - Implement RFC 7807 Problem Details for 401/403 with debug-mode verbosity gating.
+  - For Bearer: set `WWW-Authenticate` appropriately.
+
+- Hot reload reconciliation
+  - On spec change, diff schemes and (re)bind providers; log a concise summary.
+
+- Template & docs
+  - Update `templates/main.rs.txt` to call the helper; print configured schemes at startup.
+  - Document configuration and troubleshooting; deprecate example `AuthMiddleware` in generated runtime.
+
+#### Acceptance Criteria
+- With `BRRTR_API_KEY=test123` and an ApiKey header scheme (`X-API-Key`), requests with `-H "X-API-Key: test123"` succeed for secured routes without manual code edits.
+- 401/403 errors use Problem Details (in debug mode); Bearer failures include `WWW-Authenticate`.
+- Metrics show total requests and auth failures; tracing spans are annotated with security outcomes.
+- Spec hot reload preserves/updates provider bindings; secured routes remain accessible post-reload.
+
+##### Acceptance Criteria — PropelAuth Compatibility
+- ApiKey compatibility
+  - Requests authenticated via `X-API-Key: <key>` are accepted when `<key>` is valid in PropelAuth.
+  - Requests authenticated via `Authorization: Bearer <key>` are also accepted for API-key flows (migration convenience).
+  - Optional remote verification mode: when `AUTH_APIKEY_VERIFY_URL` is configured, keys are validated via PropelAuth’s verify endpoint with caching and timeouts.
+- Bearer/JWT compatibility
+  - Requests with `Authorization: Bearer <jwt>` are validated against JWKS (`AUTH_JWKS_URL`) with `iss`/`aud` checks (`AUTH_ISS`, `AUTH_AUD`) and clock skew tolerance (`AUTH_SKEW_SECS`).
+  - JWTs issued by PropelAuth (including SSO) are accepted when signatures and claims validate.
+  - Role/organization claims from the token can be mapped to OpenAPI security scopes via a configurable mapping policy; lack of required scopes yields 403 with `WWW-Authenticate: Bearer error="insufficient_scope"`.
+- Observability & safety
+  - Metrics include `provider=propelauth` label for auth outcomes; secrets/credentials are never logged.
+  - Startup/reload logs list detected schemes and whether ApiKey (local/remote) and Bearer (JWKS) providers are active.
+- Interop documentation
+  - The README/docs include a short guide for configuring BRRTRouter with PropelAuth (env variables, supported headers, scope mapping), with a link/reference to the PropelAuth documentation ([PropelAuth docs](https://docs.propelauth.com/)).
+
+#### Open Questions
+- Per-route vs per-scheme override precedence when both are configured.
+- Multiple ApiKey schemes with distinct keys in the same service: supported via per-scheme vars?
+- Default behavior for OAuth2 in dev (mock vs strict validation).
+
+#### Risks & Mitigations
+- Misconfiguration leading to global 401s → startup/reload logs list active schemes and source of config; add a self-check endpoint.
+- Security order changes causing behavior drift → update tests and docs; preserve compatibility notes.
+
+#### Dependencies
+- Spec load must provide `security_schemes` (use `load_spec_full`).
+- Problem Details error builder shared with validation/server modules.
+
+#### Implementation Notes
+- Normalize header names to lowercase for comparison; preserve original case for response headers.
+- Avoid logging raw credential values; redact or report length only.
+
+#### Progress Checklist: Authentication (OpenAPI Security)
+- [x] Auto-wire default providers per scheme (ApiKey/Bearer/OAuth2) from env/CLI
+- [x] Reorder security before request body validation
+- [ ] RFC 7807 Problem Details for 401/403; `WWW-Authenticate` for Bearer
+- [x] Top-level metrics for all requests and auth failures; tracing annotations (partial: metrics done)
+- [ ] Hot reload rebinds providers and logs scheme summary
+- [x] Generated example uses helper; no manual edits; docs updated
+
 #### 4) Robust Example Literal Generation
 - [ ] Remove all `unwrap()` in example conversion path
 - [ ] Graceful fallback to `Default::default()` with comment on mismatch

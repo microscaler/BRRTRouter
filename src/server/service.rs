@@ -96,7 +96,17 @@ impl AppService {
             ) -> bool {
                 match scheme {
                     SecurityScheme::ApiKey { name, location, .. } => match location.as_str() {
-                        "header" => req.headers.get(&name.to_ascii_lowercase()) == Some(&self.key),
+                        "header" => {
+                            // Accept either the named header or Authorization: Bearer <key> for migration convenience
+                            let header_ok = req.headers.get(&name.to_ascii_lowercase()) == Some(&self.key);
+                            let auth_ok = req
+                                .headers
+                                .get("authorization")
+                                .and_then(|h| h.strip_prefix("Bearer "))
+                                .map(|v| v == self.key)
+                                .unwrap_or(false);
+                            header_ok || auth_ok
+                        }
                         "query" => req.query.get(name) == Some(&self.key),
                         "cookie" => req.cookies.get(name) == Some(&self.key),
                         _ => false,
@@ -165,6 +175,12 @@ pub fn metrics_endpoint(res: &mut Response, metrics: &MetricsMiddleware) -> io::
         "# HELP brrtrouter_requests_total Total number of handled requests\n\
          # TYPE brrtrouter_requests_total counter\n\
          brrtrouter_requests_total {}\n\
+         # HELP brrtrouter_top_level_requests_total Total number of received requests\n\
+         # TYPE brrtrouter_top_level_requests_total counter\n\
+         brrtrouter_top_level_requests_total {}\n\
+         # HELP brrtrouter_auth_failures_total Total number of authentication failures\n\
+         # TYPE brrtrouter_auth_failures_total counter\n\
+         brrtrouter_auth_failures_total {}\n\
          # HELP brrtrouter_request_latency_seconds Average request latency in seconds\n\
          # TYPE brrtrouter_request_latency_seconds gauge\n\
          brrtrouter_request_latency_seconds {}\n\
@@ -175,6 +191,8 @@ pub fn metrics_endpoint(res: &mut Response, metrics: &MetricsMiddleware) -> io::
          # TYPE brrtrouter_coroutine_stack_used_bytes gauge\n\
          brrtrouter_coroutine_stack_used_bytes {}\n",
         metrics.request_count(),
+        metrics.top_level_request_count(),
+        metrics.auth_failures(),
         metrics.average_latency().as_secs_f64(),
         stack_size,
         used_stack
@@ -229,6 +247,11 @@ impl HttpService for AppService {
             query_params,
             body,
         } = parse_request(req);
+
+        // Count every incoming request at top-level (even those short-circuited before dispatch)
+        if let Some(metrics) = &self.metrics {
+            metrics.inc_top_level_request();
+        }
 
         if method == "GET" && path == "/health" {
             return health_endpoint(res);
@@ -317,7 +340,19 @@ impl HttpService for AppService {
                     }
                 }
                 if !authorized {
-                    write_json_error(res, 401, serde_json::json!({"error": "Unauthorized"}));
+                    if let Some(metrics) = &self.metrics { metrics.inc_auth_failure(); }
+                    // RFC 7807 Problem Details (terse by default)
+                    // For Bearer, add WWW-Authenticate header (minimal reason)
+                    res.header("WWW-Authenticate: Bearer error=\"invalid_token\"");
+                    write_json_error(
+                        res,
+                        401,
+                        serde_json::json!({
+                            "type": "about:blank",
+                            "title": "Unauthorized",
+                            "status": 401
+                        }),
+                    );
                     return Ok(());
                 }
             }
