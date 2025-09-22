@@ -74,6 +74,8 @@ fn main() -> io::Result<()> {
         Some(args.doc_dir.clone()),
     );
     service.set_metrics_middleware(metrics);
+    // Auto-register default security providers using env/CLI for ApiKey/Bearer/OAuth2
+    service.register_default_security_providers_from_env(args.test_api_key.clone());
 
     // Register default security providers based on the spec's security schemes
     {

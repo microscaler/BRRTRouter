@@ -71,6 +71,79 @@ impl AppService {
     pub fn set_metrics_middleware(&mut self, metrics: Arc<MetricsMiddleware>) {
         self.metrics = Some(metrics);
     }
+
+    /// Register default security providers based on loaded OpenAPI security schemes.
+    ///
+    /// This wires ApiKey, Bearer, and OAuth2 providers using environment variables or a
+    /// provided test key for development. For ApiKey schemes, the following configuration
+    /// is used (in order): per-scheme env `BRRTR_API_KEY__<SCHEME_NAME>`, global env
+    /// `BRRTR_API_KEY`, then `test_api_key` argument, then fallback `"test123"`.
+    pub fn register_default_security_providers_from_env(
+        &mut self,
+        test_api_key: Option<String>,
+    ) {
+        use std::sync::Arc as SyncArc;
+
+        struct ApiKeyProvider {
+            key: String,
+        }
+        impl SecurityProvider for ApiKeyProvider {
+            fn validate(
+                &self,
+                scheme: &SecurityScheme,
+                _scopes: &[String],
+                req: &SecurityRequest,
+            ) -> bool {
+                match scheme {
+                    SecurityScheme::ApiKey { name, location, .. } => match location.as_str() {
+                        "header" => req.headers.get(&name.to_ascii_lowercase()) == Some(&self.key),
+                        "query" => req.query.get(name) == Some(&self.key),
+                        "cookie" => req.cookies.get(name) == Some(&self.key),
+                        _ => false,
+                    },
+                    _ => false,
+                }
+            }
+        }
+
+        for (scheme_name, scheme) in self.security_schemes.clone() {
+            match scheme {
+                SecurityScheme::ApiKey { .. } => {
+                    // Per-scheme env: BRRTR_API_KEY__<SCHEME_NAME>
+                    let env_key_name = format!(
+                        "BRRTR_API_KEY__{}",
+                        scheme_name
+                            .chars()
+                            .map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_uppercase() } else { '_' })
+                            .collect::<String>()
+                    );
+                    let key = std::env::var(&env_key_name)
+                        .ok()
+                        .or_else(|| std::env::var("BRRTR_API_KEY").ok())
+                        .or_else(|| test_api_key.clone())
+                        .unwrap_or_else(|| "test123".to_string());
+                    self.register_security_provider(
+                        &scheme_name,
+                        SyncArc::new(ApiKeyProvider { key }),
+                    );
+                }
+                SecurityScheme::Http { ref scheme, .. } if scheme.eq_ignore_ascii_case("bearer") => {
+                    // Simple development bearer provider; real validation can be plugged in by user
+                    let provider = crate::security::BearerJwtProvider::new(
+                        std::env::var("BRRTR_BEARER_SIGNATURE").unwrap_or_else(|_| "sig".into()),
+                    );
+                    self.register_security_provider(&scheme_name, SyncArc::new(provider));
+                }
+                SecurityScheme::OAuth2 { .. } => {
+                    let provider = crate::security::OAuth2Provider::new(
+                        std::env::var("BRRTR_OAUTH2_SIGNATURE").unwrap_or_else(|_| "sig".into()),
+                    );
+                    self.register_security_provider(&scheme_name, SyncArc::new(provider));
+                }
+                _ => {}
+            }
+        }
+    }
 }
 
 /// Basic health check endpoint returning `{ "status": "ok" }`.
@@ -208,24 +281,7 @@ impl HttpService for AppService {
         };
         if let Some(mut route_match) = route_opt {
             route_match.query_params = query_params.clone();
-            // Enforce required request body when specified in spec
-            if route_match.route.request_body_required && body.is_none() {
-                write_json_error(res, 400, json!({"error": "Request body required"}));
-                return Ok(());
-            }
-            if let (Some(schema), Some(body_val)) = (&route_match.route.request_schema, &body) {
-                let compiled = JSONSchema::compile(schema).expect("invalid request schema");
-                let validation = compiled.validate(body_val);
-                if let Err(errors) = validation {
-                    let details: Vec<String> = errors.map(|e| e.to_string()).collect();
-                    write_json_error(
-                        res,
-                        400,
-                        json!({"error": "Request validation failed", "details": details}),
-                    );
-                    return Ok(());
-                }
-            }
+            // Perform security validation first
             if !route_match.route.security.is_empty() {
                 let sec_req = SecurityRequest {
                     headers: &headers,
@@ -262,6 +318,24 @@ impl HttpService for AppService {
                 }
                 if !authorized {
                     write_json_error(res, 401, serde_json::json!({"error": "Unauthorized"}));
+                    return Ok(());
+                }
+            }
+            // Enforce required request body when specified in spec
+            if route_match.route.request_body_required && body.is_none() {
+                write_json_error(res, 400, json!({"error": "Request body required"}));
+                return Ok(());
+            }
+            if let (Some(schema), Some(body_val)) = (&route_match.route.request_schema, &body) {
+                let compiled = JSONSchema::compile(schema).expect("invalid request schema");
+                let validation = compiled.validate(body_val);
+                if let Err(errors) = validation {
+                    let details: Vec<String> = errors.map(|e| e.to_string()).collect();
+                    write_json_error(
+                        res,
+                        400,
+                        json!({"error": "Request validation failed", "details": details}),
+                    );
                     return Ok(());
                 }
             }
