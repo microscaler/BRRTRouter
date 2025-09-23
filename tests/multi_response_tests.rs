@@ -82,6 +82,7 @@ fn test_select_content_type_from_spec() {
         handler_name: "h".to_string(),
         parameters: vec![],
         request_schema: None,
+        request_body_required: false,
         response_schema: None,
         example: None,
         responses,

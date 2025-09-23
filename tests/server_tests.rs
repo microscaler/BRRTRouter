@@ -4,7 +4,9 @@ use brrtrouter::{
     router::Router,
     server::AppService,
     spec::RouteMeta,
+    SecurityProvider, SecurityRequest,
 };
+use brrtrouter::spec::SecurityScheme;
 use http::Method;
 use pet_store::registry;
 use serde_json::{json, Value};
@@ -23,21 +25,41 @@ fn start_petstore_service() -> (TestTracing, ServerHandle, SocketAddr) {
     // ensure coroutines have enough stack for tests
     may::config().set_stack_size(0x8000);
     let tracing = TestTracing::init();
-    let (routes, _slug) = brrtrouter::load_spec("examples/openapi.yaml").unwrap();
+    let (routes, schemes, _slug) = brrtrouter::load_spec_full("examples/openapi.yaml").unwrap();
     let router = Arc::new(RwLock::new(Router::new(routes.clone())));
     let mut dispatcher = Dispatcher::new();
     unsafe {
         registry::register_from_spec(&mut dispatcher, &routes);
     }
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
-    let service = AppService::new(
+    let mut service = AppService::new(
         router,
         Arc::new(RwLock::new(dispatcher)),
-        HashMap::new(),
+        schemes,
         PathBuf::from("examples/openapi.yaml"),
         None,
         None,
     );
+    // Register a simple ApiKey provider to satisfy spec security in tests
+    struct ApiKeyProvider { key: String }
+    impl SecurityProvider for ApiKeyProvider {
+        fn validate(&self, scheme: &SecurityScheme, _scopes: &[String], req: &SecurityRequest) -> bool {
+            match scheme {
+                SecurityScheme::ApiKey { name, location, .. } => match location.as_str() {
+                    "header" => req.headers.get(&name.to_ascii_lowercase()) == Some(&self.key),
+                    "query" => req.query.get(name) == Some(&self.key),
+                    "cookie" => req.cookies.get(name) == Some(&self.key),
+                    _ => false,
+                },
+                _ => false,
+            }
+        }
+    }
+    for (name, scheme) in service.security_schemes.clone() {
+        if matches!(scheme, SecurityScheme::ApiKey { .. }) {
+            service.register_security_provider(&name, Arc::new(ApiKeyProvider { key: "test123".into() }));
+        }
+    }
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     drop(listener);
@@ -106,7 +128,7 @@ fn parse_response(resp: &str) -> (u16, Value) {
 #[test]
 fn test_dispatch_success() {
     let (mut tracing, handle, addr) = start_petstore_service();
-    let resp = send_request(&addr, "GET /pets HTTP/1.1\r\nHost: localhost\r\n\r\n");
+    let resp = send_request(&addr, "GET /pets HTTP/1.1\r\nHost: localhost\r\nX-API-Key: test123\r\n\r\n");
     handle.stop();
     let (status, body) = parse_response(&resp);
     assert_eq!(status, 200);
@@ -135,6 +157,7 @@ fn test_panic_recovery() {
         handler_name: "panic".to_string(),
         parameters: Vec::new(),
         request_schema: None,
+        request_body_required: false,
         response_schema: None,
         example: None,
         responses: std::collections::HashMap::new(),
@@ -193,6 +216,7 @@ fn test_headers_and_cookies() {
         handler_name: "header".to_string(),
         parameters: Vec::new(),
         request_schema: None,
+        request_body_required: false,
         response_schema: None,
         example: None,
         responses: std::collections::HashMap::new(),
@@ -259,6 +283,7 @@ fn test_status_201_json() {
         handler_name: "create".to_string(),
         parameters: Vec::new(),
         request_schema: None,
+        request_body_required: false,
         response_schema: None,
         example: None,
         responses: std::collections::HashMap::new(),
@@ -316,6 +341,7 @@ fn test_text_plain_error() {
         handler_name: "text".to_string(),
         parameters: Vec::new(),
         request_schema: None,
+        request_body_required: false,
         response_schema: None,
         example: None,
         responses: std::collections::HashMap::new(),
@@ -378,6 +404,7 @@ fn test_request_body_validation_failure() {
             "properties": {"name": {"type": "string"}},
             "required": ["name"]
         })),
+        request_body_required: false,
         response_schema: None,
         example: None,
         responses: std::collections::HashMap::new(),
@@ -440,6 +467,7 @@ fn test_response_body_validation_failure() {
         handler_name: "bad".to_string(),
         parameters: Vec::new(),
         request_schema: None,
+        request_body_required: false,
         response_schema: Some(json!({
             "type": "object",
             "properties": {"name": {"type": "string"}},

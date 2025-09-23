@@ -9,6 +9,8 @@ pub struct MetricsMiddleware {
     total_latency_ns: AtomicU64,
     stack_size: AtomicUsize,
     used_stack: AtomicUsize,
+    top_level_requests: AtomicUsize,
+    auth_failures: AtomicUsize,
 }
 
 impl Default for MetricsMiddleware {
@@ -18,6 +20,8 @@ impl Default for MetricsMiddleware {
             total_latency_ns: AtomicU64::new(0),
             stack_size: AtomicUsize::new(0),
             used_stack: AtomicUsize::new(0),
+            top_level_requests: AtomicUsize::new(0),
+            auth_failures: AtomicUsize::new(0),
         }
     }
 }
@@ -45,6 +49,22 @@ impl MetricsMiddleware {
             self.stack_size.load(Ordering::Relaxed),
             self.used_stack.load(Ordering::Relaxed),
         )
+    }
+
+    pub fn inc_top_level_request(&self) {
+        self.top_level_requests.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn top_level_request_count(&self) -> usize {
+        self.top_level_requests.load(Ordering::Relaxed)
+    }
+
+    pub fn inc_auth_failure(&self) {
+        self.auth_failures.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn auth_failures(&self) -> usize {
+        self.auth_failures.load(Ordering::Relaxed)
     }
 }
 

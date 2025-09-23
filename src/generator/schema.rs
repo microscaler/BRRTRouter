@@ -12,6 +12,7 @@ pub struct TypeDefinition {
 #[derive(Debug, Clone)]
 pub struct FieldDef {
     pub name: String,
+    pub original_name: String,
     pub ty: String,
     pub optional: bool,
     pub value: String,
@@ -48,6 +49,45 @@ pub fn is_named_type(ty: &str) -> bool {
     !primitives.contains(&ty) && matches!(ty.chars().next(), Some('A'..='Z'))
 }
 
+fn sanitize_rust_identifier(name: &str) -> String {
+    const KEYWORDS: &[&str] = &[
+        "as", "break", "const", "continue", "crate", "else", "enum", "extern", "false", "fn",
+        "for", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub", "ref",
+        "return", "self", "Self", "static", "struct", "super", "trait", "true", "type", "unsafe",
+        "use", "where", "while", "async", "await", "dyn",
+    ];
+    if KEYWORDS.contains(&name) {
+        format!("r#{}", name)
+    } else {
+        name.to_string()
+    }
+}
+
+fn sanitize_field_name(name: &str) -> String {
+    // Replace invalid identifier characters with underscores and ensure it doesn't start with a digit.
+    let mut s: String = name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if s.is_empty() {
+        s = "_".to_string();
+    }
+    if s.chars()
+        .next()
+        .map(|c| c.is_ascii_digit())
+        .unwrap_or(false)
+    {
+        s.insert(0, '_');
+    }
+    s
+}
+
 pub(crate) fn unique_handler_name(seen: &mut HashSet<String>, name: &str) -> String {
     if !seen.contains(name) {
         seen.insert(name.to_string());
@@ -67,7 +107,13 @@ pub(crate) fn unique_handler_name(seen: &mut HashSet<String>, name: &str) -> Str
 
 pub fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
     let literal = match example {
-        Value::String(s) => format!("{s:?}.to_string()"),
+        Value::String(s) => {
+            if field.ty == "serde_json::Value" || field.ty == "Value" {
+                format!("serde_json::Value::String({s:?}.to_string())")
+            } else {
+                format!("{s:?}.to_string()")
+            }
+        }
         Value::Number(n) => n.to_string(),
         Value::Bool(b) => b.to_string(),
         Value::Array(items) => {
@@ -95,38 +141,56 @@ pub fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
                     Value::Object(_) => {
                         if let Some(inner_ty) = inner_ty_opt {
                             if inner_ty == "serde_json::Value" || inner_ty == "Value" {
-                                let json = serde_json::to_string(item).unwrap();
+                                let json = serde_json::to_string(item).unwrap_or_else(|_| "null".to_string());
                                 format!("serde_json::json!({json})")
                             } else if is_named_type(inner_ty) {
-                                let json = serde_json::to_string(item).unwrap();
-                                format!("serde_json::from_value::<{inner_ty}>(serde_json::json!({json})).unwrap()")
+                                let json = serde_json::to_string(item).unwrap_or_else(|_| "null".to_string());
+                                format!(
+                                    "match serde_json::from_value::<{inner_ty}>(serde_json::json!({json})) {{ Ok(v) => v, Err(_) => Default::default() }}"
+                                )
                             } else {
-                                "Default::default()".to_string()
+                                dummy_value::dummy_value(inner_ty).unwrap_or_else(|_| "Default::default()".to_string())
                             }
+                        } else {
+                            let json = serde_json::to_string(item).unwrap_or_else(|_| "null".to_string());
+                            format!("serde_json::json!({json})")
+                        }
+                    }
+                    _ => {
+                        if let Some(inner_ty) = inner_ty_opt {
+                            dummy_value::dummy_value(inner_ty).unwrap_or_else(|_| "Default::default()".to_string())
+                        } else if is_vec_json_value {
+                            "serde_json::Value::Null".to_string()
                         } else {
                             "Default::default()".to_string()
                         }
                     }
-                    _ => "Default::default()".to_string(),
                 })
                 .collect::<Vec<_>>()
                 .join(", ");
             format!("vec![{inner}]")
         }
         Value::Object(_) => {
-            let json = serde_json::to_string(example).unwrap();
+            let json = serde_json::to_string(example).unwrap_or_else(|_| "null".to_string());
             if field.ty == "serde_json::Value" || field.ty == "Value" {
                 format!("serde_json::json!({json})")
             } else if is_named_type(&field.ty) {
                 format!(
-                    "serde_json::from_value::<{}>(serde_json::json!({json})).unwrap()",
+                    "match serde_json::from_value::<{}>(serde_json::json!({json})) {{ Ok(v) => v, Err(_) => Default::default() }}",
                     field.ty
                 )
             } else {
                 format!("serde_json::json!({json})")
             }
         }
-        _ => "Default::default()".to_string(),
+        _ => {
+            if field.ty == "serde_json::Value" || field.ty == "Value" {
+                "serde_json::Value::Null".to_string()
+            } else {
+                dummy_value::dummy_value(&field.ty)
+                    .unwrap_or_else(|_| "Default::default()".to_string())
+            }
+        }
     };
     if field.optional {
         format!("Some({literal})")
@@ -158,9 +222,10 @@ pub fn extract_fields(schema: &Value) -> Vec<FieldDef> {
                 let ty = schema_to_type(items);
                 fields.push(FieldDef {
                     name: "items".to_string(),
-                    ty: format!("Vec<{ty}>"),
+                    original_name: "items".to_string(),
+                    ty: format!("Vec<{ty}>") ,
                     optional: false,
-                    value: "vec![Default::default()]".to_string(),
+                    value: "vec![]".to_string(),
                 });
                 return fields;
             }
@@ -178,7 +243,23 @@ pub fn extract_fields(schema: &Value) -> Vec<FieldDef> {
         .unwrap_or_default();
     if let Some(props) = schema.get("properties").and_then(|p| p.as_object()) {
         for (name, prop) in props {
-            let ty = if let Some(name) = prop.get("x-ref-name").and_then(|v| v.as_str()) {
+            // Detect oneOf with null → map to Option<Inner>
+            let (mut inferred_ty, mut nullable_oneof) = if let Some(one_of) = prop.get("oneOf").and_then(|v| v.as_array()) {
+                let mut inner_ty: Option<String> = None;
+                let mut has_null = false;
+                for variant in one_of {
+                    if variant.get("type").and_then(|t| t.as_str()) == Some("null") {
+                        has_null = true;
+                    } else {
+                        inner_ty = Some(schema_to_type(variant));
+                    }
+                }
+                (inner_ty.unwrap_or_else(|| "serde_json::Value".to_string()), has_null)
+            } else { (String::new(), false) };
+
+            let ty = if !inferred_ty.is_empty() {
+                inferred_ty
+            } else if let Some(name) = prop.get("x-ref-name").and_then(|v| v.as_str()) {
                 to_camel_case(name)
             } else if let Some(r) = prop.get("$ref").and_then(|v| v.as_str()) {
                 if let Some(name) = r.strip_prefix("#/components/schemas/") {
@@ -202,12 +283,13 @@ pub fn extract_fields(schema: &Value) -> Vec<FieldDef> {
                     _ => "serde_json::Value".to_string(),
                 }
             };
-            let optional = !required.contains(name);
+            let optional = !required.contains(name) || nullable_oneof;
             let value = dummy_value::dummy_value(&ty)
                 .map(|v| if optional { format!("Some({v})") } else { v })
                 .unwrap_or_else(|_| "Default::default()".to_string());
             fields.push(FieldDef {
-                name: name.clone(),
+                name: sanitize_field_name(name),
+                original_name: name.clone(),
                 ty,
                 optional,
                 value,
@@ -268,7 +350,8 @@ pub fn parameter_to_field(param: &ParameterMeta) -> FieldDef {
         .map(|v| if optional { format!("Some({v})") } else { v })
         .unwrap_or_else(|_| "Default::default()".to_string());
     FieldDef {
-        name: param.name.clone(),
+        name: sanitize_field_name(&param.name),
+        original_name: param.name.clone(),
         ty,
         optional,
         value,

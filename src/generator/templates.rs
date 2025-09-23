@@ -1,4 +1,5 @@
 use askama::Template;
+// Remove explicit filters import; not needed and causes unresolved symbol errors
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
@@ -151,6 +152,7 @@ pub fn write_controller(
                 .unwrap_or_else(|| field.value.clone());
             FieldDef {
                 name: field.name.clone(),
+                original_name: field.original_name.clone(),
                 ty: field.ty.clone(),
                 optional: field.optional,
                 value,
@@ -182,10 +184,33 @@ pub fn write_controller(
             .join("\n")
     };
     let response_is_array = res.len() == 1 && res[0].name == "items";
-    let array_literal = enriched_fields
-        .first()
-        .map(|f| f.value.clone())
-        .unwrap_or_else(|| "vec![Default::default()]".to_string());
+    let array_literal = if response_is_array {
+        // If the example itself is an array, prefer rendering from it
+        if let Some(ref ex) = example {
+            if ex.is_array() {
+                let items_field = FieldDef {
+                    name: "items".to_string(),
+                    original_name: "items".to_string(),
+                    ty: res[0].ty.clone(), // Vec<...>
+                    optional: false,
+                    value: String::new(),
+                };
+                super::schema::rust_literal_for_example(&items_field, ex)
+            } else {
+                enriched_fields
+                    .first()
+                    .map(|f| f.value.clone())
+                    .unwrap_or_else(|| "vec![]".to_string())
+            }
+        } else {
+            enriched_fields
+                .first()
+                .map(|f| f.value.clone())
+                .unwrap_or_else(|| "vec![]".to_string())
+        }
+    } else {
+        String::new()
+    };
     let context = ControllerTemplateData {
         handler_name: handler.to_string(),
         struct_name: struct_name.to_string(),

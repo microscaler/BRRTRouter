@@ -91,6 +91,7 @@ fn test_process_schema_type_and_parameter_to_field() {
 fn test_rust_literal_for_example() {
     let mut field = FieldDef {
         name: "count".to_string(),
+        original_name: "count".to_string(),
         ty: "i32".to_string(),
         optional: false,
         value: "0".to_string(),
@@ -102,6 +103,175 @@ fn test_rust_literal_for_example() {
     field.ty = "String".to_string();
     let lit = rust_literal_for_example(&field, &json!("foo"));
     assert_eq!(lit, "Some(\"foo\".to_string())");
+}
+
+#[test]
+fn test_rust_literal_for_example_string() {
+    let field = FieldDef {
+        name: "name".to_string(),
+        original_name: "name".to_string(),
+        ty: "String".to_string(),
+        optional: false,
+        value: "default".to_string(),
+    };
+
+    let example = json!("John Doe");
+    let result = rust_literal_for_example(&field, &example);
+    assert_eq!(result, "\"John Doe\".to_string()");
+}
+
+#[test]
+fn test_rust_literal_for_example_optional_string() {
+    let field = FieldDef {
+        name: "nickname".to_string(),
+        original_name: "nickname".to_string(),
+        ty: "String".to_string(),
+        optional: true,
+        value: "default".to_string(),
+    };
+
+    let example = json!("Johnny");
+    let result = rust_literal_for_example(&field, &example);
+    assert_eq!(result, "Some(\"Johnny\".to_string())");
+}
+
+#[test]
+fn test_rust_literal_for_example_number() {
+    let field = FieldDef {
+        name: "age".to_string(),
+        original_name: "age".to_string(),
+        ty: "i32".to_string(),
+        optional: false,
+        value: "default".to_string(),
+    };
+
+    let example = json!(25);
+    let result = rust_literal_for_example(&field, &example);
+    assert_eq!(result, "25");
+}
+
+#[test]
+fn test_rust_literal_for_example_boolean() {
+    let field = FieldDef {
+        name: "active".to_string(),
+        original_name: "active".to_string(),
+        ty: "bool".to_string(),
+        optional: false,
+        value: "default".to_string(),
+    };
+
+    let example = json!(true);
+    let result = rust_literal_for_example(&field, &example);
+    assert_eq!(result, "true");
+}
+
+#[test]
+fn test_rust_literal_for_example_array() {
+    let field = FieldDef {
+        name: "tags".to_string(),
+        original_name: "tags".to_string(),
+        ty: "Vec<String>".to_string(),
+        optional: false,
+        value: "default".to_string(),
+    };
+
+    let example = json!(["tag1", "tag2", "tag3"]);
+    let result = rust_literal_for_example(&field, &example);
+    assert_eq!(
+        result,
+        "vec![\"tag1\".to_string(), \"tag2\".to_string(), \"tag3\".to_string()]"
+    );
+}
+
+#[test]
+fn test_rust_literal_for_example_array_numbers() {
+    let field = FieldDef {
+        name: "scores".to_string(),
+        original_name: "scores".to_string(),
+        ty: "Vec<i32>".to_string(),
+        optional: false,
+        value: "default".to_string(),
+    };
+
+    let example = json!([1, 2, 3]);
+    let result = rust_literal_for_example(&field, &example);
+    assert_eq!(result, "vec![1, 2, 3]");
+}
+
+#[test]
+fn test_rust_literal_for_example_json_value() {
+    let field = FieldDef {
+        name: "metadata".to_string(),
+        original_name: "metadata".to_string(),
+        ty: "serde_json::Value".to_string(),
+        optional: false,
+        value: "default".to_string(),
+    };
+
+    let example = json!({"key": "value"});
+    let result = rust_literal_for_example(&field, &example);
+    assert!(result.contains("serde_json::json!"));
+}
+
+#[test]
+fn test_rust_literal_for_example_named_type() {
+    let field = FieldDef {
+        name: "user".to_string(),
+        original_name: "user".to_string(),
+        ty: "User".to_string(),
+        optional: false,
+        value: "default".to_string(),
+    };
+
+    let example = json!({"name": "John", "age": 30});
+    let result = rust_literal_for_example(&field, &example);
+    assert!(result.contains("serde_json::from_value::<User>"));
+}
+
+#[test]
+fn test_field_def_construction() {
+    let field = FieldDef {
+        name: "test_field".to_string(),
+        original_name: "test_field".to_string(),
+        ty: "String".to_string(),
+        optional: true,
+        value: "default_value".to_string(),
+    };
+
+    assert_eq!(field.name, "test_field");
+    assert_eq!(field.ty, "String");
+    assert!(field.optional);
+    assert_eq!(field.value, "default_value");
+}
+
+#[test]
+fn test_type_definition_construction() {
+    let fields = vec![
+        FieldDef {
+            name: "id".to_string(),
+            original_name: "id".to_string(),
+            ty: "i32".to_string(),
+            optional: false,
+            value: "0".to_string(),
+        },
+        FieldDef {
+            name: "name".to_string(),
+            original_name: "name".to_string(),
+            ty: "String".to_string(),
+            optional: false,
+            value: "String::new()".to_string(),
+        },
+    ];
+
+    let type_def = TypeDefinition {
+        name: "User".to_string(),
+        fields,
+    };
+
+    assert_eq!(type_def.name, "User");
+    assert_eq!(type_def.fields.len(), 2);
+    assert_eq!(type_def.fields[0].name, "id");
+    assert_eq!(type_def.fields[1].name, "name");
 }
 
 #[test]

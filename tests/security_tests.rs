@@ -1,4 +1,5 @@
 use brrtrouter::middleware::TracingMiddleware;
+use base64::Engine;
 use brrtrouter::server::{HttpServer, ServerHandle};
 use brrtrouter::spec::SecurityScheme;
 use brrtrouter::{
@@ -15,6 +16,7 @@ use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
+use std::thread;
 mod tracing_util;
 use tracing_util::TestTracing;
 
@@ -264,8 +266,9 @@ fn make_token(scope: &str) -> String {
 fn send_request(addr: &SocketAddr, req: &str) -> String {
     let mut stream = TcpStream::connect(addr).unwrap();
     stream.write_all(req.as_bytes()).unwrap();
+    // Keep this tight; remote verification timeout is configured small in the provider for tests
     stream
-        .set_read_timeout(Some(Duration::from_millis(100)))
+        .set_read_timeout(Some(Duration::from_millis(200)))
         .unwrap();
     let mut buf = Vec::new();
     loop {
@@ -307,7 +310,317 @@ fn test_api_key_auth() {
     );
     let status = parse_status(&resp);
     assert_eq!(status, 200);
+
     handle.stop();
+}
+
+fn start_service_default_provider() -> (TestTracing, ServerHandle, SocketAddr) {
+    // ensure coroutines have enough stack for tests
+    may::config().set_stack_size(0x8000);
+    let tracing = TestTracing::init();
+    const SPEC: &str = r#"openapi: 3.1.0
+info:
+  title: Auth API
+  version: '1.0'
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+paths:
+  /secret:
+    get:
+      operationId: secret
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200': { description: OK }
+"#;
+    let path = temp_files::create_temp_yaml(SPEC);
+    let (routes, schemes, _slug) = load_spec_full(path.to_str().unwrap()).unwrap();
+    let router = Arc::new(RwLock::new(Router::new(routes.clone())));
+    let mut dispatcher = Dispatcher::new();
+    unsafe {
+        dispatcher.register_handler("secret", |req: HandlerRequest| {
+            let _ = req.reply_tx.send(HandlerResponse {
+                status: 200,
+                headers: HashMap::new(),
+                body: json!({"ok": true}),
+            });
+        });
+    }
+    dispatcher.add_middleware(Arc::new(TracingMiddleware));
+    let mut service = AppService::new(
+        router,
+        Arc::new(RwLock::new(dispatcher)),
+        schemes,
+        PathBuf::from("examples/openapi.yaml"),
+        None,
+        None,
+    );
+    // Use default provider wiring with a test key
+    service.register_default_security_providers_from_env(Some("secret".into()));
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    drop(listener);
+    let handle = HttpServer(service).start(addr).unwrap();
+    handle.wait_ready().unwrap();
+    (tracing, handle, addr)
+}
+
+#[test]
+fn test_api_key_auth_via_authorization_bearer() {
+    let (_tracing, handle, addr) = start_service_default_provider();
+    let resp = send_request(
+        &addr,
+        "GET /secret HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer secret\r\n\r\n",
+    );
+    handle.stop();
+    let status = parse_status(&resp);
+    assert_eq!(status, 200);
+}
+
+// --- JWKS Bearer provider tests ---
+
+fn start_mock_jwks_server(body: String) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let url = format!("http://{}:{}/jwks.json", addr.ip(), addr.port());
+    thread::spawn(move || {
+        if let Ok((mut stream, _)) = listener.accept() {
+            let mut buf = [0u8; 1024];
+            let _ = stream.read(&mut buf);
+            let resp = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                body.len(), body
+            );
+            let _ = stream.write_all(resp.as_bytes());
+        }
+    });
+    url
+}
+
+fn base64url_no_pad(data: &[u8]) -> String {
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(data)
+}
+
+fn make_hs256_jwt(secret: &[u8], iss: &str, aud: &str, kid: &str, exp_secs: i64) -> String {
+    use jsonwebtoken::{Algorithm, EncodingKey, Header};
+    use serde_json::json;
+    let header = Header { kid: Some(kid.to_string()), alg: Algorithm::HS256, ..Default::default() };
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64;
+    let claims = json!({
+        "iss": iss,
+        "aud": aud,
+        "exp": now + exp_secs,
+        "scope": "read write"
+    });
+    jsonwebtoken::encode(&header, &claims, &EncodingKey::from_secret(secret)).unwrap()
+}
+
+fn start_service_with_jwks(jwks_url: &str, iss: &str, aud: &str) -> (TestTracing, ServerHandle, SocketAddr) {
+    may::config().set_stack_size(0x8000);
+    let tracing = TestTracing::init();
+    const SPEC: &str = r#"openapi: 3.1.0
+info:
+  title: Token API
+  version: '1.0'
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+paths:
+  /header:
+    get:
+      operationId: header
+      security:
+        - BearerAuth: []
+      responses:
+        '200': { description: OK }
+"#;
+    let path = temp_files::create_temp_yaml(SPEC);
+    let (routes, schemes, _slug) = load_spec_full(path.to_str().unwrap()).unwrap();
+    let router = Arc::new(RwLock::new(Router::new(routes.clone())));
+    let mut dispatcher = Dispatcher::new();
+    unsafe {
+        dispatcher.register_handler("header", |req: HandlerRequest| {
+            let _ = req.reply_tx.send(HandlerResponse {
+                status: 200,
+                headers: HashMap::new(),
+                body: json!({"header": true}),
+            });
+        });
+    }
+    dispatcher.add_middleware(Arc::new(TracingMiddleware));
+    let mut service = AppService::new(
+        router,
+        Arc::new(RwLock::new(dispatcher)),
+        schemes,
+        PathBuf::from("examples/openapi.yaml"),
+        None,
+        None,
+    );
+    let provider = brrtrouter::security::JwksBearerProvider::new(jwks_url.to_string())
+        .issuer(iss.to_string())
+        .audience(aud.to_string());
+    service.register_security_provider("BearerAuth", Arc::new(provider));
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    drop(listener);
+    let handle = HttpServer(service).start(addr).unwrap();
+    handle.wait_ready().unwrap();
+    (tracing, handle, addr)
+}
+
+#[test]
+fn test_bearer_jwks_success() {
+    // Build HS256 oct key in JWKS
+    let secret = b"supersecret";
+    let k = base64url_no_pad(secret);
+    let jwks = serde_json::json!({
+        "keys": [
+            {"kty": "oct", "alg": "HS256", "kid": "k1", "k": k}
+        ]
+    }).to_string();
+    let jwks_url = start_mock_jwks_server(jwks);
+    let iss = "https://issuer.example";
+    let aud = "my-audience";
+    let token = make_hs256_jwt(secret, iss, aud, "k1", 3600);
+    let (_t, handle, addr) = start_service_with_jwks(&jwks_url, iss, aud);
+    let req = format!(
+        "GET /header HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer {}\r\n\r\n",
+        token
+    );
+    let resp = send_request(&addr, &req);
+    handle.stop();
+    let status_ok = parse_status(&resp);
+    assert_eq!(status_ok, 200);
+}
+
+#[test]
+fn test_bearer_jwks_invalid_signature() {
+    let secret = b"supersecret";
+    let k = base64url_no_pad(secret);
+    let jwks = serde_json::json!({
+        "keys": [
+            {"kty": "oct", "alg": "HS256", "kid": "k1", "k": k}
+        ]
+    }).to_string();
+    let jwks_url = start_mock_jwks_server(jwks);
+    let iss = "https://issuer.example";
+    let aud = "my-audience";
+    // token signed with different secret
+    let token = make_hs256_jwt(b"wrong", iss, aud, "k1", 3600);
+    let (_t, handle, addr) = start_service_with_jwks(&jwks_url, iss, aud);
+    let req = format!(
+        "GET /header HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer {}\r\n\r\n",
+        token
+    );
+    let resp = send_request(&addr, &req);
+    handle.stop();
+    let status = parse_status(&resp);
+    assert_eq!(status, 401);
+}
+
+// --- Remote API key verification tests ---
+
+fn start_mock_apikey_verify_server() -> (String, thread::JoinHandle<()>) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let url = format!("http://{}:{}/verify", addr.ip(), addr.port());
+    let handle = thread::spawn(move || {
+        for _ in 0..2 {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut buf = [0u8; 1024];
+                let _ = stream.read(&mut buf);
+                // naive parse of X-API-Key header (case-insensitive)
+                let req = String::from_utf8_lossy(&buf);
+                let req_lower = req.to_lowercase();
+                let ok = req_lower.contains("x-api-key: validkey");
+                let body = "";
+                let status = if ok { "200 OK" } else { "401 Unauthorized" };
+                let resp = format!(
+                    "HTTP/1.1 {}\r\nContent-Length: {}\r\n\r\n{}",
+                    status, body.len(), body
+                );
+                let _ = stream.write_all(resp.as_bytes());
+            }
+        }
+    });
+    (url, handle)
+}
+
+fn start_service_with_remote_apikey(verify_url: &str) -> (TestTracing, ServerHandle, SocketAddr) {
+    may::config().set_stack_size(0x8000);
+    let tracing = TestTracing::init();
+    const SPEC: &str = r#"openapi: 3.1.0
+info:
+  title: API Key Verify API
+  version: '1.0'
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+paths:
+  /secret:
+    get:
+      operationId: secret
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200': { description: OK }
+"#;
+    let path = temp_files::create_temp_yaml(SPEC);
+    let (routes, schemes, _slug) = load_spec_full(path.to_str().unwrap()).unwrap();
+    let router = Arc::new(RwLock::new(Router::new(routes.clone())));
+    let mut dispatcher = Dispatcher::new();
+    unsafe {
+        dispatcher.register_handler("secret", |req: HandlerRequest| {
+            let _ = req.reply_tx.send(HandlerResponse { status: 200, headers: HashMap::new(), body: json!({"ok": true}) });
+        });
+    }
+    dispatcher.add_middleware(Arc::new(TracingMiddleware));
+    let mut service = AppService::new(
+        router,
+        Arc::new(RwLock::new(dispatcher)),
+        schemes,
+        PathBuf::from("examples/openapi.yaml"),
+        None,
+        None,
+    );
+    let provider = brrtrouter::security::RemoteApiKeyProvider::new(verify_url.to_string())
+        .header_name("X-API-Key")
+        .timeout_ms(50)
+        .cache_ttl(Duration::from_millis(1));
+    service.register_security_provider("ApiKeyAuth", Arc::new(provider));
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    drop(listener);
+    let handle = HttpServer(service).start(addr).unwrap();
+    handle.wait_ready().unwrap();
+    (tracing, handle, addr)
+}
+
+#[test]
+fn test_remote_apikey_success_and_failure() {
+    let (url, handle_verify) = start_mock_apikey_verify_server();
+    let (_t, handle, addr) = start_service_with_remote_apikey(&url);
+    // success
+    let req_ok = "GET /secret HTTP/1.1\r\nHost: localhost\r\nX-API-Key: validkey\r\n\r\n";
+    let resp_ok = send_request(&addr, req_ok);
+    let status_ok = parse_status(&resp_ok);
+    assert_eq!(status_ok, 200);
+    // failure
+    let req_bad = "GET /secret HTTP/1.1\r\nHost: localhost\r\nX-API-Key: wrong\r\n\r\n";
+    let resp_bad = send_request(&addr, req_bad);
+    handle.stop();
+    handle_verify.join().ok();
+    let status_bad = parse_status(&resp_bad);
+    assert_eq!(status_bad, 401);
 }
 
 // TODO: This test fails intermittently due to timing issues with the coroutine cancellation.
@@ -372,9 +685,8 @@ fn test_bearer_jwt_provider_creation() {
     let provider = BearerJwtProvider::new("test_signature");
     // Test that provider can be created successfully
     assert!(true); // Basic creation test
-    
-    let provider_with_cookie = BearerJwtProvider::new("test_signature")
-        .cookie_name("auth_token");
+
+    let provider_with_cookie = BearerJwtProvider::new("test_signature").cookie_name("auth_token");
     // Test that cookie name can be set
     assert!(true);
 }
@@ -384,9 +696,8 @@ fn test_oauth2_provider_creation() {
     let provider = OAuth2Provider::new("test_signature");
     // Test that provider can be created successfully
     assert!(true);
-    
-    let provider_with_cookie = OAuth2Provider::new("test_signature")
-        .cookie_name("oauth_token");
+
+    let provider_with_cookie = OAuth2Provider::new("test_signature").cookie_name("oauth_token");
     // Test that cookie name can be set
     assert!(true);
 }
@@ -399,7 +710,7 @@ fn test_bearer_jwt_token_validation() {
         bearer_format: None,
         description: None,
     };
-    
+
     // Test valid token with no scopes
     let token = make_token("");
     let mut headers = HashMap::new();
@@ -409,7 +720,7 @@ fn test_bearer_jwt_token_validation() {
         query: &HashMap::new(),
         cookies: &HashMap::new(),
     };
-    
+
     assert!(provider.validate(&scheme, &[], &req));
 }
 
@@ -421,7 +732,7 @@ fn test_bearer_jwt_invalid_signature() {
         bearer_format: None,
         description: None,
     };
-    
+
     let token = make_token("");
     let mut headers = HashMap::new();
     headers.insert("authorization".to_string(), format!("Bearer {}", token));
@@ -430,7 +741,7 @@ fn test_bearer_jwt_invalid_signature() {
         query: &HashMap::new(),
         cookies: &HashMap::new(),
     };
-    
+
     assert!(!provider.validate(&scheme, &[], &req));
 }
 
@@ -442,16 +753,19 @@ fn test_bearer_jwt_malformed_token() {
         bearer_format: None,
         description: None,
     };
-    
+
     // Test malformed token (missing parts)
     let mut headers = HashMap::new();
-    headers.insert("authorization".to_string(), "Bearer invalid.token".to_string());
+    headers.insert(
+        "authorization".to_string(),
+        "Bearer invalid.token".to_string(),
+    );
     let req = SecurityRequest {
         headers: &headers,
         query: &HashMap::new(),
         cookies: &HashMap::new(),
     };
-    
+
     assert!(!provider.validate(&scheme, &[], &req));
 }
 
@@ -463,16 +777,19 @@ fn test_bearer_jwt_invalid_base64() {
         bearer_format: None,
         description: None,
     };
-    
+
     // Test token with invalid base64 payload
     let mut headers = HashMap::new();
-    headers.insert("authorization".to_string(), "Bearer header.invalid_base64.sig".to_string());
+    headers.insert(
+        "authorization".to_string(),
+        "Bearer header.invalid_base64.sig".to_string(),
+    );
     let req = SecurityRequest {
         headers: &headers,
         query: &HashMap::new(),
         cookies: &HashMap::new(),
     };
-    
+
     assert!(!provider.validate(&scheme, &[], &req));
 }
 
@@ -484,12 +801,12 @@ fn test_bearer_jwt_invalid_json() {
         bearer_format: None,
         description: None,
     };
-    
+
     use base64::{engine::general_purpose, Engine as _};
     let header = "header";
     let payload = general_purpose::STANDARD.encode(b"invalid json");
     let token = format!("{}.{}.sig", header, payload);
-    
+
     let mut headers = HashMap::new();
     headers.insert("authorization".to_string(), format!("Bearer {}", token));
     let req = SecurityRequest {
@@ -497,7 +814,7 @@ fn test_bearer_jwt_invalid_json() {
         query: &HashMap::new(),
         cookies: &HashMap::new(),
     };
-    
+
     assert!(!provider.validate(&scheme, &[], &req));
 }
 
@@ -509,7 +826,7 @@ fn test_bearer_jwt_scope_validation() {
         bearer_format: None,
         description: None,
     };
-    
+
     // Test token with read scope
     let token = make_token("read write");
     let mut headers = HashMap::new();
@@ -519,16 +836,16 @@ fn test_bearer_jwt_scope_validation() {
         query: &HashMap::new(),
         cookies: &HashMap::new(),
     };
-    
+
     // Should pass with read scope
     assert!(provider.validate(&scheme, &["read".to_string()], &req));
-    
+
     // Should pass with write scope
     assert!(provider.validate(&scheme, &["write".to_string()], &req));
-    
+
     // Should pass with both scopes
     assert!(provider.validate(&scheme, &["read".to_string(), "write".to_string()], &req));
-    
+
     // Should fail with admin scope
     assert!(!provider.validate(&scheme, &["admin".to_string()], &req));
 }
@@ -541,7 +858,7 @@ fn test_bearer_jwt_cookie_extraction() {
         bearer_format: None,
         description: None,
     };
-    
+
     let token = make_token("");
     let mut cookies = HashMap::new();
     cookies.insert("auth_token".to_string(), token);
@@ -550,7 +867,7 @@ fn test_bearer_jwt_cookie_extraction() {
         query: &HashMap::new(),
         cookies: &cookies,
     };
-    
+
     assert!(provider.validate(&scheme, &[], &req));
 }
 
@@ -562,7 +879,7 @@ fn test_bearer_jwt_wrong_scheme() {
         location: "header".to_string(),
         description: None,
     };
-    
+
     let token = make_token("");
     let mut headers = HashMap::new();
     headers.insert("authorization".to_string(), format!("Bearer {}", token));
@@ -571,7 +888,7 @@ fn test_bearer_jwt_wrong_scheme() {
         query: &HashMap::new(),
         cookies: &HashMap::new(),
     };
-    
+
     assert!(!provider.validate(&scheme, &[], &req));
 }
 
@@ -582,7 +899,7 @@ fn test_oauth2_provider_validation() {
         flows: Default::default(),
         description: None,
     };
-    
+
     let token = make_token("read");
     let mut headers = HashMap::new();
     headers.insert("authorization".to_string(), format!("Bearer {}", token));
@@ -591,7 +908,7 @@ fn test_oauth2_provider_validation() {
         query: &HashMap::new(),
         cookies: &HashMap::new(),
     };
-    
+
     assert!(provider.validate(&scheme, &["read".to_string()], &req));
 }
 
@@ -602,7 +919,7 @@ fn test_oauth2_provider_cookie() {
         flows: Default::default(),
         description: None,
     };
-    
+
     let token = make_token("read");
     let mut cookies = HashMap::new();
     cookies.insert("oauth_token".to_string(), token);
@@ -611,7 +928,7 @@ fn test_oauth2_provider_cookie() {
         query: &HashMap::new(),
         cookies: &cookies,
     };
-    
+
     assert!(provider.validate(&scheme, &["read".to_string()], &req));
 }
 
@@ -623,7 +940,7 @@ fn test_oauth2_provider_wrong_scheme() {
         bearer_format: None,
         description: None,
     };
-    
+
     let token = make_token("");
     let mut headers = HashMap::new();
     headers.insert("authorization".to_string(), format!("Bearer {}", token));
@@ -632,7 +949,7 @@ fn test_oauth2_provider_wrong_scheme() {
         query: &HashMap::new(),
         cookies: &HashMap::new(),
     };
-    
+
     assert!(!provider.validate(&scheme, &[], &req));
 }
 
@@ -646,7 +963,7 @@ fn test_api_key_provider_header() {
         location: "header".to_string(),
         description: None,
     };
-    
+
     let mut headers = HashMap::new();
     headers.insert("x-api-key".to_string(), "test_key".to_string());
     let req = SecurityRequest {
@@ -654,7 +971,7 @@ fn test_api_key_provider_header() {
         query: &HashMap::new(),
         cookies: &HashMap::new(),
     };
-    
+
     assert!(provider.validate(&scheme, &[], &req));
 }
 
@@ -668,7 +985,7 @@ fn test_api_key_provider_query() {
         location: "query".to_string(),
         description: None,
     };
-    
+
     let mut query = HashMap::new();
     query.insert("api_key".to_string(), "test_key".to_string());
     let req = SecurityRequest {
@@ -676,7 +993,7 @@ fn test_api_key_provider_query() {
         query: &query,
         cookies: &HashMap::new(),
     };
-    
+
     assert!(provider.validate(&scheme, &[], &req));
 }
 
@@ -690,7 +1007,7 @@ fn test_api_key_provider_cookie() {
         location: "cookie".to_string(),
         description: None,
     };
-    
+
     let mut cookies = HashMap::new();
     cookies.insert("api_key".to_string(), "test_key".to_string());
     let req = SecurityRequest {
@@ -698,7 +1015,7 @@ fn test_api_key_provider_cookie() {
         query: &HashMap::new(),
         cookies: &cookies,
     };
-    
+
     assert!(provider.validate(&scheme, &[], &req));
 }
 
@@ -712,13 +1029,13 @@ fn test_api_key_provider_invalid_location() {
         location: "invalid".to_string(),
         description: None,
     };
-    
+
     let req = SecurityRequest {
         headers: &HashMap::new(),
         query: &HashMap::new(),
         cookies: &HashMap::new(),
     };
-    
+
     assert!(!provider.validate(&scheme, &[], &req));
 }
 
@@ -730,13 +1047,13 @@ fn test_missing_authorization_header() {
         bearer_format: None,
         description: None,
     };
-    
+
     let req = SecurityRequest {
         headers: &HashMap::new(),
         query: &HashMap::new(),
         cookies: &HashMap::new(),
     };
-    
+
     assert!(!provider.validate(&scheme, &[], &req));
 }
 
@@ -748,15 +1065,18 @@ fn test_malformed_authorization_header() {
         bearer_format: None,
         description: None,
     };
-    
+
     let mut headers = HashMap::new();
-    headers.insert("authorization".to_string(), "Basic dXNlcjpwYXNz".to_string()); // Basic auth instead of Bearer
+    headers.insert(
+        "authorization".to_string(),
+        "Basic dXNlcjpwYXNz".to_string(),
+    ); // Basic auth instead of Bearer
     let req = SecurityRequest {
         headers: &headers,
         query: &HashMap::new(),
         cookies: &HashMap::new(),
     };
-    
+
     assert!(!provider.validate(&scheme, &[], &req));
 }
 
@@ -768,7 +1088,7 @@ fn test_case_insensitive_bearer_scheme() {
         bearer_format: None,
         description: None,
     };
-    
+
     let token = make_token("");
     let mut headers = HashMap::new();
     headers.insert("authorization".to_string(), format!("Bearer {}", token));
@@ -777,7 +1097,7 @@ fn test_case_insensitive_bearer_scheme() {
         query: &HashMap::new(),
         cookies: &HashMap::new(),
     };
-    
+
     assert!(provider.validate(&scheme, &[], &req));
 }
 
@@ -789,7 +1109,7 @@ fn test_empty_token_scopes() {
         bearer_format: None,
         description: None,
     };
-    
+
     let token = make_token(""); // Empty scope
     let mut headers = HashMap::new();
     headers.insert("authorization".to_string(), format!("Bearer {}", token));
@@ -798,10 +1118,10 @@ fn test_empty_token_scopes() {
         query: &HashMap::new(),
         cookies: &HashMap::new(),
     };
-    
+
     // Should pass with no required scopes
     assert!(provider.validate(&scheme, &[], &req));
-    
+
     // Should fail with required scopes
     assert!(!provider.validate(&scheme, &["read".to_string()], &req));
 }

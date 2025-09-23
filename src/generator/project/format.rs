@@ -1,7 +1,11 @@
 use std::path::Path;
+use std::process::Command;
 
 pub fn format_project(dir: &Path) -> anyhow::Result<()> {
-    let mut cmd = std::process::Command::new("cargo");
+    // Allow tests to override the cargo binary path without mutating PATH
+    let cargo_bin = std::env::var("BRRTR_CARGO_BIN").unwrap_or_else(|_| "cargo".to_string());
+
+    let mut cmd = Command::new(cargo_bin);
     cmd.arg("fmt").current_dir(dir);
     let status = cmd.status()?;
     if !status.success() {
@@ -16,6 +20,7 @@ mod tests {
     use std::env;
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
+    use std::sync::{Mutex, OnceLock};
 
     /// Check if cargo fmt is available
     fn is_cargo_fmt_available() -> bool {
@@ -26,6 +31,9 @@ mod tests {
             .map(|output| output.status.success())
             .unwrap_or(false)
     }
+
+    // Serialize environment mutations to avoid test races
+    static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
     #[test]
     fn test_format_project_noop() {
@@ -44,13 +52,13 @@ mod tests {
         let mut perms = fs::metadata(&stub).unwrap().permissions();
         perms.set_mode(0o755);
         fs::set_permissions(&stub, perms).unwrap();
-        let old_path = env::var("PATH").unwrap();
-        unsafe {
-            env::set_var("PATH", format!("{}:{}", dir.display(), old_path));
-        }
+        let _guard = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+        let old_bin = env::var("BRRTR_CARGO_BIN").ok();
+        env::set_var("BRRTR_CARGO_BIN", &stub);
         let res = format_project(&dir);
-        unsafe {
-            env::set_var("PATH", old_path);
+        match old_bin {
+            Some(v) => env::set_var("BRRTR_CARGO_BIN", v),
+            None => env::remove_var("BRRTR_CARGO_BIN"),
         }
         // Clean up
         let _ = std::fs::remove_dir_all(&dir);
@@ -74,13 +82,13 @@ mod tests {
         let mut perms = fs::metadata(&stub).unwrap().permissions();
         perms.set_mode(0o755);
         fs::set_permissions(&stub, perms).unwrap();
-        let old_path = env::var("PATH").unwrap();
-        unsafe {
-            env::set_var("PATH", format!("{}:{}", dir.display(), old_path));
-        }
+        let _guard = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+        let old_bin = env::var("BRRTR_CARGO_BIN").ok();
+        env::set_var("BRRTR_CARGO_BIN", &stub);
         let res = format_project(&dir);
-        unsafe {
-            env::set_var("PATH", old_path);
+        match old_bin {
+            Some(v) => env::set_var("BRRTR_CARGO_BIN", v),
+            None => env::remove_var("BRRTR_CARGO_BIN"),
         }
         // Clean up
         let _ = std::fs::remove_dir_all(&dir);

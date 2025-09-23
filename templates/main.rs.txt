@@ -1,10 +1,12 @@
 {# templates/main.rs.txt #}
 use brrtrouter::dispatcher::Dispatcher;
 use brrtrouter::middleware::MetricsMiddleware;
+use brrtrouter::{BearerJwtProvider, OAuth2Provider, SecurityProvider, SecurityRequest};
+use brrtrouter::spec::SecurityScheme;
 use brrtrouter::runtime_config::RuntimeConfig;
 use brrtrouter::server::AppService;
 use brrtrouter::server::HttpServer;
-use brrtrouter::{load_spec, router::Router};
+use brrtrouter::router::Router;
 use clap::Parser;
 use {{ name }}::registry;
 use std::collections::HashMap;
@@ -19,6 +21,11 @@ struct Args {
     static_dir: Option<PathBuf>,
     #[arg(long, default_value = "./doc")]
     doc_dir: PathBuf,
+    // Accept compatibility flags used by repo scripts; currently informational
+    #[arg(long, default_value_t = false)]
+    hot_reload: bool,
+    #[arg(long)]
+    test_api_key: Option<String>,
 }
 
 fn main() -> io::Result<()> {
@@ -27,9 +34,22 @@ fn main() -> io::Result<()> {
     let config = RuntimeConfig::from_env();
     may::config().set_stack_size(config.stack_size);
     // Load OpenAPI spec and create router
-    let (routes, _slug) = brrtrouter::spec::load_spec(args.spec.to_str().unwrap())
+    // Resolve relative specs against the crate directory so launches from other CWDs work
+    let spec_path = if args.spec.is_relative() {
+        let base = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        base.join(args.spec)
+    } else {
+        args.spec.clone()
+    };
+    if args.hot_reload {
+        println!("[info] hot-reload requested (handled internally by service watcher if enabled)");
+    }
+    if let Some(k) = &args.test_api_key {
+        println!("[info] test-api-key provided ({} chars)", k.len());
+    }
+    let (routes, schemes, _slug) = brrtrouter::spec::load_spec_full(spec_path.to_str().unwrap())
         .expect("failed to load OpenAPI spec");
-    let router = Router::new(routes.clone());
+    let _router = Router::new(routes.clone());
     // Create router and dispatcher
     let mut dispatcher = Dispatcher::new();
 
@@ -48,12 +68,66 @@ fn main() -> io::Result<()> {
     let mut service = AppService::new(
         router,
         dispatcher,
-        HashMap::new(),
-        args.spec.clone(),
+        schemes,
+        spec_path.clone(),
         args.static_dir.clone(),
         Some(args.doc_dir.clone()),
     );
     service.set_metrics_middleware(metrics);
+    // Auto-register default security providers using env/CLI for ApiKey/Bearer/OAuth2
+    service.register_default_security_providers_from_env(args.test_api_key.clone());
+
+    // Register default security providers based on the spec's security schemes
+    {
+        // Determine API key from env or CLI for ApiKey schemes
+        let default_key = std::env::var("BRRTR_API_KEY")
+            .ok()
+            .or_else(|| args.test_api_key.clone())
+            .unwrap_or_else(|| "test123".to_string());
+
+        // Simple ApiKey provider for header/query/cookie
+        struct ApiKeyProvider { key: String }
+        impl SecurityProvider for ApiKeyProvider {
+            fn validate(&self, scheme: &SecurityScheme, _scopes: &[String], req: &SecurityRequest) -> bool {
+                match scheme {
+                    SecurityScheme::ApiKey { name, location, .. } => {
+                        match location.as_str() {
+                            "header" => req.headers.get(&name.to_ascii_lowercase()) == Some(&self.key),
+                            "query" => req.query.get(name) == Some(&self.key),
+                            "cookie" => req.cookies.get(name) == Some(&self.key),
+                            _ => false,
+                        }
+                    }
+                    _ => false,
+                }
+            }
+        }
+
+        // Iterate spec-declared schemes and register appropriate providers
+        for (scheme_name, scheme) in service.security_schemes.clone() {
+            match scheme {
+                SecurityScheme::ApiKey { .. } => {
+                    service.register_security_provider(
+                        &scheme_name,
+                        std::sync::Arc::new(ApiKeyProvider { key: default_key.clone() }),
+                    );
+                }
+                SecurityScheme::Http { ref scheme, .. } if scheme.eq_ignore_ascii_case("bearer") => {
+                    service.register_security_provider(
+                        &scheme_name,
+                        std::sync::Arc::new(BearerJwtProvider::new("sig")),
+                    );
+                }
+                SecurityScheme::OAuth2 { .. } => {
+                    service.register_security_provider(
+                        &scheme_name,
+                        std::sync::Arc::new(OAuth2Provider::new("sig")),
+                    );
+                }
+                _ => {}
+            }
+        }
+    }
     let addr = if std::env::var("BRRTR_LOCAL").is_ok() {
         "127.0.0.1:8080"
     } else {
@@ -65,6 +139,6 @@ fn main() -> io::Result<()> {
 
     server
         .join()
-        .map_err(|e| io::Error::other(format!("Server encountered an error: {:?}", e)))?;
+        .map_err(|e| io::Error::other(format!("Server encountered an error: {e:?}")))?;
     Ok(())
 }

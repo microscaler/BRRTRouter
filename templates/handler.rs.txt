@@ -3,9 +3,6 @@
 use serde::{Deserialize, Serialize};
 use crate::brrtrouter::typed::TypedHandlerRequest;
 use crate::brrtrouter::dispatcher::HandlerRequest;
-use crate::brrtrouter::server::request::decode_param_value;
-use crate::brrtrouter::spec::ParameterStyle;
-use anyhow::anyhow;
 use std::convert::TryFrom;
 {% for import in imports -%}
 use crate::handlers::types::{{ import }};
@@ -14,9 +11,11 @@ use crate::handlers::types::{{ import }};
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Request {
     {% for field in request_fields -%}
-    {% if field.optional %}#[serde(skip_serializing_if = "Option::is_none")]
-    pub {{ field.name }}: Option<{{ field.ty }}>,
-    {% else %}pub {{ field.name }}: {{ field.ty }},
+    {% if field.optional %}#[serde(skip_serializing_if = "Option::is_none")] {% endif %}
+    #[serde(rename = "{{ field.original_name }}")]
+    {% if field.optional %}
+    pub {% if field.name == "type" || field.original_name == "type" %}r#type{% else %}{{ field.name }}{% endif %}: Option<{{ field.ty }}>,
+    {% else %}pub {% if field.name == "type" || field.original_name == "type" %}r#type{% else %}{{ field.name }}{% endif %}: {{ field.ty }},
     {% endif %}
     {% endfor -%}
 }
@@ -29,9 +28,11 @@ pub struct Response(pub {{ response_array_type }});
 {% else %}
 pub struct Response {
     {% for field in response_fields -%}
-    {% if field.optional %}#[serde(skip_serializing_if = "Option::is_none")]
-    pub {{ field.name }}: Option<{{ field.ty }}>,
-    {% else %}pub {{ field.name }}: {{ field.ty }},
+    {% if field.optional %}#[serde(skip_serializing_if = "Option::is_none")] {% endif %}
+    #[serde(rename = "{{ field.original_name }}")]
+    {% if field.optional %}
+    pub {% if field.name == "type" || field.original_name == "type" %}r#type{% else %}{{ field.name }}{% endif %}: Option<{{ field.ty }}>,
+    {% else %}pub {% if field.name == "type" || field.original_name == "type" %}r#type{% else %}{{ field.name }}{% endif %}: {{ field.ty }},
     {% endif %}
     {% endfor -%}
 }
@@ -57,16 +58,16 @@ impl TryFrom<HandlerRequest> for Request {
         {% endif %}
             data_map.insert(
                 "{{ p.name }}".to_string(),
-                decode_param_value(
+                crate::brrtrouter::server::request::decode_param_value(
                     v,
                     {%- if p.schema.is_some() %}Some(&serde_json::json!({{ p.schema | json }})){%- else %}None{%- endif %},
-                    {%- if p.style.is_some() %}Some(ParameterStyle::{{ p.style.as_ref().unwrap() }} ){%- else %}None{%- endif %},
+                    {%- if p.style.is_some() %}Some(crate::brrtrouter::spec::ParameterStyle::{{ p.style.as_ref().unwrap() }} ){%- else %}None{%- endif %},
                     {%- if p.explode.is_some() %}Some({{ p.explode.unwrap() }}){%- else %}None{%- endif %},
                 ),
             );
         } else {
             {% if p.required %}
-            return Err(anyhow!("Missing required parameter '{{ p.name }}'"));
+            return Err(anyhow::anyhow!("Missing required parameter '{{ p.name }}'"));
             {% else %}
             // optional parameter
             {% endif %}

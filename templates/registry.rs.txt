@@ -3,9 +3,10 @@
 use brrtrouter::dispatcher::Dispatcher;
 use brrtrouter::spec::RouteMeta;
 use brrtrouter::typed::spawn_typed;
-use crate::controllers::*;
-use crate::handlers::*;
+// Note: avoid wildcard imports to reduce warnings
 
+/// # Safety
+/// This function spawns handler coroutines. Callers must ensure coroutine runtime is set up.
 pub unsafe fn register_all(dispatcher: &mut Dispatcher) {
     {% for entry in entries -%}
     dispatcher.register_typed(
@@ -16,6 +17,8 @@ pub unsafe fn register_all(dispatcher: &mut Dispatcher) {
 }
 
 /// Dynamically register handlers for the provided routes using their handler names.
+/// # Safety
+/// This function spawns handler coroutines. Callers must ensure coroutine runtime is set up.
 pub unsafe fn register_from_spec(dispatcher: &mut Dispatcher, routes: &[RouteMeta]) {
     for route in routes {
         match route.handler_name.as_str() {

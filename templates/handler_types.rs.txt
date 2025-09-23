@@ -5,7 +5,14 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct {{ type_name }} {
     {% for field in type_def.fields -%}
+    {% if field.original_name != field.name %}
+    #[serde(rename = "{{ field.original_name }}")]
+    {% endif %}
+    {% if field.original_name == "type" %}
+    pub r#type: {{ field.ty }},
+    {% else %}
     pub {{ field.name }}: {{ field.ty }},
+    {% endif %}
     {% endfor -%}
 }
 {% endfor %}

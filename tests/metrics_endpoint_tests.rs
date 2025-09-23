@@ -4,7 +4,9 @@ use brrtrouter::{
     middleware::{MetricsMiddleware, TracingMiddleware},
     router::Router,
     server::AppService,
+    SecurityProvider, SecurityRequest,
 };
+use brrtrouter::spec::SecurityScheme;
 use pet_store::registry;
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -21,7 +23,7 @@ fn start_service() -> (TestTracing, ServerHandle, SocketAddr) {
     let config = brrtrouter::runtime_config::RuntimeConfig::from_env();
     may::config().set_stack_size(config.stack_size);
     let tracing = TestTracing::init();
-    let (routes, _slug) = brrtrouter::load_spec("examples/openapi.yaml").unwrap();
+    let (routes, schemes, _slug) = brrtrouter::load_spec_full("examples/openapi.yaml").unwrap();
     let router = Arc::new(RwLock::new(Router::new(routes.clone())));
     let mut dispatcher = Dispatcher::new();
     unsafe {
@@ -33,12 +35,32 @@ fn start_service() -> (TestTracing, ServerHandle, SocketAddr) {
     let mut service = AppService::new(
         router,
         Arc::new(RwLock::new(dispatcher)),
-        HashMap::new(),
+        schemes,
         PathBuf::from("examples/openapi.yaml"),
         None,
         None,
     );
     service.set_metrics_middleware(metrics);
+    // Register a simple ApiKey provider so requests with X-API-Key: test123 are authorized
+    struct ApiKeyProvider { key: String }
+    impl SecurityProvider for ApiKeyProvider {
+        fn validate(&self, scheme: &SecurityScheme, _scopes: &[String], req: &SecurityRequest) -> bool {
+            match scheme {
+                SecurityScheme::ApiKey { name, location, .. } => match location.as_str() {
+                    "header" => req.headers.get(&name.to_ascii_lowercase()) == Some(&self.key),
+                    "query" => req.query.get(name) == Some(&self.key),
+                    "cookie" => req.cookies.get(name) == Some(&self.key),
+                    _ => false,
+                },
+                _ => false,
+            }
+        }
+    }
+    for (name, scheme) in service.security_schemes.clone() {
+        if matches!(scheme, SecurityScheme::ApiKey { .. }) {
+            service.register_security_provider(&name, Arc::new(ApiKeyProvider { key: "test123".into() }));
+        }
+    }
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     drop(listener);
@@ -97,7 +119,7 @@ fn parse_response_parts(resp: &str) -> (u16, String, String) {
 #[test]
 fn test_metrics_endpoint() {
     let (_tracing, handle, addr) = start_service();
-    let _ = send_request(&addr, "GET /pets HTTP/1.1\r\nHost: localhost\r\n\r\n");
+    let _ = send_request(&addr, "GET /pets HTTP/1.1\r\nHost: localhost\r\nX-API-Key: test123\r\n\r\n");
     let resp = send_request(&addr, "GET /metrics HTTP/1.1\r\nHost: localhost\r\n\r\n");
     handle.stop();
     let (status, ct, body) = parse_response_parts(&resp);

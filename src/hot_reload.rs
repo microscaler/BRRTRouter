@@ -4,6 +4,7 @@ use crate::{
     spec::{self, RouteMeta},
 };
 use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use tracing::info;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
@@ -34,6 +35,7 @@ where
                             *r = new_router;
                         }
                         if let Ok(mut d) = dispatcher.write() {
+                            info!("hot-reload: applying route updates ({} routes)", routes.len());
                             on_reload(&mut d, routes);
                         }
                     }

@@ -7,3 +7,5 @@ mod tests;
 pub use project::*;
 pub use schema::*;
 pub use templates::*;
+
+pub use project::GenerationScope;

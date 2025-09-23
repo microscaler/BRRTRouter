@@ -30,12 +30,14 @@ fn test_template_writers() {
 
     let req_fields = vec![FieldDef {
         name: "id".into(),
+        original_name: "id".into(),
         ty: "String".into(),
         optional: false,
         value: "\"id\".to_string()".into(),
     }];
     let res_fields = vec![FieldDef {
         name: "ok".into(),
+        original_name: "ok".into(),
         ty: "bool".into(),
         optional: false,
         value: "true".into(),
@@ -82,6 +84,7 @@ fn test_template_writers() {
         handler_name: "test".into(),
         parameters: vec![],
         request_schema: None,
+        request_body_required: false,
         response_schema: None,
         example: None,
         responses: HashMap::new(),

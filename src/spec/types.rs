@@ -81,6 +81,7 @@ pub struct RouteMeta {
     pub handler_name: String,
     pub parameters: Vec<ParameterMeta>,
     pub request_schema: Option<Value>,
+    pub request_body_required: bool,
     pub response_schema: Option<Value>,
     pub example: Option<Value>,
     pub responses: Responses,
