@@ -195,14 +195,31 @@ impl JwksBearerProvider {
             return;
         }
         drop(guard);
-        // Fetch outside lock
-        let resp = match reqwest::blocking::get(&self.jwks_url) {
-            Ok(r) => r,
+        // Fetch outside lock with brief retries to reduce flakiness in tests
+        let client = match reqwest::blocking::Client::builder()
+            .timeout(Duration::from_millis(500))
+            .build()
+        {
+            Ok(c) => c,
             Err(_) => return,
         };
-        let body = match resp.text() {
-            Ok(t) => t,
-            Err(_) => return,
+        let mut body_opt: Option<String> = None;
+        for _ in 0..3 {
+            match client.get(&self.jwks_url).send() {
+                Ok(r) => match r.text() {
+                    Ok(t) => {
+                        body_opt = Some(t);
+                        break;
+                    }
+                    Err(_) => {}
+                },
+                Err(_) => {}
+            }
+            std::thread::sleep(Duration::from_millis(30));
+        }
+        let body = match body_opt {
+            Some(b) => b,
+            None => return,
         };
         let parsed: serde_json::Value = match serde_json::from_str(&body) {
             Ok(v) => v,
@@ -368,9 +385,9 @@ impl RemoteApiKeyProvider {
 
 impl SecurityProvider for RemoteApiKeyProvider {
     fn validate(&self, scheme: &SecurityScheme, _scopes: &[String], req: &SecurityRequest) -> bool {
-        let (name, location) = match scheme {
+        let name = match scheme {
             SecurityScheme::ApiKey { name, location, .. } if location == "header" => {
-                (name.to_ascii_lowercase(), location.as_str())
+                name.to_ascii_lowercase()
             }
             _ => return false,
         };

@@ -17,6 +17,15 @@ Inspired by the *GAU-8/A Avenger* on the A-10 Warthog, this router is designed t
 
 ---
 
+## 📈 Recent Progress (Sep 2025)
+
+- **JWT/JWKS validation fix**: `JwksBearerProvider` now respects the JWT header `alg` and supports HS256/384/512 and RS256/384/512 with JWKS (`oct` and `RSA` keys). Includes issuer/audience/leeway checks and in-memory JWKS caching with TTL.
+- **API Key provider**: Added `RemoteApiKeyProvider` with configurable header name, remote verification, timeout, and positive/negative result caching.
+- **OpenAPI-driven auth**: Default security providers are registered based on `components.securitySchemes` (e.g., API keys and Bearer/OAuth flows). API keys can be read from a named header or `Authorization: Bearer` fallback.
+- **Metrics**: Added counters for top-level requests and authentication failures for visibility and alerting.
+
+---
+
 ## 🔭 Vision
 
 Build the fastest, most predictable OpenAPI-native router in Rust — capable of **millions of requests per second**, entirely spec-driven, and friendly to coroutine runtimes.
@@ -63,7 +72,7 @@ The logo features a stylized **A-10 Warthog nose cannon**, symbolizing BRRTRoute
 | **implement tracing across entire codebsase**    | 🚧     | Tracing is implemented in some places, but not consistently across the entire codebase.                                                                                   |
 | **Deep dive into OpenAPI spec**                  | 🚧     | OpenAPI spec parsing is basic; does not handle all features like `callbacks` and other functions, produce GAP analysis in order to completely support OpenAPI 3.1.0 spec. |
 | **Panic recovery for handlers**                  | 🚧     | Un-typed handlers recover from panics using `catch_unwind`; typed handlers do not.                                                                                        |
-| **Multiple security provider race**              | 🚧     | Security checks run sequentially in `AppService::call` but lack explicit combination logic.                                                                               |
+| **Multiple security providers**                  | 🚧     | Multiple providers are supported and auto-registered from OpenAPI schemes; per-route scheme enforcement is covered by tests. Full OpenAPI OR-of-AND combination semantics are tracked in PRD. |
 | **Configurable stack size with instrumentation** | 🚧     | Stack size comes from `BRRTR_STACK_SIZE` environment variable and is logged in metrics; no runtime API or used-stack metrics.                                             |
 | **Hot reload on spec change**                    | 🚧     | `hot_reload::watch_spec` rebuilds the `Router`, but the server doesn’t automatically update the dispatcher or routes.                                                     |
 | **Code generation for typed handlers**           | 🚧     | Implemented via templates generating `TryFrom<HandlerRequest>` impls.                                                                                                     |
@@ -72,7 +81,7 @@ The logo features a stylized **A-10 Warthog nose cannon**, symbolizing BRRTRoute
 | **Structured tracing / metrics / CORS**          | 🚧     | Tracing and metrics middleware exist (with OTEL test support); CORS middleware returns default headers but is not configurable.                                           |
 | **Schema validation**                            | 🚧     | Request/response validation against OpenAPI schema is not implemented.                                                                                                    |
 | **WebSocket support**                            | 🚧     | Absent. Only SSE is available via `x-sse` flag.                                                                                                                           |
-| **JWT/OAuth2 auth**                              | 🚧     | `BearerJwtProvider` and `OAuth2Provider` exist but examples don’t demonstrate combined schemes. Implement JWT mocking in tests                                            |
+| **JWT/OAuth2 & API Key Auth**                    | ✅      | `BearerJwtProvider`, `OAuth2Provider`, `JwksBearerProvider` (JWKS HS/RS algs), and `RemoteApiKeyProvider`; scope checks, cookie support, metrics, and OpenAPI-driven registration |
 | **SPIFFE support**                               | 🚧     | SPIFFE fetching of X.509 and JWT SVIDs, bundles and supports watch/stream updates.                                                                                        |
 | **Performance target**                           | 🚧     | Criterion benchmarks exist, but no explicit optimization work toward the 1M req/sec goal.                                                                                 |
 | **Documentation & packaging**                    | 🚧     | README and roadmap exist; crate not yet prepared for crates.io publication.                                                                                               |
@@ -248,8 +257,60 @@ dispatcher.add_middleware(Arc::new(CorsMiddleware));
 ```
 
 `MetricsMiddleware` tracks request counts and average latency. `TracingMiddleware`
-creates spans for each request, `AuthMiddleware` performs a simple header token
-check, and `CorsMiddleware` adds CORS headers to responses.
+creates spans for each request, and `CorsMiddleware` adds CORS headers to responses.
+
+Note: `AuthMiddleware` in examples is development-only. Prefer OpenAPI-driven `SecurityProvider`s (`BearerJwtProvider`, `OAuth2Provider`, `JwksBearerProvider`, `RemoteApiKeyProvider`) for production authentication.
+
+---
+## 🔐 Security & Authentication
+
+BRRTRouter provides a pluggable `SecurityProvider` abstraction and auto-registers providers from your OpenAPI `components.securitySchemes`.
+
+- **Bearer (mock/JWT)**: `BearerJwtProvider` validates simple dot-separated tokens and checks whitespace-separated `scope` claims; supports header and cookie extraction.
+- **OAuth2 (mock)**: `OAuth2Provider` mirrors Bearer validation while matching OAuth2 schemes declared in OpenAPI.
+- **JWKS (production)**: `JwksBearerProvider` fetches keys from a JWKS URL and validates JWTs using the token header algorithm. Supported: HS256/384/512 and RS256/384/512. Includes issuer/audience checking, exp with leeway, and TTL-based JWKS caching.
+- **Remote API Keys**: `RemoteApiKeyProvider` verifies API keys via an HTTP endpoint, with configurable header name, timeout, and result caching. Also accepts `Authorization: Bearer <key>` fallback.
+
+Config:
+
+```yaml
+security:
+  # Global PropelAuth config (preferred)
+  propelauth:
+    auth_url: "https://auth.example.com"
+    audience: "my-audience"
+    # issuer, jwks_url, leeway_secs, cache_ttl_secs are optional; derived when omitted
+
+  # Per-scheme JWKS (if not using PropelAuth)
+  jwks:
+    BearerAuth:
+      jwks_url: "https://issuer.example/.well-known/jwks.json"
+      iss: "https://issuer.example/"
+      aud: "my-audience"
+      leeway_secs: 30
+      cache_ttl_secs: 300
+
+  # Remote API key verification
+  remote_api_keys:
+    ApiKeyAuth:
+      verify_url: "https://auth.example/verify"
+      header_name: "X-API-Key"
+      timeout_ms: 500
+      cache_ttl_secs: 60
+```
+
+Manual provider wiring has been intentionally omitted; configure providers via YAML.
+
+Authentication failures are tracked by `MetricsMiddleware` counters for observability.
+
+Auto-registration from OpenAPI and config
+
+- Providers are bound automatically from `components.securitySchemes` at startup.
+- You can override or configure providers via `config/config.yaml` in generated apps. See `templates/config.yaml` for all available options (PropelAuth JWKS, per-scheme JWKS, static/remote API keys, cookie names, leeway/TTL).
+
+TODO
+
+- Add an optional CI workflow to validate against a real PropelAuth sandbox using repository secrets (auth_url, audience). Keep disabled by default to avoid external flakiness; primary tests remain hermetic with local JWKS/API-key mocks.
 
 ---
 ## 📡 Server-Sent Events

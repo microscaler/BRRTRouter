@@ -5,12 +5,15 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
     env:
       BRRTR_LOCAL: "1"
+      RUST_BACKTRACE: "1"
+      RUST_LOG: "debug"
 
     steps:
       - name: Checkout code
@@ -20,15 +23,15 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache cargo registry
+        if: ${{ !env.ACT }}
         uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-v2-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-
+            ${{ runner.os }}-cargo-v2-
 
       - name: Install Just
         uses: extractions/setup-just@v3
@@ -44,17 +47,125 @@ jobs:
         #run: cargo build --all --all-features # this will also build the example projects, which are currently broken
         run: cargo build
 
+      - name: Build generator (release)
+        run: cargo build --release --bin brrtrouter-gen
+
+      - name: Upload generator artifact
+        if: ${{ !env.ACT }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: brrtrouter-gen-linux
+          path: target/release/brrtrouter-gen
+          retention-days: 1
+
+      - name: Install musl target for pet_store
+        run: rustup target add x86_64-unknown-linux-musl
+
+      - name: Install musl tools (provides musl-gcc for ring)
+        run: sudo apt-get update || apt-get update && (sudo apt-get install -y musl-tools || apt-get install -y musl-tools)
+
+      - name: Build pet_store (musl, release)
+        env:
+          CC_x86_64_unknown_linux_musl: musl-gcc
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
+        run: cargo build --release -p pet_store --target x86_64-unknown-linux-musl
+
+      - name: Upload pet_store binary artifact
+        if: ${{ !env.ACT }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: pet_store-musl
+          path: target/x86_64-unknown-linux-musl/release/pet_store
+          retention-days: 1
+
       - name: Lint with Clippy
         # run: cargo clippy --all-targets --all-features -- -D warnings || true - runs clippy on all targets and features, but fails the build on warnings
         run: cargo clippy -- -D warnings || true
 
-      - name: Run tests
-        # run: cargo test --all -- --nocapture - runs exampes as well, which are currently broken
+      - name: Run tests (reqwest-based)
         run: cargo test -- --nocapture
 
       - name: Install cargo-llvm-cov
+        if: ${{ !env.ACT }}
         run: cargo install cargo-llvm-cov
 
       - name: Measure coverage
+        if: ${{ !env.ACT }}
         run: cargo llvm-cov  #--no-report
 
+  e2e-docker:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    env:
+      RUST_BACKTRACE: "1"
+      RUST_LOG: "debug"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build generator (ACT local)
+        if: ${{ env.ACT }}
+        run: cargo build --release --bin brrtrouter-gen
+
+      - name: Download generator artifact
+        if: ${{ !env.ACT }}
+        uses: actions/download-artifact@v4
+        with:
+          name: brrtrouter-gen-linux
+          path: ./dist
+
+      - name: Install musl target (ACT local)
+        if: ${{ env.ACT }}
+        run: rustup target add x86_64-unknown-linux-musl
+
+      - name: Install musl tools (ACT local)
+        if: ${{ env.ACT }}
+        run: sudo apt-get update || apt-get update && (sudo apt-get install -y musl-tools || apt-get install -y musl-tools)
+
+      - name: Build pet_store (musl, release) (ACT local)
+        if: ${{ env.ACT }}
+        env:
+          CC_x86_64_unknown_linux_musl: musl-gcc
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
+        run: cargo build --release -p pet_store --target x86_64-unknown-linux-musl
+
+      - name: Download pet_store binary artifact
+        if: ${{ !env.ACT }}
+        uses: actions/download-artifact@v4
+        with:
+          name: pet_store-musl
+          path: ./dist
+
+      - name: Make generator executable
+        run: chmod +x ./dist/brrtrouter-gen
+
+      - name: Regenerate pet_store example (artifact)
+        run: ./dist/brrtrouter-gen generate --spec examples/openapi.yaml --force
+
+      - name: Regenerate pet_store example (ACT local)
+        run: ./target/release/brrtrouter-gen generate --spec examples/openapi.yaml --force
+
+      - name: Build e2e Docker image (freshly generated app + provided binary)
+        run: docker build --build-arg PETSTORE_BIN=/build/dist/pet_store --no-cache -t brrtrouter-petstore:e2e .
+
+      - name: Build e2e Docker image (ACT local binary)
+        run: docker build --build-arg PETSTORE_BIN=/build/target/x86_64-unknown-linux-musl/release/pet_store --no-cache -t brrtrouter-petstore:e2e .
+
+      - name: Run e2e tests (docker integration)
+        env:
+          E2E_DOCKER: "1"
+        run: cargo test --test docker_integration_tests -- --nocapture
+
+      - name: Run HTTP integration tests
+        run: cargo test --test curl_integration_tests -- --test-threads=1 --nocapture
+
+      - name: Upload JUnit report
+        if: ${{ !env.ACT }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-e2e
+          path: target/e2e/junit-e2e.xml
+          retention-days: 1

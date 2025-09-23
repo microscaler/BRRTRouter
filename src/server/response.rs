@@ -89,18 +89,69 @@ mod tests {
             .set_read_timeout(Some(Duration::from_millis(100)))
             .unwrap();
         let mut buf = Vec::new();
-        loop {
+        let mut header_end = None;
+        for _ in 0..10 {
             let mut tmp = [0u8; 1024];
             match stream.read(&mut tmp) {
                 Ok(0) => break,
-                Ok(n) => buf.extend_from_slice(&tmp[..n]),
+                Ok(n) => {
+                    buf.extend_from_slice(&tmp[..n]);
+                    if let Some(pos) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+                        header_end = Some(pos + 4);
+                        break;
+                    }
+                }
                 Err(ref e)
                     if e.kind() == std::io::ErrorKind::WouldBlock
                         || e.kind() == std::io::ErrorKind::TimedOut =>
                 {
-                    break
+                    std::thread::sleep(Duration::from_millis(50));
+                    continue;
                 }
                 Err(e) => panic!("read error: {:?}", e),
+            }
+        }
+        let header_end = header_end.unwrap_or(buf.len());
+        let headers = String::from_utf8_lossy(&buf[..header_end]);
+        let content_length = headers
+            .lines()
+            .find_map(|l| l.split_once(':').map(|(n, v)| (n, v)))
+            .filter(|(n, _)| n.eq_ignore_ascii_case("content-length"))
+            .and_then(|(_, v)| v.trim().parse::<usize>().ok());
+        if let Some(clen) = content_length {
+            let mut body_len = buf.len().saturating_sub(header_end);
+            while body_len < clen {
+                let mut tmp = [0u8; 4096];
+                match stream.read(&mut tmp) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        buf.extend_from_slice(&tmp[..n]);
+                        body_len += n;
+                    }
+                    Err(ref e)
+                        if e.kind() == std::io::ErrorKind::WouldBlock
+                            || e.kind() == std::io::ErrorKind::TimedOut =>
+                    {
+                        std::thread::sleep(Duration::from_millis(50));
+                        continue;
+                    }
+                    Err(e) => panic!("read error: {:?}", e),
+                }
+            }
+        } else {
+            for _ in 0..10 {
+                let mut tmp = [0u8; 4096];
+                match stream.read(&mut tmp) {
+                    Ok(0) => break,
+                    Ok(n) => buf.extend_from_slice(&tmp[..n]),
+                    Err(ref e)
+                        if e.kind() == std::io::ErrorKind::WouldBlock
+                            || e.kind() == std::io::ErrorKind::TimedOut =>
+                    {
+                        break;
+                    }
+                    Err(e) => panic!("read error: {:?}", e),
+                }
             }
         }
         String::from_utf8_lossy(&buf).to_string()

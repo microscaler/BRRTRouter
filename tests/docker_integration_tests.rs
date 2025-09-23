@@ -8,13 +8,15 @@ use bollard::Docker;
 use futures::executor::block_on;
 use futures_util::stream::TryStreamExt;
 use std::fs;
-use std::io::{Read, Write};
-use std::net::{SocketAddr, TcpStream};
+use std::net::SocketAddr;
 use std::process::Command;
 use std::thread::sleep;
 use std::time::Duration;
 use tar::Builder as TarBuilder;
 use walkdir::WalkDir;
+#[path = "common/mod.rs"]
+mod common;
+use common::http::wait_for_http_200;
 
 //
 
@@ -33,17 +35,14 @@ fn is_release_binary_available() -> bool {
 }
 
 /// Check if a Docker image exists locally to avoid network pulls in tests
-fn is_docker_image_available(image: &str) -> bool {
-    Command::new("docker")
-        .args(["image", "inspect", image])
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
-}
+// removed: not used
 
 #[test]
-#[ignore] // Requires Docker; builds image from compiled binary and runs end-to-end checks
 fn test_petstore_container_health() {
+    if std::env::var("E2E_DOCKER").is_err() {
+        println!("Skipping: set E2E_DOCKER=1 to enable Docker e2e test");
+        return;
+    }
     let started_at = std::time::Instant::now();
     if !is_docker_available() {
         println!("Skipping test: Docker not available");
@@ -143,38 +142,8 @@ fn test_petstore_container_health() {
     let addr: SocketAddr = format!("127.0.0.1:{}", mapped_port).parse().unwrap();
 
     let mut final_status = 0;
-    for i in 0..30 {
-        let mut s = match TcpStream::connect(addr) {
-            Ok(s) => s,
-            Err(_) => {
-                sleep(Duration::from_millis(200));
-                continue;
-            }
-        };
-        let req = b"GET /health HTTP/1.1\r\nHost: localhost\r\n\r\n";
-        let _ = s.write_all(req);
-        let mut buf = Vec::new();
-        let _ = s.set_read_timeout(Some(Duration::from_millis(200)));
-        let _ = s.read_to_end(&mut buf);
-        let resp = String::from_utf8_lossy(&buf);
-        if let Some(line) = resp.lines().next() {
-            if let Some(code) = line
-                .split_whitespace()
-                .nth(1)
-                .and_then(|c| c.parse::<u16>().ok())
-            {
-                final_status = code;
-                if code == 200 {
-                    break;
-                }
-            }
-        }
-        println!(
-            "Attempt {}: response: {}",
-            i + 1,
-            resp.lines().next().unwrap_or("")
-        );
-        sleep(Duration::from_millis(500));
+    if wait_for_http_200(&addr, "/health", Duration::from_secs(15), None).is_ok() {
+        final_status = 200;
     }
 
     // Stop and remove container

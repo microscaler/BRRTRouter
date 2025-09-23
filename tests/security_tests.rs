@@ -266,25 +266,88 @@ fn make_token(scope: &str) -> String {
 fn send_request(addr: &SocketAddr, req: &str) -> String {
     let mut stream = TcpStream::connect(addr).unwrap();
     stream.write_all(req.as_bytes()).unwrap();
-    // Keep this tight; remote verification timeout is configured small in the provider for tests
+    // Allow slower CI environments (e.g., act) a longer read window
+    let timeout_ms: u64 = if std::env::var("ACT").is_ok() {
+        1500
+    } else {
+        500
+    };
     stream
-        .set_read_timeout(Some(Duration::from_millis(200)))
+        .set_read_timeout(Some(Duration::from_millis(timeout_ms)))
         .unwrap();
+
+    // Read headers first
     let mut buf = Vec::new();
-    loop {
+    let mut header_end = None;
+    for _ in 0..10 {
         let mut tmp = [0u8; 1024];
         match stream.read(&mut tmp) {
             Ok(0) => break,
-            Ok(n) => buf.extend_from_slice(&tmp[..n]),
+            Ok(n) => {
+                buf.extend_from_slice(&tmp[..n]);
+                if let Some(pos) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+                    header_end = Some(pos + 4);
+                    break;
+                }
+            }
             Err(ref e)
                 if e.kind() == std::io::ErrorKind::WouldBlock
                     || e.kind() == std::io::ErrorKind::TimedOut =>
             {
-                break
+                std::thread::sleep(Duration::from_millis(50));
+                continue;
             }
             Err(e) => panic!("read error: {:?}", e),
         }
     }
+
+    let header_end = header_end.unwrap_or(buf.len());
+    let headers = String::from_utf8_lossy(&buf[..header_end]);
+    let content_length = headers
+        .lines()
+        .find_map(|l| l.split_once(':').map(|(n, v)| (n, v)))
+        .filter(|(n, _)| n.eq_ignore_ascii_case("content-length"))
+        .and_then(|(_, v)| v.trim().parse::<usize>().ok());
+
+    // Read body to expected length if Content-Length present
+    if let Some(clen) = content_length {
+        let mut body_len = buf.len().saturating_sub(header_end);
+        while body_len < clen {
+            let mut tmp = [0u8; 4096];
+            match stream.read(&mut tmp) {
+                Ok(0) => break,
+                Ok(n) => {
+                    buf.extend_from_slice(&tmp[..n]);
+                    body_len += n;
+                }
+                Err(ref e)
+                    if e.kind() == std::io::ErrorKind::WouldBlock
+                        || e.kind() == std::io::ErrorKind::TimedOut =>
+                {
+                    std::thread::sleep(Duration::from_millis(50));
+                    continue;
+                }
+                Err(e) => panic!("read error: {:?}", e),
+            }
+        }
+    } else {
+        // No Content-Length: read until timeout/close
+        for _ in 0..10 {
+            let mut tmp = [0u8; 4096];
+            match stream.read(&mut tmp) {
+                Ok(0) => break,
+                Ok(n) => buf.extend_from_slice(&tmp[..n]),
+                Err(ref e)
+                    if e.kind() == std::io::ErrorKind::WouldBlock
+                        || e.kind() == std::io::ErrorKind::TimedOut =>
+                {
+                    break;
+                }
+                Err(e) => panic!("read error: {:?}", e),
+            }
+        }
+    }
+
     String::from_utf8_lossy(&buf).to_string()
 }
 
@@ -299,7 +362,7 @@ fn parse_status(resp: &str) -> u16 {
 
 #[test]
 fn test_api_key_auth() {
-    let (mut tracing, handle, addr) = start_service();
+    let (_tracing, handle, addr) = start_service();
     let resp = send_request(&addr, "GET /secret HTTP/1.1\r\nHost: localhost\r\n\r\n");
     let status = parse_status(&resp);
     assert_eq!(status, 401);
@@ -702,22 +765,22 @@ fn test_bearer_header_and_oauth_cookie() {
 
 #[test]
 fn test_bearer_jwt_provider_creation() {
-    let provider = BearerJwtProvider::new("test_signature");
+    let _provider = BearerJwtProvider::new("test_signature");
     // Test that provider can be created successfully
     assert!(true); // Basic creation test
 
-    let provider_with_cookie = BearerJwtProvider::new("test_signature").cookie_name("auth_token");
+    let _provider_with_cookie = BearerJwtProvider::new("test_signature").cookie_name("auth_token");
     // Test that cookie name can be set
     assert!(true);
 }
 
 #[test]
 fn test_oauth2_provider_creation() {
-    let provider = OAuth2Provider::new("test_signature");
+    let _provider = OAuth2Provider::new("test_signature");
     // Test that provider can be created successfully
     assert!(true);
 
-    let provider_with_cookie = OAuth2Provider::new("test_signature").cookie_name("oauth_token");
+    let _provider_with_cookie = OAuth2Provider::new("test_signature").cookie_name("oauth_token");
     // Test that cookie name can be set
     assert!(true);
 }

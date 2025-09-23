@@ -5,16 +5,16 @@ use brrtrouter::server::{HttpServer, ServerHandle};
 use brrtrouter::spec::SecurityScheme;
 use brrtrouter::{SecurityProvider, SecurityRequest};
 use pet_store::registry;
-use std::collections::HashMap;
-use std::io::{Read, Write};
-use std::net::{SocketAddr, TcpListener, TcpStream};
+
+use std::net::{SocketAddr, TcpListener};
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
-use std::time::Duration;
 
 mod tracing_util;
 use brrtrouter::middleware::TracingMiddleware;
 use tracing_util::TestTracing;
+mod common;
+use common::http::send_request;
 
 fn start_service() -> (TestTracing, ServerHandle, SocketAddr) {
     std::env::set_var("BRRTR_STACK_SIZE", "0x8000");
@@ -76,29 +76,7 @@ fn start_service() -> (TestTracing, ServerHandle, SocketAddr) {
     (tracing, handle, addr)
 }
 
-fn send_request(addr: &SocketAddr, req: &str) -> String {
-    let mut stream = TcpStream::connect(addr).unwrap();
-    stream.write_all(req.as_bytes()).unwrap();
-    stream
-        .set_read_timeout(Some(Duration::from_millis(200)))
-        .unwrap();
-    let mut buf = Vec::new();
-    loop {
-        let mut tmp = [0u8; 1024];
-        match stream.read(&mut tmp) {
-            Ok(0) => break,
-            Ok(n) => buf.extend_from_slice(&tmp[..n]),
-            Err(ref e)
-                if e.kind() == std::io::ErrorKind::WouldBlock
-                    || e.kind() == std::io::ErrorKind::TimedOut =>
-            {
-                break
-            }
-            Err(e) => panic!("read error: {:?}", e),
-        }
-    }
-    String::from_utf8_lossy(&buf).to_string()
-}
+// send_request moved to common::http
 
 fn parse_parts(resp: &str) -> (u16, String, String) {
     let mut parts = resp.split("\r\n\r\n");
