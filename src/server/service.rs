@@ -79,10 +79,7 @@ impl AppService {
     /// provided test key for development. For ApiKey schemes, the following configuration
     /// is used (in order): per-scheme env `BRRTR_API_KEY__<SCHEME_NAME>`, global env
     /// `BRRTR_API_KEY`, then `test_api_key` argument, then fallback `"test123"`.
-    pub fn register_default_security_providers_from_env(
-        &mut self,
-        test_api_key: Option<String>,
-    ) {
+    pub fn register_default_security_providers_from_env(&mut self, test_api_key: Option<String>) {
         use std::sync::Arc as SyncArc;
 
         struct ApiKeyProvider {
@@ -99,7 +96,8 @@ impl AppService {
                     SecurityScheme::ApiKey { name, location, .. } => match location.as_str() {
                         "header" => {
                             // Accept either the named header or Authorization: Bearer <key> for migration convenience
-                            let header_ok = req.headers.get(&name.to_ascii_lowercase()) == Some(&self.key);
+                            let header_ok =
+                                req.headers.get(&name.to_ascii_lowercase()) == Some(&self.key);
                             let auth_ok = req
                                 .headers
                                 .get("authorization")
@@ -125,7 +123,11 @@ impl AppService {
                         "BRRTR_API_KEY__{}",
                         scheme_name
                             .chars()
-                            .map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_uppercase() } else { '_' })
+                            .map(|c| if c.is_ascii_alphanumeric() {
+                                c.to_ascii_uppercase()
+                            } else {
+                                '_'
+                            })
                             .collect::<String>()
                     );
                     let key = std::env::var(&env_key_name)
@@ -138,7 +140,9 @@ impl AppService {
                         SyncArc::new(ApiKeyProvider { key }),
                     );
                 }
-                SecurityScheme::Http { ref scheme, .. } if scheme.eq_ignore_ascii_case("bearer") => {
+                SecurityScheme::Http { ref scheme, .. }
+                    if scheme.eq_ignore_ascii_case("bearer") =>
+                {
                     // Simple development bearer provider; real validation can be plugged in by user
                     let provider = crate::security::BearerJwtProvider::new(
                         std::env::var("BRRTR_BEARER_SIGNATURE").unwrap_or_else(|_| "sig".into()),
@@ -334,12 +338,14 @@ impl HttpService for AppService {
                         if !provider.validate(scheme, scopes, &sec_req) {
                             // Detect insufficient scope for Bearer/OAuth2: token valid but scopes missing
                             match scheme {
-                                SecurityScheme::Http { scheme: http_scheme, .. }
-                                    if http_scheme.eq_ignore_ascii_case("bearer") => {
-                                        if provider.validate(scheme, &[], &sec_req) {
-                                            insufficient_scope = true;
-                                        }
+                                SecurityScheme::Http {
+                                    scheme: http_scheme,
+                                    ..
+                                } if http_scheme.eq_ignore_ascii_case("bearer") => {
+                                    if provider.validate(scheme, &[], &sec_req) {
+                                        insufficient_scope = true;
                                     }
+                                }
                                 SecurityScheme::OAuth2 { .. } => {
                                     if provider.validate(scheme, &[], &sec_req) {
                                         insufficient_scope = true;
@@ -357,11 +363,23 @@ impl HttpService for AppService {
                     }
                 }
                 if !authorized {
-                    if let Some(metrics) = &self.metrics { metrics.inc_auth_failure(); }
-                    let debug = std::env::var("BRRTR_DEBUG_VALIDATION").map(|v| v == "1" || v.eq_ignore_ascii_case("true")).unwrap_or(false);
+                    if let Some(metrics) = &self.metrics {
+                        metrics.inc_auth_failure();
+                    }
+                    let debug = std::env::var("BRRTR_DEBUG_VALIDATION")
+                        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                        .unwrap_or(false);
                     let status = if insufficient_scope { 403 } else { 401 };
-                    let title = if status == 403 { "Forbidden" } else { "Unauthorized" };
-                    let detail = if status == 403 { "Insufficient scope or permissions" } else { "Missing or invalid credentials" };
+                    let title = if status == 403 {
+                        "Forbidden"
+                    } else {
+                        "Unauthorized"
+                    };
+                    let detail = if status == 403 {
+                        "Insufficient scope or permissions"
+                    } else {
+                        "Missing or invalid credentials"
+                    };
                     if status == 401 {
                         res.header("WWW-Authenticate: Bearer error=\"invalid_token\"");
                     } else {
@@ -377,11 +395,17 @@ impl HttpService for AppService {
                         if let Some(map) = body.as_object_mut() {
                             map.insert("method".to_string(), json!(method));
                             map.insert("path".to_string(), json!(path));
-                            map.insert("handler".to_string(), json!(route_match.route.handler_name.clone()));
+                            map.insert(
+                                "handler".to_string(),
+                                json!(route_match.route.handler_name.clone()),
+                            );
                         }
                     }
-                    if status == 401 { warn!(method=%method, path=%path, handler=%route_match.route.handler_name, "auth failed: 401 unauthorized"); }
-                    else { warn!(method=%method, path=%path, handler=%route_match.route.handler_name, "auth failed: 403 forbidden"); }
+                    if status == 401 {
+                        warn!(method=%method, path=%path, handler=%route_match.route.handler_name, "auth failed: 401 unauthorized");
+                    } else {
+                        warn!(method=%method, path=%path, handler=%route_match.route.handler_name, "auth failed: 403 forbidden");
+                    }
                     write_json_error(res, status as u16, body);
                     return Ok(());
                 }

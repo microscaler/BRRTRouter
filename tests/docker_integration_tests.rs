@@ -1,17 +1,20 @@
+use bollard::container::{
+    Config as ContainerConfig, CreateContainerOptions, RemoveContainerOptions,
+    StartContainerOptions,
+};
+use bollard::image::BuildImageOptions;
+use bollard::models::{HostConfig, PortBinding};
+use bollard::Docker;
+use futures::executor::block_on;
+use futures_util::stream::TryStreamExt;
 use std::fs;
 use std::io::{Read, Write};
-use bollard::Docker;
-use bollard::image::BuildImageOptions;
-use bollard::container::{CreateContainerOptions, StartContainerOptions, RemoveContainerOptions, Config as ContainerConfig};
-use bollard::models::{HostConfig, PortBinding};
-use futures_util::stream::TryStreamExt;
-use futures::executor::block_on;
-use tar::Builder as TarBuilder;
-use walkdir::WalkDir;
 use std::net::{SocketAddr, TcpStream};
 use std::process::Command;
 use std::thread::sleep;
 use std::time::Duration;
+use tar::Builder as TarBuilder;
+use walkdir::WalkDir;
 
 //
 
@@ -70,11 +73,18 @@ fn test_petstore_container_health() {
         for entry in WalkDir::new(".") {
             let entry = entry.unwrap();
             let path = entry.path();
-            if path.is_dir() { continue; }
+            if path.is_dir() {
+                continue;
+            }
             let p = path.to_string_lossy();
             // Exclude heavy/noise paths
-            if p.starts_with("./target/") || p.starts_with("./.git/") || p.starts_with("./.github/") { continue; }
-            if !allow_prefixes.iter().any(|pre| p.starts_with(pre)) { continue; }
+            if p.starts_with("./target/") || p.starts_with("./.git/") || p.starts_with("./.github/")
+            {
+                continue;
+            }
+            if !allow_prefixes.iter().any(|pre| p.starts_with(pre)) {
+                continue;
+            }
             let rel = path.strip_prefix(".").unwrap();
             builder.append_path_with_name(path, rel).unwrap();
         }
@@ -92,10 +102,30 @@ fn test_petstore_container_health() {
 
     // Create and start container with random host port for 8080/tcp
     let port_key = "8080/tcp".to_string();
-    let bindings = std::collections::HashMap::from([(port_key.clone(), Some(vec![PortBinding { host_ip: Some("127.0.0.1".into()), host_port: Some("0".into()) }]))]);
-    let host_config = HostConfig { port_bindings: Some(bindings), ..Default::default() };
-    let cfg = ContainerConfig { image: Some("brrtrouter-petstore:e2e"), host_config: Some(host_config), ..Default::default() };
-    let created = block_on(docker.create_container(Some(CreateContainerOptions { name: "brrtrouter-e2e", platform: None }), cfg)).unwrap();
+    let bindings = std::collections::HashMap::from([(
+        port_key.clone(),
+        Some(vec![PortBinding {
+            host_ip: Some("127.0.0.1".into()),
+            host_port: Some("0".into()),
+        }]),
+    )]);
+    let host_config = HostConfig {
+        port_bindings: Some(bindings),
+        ..Default::default()
+    };
+    let cfg = ContainerConfig {
+        image: Some("brrtrouter-petstore:e2e"),
+        host_config: Some(host_config),
+        ..Default::default()
+    };
+    let created = block_on(docker.create_container(
+        Some(CreateContainerOptions {
+            name: "brrtrouter-e2e",
+            platform: None,
+        }),
+        cfg,
+    ))
+    .unwrap();
     block_on(docker.start_container(&created.id, None::<StartContainerOptions<String>>)).unwrap();
 
     // Give the container a moment to start
@@ -114,7 +144,13 @@ fn test_petstore_container_health() {
 
     let mut final_status = 0;
     for i in 0..30 {
-        let mut s = match TcpStream::connect(addr) { Ok(s) => s, Err(_) => { sleep(Duration::from_millis(200)); continue; } };
+        let mut s = match TcpStream::connect(addr) {
+            Ok(s) => s,
+            Err(_) => {
+                sleep(Duration::from_millis(200));
+                continue;
+            }
+        };
         let req = b"GET /health HTTP/1.1\r\nHost: localhost\r\n\r\n";
         let _ = s.write_all(req);
         let mut buf = Vec::new();
@@ -122,17 +158,33 @@ fn test_petstore_container_health() {
         let _ = s.read_to_end(&mut buf);
         let resp = String::from_utf8_lossy(&buf);
         if let Some(line) = resp.lines().next() {
-            if let Some(code) = line.split_whitespace().nth(1).and_then(|c| c.parse::<u16>().ok()) {
+            if let Some(code) = line
+                .split_whitespace()
+                .nth(1)
+                .and_then(|c| c.parse::<u16>().ok())
+            {
                 final_status = code;
-                if code == 200 { break; }
+                if code == 200 {
+                    break;
+                }
             }
         }
-        println!("Attempt {}: response: {}", i + 1, resp.lines().next().unwrap_or(""));
+        println!(
+            "Attempt {}: response: {}",
+            i + 1,
+            resp.lines().next().unwrap_or("")
+        );
         sleep(Duration::from_millis(500));
     }
 
     // Stop and remove container
-    let _ = block_on(docker.remove_container(&created.id, Some(RemoveContainerOptions { force: true, ..Default::default() })));
+    let _ = block_on(docker.remove_container(
+        &created.id,
+        Some(RemoveContainerOptions {
+            force: true,
+            ..Default::default()
+        }),
+    ));
 
     // --- JUnit XML report (for GitHub PRs) ---
     let duration = started_at.elapsed().as_secs_f64();

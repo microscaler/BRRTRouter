@@ -223,7 +223,7 @@ pub fn extract_fields(schema: &Value) -> Vec<FieldDef> {
                 fields.push(FieldDef {
                     name: "items".to_string(),
                     original_name: "items".to_string(),
-                    ty: format!("Vec<{ty}>") ,
+                    ty: format!("Vec<{ty}>"),
                     optional: false,
                     value: "vec![]".to_string(),
                 });
@@ -244,18 +244,24 @@ pub fn extract_fields(schema: &Value) -> Vec<FieldDef> {
     if let Some(props) = schema.get("properties").and_then(|p| p.as_object()) {
         for (name, prop) in props {
             // Detect oneOf with null → map to Option<Inner>
-            let (mut inferred_ty, mut nullable_oneof) = if let Some(one_of) = prop.get("oneOf").and_then(|v| v.as_array()) {
-                let mut inner_ty: Option<String> = None;
-                let mut has_null = false;
-                for variant in one_of {
-                    if variant.get("type").and_then(|t| t.as_str()) == Some("null") {
-                        has_null = true;
-                    } else {
-                        inner_ty = Some(schema_to_type(variant));
+            let (mut inferred_ty, mut nullable_oneof) =
+                if let Some(one_of) = prop.get("oneOf").and_then(|v| v.as_array()) {
+                    let mut inner_ty: Option<String> = None;
+                    let mut has_null = false;
+                    for variant in one_of {
+                        if variant.get("type").and_then(|t| t.as_str()) == Some("null") {
+                            has_null = true;
+                        } else {
+                            inner_ty = Some(schema_to_type(variant));
+                        }
                     }
-                }
-                (inner_ty.unwrap_or_else(|| "serde_json::Value".to_string()), has_null)
-            } else { (String::new(), false) };
+                    (
+                        inner_ty.unwrap_or_else(|| "serde_json::Value".to_string()),
+                        has_null,
+                    )
+                } else {
+                    (String::new(), false)
+                };
 
             let ty = if !inferred_ty.is_empty() {
                 inferred_ty
