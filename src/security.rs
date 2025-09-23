@@ -158,14 +158,29 @@ impl JwksBearerProvider {
             aud: None,
             leeway_secs: 30,
             cache_ttl: Duration::from_secs(300),
-            cache: std::sync::Mutex::new((Instant::now() - Duration::from_secs(1000), HashMap::new())),
+            cache: std::sync::Mutex::new((
+                Instant::now() - Duration::from_secs(1000),
+                HashMap::new(),
+            )),
         }
     }
 
-    pub fn issuer(mut self, iss: impl Into<String>) -> Self { self.iss = Some(iss.into()); self }
-    pub fn audience(mut self, aud: impl Into<String>) -> Self { self.aud = Some(aud.into()); self }
-    pub fn leeway(mut self, secs: u64) -> Self { self.leeway_secs = secs; self }
-    pub fn cache_ttl(mut self, ttl: Duration) -> Self { self.cache_ttl = ttl; self }
+    pub fn issuer(mut self, iss: impl Into<String>) -> Self {
+        self.iss = Some(iss.into());
+        self
+    }
+    pub fn audience(mut self, aud: impl Into<String>) -> Self {
+        self.aud = Some(aud.into());
+        self
+    }
+    pub fn leeway(mut self, secs: u64) -> Self {
+        self.leeway_secs = secs;
+        self
+    }
+    pub fn cache_ttl(mut self, ttl: Duration) -> Self {
+        self.cache_ttl = ttl;
+        self
+    }
 
     fn extract_token<'a>(&self, req: &'a SecurityRequest) -> Option<&'a str> {
         req.headers
@@ -176,27 +191,67 @@ impl JwksBearerProvider {
     fn refresh_jwks_if_needed(&self) {
         let mut guard = self.cache.lock().unwrap();
         let (last, map) = &mut *guard;
-        if last.elapsed() < self.cache_ttl && !map.is_empty() { return; }
+        if last.elapsed() < self.cache_ttl && !map.is_empty() {
+            return;
+        }
         drop(guard);
         // Fetch outside lock
-        let resp = match reqwest::blocking::get(&self.jwks_url) { Ok(r) => r, Err(_) => return };
-        let body = match resp.text() { Ok(t) => t, Err(_) => return };
-        let parsed: serde_json::Value = match serde_json::from_str(&body) { Ok(v) => v, Err(_) => return };
+        let resp = match reqwest::blocking::get(&self.jwks_url) {
+            Ok(r) => r,
+            Err(_) => return,
+        };
+        let body = match resp.text() {
+            Ok(t) => t,
+            Err(_) => return,
+        };
+        let parsed: serde_json::Value = match serde_json::from_str(&body) {
+            Ok(v) => v,
+            Err(_) => return,
+        };
         let mut new_map: HashMap<String, jsonwebtoken::DecodingKey> = HashMap::new();
         if let Some(keys) = parsed.get("keys").and_then(|v| v.as_array()) {
             for k in keys {
                 let kid = k.get("kid").and_then(|v| v.as_str()).unwrap_or("");
                 let kty = k.get("kty").and_then(|v| v.as_str()).unwrap_or("");
                 let alg = k.get("alg").and_then(|v| v.as_str()).unwrap_or("");
-                if kty.eq_ignore_ascii_case("oct") && alg.eq_ignore_ascii_case("HS256") {
+                // HMAC (oct) keys for HS* algorithms
+                if kty.eq_ignore_ascii_case("oct")
+                    && (alg.eq_ignore_ascii_case("HS256")
+                        || alg.eq_ignore_ascii_case("HS384")
+                        || alg.eq_ignore_ascii_case("HS512"))
+                {
                     if let Some(kval) = k.get("k").and_then(|v| v.as_str()) {
                         // base64url decode secret
-                        if let Ok(secret) = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(kval) {
+                        if let Ok(secret) =
+                            base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(kval)
+                        {
                             let dk = jsonwebtoken::DecodingKey::from_secret(&secret);
                             new_map.insert(kid.to_string(), dk);
                         }
                     }
+                    continue;
                 }
+                // RSA public keys for RS* algorithms
+                if kty.eq_ignore_ascii_case("RSA")
+                    && (alg.eq_ignore_ascii_case("RS256")
+                        || alg.eq_ignore_ascii_case("RS384")
+                        || alg.eq_ignore_ascii_case("RS512"))
+                {
+                    let n = match k.get("n").and_then(|v| v.as_str()) {
+                        Some(v) => v,
+                        None => continue,
+                    };
+                    let e = match k.get("e").and_then(|v| v.as_str()) {
+                        Some(v) => v,
+                        None => continue,
+                    };
+                    // jsonwebtoken expects base64url-encoded components for RSA
+                    if let Ok(dk) = jsonwebtoken::DecodingKey::from_rsa_components(n, e) {
+                        new_map.insert(kid.to_string(), dk);
+                    }
+                    continue;
+                }
+                // Unsupported kty/alg combinations are skipped
             }
         }
         let mut guard = self.cache.lock().unwrap();
@@ -216,22 +271,53 @@ impl SecurityProvider for JwksBearerProvider {
             SecurityScheme::Http { scheme, .. } if scheme.eq_ignore_ascii_case("bearer") => {}
             _ => return false,
         }
-        let token = match self.extract_token(req) { Some(t) => t, None => return false };
+        let token = match self.extract_token(req) {
+            Some(t) => t,
+            None => return false,
+        };
         // Parse header to locate kid/alg
-        let header = match jsonwebtoken::decode_header(token) { Ok(h) => h, Err(_) => return false };
-        let kid = match header.kid { Some(k) => k, None => return false };
-        let key = match self.get_key_for(&kid) { Some(k) => k, None => return false };
-        let mut validation = jsonwebtoken::Validation::new(match header.alg { jsonwebtoken::Algorithm::HS256 => jsonwebtoken::Algorithm::HS256, _ => jsonwebtoken::Algorithm::HS256 });
+        let header = match jsonwebtoken::decode_header(token) {
+            Ok(h) => h,
+            Err(_) => return false,
+        };
+        let kid = match header.kid {
+            Some(k) => k,
+            None => return false,
+        };
+        let key = match self.get_key_for(&kid) {
+            Some(k) => k,
+            None => return false,
+        };
+        let selected_alg = match header.alg {
+            jsonwebtoken::Algorithm::HS256 => jsonwebtoken::Algorithm::HS256,
+            jsonwebtoken::Algorithm::HS384 => jsonwebtoken::Algorithm::HS384,
+            jsonwebtoken::Algorithm::HS512 => jsonwebtoken::Algorithm::HS512,
+            jsonwebtoken::Algorithm::RS256 => jsonwebtoken::Algorithm::RS256,
+            jsonwebtoken::Algorithm::RS384 => jsonwebtoken::Algorithm::RS384,
+            jsonwebtoken::Algorithm::RS512 => jsonwebtoken::Algorithm::RS512,
+            _ => return false,
+        };
+        let mut validation = jsonwebtoken::Validation::new(selected_alg);
         validation.validate_exp = true;
         validation.set_required_spec_claims(&["exp"]);
         validation.leeway = self.leeway_secs;
-        if let Some(ref iss) = self.iss { validation.set_issuer(&[iss]); }
-        if let Some(ref aud) = self.aud { validation.set_audience(&[aud]); }
-        let data: Result<jsonwebtoken::TokenData<serde_json::Value>, _> = jsonwebtoken::decode(token, &key, &validation);
-        let claims = match data { Ok(d) => d.claims, Err(_) => return false };
+        if let Some(ref iss) = self.iss {
+            validation.set_issuer(&[iss]);
+        }
+        if let Some(ref aud) = self.aud {
+            validation.set_audience(&[aud]);
+        }
+        let data: Result<jsonwebtoken::TokenData<serde_json::Value>, _> =
+            jsonwebtoken::decode(token, &key, &validation);
+        let claims = match data {
+            Ok(d) => d.claims,
+            Err(_) => return false,
+        };
         // scope check
         let token_scopes = claims.get("scope").and_then(|v| v.as_str()).unwrap_or("");
-        scopes.iter().all(|s| token_scopes.split_whitespace().any(|ts| ts == s))
+        scopes
+            .iter()
+            .all(|s| token_scopes.split_whitespace().any(|ts| ts == s))
     }
 }
 
@@ -254,34 +340,68 @@ impl RemoteApiKeyProvider {
             header_name: "x-api-key".to_string(),
         }
     }
-    pub fn timeout_ms(mut self, ms: u64) -> Self { self.timeout_ms = ms; self }
-    pub fn cache_ttl(mut self, ttl: Duration) -> Self { self.cache_ttl = ttl; self }
-    pub fn header_name(mut self, name: impl Into<String>) -> Self { self.header_name = name.into().to_ascii_lowercase(); self }
+    pub fn timeout_ms(mut self, ms: u64) -> Self {
+        self.timeout_ms = ms;
+        self
+    }
+    pub fn cache_ttl(mut self, ttl: Duration) -> Self {
+        self.cache_ttl = ttl;
+        self
+    }
+    pub fn header_name(mut self, name: impl Into<String>) -> Self {
+        self.header_name = name.into().to_ascii_lowercase();
+        self
+    }
 
     fn extract_key<'a>(&self, req: &'a SecurityRequest, header_name: &str) -> Option<&'a str> {
         // Prefer named header, also accept Authorization: Bearer <key>
-        req.headers.get(header_name).map(|s| s.as_str()).or_else(|| req.headers.get("authorization").and_then(|h| h.strip_prefix("Bearer ")))
+        req.headers
+            .get(header_name)
+            .map(|s| s.as_str())
+            .or_else(|| {
+                req.headers
+                    .get("authorization")
+                    .and_then(|h| h.strip_prefix("Bearer "))
+            })
     }
 }
 
 impl SecurityProvider for RemoteApiKeyProvider {
     fn validate(&self, scheme: &SecurityScheme, _scopes: &[String], req: &SecurityRequest) -> bool {
         let (name, location) = match scheme {
-            SecurityScheme::ApiKey { name, location, .. } if location == "header" => (name.to_ascii_lowercase(), location.as_str()),
+            SecurityScheme::ApiKey { name, location, .. } if location == "header" => {
+                (name.to_ascii_lowercase(), location.as_str())
+            }
             _ => return false,
         };
-        let key = match self.extract_key(req, &self.header_name).or_else(|| self.extract_key(req, &name)) { Some(k) => k, None => return false };
+        let key = match self
+            .extract_key(req, &self.header_name)
+            .or_else(|| self.extract_key(req, &name))
+        {
+            Some(k) => k,
+            None => return false,
+        };
         // Cache lookup
         if let Some((ts, ok)) = self.cache.lock().unwrap().get(key).cloned() {
-            if ts.elapsed() < self.cache_ttl { return ok; }
+            if ts.elapsed() < self.cache_ttl {
+                return ok;
+            }
         }
         // Remote verify
-        let client = reqwest::blocking::Client::builder().timeout(Duration::from_millis(self.timeout_ms)).build();
+        let client = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_millis(self.timeout_ms))
+            .build();
         let ok = match client {
-            Ok(c) => match c.get(&self.verify_url).header("X-API-Key", key).send() { Ok(r) => r.status().is_success(), Err(_) => false },
+            Ok(c) => match c.get(&self.verify_url).header("X-API-Key", key).send() {
+                Ok(r) => r.status().is_success(),
+                Err(_) => false,
+            },
             Err(_) => false,
         };
-        self.cache.lock().unwrap().insert(key.to_string(), (Instant::now(), ok));
+        self.cache
+            .lock()
+            .unwrap()
+            .insert(key.to_string(), (Instant::now(), ok));
         ok
     }
 }

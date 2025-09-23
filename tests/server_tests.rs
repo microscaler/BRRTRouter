@@ -1,4 +1,5 @@
 use brrtrouter::server::{HttpServer, ServerHandle};
+use brrtrouter::spec::SecurityScheme;
 use brrtrouter::{
     dispatcher::{Dispatcher, HandlerRequest, HandlerResponse},
     router::Router,
@@ -6,7 +7,6 @@ use brrtrouter::{
     spec::RouteMeta,
     SecurityProvider, SecurityRequest,
 };
-use brrtrouter::spec::SecurityScheme;
 use http::Method;
 use pet_store::registry;
 use serde_json::{json, Value};
@@ -41,9 +41,16 @@ fn start_petstore_service() -> (TestTracing, ServerHandle, SocketAddr) {
         None,
     );
     // Register a simple ApiKey provider to satisfy spec security in tests
-    struct ApiKeyProvider { key: String }
+    struct ApiKeyProvider {
+        key: String,
+    }
     impl SecurityProvider for ApiKeyProvider {
-        fn validate(&self, scheme: &SecurityScheme, _scopes: &[String], req: &SecurityRequest) -> bool {
+        fn validate(
+            &self,
+            scheme: &SecurityScheme,
+            _scopes: &[String],
+            req: &SecurityRequest,
+        ) -> bool {
             match scheme {
                 SecurityScheme::ApiKey { name, location, .. } => match location.as_str() {
                     "header" => req.headers.get(&name.to_ascii_lowercase()) == Some(&self.key),
@@ -57,7 +64,12 @@ fn start_petstore_service() -> (TestTracing, ServerHandle, SocketAddr) {
     }
     for (name, scheme) in service.security_schemes.clone() {
         if matches!(scheme, SecurityScheme::ApiKey { .. }) {
-            service.register_security_provider(&name, Arc::new(ApiKeyProvider { key: "test123".into() }));
+            service.register_security_provider(
+                &name,
+                Arc::new(ApiKeyProvider {
+                    key: "test123".into(),
+                }),
+            );
         }
     }
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -128,7 +140,10 @@ fn parse_response(resp: &str) -> (u16, Value) {
 #[test]
 fn test_dispatch_success() {
     let (mut tracing, handle, addr) = start_petstore_service();
-    let resp = send_request(&addr, "GET /pets HTTP/1.1\r\nHost: localhost\r\nX-API-Key: test123\r\n\r\n");
+    let resp = send_request(
+        &addr,
+        "GET /pets HTTP/1.1\r\nHost: localhost\r\nX-API-Key: test123\r\n\r\n",
+    );
     handle.stop();
     let (status, body) = parse_response(&resp);
     assert_eq!(status, 200);

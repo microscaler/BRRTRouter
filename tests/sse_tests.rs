@@ -1,9 +1,9 @@
 use brrtrouter::dispatcher::Dispatcher;
 use brrtrouter::router::Router;
 use brrtrouter::server::AppService;
-use brrtrouter::{SecurityProvider, SecurityRequest};
-use brrtrouter::spec::SecurityScheme;
 use brrtrouter::server::{HttpServer, ServerHandle};
+use brrtrouter::spec::SecurityScheme;
+use brrtrouter::{SecurityProvider, SecurityRequest};
 use pet_store::registry;
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -37,9 +37,16 @@ fn start_service() -> (TestTracing, ServerHandle, SocketAddr) {
         None,
     );
     // Register ApiKey provider so /events (secured) can be accessed in test
-    struct ApiKeyProvider { key: String }
+    struct ApiKeyProvider {
+        key: String,
+    }
     impl SecurityProvider for ApiKeyProvider {
-        fn validate(&self, scheme: &SecurityScheme, _scopes: &[String], req: &SecurityRequest) -> bool {
+        fn validate(
+            &self,
+            scheme: &SecurityScheme,
+            _scopes: &[String],
+            req: &SecurityRequest,
+        ) -> bool {
             match scheme {
                 SecurityScheme::ApiKey { name, location, .. } => match location.as_str() {
                     "header" => req.headers.get(&name.to_ascii_lowercase()) == Some(&self.key),
@@ -53,7 +60,12 @@ fn start_service() -> (TestTracing, ServerHandle, SocketAddr) {
     }
     for (name, scheme) in service.security_schemes.clone() {
         if matches!(scheme, SecurityScheme::ApiKey { .. }) {
-            service.register_security_provider(&name, Arc::new(ApiKeyProvider { key: "test123".into() }));
+            service.register_security_provider(
+                &name,
+                Arc::new(ApiKeyProvider {
+                    key: "test123".into(),
+                }),
+            );
         }
     }
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -114,7 +126,10 @@ fn parse_parts(resp: &str) -> (u16, String, String) {
 #[test]
 fn test_event_stream() {
     let (_tracing, handle, addr) = start_service();
-    let resp = send_request(&addr, "GET /events HTTP/1.1\r\nHost: localhost\r\nX-API-Key: test123\r\n\r\n");
+    let resp = send_request(
+        &addr,
+        "GET /events HTTP/1.1\r\nHost: localhost\r\nX-API-Key: test123\r\n\r\n",
+    );
     handle.stop();
     let (status, ct, body) = parse_parts(&resp);
     assert_eq!(status, 200);

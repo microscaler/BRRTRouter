@@ -1,4 +1,5 @@
 use brrtrouter::server::{HttpServer, ServerHandle};
+use brrtrouter::spec::SecurityScheme;
 use brrtrouter::{
     dispatcher::Dispatcher,
     middleware::{MetricsMiddleware, TracingMiddleware},
@@ -6,7 +7,6 @@ use brrtrouter::{
     server::AppService,
     SecurityProvider, SecurityRequest,
 };
-use brrtrouter::spec::SecurityScheme;
 use pet_store::registry;
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -42,9 +42,16 @@ fn start_service() -> (TestTracing, ServerHandle, SocketAddr) {
     );
     service.set_metrics_middleware(metrics);
     // Register a simple ApiKey provider so requests with X-API-Key: test123 are authorized
-    struct ApiKeyProvider { key: String }
+    struct ApiKeyProvider {
+        key: String,
+    }
     impl SecurityProvider for ApiKeyProvider {
-        fn validate(&self, scheme: &SecurityScheme, _scopes: &[String], req: &SecurityRequest) -> bool {
+        fn validate(
+            &self,
+            scheme: &SecurityScheme,
+            _scopes: &[String],
+            req: &SecurityRequest,
+        ) -> bool {
             match scheme {
                 SecurityScheme::ApiKey { name, location, .. } => match location.as_str() {
                     "header" => req.headers.get(&name.to_ascii_lowercase()) == Some(&self.key),
@@ -58,7 +65,12 @@ fn start_service() -> (TestTracing, ServerHandle, SocketAddr) {
     }
     for (name, scheme) in service.security_schemes.clone() {
         if matches!(scheme, SecurityScheme::ApiKey { .. }) {
-            service.register_security_provider(&name, Arc::new(ApiKeyProvider { key: "test123".into() }));
+            service.register_security_provider(
+                &name,
+                Arc::new(ApiKeyProvider {
+                    key: "test123".into(),
+                }),
+            );
         }
     }
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -119,7 +131,10 @@ fn parse_response_parts(resp: &str) -> (u16, String, String) {
 #[test]
 fn test_metrics_endpoint() {
     let (_tracing, handle, addr) = start_service();
-    let _ = send_request(&addr, "GET /pets HTTP/1.1\r\nHost: localhost\r\nX-API-Key: test123\r\n\r\n");
+    let _ = send_request(
+        &addr,
+        "GET /pets HTTP/1.1\r\nHost: localhost\r\nX-API-Key: test123\r\n\r\n",
+    );
     let resp = send_request(&addr, "GET /metrics HTTP/1.1\r\nHost: localhost\r\n\r\n");
     handle.stop();
     let (status, ct, body) = parse_response_parts(&resp);

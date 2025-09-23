@@ -1,5 +1,5 @@
-use brrtrouter::middleware::TracingMiddleware;
 use base64::Engine;
+use brrtrouter::middleware::TracingMiddleware;
 use brrtrouter::server::{HttpServer, ServerHandle};
 use brrtrouter::spec::SecurityScheme;
 use brrtrouter::{
@@ -15,8 +15,8 @@ use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
-use std::time::Duration;
 use std::thread;
+use std::time::Duration;
 mod tracing_util;
 use tracing_util::TestTracing;
 
@@ -393,7 +393,8 @@ fn start_mock_jwks_server(body: String) -> String {
             let _ = stream.read(&mut buf);
             let resp = format!(
                 "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
-                body.len(), body
+                body.len(),
+                body
             );
             let _ = stream.write_all(resp.as_bytes());
         }
@@ -408,8 +409,15 @@ fn base64url_no_pad(data: &[u8]) -> String {
 fn make_hs256_jwt(secret: &[u8], iss: &str, aud: &str, kid: &str, exp_secs: i64) -> String {
     use jsonwebtoken::{Algorithm, EncodingKey, Header};
     use serde_json::json;
-    let header = Header { kid: Some(kid.to_string()), alg: Algorithm::HS256, ..Default::default() };
-    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64;
+    let header = Header {
+        kid: Some(kid.to_string()),
+        alg: Algorithm::HS256,
+        ..Default::default()
+    };
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
     let claims = json!({
         "iss": iss,
         "aud": aud,
@@ -419,7 +427,11 @@ fn make_hs256_jwt(secret: &[u8], iss: &str, aud: &str, kid: &str, exp_secs: i64)
     jsonwebtoken::encode(&header, &claims, &EncodingKey::from_secret(secret)).unwrap()
 }
 
-fn start_service_with_jwks(jwks_url: &str, iss: &str, aud: &str) -> (TestTracing, ServerHandle, SocketAddr) {
+fn start_service_with_jwks(
+    jwks_url: &str,
+    iss: &str,
+    aud: &str,
+) -> (TestTracing, ServerHandle, SocketAddr) {
     may::config().set_stack_size(0x8000);
     let tracing = TestTracing::init();
     const SPEC: &str = r#"openapi: 3.1.0
@@ -483,7 +495,8 @@ fn test_bearer_jwks_success() {
         "keys": [
             {"kty": "oct", "alg": "HS256", "kid": "k1", "k": k}
         ]
-    }).to_string();
+    })
+    .to_string();
     let jwks_url = start_mock_jwks_server(jwks);
     let iss = "https://issuer.example";
     let aud = "my-audience";
@@ -507,7 +520,8 @@ fn test_bearer_jwks_invalid_signature() {
         "keys": [
             {"kty": "oct", "alg": "HS256", "kid": "k1", "k": k}
         ]
-    }).to_string();
+    })
+    .to_string();
     let jwks_url = start_mock_jwks_server(jwks);
     let iss = "https://issuer.example";
     let aud = "my-audience";
@@ -543,7 +557,9 @@ fn start_mock_apikey_verify_server() -> (String, thread::JoinHandle<()>) {
                 let status = if ok { "200 OK" } else { "401 Unauthorized" };
                 let resp = format!(
                     "HTTP/1.1 {}\r\nContent-Length: {}\r\n\r\n{}",
-                    status, body.len(), body
+                    status,
+                    body.len(),
+                    body
                 );
                 let _ = stream.write_all(resp.as_bytes());
             }
@@ -580,7 +596,11 @@ paths:
     let mut dispatcher = Dispatcher::new();
     unsafe {
         dispatcher.register_handler("secret", |req: HandlerRequest| {
-            let _ = req.reply_tx.send(HandlerResponse { status: 200, headers: HashMap::new(), body: json!({"ok": true}) });
+            let _ = req.reply_tx.send(HandlerResponse {
+                status: 200,
+                headers: HashMap::new(),
+                body: json!({"ok": true}),
+            });
         });
     }
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
