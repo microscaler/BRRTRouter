@@ -1,10 +1,11 @@
 use std::fs;
 use std::io::{Read, Write};
-use bollard::{Docker, API_DEFAULT_VERSION};
+use bollard::Docker;
 use bollard::image::BuildImageOptions;
 use bollard::container::{CreateContainerOptions, StartContainerOptions, RemoveContainerOptions, Config as ContainerConfig};
 use bollard::models::{HostConfig, PortBinding};
 use futures_util::stream::TryStreamExt;
+use futures::executor::block_on;
 use tar::Builder as TarBuilder;
 use walkdir::WalkDir;
 use std::net::{SocketAddr, TcpStream};
@@ -12,8 +13,7 @@ use std::process::Command;
 use std::thread::sleep;
 use std::time::Duration;
 
-#[cfg(feature = "testcontainers")] // not a real feature, just for docs
-use testcontainers as _;
+//
 
 /// Check if Docker is available
 fn is_docker_available() -> bool {
@@ -81,35 +81,34 @@ fn test_petstore_container_health() {
         builder.finish().unwrap();
     }
     let build_opts = BuildImageOptions::<String> {
-        dockerfile: "Dockerfile",
-        t: "brrtrouter-petstore:e2e",
+        dockerfile: "Dockerfile".to_string(),
+        t: "brrtrouter-petstore:e2e".to_string(),
         rm: true,
         nocache: true,
-        version: API_DEFAULT_VERSION,
         ..Default::default()
     };
     let mut stream = docker.build_image(build_opts, None, Some(archive.into()));
-    while let Some(_chunk) = futures_util::executor::block_on(stream.try_next()).unwrap_or(None) {}
+    while let Some(_chunk) = block_on(stream.try_next()).unwrap_or(None) {}
 
     // Create and start container with random host port for 8080/tcp
     let port_key = "8080/tcp".to_string();
     let bindings = std::collections::HashMap::from([(port_key.clone(), Some(vec![PortBinding { host_ip: Some("127.0.0.1".into()), host_port: Some("0".into()) }]))]);
     let host_config = HostConfig { port_bindings: Some(bindings), ..Default::default() };
     let cfg = ContainerConfig { image: Some("brrtrouter-petstore:e2e"), host_config: Some(host_config), ..Default::default() };
-    let created = futures_util::executor::block_on(docker.create_container(Some(CreateContainerOptions { name: "brrtrouter-e2e" }), cfg)).unwrap();
-    futures_util::executor::block_on(docker.start_container(&created.id, None::<StartContainerOptions<String>>)).unwrap();
+    let created = block_on(docker.create_container(Some(CreateContainerOptions { name: "brrtrouter-e2e", platform: None }), cfg)).unwrap();
+    block_on(docker.start_container(&created.id, None::<StartContainerOptions<String>>)).unwrap();
 
     // Give the container a moment to start
     sleep(Duration::from_secs(2));
 
     // Poll health endpoint via raw TCP to avoid curl dependency
-    let inspect = futures_util::executor::block_on(docker.inspect_container(&created.id, None)).unwrap();
+    let inspect = block_on(docker.inspect_container(&created.id, None)).unwrap();
     let mapped = inspect
         .network_settings
         .and_then(|ns| ns.ports)
-        .and_then(|mut p| p.remove(&port_key))
+        .and_then(|mut p| p.remove(&port_key).flatten())
         .and_then(|mut v| v.pop())
-        .and_then(|b| b.and_then(|b| b.host_port));
+        .and_then(|b| b.host_port);
     let mapped_port = mapped.unwrap().parse::<u16>().unwrap();
     let addr: SocketAddr = format!("127.0.0.1:{}", mapped_port).parse().unwrap();
 
@@ -133,7 +132,7 @@ fn test_petstore_container_health() {
     }
 
     // Stop and remove container
-    let _ = futures_util::executor::block_on(docker.remove_container(&created.id, Some(RemoveContainerOptions { force: true, ..Default::default() })));
+    let _ = block_on(docker.remove_container(&created.id, Some(RemoveContainerOptions { force: true, ..Default::default() })));
 
     // --- JUnit XML report (for GitHub PRs) ---
     let duration = started_at.elapsed().as_secs_f64();
