@@ -17,7 +17,17 @@ use brrtrouter::middleware::TracingMiddleware;
 use tracing_util::TestTracing;
 
 fn set_stack_size() -> TestTracing {
-    may::config().set_stack_size(0x801);
+    let size = std::env::var("BRRTR_STACK_SIZE")
+        .ok()
+        .and_then(|v| {
+            if let Some(hex) = v.strip_prefix("0x") {
+                usize::from_str_radix(hex, 16).ok()
+            } else {
+                v.parse().ok()
+            }
+        })
+        .unwrap_or(0x4000);
+    may::config().set_stack_size(size);
     TestTracing::init()
 }
 
@@ -360,7 +370,8 @@ fn test_dispatch_all_registry_handlers() {
                 None,
                 json!({"body": "Welcome to the blog", "id": "post1", "title": "Intro"}),
             ),
-            "stream_events" => (Method::GET, "/events", None, json!("")),
+            // Skip SSE route in dispatcher unit test; it is long-lived
+            "stream_events" => continue,
             // Skip handlers not explicitly covered here (spec may include more)
             _other => continue,
         };

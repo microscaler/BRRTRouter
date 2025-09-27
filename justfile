@@ -33,6 +33,29 @@ build:
 test:
 	cargo test -- --nocapture
 
+# CI-oriented test runs
+test-ci:
+	cargo test -- --nocapture
+
+# Docker E2E tests (requires Docker on host)
+test-e2e-docker:
+	RUST_LOG=debug RUST_BACKTRACE=1 E2E_DOCKER=1 cargo test --test docker_integration_tests -- --nocapture
+
+# HTTP integration tests against Dockerized example (no curl required)
+test-e2e-http:
+	RUST_LOG=debug RUST_BACKTRACE=1 cargo test --test curl_integration_tests -- --test-threads=1 --nocapture
+
+# Convenience: run both E2E suites
+e2e:
+	just test-e2e-docker
+	just test-e2e-http
+
+act:
+	E2E_DOCKER=1 act --container-architecture linux/amd64 -P ubuntu-latest=ghcr.io/catthehacker/ubuntu:act-22.04 -W .github/workflows/ci.yml -v
+
+security:
+	E2E_DOCKER=1  cargo test --test security_tests -- --nocapture
+	
 # Measure code coverage (requires cargo-llvm-cov)
 coverage:
 	cargo llvm-cov --no-report
@@ -45,10 +68,22 @@ bench:
 fg:
 	cargo flamegraph -p pet_store --bin pet_store
 
-# Start the example with a default API key and then run curls
+# Start the Pet Store locally with correct spec/doc/config paths (foreground)
+start-petstore:
+	RUST_LOG=trace RUST_BACKTRACE=1 cargo run -p pet_store -- --spec doc/openapi.yaml --doc-dir examples/pet_store/doc --config config/config.yaml --test-api-key test123
+
+start-petstore-stack:
+	ulimit -n 65536
+	# sudo launchctl limit maxfiles 65536 65536
+	# sudo sysctl kern.ipc.somaxconn=4096
+	# sudo sysctl net.inet.tcp.sendspace=1048576 net.inet.tcp.recvspace=1048576
+	BRRTR_STACK_SIZE=0x4000  RUST_LOG=trace RUST_BACKTRACE=1 cargo run -p pet_store -- --spec doc/openapi.yaml --doc-dir examples/pet_store/doc --config config/config.yaml --test-api-key test123
+
+
+# Start the example in background and then run curls (uses correct paths)
 curls-start:
-	@echo "Starting example server with BRRTR_API_KEY=test123..."
-	@BRRTR_API_KEY=test123 cargo run --manifest-path examples/pet_store/Cargo.toml -- --spec doc/openapi.yaml &
+	@echo "Starting example server with test API key..."
+	@RUST_LOG=trace RUST_BACKTRACE=1 cargo run --manifest-path examples/pet_store/Cargo.toml -- --spec doc/openapi.yaml --doc-dir examples/pet_store/doc --config config/config.yaml --test-api-key test123 &
 	@echo "Waiting for server readiness on /health..."
 	@for i in $$(seq 1 60); do \
 		code=$$(curl -s -o /dev/null -w "%{http_code}" http://0.0.0.0:8080/health || true); \
@@ -103,7 +138,7 @@ curls:
 	echo ""
 
 	# SSE (avoid blocking)
-	curl -sS -m 2 -H "X-API-Key: test123" "http://0.0.0.0:8080/events" | head -n 1 || true
+	curl -i -sS -m 2 -H "X-API-Key: test123" "http://0.0.0.0:8080/events" | head -n 1 || true
 	echo ""
 
 	# Download (JSON meta variant)
@@ -130,7 +165,8 @@ curls:
 	echo ""
 
 	# Secure endpoint (requires API key)
-	curl -i -H "X-API-Key: test123" "http://0.0.0.0:8080/secure"
+	# This is a fake token, it will not work outside the example
+	curl -i -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30=.sig" http://0.0.0.0:8080/secure
 	echo ""
 
 	# Webhook registration
