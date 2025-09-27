@@ -1,0 +1,12 @@
+vendor/*
+build/examples/pet_store/target/
+target/*
+*.logs
+*.log
+*.log.*
+.DS_Store
+
+.venv
+.idea
+.git
+

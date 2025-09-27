@@ -32,6 +32,10 @@ pub struct CargoTomlTemplateData {
 }
 
 #[derive(Template)]
+#[template(path = "config.yaml", escape = "none")]
+pub struct ConfigYamlTemplate;
+
+#[derive(Template)]
 #[template(path = "main.rs.txt", escape = "none")]
 pub struct MainRsTemplateData {
     pub name: String,
@@ -305,5 +309,13 @@ pub fn write_static_index(dir: &Path) -> anyhow::Result<()> {
     let rendered = StaticIndexTemplate.render()?;
     fs::write(dir.join("index.html"), rendered)?;
     println!("✅ Wrote static index → {:?}", dir.join("index.html"));
+    Ok(())
+}
+
+pub fn write_default_config(dir: &Path) -> anyhow::Result<()> {
+    let rendered = ConfigYamlTemplate.render()?;
+    std::fs::create_dir_all(dir)?;
+    std::fs::write(dir.join("config.yaml"), rendered)?;
+    println!("✅ Wrote default config → {:?}", dir.join("config.yaml"));
     Ok(())
 }

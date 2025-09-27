@@ -2,11 +2,9 @@ use brrtrouter::server::{HttpServer, ServerHandle};
 use brrtrouter::{dispatcher::Dispatcher, router::Router, server::AppService};
 use pet_store::registry;
 use std::collections::HashMap;
-use std::io::{Read, Write};
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::net::{SocketAddr, TcpListener};
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
-use std::time::Duration;
 
 fn start_service() -> (ServerHandle, SocketAddr) {
     // Ensure coroutines have enough stack for tests
@@ -33,29 +31,8 @@ fn start_service() -> (ServerHandle, SocketAddr) {
     (handle, addr)
 }
 
-fn send_request(addr: &SocketAddr, req: &str) -> String {
-    let mut stream = TcpStream::connect(addr).unwrap();
-    stream.write_all(req.as_bytes()).unwrap();
-    stream
-        .set_read_timeout(Some(Duration::from_millis(100)))
-        .unwrap();
-    let mut buf = Vec::new();
-    loop {
-        let mut tmp = [0u8; 1024];
-        match stream.read(&mut tmp) {
-            Ok(0) => break,
-            Ok(n) => buf.extend_from_slice(&tmp[..n]),
-            Err(ref e)
-                if e.kind() == std::io::ErrorKind::WouldBlock
-                    || e.kind() == std::io::ErrorKind::TimedOut =>
-            {
-                break
-            }
-            Err(e) => panic!("read error: {:?}", e),
-        }
-    }
-    String::from_utf8_lossy(&buf).to_string()
-}
+mod common;
+use common::http::send_request;
 
 fn parse_parts(resp: &str) -> (u16, String) {
     let mut parts = resp.split("\r\n\r\n");

@@ -74,6 +74,22 @@ impl Router {
         Self { routes, base_path }
     }
 
+    pub fn dump_routes(&self) {
+        println!(
+            "[routes] base_path={} count={}",
+            self.base_path,
+            self.routes.len()
+        );
+        for (method, _re, meta, _params) in &self.routes {
+            println!(
+                "[route] {} {} -> {}",
+                method,
+                format!("{}{}", self.base_path, meta.path_pattern),
+                meta.handler_name
+            );
+        }
+    }
+
     pub fn route(&self, method: Method, path: &str) -> Option<RouteMatch> {
         for (m, regex, route, param_names) in &self.routes {
             if *m != method {

@@ -30,3 +30,19 @@ fn test_traversal_prevented() {
     assert!(sf.load("../Cargo.toml", None).is_err());
     assert!(sf.load("..\\Cargo.toml", None).is_err());
 }
+
+#[test]
+fn test_addition_template_renders_sum() {
+    let sf = StaticFiles::new("tests/staticdata");
+    let a = 7;
+    let b = 13;
+    let ctx = json!({
+        "a": a,
+        "b": b,
+        "sum": a + b,
+    });
+    let (bytes, ct) = sf.load("add.html", Some(&ctx)).unwrap();
+    assert_eq!(ct, "text/html");
+    let body = String::from_utf8(bytes).unwrap();
+    assert!(body.contains(&format!("{} + {} = {}", a, b, a + b)));
+}

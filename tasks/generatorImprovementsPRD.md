@@ -686,6 +686,39 @@ AppService.call -> write_handler_response
 - [ ] Quality gates: clippy `-D warnings` on generated example
 - [ ] Coverage: `cargo llvm-cov` ≥65% (target 80%)
 
+#### 10.1) Curl Integration Tests (Single-Container Strategy)
+
+Objective: Replace Justfile shell curls with Rust-based curl tests that run against a single shared container for the entire test process, to reveal cross-route interactions while keeping CI deterministic.
+
+Approach
+- Single shared container harness
+  - Use a global singleton (e.g., `once_cell::sync::Lazy`) to start one `brrtrouter-petstore:e2e` container with a random mapped port.
+  - Wait for readiness via `/health` (HTTP 200).
+  - Expose a `base_url()` helper for all tests.
+  - Ensure a teardown guard stops/removes the container at process exit.
+- Curl helpers
+  - Minimal wrappers that shell out to `curl -sS -D - --fail` for GET/POST and custom headers.
+  - Utilities for JSON body posts, API key header, and small backoff retries for transient errors.
+- Test organization
+  - One test per former Justfile curl; group by domain in files: health/docs/metrics/auth/pets CRUD, etc.
+  - Prefer assertions on status, content-type, and key body substrings; avoid brittle counters across tests.
+  - Mark these tests with `#[ignore]` and run explicitly in the e2e workflow.
+- CI integration
+  - After building the e2e image, run: `cargo test --test curl_* -- --ignored --test-threads=1`.
+  - Serial execution avoids hidden order dependencies and shared-state flakes.
+- Migration
+  - Inventory existing Justfile curls, prioritize critical flows (health, docs, openapi, metrics, one secured route), then convert the rest.
+  - Keep Justfile curls temporarily for local convenience; annotate to point to Rust tests; remove when parity is achieved.
+
+Checklist
+- [ ] Implement shared container harness (global singleton, base_url, teardown)
+- [ ] Add curl helpers (GET/POST JSON, headers, retries)
+- [ ] Convert health/docs/openapi/metrics curls
+- [ ] Convert auth/secured routes curls
+- [ ] Convert pets CRUD and remaining curls
+- [ ] Mark tests `#[ignore]` and wire into e2e job command
+- [ ] Deprecate or annotate Justfile curls to reference Rust tests
+
 #### 11) Success Criteria
 - [ ] Zero-warning example on first generation
 - [ ] No panics; actionable errors only

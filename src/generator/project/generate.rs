@@ -58,12 +58,14 @@ pub fn generate_project_with_options(
     let controller_dir = src_dir.join("controllers");
     let doc_dir = base_dir.join("doc");
     let static_dir = base_dir.join("static_site");
+    let config_dir = base_dir.join("config");
     if !dry_run {
         fs::create_dir_all(&src_dir)?;
         fs::create_dir_all(&handler_dir)?;
         fs::create_dir_all(&controller_dir)?;
         fs::create_dir_all(&doc_dir)?;
         fs::create_dir_all(&static_dir)?;
+        fs::create_dir_all(&config_dir)?;
     }
 
     let spec_copy_path = doc_dir.join("openapi.yaml");
@@ -301,6 +303,7 @@ pub fn generate_project_with_options(
         } else {
             write_openapi_index(&doc_dir)?;
             write_static_index(&static_dir)?;
+            super::super::templates::write_default_config(&config_dir)?;
             if docs_existed && force {
                 updated.push(format!("docs: {:?}", docs_path));
             } else if !docs_existed {
