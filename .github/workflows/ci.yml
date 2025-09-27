@@ -146,6 +146,7 @@ jobs:
         run: ./dist/brrtrouter-gen generate --spec examples/openapi.yaml --force
 
       - name: Regenerate pet_store example (ACT local)
+        if: ${{ env.ACT }}
         run: ./target/release/brrtrouter-gen generate --spec examples/openapi.yaml --force
 
       - name: Build e2e Docker image (freshly generated app + provided binary)
