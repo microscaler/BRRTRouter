@@ -77,8 +77,13 @@ impl ContainerHarness {
 
         // Wait for readiness using shared helper
         let addr: SocketAddr = format!("127.0.0.1:{}", host_port).parse().unwrap();
-        wait_for_http_200(&addr, "/health", Duration::from_secs(15), Some(&container_id))
-            .expect("container readiness check failed");
+        wait_for_http_200(
+            &addr,
+            "/health",
+            Duration::from_secs(15),
+            Some(&container_id),
+        )
+        .expect("container readiness check failed");
 
         Self {
             container_id,

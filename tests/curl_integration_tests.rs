@@ -106,7 +106,11 @@ fn curl_auth_api_key_unauthorized_then_authorized() {
     // Without API key should be 401
     let url = format!("{}/pets", curl_harness::base_url());
     let (ok_no_key, _body_no_key, headers_no_key) = run_http(&url);
-    assert!(!ok_no_key, "GET /pets without key should fail: headers=\n{}", headers_no_key);
+    assert!(
+        !ok_no_key,
+        "GET /pets without key should fail: headers=\n{}",
+        headers_no_key
+    );
 
     // With API key should be 200
     let opts = HttpOptions {
@@ -115,7 +119,11 @@ fn curl_auth_api_key_unauthorized_then_authorized() {
     };
     let (ok_with_key, _body_with_key, headers_with_key) =
         run_http_with(&format!("{}/pets", curl_harness::base_url()), &opts);
-    assert!(ok_with_key, "GET /pets with key failed: headers=\n{}", headers_with_key);
+    assert!(
+        ok_with_key,
+        "GET /pets with key failed: headers=\n{}",
+        headers_with_key
+    );
 }
 
 #[test]

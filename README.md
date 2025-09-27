@@ -68,8 +68,8 @@ The logo features a stylized **A-10 Warthog nose cannon**, symbolizing BRRTRoute
 | **Fix flaky tests / deterministic startup**      | 🚧     | Tests use a fixed sleep to wait for server readiness and cancel the coroutine abruptly.                                                                                   |
 | **Investigate config context**                   | 🚧     | A pragmatic way to pass Configuration across the entire code base, possibly with an immutable global config that is loaded at start time                                  |
 | **Extend fake otel collector across all tests**  | 🚧     | Fake OpenTelemetry collector is used in just tests, but not all tests utilize it.                                                                                         |
-| **handler coroutinge stack size**                | 🚧     | Coroutine stack size is set via `BRRTR_STACK_SIZE` env var, but not dynamically adjustable or measured.                                                                   |
-| **implement tracing across entire codebsase**    | 🚧     | Tracing is implemented in some places, but not consistently across the entire codebase.                                                                                   |
+| **handler coroutine stack size**                 | 🚧     | Coroutine stack size is set via `BRRTR_STACK_SIZE` env var, but not dynamically adjustable or measured.                                                                   |
+| **implement tracing across entire codebase**     | 🚧     | Tracing is implemented in some places, but not consistently across the entire codebase.                                                                                   |
 | **Deep dive into OpenAPI spec**                  | 🚧     | OpenAPI spec parsing is basic; does not handle all features like `callbacks` and other functions, produce GAP analysis in order to completely support OpenAPI 3.1.0 spec. |
 | **Panic recovery for handlers**                  | 🚧     | Un-typed handlers recover from panics using `catch_unwind`; typed handlers do not.                                                                                        |
 | **Multiple security providers**                  | 🚧     | Multiple providers are supported and auto-registered from OpenAPI schemes; per-route scheme enforcement is covered by tests. Full OpenAPI OR-of-AND combination semantics are tracked in PRD. |
@@ -79,11 +79,11 @@ The logo features a stylized **A-10 Warthog nose cannon**, symbolizing BRRTRoute
 | **Dynamic route registration**                   | 🚧     | `Dispatcher::add_route` and `register_from_spec` allow runtime insertion; tests cover this.                                                                               |
 | **Improved handler ergonomics**                  | ✅     | Use `#[handler]` to implement the `Handler` trait automatically. |
 | **Structured tracing / metrics / CORS**          | 🚧     | Tracing and metrics middleware exist (with OTEL test support); CORS middleware returns default headers but is not configurable.                                           |
-| **Schema validation**                            | 🚧     | Request/response validation against OpenAPI schema is not implemented.                                                                                                    |
+| **Schema validation**                            | ✅      | Request and response validation against OpenAPI JSON Schema with clear 400 errors; exercised in tests.                                                                    |
 | **WebSocket support**                            | 🚧     | Absent. Only SSE is available via `x-sse` flag.                                                                                                                           |
 | **JWT/OAuth2 & API Key Auth**                    | ✅      | `BearerJwtProvider`, `OAuth2Provider`, `JwksBearerProvider` (JWKS HS/RS algs), and `RemoteApiKeyProvider`; scope checks, cookie support, metrics, and OpenAPI-driven registration |
 | **SPIFFE support**                               | 🚧     | SPIFFE fetching of X.509 and JWT SVIDs, bundles and supports watch/stream updates.                                                                                        |
-| **Performance target**                           | 🚧     | Criterion benchmarks exist, but no explicit optimization work toward the 1M req/sec goal.                                                                                 |
+| **Performance target**                           | 🚧     | Criterion benchmarks exist, but no explicit optimization work toward the 100k req/sec goal.                                                                                 |
 | **Documentation & packaging**                    | 🚧     | README and roadmap exist; crate not yet prepared for crates.io publication.                                                                                               |
 
 ---
@@ -93,28 +93,31 @@ The logo features a stylized **A-10 Warthog nose cannon**, symbolizing BRRTRoute
 Run the coroutine server:
 
 ```bash
-cargo run
+just start-petstore
 
-curl "http://localhost:8080/items/123?debug=true" \
-  -X POST \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Ball"}'
+curl -i -H "X-API-Key: test123" -H "Content-Type: application/json" -d '{"name":"Bella"}' "http://0.0.0.0:8080/pets"
+HTTP/1.1 200 Ok
+Server: M
+Date: Sat, 27 Sep 2025 19:15:27 GMT
+Content-Length: 31
+Content-Type: application/json
+Content-Type: application/json
 
-> {
-  "handler": "post_item",
-  "method": "POST",
-  "path": "/items/{id}",
-  "params": { "id": "123" },
-  "query": { "debug": "true" },
-  "body": { "name": "Ball" }
-}
+> {"id":67890,"status":"success"}
+
 
 curl http://localhost:8080/health
 > { "status": "ok" }
 ```
 
+
+
 Visit `http://localhost:8080/docs` to open the bundled Swagger UI powered by the
 `/openapi.yaml` specification.
+
+Troubleshooting `/docs`:
+- If you launch from a different working directory, pass an explicit docs path: `--doc-dir examples/pet_store/doc`.
+- The `just start-petstore` task already sets the correct `--doc-dir`.
 
 ### Environment Variables
 
@@ -129,7 +132,7 @@ Run:
 just build-pet-store
 ```
 
-This wraps `./scripts/build_pet_store.sh` so you can pass cargo flags after the task.
+Builds the Pet Store example; you can pass cargo flags after the task.
 
 ## 🧪 Running Tests
 
@@ -338,7 +341,7 @@ We welcome contributions that improve:
 - 🚧 Server-side events
 - 🧪 Test coverage and spec validation
 - 🧠 Coroutine handler ergonomics
-- 📊 Benchmarks for match throughput (goal: 1M+ matches/sec/core)
+- 📊 Benchmarks for match throughput (goal: 100k matches/sec)
 - 🔐 Middleware hooks 
   - Metrics
   - Tracing
@@ -347,6 +350,6 @@ We welcome contributions that improve:
 - 💥 Reusable SDK packaging and publising to crates.io
 
 Benchmark goal:
-- Raspberry Pi 5, single core
-- 1M route matches/sec
-- ≤1ms latency (excluding handler execution)
+- Raspberry Pi 5
+- 100k route matches/sec
+- ≤8ms latency (excluding handler execution)

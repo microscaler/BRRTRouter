@@ -215,7 +215,6 @@ impl JwksBearerProvider {
                 },
                 Err(_) => {}
             }
-            std::thread::sleep(Duration::from_millis(30));
         }
         let body = match body_opt {
             Some(b) => b,

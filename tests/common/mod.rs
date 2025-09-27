@@ -168,7 +168,9 @@ pub mod http {
         loop {
             if Instant::now() > deadline {
                 if let Some(id) = container_id {
-                    let _ = Command::new("docker").args(["logs", "--tail", "200", id]).status();
+                    let _ = Command::new("docker")
+                        .args(["logs", "--tail", "200", id])
+                        .status();
                 }
                 return Err(format!(
                     "service did not become ready at {} within {:?}",
