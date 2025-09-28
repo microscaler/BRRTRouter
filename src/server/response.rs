@@ -24,6 +24,9 @@ pub fn write_handler_response(
 ) {
     let reason = status_reason(status);
     res.status_code(status as usize, reason);
+    // Enable HTTP/1.1 persistent connections by default
+    res.header("Connection: keep-alive");
+    res.header("Keep-Alive: timeout=5, max=1000");
     for (k, v) in headers {
         let header_value = format!("{k}: {v}").into_boxed_str();
         res.header(Box::leak(header_value));
@@ -47,6 +50,9 @@ pub fn write_handler_response(
 pub fn write_json_error(res: &mut Response, status: u16, body: Value) {
     let reason = status_reason(status);
     res.status_code(status as usize, reason);
+    // Enable HTTP/1.1 persistent connections by default
+    res.header("Connection: keep-alive");
+    res.header("Keep-Alive: timeout=5, max=1000");
     res.header("Content-Type: application/json");
     res.body_vec(body.to_string().into_bytes());
 }
