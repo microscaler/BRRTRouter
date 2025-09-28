@@ -67,7 +67,7 @@ Inspired by the *GAU-8/A Avenger* on the A-10 Warthog, this router is designed t
 
 Build the fastest, most predictable OpenAPI-native router in Rust — capable of **millions of requests per second**, entirely spec-driven, and friendly to coroutine runtimes.
 
-> We aim for **1 million route match requests/sec on a single-core Raspberry Pi 5**, with sub-millisecond latency.  
+> We aim for **100K route match requests/sec on a single-core**, with sub-millisecond latency.  
 > This excludes handler execution cost and assumes coroutine-friendly request handling.
 
 ---
