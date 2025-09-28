@@ -24,6 +24,43 @@ Inspired by the *GAU-8/A Avenger* on the A-10 Warthog, this router is designed t
 - **OpenAPI-driven auth**: Default security providers are registered based on `components.securitySchemes` (e.g., API keys and Bearer/OAuth flows). API keys can be read from a named header or `Authorization: Bearer` fallback.
 - **Metrics**: Added counters for top-level requests and authentication failures for visibility and alerting.
 
+
+## 📈 Performance Benchmarks (Sep 2025)
+
+### BRRTRouters requests **≈ 40 k req/s** 
+
+| Stack / “hello-world” benchmark          | Test rig(s)*                               | Req/s (steady-state) | Comments                                |
+| ---------------------------------------- | ------------------------------------------ | -------------------- | --------------------------------------- |
+| **BRRTRouter + may_minihttp** (your run) | M-class laptop – 8 wrk threads / 800 conns | **≈ 40 k**           | Average latency ≈ 6 ms                  |
+| **Node 18 / Express**                    | Same class HW                              | 8–15 k               | Single threaded; many small allocations |
+| **Python / FastAPI (uvicorn)**           | Same                                       | 6–10 k               | Async IO but Python overhead dominates  |
+| **Go / net-http**                        | Same                                       | 70–90 k              | Go scheduler, GC in play                |
+| **Rust / Axum** (tokio)                  | Same                                       | 120–180 k            | Native threads, zero-copy write         |
+| **Rust / Actix-web**                     | Same                                       | 180–250 k            | Pre-allocated workers, slab alloc       |
+| **Nginx (static)**                       | Same                                       | 450–550 k            | C, epoll, no JSON work                  |
+
+*Community figures taken from TechEmpower round-20-equivalent and recent blog posts; all on laptop-grade CPUs (Apple M-series or 8-core x86).
+
+---
+
+### Interpretation
+
+* **40 k req/s** with JSON encode/parse on every call is respectable for a coroutine runtime that **doesn’t** use a thread-per-core model.
+* It is, however, ~4–6× slower than the fastest Rust HTTP frameworks that exploit per-core threads, `mio`/epoll, and pre-allocated arenas.
+* Socket-level errors (`connect 555`, `read 38 307`) show the client saturated or the server closed connections under load – this artificially deflates RPS a bit.
+
+---
+
+### Why BRRTRouter is currently a bit slower
+
+| Factor                                                                                                                    | Impact |
+| ------------------------------------------------------------------------------------------------------------------------- | ------ |
+| **may_minihttp** does its own tiny HTTP parse; not as tuned as hyper/actix.                                               |        |
+| Each request still goes through **MPSC** channel -> coroutine context switch -> `serde_json` parse even for small bodies. |        |
+| Default coroutine **stack size** = 1 MB; 800 concurrent requests ⇒ 800 MB virtual memory ⇒ λ minor kernel pressure.       |        |
+| No **connection pooling / keep-alive tuning** yet.                                                                        |        |
+
+
 ---
 
 ## 🔭 Vision
