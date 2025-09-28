@@ -33,8 +33,8 @@ Inspired by the *GAU-8/A Avenger* on the A-10 Warthog, this router is designed t
 | ---------------------------------------- | ------------------------------------------ | -------------------- | --------------------------------------- |
 | **Node 18 / Express**                    | Same class HW                              | 8–15 k               | Single threaded; many small allocations |
 | **Python / FastAPI (uvicorn)**           | Same                                       | 6–10 k               | Async IO but Python overhead dominates  |
-| **Go / net-http**                        | Same                                       | 70–90 k              | Go scheduler, GC in play                |
 | **Rust / BRRTRouter**                    | M-class laptop – 8 wrk threads / 800 conns | **≈ 40 k**           | Average latency ≈ 6 ms                  |
+| **Go / net-http**                        | Same                                       | 70–90 k              | Go scheduler, GC in play                |
 | **Rust / Axum** (tokio)                  | Same                                       | 120–180 k            | Native threads, zero-copy write         |
 | **Rust / Actix-web**                     | Same                                       | 180–250 k            | Pre-allocated workers, slab alloc       |
 | **Nginx (static)**                       | Same                                       | 450–550 k            | C, epoll, no JSON work                  |
