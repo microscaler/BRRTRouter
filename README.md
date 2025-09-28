@@ -46,6 +46,7 @@ Inspired by the *GAU-8/A Avenger* on the A-10 Warthog, this router is designed t
 ### Interpretation
 
 * **40 k req/s** with JSON encode/parse on every call is respectable for a coroutine runtime that **doesn’t** use a thread-per-core model.
+* The concept of a Hello World is not really possible with BRRTRouter, as you always have a complete controller/handler path. Tests against the health endpoint match Axum; however, this is not a valuable example.
 * It is, however, ~4–6× slower than the fastest Rust HTTP frameworks that exploit per-core threads, `mio`/epoll, and pre-allocated arenas.
 * Socket-level errors (`connect 555`, `read 38 307`) show the client saturated or the server closed connections under load – this artificially deflates RPS a bit.
 
