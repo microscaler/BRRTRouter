@@ -31,13 +31,13 @@ Inspired by the *GAU-8/A Avenger* on the A-10 Warthog, this router is designed t
 
 | Stack / “hello-world” benchmark          | Test rig(s)*                               | Req/s (steady-state) | Comments                                |
 | ---------------------------------------- | ------------------------------------------ | -------------------- | --------------------------------------- |
-| **Node 18 / Express**                    | Same class HW                              | 8–15 k               | Single threaded; many small allocations |
-| **Python / FastAPI (uvicorn)**           | Same                                       | 6–10 k               | Async IO but Python overhead dominates  |
+| Node 18 / Express                        | Same class HW                              | 8–15 k               | Single threaded; many small allocations |
+| Python / FastAPI (uvicorn)               | Same                                       | 6–10 k               | Async IO but Python overhead dominates  |
 | **Rust / BRRTRouter**                    | M-class laptop – 8 wrk threads / 800 conns | **≈ 40 k**           | Average latency ≈ 6 ms                  |
-| **Go / net-http**                        | Same                                       | 70–90 k              | Go scheduler, GC in play                |
-| **Rust / Axum** (tokio)                  | Same                                       | 120–180 k            | Native threads, zero-copy write         |
-| **Rust / Actix-web**                     | Same                                       | 180–250 k            | Pre-allocated workers, slab alloc       |
-| **Nginx (static)**                       | Same                                       | 450–550 k            | C, epoll, no JSON work                  |
+| Go / net-http                            | Same                                       | 70–90 k              | Go scheduler, GC in play                |
+| Rust / Axum (tokio)                      | Same                                       | 120–180 k            | Native threads, zero-copy write         |
+| Rust / Actix-web                         | Same                                       | 180–250 k            | Pre-allocated workers, slab alloc       |
+| Nginx (static)                           | Same                                       | 450–550 k            | C, epoll, no JSON work                  |
 
 *Community figures taken from TechEmpower round-20-equivalent and recent blog posts; all on laptop-grade CPUs (Apple M-series or 8-core x86).
 
