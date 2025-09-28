@@ -31,7 +31,7 @@ Inspired by the *GAU-8/A Avenger* on the A-10 Warthog, this router is designed t
 
 | Stack / “hello-world” benchmark          | Test rig(s)*                               | Req/s (steady-state) | Comments                                |
 | ---------------------------------------- | ------------------------------------------ | -------------------- | --------------------------------------- |
-| **BRRTRouter + may_minihttp** (your run) | M-class laptop – 8 wrk threads / 800 conns | **≈ 40 k**           | Average latency ≈ 6 ms                  |
+| **BRRTRouter**                           | M-class laptop – 8 wrk threads / 800 conns | **≈ 40 k**           | Average latency ≈ 6 ms                  |
 | **Node 18 / Express**                    | Same class HW                              | 8–15 k               | Single threaded; many small allocations |
 | **Python / FastAPI (uvicorn)**           | Same                                       | 6–10 k               | Async IO but Python overhead dominates  |
 | **Go / net-http**                        | Same                                       | 70–90 k              | Go scheduler, GC in play                |
