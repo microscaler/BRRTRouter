@@ -25,6 +25,8 @@ pub struct AppService {
     pub static_files: Option<StaticFiles>,
     pub doc_files: Option<StaticFiles>,
     pub watcher: Option<notify::RecommendedWatcher>,
+    // Optional keep-alive settings: (timeout_secs, max_requests)
+    pub keep_alive: Option<(u64, u64)>,
 }
 
 impl Clone for AppService {
@@ -39,6 +41,7 @@ impl Clone for AppService {
             static_files: self.static_files.clone(),
             doc_files: self.doc_files.clone(),
             watcher: None,
+            keep_alive: self.keep_alive.clone(),
         }
     }
 }
@@ -62,6 +65,7 @@ impl AppService {
             static_files: static_dir.map(StaticFiles::new),
             doc_files: doc_dir.map(StaticFiles::new),
             watcher: None,
+            keep_alive: None,
         }
     }
 
@@ -71,6 +75,16 @@ impl AppService {
 
     pub fn set_metrics_middleware(&mut self, metrics: Arc<MetricsMiddleware>) {
         self.metrics = Some(metrics);
+    }
+
+    /// Configure HTTP/1.1 keep-alive headers to be sent on responses.
+    /// If `enable` is false, keep-alive headers are not sent.
+    pub fn set_keep_alive(&mut self, enable: bool, timeout_secs: u64, max_requests: u64) {
+        if enable {
+            self.keep_alive = Some((timeout_secs, max_requests));
+        } else {
+            self.keep_alive = None;
+        }
     }
 
     /// Register default security providers based on loaded OpenAPI security schemes.
@@ -252,6 +266,13 @@ impl HttpService for AppService {
             query_params,
             body,
         } = parse_request(req);
+
+        // Apply keep-alive headers early so all responses inherit them
+        if let Some((timeout, max)) = self.keep_alive {
+            let ka = format!("Keep-Alive: timeout={}, max={}", timeout, max).into_boxed_str();
+            res.header("Connection: keep-alive");
+            res.header(Box::leak(ka));
+        }
 
         // Count every incoming request at top-level (even those short-circuited before dispatch)
         if let Some(metrics) = &self.metrics {
