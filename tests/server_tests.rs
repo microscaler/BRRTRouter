@@ -142,7 +142,7 @@ fn test_panic_recovery() {
     may::config().set_stack_size(0x8000);
     let _tracing = TestTracing::init();
     fn panic_handler(_req: HandlerRequest) {
-        panic!("boom");
+        panic!("boom! - watch to see if I recover");
     }
     let route = RouteMeta {
         method: Method::GET,
