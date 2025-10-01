@@ -211,13 +211,23 @@ jobs:
             sleep 0.5; \
           done
 
+      - name: Compute perf params (threads and connections)
+        id: perf
+        run: |
+          CORES=$(nproc || getconf _NPROCESSORS_ONLN || echo 2)
+          THREADS="$CORES"
+          CONNS=$((CORES * 50))
+          echo "Detected cores: $CORES; threads=$THREADS; connections=$CONNS"
+          echo "threads=$THREADS" >> $GITHUB_OUTPUT
+          echo "connections=$CONNS" >> $GITHUB_OUTPUT
+
       - name: wrk GET /health
         run: |
-            wrk -t4 -c200 -d30s http://127.0.0.1:8080/health | tee wrk_health.txt
+            wrk -t${{ steps.perf.outputs.threads }} -c${{ steps.perf.outputs.connections }} -d60s http://127.0.0.1:8080/health | tee wrk_health.txt
 
       - name: wrk GET /pets
         run: |
-            wrk -t4 -c200 -d30s -H "X-API-Key: test123" http://127.0.0.1:8080/pets | tee wrk_pets.txt
+            wrk -t${{ steps.perf.outputs.threads }} -c${{ steps.perf.outputs.connections }} -d60s -H "X-API-Key: test123" http://127.0.0.1:8080/pets | tee wrk_pets.txt
 
       - name: Use repo post.lua if present
         id: postlua
@@ -235,7 +245,7 @@ jobs:
           LUA
 
       - name: wrk POST /pets
-        run: wrk -t4 -c200 -d30s -s ${{ steps.postlua.outputs.path }} http://127.0.0.1:8080/pets | tee wrk_pets_post.txt
+        run: wrk -t${{ steps.perf.outputs.threads }} -c${{ steps.perf.outputs.connections }} -d60s -s ${{ steps.postlua.outputs.path }} http://127.0.0.1:8080/pets | tee wrk_pets_post.txt
 
       - name: Upload wrk artifacts
         uses: actions/upload-artifact@v4
