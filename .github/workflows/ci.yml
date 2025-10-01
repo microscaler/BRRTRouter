@@ -66,7 +66,7 @@ jobs:
 
       - name: Build pet_store (musl, release)
         env:
-          CC_x86_64_UNKNOWN_LINUX_MUSL: musl-gcc
+          CC_x86_64_unknown_linux_musl: musl-gcc
           CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
         run: cargo build --release -p pet_store --target x86_64-unknown-linux-musl
 
@@ -128,7 +128,7 @@ jobs:
       - name: Build pet_store (musl, release) (ACT local)
         if: ${{ env.ACT }}
         env:
-          CC_x86_64_UNKNOWN_LINUX_MUSL: musl-gcc
+          CC_x86_64_unknown_linux_musl: musl-gcc
           CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
         run: cargo build --release -p pet_store --target x86_64-unknown-linux-musl
 
