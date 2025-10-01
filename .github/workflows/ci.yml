@@ -66,7 +66,7 @@ jobs:
 
       - name: Build pet_store (musl, release)
         env:
-          CC_x86_64_unknown_linux_musl: musl-gcc
+          CC_x86_64_UNKNOWN_LINUX_MUSL: musl-gcc
           CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
         run: cargo build --release -p pet_store --target x86_64-unknown-linux-musl
 
@@ -128,7 +128,7 @@ jobs:
       - name: Build pet_store (musl, release) (ACT local)
         if: ${{ env.ACT }}
         env:
-          CC_x86_64_unknown_linux_musl: musl-gcc
+          CC_x86_64_UNKNOWN_LINUX_MUSL: musl-gcc
           CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
         run: cargo build --release -p pet_store --target x86_64-unknown-linux-musl
 
@@ -156,6 +156,19 @@ jobs:
         if: ${{ env.ACT }}
         run: docker build --build-arg PETSTORE_BIN=/build/target/x86_64-unknown-linux-musl/release/pet_store --no-cache -t brrtrouter-petstore:e2e .
 
+      - name: Install uuidgen
+        run: sudo apt-get update && sudo apt-get install -y uuid-runtime
+
+      - name: Tag and push ttl.sh ephemeral image
+        id: ttl
+        run: |
+          IMAGE_NAME=$(uuidgen)
+          IMAGE="ttl.sh/${IMAGE_NAME}:1h"
+          echo "Tagging $IMAGE"
+          docker tag brrtrouter-petstore:e2e "$IMAGE"
+          docker push "$IMAGE"
+          echo "image=$IMAGE" >> $GITHUB_OUTPUT
+
       - name: Run e2e tests (docker integration)
         env:
           E2E_DOCKER: "1"
@@ -171,3 +184,62 @@ jobs:
           name: junit-e2e
           path: target/e2e/junit-e2e.xml
           retention-days: 1
+
+    outputs:
+      image: ${{ steps.ttl.outputs.image }}
+
+  perf-wrk:
+    needs: e2e-docker
+    runs-on: ubuntu-latest
+    services:
+      petstore:
+        image: ${{ needs.e2e-docker.outputs.image }}
+        ports:
+          - 8080:8080
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install wrk
+        run: sudo apt-get update && sudo apt-get install -y wrk curl
+
+      - name: Wait for readiness
+        run: |
+          for i in $(seq 1 120); do \
+            code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8080/health || true); \
+            [ "$code" = "200" ] && echo "ready" && break; \
+            sleep 0.5; \
+          done
+
+      - name: wrk GET /health
+        run: wrk -t4 -c200 -d30s http://127.0.0.1:8080/health | tee wrk_health.txt
+
+      - name: wrk GET /pets
+        run: wrk -t4 -c200 -d30s -H "X-API-Key: test123" http://127.0.0.1:8080/pets | tee wrk_pets.txt
+
+      - name: Use repo post.lua if present
+        id: postlua
+        run: |
+          if [ -f scripts/post.lua ]; then echo "path=scripts/post.lua" >> $GITHUB_OUTPUT; else echo "path=post.lua" >> $GITHUB_OUTPUT; fi
+
+      - name: Create post.lua (fallback)
+        if: steps.postlua.outputs.path == 'post.lua'
+        run: |
+          cat > post.lua <<'LUA'
+          wrk.method = "POST"
+          wrk.body   = '{"name":"Bella"}'
+          wrk.headers["Content-Type"] = "application/json"
+          wrk.headers["X-API-Key"]    = "test123"
+          LUA
+
+      - name: wrk POST /pets
+        run: wrk -t4 -c200 -d30s -s ${{ steps.postlua.outputs.path }} http://127.0.0.1:8080/pets | tee wrk_pets_post.txt
+
+      - name: Upload wrk artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wrk-results
+          path: |
+            wrk_health.txt
+            wrk_pets.txt
+            wrk_pets_post.txt
