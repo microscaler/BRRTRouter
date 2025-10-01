@@ -12,6 +12,7 @@ use serde_json::json;
 use std::collections::HashMap;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use std::sync::{Arc, RwLock};
 use tracing::{info, warn};
 
@@ -47,6 +48,19 @@ impl Clone for AppService {
 }
 
 impl AppService {
+    /// Intern table for keep-alive header values to avoid repeated leaks
+    fn intern_keep_alive(value: String) -> &'static str {
+        static INTERN: OnceLock<RwLock<HashMap<String, &'static str>>> = OnceLock::new();
+        let map = INTERN.get_or_init(|| RwLock::new(HashMap::new()));
+        // Acquire write lock to make race-free and avoid leaking duplicates.
+        let mut write = map.write().expect("keep-alive interner poisoned");
+        if let Some(existing) = write.get(&value).copied() {
+            return existing;
+        }
+        let leaked: &'static str = Box::leak(value.into_boxed_str());
+        write.insert(leaked.to_string(), leaked);
+        leaked
+    }
     pub fn new(
         router: Arc<RwLock<Router>>,
         dispatcher: Arc<RwLock<Dispatcher>>,
@@ -84,9 +98,13 @@ impl AppService {
     /// allocate once and leak a single header string here to avoid per-request leaks.
     pub fn set_keep_alive(&mut self, enable: bool, timeout_secs: u64, max_requests: u64) {
         if enable {
-            let header = format!("Keep-Alive: timeout={}, max={}", timeout_secs, max_requests)
-                .into_boxed_str();
-            self.keep_alive_header = Some(Box::leak(header));
+            // Build the desired header value and intern it to reuse any previously leaked instance.
+            let new_value = format!("Keep-Alive: timeout={}, max={}", timeout_secs, max_requests);
+            let interned = Self::intern_keep_alive(new_value);
+            if self.keep_alive_header == Some(interned) {
+                return;
+            }
+            self.keep_alive_header = Some(interned);
         } else {
             self.keep_alive_header = None;
         }

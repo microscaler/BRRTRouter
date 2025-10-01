@@ -194,6 +194,7 @@ jobs:
     services:
       petstore:
         image: ${{ needs.e2e-docker.outputs.image }}
+        options: --name petstore
         ports:
           - 8080:8080
         env:
@@ -223,7 +224,7 @@ jobs:
       - name: Resolve service container PID
         id: svc
         run: |
-          CID=$(docker ps --filter "label=com.github.actions.service=petstore" -q)
+          CID=$(docker ps --filter "name=^/petstore$" -q)
           echo "Container: $CID"
           PID=$(docker inspect -f '{{.State.Pid}}' "$CID")
           echo "pid=$PID" >> $GITHUB_OUTPUT
@@ -277,7 +278,7 @@ jobs:
 
       - name: Copy jemalloc profiles from container
         run: |
-          CID=$(docker ps --filter "label=com.github.actions.service=petstore" -q)
+          CID=$(docker ps --filter "name=^/petstore$" -q)
           mkdir -p jemalloc_profiles
           # Copy /tmp directory and extract jeprof files
           docker cp "$CID":/tmp jemalloc_tmp 2>/dev/null || true
@@ -289,6 +290,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: profiling-artifacts
+          retention-days: 1
           path: |
             flame.svg
             out.folded
@@ -298,6 +300,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: wrk-results
+          retention-days: 1
           path: |
             wrk_health.txt
             wrk_pets.txt
