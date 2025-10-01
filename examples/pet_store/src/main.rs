@@ -12,6 +12,10 @@ use pet_store::registry;
 use std::fs;
 use std::io;
 use std::path::PathBuf;
+use tikv_jemallocator::Jemalloc;
+
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
 struct AppConfig {
