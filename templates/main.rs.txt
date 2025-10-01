@@ -13,6 +13,10 @@ use {{ name }}::registry;
 use std::io;
 use std::path::PathBuf;
 use std::fs;
+use tikv_jemallocator::Jemalloc;
+
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
 struct AppConfig {

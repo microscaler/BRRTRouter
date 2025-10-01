@@ -196,12 +196,21 @@ jobs:
         image: ${{ needs.e2e-docker.outputs.image }}
         ports:
           - 8080:8080
+        env:
+          # Enable jemalloc heap profiling in the service container
+          MALLOC_CONF: prof:true,prof_active:true,prof_prefix:/tmp/jeprof,lg_prof_sample:20
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Install wrk
         run: sudo apt-get update && sudo apt-get install -y wrk curl
+
+      - name: Install perf and FlameGraph tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y linux-tools-common linux-tools-generic git perl
+          git clone https://github.com/brendangregg/FlameGraph.git
 
       - name: Wait for readiness
         run: |
@@ -210,6 +219,20 @@ jobs:
             [ "$code" = "200" ] && echo "ready" && break; \
             sleep 0.5; \
           done
+
+      - name: Resolve service container PID
+        id: svc
+        run: |
+          CID=$(docker ps --filter "label=com.github.actions.service=petstore" -q)
+          echo "Container: $CID"
+          PID=$(docker inspect -f '{{.State.Pid}}' "$CID")
+          echo "pid=$PID" >> $GITHUB_OUTPUT
+
+      - name: Start perf recording (background)
+        run: |
+          sudo sysctl kernel.perf_event_paranoid=1 || true
+          sudo sysctl kernel.kptr_restrict=0 || true
+          sudo perf record -F 99 -g -p ${{ steps.svc.outputs.pid }} -- sleep 70 &
 
       - name: Compute perf params (threads and connections)
         id: perf
@@ -246,6 +269,30 @@ jobs:
 
       - name: wrk POST /pets
         run: wrk -t${{ steps.perf.outputs.threads }} -c${{ steps.perf.outputs.connections }} -d60s -s ${{ steps.postlua.outputs.path }} http://127.0.0.1:8080/pets | tee wrk_pets_post.txt
+
+      - name: Build flamegraph
+        run: |
+          sudo perf script | ./FlameGraph/stackcollapse-perf.pl > out.folded || true
+          ./FlameGraph/flamegraph.pl out.folded > flame.svg || true
+
+      - name: Copy jemalloc profiles from container
+        run: |
+          CID=$(docker ps --filter "label=com.github.actions.service=petstore" -q)
+          mkdir -p jemalloc_profiles
+          # Copy /tmp directory and extract jeprof files
+          docker cp "$CID":/tmp jemalloc_tmp 2>/dev/null || true
+          if ls jemalloc_tmp 1>/dev/null 2>&1; then
+            find jemalloc_tmp -maxdepth 1 -type f -name 'jeprof.*' -exec mv {} jemalloc_profiles/ \; || true
+          fi
+
+      - name: Upload profiling artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: profiling-artifacts
+          path: |
+            flame.svg
+            out.folded
+            jemalloc_profiles
 
       - name: Upload wrk artifacts
         uses: actions/upload-artifact@v4
