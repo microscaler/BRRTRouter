@@ -212,10 +212,12 @@ jobs:
           done
 
       - name: wrk GET /health
-        run: wrk -t4 -c200 -d30s http://127.0.0.1:8080/health | tee wrk_health.txt
+        run: |
+            wrk -t4 -c200 -d30s http://127.0.0.1:8080/health | tee wrk_health.txt
 
       - name: wrk GET /pets
-        run: wrk -t4 -c200 -d30s -H "X-API-Key: test123" http://127.0.0.1:8080/pets | tee wrk_pets.txt
+        run: |
+            wrk -t4 -c200 -d30s -H "X-API-Key: test123" http://127.0.0.1:8080/pets | tee wrk_pets.txt
 
       - name: Use repo post.lua if present
         id: postlua
