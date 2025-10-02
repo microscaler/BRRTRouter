@@ -210,7 +210,7 @@ jobs:
       - name: Install perf and FlameGraph tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y linux-tools-common linux-tools-generic git perl
+          sudo apt-get install -y linux-tools-common linux-tools-generic linux-tools-$(uname -r) git perl
           git clone https://github.com/brendangregg/FlameGraph.git
 
       - name: Wait for readiness
@@ -229,52 +229,65 @@ jobs:
           PID=$(docker inspect -f '{{.State.Pid}}' "$CID")
           echo "pid=$PID" >> $GITHUB_OUTPUT
 
-      - name: Start perf recording (background)
+      - name: Profile with perf while running wrk
         run: |
+          set -e
+          # Tune perf permissions
           sudo sysctl kernel.perf_event_paranoid=1 || true
           sudo sysctl kernel.kptr_restrict=0 || true
-          sudo perf record -F 99 -g -p ${{ steps.svc.outputs.pid }} -- sleep 70 &
 
-      - name: Compute perf params (threads and connections)
-        id: perf
-        run: |
+          # Resolve container PID (named service)
+          CID=$(docker ps --filter "name=^/petstore$" -q)
+          echo "Container: $CID"
+          PID=$(docker inspect -f '{{.State.Pid}}' "$CID")
+          echo "Service PID: $PID"
+
+          # Compute load params
           CORES=$(nproc || getconf _NPROCESSORS_ONLN || echo 2)
           THREADS="$CORES"
           CONNS=$((CORES * 50))
           echo "Detected cores: $CORES; threads=$THREADS; connections=$CONNS"
-          echo "threads=$THREADS" >> $GITHUB_OUTPUT
-          echo "connections=$CONNS" >> $GITHUB_OUTPUT
 
-      - name: wrk GET /health
-        run: |
-            wrk -t${{ steps.perf.outputs.threads }} -c${{ steps.perf.outputs.connections }} -d60s http://127.0.0.1:8080/health | tee wrk_health.txt
+          # Ensure post.lua available (prefer repo version)
+          POST_LUA=post.lua
+          if [ -f scripts/post.lua ]; then
+            POST_LUA=scripts/post.lua
+          else
+            cat > post.lua <<'LUA'
+              wrk.method = "POST"
+              wrk.body   = '{"name":"Bella"}'
+              wrk.headers["Content-Type"] = "application/json"
+              wrk.headers["X-API-Key"]    = "test123"
+              LUA
+          fi
 
-      - name: wrk GET /pets
-        run: |
-            wrk -t${{ steps.perf.outputs.threads }} -c${{ steps.perf.outputs.connections }} -d60s -H "X-API-Key: test123" http://127.0.0.1:8080/pets | tee wrk_pets.txt
-
-      - name: Use repo post.lua if present
-        id: postlua
-        run: |
-          if [ -f scripts/post.lua ]; then echo "path=scripts/post.lua" >> $GITHUB_OUTPUT; else echo "path=post.lua" >> $GITHUB_OUTPUT; fi
-
-      - name: Create post.lua (fallback)
-        if: steps.postlua.outputs.path == 'post.lua'
-        run: |
-          cat > post.lua <<'LUA'
-          wrk.method = "POST"
-          wrk.body   = '{"name":"Bella"}'
-          wrk.headers["Content-Type"] = "application/json"
-          wrk.headers["X-API-Key"]    = "test123"
-          LUA
-
-      - name: wrk POST /pets
-        run: wrk -t${{ steps.perf.outputs.threads }} -c${{ steps.perf.outputs.connections }} -d60s -s ${{ steps.postlua.outputs.path }} http://127.0.0.1:8080/pets | tee wrk_pets_post.txt
+          # Run workload under perf so recording ends cleanly when workload finishes
+          sudo perf record -F 99 -g -p "$PID" -- bash -lc "
+            set -e
+            wrk -t$THREADS -c$CONNS -d60s http://127.0.0.1:8080/health | tee wrk_health.txt
+            wrk -t$THREADS -c$CONNS -d60s -H 'X-API-Key: test123' http://127.0.0.1:8080/pets | tee wrk_pets.txt
+            wrk -t$THREADS -c$CONNS -d60s -s $POST_LUA http://127.0.0.1:8080/pets | tee wrk_pets_post.txt
+          "
 
       - name: Build flamegraph
         run: |
-          sudo perf script | ./FlameGraph/stackcollapse-perf.pl > out.folded || true
-          ./FlameGraph/flamegraph.pl out.folded > flame.svg || true
+          set -e
+          # Ensure FlameGraph tools are present
+          if [ ! -d FlameGraph ]; then
+            git clone https://github.com/brendangregg/FlameGraph.git
+          fi
+          ls -la FlameGraph | sed -n '1,5p'
+          # Generate folded stacks and flamegraph from perf.data produced above
+          if [ -f perf.data ]; then
+            sudo perf script -i perf.data | ./FlameGraph/stackcollapse-perf.pl > out.folded || true
+            if [ -s out.folded ]; then
+              ./FlameGraph/flamegraph.pl out.folded > flame.svg || true
+            else
+              echo "No stacks found in out.folded"
+            fi
+          else
+            echo "perf.data not found"
+          fi
 
       - name: Copy jemalloc profiles from container
         run: |
