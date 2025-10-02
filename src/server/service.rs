@@ -12,6 +12,7 @@ use serde_json::json;
 use std::collections::HashMap;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use std::sync::{Arc, RwLock};
 use tracing::{info, warn};
 
@@ -25,6 +26,8 @@ pub struct AppService {
     pub static_files: Option<StaticFiles>,
     pub doc_files: Option<StaticFiles>,
     pub watcher: Option<notify::RecommendedWatcher>,
+    // Precomputed Keep-Alive header (to avoid per-request allocations/leaks)
+    pub keep_alive_header: Option<&'static str>,
 }
 
 impl Clone for AppService {
@@ -39,11 +42,25 @@ impl Clone for AppService {
             static_files: self.static_files.clone(),
             doc_files: self.doc_files.clone(),
             watcher: None,
+            keep_alive_header: self.keep_alive_header.clone(),
         }
     }
 }
 
 impl AppService {
+    /// Intern table for keep-alive header values to avoid repeated leaks
+    fn intern_keep_alive(value: String) -> &'static str {
+        static INTERN: OnceLock<RwLock<HashMap<String, &'static str>>> = OnceLock::new();
+        let map = INTERN.get_or_init(|| RwLock::new(HashMap::new()));
+        // Acquire write lock to make race-free and avoid leaking duplicates.
+        let mut write = map.write().expect("keep-alive interner poisoned");
+        if let Some(existing) = write.get(&value).copied() {
+            return existing;
+        }
+        let leaked: &'static str = Box::leak(value.into_boxed_str());
+        write.insert(leaked.to_string(), leaked);
+        leaked
+    }
     pub fn new(
         router: Arc<RwLock<Router>>,
         dispatcher: Arc<RwLock<Dispatcher>>,
@@ -62,6 +79,7 @@ impl AppService {
             static_files: static_dir.map(StaticFiles::new),
             doc_files: doc_dir.map(StaticFiles::new),
             watcher: None,
+            keep_alive_header: None,
         }
     }
 
@@ -71,6 +89,25 @@ impl AppService {
 
     pub fn set_metrics_middleware(&mut self, metrics: Arc<MetricsMiddleware>) {
         self.metrics = Some(metrics);
+    }
+
+    /// Configure HTTP/1.1 keep-alive headers to be sent on responses.
+    /// If `enable` is false, keep-alive headers are not sent.
+    ///
+    /// Note: may_minihttp requires header values with 'static lifetime; we therefore
+    /// allocate once and leak a single header string here to avoid per-request leaks.
+    pub fn set_keep_alive(&mut self, enable: bool, timeout_secs: u64, max_requests: u64) {
+        if enable {
+            // Build the desired header value and intern it to reuse any previously leaked instance.
+            let new_value = format!("Keep-Alive: timeout={}, max={}", timeout_secs, max_requests);
+            let interned = Self::intern_keep_alive(new_value);
+            if self.keep_alive_header == Some(interned) {
+                return;
+            }
+            self.keep_alive_header = Some(interned);
+        } else {
+            self.keep_alive_header = None;
+        }
     }
 
     /// Register default security providers based on loaded OpenAPI security schemes.
@@ -252,6 +289,12 @@ impl HttpService for AppService {
             query_params,
             body,
         } = parse_request(req);
+
+        // Apply keep-alive headers early so all responses inherit them
+        if let Some(ka) = self.keep_alive_header {
+            res.header("Connection: keep-alive");
+            res.header(ka);
+        }
 
         // Count every incoming request at top-level (even those short-circuited before dispatch)
         if let Some(metrics) = &self.metrics {

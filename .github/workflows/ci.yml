@@ -156,6 +156,19 @@ jobs:
         if: ${{ env.ACT }}
         run: docker build --build-arg PETSTORE_BIN=/build/target/x86_64-unknown-linux-musl/release/pet_store --no-cache -t brrtrouter-petstore:e2e .
 
+      - name: Install uuidgen
+        run: sudo apt-get update && sudo apt-get install -y uuid-runtime
+
+      - name: Tag and push ttl.sh ephemeral image
+        id: ttl
+        run: |
+          IMAGE_NAME=$(uuidgen)
+          IMAGE="ttl.sh/${IMAGE_NAME}:1h"
+          echo "Tagging $IMAGE"
+          docker tag brrtrouter-petstore:e2e "$IMAGE"
+          docker push "$IMAGE"
+          echo "image=$IMAGE" >> $GITHUB_OUTPUT
+
       - name: Run e2e tests (docker integration)
         env:
           E2E_DOCKER: "1"
@@ -171,3 +184,124 @@ jobs:
           name: junit-e2e
           path: target/e2e/junit-e2e.xml
           retention-days: 1
+
+    outputs:
+      image: ${{ steps.ttl.outputs.image }}
+
+  perf-wrk:
+    needs: e2e-docker
+    runs-on: ubuntu-latest
+    services:
+      petstore:
+        image: ${{ needs.e2e-docker.outputs.image }}
+        options: --name petstore
+        ports:
+          - 8080:8080
+        env:
+          # Enable jemalloc heap profiling in the service container
+          MALLOC_CONF: prof:true,prof_active:true,prof_prefix:/tmp/jeprof,lg_prof_sample:20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install wrk
+        run: sudo apt-get update && sudo apt-get install -y wrk curl
+
+      - name: Install perf and FlameGraph tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y linux-tools-common linux-tools-generic git perl
+          git clone https://github.com/brendangregg/FlameGraph.git
+
+      - name: Wait for readiness
+        run: |
+          for i in $(seq 1 120); do \
+            code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8080/health || true); \
+            [ "$code" = "200" ] && echo "ready" && break; \
+            sleep 0.5; \
+          done
+
+      - name: Resolve service container PID
+        id: svc
+        run: |
+          CID=$(docker ps --filter "name=^/petstore$" -q)
+          echo "Container: $CID"
+          PID=$(docker inspect -f '{{.State.Pid}}' "$CID")
+          echo "pid=$PID" >> $GITHUB_OUTPUT
+
+      - name: Start perf recording (background)
+        run: |
+          sudo sysctl kernel.perf_event_paranoid=1 || true
+          sudo sysctl kernel.kptr_restrict=0 || true
+          sudo perf record -F 99 -g -p ${{ steps.svc.outputs.pid }} -- sleep 70 &
+
+      - name: Compute perf params (threads and connections)
+        id: perf
+        run: |
+          CORES=$(nproc || getconf _NPROCESSORS_ONLN || echo 2)
+          THREADS="$CORES"
+          CONNS=$((CORES * 50))
+          echo "Detected cores: $CORES; threads=$THREADS; connections=$CONNS"
+          echo "threads=$THREADS" >> $GITHUB_OUTPUT
+          echo "connections=$CONNS" >> $GITHUB_OUTPUT
+
+      - name: wrk GET /health
+        run: |
+            wrk -t${{ steps.perf.outputs.threads }} -c${{ steps.perf.outputs.connections }} -d60s http://127.0.0.1:8080/health | tee wrk_health.txt
+
+      - name: wrk GET /pets
+        run: |
+            wrk -t${{ steps.perf.outputs.threads }} -c${{ steps.perf.outputs.connections }} -d60s -H "X-API-Key: test123" http://127.0.0.1:8080/pets | tee wrk_pets.txt
+
+      - name: Use repo post.lua if present
+        id: postlua
+        run: |
+          if [ -f scripts/post.lua ]; then echo "path=scripts/post.lua" >> $GITHUB_OUTPUT; else echo "path=post.lua" >> $GITHUB_OUTPUT; fi
+
+      - name: Create post.lua (fallback)
+        if: steps.postlua.outputs.path == 'post.lua'
+        run: |
+          cat > post.lua <<'LUA'
+          wrk.method = "POST"
+          wrk.body   = '{"name":"Bella"}'
+          wrk.headers["Content-Type"] = "application/json"
+          wrk.headers["X-API-Key"]    = "test123"
+          LUA
+
+      - name: wrk POST /pets
+        run: wrk -t${{ steps.perf.outputs.threads }} -c${{ steps.perf.outputs.connections }} -d60s -s ${{ steps.postlua.outputs.path }} http://127.0.0.1:8080/pets | tee wrk_pets_post.txt
+
+      - name: Build flamegraph
+        run: |
+          sudo perf script | ./FlameGraph/stackcollapse-perf.pl > out.folded || true
+          ./FlameGraph/flamegraph.pl out.folded > flame.svg || true
+
+      - name: Copy jemalloc profiles from container
+        run: |
+          CID=$(docker ps --filter "name=^/petstore$" -q)
+          mkdir -p jemalloc_profiles
+          # Copy /tmp directory and extract jeprof files
+          docker cp "$CID":/tmp jemalloc_tmp 2>/dev/null || true
+          if ls jemalloc_tmp 1>/dev/null 2>&1; then
+            find jemalloc_tmp -maxdepth 1 -type f -name 'jeprof.*' -exec mv {} jemalloc_profiles/ \; || true
+          fi
+
+      - name: Upload profiling artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: profiling-artifacts
+          retention-days: 1
+          path: |
+            flame.svg
+            out.folded
+            jemalloc_profiles
+
+      - name: Upload wrk artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wrk-results
+          retention-days: 1
+          path: |
+            wrk_health.txt
+            wrk_pets.txt
+            wrk_pets_post.txt

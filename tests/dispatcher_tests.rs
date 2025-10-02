@@ -256,7 +256,7 @@ fn test_typed_controller_invalid_params() {
 fn test_panic_handler_returns_500() {
     let _tracing = set_stack_size();
     fn panic_handler(_req: HandlerRequest) {
-        panic!("boom");
+        panic!("boom! - watch to see if I recover");
     }
 
     let mut dispatcher = Dispatcher::new();
