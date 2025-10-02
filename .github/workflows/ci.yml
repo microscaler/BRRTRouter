@@ -169,20 +169,33 @@ jobs:
           docker push "$IMAGE"
           echo "image=$IMAGE" >> $GITHUB_OUTPUT
 
+      - name: Prepare JUnit tooling
+        run: |
+          mkdir -p target/e2e
+          cargo install cargo2junit || true
+
       - name: Run e2e tests (docker integration)
         env:
           E2E_DOCKER: "1"
-        run: cargo test --test docker_integration_tests -- --nocapture
+        run: |
+          # Single run: emit JSON, save to file, and convert to JUnit
+          cargo test --test docker_integration_tests -- --format=json \
+            | tee target/e2e/docker.json \
+            | cargo2junit > target/e2e/junit-docker.xml || true
 
       - name: Run HTTP integration tests
-        run: cargo test --test curl_integration_tests -- --test-threads=1 --nocapture
+        run: |
+          # Single run: emit JSON, save to file, and convert to JUnit
+          cargo test --test curl_integration_tests -- --test-threads=1 --format=json \
+            | tee target/e2e/curl.json \
+            | cargo2junit > target/e2e/junit-curl.xml || true
 
-      - name: Upload JUnit report
+      - name: Upload JUnit reports
         if: ${{ !env.ACT }}
         uses: actions/upload-artifact@v4
         with:
           name: junit-e2e
-          path: target/e2e/junit-e2e.xml
+          path: target/e2e/*.xml
           retention-days: 1
 
     outputs:
