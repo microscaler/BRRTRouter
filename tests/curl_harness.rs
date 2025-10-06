@@ -30,12 +30,24 @@ impl ContainerHarness {
             panic!("Docker is required for curl e2e tests");
         }
 
-        // Always (re)build image to keep binary/spec in sync for CI
-        let status = Command::new("docker")
-            .args(["build", "--no-cache", "-t", "brrtrouter-petstore:e2e", "."])
-            .status()
-            .expect("failed to build e2e image");
-        assert!(status.success(), "docker build failed");
+        // Check if image already exists (e.g., pre-built in CI)
+        let image_exists = Command::new("docker")
+            .args(["image", "inspect", "brrtrouter-petstore:e2e"])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+
+        if !image_exists {
+            // Build image if it doesn't exist (local dev workflow)
+            eprintln!("Building brrtrouter-petstore:e2e image...");
+            let status = Command::new("docker")
+                .args(["build", "--no-cache", "-t", "brrtrouter-petstore:e2e", "."])
+                .status()
+                .expect("failed to build e2e image");
+            assert!(status.success(), "docker build failed");
+        } else {
+            eprintln!("Using existing brrtrouter-petstore:e2e image");
+        }
 
         // Run container detached with random host port for 8080
         // Clean up any old container name from previous runs
