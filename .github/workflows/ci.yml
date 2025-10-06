@@ -261,25 +261,15 @@ jobs:
           CONNS=$((CORES * 50))
           echo "Detected cores: $CORES; threads=$THREADS; connections=$CONNS"
 
-          # Ensure post.lua available (prefer repo version)
-          POST_LUA=post.lua
-          if [ -f scripts/post.lua ]; then
-            POST_LUA=scripts/post.lua
-          else
-            cat > post.lua <<'LUA'
-              wrk.method = "POST"
-              wrk.body   = '{"name":"Bella"}'
-              wrk.headers["Content-Type"] = "application/json"
-              wrk.headers["X-API-Key"]    = "test123"
-              LUA
-          fi
+          # Ensure repo script exists
+          test -f scripts/post.lua || { echo "scripts/post.lua not found"; exit 1; }
 
           # Run workload under perf so recording ends cleanly when workload finishes
           sudo perf record -F 99 -g -p "$PID" -- bash -lc "
             set -e
             wrk -t$THREADS -c$CONNS -d60s http://127.0.0.1:8080/health | tee wrk_health.txt
             wrk -t$THREADS -c$CONNS -d60s -H 'X-API-Key: test123' http://127.0.0.1:8080/pets | tee wrk_pets.txt
-            wrk -t$THREADS -c$CONNS -d60s -s $POST_LUA http://127.0.0.1:8080/pets | tee wrk_pets_post.txt
+            wrk -t$THREADS -c$CONNS -d60s -s scripts/post.lua http://127.0.0.1:8080/pets | tee wrk_pets_post.txt
           "
 
       - name: Build flamegraph
