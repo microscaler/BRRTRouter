@@ -14,6 +14,27 @@ Inspired by the *GAU-8/A Avenger* on the A-10 Warthog, this router is designed t
 [![Crate](https://img.shields.io/crates/v/brrrouter.svg)](https://crates.io/crates/brrrouter)
 [![Docs](https://docs.rs/brrrouter/badge.svg)](https://docs.rs/brrrouter)
 
+---
+
+## ⚠️ Alpha Stage Notice
+
+**This library is currently in alpha stage (v0.1.0-alpha.1).**
+
+This documentation is published for **review and feedback purposes**, not for production adoption. 
+
+**Status:**
+- ✅ Core functionality working
+- 🔧 API may change (breaking changes expected)
+- 🔧 Performance optimization ongoing
+- 🧪 Seeking early feedback and testing
+
+**We welcome:**
+- 📝 Documentation feedback
+- 🐛 Bug reports
+- 💡 API suggestions
+- 🧪 Testing and experimentation
+
+**Not recommended for production use yet.** Wait for v0.1.0 stable release.
 
 ---
 

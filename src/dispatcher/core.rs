@@ -13,32 +13,59 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::middleware::Middleware;
+
+/// Request data passed to a handler coroutine
+///
+/// Contains all extracted HTTP request information including path/query parameters,
+/// headers, cookies, and body. Also includes a reply channel for sending the response.
 #[derive(Debug, Clone)]
 pub struct HandlerRequest {
+    /// HTTP method (GET, POST, etc.)
     pub method: Method,
+    /// Request path
     pub path: String,
+    /// Name of the handler that should process this request
     pub handler_name: String,
+    /// Path parameters extracted from the URL
     pub path_params: HashMap<String, String>,
+    /// Query string parameters
     pub query_params: HashMap<String, String>,
+    /// HTTP headers
     pub headers: HashMap<String, String>,
+    /// Cookies parsed from the Cookie header
     pub cookies: HashMap<String, String>,
+    /// Request body parsed as JSON (if present)
     pub body: Option<Value>,
+    /// Channel for sending the response back to the dispatcher
     pub reply_tx: mpsc::Sender<HandlerResponse>,
 }
 
+/// Response data sent back from a handler coroutine
+///
+/// Contains the HTTP status code, headers, and JSON body to be sent to the client.
 #[derive(Debug, Clone, Serialize)]
 pub struct HandlerResponse {
+    /// HTTP status code (200, 404, 500, etc.)
     pub status: u16,
+    /// HTTP response headers
     #[serde(skip_serializing)]
     pub headers: HashMap<String, String>,
+    /// Response body as JSON
     pub body: Value,
 }
 
+/// Type alias for a channel sender that dispatches requests to a handler
 pub type HandlerSender = mpsc::Sender<HandlerRequest>;
 
+/// Dispatcher that routes requests to registered handler coroutines
+///
+/// Maintains a registry of handler names to their corresponding channel senders,
+/// and manages middleware that processes requests/responses.
 #[derive(Clone, Default)]
 pub struct Dispatcher {
+    /// Map of handler names to their channel senders
     pub handlers: HashMap<String, HandlerSender>,
+    /// Ordered list of middleware to apply to requests/responses
     pub middlewares: Vec<Arc<dyn Middleware>>,
 }
 

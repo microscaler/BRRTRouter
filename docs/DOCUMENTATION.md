@@ -4,23 +4,41 @@ This document provides an overview of BRRTRouter's documentation structure and g
 
 ## Documentation Status
 
+**For detailed progress tracking, see [DOCUMENTATION_PROGRESS.md](DOCUMENTATION_PROGRESS.md)**
+
 ### ✅ Completed
 
 - **Module-level documentation** - All public modules now have comprehensive `//!` documentation
 - **Architecture documentation** - Each module explains its design and integration points
+- **Architecture diagrams** - Mermaid sequence diagrams for code generation and request handling flows
 - **Usage examples** - Practical examples included in all module docs
+- **Pet Store example** - Comprehensive walkthrough of the generated example project
+- **Performance section** - Benchmarks, profiling guide, and optimization tips
+- **Telemetry section** - Complete guide to built-in metrics and tracing
 - **CI integration** - Documentation linting added to GitHub Actions workflow
 - **Contributing guide** - Documentation standards added to CONTRIBUTING.md
+- **Alpha stage notice** - Clear communication about project maturity
+
+### 🚧 In Progress (40 of 227 items completed)
+
+**See [DOCUMENTATION_PROGRESS.md](DOCUMENTATION_PROGRESS.md) for detailed tracking**
+
+- **Item-level documentation** - Adding `///` doc comments to all public functions, structs, enums, and traits
+  - ✅ CLI commands and arguments (complete)
+  - ✅ Core dispatcher types (partial)
+  - ✅ Spec types and metadata (partial)
+  - 🚧 Generator templates (50 items remaining)
+  - 🚧 Server service implementation (14 items remaining)
+  - 🚧 Router core (8 items remaining)
+  - And many more...
 
 ### 📋 Remaining Tasks
 
-The following documentation tasks are recommended for future work:
-
-1. **Function-level documentation** - Add `///` doc comments to all public functions, structs, and traits
-2. **Complex function examples** - Add detailed examples to non-trivial functions
+1. **Complete Priority 1** - User-facing APIs (generator, server, router)
+2. **Function examples** - Add detailed examples to complex functions
 3. **Test documentation** - Document test modules with coverage and purpose
 4. **API guides** - Create user guides for common scenarios
-5. **Architecture diagrams** - Add visual diagrams to complex modules
+5. **Error documentation** - Document all error variants and conditions
 
 ## Documentation Structure
 
