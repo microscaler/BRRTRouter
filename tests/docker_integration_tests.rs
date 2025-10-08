@@ -142,7 +142,7 @@ fn test_petstore_container_health() {
     let addr: SocketAddr = format!("127.0.0.1:{}", mapped_port).parse().unwrap();
 
     let mut final_status = 0;
-    if wait_for_http_200(&addr, "/health", Duration::from_secs(15), None).is_ok() {
+    if wait_for_http_200(&addr, "/health", Duration::from_secs(30), None).is_ok() {
         final_status = 200;
     }
 

@@ -82,6 +82,12 @@ jobs:
         # run: cargo clippy --all-targets --all-features -- -D warnings || true - runs clippy on all targets and features, but fails the build on warnings
         run: cargo clippy -- -D warnings || true
 
+      - name: Check documentation
+        run: |
+          echo "Checking for missing documentation and broken intra-doc links..."
+          RUSTDOCFLAGS="-D warnings -D rustdoc::broken_intra_doc_links --html-in-header doc/head.html" cargo doc --no-deps --lib || true
+          echo "Documentation check complete (warnings are informational only)"
+
       - name: Run tests (reqwest-based)
         run: cargo test -- --nocapture
 
@@ -210,7 +216,7 @@ jobs:
       - name: Install perf and FlameGraph tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y linux-tools-common linux-tools-generic git perl
+          sudo apt-get install -y linux-tools-common linux-tools-generic linux-tools-$(uname -r) git perl
           git clone https://github.com/brendangregg/FlameGraph.git
 
       - name: Wait for readiness

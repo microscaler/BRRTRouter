@@ -1,14 +1,133 @@
+//! # Security Module
+//!
+//! The security module provides authentication and authorization providers for BRRTRouter,
+//! implementing various security schemes defined in OpenAPI specifications.
+//!
+//! ## Overview
+//!
+//! This module implements the [`SecurityProvider`] trait for common authentication methods:
+//! - **API Keys** - Header, query parameter, or cookie-based API keys
+//! - **Bearer JWT** - JSON Web Token validation with signature verification
+//! - **OAuth2** - OAuth2 token validation with scope checking
+//!
+//! Security providers are registered with the application and automatically enforced based on
+//! the `security` requirements defined in your OpenAPI specification.
+//!
+//! ## Architecture
+//!
+//! Security validation follows this flow:
+//!
+//! 1. Request arrives with credentials (header, cookie, query param)
+//! 2. Router determines which security scheme(s) are required for the route
+//! 3. Appropriate [`SecurityProvider`] is invoked to validate credentials
+//! 4. If validation succeeds, request proceeds to handler
+//! 5. If validation fails, 401/403 response is returned
+//!
+//! ## Security Providers
+//!
+//! ### API Key Provider
+//!
+//! Validates simple API keys from headers, query parameters, or cookies:
+//!
+//! ```rust
+//! use brrtrouter::security::{SecurityProvider, SecurityRequest};
+//! use brrtrouter::spec::SecurityScheme;
+//! use std::collections::HashMap;
+//!
+//! // Simple static API key validation
+//! struct ApiKeyProvider { key: String }
+//!
+//! impl SecurityProvider for ApiKeyProvider {
+//!     fn validate(&self, scheme: &SecurityScheme, scopes: &[String], req: &SecurityRequest) -> bool {
+//!         req.headers.get("X-API-Key")
+//!             .map(|k| k == &self.key)
+//!             .unwrap_or(false)
+//!     }
+//! }
+//! ```
+//!
+//! ### Bearer JWT Provider
+//!
+//! The [`BearerJwtProvider`] validates JWTs with:
+//! - Signature verification
+//! - Scope checking
+//! - Cookie or header extraction
+//!
+//! ```rust
+//! use brrtrouter::security::BearerJwtProvider;
+//!
+//! let provider = BearerJwtProvider::new("my-secret-signature")
+//!     .cookie_name("auth_token");
+//! ```
+//!
+//! ### OAuth2 Provider
+//!
+//! The [`OAuth2Provider`] validates OAuth2 tokens with scope checking:
+//!
+//! ```rust
+//! use brrtrouter::security::OAuth2Provider;
+//!
+//! let provider = OAuth2Provider::new("oauth-signature");
+//! ```
+//!
+//! ## Caching
+//!
+//! Security providers support optional caching to reduce validation overhead:
+//! - Positive results can be cached to avoid repeated database/API lookups
+//! - Negative results can be cached to prevent brute force attacks
+//! - TTL-based expiration ensures credentials are re-validated periodically
+//!
+//! ## Example
+//!
+//! ```rust
+//! use brrtrouter::server::AppService;
+//! use brrtrouter::security::BearerJwtProvider;
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! # let spec = brrtrouter::spec::load_spec("examples/openapi.yaml")?;
+//! # let router = brrtrouter::router::Router::from_spec(&spec);
+//! let mut service = AppService::new(router, spec);
+//!
+//! // Register security provider
+//! let jwt_provider = BearerJwtProvider::new("secret");
+//! service.register_security_provider("bearerAuth", Box::new(jwt_provider));
+//! # Ok(())
+//! # }
+//! ```
+
 use crate::spec::SecurityScheme;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
+/// Request context for security validation.
+///
+/// Contains extracted credentials from various sources (headers, query, cookies)
+/// that security providers can use to validate the request.
 pub struct SecurityRequest<'a> {
+    /// HTTP headers from the request
     pub headers: &'a HashMap<String, String>,
+    /// Query parameters from the request URL
     pub query: &'a HashMap<String, String>,
+    /// Cookies from the request
     pub cookies: &'a HashMap<String, String>,
 }
 
+/// Trait for implementing security validation providers.
+///
+/// Implement this trait to create custom authentication/authorization logic
+/// for your OpenAPI security schemes.
 pub trait SecurityProvider: Send + Sync {
+    /// Validate a request against a security scheme.
+    ///
+    /// # Arguments
+    ///
+    /// * `scheme` - The OpenAPI security scheme definition
+    /// * `scopes` - Required scopes for this operation (for OAuth2/OpenID)
+    /// * `req` - The security request context with credentials
+    ///
+    /// # Returns
+    ///
+    /// `true` if the request is authenticated and authorized, `false` otherwise
     fn validate(&self, scheme: &SecurityScheme, scopes: &[String], req: &SecurityRequest) -> bool;
 }
 

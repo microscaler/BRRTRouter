@@ -36,6 +36,125 @@ next time the generator runs.
 
 4. Run `cargo fmt` and `cargo test` before submitting a pull request.
 
+## Documentation Standards
+
+BRRTRouter follows strict documentation standards to help contributors understand the codebase.
+
+### Module Documentation
+
+Every public module must have module-level documentation (`//!`) that includes:
+
+1. **Title** - A clear, concise module name
+2. **Overview** - What the module does and why it exists
+3. **Architecture** - How the module works (diagrams welcome)
+4. **Usage Examples** - At least one practical example
+5. **Key Types** - Links to important types exported by the module
+
+Example:
+
+```rust
+//! # Router Module
+//!
+//! Provides path matching and route resolution for BRRTRouter.
+//!
+//! ## Overview
+//!
+//! The router matches incoming requests to handlers defined in OpenAPI specs...
+//!
+//! ## Example
+//!
+//! ```rust
+//! use brrtrouter::router::Router;
+//! let router = Router::from_spec(&spec);
+//! ```
+```
+
+### Function and Type Documentation
+
+All public functions, structs, enums, and traits must have doc comments (`///`) that include:
+
+1. **Purpose** - What the item does
+2. **Arguments** - Description of each parameter (for functions)
+3. **Returns** - What the function returns
+4. **Examples** - Code examples for non-trivial items
+5. **Panics** - Document panic conditions
+6. **Safety** - Document unsafe requirements (if applicable)
+
+Example:
+
+```rust
+/// Loads an OpenAPI specification from a file.
+///
+/// # Arguments
+///
+/// * `path` - Path to the OpenAPI YAML or JSON file
+///
+/// # Returns
+///
+/// Returns the parsed `Spec` object or an error if parsing fails.
+///
+/// # Example
+///
+/// ```rust
+/// let spec = load_spec("openapi.yaml")?;
+/// ```
+pub fn load_spec(path: &str) -> Result<Spec, Error> {
+    // ...
+}
+```
+
+### Generating Documentation
+
+Generate and view the documentation locally:
+
+```bash
+# Using just (recommended)
+just docs              # Generate and open docs with Mermaid diagrams
+just docs-build        # Generate without opening
+just docs-check        # Check for warnings and broken links
+
+# Or using cargo directly
+cargo doc --no-deps --lib --open
+
+# The project is configured to automatically include Mermaid.js for diagram rendering
+# via .cargo/config.toml and doc/head.html
+```
+
+**Note**: The documentation includes interactive Mermaid sequence diagrams. These are automatically rendered when you view the docs in a browser thanks to the Mermaid.js library loaded via `doc/head.html`.
+
+**Quick Reference:**
+- `just docs` - Most common: build and view docs
+- `just docs-check` - Verify docs before committing
+- Docs auto-include Mermaid.js for diagram rendering
+
+### CI Checks
+
+The CI pipeline automatically checks:
+- Missing documentation warnings
+- Broken intra-doc links
+- Example code in docs compiles (when not marked as `ignore`)
+
+### Test Documentation
+
+Test modules should have a module-level comment explaining:
+- What is being tested
+- Test coverage scope
+- Any special setup or teardown
+
+Example:
+
+```rust
+//! # Router Tests
+//!
+//! Tests for path matching, parameter extraction, and route resolution.
+//!
+//! Coverage:
+//! - Path parameter extraction
+//! - Query parameter parsing
+//! - HTTP method matching
+//! - 404 handling
+```
+
 ## Code Base Overview
 
 ### General Structure

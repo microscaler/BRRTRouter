@@ -60,6 +60,18 @@ security:
 coverage:
 	cargo llvm-cov --no-report
 
+# Generate and open documentation with Mermaid diagrams
+docs:
+	cargo doc --no-deps --lib --open
+
+# Generate documentation without opening
+docs-build:
+	cargo doc --no-deps --lib
+
+# Check documentation for warnings and broken links
+docs-check:
+	RUSTDOCFLAGS="-D warnings -D rustdoc::broken_intra_doc_links --html-in-header doc/head.html" cargo doc --no-deps --lib
+
 # Run benchmarks
 bench:
 	cargo bench
@@ -77,13 +89,13 @@ start-petstore-stack:
 	# sudo launchctl limit maxfiles 65536 65536
 	# sudo sysctl kern.ipc.somaxconn=4096
 	# sudo sysctl net.inet.tcp.sendspace=1048576 net.inet.tcp.recvspace=1048576
-	BRRTR_STACK_SIZE=0x4000  RUST_LOG=trace RUST_BACKTRACE=1 cargo run -p pet_store -- --spec doc/openapi.yaml --doc-dir examples/pet_store/doc --config config/config.yaml --test-api-key test123
+	BRRTR_STACK_SIZE=0x4000  RUST_LOG=trace RUST_BACKTRACE=1 cargo run -p pet_store -- --spec doc/openapi.yaml --doc-dir examples/pet_store/doc --config examples/pet_store/config/config.yaml --test-api-key test123
 
 
 # Start the example in background and then run curls (uses correct paths)
 curls-start:
 	@echo "Starting example server with test API key..."
-	@RUST_LOG=trace RUST_BACKTRACE=1 cargo run --manifest-path examples/pet_store/Cargo.toml -- --spec doc/openapi.yaml --doc-dir examples/pet_store/doc --config config/config.yaml --test-api-key test123 &
+	@RUST_LOG=trace RUST_BACKTRACE=1 cargo run --manifest-path examples/pet_store/Cargo.toml -- --spec doc/openapi.yaml --doc-dir examples/pet_store/doc --config examples/pet_store/config/config.yaml --test-api-key test123 &
 	@echo "Waiting for server readiness on /health..."
 	@for i in $$(seq 1 60); do \
 		code=$$(curl -s -o /dev/null -w "%{http_code}" http://0.0.0.0:8080/health || true); \
