@@ -89,10 +89,12 @@ impl MetricsMiddleware {
         self.top_level_requests.load(Ordering::Relaxed)
     }
 
+    /// Increment the authentication failure counter
     pub fn inc_auth_failure(&self) {
         self.auth_failures.fetch_add(1, Ordering::Relaxed);
     }
 
+    /// Get the total number of authentication failures
     pub fn auth_failures(&self) -> usize {
         self.auth_failures.load(Ordering::Relaxed)
     }

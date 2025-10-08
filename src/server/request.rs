@@ -132,6 +132,18 @@ pub fn decode_param_value(
     }
 }
 
+/// Parse an incoming HTTP request into a ParsedRequest
+///
+/// Extracts all components (method, path, headers, cookies, query params, body)
+/// from the raw HTTP request.
+///
+/// # Arguments
+///
+/// * `req` - The raw HTTP request from may_minihttp
+///
+/// # Returns
+///
+/// A parsed request with all extracted components
 pub fn parse_request(req: Request) -> ParsedRequest {
     let method = req.method().to_string();
     let raw_path = req.path().to_string();

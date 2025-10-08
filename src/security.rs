@@ -543,6 +543,10 @@ impl RemoteApiKeyProvider {
         self.cache_ttl = ttl;
         self
     }
+    
+    /// Configure the header name to look for the API key
+    ///
+    /// Default: `x-api-key`
     pub fn header_name(mut self, name: impl Into<String>) -> Self {
         self.header_name = name.into().to_ascii_lowercase();
         self

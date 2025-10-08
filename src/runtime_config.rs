@@ -68,6 +68,7 @@ use std::env;
 /// the coroutine runtime behavior.
 #[derive(Debug, Clone, Copy)]
 pub struct RuntimeConfig {
+    /// Stack size for coroutines in bytes (default: 2MB)
     pub stack_size: usize,
 }
 

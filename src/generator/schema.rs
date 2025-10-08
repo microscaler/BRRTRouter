@@ -3,21 +3,44 @@ use crate::spec::{resolve_schema_ref, ParameterMeta};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 
+/// A Rust type definition generated from an OpenAPI schema
+///
+/// Represents a struct that will be generated in the output code.
 #[derive(Debug, Clone)]
 pub struct TypeDefinition {
+    /// The Rust struct name (e.g., `Pet`, `User`)
     pub name: String,
+    /// The fields that make up this struct
     pub fields: Vec<FieldDef>,
 }
 
+/// A field definition for a generated Rust struct
+///
+/// Contains all information needed to generate a struct field including
+/// its name, type, and whether it's optional.
 #[derive(Debug, Clone)]
 pub struct FieldDef {
+    /// Sanitized Rust field name (e.g., `user_id`)
     pub name: String,
+    /// Original field name from OpenAPI spec (for serde rename)
     pub original_name: String,
+    /// Rust type (e.g., `String`, `i64`, `Vec<Pet>`)
     pub ty: String,
+    /// Whether the field is optional (`Option<T>`)
     pub optional: bool,
+    /// Example value as a Rust literal
     pub value: String,
 }
 
+/// Convert a snake_case string to CamelCase
+///
+/// Used for generating Rust struct names from OpenAPI schema names.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// assert_eq!(to_camel_case("user_profile"), "UserProfile");
+/// ```
 pub fn to_camel_case(s: &str) -> String {
     s.split('_')
         .map(|w| {
@@ -30,6 +53,12 @@ pub fn to_camel_case(s: &str) -> String {
         .collect()
 }
 
+/// Check if a type string represents a named (custom) type vs a primitive
+///
+/// Returns `true` for custom types like `Pet`, `User`, `Vec<Pet>`.
+/// Returns `false` for primitives like `String`, `i64`, `bool`.
+///
+/// Used to determine if a type needs to be imported or defined.
 pub fn is_named_type(ty: &str) -> bool {
     let primitives = [
         "String",
@@ -105,6 +134,19 @@ pub(crate) fn unique_handler_name(seen: &mut HashSet<String>, name: &str) -> Str
     }
 }
 
+/// Generate a Rust literal expression from an example value
+///
+/// Converts JSON example values into Rust code that can be used as default
+/// values in generated structs.
+///
+/// # Arguments
+///
+/// * `field` - The field definition (provides type context)
+/// * `example` - The JSON example value from OpenAPI spec
+///
+/// # Returns
+///
+/// A Rust expression string (e.g., `"example".to_string()`, `42i64`, `vec![]`)
 pub fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
     let literal = match example {
         Value::String(s) => {
@@ -199,6 +241,16 @@ pub fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
     }
 }
 
+/// Process an OpenAPI schema and generate a Rust type definition
+///
+/// Extracts fields from the schema and adds the resulting type to the types map.
+/// Skips schemas that don't define any fields or are already processed.
+///
+/// # Arguments
+///
+/// * `name` - Schema name from OpenAPI spec
+/// * `schema` - JSON Schema definition
+/// * `types` - Mutable map of generated types (updated in-place)
 pub fn process_schema_type(
     name: &str,
     schema: &Value,
@@ -214,6 +266,18 @@ pub fn process_schema_type(
     }
 }
 
+/// Extract field definitions from an OpenAPI/JSON Schema
+///
+/// Parses the schema's `properties` and generates Rust field definitions with
+/// appropriate types, handling arrays, objects, primitives, and nested types.
+///
+/// # Arguments
+///
+/// * `schema` - JSON Schema definition
+///
+/// # Returns
+///
+/// A vector of field definitions that can be used to generate a Rust struct
 pub fn extract_fields(schema: &Value) -> Vec<FieldDef> {
     let mut fields = vec![];
     if let Some(schema_type) = schema.get("type").and_then(|t| t.as_str()) {
@@ -305,6 +369,24 @@ pub fn extract_fields(schema: &Value) -> Vec<FieldDef> {
     fields
 }
 
+/// Convert a JSON Schema to a Rust type string
+///
+/// Maps OpenAPI/JSON Schema types to their Rust equivalents:
+/// - `string` → `String`
+/// - `integer` → `i32`
+/// - `number` → `f64`
+/// - `boolean` → `bool`
+/// - `array` → `Vec<T>`
+/// - `$ref` → Named type (e.g., `Pet`, `User`)
+/// - default → `serde_json::Value`
+///
+/// # Arguments
+///
+/// * `schema` - JSON Schema definition
+///
+/// # Returns
+///
+/// A Rust type string (e.g., `String`, `Vec<Pet>`, `Option<i64>`)
 pub fn schema_to_type(schema: &Value) -> String {
     if let Some(name) = schema.get("x-ref-name").and_then(|v| v.as_str()) {
         return to_camel_case(name);
@@ -345,6 +427,18 @@ pub fn schema_to_type(schema: &Value) -> String {
     }
 }
 
+/// Convert an OpenAPI parameter to a field definition
+///
+/// Extracts type information from the parameter's schema and creates
+/// a field definition suitable for code generation.
+///
+/// # Arguments
+///
+/// * `param` - Parameter metadata from OpenAPI spec
+///
+/// # Returns
+///
+/// A field definition with the parameter's name, type, and a default value
 pub fn parameter_to_field(param: &ParameterMeta) -> FieldDef {
     let ty = param
         .schema
@@ -364,6 +458,23 @@ pub fn parameter_to_field(param: &ParameterMeta) -> FieldDef {
     }
 }
 
+/// Collect all component schemas from an OpenAPI specification
+///
+/// Parses the spec file and extracts all schema definitions from `components.schemas`,
+/// converting them to Rust type definitions. Resolves all `$ref` references and
+/// processes nested schemas recursively.
+///
+/// # Arguments
+///
+/// * `spec_path` - Path to the OpenAPI specification file
+///
+/// # Returns
+///
+/// A map of type names to their definitions
+///
+/// # Errors
+///
+/// Returns an error if the spec file cannot be read or parsed.
 pub fn collect_component_schemas(
     spec_path: &std::path::Path,
 ) -> anyhow::Result<HashMap<String, TypeDefinition>> {

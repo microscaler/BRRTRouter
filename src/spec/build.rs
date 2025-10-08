@@ -361,6 +361,18 @@ pub fn extract_parameters(
     out
 }
 
+/// Extract the SSE flag from an OpenAPI operation
+///
+/// Checks for `x-sse` or `sse` extension fields to determine if the operation
+/// uses Server-Sent Events for streaming responses.
+///
+/// # Arguments
+///
+/// * `operation` - The OpenAPI operation definition
+///
+/// # Returns
+///
+/// `true` if the operation uses SSE, `false` otherwise
 pub fn extract_sse_flag(operation: &oas3::spec::Operation) -> bool {
     operation
         .extensions

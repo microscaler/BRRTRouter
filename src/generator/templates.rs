@@ -10,92 +10,159 @@ use super::schema::{
 };
 use crate::spec::{ParameterMeta, RouteMeta};
 
+/// Entry in the handler registry for code generation
+///
+/// Contains all information needed to register a handler in the dispatcher.
 #[derive(Debug, Clone)]
 pub struct RegistryEntry {
+    /// Handler function name
     pub name: String,
+    /// Typed request struct name
     pub request_type: String,
+    /// Controller struct name
     pub controller_struct: String,
+    /// Route parameters
     pub parameters: Vec<ParameterMeta>,
 }
 
+/// Route information for display in generated code comments
 #[derive(Debug, Clone)]
 pub struct RouteDisplay {
+    /// HTTP method (GET, POST, etc.)
     pub method: String,
+    /// Route path pattern
     pub path: String,
+    /// Handler name
     pub handler: String,
 }
 
+/// Template data for generating Cargo.toml
 #[derive(Template)]
 #[template(path = "Cargo.toml.txt")]
 pub struct CargoTomlTemplateData {
+    /// Project name
     pub name: String,
 }
 
+/// Template for generating config.yaml with default settings
 #[derive(Template)]
 #[template(path = "config.yaml", escape = "none")]
 pub struct ConfigYamlTemplate;
 
+/// Template data for generating main.rs entry point
 #[derive(Template)]
 #[template(path = "main.rs.txt", escape = "none")]
 pub struct MainRsTemplateData {
+    /// Project name
     pub name: String,
+    /// Routes for displaying in comments
     pub routes: Vec<RouteDisplay>,
 }
 
+/// Template for generating OpenAPI documentation HTML
 #[derive(Template)]
 #[template(path = "openapi.index.html", escape = "none")]
 pub struct OpenapiIndexTemplate;
 
+/// Template for generating static site index.html
 #[derive(Template)]
 #[template(path = "static.index.html", escape = "none")]
 pub struct StaticIndexTemplate;
 
+/// Template data for generating mod.rs module declarations
 #[derive(Template)]
 #[template(path = "mod.rs.txt")]
 pub struct ModRsTemplateData {
+    /// Module names to declare
     pub modules: Vec<String>,
 }
 
+/// Template data for generating registry.rs (handler registration)
 #[derive(Template)]
 #[template(path = "registry.rs.txt")]
 pub struct RegistryTemplateData {
+    /// Registry entries for all handlers
     pub entries: Vec<RegistryEntry>,
 }
 
+/// Template data for generating handler_types.rs (type definitions)
 #[derive(Template)]
 #[template(path = "handler_types.rs.txt")]
 pub struct TypesTemplateData {
+    /// Map of type names to definitions
     pub types: BTreeMap<String, TypeDefinition>,
 }
 
+/// Template data for generating a handler module
+///
+/// Contains all information needed to generate request/response types and a handler skeleton.
 #[derive(Template)]
 #[template(path = "handler.rs.txt")]
 pub struct HandlerTemplateData {
+    /// Handler function name
     pub handler_name: String,
+    /// Request struct fields
     pub request_fields: Vec<FieldDef>,
+    /// Response struct fields
     pub response_fields: Vec<FieldDef>,
+    /// Whether the response is an array
     pub response_is_array: bool,
+    /// Type of array elements (if response is array)
     pub response_array_type: String,
+    /// Types to import (e.g., custom types from handler_types)
     pub imports: Vec<String>,
+    /// Route parameters
     pub parameters: Vec<ParameterMeta>,
+    /// Whether this handler uses Server-Sent Events
     pub sse: bool,
 }
 
+/// Template data for generating a controller module
+///
+/// Controllers spawn coroutines that dispatch requests to handlers.
 #[derive(Template)]
 #[template(path = "controller.rs.txt")]
 pub struct ControllerTemplateData {
+    /// Handler function name
     pub handler_name: String,
+    /// Controller struct name
     pub struct_name: String,
+    /// Response struct fields
     pub response_fields: Vec<FieldDef>,
+    /// Example response as Rust code
     pub example: String,
+    /// Whether an example response is available
     pub has_example: bool,
+    /// Example response as JSON string
     pub example_json: String,
+    /// Whether the response is an array
     pub response_is_array: bool,
+    /// Array literal for response (if array)
     pub response_array_literal: String,
+    /// Types to import
     pub imports: Vec<String>,
+    /// Whether this handler uses Server-Sent Events
     pub sse: bool,
 }
 
+/// Write a handler module file
+///
+/// Generates a handler module with request/response types and a skeleton handler function.
+///
+/// # Arguments
+///
+/// * `path` - Output file path
+/// * `handler` - Handler function name
+/// * `req` - Request struct fields
+/// * `res` - Response struct fields
+/// * `imports` - Types to import
+/// * `params` - Route parameters
+/// * `sse` - Whether to use Server-Sent Events
+/// * `force` - Overwrite existing file
+///
+/// # Errors
+///
+/// Returns an error if file writing fails
 #[allow(clippy::too_many_arguments)]
 pub fn write_handler(
     path: &Path,
@@ -127,6 +194,24 @@ pub fn write_handler(
     Ok(())
 }
 
+/// Write a controller module file
+///
+/// Generates a controller that spawns a coroutine to handle requests for a specific endpoint.
+/// Controllers bridge the dispatcher and handlers.
+///
+/// # Arguments
+///
+/// * `path` - Output file path
+/// * `handler` - Handler function name
+/// * `struct_name` - Controller struct name
+/// * `res` - Response struct fields
+/// * `example` - Example response from OpenAPI spec
+/// * `sse` - Whether to use Server-Sent Events
+/// * `force` - Overwrite existing file
+///
+/// # Errors
+///
+/// Returns an error if file writing fails
 pub fn write_controller(
     path: &Path,
     handler: &str,
@@ -243,6 +328,18 @@ pub(crate) fn write_mod_rs(dir: &Path, modules: &[String], label: &str) -> anyho
     Ok(())
 }
 
+/// Write the registry.rs file
+///
+/// Generates the handler registry that registers all handlers with the dispatcher.
+///
+/// # Arguments
+///
+/// * `dir` - Output directory (typically `src/`)
+/// * `entries` - Registry entries for all handlers
+///
+/// # Errors
+///
+/// Returns an error if file writing fails
 pub fn write_registry_rs(dir: &Path, entries: &[RegistryEntry]) -> anyhow::Result<()> {
     let path = dir.join("registry.rs");
     let rendered = RegistryTemplateData {
@@ -279,6 +376,19 @@ pub(crate) fn write_cargo_toml(base: &Path, slug: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Write the main.rs entry point
+///
+/// Generates the main.rs file that starts the HTTP server and registers handlers.
+///
+/// # Arguments
+///
+/// * `dir` - Output directory (typically `src/`)
+/// * `slug` - Project name slug
+/// * `routes` - All routes from the OpenAPI spec
+///
+/// # Errors
+///
+/// Returns an error if file writing fails
 pub fn write_main_rs(dir: &Path, slug: &str, routes: Vec<RouteMeta>) -> anyhow::Result<()> {
     let routes = routes
         .into_iter()
@@ -298,6 +408,17 @@ pub fn write_main_rs(dir: &Path, slug: &str, routes: Vec<RouteMeta>) -> anyhow::
     Ok(())
 }
 
+/// Write the OpenAPI documentation index.html
+///
+/// Generates an HTML page that displays the OpenAPI specification using Swagger UI.
+///
+/// # Arguments
+///
+/// * `dir` - Output directory (typically `doc/`)
+///
+/// # Errors
+///
+/// Returns an error if file writing fails
 pub fn write_openapi_index(dir: &Path) -> anyhow::Result<()> {
     let rendered = OpenapiIndexTemplate.render()?;
     fs::write(dir.join("index.html"), rendered)?;
@@ -305,6 +426,17 @@ pub fn write_openapi_index(dir: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Write the static site index.html
+///
+/// Generates a simple placeholder index page for the static site.
+///
+/// # Arguments
+///
+/// * `dir` - Output directory (typically `static_site/`)
+///
+/// # Errors
+///
+/// Returns an error if file writing fails
 pub fn write_static_index(dir: &Path) -> anyhow::Result<()> {
     let rendered = StaticIndexTemplate.render()?;
     fs::write(dir.join("index.html"), rendered)?;
@@ -312,6 +444,17 @@ pub fn write_static_index(dir: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Write the default config.yaml
+///
+/// Generates a configuration file with default settings for the application.
+///
+/// # Arguments
+///
+/// * `dir` - Output directory (typically `config/`)
+///
+/// # Errors
+///
+/// Returns an error if file writing fails
 pub fn write_default_config(dir: &Path) -> anyhow::Result<()> {
     let rendered = ConfigYamlTemplate.render()?;
     std::fs::create_dir_all(dir)?;

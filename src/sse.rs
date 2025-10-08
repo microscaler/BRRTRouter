@@ -104,6 +104,14 @@ pub struct SseSender {
 }
 
 impl SseSender {
+    /// Send a message to the SSE stream
+    ///
+    /// Messages are sent as `data:` events. The connection will be closed
+    /// when all senders are dropped.
+    ///
+    /// # Arguments
+    ///
+    /// * `data` - The message data to send
     pub fn send(&self, data: impl Into<String>) {
         let _ = self.tx.send(data.into());
     }

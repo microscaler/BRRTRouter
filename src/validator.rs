@@ -95,6 +95,14 @@ pub fn print_issues(issues: &[ValidationIssue]) {
     eprintln!("\nPlease fix the issues in your OpenAPI spec before starting the server.\n");
 }
 
+/// Exit the process with error code 1 if there are any validation issues
+///
+/// Prints all validation issues to stderr before exiting. Used by CLI commands
+/// to enforce specification validity.
+///
+/// # Arguments
+///
+/// * `issues` - List of validation issues
 pub fn fail_if_issues(issues: Vec<ValidationIssue>) {
     if !issues.is_empty() {
         for issue in &issues {

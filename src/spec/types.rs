@@ -131,6 +131,10 @@ pub struct RouteMeta {
 }
 
 impl RouteMeta {
+    /// Get the content type for a specific HTTP status code response
+    ///
+    /// Returns the first content type defined for the given status code
+    /// (typically `application/json`).
     pub fn content_type_for(&self, status: u16) -> Option<String> {
         self.responses
             .get(&status)
