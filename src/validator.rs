@@ -50,12 +50,22 @@
 /// - `message` - A human-readable description of the problem
 #[derive(Debug)]
 pub struct ValidationIssue {
+    /// Where the issue occurred (e.g., "path:/users/{id}", "query:limit")
     pub location: String,
+    /// Type of validation issue (e.g., "required", "type_mismatch", "constraint_violation")
     pub kind: String,
+    /// Human-readable description of what went wrong
     pub message: String,
 }
 
 impl ValidationIssue {
+    /// Create a new validation issue
+    ///
+    /// # Arguments
+    ///
+    /// * `location` - Where the issue occurred
+    /// * `kind` - Type of validation issue
+    /// * `message` - Description of the problem
     pub fn new(
         location: impl Into<String>,
         kind: impl Into<String>,
@@ -69,6 +79,11 @@ impl ValidationIssue {
     }
 }
 
+/// Print validation issues to stderr in a formatted, user-friendly way
+///
+/// # Arguments
+///
+/// * `issues` - List of validation issues to display
 pub fn print_issues(issues: &[ValidationIssue]) {
     eprintln!(
         "\n❌ OpenAPI spec validation failed. {} issue(s) found:\n",

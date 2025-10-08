@@ -4,13 +4,22 @@ use std::collections::HashMap;
 use std::io::Read;
 
 /// Parsed HTTP request data used by `AppService`.
+///
+/// Contains all extracted information from the raw HTTP request including
+/// headers, cookies, query parameters, and JSON body.
 #[derive(Debug, PartialEq)]
 pub struct ParsedRequest {
+    /// HTTP method (GET, POST, etc.)
     pub method: String,
+    /// Request path including query string
     pub path: String,
+    /// HTTP headers (lowercase keys)
     pub headers: HashMap<String, String>,
+    /// Parsed cookies from Cookie header
     pub cookies: HashMap<String, String>,
+    /// Parsed query string parameters
     pub query_params: HashMap<String, String>,
+    /// Parsed JSON body (if content-type is application/json)
     pub body: Option<serde_json::Value>,
 }
 
@@ -31,6 +40,17 @@ pub fn parse_cookies(headers: &HashMap<String, String>) -> HashMap<String, Strin
         .unwrap_or_default()
 }
 
+/// Parse query string parameters from a URL path
+///
+/// Extracts everything after the `?` character and URL-decodes parameter names and values.
+///
+/// # Arguments
+///
+/// * `path` - The full URL path (e.g., `/users?limit=10&offset=20`)
+///
+/// # Returns
+///
+/// A map of query parameter names to values
 pub fn parse_query_params(path: &str) -> HashMap<String, String> {
     if let Some(pos) = path.find("?") {
         let query_str = &path[pos + 1..];
@@ -42,6 +62,22 @@ pub fn parse_query_params(path: &str) -> HashMap<String, String> {
     }
 }
 
+/// Decode a parameter value according to OpenAPI schema and style
+///
+/// Converts string parameter values to their appropriate JSON types based on
+/// the OpenAPI schema (integer, number, boolean, array, object). Handles
+/// different serialization styles (form, simple, etc.) for arrays and objects.
+///
+/// # Arguments
+///
+/// * `value` - The raw parameter value string
+/// * `schema` - Optional JSON Schema for type conversion
+/// * `style` - Optional OpenAPI parameter style (form, simple, etc.)
+/// * `_explode` - Whether to use exploded format (currently unused)
+///
+/// # Returns
+///
+/// The decoded JSON value with appropriate type
 pub fn decode_param_value(
     value: &str,
     schema: Option<&serde_json::Value>,

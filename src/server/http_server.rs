@@ -20,6 +20,18 @@ pub struct ServerHandle {
 }
 
 impl ServerHandle {
+    /// Wait for the server to be ready to accept connections
+    ///
+    /// Polls the server address by attempting TCP connections until successful.
+    /// Useful in tests to ensure the server is fully started before sending requests.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when the server is ready
+    ///
+    /// # Errors
+    ///
+    /// Returns `TimedOut` error if the server doesn't become ready within ~250ms (50 attempts × 5ms).
     pub fn wait_ready(&self) -> io::Result<()> {
         for _ in 0..50 {
             if TcpStream::connect(self.addr).is_ok() {
@@ -30,6 +42,10 @@ impl ServerHandle {
         Err(io::Error::new(io::ErrorKind::TimedOut, "server not ready"))
     }
 
+    /// Stop the server gracefully
+    ///
+    /// Cancels the server coroutine and waits for it to finish.
+    /// Consumes the handle, preventing further operations.
     pub fn stop(self) {
         unsafe {
             self.handle.coroutine().cancel();
@@ -37,6 +53,18 @@ impl ServerHandle {
         let _ = self.handle.join();
     }
 
+    /// Wait for the server thread to complete
+    ///
+    /// Blocks until the server coroutine finishes. The server will run indefinitely
+    /// unless stopped externally or an error occurs.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if the server thread completed successfully
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the server thread panicked.
     pub fn join(self) -> std::thread::Result<()> {
         self.handle.join()
     }
