@@ -1,3 +1,36 @@
+//! Unit tests for the code generator schema processing
+//!
+//! # Test Coverage
+//!
+//! Validates the schema analysis and type generation logic:
+//! - Case conversion (snake_case → CamelCase)
+//! - Type classification (primitive vs named types)
+//! - Schema to Rust type mapping
+//! - Field extraction from JSON schemas
+//! - Parameter conversion
+//! - Example data to Rust literal conversion
+//!
+//! # Test Strategy
+//!
+//! Uses isolated unit tests with synthetic JSON schemas to verify:
+//! 1. **Type Mapping**: JSON Schema types → Rust types
+//! 2. **Example Conversion**: JSON values → Rust code literals
+//! 3. **Edge Cases**: Arrays, objects, oneOf, nested types, nullable types
+//! 4. **OpenAPI Features**: Required fields, optional fields, refs, examples
+//!
+//! # Key Test Cases
+//!
+//! - `test_to_camel_case`: Case conversion correctness
+//! - `test_is_named_type`: Primitive vs custom type detection
+//! - `test_schema_to_type`: Comprehensive type mapping
+//! - `test_extract_fields`: Complex schema parsing with oneOf
+//! - `test_rust_literal_for_example`: JSON → Rust literal generation
+//!
+//! # Coverage Goal
+//!
+//! Aims for 100% coverage of schema processing functions to ensure
+//! generated code is type-safe and matches OpenAPI specifications
+
 use brrtrouter::generator::{
     extract_fields, is_named_type, parameter_to_field, process_schema_type,
     rust_literal_for_example, schema_to_type, to_camel_case, FieldDef, TypeDefinition,

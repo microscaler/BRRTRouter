@@ -1,3 +1,36 @@
+//! Integration tests for the HTTP server and request processing pipeline
+//!
+//! # Test Coverage
+//!
+//! This module tests the complete HTTP server stack:
+//! - Server startup and lifecycle management
+//! - Request routing and dispatching
+//! - Authentication and authorization
+//! - Response serialization
+//! - Keep-alive connection handling
+//! - Echo handler functionality
+//!
+//! # Test Strategy
+//!
+//! Uses the Pet Store example application as a test subject to verify:
+//! 1. **End-to-End Flow**: HTTP request → router → dispatcher → handler → response
+//! 2. **Security**: API key authentication, bearer token validation
+//! 3. **Error Handling**: 404 for missing routes, 401 for auth failures
+//! 4. **Configuration**: Keep-alive settings, service registration
+//!
+//! # Test Fixtures
+//!
+//! - `start_petstore_service()`: Spins up a complete Pet Store API server
+//! - Uses generated handlers from `examples/openapi.yaml`
+//! - Includes tracing middleware for debugging
+//! - Binds to random available port to avoid conflicts
+//!
+//! # Important Notes
+//!
+//! - Tests use May coroutines with 32KB stack size
+//! - Server runs in background thread, cleaned up automatically
+//! - Tracing is captured per-test for isolation
+
 use brrtrouter::server::{HttpServer, ServerHandle};
 use brrtrouter::spec::SecurityScheme;
 use brrtrouter::{

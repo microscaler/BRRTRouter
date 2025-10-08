@@ -1,3 +1,36 @@
+//! Unit tests for the HTTP router and path matching
+//!
+//! # Test Coverage
+//!
+//! Validates route matching and path parameter extraction:
+//! - Path pattern to regex compilation
+//! - Route matching by method and path
+//! - Path parameter extraction
+//! - Route priority (longest match first)
+//! - Ambiguous route detection
+//!
+//! # Test Strategy
+//!
+//! Uses synthetic OpenAPI specs with various path patterns:
+//! - Static paths: `/users`
+//! - Path parameters: `/users/{id}`
+//! - Multiple parameters: `/users/{userId}/posts/{postId}`
+//! - Ambiguous routes: `/users/me` vs `/users/{id}`
+//!
+//! # Key Test Cases
+//!
+//! - `test_router_matches_static_route`: Exact path matching
+//! - `test_router_matches_parameterized_route`: Path param extraction
+//! - `test_router_respects_http_methods`: Method-specific routing
+//! - `test_router_prioritizes_longer_routes`: Specificity ordering
+//!
+//! # Edge Cases Tested
+//!
+//! - Missing routes return None
+//! - Wrong methods return None
+//! - Path parameters are URL-decoded
+//! - Routes are sorted by length (longest first)
+
 use brrtrouter::{
     router::{RouteMatch, Router},
     spec::RouteMeta,

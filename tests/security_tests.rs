@@ -1,3 +1,38 @@
+//! Integration tests for authentication and authorization
+//!
+//! # Test Coverage
+//!
+//! Comprehensive testing of all security providers:
+//! - API key authentication (header-based)
+//! - Bearer JWT authentication (simple signature)
+//! - Bearer JWT with JWKS validation (production-ready)
+//! - OAuth2 authentication  
+//! - Remote API key provider (HTTP-based validation)
+//! - Cookie-based token extraction
+//!
+//! # Test Strategy
+//!
+//! 1. **Unit Tests**: Individual provider validation logic
+//! 2. **Integration Tests**: Full HTTP server with auth enforcement
+//! 3. **Mock Services**: Simulated JWKS/remote validation endpoints
+//! 4. **Token Generation**: Base64-encoded JWT tokens for testing
+//!
+//! # Key Test Scenarios
+//!
+//! - Valid credentials → 200 OK
+//! - Missing credentials → 401 Unauthorized
+//! - Invalid credentials → 401 Unauthorized  
+//! - Expired tokens → 401 Unauthorized
+//! - Scope-based authorization
+//! - Multiple auth schemes (OR logic)
+//!
+//! # Test Fixtures
+//!
+//! - Mock JWKS server on random port
+//! - Pet Store API with security schemes
+//! - Pre-generated JWT tokens with known signatures
+//! - Remote validation server simulator
+
 use base64::Engine;
 use brrtrouter::middleware::TracingMiddleware;
 use brrtrouter::server::{HttpServer, ServerHandle};

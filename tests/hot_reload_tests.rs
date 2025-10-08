@@ -1,3 +1,35 @@
+//! Tests for hot reload and live spec watching
+//!
+//! # Test Coverage
+//!
+//! Validates the hot reload system that watches OpenAPI specs and updates routes:
+//! - File system watching (notify crate)
+//! - Debouncing (multiple changes → single reload)
+//! - Route registration updates
+//! - Router/dispatcher synchronization
+//!
+//! # Test Strategy
+//!
+//! Uses temporary files to simulate spec changes:
+//! 1. Write initial spec to temp file
+//! 2. Start file watcher
+//! 3. Modify spec (add/remove routes)
+//! 4. Verify router updates reflect changes
+//! 5. Test debounce window (rapid changes)
+//!
+//! # Key Test Cases
+//!
+//! - `test_watch_spec_reload`: Basic hot reload works
+//! - Debouncing prevents excessive reloads
+//! - Router updates are atomic
+//! - No race conditions in reload
+//!
+//! # Challenges
+//!
+//! - File system timing is non-deterministic
+//! - Need to wait for debounce window
+//! - Cross-platform FS notification differences
+
 use brrtrouter::{dispatcher::Dispatcher, hot_reload::watch_spec, load_spec, router::Router};
 use may::sync::mpsc;
 use std::sync::{Arc, Mutex, RwLock};
