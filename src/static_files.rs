@@ -97,6 +97,15 @@ pub struct StaticFiles {
 }
 
 impl StaticFiles {
+    /// Create a new static file server for the given directory
+    ///
+    /// # Arguments
+    ///
+    /// * `base` - Base directory containing static files
+    ///
+    /// # Security
+    ///
+    /// Path traversal attacks are prevented - requests cannot escape the base directory.
     pub fn new<P: Into<PathBuf>>(base: P) -> Self {
         Self {
             base_dir: base.into(),
@@ -141,6 +150,27 @@ impl StaticFiles {
         }
     }
 
+    /// Load a file from the static directory with optional template rendering
+    ///
+    /// If the file has an `.html` extension, it's rendered as a MiniJinja template
+    /// with the provided context. Other files are returned as-is.
+    ///
+    /// # Arguments
+    ///
+    /// * `url_path` - URL path to the file (e.g., `/index.html`)
+    /// * `ctx` - Optional JSON context for template rendering
+    ///
+    /// # Returns
+    ///
+    /// A tuple of `(file_contents, content_type)` on success.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The path is invalid or contains directory traversal attempts
+    /// - The file doesn't exist
+    /// - Template rendering fails (for HTML files)
+    /// - File I/O fails
     pub fn load(
         &self,
         url_path: &str,

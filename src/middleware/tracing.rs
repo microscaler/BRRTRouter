@@ -5,6 +5,10 @@ use tracing::info_span;
 use super::Middleware;
 use crate::dispatcher::{HandlerRequest, HandlerResponse};
 
+/// Middleware for distributed tracing using the `tracing` crate
+///
+/// Creates spans for each HTTP request with method, path, and handler information.
+/// Automatically records request start/completion with latency metrics.
 pub struct TracingMiddleware;
 
 impl Middleware for TracingMiddleware {

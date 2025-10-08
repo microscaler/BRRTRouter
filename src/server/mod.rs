@@ -68,9 +68,13 @@
 //! # }
 //! ```
 
+/// HTTP server implementation using may_minihttp
 pub mod http_server;
+/// Request parsing and parameter extraction
 pub mod request;
+/// Response building and serialization
 pub mod response;
+/// Core application service that handles requests
 pub mod service;
 
 pub use request::{decode_param_value, parse_request, ParsedRequest};

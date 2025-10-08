@@ -7,6 +7,10 @@ use serde_json::Value;
 use super::Middleware;
 use crate::dispatcher::{HandlerRequest, HandlerResponse};
 
+/// CORS (Cross-Origin Resource Sharing) middleware
+///
+/// Handles preflight OPTIONS requests and adds CORS headers to responses.
+/// Configurable with allowed origins, headers, and methods.
 pub struct CorsMiddleware {
     allowed_origins: Vec<String>,
     allowed_headers: Vec<String>,
@@ -14,6 +18,26 @@ pub struct CorsMiddleware {
 }
 
 impl CorsMiddleware {
+    /// Create a new CORS middleware with specific configuration
+    ///
+    /// # Arguments
+    ///
+    /// * `allowed_origins` - List of allowed origins (e.g., `["https://example.com"]`)
+    /// * `allowed_headers` - List of allowed headers (e.g., `["Content-Type", "Authorization"]`)
+    /// * `allowed_methods` - List of allowed HTTP methods
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use brrtrouter::middleware::CorsMiddleware;
+    /// use http::Method;
+    ///
+    /// let cors = CorsMiddleware::new(
+    ///     vec!["https://example.com".to_string()],
+    ///     vec!["Content-Type".to_string()],
+    ///     vec![Method::GET, Method::POST],
+    /// );
+    /// ```
     pub fn new(
         allowed_origins: Vec<String>,
         allowed_headers: Vec<String>,

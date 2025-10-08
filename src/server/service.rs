@@ -16,17 +16,31 @@ use std::sync::OnceLock;
 use std::sync::{Arc, RwLock};
 use tracing::{info, warn};
 
+/// HTTP application service that handles all incoming requests
+///
+/// This is the core service that processes HTTP requests through the full pipeline:
+/// routing, authentication, validation, dispatching, and response generation.
+/// It integrates all major components (router, dispatcher, middleware, security, etc.).
 pub struct AppService {
+    /// Router for matching requests to handlers
     pub router: Arc<RwLock<Router>>,
+    /// Dispatcher for sending requests to handler coroutines
     pub dispatcher: Arc<RwLock<Dispatcher>>,
+    /// Security schemes defined in the OpenAPI spec
     pub security_schemes: HashMap<String, SecurityScheme>,
+    /// Active security provider implementations (API keys, JWT, OAuth2)
     pub security_providers: HashMap<String, Arc<dyn SecurityProvider>>,
+    /// Optional metrics collection middleware
     pub metrics: Option<Arc<crate::middleware::MetricsMiddleware>>,
+    /// Path to the OpenAPI specification file
     pub spec_path: PathBuf,
+    /// Optional static file server for application files
     pub static_files: Option<StaticFiles>,
+    /// Optional documentation file server (OpenAPI spec, HTML docs)
     pub doc_files: Option<StaticFiles>,
+    /// Optional file watcher for hot reloading
     pub watcher: Option<notify::RecommendedWatcher>,
-    // Precomputed Keep-Alive header (to avoid per-request allocations/leaks)
+    /// Precomputed Keep-Alive header (to avoid per-request allocations/leaks)
     pub keep_alive_header: Option<&'static str>,
 }
 
@@ -61,6 +75,21 @@ impl AppService {
         write.insert(leaked.to_string(), leaked);
         leaked
     }
+    
+    /// Create a new application service
+    ///
+    /// # Arguments
+    ///
+    /// * `router` - Router for matching requests to handlers
+    /// * `dispatcher` - Dispatcher for sending requests to handler coroutines
+    /// * `security_schemes` - Security schemes from OpenAPI spec
+    /// * `spec_path` - Path to the OpenAPI specification file
+    /// * `static_dir` - Optional directory for static files
+    /// * `doc_dir` - Optional directory for documentation files
+    ///
+    /// # Returns
+    ///
+    /// A new `AppService` ready to handle requests
     pub fn new(
         router: Arc<RwLock<Router>>,
         dispatcher: Arc<RwLock<Dispatcher>>,
@@ -83,10 +112,26 @@ impl AppService {
         }
     }
 
+    /// Register a security provider for authentication/authorization
+    ///
+    /// Security providers validate credentials (API keys, JWT tokens, OAuth2) and
+    /// enforce access control based on the OpenAPI security schemes.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Security scheme name from OpenAPI spec
+    /// * `provider` - Implementation of the security provider
     pub fn register_security_provider(&mut self, name: &str, provider: Arc<dyn SecurityProvider>) {
         self.security_providers.insert(name.to_string(), provider);
     }
 
+    /// Set the metrics collection middleware
+    ///
+    /// Enables Prometheus metrics collection for requests, responses, and handler performance.
+    ///
+    /// # Arguments
+    ///
+    /// * `metrics` - Metrics middleware instance
     pub fn set_metrics_middleware(&mut self, metrics: Arc<MetricsMiddleware>) {
         self.metrics = Some(metrics);
     }

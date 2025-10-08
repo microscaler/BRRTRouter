@@ -28,6 +28,28 @@ fn strip_unknown_verbs(val: &mut serde_json::Value) {
     }
 }
 
+/// Load an OpenAPI specification from a file and extract route metadata
+///
+/// Supports both YAML and JSON formats. Returns route metadata and a URL-safe project slug
+/// derived from the API title.
+///
+/// # Arguments
+///
+/// * `file_path` - Path to the OpenAPI specification file
+///
+/// # Returns
+///
+/// A tuple of:
+/// * `Vec<RouteMeta>` - Route metadata for all operations in the spec
+/// * `String` - URL-safe project slug derived from API title
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The file cannot be read
+/// - The spec is invalid YAML/JSON
+/// - The spec doesn't conform to OpenAPI 3.x
+/// - Route extraction fails
 pub fn load_spec(file_path: &str) -> anyhow::Result<(Vec<RouteMeta>, String)> {
     let content = std::fs::read_to_string(file_path)?;
     let mut value: serde_json::Value =
@@ -52,6 +74,24 @@ pub fn load_spec(file_path: &str) -> anyhow::Result<(Vec<RouteMeta>, String)> {
     Ok((routes, title))
 }
 
+/// Load an OpenAPI specification with full security scheme information
+///
+/// Like `load_spec` but also extracts security schemes for authentication/authorization.
+///
+/// # Arguments
+///
+/// * `file_path` - Path to the OpenAPI specification file
+///
+/// # Returns
+///
+/// A tuple of:
+/// * `Vec<RouteMeta>` - Route metadata for all operations
+/// * `HashMap<String, SecurityScheme>` - Security schemes defined in the spec
+/// * `String` - URL-safe project slug
+///
+/// # Errors
+///
+/// Returns an error if the spec cannot be loaded or parsed.
 pub fn load_spec_full(
     file_path: &str,
 ) -> anyhow::Result<(
@@ -93,6 +133,24 @@ pub fn load_spec_from_spec(spec: OpenApiV3Spec) -> anyhow::Result<Vec<RouteMeta>
     Ok(routes)
 }
 
+/// Extract route metadata and security schemes from an already-parsed OpenAPI spec
+///
+/// Useful when you already have a parsed `OpenApiV3Spec` and want to extract
+/// both routes and security information without reloading from a file.
+///
+/// # Arguments
+///
+/// * `spec` - Parsed OpenAPI specification
+///
+/// # Returns
+///
+/// A tuple of:
+/// * `Vec<RouteMeta>` - Route metadata
+/// * `HashMap<String, SecurityScheme>` - Security schemes
+///
+/// # Errors
+///
+/// Returns an error if route extraction fails.
 pub fn load_spec_from_spec_full(
     spec: OpenApiV3Spec,
 ) -> anyhow::Result<(

@@ -1,6 +1,19 @@
 use std::path::Path;
 use std::process::Command;
 
+/// Format a generated project using `cargo fmt`
+///
+/// # Arguments
+///
+/// * `dir` - Directory containing the Rust project to format
+///
+/// # Returns
+///
+/// `Ok(())` on success
+///
+/// # Errors
+///
+/// Returns an error if `cargo fmt` fails or is not installed.
 pub fn format_project(dir: &Path) -> anyhow::Result<()> {
     // Allow tests to override the cargo binary path without mutating PATH
     let cargo_bin = std::env::var("BRRTR_CARGO_BIN").unwrap_or_else(|_| "cargo".to_string());

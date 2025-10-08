@@ -70,6 +70,9 @@ pub struct Dispatcher {
 }
 
 impl Dispatcher {
+    /// Create a new empty dispatcher
+    ///
+    /// Handlers must be registered using `register_handler` or `add_route`.
     pub fn new() -> Self {
         Dispatcher {
             handlers: HashMap::new(),
@@ -88,6 +91,14 @@ impl Dispatcher {
         self.handlers.insert(route.handler_name, sender);
     }
 
+    /// Add middleware to the processing pipeline
+    ///
+    /// Middleware is executed in the order it's added. Each middleware can
+    /// modify requests before they reach handlers and responses before they're sent.
+    ///
+    /// # Arguments
+    ///
+    /// * `mw` - Middleware implementation to add
     pub fn add_middleware(&mut self, mw: Arc<dyn Middleware>) {
         self.middlewares.push(mw);
     }
@@ -141,6 +152,26 @@ impl Dispatcher {
         self.handlers.insert(name, tx);
     }
 
+    /// Dispatch a request to the appropriate handler
+    ///
+    /// Sends the request to the handler's coroutine via channel and waits for the response.
+    /// Returns `None` if no handler is registered for the route.
+    ///
+    /// # Arguments
+    ///
+    /// * `route_match` - Matched route with path parameters
+    /// * `body` - Optional JSON request body
+    /// * `headers` - HTTP headers
+    /// * `cookies` - Parsed cookies
+    ///
+    /// # Returns
+    ///
+    /// * `Some(HandlerResponse)` - Response from the handler
+    /// * `None` - If no handler is registered for this route
+    ///
+    /// # Timeout
+    ///
+    /// Waits up to 30 seconds for a response before timing out.
     pub fn dispatch(
         &self,
         route_match: RouteMatch,

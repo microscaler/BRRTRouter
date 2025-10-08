@@ -15,6 +15,18 @@ fn status_reason(status: u16) -> &'static str {
 
 use std::collections::HashMap;
 
+/// Write a handler response to the HTTP response object
+///
+/// Serializes the response body as JSON or plain text and sets appropriate headers.
+/// Handles Server-Sent Events (SSE) responses with special content type.
+///
+/// # Arguments
+///
+/// * `res` - HTTP response object to write to
+/// * `status` - HTTP status code (e.g., 200, 404, 500)
+/// * `body` - Response body as JSON value
+/// * `is_sse` - Whether this is a Server-Sent Events response
+/// * `headers` - Additional HTTP headers to include
 pub fn write_handler_response(
     res: &mut Response,
     status: u16,
@@ -44,6 +56,16 @@ pub fn write_handler_response(
     }
 }
 
+/// Write a JSON error response to the HTTP response object
+///
+/// Used for validation errors, authentication failures, and other error conditions.
+/// Always sets content-type to `application/json`.
+///
+/// # Arguments
+///
+/// * `res` - HTTP response object to write to
+/// * `status` - HTTP status code (typically 400-599)
+/// * `body` - Error response body as JSON (usually includes "error" field)
 pub fn write_json_error(res: &mut Response, status: u16, body: Value) {
     let reason = status_reason(status);
     res.status_code(status as usize, reason);
