@@ -146,6 +146,14 @@ pub struct BearerJwtProvider {
 }
 
 impl BearerJwtProvider {
+    /// Create a new Bearer JWT provider with the given signature
+    ///
+    /// The signature is used to validate JWT tokens (checked against the 3rd part of the JWT).
+    /// This is a simplified implementation for testing - production should use proper JWT libraries.
+    ///
+    /// # Arguments
+    ///
+    /// * `signature` - Expected JWT signature value
     pub fn new(signature: impl Into<String>) -> Self {
         Self {
             signature: signature.into(),
@@ -214,6 +222,14 @@ pub struct OAuth2Provider {
 }
 
 impl OAuth2Provider {
+    /// Create a new OAuth2 provider with the given signature
+    ///
+    /// Uses JWT validation similar to `BearerJwtProvider`. This is a simplified
+    /// implementation for testing - production should use proper OAuth2 libraries.
+    ///
+    /// # Arguments
+    ///
+    /// * `signature` - Expected JWT signature value
     pub fn new(signature: impl Into<String>) -> Self {
         Self {
             signature: signature.into(),
@@ -221,6 +237,11 @@ impl OAuth2Provider {
         }
     }
 
+    /// Configure the cookie name used to read the OAuth2 token
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Cookie name (e.g., "oauth_token")
     pub fn cookie_name(mut self, name: impl Into<String>) -> Self {
         self.cookie_name = Some(name.into());
         self
@@ -270,6 +291,14 @@ pub struct JwksBearerProvider {
 }
 
 impl JwksBearerProvider {
+    /// Create a new JWKS-based Bearer provider
+    ///
+    /// Fetches JSON Web Key Sets from the provided URL and uses them to validate
+    /// JWT signatures. This is the production-ready JWT validation provider.
+    ///
+    /// # Arguments
+    ///
+    /// * `jwks_url` - URL to fetch JWKS from (e.g., `https://example.auth0.com/.well-known/jwks.json`)
     pub fn new(jwks_url: impl Into<String>) -> Self {
         Self {
             jwks_url: jwks_url.into(),
@@ -284,18 +313,33 @@ impl JwksBearerProvider {
         }
     }
 
+    /// Configure the expected JWT issuer claim
+    ///
+    /// Validation will fail if the JWT `iss` claim doesn't match this value.
     pub fn issuer(mut self, iss: impl Into<String>) -> Self {
         self.iss = Some(iss.into());
         self
     }
+    
+    /// Configure the expected JWT audience claim
+    ///
+    /// Validation will fail if the JWT `aud` claim doesn't match this value.
     pub fn audience(mut self, aud: impl Into<String>) -> Self {
         self.aud = Some(aud.into());
         self
     }
+    
+    /// Configure leeway for time-based claims validation
+    ///
+    /// Allows some clock skew between client and server when validating exp, nbf, and iat claims.
     pub fn leeway(mut self, secs: u64) -> Self {
         self.leeway_secs = secs;
         self
     }
+    
+    /// Configure the TTL for cached JWKS keys
+    ///
+    /// Keys are cached to avoid repeated HTTP requests to the JWKS URL.
     pub fn cache_ttl(mut self, ttl: Duration) -> Self {
         self.cache_ttl = ttl;
         self
@@ -466,6 +510,14 @@ pub struct RemoteApiKeyProvider {
 }
 
 impl RemoteApiKeyProvider {
+    /// Create a new remote API key provider
+    ///
+    /// Validates API keys by making HTTP requests to an external verification service.
+    /// Results are cached to reduce latency and load on the verification service.
+    ///
+    /// # Arguments
+    ///
+    /// * `verify_url` - URL of the verification service (e.g., `https://api.example.com/verify`)
     pub fn new(verify_url: impl Into<String>) -> Self {
         Self {
             verify_url: verify_url.into(),
@@ -475,10 +527,18 @@ impl RemoteApiKeyProvider {
             header_name: "x-api-key".to_string(),
         }
     }
+    
+    /// Configure the HTTP request timeout in milliseconds
+    ///
+    /// Default: 500ms
     pub fn timeout_ms(mut self, ms: u64) -> Self {
         self.timeout_ms = ms;
         self
     }
+    
+    /// Configure the TTL for cached validation results
+    ///
+    /// Default: 60 seconds
     pub fn cache_ttl(mut self, ttl: Duration) -> Self {
         self.cache_ttl = ttl;
         self

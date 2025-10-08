@@ -12,14 +12,34 @@ use std::convert::TryFrom;
 /// Trait implemented by typed coroutine handlers.
 ///
 /// A handler receives a [`TypedHandlerRequest`] and returns a typed response.
+/// This provides type-safe request/response handling with automatic validation.
 pub trait Handler: Send + 'static {
+    /// The typed request type (converted from HandlerRequest)
     type Request: TryFrom<HandlerRequest, Error = anyhow::Error> + Send + 'static;
+    /// The typed response type (serialized to JSON)
     type Response: Serialize + Send + 'static;
 
+    /// Handle a typed request and return a typed response
+    ///
+    /// # Arguments
+    ///
+    /// * `req` - Typed request with validated data
+    ///
+    /// # Returns
+    ///
+    /// A typed response that will be serialized to JSON
     fn handle(&self, req: TypedHandlerRequest<Self::Request>) -> Self::Response;
 }
 
+/// Trait for converting HandlerRequest to TypedHandlerRequest
+///
+/// Implemented automatically for TypedHandlerRequest<T> where T can be converted from HandlerRequest.
 pub trait TypedHandlerFor<T>: Sized {
+    /// Convert a generic HandlerRequest to a typed request
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request data cannot be converted to type T
     fn from_handler(req: HandlerRequest) -> anyhow::Result<TypedHandlerRequest<T>>;
 }
 
@@ -103,13 +123,23 @@ where
     tx
 }
 
+/// Typed request data passed to a Handler
+///
+/// Contains the HTTP metadata (method, path, params) along with the typed
+/// request data that has been validated and converted from the raw HandlerRequest.
 #[derive(Debug, Clone)]
 pub struct TypedHandlerRequest<T> {
+    /// HTTP method
     pub method: Method,
+    /// Request path
     pub path: String,
+    /// Handler name
     pub handler_name: String,
+    /// Path parameters extracted from URL
     pub path_params: HashMap<String, String>,
+    /// Query string parameters
     pub query_params: HashMap<String, String>,
+    /// Typed request data (validated and converted)
     pub data: T,
 }
 
