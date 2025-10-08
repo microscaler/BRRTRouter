@@ -40,7 +40,7 @@ pub trait Middleware: Send + Sync {
     fn before(&self, _req: &HandlerRequest) -> Option<HandlerResponse> {
         None
     }
-    
+
     /// Called after the handler returns a response
     ///
     /// Can modify the response before it's sent to the client.

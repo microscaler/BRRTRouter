@@ -101,7 +101,7 @@ impl AppService {
         write.insert(leaked.to_string(), leaked);
         leaked
     }
-    
+
     /// Create a new application service
     ///
     /// # Arguments

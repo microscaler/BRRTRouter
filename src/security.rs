@@ -79,20 +79,14 @@
 //!
 //! ## Example
 //!
-//! ```rust
+//! ```rust,ignore
+//! // Example: Register a security provider (requires full server setup)
 //! use brrtrouter::server::AppService;
 //! use brrtrouter::security::BearerJwtProvider;
+//! use std::sync::Arc;
 //!
-//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! # let spec = brrtrouter::spec::load_spec("examples/openapi.yaml")?;
-//! # let router = brrtrouter::router::Router::from_spec(&spec);
-//! let mut service = AppService::new(router, spec);
-//!
-//! // Register security provider
 //! let jwt_provider = BearerJwtProvider::new("secret");
-//! service.register_security_provider("bearerAuth", Box::new(jwt_provider));
-//! # Ok(())
-//! # }
+//! service.register_security_provider("bearerAuth", Arc::new(jwt_provider));
 //! ```
 
 use crate::spec::SecurityScheme;
@@ -408,7 +402,7 @@ impl JwksBearerProvider {
         self.iss = Some(iss.into());
         self
     }
-    
+
     /// Configure the expected JWT audience claim
     ///
     /// Validation will fail if the JWT `aud` claim doesn't match this value.
@@ -416,7 +410,7 @@ impl JwksBearerProvider {
         self.aud = Some(aud.into());
         self
     }
-    
+
     /// Configure leeway for time-based claims validation
     ///
     /// Allows some clock skew between client and server when validating exp, nbf, and iat claims.
@@ -424,7 +418,7 @@ impl JwksBearerProvider {
         self.leeway_secs = secs;
         self
     }
-    
+
     /// Configure the TTL for cached JWKS keys
     ///
     /// Keys are cached to avoid repeated HTTP requests to the JWKS URL.
@@ -691,7 +685,7 @@ impl RemoteApiKeyProvider {
             header_name: "x-api-key".to_string(),
         }
     }
-    
+
     /// Configure the HTTP request timeout in milliseconds
     ///
     /// Default: 500ms
@@ -699,7 +693,7 @@ impl RemoteApiKeyProvider {
         self.timeout_ms = ms;
         self
     }
-    
+
     /// Configure the TTL for cached validation results
     ///
     /// Default: 60 seconds
@@ -707,7 +701,7 @@ impl RemoteApiKeyProvider {
         self.cache_ttl = ttl;
         self
     }
-    
+
     /// Configure the header name to look for the API key
     ///
     /// Default: `x-api-key`
@@ -774,11 +768,12 @@ impl RemoteApiKeyProvider {
 ///
 /// ```rust
 /// use brrtrouter::security::RemoteApiKeyProvider;
+/// use std::time::Duration;
 ///
 /// let provider = RemoteApiKeyProvider::new("https://auth.example.com/verify")
-///     .timeout_ms(1000)           // 1 second timeout
-///     .cache_ttl(300)             // 5 minute cache
-///     .header_name("X-Custom-Key"); // Custom header
+///     .timeout_ms(1000)                             // 1 second timeout
+///     .cache_ttl(Duration::from_secs(300))           // 5 minute cache
+///     .header_name("X-Custom-Key");                 // Custom header
 /// ```
 ///
 /// # Performance

@@ -33,8 +33,12 @@
 //! sender.send("Event 2");
 //! sender.send("Event 3");
 //!
+//! // Drop sender to close the channel
+//! drop(sender);
+//!
 //! // Collect events as SSE-formatted string
 //! let response = receiver.collect();
+//! assert!(response.contains("Event 1"));
 //! ```
 //!
 //! ## SSE Format

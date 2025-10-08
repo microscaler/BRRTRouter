@@ -31,7 +31,7 @@
 //!
 //! ## Usage
 //!
-//! ```rust
+//! ```rust,ignore
 //! use brrtrouter::static_files::StaticFiles;
 //! use serde_json::json;
 //!

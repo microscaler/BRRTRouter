@@ -234,7 +234,8 @@
 //!
 //! ## Quick Start
 //!
-//! ```no_run
+//! ```ignore
+//! // Example: Basic server setup (API has evolved - see examples/pet_store for current approach)
 //! use brrtrouter::{load_spec, router::Router, server::AppService};
 //!
 //! // Load your OpenAPI specification

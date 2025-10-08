@@ -225,7 +225,7 @@ pub fn write_controller(
         println!("⚠️  Skipping existing controller file: {path:?}");
         return Ok(());
     }
-    
+
     // COMPLEX LOGIC: Extract example data from OpenAPI response example
     // The example can be an object (most common) or an array (for list endpoints)
     // We convert it to a map so we can look up values by field name
@@ -236,7 +236,7 @@ pub fn write_controller(
             _ => None, // Not an object, we'll handle arrays separately
         })
         .unwrap_or_default();
-    
+
     // ENRICHMENT: Replace each field's dummy value with actual example data if available
     // This ensures generated controllers return realistic example responses from the OpenAPI spec
     let enriched_fields = res
@@ -247,7 +247,7 @@ pub fn write_controller(
                 .get(&field.name) // Look up field by name in example
                 .map(|val| rust_literal_for_example(field, val)) // Convert JSON → Rust literal
                 .unwrap_or_else(|| field.value.clone()); // Fallback to dummy value
-            
+
             // Clone field with enriched value
             FieldDef {
                 name: field.name.clone(),
@@ -285,7 +285,7 @@ pub fn write_controller(
     // COMPLEX: Detect if response is an array (list endpoints like GET /pets)
     // Array responses have a single field named "items" with type Vec<T>
     let response_is_array = res.len() == 1 && res[0].name == "items";
-    
+
     // TRICKY ARRAY HANDLING: Generate vec![] literal for array responses
     // We have three possible sources of data, prioritized:
     // 1. OpenAPI example that is itself an array → use it directly

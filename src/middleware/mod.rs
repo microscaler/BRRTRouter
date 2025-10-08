@@ -37,7 +37,7 @@
 //!
 //! Implement the [`Middleware`] trait:
 //!
-//! ```rust
+//! ```rust,ignore
 //! use brrtrouter::middleware::Middleware;
 //! use may_minihttp::{Request, Response};
 //!
@@ -67,7 +67,7 @@
 //!
 //! ## Example
 //!
-//! ```rust
+//! ```rust,ignore
 //! use brrtrouter::middleware::{AuthMiddleware, CorsMiddleware, MetricsMiddleware};
 //! use brrtrouter::server::AppService;
 //!

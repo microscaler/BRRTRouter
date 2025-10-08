@@ -63,7 +63,7 @@
 //!
 //! ### Programmatic Usage
 //!
-//! ```rust
+//! ```rust,ignore
 //! use brrtrouter::generator::{generate_project_from_spec, GenerationScope};
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {

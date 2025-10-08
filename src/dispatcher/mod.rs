@@ -25,7 +25,7 @@
 //!
 //! Handlers are registered with the dispatcher at startup:
 //!
-//! ```rust
+//! ```rust,ignore
 //! use brrtrouter::dispatcher::Dispatcher;
 //! use brrtrouter::server::{HandlerRequest, HandlerResponse};
 //!

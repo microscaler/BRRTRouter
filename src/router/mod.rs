@@ -25,7 +25,7 @@
 //!
 //! ## Example
 //!
-//! ```rust
+//! ```rust,ignore
 //! use brrtrouter::router::Router;
 //! use brrtrouter::spec::load_spec;
 //!

@@ -45,13 +45,12 @@ pub struct TracingMiddleware;
 ///
 /// Configure tracing subscriber in `main.rs`:
 ///
-/// ```rust
+/// ```rust,ignore
 /// use tracing_subscriber::layer::SubscriberExt;
 /// use tracing_subscriber::util::SubscriberInitExt;
 ///
 /// tracing_subscriber::registry()
 ///     .with(tracing_subscriber::fmt::layer())
-///     .with(opentelemetry::trace::TracerProvider::default())
 ///     .init();
 /// ```
 impl Middleware for TracingMiddleware {

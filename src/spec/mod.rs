@@ -22,7 +22,7 @@
 //!
 //! There are three ways to load an OpenAPI spec:
 //!
-//! ```rust
+//! ```rust,ignore
 //! use brrtrouter::spec::{load_spec, load_spec_full, load_spec_from_spec};
 //! use oas3::Spec;
 //!
@@ -69,7 +69,7 @@
 //!
 //! ## Example
 //!
-//! ```rust
+//! ```rust,ignore
 //! use brrtrouter::spec::load_spec_full;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {

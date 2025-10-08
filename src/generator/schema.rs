@@ -402,7 +402,7 @@ pub fn process_schema_type(
 /// A vector of field definitions that can be used to generate a Rust struct
 pub fn extract_fields(schema: &Value) -> Vec<FieldDef> {
     let mut fields = vec![];
-    
+
     // Special case: if schema is itself an array, return a single "items" field
     if let Some(schema_type) = schema.get("type").and_then(|t| t.as_str()) {
         if schema_type == "array" {
@@ -419,7 +419,7 @@ pub fn extract_fields(schema: &Value) -> Vec<FieldDef> {
             }
         }
     }
-    
+
     // Extract the list of required field names from the schema
     // This is used to determine if fields should be Option<T> or T
     let required = schema
@@ -432,7 +432,7 @@ pub fn extract_fields(schema: &Value) -> Vec<FieldDef> {
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
-    
+
     // Process each property in the schema
     if let Some(props) = schema.get("properties").and_then(|p| p.as_object()) {
         for (name, prop) in props {
@@ -495,22 +495,22 @@ pub fn extract_fields(schema: &Value) -> Vec<FieldDef> {
                     _ => "serde_json::Value".to_string(),
                 }
             };
-            
+
             // Determine if field is optional:
             // - Not in required array, OR
             // - Has oneOf with null variant
             let optional = !required.contains(name) || nullable_oneof;
-            
+
             // Generate a dummy value for this field
             // If optional, wrap in Some(...), otherwise use value directly
             let value = dummy_value::dummy_value(&ty)
                 .map(|v| if optional { format!("Some({v})") } else { v })
                 .unwrap_or_else(|_| "Default::default()".to_string());
-            
+
             // Create the field definition with sanitized name and original name for serde
             fields.push(FieldDef {
                 name: sanitize_field_name(name), // Rust-safe identifier
-                original_name: name.clone(),      // Original JSON name for #[serde(rename)]
+                original_name: name.clone(),     // Original JSON name for #[serde(rename)]
                 ty,
                 optional,
                 value,

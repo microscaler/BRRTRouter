@@ -39,34 +39,32 @@ fn container_name() -> String {
 pub fn cleanup_orphaned_containers() {
     let name = container_name();
     eprintln!("Checking for orphaned test containers ({})...", name);
-    
+
     // First, try to stop the container (may not exist, that's OK)
     let stop_output = Command::new("docker")
         .args(["stop", "-t", "2", &name])
         .output();
-    
+
     if let Ok(output) = &stop_output {
         if output.status.success() {
             eprintln!("Stopped orphaned container: {}", name);
         }
     }
-    
+
     // Then force remove it (works on stopped or running containers)
-    let rm_output = Command::new("docker")
-        .args(["rm", "-f", &name])
-        .output();
-    
+    let rm_output = Command::new("docker").args(["rm", "-f", &name]).output();
+
     if let Ok(output) = &rm_output {
         if output.status.success() {
             eprintln!("Removed orphaned container: {}", name);
-            
+
             // Poll to verify the container name is actually released
             // This prevents race conditions in parallel test execution
             for attempt in 1..=20 {
                 let check = Command::new("docker")
                     .args(["ps", "-a", "--filter", &format!("name=^/{}$", name), "-q"])
                     .output();
-                
+
                 if let Ok(output) = check {
                     let container_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
                     if container_id.is_empty() {
@@ -74,11 +72,14 @@ pub fn cleanup_orphaned_containers() {
                         break;
                     }
                 }
-                
+
                 if attempt == 20 {
-                    eprintln!("Warning: Container name '{}' may still be in use after cleanup", name);
+                    eprintln!(
+                        "Warning: Container name '{}' may still be in use after cleanup",
+                        name
+                    );
                 }
-                
+
                 thread::sleep(Duration::from_millis(50));
             }
         } else {
@@ -102,23 +103,29 @@ impl Drop for ContainerHarness {
     /// This is critical for local development where tests may be run repeatedly.
     fn drop(&mut self) {
         eprintln!("Cleaning up Docker container: {}", self.container_id);
-        
+
         // Stop the container (with timeout)
         let stop_result = Command::new("docker")
             .args(["stop", "-t", "2", &self.container_id])
             .status();
-        
+
         if let Err(e) = stop_result {
-            eprintln!("Warning: Failed to stop container {}: {}", self.container_id, e);
+            eprintln!(
+                "Warning: Failed to stop container {}: {}",
+                self.container_id, e
+            );
         }
-        
+
         // Remove the container (force flag handles already-stopped containers)
         let rm_result = Command::new("docker")
             .args(["rm", "-f", &self.container_id])
             .status();
-        
+
         if let Err(e) = rm_result {
-            eprintln!("Warning: Failed to remove container {}: {}", self.container_id, e);
+            eprintln!(
+                "Warning: Failed to remove container {}: {}",
+                self.container_id, e
+            );
         } else {
             eprintln!("Successfully cleaned up container: {}", self.container_id);
         }
@@ -146,7 +153,7 @@ impl ContainerHarness {
             // from previous failed runs
             cleanup_orphaned_containers();
         });
-        
+
         // Ensure Docker is available
         let docker_ok = Command::new("docker")
             .arg("--version")

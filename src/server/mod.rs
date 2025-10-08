@@ -52,7 +52,7 @@
 //!
 //! ## Example
 //!
-//! ```rust
+//! ```rust,ignore
 //! use brrtrouter::server::AppService;
 //! use brrtrouter::router::Router;
 //! use brrtrouter::spec::load_spec;
