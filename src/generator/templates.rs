@@ -225,26 +225,36 @@ pub fn write_controller(
         println!("⚠️  Skipping existing controller file: {path:?}");
         return Ok(());
     }
+    
+    // COMPLEX LOGIC: Extract example data from OpenAPI response example
+    // The example can be an object (most common) or an array (for list endpoints)
+    // We convert it to a map so we can look up values by field name
     let example_map = example
         .as_ref()
         .and_then(|v| match v {
             Value::Object(map) => Some(map.clone()),
-            _ => None,
+            _ => None, // Not an object, we'll handle arrays separately
         })
         .unwrap_or_default();
+    
+    // ENRICHMENT: Replace each field's dummy value with actual example data if available
+    // This ensures generated controllers return realistic example responses from the OpenAPI spec
     let enriched_fields = res
         .iter()
         .map(|field| {
+            // Try to find this field in the example data
             let value = example_map
-                .get(&field.name)
-                .map(|val| rust_literal_for_example(field, val))
-                .unwrap_or_else(|| field.value.clone());
+                .get(&field.name) // Look up field by name in example
+                .map(|val| rust_literal_for_example(field, val)) // Convert JSON → Rust literal
+                .unwrap_or_else(|| field.value.clone()); // Fallback to dummy value
+            
+            // Clone field with enriched value
             FieldDef {
                 name: field.name.clone(),
                 original_name: field.original_name.clone(),
                 ty: field.ty.clone(),
                 optional: field.optional,
-                value,
+                value, // Use enriched value with actual example data
             }
         })
         .collect::<Vec<_>>();
@@ -272,32 +282,47 @@ pub fn write_controller(
             .collect::<Vec<_>>()
             .join("\n")
     };
+    // COMPLEX: Detect if response is an array (list endpoints like GET /pets)
+    // Array responses have a single field named "items" with type Vec<T>
     let response_is_array = res.len() == 1 && res[0].name == "items";
+    
+    // TRICKY ARRAY HANDLING: Generate vec![] literal for array responses
+    // We have three possible sources of data, prioritized:
+    // 1. OpenAPI example that is itself an array → use it directly
+    // 2. OpenAPI example that is an object → extract the "items" field
+    // 3. No example → use dummy data
     let array_literal = if response_is_array {
-        // If the example itself is an array, prefer rendering from it
+        // Check if we have an OpenAPI example to work with
         if let Some(ref ex) = example {
             if ex.is_array() {
+                // BEST CASE: Example is already an array like [{"id": 1}, {"id": 2}]
+                // Create a temporary FieldDef to convert the whole array
                 let items_field = FieldDef {
                     name: "items".to_string(),
                     original_name: "items".to_string(),
-                    ty: res[0].ty.clone(), // Vec<...>
+                    ty: res[0].ty.clone(), // Vec<T> where T is the element type
                     optional: false,
-                    value: String::new(),
+                    value: String::new(), // Not used for this purpose
                 };
+                // Convert entire JSON array to Rust vec![] literal
                 super::schema::rust_literal_for_example(&items_field, ex)
             } else {
+                // Example is an object but response is array - use enriched field
+                // (This can happen with inconsistent OpenAPI specs)
                 enriched_fields
                     .first()
                     .map(|f| f.value.clone())
                     .unwrap_or_else(|| "vec![]".to_string())
             }
         } else {
+            // NO EXAMPLE: Fall back to enriched field's dummy value
             enriched_fields
                 .first()
                 .map(|f| f.value.clone())
                 .unwrap_or_else(|| "vec![]".to_string())
         }
     } else {
+        // Not an array response, no array literal needed
         String::new()
     };
     let context = ControllerTemplateData {
