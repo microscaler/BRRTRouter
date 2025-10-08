@@ -51,7 +51,27 @@ impl CorsMiddleware {
     }
 }
 
+/// Default CORS policy allowing all origins and common methods
+///
+/// This implementation provides a permissive CORS configuration suitable for
+/// development and testing. Production systems should use `CorsMiddleware::new()`
+/// with specific origin restrictions.
 impl Default for CorsMiddleware {
+    /// Create a default CORS middleware
+    ///
+    /// Default configuration:
+    /// - `allowed_origins`: `["*"]` (all origins)
+    /// - `allowed_headers`: `["*"]` (all headers)
+    /// - `allowed_methods`: `GET, POST, PUT, DELETE, PATCH, OPTIONS`
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use brrtrouter::middleware::CorsMiddleware;
+    ///
+    /// let cors = CorsMiddleware::default();
+    /// // Allows all origins, headers, and common HTTP methods
+    /// ```
     fn default() -> Self {
         Self {
             allowed_origins: vec!["*".into()],
@@ -67,7 +87,35 @@ impl Default for CorsMiddleware {
     }
 }
 
+/// CORS middleware implementation
+///
+/// Handles CORS preflight (OPTIONS) requests and adds CORS headers to all responses.
+/// This ensures browsers can make cross-origin requests according to the configured policy.
+///
+/// # CORS Flow
+///
+/// 1. **Preflight (OPTIONS)**: Returns 200 with CORS headers, no handler invoked
+/// 2. **Actual Request**: Handler executes, CORS headers added to response in `after()`
+///
+/// # Security
+///
+/// - Default config allows all origins (`*`) - restrict in production
+/// - Validates Origin header against `allowed_origins`
+/// - Exposes CORS headers via `Access-Control-Expose-Headers`
 impl Middleware for CorsMiddleware {
+    /// Handle CORS preflight requests (OPTIONS)
+    ///
+    /// If the request is OPTIONS, immediately return a 200 response with CORS headers.
+    /// For other methods, return None to allow the request to proceed to the handler.
+    ///
+    /// # Arguments
+    ///
+    /// * `req` - The incoming request
+    ///
+    /// # Returns
+    ///
+    /// - `Some(response)` - For OPTIONS requests (preflight)
+    /// - `None` - For all other requests (proceed to handler)
     fn before(&self, req: &HandlerRequest) -> Option<HandlerResponse> {
         if req.method == Method::OPTIONS {
             Some(HandlerResponse {
@@ -80,6 +128,22 @@ impl Middleware for CorsMiddleware {
         }
     }
 
+    /// Add CORS headers to the response after handler execution
+    ///
+    /// Called for all non-OPTIONS requests. Adds CORS headers to allow cross-origin
+    /// access based on the middleware configuration.
+    ///
+    /// # Arguments
+    ///
+    /// * `_req` - The original request (unused)
+    /// * `res` - The response to modify (headers added in-place)
+    /// * `_latency` - Request processing duration (unused)
+    ///
+    /// # Headers Added
+    ///
+    /// - `Access-Control-Allow-Origin`: First allowed origin or `*`
+    /// - `Access-Control-Allow-Methods`: Comma-separated list of allowed methods
+    /// - `Access-Control-Allow-Headers`: First allowed header or `*`
     fn after(&self, _req: &HandlerRequest, res: &mut HandlerResponse, _latency: Duration) {
         let origins = self.allowed_origins.join(", ");
         res.headers

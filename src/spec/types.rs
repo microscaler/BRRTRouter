@@ -40,7 +40,31 @@ pub enum ParameterStyle {
     DeepObject,
 }
 
+/// Convert from `oas3` crate's `ParameterStyle` to BRRTRouter's enum
+///
+/// Maps OpenAPI 3.x parameter style definitions from the `oas3` parser
+/// to BRRTRouter's internal representation.
+///
+/// # OpenAPI Parameter Styles
+///
+/// Different encoding styles for parameter values:
+/// - **Simple**: Comma-separated (default for path/header)
+/// - **Form**: Ampersand-separated (default for query/cookie)
+/// - **Matrix**: Semicolon-prefixed (path only)
+/// - **Label**: Dot-prefixed (path only)
+/// - **SpaceDelimited**: Space-separated arrays
+/// - **PipeDelimited**: Pipe-separated arrays
+/// - **DeepObject**: Nested objects as `key[subkey]=value`
 impl From<oas3::spec::ParameterStyle> for ParameterStyle {
+    /// Convert `oas3::spec::ParameterStyle` to `ParameterStyle`
+    ///
+    /// # Arguments
+    ///
+    /// * `style` - Parameter style from parsed OpenAPI spec
+    ///
+    /// # Returns
+    ///
+    /// Equivalent BRRTRouter `ParameterStyle` enum variant
     fn from(style: oas3::spec::ParameterStyle) -> Self {
         use oas3::spec::ParameterStyle as PS;
         match style {
@@ -55,7 +79,33 @@ impl From<oas3::spec::ParameterStyle> for ParameterStyle {
     }
 }
 
+/// Display implementation for `ParameterStyle`
+///
+/// Formats the parameter style as a human-readable string for logging,
+/// error messages, and debugging output.
+///
+/// # Output Format
+///
+/// Returns the enum variant name as-is: "Matrix", "Label", "Form", etc.
+///
+/// # Usage
+///
+/// ```rust
+/// use brrtrouter::spec::ParameterStyle;
+///
+/// let style = ParameterStyle::Form;
+/// println!("Style: {}", style); // "Style: Form"
+/// ```
 impl std::fmt::Display for ParameterStyle {
+    /// Format the parameter style as a string
+    ///
+    /// # Arguments
+    ///
+    /// * `f` - Formatter to write the output
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if formatting succeeds, `Err` otherwise
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self {
             ParameterStyle::Matrix => "Matrix",
@@ -70,7 +120,33 @@ impl std::fmt::Display for ParameterStyle {
     }
 }
 
+/// Display implementation for `ParameterLocation`
+///
+/// Formats the parameter location as a human-readable string for logging,
+/// error messages, and validation output.
+///
+/// # Output Format
+///
+/// Returns the enum variant name: "Path", "Query", "Header", "Cookie"
+///
+/// # Usage
+///
+/// ```rust
+/// use brrtrouter::spec::ParameterLocation;
+///
+/// let loc = ParameterLocation::Query;
+/// println!("Location: {}", loc); // "Location: Query"
+/// ```
 impl std::fmt::Display for ParameterLocation {
+    /// Format the parameter location as a string
+    ///
+    /// # Arguments
+    ///
+    /// * `f` - Formatter to write the output
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if formatting succeeds, `Err` otherwise
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ParameterLocation::Path => write!(f, "Path"),
@@ -81,7 +157,37 @@ impl std::fmt::Display for ParameterLocation {
     }
 }
 
+/// Convert from `oas3` crate's `ParameterIn` to BRRTRouter's enum
+///
+/// Maps OpenAPI 3.x parameter location definitions from the `oas3` parser
+/// to BRRTRouter's internal representation.
+///
+/// # OpenAPI Parameter Locations
+///
+/// Parameters can appear in different parts of the request:
+/// - **Path**: URL path segments (`/users/{id}`)
+/// - **Query**: URL query string (`/users?id=123`)
+/// - **Header**: HTTP headers (`Authorization: Bearer token`)
+/// - **Cookie**: HTTP cookies (`session=abc123`)
+///
+/// # Usage
+///
+/// ```rust
+/// use brrtrouter::spec::ParameterLocation;
+///
+/// let oas_param = oas3::spec::ParameterIn::Query;
+/// let loc: ParameterLocation = oas_param.into();
+/// ```
 impl From<oas3::spec::ParameterIn> for ParameterLocation {
+    /// Convert `oas3::spec::ParameterIn` to `ParameterLocation`
+    ///
+    /// # Arguments
+    ///
+    /// * `loc` - Parameter location from parsed OpenAPI spec
+    ///
+    /// # Returns
+    ///
+    /// Equivalent BRRTRouter `ParameterLocation` enum variant
     fn from(loc: oas3::spec::ParameterIn) -> Self {
         match loc {
             oas3::spec::ParameterIn::Path => ParameterLocation::Path,

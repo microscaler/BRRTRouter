@@ -24,7 +24,14 @@ pub struct MetricsMiddleware {
     auth_failures: AtomicUsize,
 }
 
+/// Default initialization for metrics middleware
+///
+/// Creates a new instance with all atomic counters set to zero.
+/// Equivalent to `MetricsMiddleware::new()`.
 impl Default for MetricsMiddleware {
+    /// Create a metrics middleware with zeroed counters
+    ///
+    /// All metrics start at zero and increment as requests are processed.
     fn default() -> Self {
         Self {
             request_count: AtomicUsize::new(0),
@@ -100,12 +107,58 @@ impl MetricsMiddleware {
     }
 }
 
+/// Metrics collection middleware implementation
+///
+/// Automatically tracks request statistics using atomic operations for thread-safety.
+/// This middleware is passive - it never blocks requests, only observes and records.
+///
+/// # Metrics Collected
+///
+/// - **Request count**: Total requests processed
+/// - **Latency**: Average processing time (calculated from `after()`)
+/// - **Stack usage**: Coroutine stack size and peak usage
+/// - **Top-level requests**: Infrastructure endpoints (health, metrics, docs)
+/// - **Auth failures**: Failed authentication attempts
+///
+/// # Performance
+///
+/// Uses `Ordering::Relaxed` for atomic operations to minimize overhead.
+/// Metrics are eventually consistent but extremely low-cost to collect.
 impl Middleware for MetricsMiddleware {
+    /// Increment request counter before processing
+    ///
+    /// Called for every request that reaches the dispatcher.
+    /// Increments the total request count atomically.
+    ///
+    /// # Arguments
+    ///
+    /// * `_req` - The incoming request (unused)
+    ///
+    /// # Returns
+    ///
+    /// Always returns `None` (never blocks requests)
     fn before(&self, _req: &HandlerRequest) -> Option<HandlerResponse> {
         self.request_count.fetch_add(1, Ordering::Relaxed);
         None
     }
 
+    /// Record latency and stack metrics after processing
+    ///
+    /// Called after the handler completes. Updates:
+    /// 1. Total latency (for average calculation)
+    /// 2. Stack size and usage (if running in a coroutine)
+    ///
+    /// # Arguments
+    ///
+    /// * `_req` - The original request (unused)
+    /// * `_res` - The response (unused)
+    /// * `latency` - Time taken to process the request
+    ///
+    /// # Stack Tracking
+    ///
+    /// - If in coroutine context: Records actual stack size from coroutine
+    /// - If not in coroutine: Records global stack size from May config
+    /// - Used stack is always 0 (May doesn't expose actual usage)
     fn after(&self, _req: &HandlerRequest, _res: &mut HandlerResponse, latency: Duration) {
         self.total_latency_ns
             .fetch_add(latency.as_nanos() as u64, Ordering::Relaxed);

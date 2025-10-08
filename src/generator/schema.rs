@@ -78,6 +78,25 @@ pub fn is_named_type(ty: &str) -> bool {
     !primitives.contains(&ty) && matches!(ty.chars().next(), Some('A'..='Z'))
 }
 
+/// Sanitize a Rust identifier by escaping keywords (private helper)
+///
+/// Rust keywords like `type`, `self`, `fn` cannot be used as identifiers.
+/// This function detects keywords and prefixes them with `r#` (raw identifier syntax).
+///
+/// # Arguments
+///
+/// * `name` - Identifier to sanitize
+///
+/// # Returns
+///
+/// Either the original name or `r#{name}` if it's a keyword
+///
+/// # Example
+///
+/// ```ignore
+/// assert_eq!(sanitize_rust_identifier("type"), "r#type");
+/// assert_eq!(sanitize_rust_identifier("user_id"), "user_id");
+/// ```
 fn sanitize_rust_identifier(name: &str) -> String {
     const KEYWORDS: &[&str] = &[
         "as", "break", "const", "continue", "crate", "else", "enum", "extern", "false", "fn",
@@ -92,6 +111,29 @@ fn sanitize_rust_identifier(name: &str) -> String {
     }
 }
 
+/// Sanitize a field name to be a valid Rust identifier (private helper)
+///
+/// Field names from OpenAPI specs may contain characters invalid in Rust (hyphens, dots, etc.).
+/// This function:
+/// 1. Replaces invalid characters with underscores
+/// 2. Ensures the name doesn't start with a digit
+/// 3. Handles empty strings
+///
+/// # Arguments
+///
+/// * `name` - Field name from OpenAPI spec
+///
+/// # Returns
+///
+/// A valid Rust identifier
+///
+/// # Example
+///
+/// ```ignore
+/// assert_eq!(sanitize_field_name("user-id"), "user_id");
+/// assert_eq!(sanitize_field_name("123field"), "_123field");
+/// assert_eq!(sanitize_field_name(""), "_");
+/// ```
 fn sanitize_field_name(name: &str) -> String {
     // Replace invalid identifier characters with underscores and ensure it doesn't start with a digit.
     let mut s: String = name
@@ -117,6 +159,28 @@ fn sanitize_field_name(name: &str) -> String {
     s
 }
 
+/// Generate a unique handler name to avoid duplicates (internal helper)
+///
+/// Ensures handler names are unique by appending a counter if a duplicate is detected.
+/// This prevents compilation errors when multiple operations have the same operation ID.
+///
+/// # Arguments
+///
+/// * `seen` - Mutable set of already-used handler names
+/// * `name` - Desired handler name
+///
+/// # Returns
+///
+/// Either the original name (if unique) or `{name}_{counter}` (if duplicate)
+///
+/// # Example
+///
+/// ```ignore
+/// let mut seen = HashSet::new();
+/// assert_eq!(unique_handler_name(&mut seen, "get_user"), "get_user");
+/// assert_eq!(unique_handler_name(&mut seen, "get_user"), "get_user_1");
+/// assert_eq!(unique_handler_name(&mut seen, "get_user"), "get_user_2");
+/// ```
 pub(crate) fn unique_handler_name(seen: &mut HashSet<String>, name: &str) -> String {
     if !seen.contains(name) {
         seen.insert(name.to_string());

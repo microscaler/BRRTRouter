@@ -342,6 +342,20 @@ pub fn write_controller(
     Ok(())
 }
 
+/// Write a mod.rs file with module declarations (internal helper)
+///
+/// Generates a `mod.rs` file that declares all submodules in a directory.
+/// Used internally by the generator to create handler/controller module files.
+///
+/// # Arguments
+///
+/// * `dir` - Directory where mod.rs will be created
+/// * `modules` - List of module names to declare
+/// * `label` - Label for success message (e.g., "handlers", "controllers")
+///
+/// # Errors
+///
+/// Returns an error if file writing fails
 pub(crate) fn write_mod_rs(dir: &Path, modules: &[String], label: &str) -> anyhow::Result<()> {
     let path = dir.join("mod.rs");
     let rendered = ModRsTemplateData {
@@ -376,6 +390,19 @@ pub fn write_registry_rs(dir: &Path, entries: &[RegistryEntry]) -> anyhow::Resul
     Ok(())
 }
 
+/// Write the types.rs file with type definitions (internal helper)
+///
+/// Generates a `types.rs` file containing all Rust struct definitions extracted
+/// from OpenAPI component schemas.
+///
+/// # Arguments
+///
+/// * `dir` - Output directory (typically `src/handlers/`)
+/// * `types` - Map of type names to their definitions
+///
+/// # Errors
+///
+/// Returns an error if template rendering or file writing fails
 pub(crate) fn write_types_rs(
     dir: &Path,
     types: &HashMap<String, TypeDefinition>,
@@ -391,6 +418,18 @@ pub(crate) fn write_types_rs(
     Ok(())
 }
 
+/// Write the Cargo.toml file for the generated project (internal helper)
+///
+/// Generates the Cargo.toml manifest with project name and dependencies.
+///
+/// # Arguments
+///
+/// * `base` - Project root directory
+/// * `slug` - Project name slug (URL-safe identifier)
+///
+/// # Errors
+///
+/// Returns an error if template rendering or file writing fails
 pub(crate) fn write_cargo_toml(base: &Path, slug: &str) -> anyhow::Result<()> {
     let rendered = CargoTomlTemplateData {
         name: slug.to_string(),
