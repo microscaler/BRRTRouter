@@ -380,26 +380,16 @@ jobs:
         run: |
           echo "## 📊 Goose Load Test Results" > goose-summary.md
           echo "" >> goose-summary.md
-          echo "**Test Configuration:**" >> goose-summary.md
-          echo "- Duration: 2 minutes" >> goose-summary.md
-          echo "- Users: 20 concurrent" >> goose-summary.md
-          echo "- Hatch Rate: 5 users/second" >> goose-summary.md
+          echo "Full metrics available in ASCII report artifact." >> goose-summary.md
           echo "" >> goose-summary.md
-          echo "**Endpoints Tested:**" >> goose-summary.md
-          echo "- ✅ GET /health" >> goose-summary.md
-          echo "- ✅ GET /metrics" >> goose-summary.md
-          echo "- ✅ GET /pets (authenticated)" >> goose-summary.md
-          echo "- ✅ GET /pets/{id} (authenticated)" >> goose-summary.md
-          echo "- ✅ GET /users (authenticated)" >> goose-summary.md
-          echo "- ✅ GET /users/{id} (authenticated)" >> goose-summary.md
-          echo "- ✅ GET /openapi.yaml" >> goose-summary.md
-          echo "- ✅ GET /docs (Swagger UI)" >> goose-summary.md
-          echo "- ✅ Static files (CSS, JS)" >> goose-summary.md
-          echo "" >> goose-summary.md
-          echo "\`\`\`" >> goose-summary.md
-          # Extract transaction metrics section
-          sed -n '/=== PER TRANSACTION METRICS ===/,/=== /p' goose-metrics.txt | head -n -1 >> goose-summary.md || echo "Metrics extraction failed" >> goose-summary.md
-          echo "\`\`\`" >> goose-summary.md
+          
+          # Extract actual aggregated metrics from Goose output
+          if grep -q "All Transactions" goose-metrics.txt; then
+            echo "### Summary Statistics" >> goose-summary.md
+            echo "\`\`\`" >> goose-summary.md
+            grep -A 10 "All Transactions" goose-metrics.txt >> goose-summary.md || echo "Could not extract summary" >> goose-summary.md
+            echo "\`\`\`" >> goose-summary.md
+          fi
 
       - name: Upload Goose ASCII metrics
         uses: actions/upload-artifact@v4

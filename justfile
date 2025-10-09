@@ -192,3 +192,45 @@ nextest-test:
 	cargo nextest run --workspace --all-targets --fail-fast --retries 1
 
 alias nt := nextest-test
+
+# ============================================================================
+# Local Development with Tilt + kind
+# ============================================================================
+
+# Start local development environment (kind + Tilt)
+# Tilt UI runs on port 10351 by default (configurable in Tiltfile)
+# To use a different port: TILT_PORT=10352 just dev-up
+dev-up:
+	@echo "🚀 Starting BRRTRouter development environment..."
+	@./scripts/dev-setup.sh
+	@echo ""
+	@echo "Starting Tilt (press 'space' to open web UI)..."
+	@tilt up
+
+# Stop local development environment
+dev-down:
+	@echo "🛑 Stopping Tilt..."
+	@tilt down || true
+	@echo "🗑️  Tearing down kind cluster..."
+	@./scripts/dev-teardown.sh
+
+# Check development environment status
+dev-status:
+	@echo "📊 kind cluster status:"
+	@kind get clusters | grep brrtrouter-dev || echo "❌ Cluster not found"
+	@echo ""
+	@echo "📦 Kubernetes pods:"
+	@kubectl get pods -n brrtrouter-dev 2>/dev/null || echo "❌ Namespace not found"
+	@echo ""
+	@echo "🔗 Services:"
+	@kubectl get svc -n brrtrouter-dev 2>/dev/null || echo "❌ No services found"
+
+# Rebuild and redeploy (useful after major changes)
+dev-rebuild:
+	@echo "🔨 Rebuilding all components..."
+	@cargo clean
+	@cargo build --release
+	@cargo build --release -p pet_store
+	@echo "🔄 Restarting Tilt..."
+	@tilt down || true
+	@tilt up

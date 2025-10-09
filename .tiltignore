@@ -1,0 +1,42 @@
+# Files to ignore for Tilt file watching
+# Speeds up Tilt by not watching unnecessary files
+
+# Build artifacts
+target/debug/
+target/doc/
+target/tmp/
+target/nextest/
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Test artifacts
+test_results.json
+comprehensive_test_report.json
+detailed_test_stability_results.json
+test_stability_results.json
+
+# Vendor
+vendor/
+
+# Git
+.git/
+
+# Documentation builds
+target/doc/
+
+# Temporary files
+*.tmp
+*.temp

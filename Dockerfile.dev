@@ -1,0 +1,42 @@
+# Minimal runtime-only Dockerfile for Tilt development
+# Binary is cross-compiled on host (Apple Silicon -> x86_64 Linux) and copied in
+
+FROM --platform=linux/amd64 alpine:3.19
+
+# Install runtime dependencies
+RUN apk add --no-cache \
+    ca-certificates \
+    libgcc
+
+# Create app directory with proper permissions for live updates
+WORKDIR /app
+
+# Copy pre-built binary from staging directory (x86_64 Linux musl target)
+COPY ./build_artifacts/pet_store /app/pet_store
+RUN chmod +x /app/pet_store
+
+# Create directories for configuration and assets with write permissions
+RUN mkdir -p /app/config /app/doc /app/static_site && \
+    chmod -R 777 /app
+
+# Copy configuration and assets to writable locations
+COPY ./examples/pet_store/config /app/config
+COPY ./examples/pet_store/doc /app/doc
+
+# Copy static site from sample-ui build output (Tailwind CSS + SolidJS)
+# Note: sample-ui/scripts/copy-to-petstore.js copies dist/* to examples/pet_store/static_site/
+COPY ./examples/pet_store/static_site /app/static_site
+
+# Expose HTTP port
+EXPOSE 8080
+
+# Set runtime environment
+ENV RUST_BACKTRACE=1
+ENV RUST_LOG=debug
+
+# Run the service
+ENTRYPOINT ["/app/pet_store", \
+    "--spec", "/app/doc/openapi.yaml", \
+    "--doc-dir", "/app/doc", \
+    "--static-dir", "/app/static_site", \
+    "--config", "/app/config/config.yaml"]

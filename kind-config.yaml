@@ -1,0 +1,39 @@
+# kind cluster configuration for BRRTRouter local development
+# Creates a single-node cluster with port mappings for services
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: brrtrouter-dev
+nodes:
+  - role: control-plane
+    # Port mappings for local access to services
+    extraPortMappings:
+      # Pet Store API
+      - containerPort: 30900
+        hostPort: 9090
+        protocol: TCP
+      # Grafana UI
+      - containerPort: 30300
+        hostPort: 3000
+        protocol: TCP
+      # Prometheus UI
+      - containerPort: 30090
+        hostPort: 8080
+        protocol: TCP
+      # Jaeger UI
+      - containerPort: 30686
+        hostPort: 16686
+        protocol: TCP
+    # Resource limits for local development
+    kubeadmConfigPatches:
+      - |
+        kind: ClusterConfiguration
+        apiServer:
+          extraArgs:
+            # Increase API server timeout for debugging
+            request-timeout: "300s"
+        controllerManager:
+          extraArgs:
+            # Faster reconciliation for development
+            node-monitor-period: "2s"
+            node-monitor-grace-period: "16s"
+

@@ -40,6 +40,56 @@ This documentation is published for **review and feedback purposes**, not for pr
 
 ## 🚀 Quick Start
 
+### Option 1: Local Development with Tilt + kind ⭐ **RECOMMENDED**
+
+**Fast iteration with full observability stack** (Prometheus, Grafana, Jaeger):
+
+```bash
+# Prerequisites: Docker, kind, kubectl, tilt (see docs/LOCAL_DEVELOPMENT.md)
+
+# Clone the repository
+git clone https://github.com/microscaler/BRRTRouter.git
+cd BRRTRouter
+
+# One-time setup: Create kind cluster
+./scripts/dev-setup.sh
+
+# Start Tilt (press 'space' for web UI)
+tilt up
+
+# 🎉 Services are now live!
+# - Pet Store API: http://localhost:8080 (standard HTTP)
+# - Grafana:       http://localhost:3000 (admin/admin)
+# - Prometheus:    http://localhost:9090 (standard Prometheus)
+# - Jaeger UI:     http://localhost:16686
+# - PostgreSQL:    localhost:5432 (user: brrtrouter, db: brrtrouter)
+# - Redis:         localhost:6379
+
+# Test the API
+curl -H "X-API-Key: test123" http://localhost:8080/pets
+curl http://localhost:8080/health
+
+# Query PostgreSQL
+psql -h localhost -U brrtrouter -d brrtrouter
+
+# Connect to Redis
+redis-cli -h localhost -p 6379
+```
+
+**Why Tilt + kind?**
+- ✅ **1-2 second iteration cycle** - edit code, see changes instantly
+- ✅ **Cross-platform** - works reliably on macOS (Apple Silicon), Linux, Windows
+- ✅ **Production-like** - Full Kubernetes environment locally
+- ✅ **Observability built-in** - Prometheus, Grafana, Jaeger, OTEL
+- ✅ **Multi-service testing** - PostgreSQL, Redis included
+- ✅ **No port conflicts** - Isolated in kind cluster
+
+📚 **[Complete Setup Guide →](docs/LOCAL_DEVELOPMENT.md)** | **[Architecture Details →](docs/TILT_IMPLEMENTATION.md)**
+
+### Option 2: Simple cargo run
+
+For quick testing without Kubernetes (single-service only):
+
 ```bash
 # Clone the repository
 git clone https://github.com/microscaler/BRRTRouter.git
@@ -57,7 +107,7 @@ curl http://localhost:8080/metrics
 open http://localhost:8080/docs
 ```
 
-**Generate your own service:**
+### Generate Your Own Service
 
 ```bash
 # Install the generator
@@ -75,6 +125,11 @@ cargo run -- --spec doc/openapi.yaml --port 8080
 
 ## 📈 Recent Progress (October 2025)
 
+- **🎉 Tilt + kind Local Development**: Fast iteration (~1-2s) with full observability stack (Prometheus, Grafana, Jaeger)
+  - Cross-compilation support for Apple Silicon → x86_64 Linux
+  - Live binary syncing without container rebuilds
+  - Production-like Kubernetes environment locally
+  - PostgreSQL and Redis included for multi-service testing
 - **🎉 100% Documentation Coverage**: All public APIs, impl blocks, complex functions, and test modules comprehensively documented
 - **✅ Parallel Test Execution**: Fixed Docker container conflicts for nextest parallel execution (219 tests pass)
 - **🦆 Goose Load Testing**: Comprehensive CI load tests covering ALL OpenAPI endpoints (unlike wrk)
@@ -309,20 +364,35 @@ Every PR runs a 2-minute Goose load test that:
 
 See [`docs/GOOSE_LOAD_TESTING.md`](docs/GOOSE_LOAD_TESTING.md) for complete guide.
 
-## 🐳 Pet Store Docker Image
+## 🐳 Docker & Container Deployment
 
-The `examples/pet_store` application can be packaged as a Docker image for
-integration testing or deployment. A `Dockerfile` and `docker-compose.yml` are
-included. Build and run the container with:
+### ⭐ Recommended: Tilt + kind (Local Development)
+
+For **local development**, use the [Tilt + kind setup](#option-1-local-development-with-tilt--kind--recommended) which provides:
+- Fast iteration with live updates
+- Full observability stack
+- Multi-service testing (PostgreSQL, Redis)
+- Production-like Kubernetes environment
+
+See [docs/LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md) for complete setup.
+
+### Legacy: Docker Compose (Deprecated)
+
+⚠️ **The `docker-compose.yml` setup is deprecated** in favor of Tilt + kind for local development.
+
+For simple single-container testing, you can still use:
 
 ```bash
 docker compose up -d --build
 ```
 
-The Dockerfile automatically runs the `brrtrouter-gen` generator so the example
-code is always up to date. The generated `doc` and `static_site` directories are
-copied into the final image. The service listens on port `8080` and exposes the
-`/health` endpoint for readiness checks.
+However, this approach:
+- ❌ Lacks observability (no Prometheus, Grafana, Jaeger)
+- ❌ Slower iteration (full rebuild required)
+- ❌ No multi-service support
+- ❌ Less production-like
+
+**For contributors**: Please use `tilt up` instead of `docker compose`.
 
 
 Unit tests validate:
@@ -479,10 +549,18 @@ TODO
 
 BRRTRouter has **100% comprehensive documentation** across all levels:
 
+### For Contributors
+
+- **🚀 Local Development**: [docs/LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md) - **START HERE** for Tilt + kind setup
+- **🏗️ Tilt Implementation**: [docs/TILT_IMPLEMENTATION.md](docs/TILT_IMPLEMENTATION.md) - Architecture of the dev environment
+- **🤝 Contributing Guide**: [CONTRIBUTING.md](CONTRIBUTING.md) - Development workflow and standards
+- **🧪 Test Documentation**: [docs/TEST_DOCUMENTATION.md](docs/TEST_DOCUMENTATION.md) - Complete test suite overview
+- **🦆 Load Testing**: [docs/GOOSE_LOAD_TESTING.md](docs/GOOSE_LOAD_TESTING.md) - Goose load testing guide
+
+### For API Users
+
 - **📖 API Documentation**: `cargo doc --open` - All public APIs documented
 - **🏗️ Architecture**: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) - System design with Mermaid diagrams
-- **🧪 Test Coverage**: [docs/TEST_DOCUMENTATION.md](docs/TEST_DOCUMENTATION.md) - Complete test suite overview
-- **🤝 Contributing**: [CONTRIBUTING.md](CONTRIBUTING.md) - Development workflow and standards
 - **🚀 Publishing**: [docs/PUBLISHING.md](docs/PUBLISHING.md) - Release process for crates.io
 - **📊 Roadmap**: [docs/ROADMAP.md](docs/ROADMAP.md) - Future plans and completed work
 
@@ -504,11 +582,48 @@ return `text/event-stream` content. Handlers use `brrrouter::sse::channel()` to 
 See [`examples/openapi.yaml`](examples/openapi.yaml) for the sample `/events` endpoint.
 
 ---
-## 📈 Contributing & Benchmarks
-For a detailed view of completed and upcoming work, see [docs/ROADMAP.md](docs/ROADMAP.md).
-Please read [CONTRIBUTING.md](CONTRIBUTING.md) for instructions on generating the example code.
+## 🤝 Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow and repository layout.
+We welcome contributions from developers at all levels! 
+
+### Getting Started as a Contributor
+
+1. **🚀 Set up your development environment** (5 minutes):
+   ```bash
+   git clone https://github.com/microscaler/BRRTRouter.git
+   cd BRRTRouter
+   ./scripts/dev-setup.sh  # One-time: creates kind cluster
+   tilt up                 # Start full dev stack
+   ```
+
+2. **✅ Verify everything works**:
+   ```bash
+   curl http://localhost:9090/health
+   curl -H "X-API-Key: test123" http://localhost:9090/pets
+   ```
+
+3. **📖 Read the contribution guide**: [CONTRIBUTING.md](CONTRIBUTING.md)
+
+4. **🔍 Pick an issue**: Look for [`good first issue`](https://github.com/microscaler/BRRTRouter/labels/good%20first%20issue) labels
+
+5. **🧪 Run tests before committing**:
+   ```bash
+   just nt        # Fast parallel tests with nextest
+   cargo fmt      # Format code
+   ```
+
+### Development Workflow
+
+- **Edit code** in `src/` or `examples/pet_store/src/`
+- **Tilt auto-rebuilds** and syncs (~1-2s)
+- **Test immediately** with `curl` or Swagger UI
+- **View logs**: `kubectl logs -f -n brrtrouter-dev deployment/petstore`
+- **Check metrics**: http://localhost:3000 (Grafana)
+- **Trace requests**: http://localhost:16686 (Jaeger)
+
+See [docs/LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md) for complete workflow.
+
+### Areas for Contribution
 
 We welcome contributions that improve:
 - 🧵 Typed handler deserialization
@@ -533,3 +648,54 @@ Benchmark goal:
 - Raspberry Pi 5
 - 100k route matches/sec
 - ≤8ms latency (excluding handler execution)
+
+---
+
+## 📋 Quick Reference for Contributors
+
+| Task | Command | Notes |
+|------|---------|-------|
+| **Setup dev environment** | `./scripts/dev-setup.sh && tilt up` | One-time cluster creation, then start Tilt |
+| **Start development** | `tilt up` | All services with hot reload |
+| **Stop development** | `Ctrl-C` or `tilt down` | Clean shutdown |
+| **View Tilt UI** | Press `space` in terminal | Interactive dashboard |
+| **Run tests** | `just nt` | Fast parallel execution (recommended) |
+| **Run tests (standard)** | `just test` | Standard cargo test |
+| **Format code** | `cargo fmt` | Required before commit |
+| **Check coverage** | `just coverage` | Must be ≥80% |
+| **Build docs** | `just docs` | Opens in browser |
+| **Load test** | `cargo run --release --example api_load_test -- --host http://localhost:9090 -u10 -r2 -t30s` | Tests all endpoints |
+| **View service logs** | `kubectl logs -f -n brrtrouter-dev deployment/petstore` | Real-time logs |
+| **Restart service** | `kubectl rollout restart deployment/petstore -n brrtrouter-dev` | Force restart |
+| **Check cluster status** | `just dev-status` | View all pods/services |
+| **Teardown cluster** | `just dev-down` | Remove everything |
+
+### Service URLs (when Tilt is running)
+
+| Service | URL | Purpose |
+|---------|-----|---------|
+| **Pet Store API** | http://localhost:8080 | Main API (standard HTTP port) |
+| **Swagger UI** | http://localhost:8080/docs | Interactive API docs |
+| **Health Check** | http://localhost:8080/health | Readiness probe |
+| **Metrics** | http://localhost:8080/metrics | Prometheus metrics |
+| **Grafana** | http://localhost:3000 | Dashboards (admin/admin) |
+| **Prometheus** | http://localhost:9090 | Metrics database (standard Prometheus port) |
+| **Jaeger** | http://localhost:16686 | Distributed tracing |
+| **PostgreSQL** | localhost:5432 | Database (user: brrtrouter, db: brrtrouter, pass: dev_password) |
+| **Redis** | localhost:6379 | Cache/session store |
+| **Tilt Web UI** | http://localhost:10351 | Dev dashboard (press 'space' in terminal) |
+
+---
+
+## 📞 Community & Support
+
+- **Issues**: [GitHub Issues](https://github.com/microscaler/BRRTRouter/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/microscaler/BRRTRouter/discussions)
+- **Roadmap**: [docs/ROADMAP.md](docs/ROADMAP.md)
+
+**Found a bug?** Open an issue with:
+- Steps to reproduce
+- Expected vs actual behavior
+- Output of `just dev-status` and relevant logs
+
+**Have an idea?** Start a discussion or open a feature request!
