@@ -554,6 +554,8 @@ This section analyzes all test modules in BRRTRouter to identify opportunities f
   - `with_handler()` for basic custom handlers
   - `with_handler_and_schemas()` for validation tests
 
+**Important Design Decision**: All test fixtures now include static and doc directories even when tests don't explicitly exercise them. This ensures comprehensive integration testing - if any change breaks static file serving or documentation endpoints, ALL tests will catch it, not just the dedicated static/docs tests. This provides robust regression detection.
+
 ```rust
 struct CustomServerTestFixture {
     _tracing: TestTracing,
@@ -585,6 +587,8 @@ impl Drop for CustomServerTestFixture {
 **Progress**: 7/7 tests completed ✅
 **Test Results**: All 28 tests pass, no memory leaks detected
 **Implementation**: `SecurityTestServer` fixture with multiple constructors for different service types
+
+**Important Design Decision**: All security test fixtures now include static and doc directories for comprehensive integration testing and regression detection.
 
 **Recommendation**: Create a `SecurityTestServer` fixture.
 

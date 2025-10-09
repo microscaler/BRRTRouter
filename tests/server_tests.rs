@@ -86,8 +86,8 @@ impl PetStoreTestServer {
             Arc::new(RwLock::new(dispatcher)),
             schemes,
             PathBuf::from("examples/openapi.yaml"),
-            None,
-            None,
+            Some(PathBuf::from("examples/pet_store/static_site")),
+            Some(PathBuf::from("examples/pet_store/doc")),
         );
         
         // Setup: Register API key provider for authentication
@@ -224,8 +224,8 @@ impl CustomServerTestFixture {
             Arc::new(RwLock::new(dispatcher)),
             HashMap::new(),
             PathBuf::from("examples/openapi.yaml"),
-            None,
-            None,
+            Some(PathBuf::from("examples/pet_store/static_site")),
+            Some(PathBuf::from("examples/pet_store/doc")),
         );
         
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
