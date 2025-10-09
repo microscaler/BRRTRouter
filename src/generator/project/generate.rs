@@ -15,17 +15,28 @@ use crate::generator::templates::{
 
 use anyhow::Context;
 
+/// Configuration for selective code generation
+///
+/// Controls which parts of the project are regenerated. Useful for incremental
+/// updates where only specific files need to be modified.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct GenerationScope {
+    /// Generate handler modules (request/response types and handler skeletons)
     pub handlers: bool,
+    /// Generate controller modules (coroutine dispatchers)
     pub controllers: bool,
+    /// Generate type definitions from OpenAPI schemas
     pub types: bool,
+    /// Generate registry module (handler registration)
     pub registry: bool,
+    /// Generate main.rs entry point
     pub main: bool,
+    /// Generate documentation files (OpenAPI spec, HTML docs)
     pub docs: bool,
 }
 
 impl GenerationScope {
+    /// Create a scope that enables all generation options
     pub fn all() -> Self {
         Self {
             handlers: true,
@@ -38,10 +49,46 @@ impl GenerationScope {
     }
 }
 
+/// Generate a complete Rust project from an OpenAPI specification
+///
+/// Creates a new project with handlers, controllers, types, and all supporting files
+/// in the `examples/` directory. This is the simple interface that generates everything.
+///
+/// # Arguments
+///
+/// * `spec_path` - Path to the OpenAPI specification file
+/// * `force` - Overwrite existing files without prompting
+///
+/// # Returns
+///
+/// The path to the generated project directory
+///
+/// # Errors
+///
+/// Returns an error if spec loading, code generation, or file I/O fails.
 pub fn generate_project_from_spec(spec_path: &Path, force: bool) -> anyhow::Result<PathBuf> {
     generate_project_with_options(spec_path, force, false, &GenerationScope::all())
 }
 
+/// Generate a Rust project with fine-grained control over what gets generated
+///
+/// Allows selective regeneration of specific parts (handlers, controllers, etc.)
+/// and supports dry-run mode for previewing changes.
+///
+/// # Arguments
+///
+/// * `spec_path` - Path to the OpenAPI specification file
+/// * `force` - Overwrite existing files without prompting
+/// * `dry_run` - Show what would be generated without writing files
+/// * `scope` - Which parts of the project to generate
+///
+/// # Returns
+///
+/// The path to the generated project directory
+///
+/// # Errors
+///
+/// Returns an error if spec loading, code generation, or file I/O fails.
 pub fn generate_project_with_options(
     spec_path: &Path,
     force: bool,

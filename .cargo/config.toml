@@ -1,0 +1,6 @@
+# Cargo configuration for BRRTRouter
+
+[build]
+# Enable Mermaid diagram rendering in documentation
+rustdocflags = ["--html-in-header", "doc/head.html"]
+

@@ -1,6 +1,6 @@
 [package]
 name = "brrtrouter"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 edition = "2021"
 authors = ["Charles Sibbald <casibbald@gmail.com>"]
 description = "A blazing-fast, OpenAPI 3.1 driven Rust request router powered by coroutines and may_minihttp."
@@ -10,6 +10,16 @@ keywords = ["router", "openapi", "a10", "coroutine", "may"]
 categories = ["web-programming", "api-bindings", "asynchronous"]
 readme = "README.md"
 exclude = [".github/"]
+
+[package.metadata.docs.rs]
+# Enable Mermaid diagram rendering in docs.rs
+rustdoc-args = ["--html-in-header", "doc/head.html"]
+# Build all features for comprehensive documentation
+all-features = true
+# Use nightly for better documentation features
+# rustc-args = ["--cfg", "docsrs"]
+# Build only the library docs (not binaries)
+default-target = "x86_64-unknown-linux-gnu"
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }

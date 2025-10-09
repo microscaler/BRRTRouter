@@ -1,15 +1,111 @@
+//! # Static Files Module
+//!
+//! The static files module provides secure static file serving with template rendering
+//! support for BRRTRouter applications.
+//!
+//! ## Overview
+//!
+//! This module enables serving:
+//! - Static HTML, CSS, JavaScript files
+//! - Template files with dynamic content injection (using MiniJinja)
+//! - API documentation pages
+//! - Landing pages and SPAs
+//!
+//! ## Security
+//!
+//! The module includes path traversal protection:
+//! - Blocks `../` and `..\\` sequences
+//! - Validates path components
+//! - Prevents access outside the base directory
+//! - Rejects parent directory navigation attempts
+//!
+//! ## Template Rendering
+//!
+//! HTML files ending in `.html` are automatically processed as MiniJinja templates,
+//! allowing dynamic content injection:
+//!
+//! ```html
+//! <h1>{{ title }}</h1>
+//! <p>{{ description }}</p>
+//! ```
+//!
+//! ## Usage
+//!
+//! ```rust,ignore
+//! use brrtrouter::static_files::StaticFiles;
+//! use serde_json::json;
+//!
+//! let static_files = StaticFiles::new("./static");
+//!
+//! // Serve a static file
+//! let (content_type, body) = static_files.load("/index.html", None)
+//!     .expect("Failed to load file");
+//!
+//! // Serve with template context
+//! let ctx = json!({
+//!     "title": "My API",
+//!     "version": "1.0.0"
+//! });
+//! let (content_type, body) = static_files.load("/index.html", Some(&ctx))
+//!     .expect("Failed to load file");
+//! ```
+//!
+//! ## Supported MIME Types
+//!
+//! The module automatically detects content types:
+//!
+//! - `.html` → `text/html`
+//! - `.css` → `text/css`
+//! - `.js` → `application/javascript`
+//! - `.json` → `application/json`
+//! - `.txt` → `text/plain`
+//! - Others → `application/octet-stream`
+//!
+//! ## Handler Integration
+//!
+//! ```rust,ignore
+//! use brrtrouter::static_files::StaticFiles;
+//! use brrtrouter::dispatcher::HandlerResponse;
+//!
+//! fn serve_docs(req: HandlerRequest) -> HandlerResponse {
+//!     let static_files = StaticFiles::new("./docs");
+//!     
+//!     match static_files.load(req.path(), None) {
+//!         Ok((content_type, body)) => {
+//!             HandlerResponse::new(200)
+//!                 .header("Content-Type", content_type)
+//!                 .body(body)
+//!         }
+//!         Err(_) => HandlerResponse::new(404).body("Not Found"),
+//!     }
+//! }
+//! ```
+
 use minijinja::Environment;
 use serde_json::Value as JsonValue;
 use std::fs;
 use std::io;
 use std::path::{Component, Path, PathBuf};
 
+/// Static file server with security and template rendering support.
+///
+/// Serves files from a base directory with path traversal protection
+/// and automatic template rendering for HTML files.
 #[derive(Clone)]
 pub struct StaticFiles {
     base_dir: PathBuf,
 }
 
 impl StaticFiles {
+    /// Create a new static file server for the given directory
+    ///
+    /// # Arguments
+    ///
+    /// * `base` - Base directory containing static files
+    ///
+    /// # Security
+    ///
+    /// Path traversal attacks are prevented - requests cannot escape the base directory.
     pub fn new<P: Into<PathBuf>>(base: P) -> Self {
         Self {
             base_dir: base.into(),
@@ -54,6 +150,27 @@ impl StaticFiles {
         }
     }
 
+    /// Load a file from the static directory with optional template rendering
+    ///
+    /// If the file has an `.html` extension, it's rendered as a MiniJinja template
+    /// with the provided context. Other files are returned as-is.
+    ///
+    /// # Arguments
+    ///
+    /// * `url_path` - URL path to the file (e.g., `/index.html`)
+    /// * `ctx` - Optional JSON context for template rendering
+    ///
+    /// # Returns
+    ///
+    /// A tuple of `(file_contents, content_type)` on success.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The path is invalid or contains directory traversal attempts
+    /// - The file doesn't exist
+    /// - Template rendering fails (for HTML files)
+    /// - File I/O fails
     pub fn load(
         &self,
         url_path: &str,

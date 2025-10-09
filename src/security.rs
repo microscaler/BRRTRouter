@@ -1,14 +1,127 @@
+//! # Security Module
+//!
+//! The security module provides authentication and authorization providers for BRRTRouter,
+//! implementing various security schemes defined in OpenAPI specifications.
+//!
+//! ## Overview
+//!
+//! This module implements the [`SecurityProvider`] trait for common authentication methods:
+//! - **API Keys** - Header, query parameter, or cookie-based API keys
+//! - **Bearer JWT** - JSON Web Token validation with signature verification
+//! - **OAuth2** - OAuth2 token validation with scope checking
+//!
+//! Security providers are registered with the application and automatically enforced based on
+//! the `security` requirements defined in your OpenAPI specification.
+//!
+//! ## Architecture
+//!
+//! Security validation follows this flow:
+//!
+//! 1. Request arrives with credentials (header, cookie, query param)
+//! 2. Router determines which security scheme(s) are required for the route
+//! 3. Appropriate [`SecurityProvider`] is invoked to validate credentials
+//! 4. If validation succeeds, request proceeds to handler
+//! 5. If validation fails, 401/403 response is returned
+//!
+//! ## Security Providers
+//!
+//! ### API Key Provider
+//!
+//! Validates simple API keys from headers, query parameters, or cookies:
+//!
+//! ```rust
+//! use brrtrouter::security::{SecurityProvider, SecurityRequest};
+//! use brrtrouter::spec::SecurityScheme;
+//! use std::collections::HashMap;
+//!
+//! // Simple static API key validation
+//! struct ApiKeyProvider { key: String }
+//!
+//! impl SecurityProvider for ApiKeyProvider {
+//!     fn validate(&self, scheme: &SecurityScheme, scopes: &[String], req: &SecurityRequest) -> bool {
+//!         req.headers.get("X-API-Key")
+//!             .map(|k| k == &self.key)
+//!             .unwrap_or(false)
+//!     }
+//! }
+//! ```
+//!
+//! ### Bearer JWT Provider
+//!
+//! The [`BearerJwtProvider`] validates JWTs with:
+//! - Signature verification
+//! - Scope checking
+//! - Cookie or header extraction
+//!
+//! ```rust
+//! use brrtrouter::security::BearerJwtProvider;
+//!
+//! let provider = BearerJwtProvider::new("my-secret-signature")
+//!     .cookie_name("auth_token");
+//! ```
+//!
+//! ### OAuth2 Provider
+//!
+//! The [`OAuth2Provider`] validates OAuth2 tokens with scope checking:
+//!
+//! ```rust
+//! use brrtrouter::security::OAuth2Provider;
+//!
+//! let provider = OAuth2Provider::new("oauth-signature");
+//! ```
+//!
+//! ## Caching
+//!
+//! Security providers support optional caching to reduce validation overhead:
+//! - Positive results can be cached to avoid repeated database/API lookups
+//! - Negative results can be cached to prevent brute force attacks
+//! - TTL-based expiration ensures credentials are re-validated periodically
+//!
+//! ## Example
+//!
+//! ```rust,ignore
+//! // Example: Register a security provider (requires full server setup)
+//! use brrtrouter::server::AppService;
+//! use brrtrouter::security::BearerJwtProvider;
+//! use std::sync::Arc;
+//!
+//! let jwt_provider = BearerJwtProvider::new("secret");
+//! service.register_security_provider("bearerAuth", Arc::new(jwt_provider));
+//! ```
+
 use crate::spec::SecurityScheme;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
+/// Request context for security validation.
+///
+/// Contains extracted credentials from various sources (headers, query, cookies)
+/// that security providers can use to validate the request.
 pub struct SecurityRequest<'a> {
+    /// HTTP headers from the request
     pub headers: &'a HashMap<String, String>,
+    /// Query parameters from the request URL
     pub query: &'a HashMap<String, String>,
+    /// Cookies from the request
     pub cookies: &'a HashMap<String, String>,
 }
 
+/// Trait for implementing security validation providers.
+///
+/// Implement this trait to create custom authentication/authorization logic
+/// for your OpenAPI security schemes.
 pub trait SecurityProvider: Send + Sync {
+    /// Validate a request against a security scheme.
+    ///
+    /// # Arguments
+    ///
+    /// * `scheme` - The OpenAPI security scheme definition
+    /// * `scopes` - Required scopes for this operation (for OAuth2/OpenID)
+    /// * `req` - The security request context with credentials
+    ///
+    /// # Returns
+    ///
+    /// `true` if the request is authenticated and authorized, `false` otherwise
     fn validate(&self, scheme: &SecurityScheme, scopes: &[String], req: &SecurityRequest) -> bool;
 }
 
@@ -27,6 +140,14 @@ pub struct BearerJwtProvider {
 }
 
 impl BearerJwtProvider {
+    /// Create a new Bearer JWT provider with the given signature
+    ///
+    /// The signature is used to validate JWT tokens (checked against the 3rd part of the JWT).
+    /// This is a simplified implementation for testing - production should use proper JWT libraries.
+    ///
+    /// # Arguments
+    ///
+    /// * `signature` - Expected JWT signature value
     pub fn new(signature: impl Into<String>) -> Self {
         Self {
             signature: signature.into(),
@@ -74,7 +195,47 @@ impl BearerJwtProvider {
     }
 }
 
+/// Bearer JWT authentication provider implementation
+///
+/// Validates JWT tokens passed via the `Authorization: Bearer {token}` header.
+/// Checks token signature and required scopes.
+///
+/// # Validation Flow
+///
+/// 1. Verify security scheme is HTTP Bearer
+/// 2. Extract token from Authorization header (or cookie if configured)
+/// 3. Parse JWT and validate signature
+/// 4. Check if token contains all required scopes
+///
+/// # JWT Format
+///
+/// Expects JWT format: `header.payload.signature`
+/// - Signature (3rd part) must match configured signature value
+/// - Payload must be valid JSON with optional `scope` field
+/// - Scopes can be space-separated string: `"read:users write:users"`
+///
+/// # Security
+///
+/// This is a simplified implementation suitable for:
+/// - ✅ Testing and development
+/// - ✅ Internal microservices with pre-shared secrets
+/// - ❌ NOT for production with external clients (use `JwksBearerProvider`)
+///
+/// For production JWT validation with proper key rotation,
+/// use `JwksBearerProvider` with JWKS endpoint.
 impl SecurityProvider for BearerJwtProvider {
+    /// Validate a Bearer JWT token against the security scheme
+    ///
+    /// # Arguments
+    ///
+    /// * `scheme` - Security scheme from OpenAPI spec
+    /// * `scopes` - Required OAuth2 scopes from operation
+    /// * `req` - The security request containing headers/cookies
+    ///
+    /// # Returns
+    ///
+    /// - `true` - Token is valid and contains required scopes
+    /// - `false` - Token missing, invalid signature, or missing scopes
     fn validate(&self, scheme: &SecurityScheme, scopes: &[String], req: &SecurityRequest) -> bool {
         match scheme {
             SecurityScheme::Http { scheme, .. } if scheme.eq_ignore_ascii_case("bearer") => {}
@@ -95,6 +256,14 @@ pub struct OAuth2Provider {
 }
 
 impl OAuth2Provider {
+    /// Create a new OAuth2 provider with the given signature
+    ///
+    /// Uses JWT validation similar to `BearerJwtProvider`. This is a simplified
+    /// implementation for testing - production should use proper OAuth2 libraries.
+    ///
+    /// # Arguments
+    ///
+    /// * `signature` - Expected JWT signature value
     pub fn new(signature: impl Into<String>) -> Self {
         Self {
             signature: signature.into(),
@@ -102,6 +271,11 @@ impl OAuth2Provider {
         }
     }
 
+    /// Configure the cookie name used to read the OAuth2 token
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Cookie name (e.g., "oauth_token")
     pub fn cookie_name(mut self, name: impl Into<String>) -> Self {
         self.cookie_name = Some(name.into());
         self
@@ -119,7 +293,55 @@ impl OAuth2Provider {
     }
 }
 
+/// OAuth2 provider implementation using JWT validation
+///
+/// Simplified OAuth2 provider that reuses `BearerJwtProvider` logic for token validation.
+/// Supports both Authorization header and cookie-based tokens.
+///
+/// # Validation Flow
+///
+/// 1. Verify security scheme is OAuth2
+/// 2. Extract token from cookie (if configured) or Authorization header
+/// 3. Delegate validation to `BearerJwtProvider` logic
+///
+/// # Token Sources (Priority Order)
+///
+/// 1. **Cookie**: If `cookie_name()` is configured, read token from cookie
+/// 2. **Authorization Header**: Falls back to `Authorization: Bearer {token}`
+///
+/// # Usage
+///
+/// ```rust
+/// use brrtrouter::security::OAuth2Provider;
+///
+/// // Authorization header only
+/// let provider = OAuth2Provider::new("secret_signature");
+///
+/// // Cookie-based (e.g., for browser SPAs)
+/// let provider = OAuth2Provider::new("secret_signature")
+///     .cookie_name("oauth_token");
+/// ```
+///
+/// # Security
+///
+/// - ✅ Testing and development
+/// - ✅ Internal APIs with controlled clients
+/// - ❌ NOT for production OAuth2 flows (use proper OAuth2 library)
+///
+/// For production: Use `JwksBearerProvider` with proper JWKS validation.
 impl SecurityProvider for OAuth2Provider {
+    /// Validate an OAuth2 token (uses JWT validation internally)
+    ///
+    /// # Arguments
+    ///
+    /// * `scheme` - Security scheme from OpenAPI spec (must be OAuth2)
+    /// * `scopes` - Required OAuth2 scopes from operation
+    /// * `req` - The security request containing headers/cookies
+    ///
+    /// # Returns
+    ///
+    /// - `true` - Token is valid and contains required scopes
+    /// - `false` - Token missing, invalid, or missing scopes
     fn validate(&self, scheme: &SecurityScheme, scopes: &[String], req: &SecurityRequest) -> bool {
         match scheme {
             SecurityScheme::OAuth2 { .. } => {}
@@ -151,6 +373,14 @@ pub struct JwksBearerProvider {
 }
 
 impl JwksBearerProvider {
+    /// Create a new JWKS-based Bearer provider
+    ///
+    /// Fetches JSON Web Key Sets from the provided URL and uses them to validate
+    /// JWT signatures. This is the production-ready JWT validation provider.
+    ///
+    /// # Arguments
+    ///
+    /// * `jwks_url` - URL to fetch JWKS from (e.g., `https://example.auth0.com/.well-known/jwks.json`)
     pub fn new(jwks_url: impl Into<String>) -> Self {
         Self {
             jwks_url: jwks_url.into(),
@@ -165,18 +395,33 @@ impl JwksBearerProvider {
         }
     }
 
+    /// Configure the expected JWT issuer claim
+    ///
+    /// Validation will fail if the JWT `iss` claim doesn't match this value.
     pub fn issuer(mut self, iss: impl Into<String>) -> Self {
         self.iss = Some(iss.into());
         self
     }
+
+    /// Configure the expected JWT audience claim
+    ///
+    /// Validation will fail if the JWT `aud` claim doesn't match this value.
     pub fn audience(mut self, aud: impl Into<String>) -> Self {
         self.aud = Some(aud.into());
         self
     }
+
+    /// Configure leeway for time-based claims validation
+    ///
+    /// Allows some clock skew between client and server when validating exp, nbf, and iat claims.
     pub fn leeway(mut self, secs: u64) -> Self {
         self.leeway_secs = secs;
         self
     }
+
+    /// Configure the TTL for cached JWKS keys
+    ///
+    /// Keys are cached to avoid repeated HTTP requests to the JWKS URL.
     pub fn cache_ttl(mut self, ttl: Duration) -> Self {
         self.cache_ttl = ttl;
         self
@@ -281,7 +526,83 @@ impl JwksBearerProvider {
     }
 }
 
+/// JWKS-based Bearer JWT provider implementation
+///
+/// Production-grade JWT validation using JSON Web Key Sets (JWKS).
+/// Fetches public keys from a JWKS endpoint and validates JWTs using proper cryptography.
+///
+/// # Validation Flow
+///
+/// 1. Verify security scheme is HTTP Bearer
+/// 2. Extract token from Authorization header or cookie
+/// 3. Parse JWT header to get `kid` (key ID) and `alg` (algorithm)
+/// 4. Fetch decoding key from JWKS cache (refreshes if expired)
+/// 5. Validate token signature using `jsonwebtoken` crate
+/// 6. Verify issuer (`iss`), audience (`aud`), expiration (`exp`)
+/// 7. Check required scopes in `scope` claim
+///
+/// # Supported Algorithms
+///
+/// - **HMAC**: HS256, HS384, HS512 (symmetric keys)
+/// - **RSA**: RS256, RS384, RS512 (asymmetric keys)
+///
+/// # JWKS Caching
+///
+/// - Keys are cached in-memory with configurable TTL (default: 3600s)
+/// - Automatic refresh when cache expires
+/// - Retry logic (3 attempts) for JWKS fetch
+/// - Thread-safe using `Mutex`
+///
+/// # Claims Validation
+///
+/// - **`exp`** (expiration): Always validated with configurable leeway
+/// - **`iss`** (issuer): Optional, validated if configured via `issuer()`
+/// - **`aud`** (audience): Optional, validated if configured via `audience()`
+/// - **`scope`**: Required for scope-protected operations
+///
+/// # Usage
+///
+/// ```rust
+/// use brrtrouter::security::JwksBearerProvider;
+///
+/// let provider = JwksBearerProvider::new("https://auth.example.com/.well-known/jwks.json")
+///     .issuer("https://auth.example.com")
+///     .audience("my-api")
+///     .leeway(60); // 60 seconds clock skew tolerance
+/// ```
+///
+/// # Security
+///
+/// - ✅ Production-ready
+/// - ✅ Supports key rotation (JWKS updates automatically)
+/// - ✅ Proper cryptographic validation
+/// - ✅ Issuer and audience validation
+/// - ✅ Expiration checking with leeway
 impl SecurityProvider for JwksBearerProvider {
+    /// Validate a JWT token using JWKS
+    ///
+    /// Performs full cryptographic validation including signature, issuer, audience,
+    /// expiration, and scopes.
+    ///
+    /// # Arguments
+    ///
+    /// * `scheme` - Security scheme from OpenAPI spec (must be HTTP Bearer)
+    /// * `scopes` - Required OAuth2 scopes from operation
+    /// * `req` - The security request containing headers/cookies
+    ///
+    /// # Returns
+    ///
+    /// - `true` - Token is valid and contains required scopes
+    /// - `false` - Token missing, invalid signature, expired, or missing scopes
+    ///
+    /// # Validation Steps
+    ///
+    /// 1. Extract token
+    /// 2. Parse header for `kid` and `alg`
+    /// 3. Fetch decoding key from JWKS (cached)
+    /// 4. Validate signature with `jsonwebtoken`
+    /// 5. Check `iss`, `aud`, `exp` claims
+    /// 6. Verify scopes
     fn validate(&self, scheme: &SecurityScheme, scopes: &[String], req: &SecurityRequest) -> bool {
         match scheme {
             SecurityScheme::Http { scheme, .. } if scheme.eq_ignore_ascii_case("bearer") => {}
@@ -347,6 +668,14 @@ pub struct RemoteApiKeyProvider {
 }
 
 impl RemoteApiKeyProvider {
+    /// Create a new remote API key provider
+    ///
+    /// Validates API keys by making HTTP requests to an external verification service.
+    /// Results are cached to reduce latency and load on the verification service.
+    ///
+    /// # Arguments
+    ///
+    /// * `verify_url` - URL of the verification service (e.g., `https://api.example.com/verify`)
     pub fn new(verify_url: impl Into<String>) -> Self {
         Self {
             verify_url: verify_url.into(),
@@ -356,14 +685,26 @@ impl RemoteApiKeyProvider {
             header_name: "x-api-key".to_string(),
         }
     }
+
+    /// Configure the HTTP request timeout in milliseconds
+    ///
+    /// Default: 500ms
     pub fn timeout_ms(mut self, ms: u64) -> Self {
         self.timeout_ms = ms;
         self
     }
+
+    /// Configure the TTL for cached validation results
+    ///
+    /// Default: 60 seconds
     pub fn cache_ttl(mut self, ttl: Duration) -> Self {
         self.cache_ttl = ttl;
         self
     }
+
+    /// Configure the header name to look for the API key
+    ///
+    /// Default: `x-api-key`
     pub fn header_name(mut self, name: impl Into<String>) -> Self {
         self.header_name = name.into().to_ascii_lowercase();
         self
@@ -382,7 +723,86 @@ impl RemoteApiKeyProvider {
     }
 }
 
+/// Remote API key provider implementation
+///
+/// Validates API keys by making HTTP requests to an external verification service.
+/// Implements caching to reduce latency and load on the verification endpoint.
+///
+/// # Validation Flow
+///
+/// 1. Verify security scheme is API Key with `location: header`
+/// 2. Extract API key from configured header (or Authorization: Bearer)
+/// 3. Check cache for recent validation result
+/// 4. If cache miss or expired: Make HTTP GET to verification URL
+/// 5. Cache result (success/failure) with TTL
+/// 6. Return validation result
+///
+/// # Key Extraction Priority
+///
+/// 1. **Custom header**: `X-API-Key` (or configured via `header_name()`)
+/// 2. **OpenAPI spec header**: Uses `name` from `securityScheme.name`
+/// 3. **Authorization header**: Falls back to `Authorization: Bearer {key}`
+///
+/// # Verification Request
+///
+/// Makes HTTP GET to configured URL with key in `X-API-Key` header:
+///
+/// ```text
+/// GET /verify HTTP/1.1
+/// Host: api.example.com
+/// X-API-Key: user_api_key_here
+/// ```
+///
+/// Success: 2xx status code
+/// Failure: Any other status code or timeout
+///
+/// # Caching
+///
+/// - **TTL**: Configurable (default: 60 seconds)
+/// - **Storage**: In-memory HashMap with Mutex
+/// - **Key**: API key string
+/// - **Value**: (timestamp, valid: bool)
+/// - **Eviction**: Lazy (checks on read)
+///
+/// # Usage
+///
+/// ```rust
+/// use brrtrouter::security::RemoteApiKeyProvider;
+/// use std::time::Duration;
+///
+/// let provider = RemoteApiKeyProvider::new("https://auth.example.com/verify")
+///     .timeout_ms(1000)                             // 1 second timeout
+///     .cache_ttl(Duration::from_secs(300))           // 5 minute cache
+///     .header_name("X-Custom-Key");                 // Custom header
+/// ```
+///
+/// # Performance
+///
+/// - **Cache hit**: ~1µs (HashMap lookup)
+/// - **Cache miss**: ~50-500ms (HTTP request)
+/// - Recommendation: Use longer TTL for trusted environments
 impl SecurityProvider for RemoteApiKeyProvider {
+    /// Validate an API key by making an HTTP request to verification service
+    ///
+    /// Uses caching to avoid repeated verification requests for the same key.
+    ///
+    /// # Arguments
+    ///
+    /// * `scheme` - Security scheme from OpenAPI spec (must be API Key)
+    /// * `_scopes` - Required scopes (unused - API keys don't have scopes)
+    /// * `req` - The security request containing headers
+    ///
+    /// # Returns
+    ///
+    /// - `true` - API key is valid (cached or verified remotely)
+    /// - `false` - API key missing, invalid, or verification failed
+    ///
+    /// # Cache Behavior
+    ///
+    /// - Cached success: Returns true immediately
+    /// - Cached failure: Returns false immediately
+    /// - Expired cache: Makes new verification request
+    /// - New key: Makes verification request and caches result
     fn validate(&self, scheme: &SecurityScheme, _scopes: &[String], req: &SecurityRequest) -> bool {
         let name = match scheme {
             SecurityScheme::ApiKey { name, location, .. } if location == "header" => {

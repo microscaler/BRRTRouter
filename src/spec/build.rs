@@ -7,6 +7,19 @@ use oas3::spec::{MediaTypeExamples, ObjectOrReference, Parameter};
 use oas3::OpenApiV3Spec;
 use serde_json::Value;
 
+/// Resolve a JSON Schema `$ref` to the actual schema definition
+///
+/// Looks up schema references like `#/components/schemas/User` in the OpenAPI spec
+/// and returns the resolved schema object.
+///
+/// # Arguments
+///
+/// * `spec` - The OpenAPI specification
+/// * `ref_path` - The `$ref` path (e.g., `#/components/schemas/Pet`)
+///
+/// # Returns
+///
+/// The resolved schema object, or `None` if the reference can't be resolved
 pub fn resolve_schema_ref<'a>(
     spec: &'a OpenApiV3Spec,
     ref_path: &str,
@@ -25,6 +38,16 @@ pub fn resolve_schema_ref<'a>(
     }
 }
 
+/// Recursively expand all JSON Schema `$ref` references in a value
+///
+/// Traverses the JSON value tree and replaces any `$ref` objects with their
+/// resolved schema definitions from the OpenAPI spec. Adds an `x-ref-name` field
+/// to track the original reference name.
+///
+/// # Arguments
+///
+/// * `spec` - The OpenAPI specification
+/// * `value` - The JSON value to process (modified in-place)
 pub fn expand_schema_refs(spec: &OpenApiV3Spec, value: &mut Value) {
     match value {
         Value::Object(obj) => {
@@ -82,6 +105,21 @@ fn resolve_handler_name(
         })
 }
 
+/// Extract the request body schema from an OpenAPI operation
+///
+/// Parses the `requestBody` section of an operation and extracts the JSON schema
+/// for `application/json` content type. Also determines if the request body is required.
+///
+/// # Arguments
+///
+/// * `spec` - The OpenAPI specification
+/// * `operation` - The operation to extract from
+///
+/// # Returns
+///
+/// A tuple of `(schema, required)` where:
+/// * `schema` - The JSON schema for the request body (if present)
+/// * `required` - Whether the request body is required
 pub fn extract_request_schema(
     spec: &OpenApiV3Spec,
     operation: &oas3::spec::Operation,
@@ -106,6 +144,23 @@ pub fn extract_request_schema(
     (schema, required)
 }
 
+/// Extract response schemas and examples from an OpenAPI operation
+///
+/// Parses all response definitions from an operation and extracts schemas, examples,
+/// and content types for each status code. Prioritizes 200 OK with application/json,
+/// then falls back to other 2xx responses.
+///
+/// # Arguments
+///
+/// * `spec` - The OpenAPI specification
+/// * `operation` - The operation to extract from
+///
+/// # Returns
+///
+/// A tuple of:
+/// * Default response schema (prioritizes 200 OK application/json)
+/// * Default response example
+/// * Map of all responses by status code and content type
 pub fn extract_response_schema_and_example(
     spec: &OpenApiV3Spec,
     operation: &oas3::spec::Operation,
@@ -214,6 +269,18 @@ pub fn extract_response_schema_and_example(
     (default_schema, default_example, all)
 }
 
+/// Extract all security schemes from an OpenAPI specification
+///
+/// Parses the `components.securitySchemes` section and returns a map of scheme names
+/// to their definitions (API keys, HTTP auth, OAuth2, OpenID Connect, etc.).
+///
+/// # Arguments
+///
+/// * `spec` - The OpenAPI specification
+///
+/// # Returns
+///
+/// A map of security scheme names to their definitions
 pub fn extract_security_schemes(
     spec: &OpenApiV3Spec,
 ) -> std::collections::HashMap<String, SecurityScheme> {
@@ -249,6 +316,20 @@ fn resolve_parameter_ref<'a>(
     }
 }
 
+/// Extract parameter metadata from an OpenAPI operation
+///
+/// Resolves parameter references and extracts metadata for path, query, header,
+/// and cookie parameters. Each parameter includes its name, location, schema,
+/// whether it's required, and serialization style.
+///
+/// # Arguments
+///
+/// * `spec` - The OpenAPI specification
+/// * `params` - List of parameters (may include references)
+///
+/// # Returns
+///
+/// A vector of resolved parameter metadata
 pub fn extract_parameters(
     spec: &OpenApiV3Spec,
     params: &Vec<ObjectOrReference<Parameter>>,
@@ -280,6 +361,18 @@ pub fn extract_parameters(
     out
 }
 
+/// Extract the SSE flag from an OpenAPI operation
+///
+/// Checks for `x-sse` or `sse` extension fields to determine if the operation
+/// uses Server-Sent Events for streaming responses.
+///
+/// # Arguments
+///
+/// * `operation` - The OpenAPI operation definition
+///
+/// # Returns
+///
+/// `true` if the operation uses SSE, `false` otherwise
 pub fn extract_sse_flag(operation: &oas3::spec::Operation) -> bool {
     operation
         .extensions
@@ -289,6 +382,25 @@ pub fn extract_sse_flag(operation: &oas3::spec::Operation) -> bool {
         .unwrap_or(false)
 }
 
+/// Build route metadata for all operations in an OpenAPI specification
+///
+/// This is the main function that processes an OpenAPI spec and extracts all the
+/// metadata needed to generate handlers, validate requests, and register routes.
+/// It validates the spec and reports any issues found.
+///
+/// # Arguments
+///
+/// * `spec` - The parsed OpenAPI specification
+/// * `slug` - URL-safe project slug (used for generated file names)
+///
+/// # Returns
+///
+/// A vector of `RouteMeta` for all valid operations
+///
+/// # Errors
+///
+/// Returns an error if critical validation issues are found that prevent
+/// code generation (e.g., missing handler names, invalid parameters).
 pub fn build_routes(spec: &OpenApiV3Spec, slug: &str) -> anyhow::Result<Vec<RouteMeta>> {
     let mut routes = Vec::new();
     let mut issues = Vec::new();

@@ -3,24 +3,53 @@ use http::Method;
 use regex::Regex;
 use std::collections::HashMap;
 
+/// Result of successfully matching a request path to a route
+///
+/// Contains the matched route metadata and extracted parameters.
 #[derive(Debug, Clone)]
 pub struct RouteMatch {
+    /// The matched route metadata from the OpenAPI spec
     pub route: RouteMeta,
+    /// Path parameters extracted from the URL (e.g., `{id}` → `{"id": "123"}`)
     pub path_params: HashMap<String, String>,
+    /// Name of the handler that should process this request
     pub handler_name: String,
+    /// Query string parameters (populated by the server)
     pub query_params: HashMap<String, String>,
 }
 
-/// Router to match HTTP requests to handlers
-/// method, compiled regex, meta, param names
+/// Router that matches HTTP requests to handlers using regex patterns
+///
+/// Compiles OpenAPI path patterns (e.g., `/users/{id}`) into regex patterns
+/// and matches incoming requests to the appropriate handler. Routes are sorted
+/// by path length (longest first) to ensure most specific routes match first.
+///
+/// # Performance
+///
+/// Current implementation uses O(n) linear scanning with regex matching.
+/// For v1.0, this will be replaced with a trie-based router for O(log n) lookup.
 #[derive(Clone)]
 pub struct Router {
+    /// List of routes: (method, regex, metadata, param_names)
     routes: Vec<(Method, Regex, RouteMeta, Vec<String>)>,
+    /// Base path prefix for all routes (e.g., `/api/v1`)
     #[allow(dead_code)]
     base_path: String,
 }
 
 impl Router {
+    /// Create a new router from OpenAPI route metadata
+    ///
+    /// Compiles all route patterns into regex matchers and sorts them by
+    /// specificity (longest paths first) for optimal matching.
+    ///
+    /// # Arguments
+    ///
+    /// * `routes` - List of route metadata extracted from OpenAPI spec
+    ///
+    /// # Returns
+    ///
+    /// A new `Router` ready to match incoming requests
     pub fn new(routes: Vec<RouteMeta>) -> Self {
         // Filter out routes that are not HTTP methods we care about
         // We only support GET, POST, PUT, DELETE, PATCH, and OPTIONS
@@ -74,6 +103,9 @@ impl Router {
         Self { routes, base_path }
     }
 
+    /// Print all registered routes to stdout
+    ///
+    /// Useful for debugging and verifying that routes are loaded correctly.
     pub fn dump_routes(&self) {
         println!(
             "[routes] base_path={} count={}",
@@ -90,6 +122,31 @@ impl Router {
         }
     }
 
+    /// Match an HTTP request to a route
+    ///
+    /// Attempts to find a route that matches both the HTTP method and path pattern.
+    /// Path parameters are extracted and returned in the match result.
+    ///
+    /// # Arguments
+    ///
+    /// * `method` - HTTP method (GET, POST, etc.)
+    /// * `path` - Request path (e.g., `/users/123`)
+    ///
+    /// # Returns
+    ///
+    /// * `Some(RouteMatch)` - If a matching route is found
+    /// * `None` - If no route matches (results in 404)
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use http::Method;
+    ///
+    /// if let Some(m) = router.route(Method::GET, "/users/123") {
+    ///     println!("Handler: {}", m.handler_name);
+    ///     println!("User ID: {}", m.path_params["id"]);
+    /// }
+    /// ```
     pub fn route(&self, method: Method, path: &str) -> Option<RouteMatch> {
         for (m, regex, route, param_names) in &self.routes {
             if *m != method {
@@ -112,6 +169,28 @@ impl Router {
         }
         None
     }
+    /// Convert an OpenAPI path pattern to a regex and extract parameter names
+    ///
+    /// Transforms path patterns like `/users/{id}` into regex patterns like
+    /// `^/users/([^/]+)$` and extracts parameter names `["id"]`.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - OpenAPI path pattern (e.g., `/users/{id}/posts/{postId}`)
+    ///
+    /// # Returns
+    ///
+    /// A tuple of:
+    /// * `Regex` - Compiled regex for matching paths
+    /// * `Vec<String>` - Ordered list of parameter names
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let (regex, params) = Router::path_to_regex("/users/{id}");
+    /// assert_eq!(params, vec!["id"]);
+    /// assert!(regex.is_match("/users/123"));
+    /// ```
     pub(crate) fn path_to_regex(path: &str) -> (Regex, Vec<String>) {
         if path == "/" {
             return (

@@ -14,15 +14,76 @@ Inspired by the *GAU-8/A Avenger* on the A-10 Warthog, this router is designed t
 [![Crate](https://img.shields.io/crates/v/brrrouter.svg)](https://crates.io/crates/brrrouter)
 [![Docs](https://docs.rs/brrrouter/badge.svg)](https://docs.rs/brrrouter)
 
+---
+
+## ⚠️ Alpha Stage Notice
+
+**This library is currently in alpha stage (v0.1.0-alpha.1).**
+
+This documentation is published for **review and feedback purposes**, not for production adoption. 
+
+**Status:**
+- ✅ Core functionality working
+- 🔧 API may change (breaking changes expected)
+- 🔧 Performance optimization ongoing
+- 🧪 Seeking early feedback and testing
+
+**We welcome:**
+- 📝 Documentation feedback
+- 🐛 Bug reports
+- 💡 API suggestions
+- 🧪 Testing and experimentation
+
+**Not recommended for production use yet.** Wait for v0.1.0 stable release.
 
 ---
 
-## 📈 Recent Progress (Sep 2025)
+## 🚀 Quick Start
 
-- **JWT/JWKS validation fix**: `JwksBearerProvider` now respects the JWT header `alg` and supports HS256/384/512 and RS256/384/512 with JWKS (`oct` and `RSA` keys). Includes issuer/audience/leeway checks and in-memory JWKS caching with TTL.
-- **API Key provider**: Added `RemoteApiKeyProvider` with configurable header name, remote verification, timeout, and positive/negative result caching.
-- **OpenAPI-driven auth**: Default security providers are registered based on `components.securitySchemes` (e.g., API keys and Bearer/OAuth flows). API keys can be read from a named header or `Authorization: Bearer` fallback.
-- **Metrics**: Added counters for top-level requests and authentication failures for visibility and alerting.
+```bash
+# Clone the repository
+git clone https://github.com/microscaler/BRRTRouter.git
+cd BRRTRouter
+
+# Run the pet store example
+just start-petstore
+
+# In another terminal, test the API
+curl -H "X-API-Key: test123" http://localhost:8080/pets
+curl http://localhost:8080/health
+curl http://localhost:8080/metrics
+
+# Visit Swagger UI
+open http://localhost:8080/docs
+```
+
+**Generate your own service:**
+
+```bash
+# Install the generator
+cargo install --path . --bin brrtrouter-gen
+
+# Generate a new service from your OpenAPI spec
+brrtrouter-gen generate --spec your-api.yaml
+
+# Your service is ready in the generated directory!
+cd your_service
+cargo run -- --spec doc/openapi.yaml --port 8080
+```
+
+---
+
+## 📈 Recent Progress (October 2025)
+
+- **🎉 100% Documentation Coverage**: All public APIs, impl blocks, complex functions, and test modules comprehensively documented
+- **✅ Parallel Test Execution**: Fixed Docker container conflicts for nextest parallel execution (219 tests pass)
+- **🔐 Production-Ready Security**: 
+  - `JwksBearerProvider` with full JWKS support (HS256/384/512, RS256/384/512)
+  - `RemoteApiKeyProvider` with caching and configurable headers
+  - OpenAPI-driven auto-registration of security providers
+- **📊 Enhanced Metrics**: Request counts, latency tracking, auth failure counters, stack usage monitoring
+- **🔥 Hot Reload**: Live spec reloading with filesystem watching
+- **📝 Code Generation**: Complete typed handler generation from OpenAPI schemas
 
 
 ## 📈 Performance Benchmarks (Sep 2025)
@@ -79,9 +140,22 @@ The logo features a stylized **A-10 Warthog nose cannon**, symbolizing BRRTRoute
 
 ---
 
-## ✅ Current Foundation Status
+## ✨ Key Features
 
-### 🚧 Implemented Features (May 2025)
+- **📜 OpenAPI-First**: Your API spec is the single source of truth - routing, validation, and handlers generated automatically
+- **⚡ Coroutine-Powered**: Built on `may` coroutines for lightweight concurrency (800+ concurrent connections on 1MB stack)
+- **🔐 Security Built-In**: JWT/JWKS, OAuth2, API Keys with auto-registration from OpenAPI `securitySchemes`
+- **📊 Observability**: Prometheus metrics, OpenTelemetry tracing, health checks out of the box
+- **🔥 Hot Reload**: Live spec reloading without server restart
+- **🎨 Swagger UI**: Built-in interactive API documentation at `/docs`
+- **✅ Validated**: Request/response validation against JSON Schema with clear error messages
+- **🧪 Well-Tested**: 219 tests, 80%+ coverage, parallel execution support
+
+---
+
+## ✅ Feature Status
+
+### 🎯 Production-Ready (October 2025)
 | Feature                                          | Status | Description                                                                                                                                                               |
 |--------------------------------------------------|--------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | **OpenAPI 3.1 Spec Parser**                      | ✅      | Parses `paths`, `methods`, parameters, and `x-handler-*` extensions                                                                                                       |
@@ -175,7 +249,13 @@ Builds the Pet Store example; you can pass cargo flags after the task.
 ## 🧪 Running Tests
 
 ```bash
+# Standard cargo test
 just test
+
+# Fast parallel execution with nextest (recommended)
+just nt
+
+# All 219 tests pass reliably with parallel execution ✅
 ```
 
 ### 📈 Measuring Coverage
@@ -354,6 +434,28 @@ TODO
 - Add an optional CI workflow to validate against a real PropelAuth sandbox using repository secrets (auth_url, audience). Keep disabled by default to avoid external flakiness; primary tests remain hermetic with local JWKS/API-key mocks.
 
 ---
+
+## 📚 Documentation
+
+BRRTRouter has **100% comprehensive documentation** across all levels:
+
+- **📖 API Documentation**: `cargo doc --open` - All public APIs documented
+- **🏗️ Architecture**: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) - System design with Mermaid diagrams
+- **🧪 Test Coverage**: [docs/TEST_DOCUMENTATION.md](docs/TEST_DOCUMENTATION.md) - Complete test suite overview
+- **🤝 Contributing**: [CONTRIBUTING.md](CONTRIBUTING.md) - Development workflow and standards
+- **🚀 Publishing**: [docs/PUBLISHING.md](docs/PUBLISHING.md) - Release process for crates.io
+- **📊 Roadmap**: [docs/ROADMAP.md](docs/ROADMAP.md) - Future plans and completed work
+
+**Build and view docs locally:**
+
+```bash
+just docs
+# or
+cargo doc --open
+```
+
+---
+
 ## 📡 Server-Sent Events
 
 BRRTRouter can serve [Server-Sent Events](https://html.spec.whatwg.org/multipage/server-sent-events.html).

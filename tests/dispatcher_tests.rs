@@ -1,3 +1,34 @@
+//! Tests for the request dispatcher and coroutine handler system
+//!
+//! # Test Coverage
+//!
+//! Validates the dispatcher's core responsibilities:
+//! - Handler registration and lookup
+//! - Request routing to correct handlers
+//! - Response collection from handlers
+//! - Typed handler conversion (HandlerRequest → TypedHandlerRequest)
+//! - Middleware integration
+//! - Panic recovery and error handling
+//!
+//! # Test Strategy
+//!
+//! 1. **Unit Tests**: Isolated dispatcher logic with mock handlers
+//! 2. **Integration Tests**: Full router → dispatcher → handler flow
+//! 3. **Typed Tests**: Type-safe handler conversion and validation
+//! 4. **Error Tests**: Panic handling, timeout behavior
+//!
+//! # Key Test Cases
+//!
+//! - `test_dispatcher_routes_to_handler`: Basic routing works
+//! - `test_dispatcher_with_middleware`: Middleware execution order
+//! - `test_typed_handler_conversion`: Type-safe request handling
+//! - `test_panic_handler_returns_500`: Panic recovery (currently ignored - needs fix)
+//!
+//! # Known Issues
+//!
+//! - Panic test is ignored: May coroutines don't play well with catch_unwind in test context
+//! - This is a framework limitation, not a production issue
+
 use brrtrouter::{
     dispatcher::{Dispatcher, HandlerRequest},
     load_spec,

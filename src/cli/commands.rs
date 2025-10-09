@@ -12,21 +12,29 @@ use std::io;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
+/// Command-line interface for BRRTRouter
+///
+/// Provides commands for generating code from OpenAPI specifications
+/// and running development servers.
 #[derive(Parser)]
 #[command(name = "brrrouter")]
 #[command(about = "BRRTRouter CLI", long_about = None)]
 pub struct Cli {
+    /// The subcommand to execute
     #[command(subcommand)]
     pub command: Commands,
 }
 
+/// Available CLI commands for BRRTRouter
 #[derive(Subcommand)]
 pub enum Commands {
     /// Generate handler stubs from an OpenAPI spec
     Generate {
+        /// Path to the OpenAPI specification file (YAML or JSON)
         #[arg(short, long)]
         spec: PathBuf,
 
+        /// Overwrite existing files without prompting
         #[arg(short, long, default_value_t = false)]
         force: bool,
 
@@ -40,27 +48,48 @@ pub enum Commands {
     },
     /// Run the server for a spec using echo handlers
     Serve {
+        /// Path to the OpenAPI specification file (YAML or JSON)
         #[arg(short, long)]
         spec: PathBuf,
 
+        /// Watch for changes and hot-reload the server
         #[arg(long, default_value_t = false)]
         watch: bool,
 
+        /// Address and port to bind the server to
         #[arg(long, default_value = "0.0.0.0:8080")]
         addr: String,
     },
 }
 
+/// Specific parts of the generated project that can be selectively regenerated
+///
+/// Used with the `--only` flag to limit code generation to specific components.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
 pub enum OnlyPart {
+    /// Handler modules (request/response types and handler logic)
     Handlers,
+    /// Controller modules (coroutine-based request dispatching)
     Controllers,
+    /// Type definitions derived from OpenAPI schemas
     Types,
+    /// Handler registry (registration of all handlers with the dispatcher)
     Registry,
+    /// Main application entry point
     Main,
+    /// Documentation files (OpenAPI spec, HTML docs)
     Docs,
 }
 
+/// Execute the CLI command provided by the user
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The OpenAPI spec cannot be loaded or parsed
+/// - Code generation fails
+/// - The server fails to start
+/// - Hot reload watcher setup fails
 pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     match &cli.command {
@@ -141,6 +170,10 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
+/// Convert CLI `--only` parts to a `GenerationScope` configuration
+///
+/// If `only` is `None`, all parts are enabled. If `only` is provided,
+/// only the specified parts are enabled.
 fn map_only_to_scope(only: Option<&[OnlyPart]>) -> crate::generator::GenerationScope {
     use crate::generator::GenerationScope as Scope;
     let mut scope = Scope::all();

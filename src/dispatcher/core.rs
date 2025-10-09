@@ -13,36 +13,66 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::middleware::Middleware;
+
+/// Request data passed to a handler coroutine
+///
+/// Contains all extracted HTTP request information including path/query parameters,
+/// headers, cookies, and body. Also includes a reply channel for sending the response.
 #[derive(Debug, Clone)]
 pub struct HandlerRequest {
+    /// HTTP method (GET, POST, etc.)
     pub method: Method,
+    /// Request path
     pub path: String,
+    /// Name of the handler that should process this request
     pub handler_name: String,
+    /// Path parameters extracted from the URL
     pub path_params: HashMap<String, String>,
+    /// Query string parameters
     pub query_params: HashMap<String, String>,
+    /// HTTP headers
     pub headers: HashMap<String, String>,
+    /// Cookies parsed from the Cookie header
     pub cookies: HashMap<String, String>,
+    /// Request body parsed as JSON (if present)
     pub body: Option<Value>,
+    /// Channel for sending the response back to the dispatcher
     pub reply_tx: mpsc::Sender<HandlerResponse>,
 }
 
+/// Response data sent back from a handler coroutine
+///
+/// Contains the HTTP status code, headers, and JSON body to be sent to the client.
 #[derive(Debug, Clone, Serialize)]
 pub struct HandlerResponse {
+    /// HTTP status code (200, 404, 500, etc.)
     pub status: u16,
+    /// HTTP response headers
     #[serde(skip_serializing)]
     pub headers: HashMap<String, String>,
+    /// Response body as JSON
     pub body: Value,
 }
 
+/// Type alias for a channel sender that dispatches requests to a handler
 pub type HandlerSender = mpsc::Sender<HandlerRequest>;
 
+/// Dispatcher that routes requests to registered handler coroutines
+///
+/// Maintains a registry of handler names to their corresponding channel senders,
+/// and manages middleware that processes requests/responses.
 #[derive(Clone, Default)]
 pub struct Dispatcher {
+    /// Map of handler names to their channel senders
     pub handlers: HashMap<String, HandlerSender>,
+    /// Ordered list of middleware to apply to requests/responses
     pub middlewares: Vec<Arc<dyn Middleware>>,
 }
 
 impl Dispatcher {
+    /// Create a new empty dispatcher
+    ///
+    /// Handlers must be registered using `register_handler` or `add_route`.
     pub fn new() -> Self {
         Dispatcher {
             handlers: HashMap::new(),
@@ -61,6 +91,14 @@ impl Dispatcher {
         self.handlers.insert(route.handler_name, sender);
     }
 
+    /// Add middleware to the processing pipeline
+    ///
+    /// Middleware is executed in the order it's added. Each middleware can
+    /// modify requests before they reach handlers and responses before they're sent.
+    ///
+    /// # Arguments
+    ///
+    /// * `mw` - Middleware implementation to add
     pub fn add_middleware(&mut self, mw: Arc<dyn Middleware>) {
         self.middlewares.push(mw);
     }
@@ -114,6 +152,26 @@ impl Dispatcher {
         self.handlers.insert(name, tx);
     }
 
+    /// Dispatch a request to the appropriate handler
+    ///
+    /// Sends the request to the handler's coroutine via channel and waits for the response.
+    /// Returns `None` if no handler is registered for the route.
+    ///
+    /// # Arguments
+    ///
+    /// * `route_match` - Matched route with path parameters
+    /// * `body` - Optional JSON request body
+    /// * `headers` - HTTP headers
+    /// * `cookies` - Parsed cookies
+    ///
+    /// # Returns
+    ///
+    /// * `Some(HandlerResponse)` - Response from the handler
+    /// * `None` - If no handler is registered for this route
+    ///
+    /// # Timeout
+    ///
+    /// Waits up to 30 seconds for a response before timing out.
     pub fn dispatch(
         &self,
         route_match: RouteMatch,

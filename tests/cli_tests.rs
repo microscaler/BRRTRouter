@@ -1,3 +1,36 @@
+//! Command-line interface integration tests
+//!
+//! # Test Coverage
+//!
+//! Validates the CLI commands and their behavior:
+//! - `generate` command with various options
+//! - Project generation from OpenAPI specs
+//! - Argument parsing and validation
+//! - Error messages and exit codes
+//! - File structure verification
+//!
+//! # Test Strategy
+//!
+//! Uses subprocess execution to test CLI as end-users would:
+//! 1. Run `brrtrouter-gen` binary with arguments
+//! 2. Verify exit codes (0 = success, non-zero = error)
+//! 3. Check generated file structure
+//! 4. Validate generated code compiles
+//!
+//! # Key Test Cases
+//!
+//! - `test_cli_generate_creates_project`: Basic generation works
+//! - Argument validation (missing spec, invalid paths)
+//! - Force flag behavior (overwrite existing)
+//! - Output directory creation
+//!
+//! # Note
+//!
+//! These tests are slower than unit tests because they:
+//! - Execute external processes
+//! - Generate full projects
+//! - Compile generated code
+
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::process::Command;

@@ -1,0 +1,83 @@
+name: Documentation
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow only one concurrent deployment
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  build-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-docs-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-docs-
+
+      - name: Build documentation
+        run: |
+          # Build with Mermaid support
+          RUSTDOCFLAGS="--html-in-header doc/head.html" cargo doc --no-deps --lib
+          
+          # Create index.html redirect to brrtrouter docs
+          cat > target/doc/index.html <<EOF
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="utf-8">
+            <meta http-equiv="refresh" content="0; url=brrtrouter/index.html">
+            <title>BRRTRouter Documentation</title>
+          </head>
+          <body>
+            <p>Redirecting to <a href="brrtrouter/index.html">BRRTRouter documentation</a>...</p>
+          </body>
+          </html>
+          EOF
+          
+          # Add .nojekyll to prevent GitHub Pages from processing
+          touch target/doc/.nojekyll
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: 'target/doc'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Summary
+        run: |
+          echo "📚 Documentation deployed!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "View at: https://${{ github.repository_owner }}.github.io/BRRTRouter/" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Includes Mermaid sequence diagrams" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Architecture documentation" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Pet Store example" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Telemetry & metrics guide" >> $GITHUB_STEP_SUMMARY
+

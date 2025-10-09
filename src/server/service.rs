@@ -16,21 +16,61 @@ use std::sync::OnceLock;
 use std::sync::{Arc, RwLock};
 use tracing::{info, warn};
 
+/// HTTP application service that handles all incoming requests
+///
+/// This is the core service that processes HTTP requests through the full pipeline:
+/// routing, authentication, validation, dispatching, and response generation.
+/// It integrates all major components (router, dispatcher, middleware, security, etc.).
 pub struct AppService {
+    /// Router for matching requests to handlers
     pub router: Arc<RwLock<Router>>,
+    /// Dispatcher for sending requests to handler coroutines
     pub dispatcher: Arc<RwLock<Dispatcher>>,
+    /// Security schemes defined in the OpenAPI spec
     pub security_schemes: HashMap<String, SecurityScheme>,
+    /// Active security provider implementations (API keys, JWT, OAuth2)
     pub security_providers: HashMap<String, Arc<dyn SecurityProvider>>,
+    /// Optional metrics collection middleware
     pub metrics: Option<Arc<crate::middleware::MetricsMiddleware>>,
+    /// Path to the OpenAPI specification file
     pub spec_path: PathBuf,
+    /// Optional static file server for application files
     pub static_files: Option<StaticFiles>,
+    /// Optional documentation file server (OpenAPI spec, HTML docs)
     pub doc_files: Option<StaticFiles>,
+    /// Optional file watcher for hot reloading
     pub watcher: Option<notify::RecommendedWatcher>,
-    // Precomputed Keep-Alive header (to avoid per-request allocations/leaks)
+    /// Precomputed Keep-Alive header (to avoid per-request allocations/leaks)
     pub keep_alive_header: Option<&'static str>,
 }
 
+/// Clone implementation for `AppService`
+///
+/// Creates a shallow clone of the service, sharing:
+/// - Router (Arc-wrapped)
+/// - Dispatcher (Arc-wrapped)
+/// - Security schemes and providers (Arc-wrapped)
+/// - Metrics middleware (Arc-wrapped)
+/// - Static and doc file servers (Arc-wrapped)
+///
+/// **Important**: The `watcher` field is NOT cloned and is set to `None`.
+/// This prevents multiple filesystem watchers from being active on clones.
+/// Only the original service instance should manage hot reload.
+///
+/// # Use Cases
+///
+/// - Creating worker instances for multi-threaded servers
+/// - Sharing service state across coroutines
+/// - Testing with isolated service instances
 impl Clone for AppService {
+    /// Create a shallow clone of the service
+    ///
+    /// All shared state (Router, Dispatcher, etc.) is Arc-cloned (ref count bumped).
+    /// The watcher is set to None to avoid duplicate filesystem watchers.
+    ///
+    /// # Returns
+    ///
+    /// A new `AppService` instance sharing the same underlying state
     fn clone(&self) -> Self {
         Self {
             router: self.router.clone(),
@@ -61,6 +101,21 @@ impl AppService {
         write.insert(leaked.to_string(), leaked);
         leaked
     }
+
+    /// Create a new application service
+    ///
+    /// # Arguments
+    ///
+    /// * `router` - Router for matching requests to handlers
+    /// * `dispatcher` - Dispatcher for sending requests to handler coroutines
+    /// * `security_schemes` - Security schemes from OpenAPI spec
+    /// * `spec_path` - Path to the OpenAPI specification file
+    /// * `static_dir` - Optional directory for static files
+    /// * `doc_dir` - Optional directory for documentation files
+    ///
+    /// # Returns
+    ///
+    /// A new `AppService` ready to handle requests
     pub fn new(
         router: Arc<RwLock<Router>>,
         dispatcher: Arc<RwLock<Dispatcher>>,
@@ -83,10 +138,26 @@ impl AppService {
         }
     }
 
+    /// Register a security provider for authentication/authorization
+    ///
+    /// Security providers validate credentials (API keys, JWT tokens, OAuth2) and
+    /// enforce access control based on the OpenAPI security schemes.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Security scheme name from OpenAPI spec
+    /// * `provider` - Implementation of the security provider
     pub fn register_security_provider(&mut self, name: &str, provider: Arc<dyn SecurityProvider>) {
         self.security_providers.insert(name.to_string(), provider);
     }
 
+    /// Set the metrics collection middleware
+    ///
+    /// Enables Prometheus metrics collection for requests, responses, and handler performance.
+    ///
+    /// # Arguments
+    ///
+    /// * `metrics` - Metrics middleware instance
     pub fn set_metrics_middleware(&mut self, metrics: Arc<MetricsMiddleware>) {
         self.metrics = Some(metrics);
     }
@@ -279,7 +350,77 @@ pub fn swagger_ui_endpoint(res: &mut Response, docs: &StaticFiles) -> io::Result
     Ok(())
 }
 
+/// HTTP service implementation for `AppService`
+///
+/// Main request processing pipeline that handles all incoming HTTP requests.
+/// This is the entry point for the `may_minihttp` HTTP server.
+///
+/// # Request Processing Flow
+///
+/// 1. **Parse Request**: Extract method, path, headers, cookies, query params, body
+/// 2. **Apply Keep-Alive**: Set connection persistence headers (if configured)
+/// 3. **Metrics**: Increment top-level request counter
+/// 4. **Infrastructure Endpoints** (short-circuit):
+///    - `GET /health` → Health check (200 OK)
+///    - `GET /metrics` → Prometheus metrics
+///    - `GET /openapi.yaml` → OpenAPI specification
+///    - `GET /docs` → Swagger UI
+/// 5. **Static Files**: Serve from `static_files` if configured (GET requests only)
+/// 6. **Routing**: Match request against OpenAPI routes
+/// 7. **Security Validation**: Check authentication/authorization
+/// 8. **Dispatch**: Send to handler via coroutine channel
+/// 9. **Response**: Write handler result to HTTP response
+///
+/// # Short-Circuit Paths (No Dispatch)
+///
+/// These endpoints bypass the dispatcher for performance:
+/// - `/health` - Always returns 200 OK immediately
+/// - `/metrics` - Reads atomic counters and returns Prometheus text
+/// - `/openapi.yaml` - Serves spec file directly
+/// - `/docs` - Renders Swagger UI template
+/// - Static files - Serves from filesystem cache
+///
+/// # Security Enforcement
+///
+/// If route has `security` requirements:
+/// 1. Extract credentials from request (headers/cookies)
+/// 2. Call all registered `SecurityProvider` instances
+/// 3. Check if ANY requirement is satisfied (OR logic)
+/// 4. Return 401 if all fail, or 403 if scopes insufficient
+///
+/// # Error Responses
+///
+/// - **401 Unauthorized**: No valid credentials
+/// - **403 Forbidden**: Valid credentials but insufficient scopes
+/// - **404 Not Found**: No matching route
+/// - **500 Internal Server Error**: Handler panic or dispatch failure
+///
+/// # Performance
+///
+/// - Infrastructure endpoints: ~50µs
+/// - Static files: ~100µs (cached)
+/// - Dispatched requests: ~500µs + handler time
+/// - Security validation: ~50µs (simple) to ~500ms (remote)
 impl HttpService for AppService {
+    /// Handle an incoming HTTP request and write the response
+    ///
+    /// This is the main entry point called by `may_minihttp` for every request.
+    /// The method is mutable to allow updating the watcher state during hot reload.
+    ///
+    /// # Arguments
+    ///
+    /// * `req` - Incoming HTTP request from `may_minihttp`
+    /// * `res` - Mutable response builder to write the result
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(())` - Request processed successfully (even if response is 4xx/5xx)
+    /// - `Err(io::Error)` - I/O error writing response (connection closed, etc.)
+    ///
+    /// # Thread Safety
+    ///
+    /// This method is called from multiple coroutines concurrently.
+    /// All shared state (Router, Dispatcher, etc.) uses Arc + Mutex/RwLock.
     fn call(&mut self, req: Request, res: &mut Response) -> io::Result<()> {
         let ParsedRequest {
             method,
