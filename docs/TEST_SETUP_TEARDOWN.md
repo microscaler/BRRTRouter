@@ -517,6 +517,479 @@ fn test_success() {
 - [lazy_static documentation](https://docs.rs/lazy_static/latest/lazy_static/)
 - [ctor documentation](https://docs.rs/ctor/latest/ctor/)
 
+## Assessment: Opportunities for Drop Trait Implementation
+
+This section analyzes all test modules in BRRTRouter to identify opportunities for implementing the Drop trait pattern for automatic cleanup.
+
+### Summary Statistics
+
+| Category | Count | Needs Drop Trait |
+|----------|-------|------------------|
+| **Server Handle Cleanup** | 23 tests | ✅ High Priority |
+| **Temporary File Cleanup** | 4 tests | ✅ Medium Priority |
+| **Docker Container Cleanup** | 1 test | ✅ Already Has Drop |
+| **File Watcher Cleanup** | 1 test | ⚠️  Manual drop OK |
+| **No Cleanup Needed** | ~190 tests | ✅ Good |
+
+### Detailed Analysis by Test Module
+
+#### 1. server_tests.rs - ✅ PARTIALLY IMPLEMENTED
+
+| Test | Manual Cleanup | Should Use Drop | Priority | Notes |
+|------|----------------|-----------------|----------|-------|
+| `test_dispatch_success` | ✅ Now uses Drop | - | DONE | Refactored to `PetStoreTestServer` |
+| `test_route_404` | ✅ Now uses Drop | - | DONE | Refactored to `PetStoreTestServer` |
+| `test_panic_recovery` | `handle.stop()` | ✅ YES | HIGH | Creates custom server |
+| `test_headers_and_cookies` | `handle.stop()` | ✅ YES | HIGH | Creates custom server |
+| `test_status_201_json` | `handle.stop()` | ✅ YES | HIGH | Creates custom server |
+| `test_text_plain_error` | `handle.stop()` | ✅ YES | HIGH | Creates custom server |
+| `test_request_body_validation_failure` | `handle.stop()` | ✅ YES | HIGH | Creates custom server |
+| `test_response_body_validation_failure` | `handle.stop()` | ✅ YES | HIGH | Creates custom server |
+
+**Recommendation**: Create a `CustomServerTestFixture` for tests that need custom handler registration.
+
+```rust
+struct CustomServerTestFixture {
+    _tracing: TestTracing,
+    handle: Option<ServerHandle>,
+    addr: SocketAddr,
+}
+
+impl Drop for CustomServerTestFixture {
+    fn drop(&mut self) {
+        if let Some(handle) = self.handle.take() {
+            handle.stop();
+        }
+    }
+}
+```
+
+#### 2. security_tests.rs - ✅ **COMPLETE**
+
+| Test | Manual Cleanup | Should Use Drop | Priority | Status |
+|------|----------------|-----------------|----------|--------|
+| `test_api_key_auth` | ~~`handle.stop()`~~ | ✅ YES | HIGH | ✅ **DONE** |
+| `test_api_key_auth_via_authorization_bearer` | ~~`handle.stop()`~~ | ✅ YES | HIGH | ✅ **DONE** |
+| `test_bearer_jwks_success` | ~~`handle.stop()`~~ | ✅ YES | HIGH | ✅ **DONE** |
+| `test_bearer_jwks_invalid_signature` | ~~`handle.stop()`~~ | ✅ YES | HIGH | ✅ **DONE** |
+| `test_remote_apikey_success_and_failure` | ~~`handle.stop()` + `handle_verify.join()`~~ | ✅ YES | HIGH | ✅ **DONE** (Handled TWO servers!) |
+| `test_multiple_security_providers` | ~~`handle.stop()`~~ | ✅ YES | HIGH | ✅ **DONE** |
+| `test_bearer_header_and_oauth_cookie` | ~~`handle.stop()`~~ | ✅ YES | HIGH | ✅ **DONE** |
+
+**Progress**: 7/7 tests completed ✅
+**Test Results**: All 28 tests pass, no memory leaks detected
+**Implementation**: `SecurityTestServer` fixture with multiple constructors for different service types
+
+**Recommendation**: Create a `SecurityTestServer` fixture.
+
+```rust
+struct SecurityTestServer {
+    _tracing: TestTracing,
+    handle: Option<ServerHandle>,
+    addr: SocketAddr,
+    // For tests with verification servers
+    verify_handle: Option<JoinHandle<()>>,
+}
+
+impl Drop for SecurityTestServer {
+    fn drop(&mut self) {
+        if let Some(handle) = self.handle.take() {
+            handle.stop();
+        }
+        if let Some(verify) = self.verify_handle.take() {
+            verify.join().ok();
+        }
+    }
+}
+```
+
+#### 3. static_server_tests.rs - ❌ NO DROP IMPLEMENTATION
+
+| Test | Manual Cleanup | Should Use Drop | Priority | Notes |
+|------|----------------|-----------------|----------|-------|
+| `test_js_served` | `handle.stop()` | ✅ YES | MEDIUM | |
+| `test_root_served` | `handle.stop()` | ✅ YES | MEDIUM | |
+| `test_traversal_blocked` | `handle.stop()` | ✅ YES | MEDIUM | |
+
+**Total**: 3 tests need Drop trait
+
+**Recommendation**: Create a `StaticFileTestServer` fixture.
+
+#### 4. multi_response_tests.rs - ❌ NO DROP IMPLEMENTATION
+
+| Test | Manual Cleanup | Should Use Drop | Priority | Notes |
+|------|----------------|-----------------|----------|-------|
+| `test_201_created_response` | `handle.stop()` | ✅ YES | MEDIUM | |
+
+**Total**: 1 test needs Drop trait
+
+**Recommendation**: Use `CustomServerTestFixture` (same as server_tests.rs).
+
+#### 5. sse_tests.rs - ❌ NO DROP IMPLEMENTATION
+
+| Test | Manual Cleanup | Should Use Drop | Priority | Notes |
+|------|----------------|-----------------|----------|-------|
+| `test_sse_endpoint` | `handle.stop()` | ✅ YES | MEDIUM | |
+
+**Total**: 1 test needs Drop trait
+
+**Recommendation**: Use `PetStoreTestServer` (already available).
+
+#### 6. metrics_endpoint_tests.rs - ❌ NO DROP IMPLEMENTATION
+
+| Test | Manual Cleanup | Should Use Drop | Priority | Notes |
+|------|----------------|-----------------|----------|-------|
+| `test_metrics_endpoint` | `handle.stop()` | ✅ YES | MEDIUM | |
+
+**Total**: 1 test needs Drop trait
+
+**Recommendation**: Use `PetStoreTestServer` (already available).
+
+#### 7. health_endpoint_tests.rs - ❌ NO DROP IMPLEMENTATION
+
+| Test | Manual Cleanup | Should Use Drop | Priority | Notes |
+|------|----------------|-----------------|----------|-------|
+| `test_health_endpoint` | `handle.stop()` | ✅ YES | MEDIUM | |
+
+**Total**: 1 test needs Drop trait
+
+**Recommendation**: Use `PetStoreTestServer` (already available).
+
+#### 8. docs_endpoint_tests.rs - ❌ NO DROP IMPLEMENTATION
+
+| Test | Manual Cleanup | Should Use Drop | Priority | Notes |
+|------|----------------|-----------------|----------|-------|
+| `test_openapi_yaml_endpoint` | `handle.stop()` | ✅ YES | MEDIUM | |
+| `test_swagger_ui_endpoint` | `handle.stop()` | ✅ YES | MEDIUM | |
+
+**Total**: 2 tests need Drop trait
+
+**Recommendation**: Use `PetStoreTestServer` (already available).
+
+#### 9. hot_reload_tests.rs - ⚠️ SPECIAL CASE
+
+| Test | Manual Cleanup | Should Use Drop | Priority | Notes |
+|------|----------------|-----------------|----------|-------|
+| `test_watch_spec_reload` | `drop(watcher)` + `std::fs::remove_file()` | ⚠️  MAYBE | LOW | Manual drop is explicit and clear |
+
+**Total**: 1 test with manual cleanup
+
+**Recommendation**: Could implement `TempSpecFile` fixture, but current code is clear enough.
+
+```rust
+struct TempSpecFile {
+    path: PathBuf,
+}
+
+impl Drop for TempSpecFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+```
+
+#### 10. generator_templates_tests.rs - ⚠️ FILE CLEANUP
+
+| Test | Manual Cleanup | Should Use Drop | Priority | Notes |
+|------|----------------|-----------------|----------|-------|
+| `test_write_registry_rs` | `fs::remove_dir_all(&dir)` | ✅ YES | LOW | Could use tempfile crate |
+
+**Total**: 1 test with file cleanup
+
+**Recommendation**: Use `tempfile::TempDir` which has Drop built-in.
+
+```rust
+use tempfile::TempDir;
+
+#[test]
+fn test_write_registry_rs() {
+    let dir = TempDir::new().unwrap();
+    // ... test code ...
+    // Automatic cleanup when dir goes out of scope
+}
+```
+
+#### 11. generator_project_tests.rs - ⚠️ FILE CLEANUP
+
+| Test | Manual Cleanup | Should Use Drop | Priority | Notes |
+|------|----------------|-----------------|----------|-------|
+| `test_generate_project_formats` | `fs::remove_dir_all(&dir)` | ✅ YES | LOW | Could use tempfile crate |
+
+**Total**: 1 test with file cleanup
+
+**Recommendation**: Use `tempfile::TempDir`.
+
+#### 12. cli_tests.rs - ⚠️ IMPLICIT CLEANUP
+
+| Test | Manual Cleanup | Should Use Drop | Priority | Notes |
+|------|----------------|-----------------|----------|-------|
+| `test_cli_generate_creates_project` | Uses `temp_dir()` | ❌ NO | N/A | Relies on OS temp cleanup |
+
+**Total**: 0 tests need Drop trait (uses OS temp directory)
+
+**Recommendation**: No change needed (temp dirs cleaned by OS).
+
+#### 13. docker_integration_tests.rs - ⚠️ PARTIAL CLEANUP
+
+| Test | Manual Cleanup | Should Use Drop | Priority | Notes |
+|------|----------------|-----------------|----------|-------|
+| `test_petstore_container_health` | `docker.remove_container()` | ⚠️  MAYBE | LOW | Already has explicit cleanup |
+
+**Total**: 1 test with Docker cleanup
+
+**Recommendation**: Could create `DockerContainerFixture` but current inline cleanup is adequate for single test.
+
+#### 14. curl_harness.rs - ✅ HAS DROP IMPLEMENTATION
+
+| Resource | Cleanup | Status | Notes |
+|----------|---------|--------|-------|
+| `ContainerHarness` | `impl Drop` | ✅ DONE | Properly implemented! |
+
+**Status**: ✅ This is a model implementation - uses Drop correctly for Docker container cleanup.
+
+#### 15. middleware_tests.rs - ❌ NO CLEANUP NEEDED
+
+All tests are unit tests with no external resources.
+
+**Status**: ✅ No action needed.
+
+### Priority Summary
+
+#### HIGH Priority (23 tests) - Server Handle Cleanup
+
+**Modules needing Drop implementation**:
+1. `server_tests.rs` - 6 tests (out of 8 total)
+2. `security_tests.rs` - 7 tests
+3. `static_server_tests.rs` - 3 tests
+4. `multi_response_tests.rs` - 1 test
+5. `sse_tests.rs` - 1 test
+6. `metrics_endpoint_tests.rs` - 1 test
+7. `health_endpoint_tests.rs` - 1 test
+8. `docs_endpoint_tests.rs` - 2 tests
+
+**Impact**: 
+- Prevents memory leaks from server handles
+- Ensures proper cleanup even on panic
+- Makes tests more maintainable
+
+#### MEDIUM Priority (3 tests) - Temporary File Cleanup
+
+**Modules**:
+1. `generator_templates_tests.rs` - 1 test
+2. `generator_project_tests.rs` - 1 test
+3. `hot_reload_tests.rs` - 1 test
+
+**Impact**:
+- Prevents temporary file accumulation
+- Better for CI environments
+
+#### LOW Priority - Special Cases
+
+**Modules**:
+1. `docker_integration_tests.rs` - Already has cleanup, could be improved
+2. `cli_tests.rs` - Uses OS temp cleanup, no action needed
+
+### Recommended Fixtures to Create
+
+#### 1. CustomServerTestFixture (for server_tests.rs)
+
+```rust
+/// Test fixture for tests requiring custom handler registration
+struct CustomServerTestFixture {
+    _tracing: TestTracing,
+    handle: Option<ServerHandle>,
+    addr: SocketAddr,
+}
+
+impl CustomServerTestFixture {
+    fn with_handler<F>(handler_name: &str, handler: F, route: RouteMeta) -> Self 
+    where
+        F: Fn(HandlerRequest) -> HandlerResponse + Send + Sync + 'static
+    {
+        may::config().set_stack_size(0x8000);
+        let tracing = TestTracing::init();
+        
+        let router = Arc::new(RwLock::new(Router::new(vec![route])));
+        let mut dispatcher = Dispatcher::new();
+        unsafe {
+            dispatcher.register_handler(handler_name, handler);
+        }
+        
+        let service = AppService::new(
+            router,
+            Arc::new(RwLock::new(dispatcher)),
+            HashMap::new(),
+            PathBuf::from("examples/openapi.yaml"),
+            None,
+            None,
+        );
+        
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        drop(listener);
+        let handle = HttpServer(service).start(addr).unwrap();
+        handle.wait_ready().unwrap();
+        
+        Self {
+            _tracing: tracing,
+            handle: Some(handle),
+            addr,
+        }
+    }
+    
+    fn addr(&self) -> SocketAddr {
+        self.addr
+    }
+}
+
+impl Drop for CustomServerTestFixture {
+    fn drop(&mut self) {
+        if let Some(handle) = self.handle.take() {
+            handle.stop();
+        }
+    }
+}
+```
+
+#### 2. SecurityTestServer (for security_tests.rs)
+
+```rust
+/// Test fixture for security-related tests
+struct SecurityTestServer {
+    _tracing: TestTracing,
+    handle: Option<ServerHandle>,
+    addr: SocketAddr,
+    verify_handle: Option<std::thread::JoinHandle<()>>,
+}
+
+impl SecurityTestServer {
+    fn new_with_providers(providers: Vec<(&str, Arc<dyn SecurityProvider>)>) -> Self {
+        // Similar setup to PetStoreTestServer but with custom providers
+        // ...
+        
+        Self {
+            _tracing: tracing,
+            handle: Some(handle),
+            addr,
+            verify_handle: None,
+        }
+    }
+    
+    fn with_verify_server(mut self, verify_handle: std::thread::JoinHandle<()>) -> Self {
+        self.verify_handle = Some(verify_handle);
+        self
+    }
+    
+    fn addr(&self) -> SocketAddr {
+        self.addr
+    }
+}
+
+impl Drop for SecurityTestServer {
+    fn drop(&mut self) {
+        if let Some(handle) = self.handle.take() {
+            handle.stop();
+        }
+        if let Some(verify) = self.verify_handle.take() {
+            verify.join().ok();
+        }
+    }
+}
+```
+
+#### 3. TempSpecFile (for hot_reload_tests.rs)
+
+```rust
+/// Test fixture for temporary OpenAPI spec files
+struct TempSpecFile {
+    path: PathBuf,
+}
+
+impl TempSpecFile {
+    fn new(content: &str) -> Self {
+        use std::io::Write;
+        let mut path = std::env::temp_dir();
+        path.push(format!("test_spec_{}.yaml", std::process::id()));
+        
+        let mut file = std::fs::File::create(&path).unwrap();
+        file.write_all(content.as_bytes()).unwrap();
+        
+        Self { path }
+    }
+    
+    fn path(&self) -> &Path {
+        &self.path
+    }
+    
+    fn update(&self, content: &str) {
+        std::fs::write(&self.path, content).unwrap();
+    }
+}
+
+impl Drop for TempSpecFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+```
+
+### Migration Strategy
+
+1. **Phase 1**: Create fixture structs in respective test modules
+2. **Phase 2**: Migrate HIGH priority tests (server handles)
+3. **Phase 3**: Migrate MEDIUM priority tests (file cleanup)
+4. **Phase 4**: Document patterns and update test documentation
+
+### Benefits of Implementation
+
+1. **Prevents Memory Leaks**: Guaranteed cleanup even on panic
+2. **Reduces Code Duplication**: Shared fixtures across tests
+3. **Improves Maintainability**: Clear setup/teardown patterns
+4. **Better CI Performance**: No orphaned resources
+5. **Type Safety**: Compiler enforces cleanup
+
+### Before/After Example
+
+**Before** (23 tests like this):
+```rust
+#[test]
+fn test_api_key_in_header() {
+    let (_tracing, handle, addr) = start_service();
+    let resp = send_request(&addr, "GET /secret HTTP/1.1\r\n...");
+    let status = parse_status(&resp);
+    assert_eq!(status, 200);
+    handle.stop();  // ❌ Must remember!
+}
+```
+
+**After**:
+```rust
+#[test]
+fn test_api_key_in_header() {
+    let server = SecurityTestServer::new();
+    let resp = send_request(&server.addr(), "GET /secret HTTP/1.1\r\n...");
+    let status = parse_status(&resp);
+    assert_eq!(status, 200);
+    // ✅ Automatic cleanup!
+}
+```
+
+### Testing the Fixtures
+
+```rust
+#[test]
+fn test_fixture_cleans_up_on_panic() {
+    let result = std::panic::catch_unwind(|| {
+        let _server = PetStoreTestServer::new();
+        panic!("Simulated test panic");
+    });
+    
+    assert!(result.is_err());
+    // Server should be cleaned up even though we panicked
+    // Verify by checking no leaked resources
+}
+```
+
 ## Related Documentation
 
 - `docs/MEMORY_LEAK_FIX.md` - Why proper teardown prevents leaks
