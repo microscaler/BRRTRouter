@@ -1,0 +1,131 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jaeger
+  namespace: brrtrouter-dev
+  labels:
+    app: jaeger
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jaeger
+  template:
+    metadata:
+      labels:
+        app: jaeger
+    spec:
+      # Init container to fix permissions on persistent volume
+      initContainers:
+        - name: fix-permissions
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              mkdir -p /badger/data /badger/key
+              chmod -R 777 /badger
+              chown -R 10001:10001 /badger
+          volumeMounts:
+            - name: storage
+              mountPath: /badger
+          securityContext:
+            runAsUser: 0
+      containers:
+        - name: jaeger
+          image: jaegertracing/all-in-one:1.52
+          ports:
+            # Jaeger UI
+            - name: ui
+              containerPort: 16686
+              protocol: TCP
+            # OTLP gRPC receiver
+            - name: otlp-grpc
+              containerPort: 4317
+              protocol: TCP
+            # OTLP HTTP receiver
+            - name: otlp-http
+              containerPort: 4318
+              protocol: TCP
+            # Jaeger Thrift compact
+            - name: compact
+              containerPort: 6831
+              protocol: UDP
+            # Jaeger Thrift binary
+            - name: binary
+              containerPort: 6832
+              protocol: UDP
+            # Jaeger gRPC
+            - name: grpc
+              containerPort: 14250
+              protocol: TCP
+          env:
+            - name: COLLECTOR_OTLP_ENABLED
+              value: "true"
+            - name: SPAN_STORAGE_TYPE
+              value: "badger"
+            - name: BADGER_EPHEMERAL
+              value: "false"
+            - name: BADGER_DIRECTORY_VALUE
+              value: "/badger/data"
+            - name: BADGER_DIRECTORY_KEY
+              value: "/badger/key"
+          volumeMounts:
+            - name: storage
+              mountPath: /badger
+          securityContext:
+            runAsUser: 10001
+            runAsGroup: 10001
+            fsGroup: 10001
+            runAsNonRoot: true
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+      volumes:
+        - name: storage
+          persistentVolumeClaim:
+            claimName: jaeger-storage
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jaeger
+  namespace: brrtrouter-dev
+  labels:
+    app: jaeger
+spec:
+  type: NodePort
+  ports:
+    # UI
+    - port: 16686
+      targetPort: ui
+      nodePort: 30686
+      protocol: TCP
+      name: ui
+    # OTLP gRPC
+    - port: 4317
+      targetPort: otlp-grpc
+      protocol: TCP
+      name: otlp-grpc
+    # OTLP HTTP
+    - port: 4318
+      targetPort: otlp-http
+      protocol: TCP
+      name: otlp-http
+    # Jaeger Thrift compact
+    - port: 6831
+      targetPort: compact
+      protocol: UDP
+      name: compact
+    # Jaeger gRPC
+    - port: 14250
+      targetPort: grpc
+      protocol: TCP
+      name: grpc
+  selector:
+    app: jaeger
+

@@ -1,8 +1,63 @@
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use super::Middleware;
 use crate::dispatcher::{HandlerRequest, HandlerResponse};
+
+/// Per-path metrics tracking
+#[derive(Default)]
+struct PathMetrics {
+    count: AtomicUsize,
+    total_latency_ns: AtomicU64,
+    max_latency_ns: AtomicU64,
+    min_latency_ns: AtomicU64,
+}
+
+impl PathMetrics {
+    fn new() -> Self {
+        Self {
+            count: AtomicUsize::new(0),
+            total_latency_ns: AtomicU64::new(0),
+            max_latency_ns: AtomicU64::new(0),
+            min_latency_ns: AtomicU64::new(u64::MAX), // Start high for min
+        }
+    }
+    
+    fn record(&self, latency_ns: u64) {
+        self.count.fetch_add(1, Ordering::Relaxed);
+        self.total_latency_ns.fetch_add(latency_ns, Ordering::Relaxed);
+        
+        // Update max
+        let mut current_max = self.max_latency_ns.load(Ordering::Relaxed);
+        while latency_ns > current_max {
+            match self.max_latency_ns.compare_exchange_weak(
+                current_max,
+                latency_ns,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => break,
+                Err(x) => current_max = x,
+            }
+        }
+        
+        // Update min
+        let mut current_min = self.min_latency_ns.load(Ordering::Relaxed);
+        while latency_ns < current_min {
+            match self.min_latency_ns.compare_exchange_weak(
+                current_min,
+                latency_ns,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => break,
+                Err(x) => current_min = x,
+            }
+        }
+    }
+}
 
 /// Middleware for collecting Prometheus-compatible metrics
 ///
@@ -15,6 +70,7 @@ use crate::dispatcher::{HandlerRequest, HandlerResponse};
 /// - Stack size and usage (for coroutine monitoring)
 /// - Top-level request count (non-handler requests like /health, /metrics)
 /// - Authentication failure count
+/// - Per-path metrics (count, latency, min/max)
 pub struct MetricsMiddleware {
     request_count: AtomicUsize,
     total_latency_ns: AtomicU64,
@@ -22,6 +78,8 @@ pub struct MetricsMiddleware {
     used_stack: AtomicUsize,
     top_level_requests: AtomicUsize,
     auth_failures: AtomicUsize,
+    /// Per-path metrics for detailed monitoring
+    path_metrics: Arc<RwLock<HashMap<String, Arc<PathMetrics>>>>,
 }
 
 /// Default initialization for metrics middleware
@@ -40,6 +98,7 @@ impl Default for MetricsMiddleware {
             used_stack: AtomicUsize::new(0),
             top_level_requests: AtomicUsize::new(0),
             auth_failures: AtomicUsize::new(0),
+            path_metrics: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 }
@@ -105,6 +164,54 @@ impl MetricsMiddleware {
     pub fn auth_failures(&self) -> usize {
         self.auth_failures.load(Ordering::Relaxed)
     }
+    
+    /// Record metrics for a specific path
+    ///
+    /// This is called internally by the middleware to track per-path statistics.
+    pub(crate) fn record_path_metrics(&self, path: &str, latency_ns: u64) {
+        // Get or create path metrics
+        let metrics = {
+            // Fast path: try read lock first
+            if let Ok(map) = self.path_metrics.read() {
+                if let Some(pm) = map.get(path) {
+                    pm.clone()
+                } else {
+                    drop(map); // Release read lock before upgrading
+                    // Slow path: need to create new entry
+                    let mut map = self.path_metrics.write().unwrap();
+                    map.entry(path.to_string())
+                        .or_insert_with(|| Arc::new(PathMetrics::new()))
+                        .clone()
+                }
+            } else {
+                // Fallback if read lock fails
+                let mut map = self.path_metrics.write().unwrap();
+                map.entry(path.to_string())
+                    .or_insert_with(|| Arc::new(PathMetrics::new()))
+                    .clone()
+            }
+        };
+        
+        metrics.record(latency_ns);
+    }
+    
+    /// Get all per-path metrics for Prometheus export
+    ///
+    /// Returns a snapshot of metrics for all paths that have been accessed.
+    /// The returned HashMap maps path -> (count, avg_latency_ns, min_ns, max_ns).
+    pub fn path_stats(&self) -> HashMap<String, (usize, u64, u64, u64)> {
+        let map = self.path_metrics.read().unwrap();
+        map.iter()
+            .map(|(path, pm)| {
+                let count = pm.count.load(Ordering::Relaxed);
+                let total = pm.total_latency_ns.load(Ordering::Relaxed);
+                let min = pm.min_latency_ns.load(Ordering::Relaxed);
+                let max = pm.max_latency_ns.load(Ordering::Relaxed);
+                let avg = if count > 0 { total / count as u64 } else { 0 };
+                (path.clone(), (count, avg, min, max))
+            })
+            .collect()
+    }
 }
 
 /// Metrics collection middleware implementation
@@ -146,11 +253,12 @@ impl Middleware for MetricsMiddleware {
     ///
     /// Called after the handler completes. Updates:
     /// 1. Total latency (for average calculation)
-    /// 2. Stack size and usage (if running in a coroutine)
+    /// 2. Per-path latency and counters
+    /// 3. Stack size and usage (if running in a coroutine)
     ///
     /// # Arguments
     ///
-    /// * `_req` - The original request (unused)
+    /// * `req` - The original request (used for path tracking)
     /// * `_res` - The response (unused)
     /// * `latency` - Time taken to process the request
     ///
@@ -159,9 +267,15 @@ impl Middleware for MetricsMiddleware {
     /// - If in coroutine context: Records actual stack size from coroutine
     /// - If not in coroutine: Records global stack size from May config
     /// - Used stack is always 0 (May doesn't expose actual usage)
-    fn after(&self, _req: &HandlerRequest, _res: &mut HandlerResponse, latency: Duration) {
+    fn after(&self, req: &HandlerRequest, _res: &mut HandlerResponse, latency: Duration) {
+        let latency_ns = latency.as_nanos() as u64;
+        
         self.total_latency_ns
-            .fetch_add(latency.as_nanos() as u64, Ordering::Relaxed);
+            .fetch_add(latency_ns, Ordering::Relaxed);
+        
+        // Record per-path metrics
+        self.record_path_metrics(&req.path, latency_ns);
+        
         // record stack metrics for the current coroutine when available
         if may::coroutine::is_coroutine() {
             let co = may::coroutine::current();

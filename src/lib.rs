@@ -740,17 +740,21 @@
 //!
 //! ### Monitoring Dashboard
 //!
-//! The Pet Store example includes a Grafana dashboard configuration in `docker-compose.yml`:
+//! The Pet Store example includes a complete observability stack via Tilt + kind:
 //!
 //! ```bash
-//! docker-compose up -d  # Starts Prometheus, Grafana, and Jaeger
+//! just dev-up  # Starts full development environment with observability
 //! ```
 //!
 //! **Included services:**
 //! - **Prometheus** - Metrics collection (http://localhost:9090)
-//! - **Grafana** - Metrics visualization (http://localhost:3000)
+//! - **Grafana** - Unified dashboards with Prometheus, Loki, Jaeger (http://localhost:3000)
+//! - **Loki** - Log aggregation with LogQL queries (http://localhost:3100)
+//! - **Promtail** - Log shipping from pods
 //! - **Jaeger** - Distributed tracing UI (http://localhost:16686)
-//! - **OTLP Collector** - Trace aggregation
+//! - **OTLP Collector** - Trace and metrics aggregation
+//! - **PostgreSQL** - Data store (localhost:5432)
+//! - **Redis** - Cache/session store (localhost:6379)
 //!
 //! ### Custom Metrics
 //!
@@ -829,6 +833,7 @@ mod echo;
 pub mod generator;
 pub mod hot_reload;
 pub mod middleware;
+pub mod otel;
 pub mod router;
 pub mod runtime_config;
 pub mod security;

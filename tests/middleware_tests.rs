@@ -71,7 +71,7 @@ fn test_metrics_middleware_counts() {
 fn test_metrics_stack_usage() {
     // set an odd stack size so may prints usage information
     may::config().set_stack_size(0x801);
-    let mut tracing = TestTracing::init();
+    let _tracing = TestTracing::init();
 
     let (routes, _slug) = load_spec("examples/openapi.yaml").unwrap();
     let router = Router::new(routes.clone());
@@ -88,9 +88,9 @@ fn test_metrics_stack_usage() {
         .dispatch(route_match, None, HashMap::new(), HashMap::new())
         .unwrap();
     assert_eq!(resp.status, 200);
-    let (size, used) = metrics.stack_usage();
+    let (size, _used) = metrics.stack_usage();
     assert_eq!(size, 0x801);
-    assert!(used >= 0);
+    // used is always >= 0 since it's usize, no need to assert
     // tracing.wait_for_span("get_pet");
 }
 
@@ -128,10 +128,9 @@ fn test_metrics_middleware_zero_requests() {
     assert_eq!(metrics.request_count(), 0);
     assert_eq!(metrics.average_latency(), Duration::from_nanos(0));
 
-    // Stack usage should have defaults
-    let (size, used) = metrics.stack_usage();
-    assert!(size >= 0);
-    assert!(used >= 0);
+    // Stack usage should have defaults (both are usize, always >= 0)
+    let (_size, _used) = metrics.stack_usage();
+    // No need to assert >= 0 for usize values
 }
 
 #[test]

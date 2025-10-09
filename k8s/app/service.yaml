@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: petstore
+  namespace: brrtrouter-dev
+  labels:
+    app: petstore
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8080"
+    prometheus.io/path: "/metrics"
+spec:
+  type: NodePort
+  ports:
+    - port: 8080
+      targetPort: http
+      nodePort: 30900
+      protocol: TCP
+      name: http
+  selector:
+    app: petstore
+

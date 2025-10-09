@@ -1,11 +1,176 @@
 use std::net::SocketAddr;
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 #[path = "common/mod.rs"]
 mod common;
 use common::http::wait_for_http_200;
+
+/// Flag to track if signal handler cleanup is already running
+static SIGNAL_CLEANUP_RUNNING: AtomicBool = AtomicBool::new(false);
+
+/// Register signal handlers and atexit cleanup to ensure containers are always removed
+///
+/// This is critical because `HARNESS` is a static `OnceLock`, so its `Drop` is never
+/// called until process exit. We need explicit cleanup on:
+/// 1. Normal exit (atexit)
+/// 2. SIGINT (Ctrl+C)
+/// 3. SIGTERM (kill command)
+fn register_signal_handlers() {
+    extern "C" fn cleanup_handler() {
+        // Prevent recursive cleanup if multiple handlers fire
+        if SIGNAL_CLEANUP_RUNNING.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        
+        eprintln!("\n🧹 Cleaning up Docker resources on exit...");
+        
+        // 1. Clean up the running container
+        if let Some(harness) = HARNESS.get() {
+            eprintln!("Stopping container: {}", harness.container_id);
+            let _ = Command::new("docker")
+                .args(["stop", "-t", "2", &harness.container_id])
+                .status();
+            let _ = Command::new("docker")
+                .args(["rm", "-f", &harness.container_id])
+                .status();
+        }
+        
+        // Also cleanup by name (in case harness wasn't initialized)
+        cleanup_orphaned_containers();
+        
+        // 2. Clean up dangling test images
+        // Why cleanup images?
+        // - Each test run creates a new image (even though content is identical)
+        // - These accumulate quickly (6+ images per test run)
+        // - They're all 8-9MB and clutter `docker images`
+        // - Dangling images (<none>:<none>) serve no purpose
+        //
+        // Strategy:
+        // 1. First try `docker image prune` (safe, won't remove in-use images)
+        // 2. Then manually remove remaining <none> images (with safety checks)
+        //
+        // Safety:
+        // - Never use --force on individual image removal
+        // - Skip images that return "conflict" or "being used" errors
+        // - This prevents removing images from running containers (like kind)
+        eprintln!("Cleaning up dangling test images...");
+        
+        // Step 1: Try docker prune first (safest, won't touch in-use images)
+        let prune_result = Command::new("docker")
+            .args([
+                "image",
+                "prune",
+                "-f",  // Force (no prompt)
+                "--filter", "dangling=true",  // Only <none>:<none> images
+                "--filter", "until=1h",       // Only recent (from this test run)
+            ])
+            .output();
+        
+        match prune_result {
+            Ok(output) => {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                if !stdout.trim().is_empty() && !stdout.contains("Total reclaimed space: 0B") {
+                    eprintln!("✓ Pruned: {}", stdout.trim());
+                }
+            }
+            Err(e) => {
+                eprintln!("⚠ Could not prune images: {}", e);
+            }
+        }
+        
+        // Step 2: Clean up remaining <none> images that prune missed
+        // Get list of <none>:<none> image IDs
+        // Note: This uses shell commands which might not work in all environments
+        // If it fails, we just skip it (prune in Step 1 already did the main cleanup)
+        match Command::new("sh")
+            .args(["-c", "docker images | grep '<none>' | awk '{print $3}'"])
+            .output()
+        {
+            Ok(output) if output.status.success() => {
+                let image_ids = String::from_utf8_lossy(&output.stdout);
+                let ids: Vec<&str> = image_ids.lines().filter(|s| !s.is_empty()).collect();
+                
+                if !ids.is_empty() {
+                    eprintln!("Found {} additional <none> image(s) to remove...", ids.len());
+                    let mut removed_count = 0;
+                    let mut skipped_count = 0;
+                    
+                    for image_id in ids {
+                        // Try to remove without --force (won't remove in-use images)
+                        match Command::new("docker")
+                            .args(["image", "rm", image_id])
+                            .output()
+                        {
+                            Ok(rm_output) => {
+                                if rm_output.status.success() {
+                                    removed_count += 1;
+                                } else {
+                                    let stderr = String::from_utf8_lossy(&rm_output.stderr);
+                                    // Skip errors for in-use images (safe to ignore)
+                                    if stderr.contains("conflict") || stderr.contains("being used") {
+                                        skipped_count += 1;
+                                    } else {
+                                        eprintln!("  ⚠ Could not remove {}: {}", image_id, stderr.trim());
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("  ⚠ Failed to remove {}: {}", image_id, e);
+                            }
+                        }
+                    }
+                    
+                    if removed_count > 0 {
+                        eprintln!("✓ Removed {} <none> image(s)", removed_count);
+                    }
+                    if skipped_count > 0 {
+                        eprintln!("✓ Skipped {} in-use image(s) (safe)", skipped_count);
+                    }
+                }
+            }
+            Ok(_) => {
+                // Command ran but returned non-zero (e.g., grep found no matches)
+                // This is fine, nothing to clean up
+            }
+            Err(e) => {
+                // Shell command not available or other error
+                // This is fine, Step 1 (prune) already did the main work
+                eprintln!("  ℹ️  Manual image cleanup unavailable: {}", e);
+                eprintln!("     (docker prune in Step 1 already cleaned up most images)");
+            }
+        }
+        
+        eprintln!("✓ Cleanup complete\n");
+    }
+    
+    extern "C" fn signal_handler(_: libc::c_int) {
+        cleanup_handler();
+        
+        // Re-raise the signal to allow normal termination
+        unsafe {
+            libc::signal(libc::SIGINT, libc::SIG_DFL);
+            libc::raise(libc::SIGINT);
+        }
+    }
+    
+    // Register signal handlers for SIGINT and SIGTERM
+    unsafe {
+        libc::signal(libc::SIGINT, signal_handler as libc::sighandler_t);
+        libc::signal(libc::SIGTERM, signal_handler as libc::sighandler_t);
+    }
+    
+    // ALSO register atexit handler for normal process termination
+    // This handles the case where tests complete successfully
+    extern "C" fn atexit_wrapper() {
+        cleanup_handler();
+    }
+    unsafe {
+        libc::atexit(atexit_wrapper);
+    }
+}
 
 /// Register a cleanup handler to ensure Docker containers are removed on test exit
 ///
@@ -13,13 +178,178 @@ use common::http::wait_for_http_200;
 /// The handler is registered once and persists for the entire test process.
 static CLEANUP_REGISTERED: OnceLock<()> = OnceLock::new();
 
+/// Singleton to ensure image setup runs exactly once across all test threads
+static IMAGE_SETUP: OnceLock<Result<(), String>> = OnceLock::new();
+
 static HARNESS: OnceLock<ContainerHarness> = OnceLock::new();
+
+/// Ensure Docker image exists before running tests
+///
+/// This function uses a singleton pattern to ensure the image check
+/// runs exactly once, even with parallel test execution. Other threads will
+/// block and wait for the first thread to complete the check.
+///
+/// # Panics
+///
+/// Panics if Docker is not available or the required image doesn't exist.
+pub fn ensure_image_ready() {
+    let result = IMAGE_SETUP.get_or_init(|| {
+        // Only ONE thread will execute this block
+        let start = Instant::now();
+        let thread_id = thread::current().id();
+        eprintln!("\n=== Docker Image Setup (Thread {:?}) ===", thread_id);
+        
+        // Ensure Docker is available
+        eprintln!("[1/2] Checking Docker availability...");
+        let docker_ok = Command::new("docker")
+            .arg("--version")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+        
+        if !docker_ok {
+            return Err("Docker is required for curl e2e tests. Please install Docker and ensure it's running.".to_string());
+        }
+        eprintln!("      ✓ Docker is available");
+
+        // STEP 2: Build the binary locally using cross-compilation
+        // =========================================================
+        // Why cross-compile?
+        // - We're on macOS (likely ARM64), but Docker runs Linux x86_64 containers
+        // - Building natively would produce aarch64-apple-darwin binary (wrong arch!)
+        // - We need x86_64-unknown-linux-musl for Docker's Linux containers
+        //
+        // Why cargo-zigbuild?
+        // - Handles cross-compilation without needing musl-gcc on macOS
+        // - Already configured in .cargo/config.toml for this target
+        // - Same tool used by Tilt workflow (consistency!)
+        //
+        // Why build here instead of in Dockerfile?
+        // - Local builds use incremental compilation (10-30s vs 5-10min in Docker)
+        // - Cargo cache is preserved between runs
+        // - ALWAYS tests current code (impossible to forget to rebuild!)
+        eprintln!("[2/5] Building pet_store binary for Linux x86_64...");
+        let build_output = Command::new("cargo")
+            .args([
+                "zigbuild",
+                "--release",
+                "-p", "pet_store",
+                "--target", "x86_64-unknown-linux-musl"
+            ])
+            .output()
+            .expect("failed to run cargo zigbuild");
+        
+        if !build_output.status.success() {
+            eprintln!("      ❌ Build failed!");
+            eprintln!("{}", String::from_utf8_lossy(&build_output.stderr));
+            return Err("Failed to build pet_store binary. Do you have cargo-zigbuild installed?".to_string());
+        }
+        eprintln!("      ✓ Binary built for Linux x86_64");
+        
+        // STEP 3: Verify the cross-compiled binary exists
+        // ================================================
+        eprintln!("[3/5] Verifying binary...");
+        let binary_path = "target/x86_64-unknown-linux-musl/release/pet_store";
+        if !std::path::Path::new(binary_path).exists() {
+            return Err(format!("Binary not found at {}", binary_path));
+        }
+        eprintln!("      ✓ Binary found at {}", binary_path);
+
+        // STEP 4: Copy to staging area (CRITICAL - same as Tilt workflow!)
+        // =================================================================
+        // Why copy to build_artifacts/?
+        // 
+        // Docker's build context has .dockerignore which blocks target/* for performance:
+        //   target/*                    ← blocks ALL of target/
+        //   !build_artifacts/pet_store  ← but allows this specific file
+        //
+        // Without this staging step:
+        //   - Docker can't access target/x86_64-unknown-linux-musl/release/pet_store
+        //   - Build fails with: "not found" error
+        //   - Even though the file exists on host!
+        //
+        // The staging area pattern:
+        //   1. Build locally: cargo zigbuild → target/x86_64-unknown-linux-musl/release/pet_store
+        //   2. Stage: copy → build_artifacts/pet_store
+        //   3. Docker: COPY build_artifacts/pet_store → /pet_store
+        //
+        // This is the SAME pattern used in Tilt (see Tiltfile lines ~70-90):
+        //   - Tilt builds locally for fast iteration
+        //   - Copies to build_artifacts/
+        //   - Docker just copies the pre-built binary
+        //   - Result: Instant Docker builds (<1s) + always testing current code!
+        //
+        // For future AI/contributors:
+        // - Do NOT remove this staging step!
+        // - Do NOT try to copy directly from target/ in Dockerfile.test
+        // - Do NOT modify .dockerignore to allow target/* (kills Docker performance)
+        // - This pattern is intentional and matches our Tilt workflow
+        eprintln!("[4/5] Copying to staging area...");
+        std::fs::create_dir_all("build_artifacts")
+            .expect("failed to create build_artifacts directory");
+        std::fs::copy(binary_path, "build_artifacts/pet_store")
+            .expect("failed to copy binary to staging");
+        eprintln!("      ✓ Binary staged at build_artifacts/pet_store");
+
+        // STEP 5: Build the Docker image (instant - just copies the staged binary!)
+        // ==========================================================================
+        // This is super fast (<1s) because:
+        // - dockerfiles/Dockerfile.test uses FROM scratch (no base image layers)
+        // - Only copies pre-built files (no compilation in Docker)
+        // - The binary is already compiled and staged
+        //
+        // Result: 15-30s for full cycle (compile + Docker) vs 5-10min if we compiled in Docker!
+        eprintln!("[5/5] Building Docker image (copying binary)...");
+        let docker_output = Command::new("docker")
+            .args([
+                "build",
+                "-f", "dockerfiles/Dockerfile.test",
+                "-t", "brrtrouter-petstore:e2e",
+                "--rm",              // Remove intermediate containers after build
+                "--force-rm",        // Always remove intermediate containers (even on failure)
+                "."
+            ])
+            .output()
+            .expect("failed to run docker build");
+
+        if !docker_output.status.success() {
+            eprintln!("      ❌ Docker build failed!");
+            eprintln!("{}", String::from_utf8_lossy(&docker_output.stderr));
+            return Err("Docker build failed".to_string());
+        }
+        eprintln!("      ✓ Image ready");
+        eprintln!("");
+        eprintln!("=== Setup Complete in {:.2}s ===", start.elapsed().as_secs_f64());
+        eprintln!("    ✨ Testing CURRENT code (just compiled)");
+        eprintln!("");
+        Ok(())
+    });
+    
+    // All threads (including the one that ran setup) check the result
+    if let Err(e) = result {
+        panic!("{}", e);
+    }
+    
+    // If we get here, another thread might have done the setup - let them know
+    let thread_id = thread::current().id();
+    eprintln!("[Thread {:?}] Image setup complete, proceeding with test...", thread_id);
+}
 
 /// Get the base URL for the shared test container
 ///
 /// Lazily starts the container on first access and returns the URL for all subsequent calls.
 /// The container is automatically cleaned up when the test process exits.
+///
+/// **Important:** Call `ensure_image_ready()` before running tests to avoid setup timeouts.
 pub fn base_url() -> &'static str {
+    // Register signal handlers once to ensure cleanup on SIGINT/SIGTERM
+    CLEANUP_REGISTERED.get_or_init(|| {
+        register_signal_handlers();
+    });
+    
+    // Ensure image is ready before starting container
+    ensure_image_ready();
+    
     let h = HARNESS.get_or_init(ContainerHarness::start);
     h.base_url.as_str()
 }
@@ -38,56 +368,55 @@ fn container_name() -> String {
 /// manually if needed. Safe to call even if no container exists.
 pub fn cleanup_orphaned_containers() {
     let name = container_name();
-    eprintln!("Checking for orphaned test containers ({})...", name);
+    eprintln!("Cleaning up container: {}", name);
 
-    // First, try to stop the container (may not exist, that's OK)
-    let stop_output = Command::new("docker")
-        .args(["stop", "-t", "2", &name])
+    // Force kill and remove in one command (most aggressive)
+    let kill_output = Command::new("docker")
+        .args(["rm", "-f", &name])
         .output();
 
-    if let Ok(output) = &stop_output {
-        if output.status.success() {
-            eprintln!("Stopped orphaned container: {}", name);
+    match kill_output {
+        Ok(output) => {
+            if output.status.success() {
+                eprintln!("✓ Removed container: {}", name);
+            } else {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                if stderr.contains("No such container") {
+                    eprintln!("✓ No orphaned container found");
+                } else {
+                    eprintln!("⚠ Failed to remove container: {}", stderr);
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("⚠ Docker command failed: {}", e);
         }
     }
 
-    // Then force remove it (works on stopped or running containers)
-    let rm_output = Command::new("docker").args(["rm", "-f", &name]).output();
+    // Poll to verify the container is actually gone
+    // This is critical to prevent "name already in use" errors
+    for attempt in 1..=30 {  // Increased from 20 to 30 attempts
+        let check = Command::new("docker")
+            .args(["ps", "-a", "--filter", &format!("name=^/{}$", name), "-q"])
+            .output();
 
-    if let Ok(output) = &rm_output {
-        if output.status.success() {
-            eprintln!("Removed orphaned container: {}", name);
-
-            // Poll to verify the container name is actually released
-            // This prevents race conditions in parallel test execution
-            for attempt in 1..=20 {
-                let check = Command::new("docker")
-                    .args(["ps", "-a", "--filter", &format!("name=^/{}$", name), "-q"])
-                    .output();
-
-                if let Ok(output) = check {
-                    let container_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                    if container_id.is_empty() {
-                        eprintln!("Verified container name '{}' is released", name);
-                        break;
-                    }
+        if let Ok(output) = check {
+            let container_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if container_id.is_empty() {
+                if attempt > 1 {
+                    eprintln!("✓ Container name '{}' is released (took {} attempts)", name, attempt);
                 }
-
-                if attempt == 20 {
-                    eprintln!(
-                        "Warning: Container name '{}' may still be in use after cleanup",
-                        name
-                    );
-                }
-
-                thread::sleep(Duration::from_millis(50));
-            }
-        } else {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            if !stderr.contains("No such container") {
-                eprintln!("Warning: Failed to remove container: {}", stderr);
+                return;
             }
         }
+
+        if attempt == 30 {
+            eprintln!("❌ ERROR: Container name '{}' still in use after 30 attempts!", name);
+            eprintln!("   This will cause 'name already in use' errors");
+            eprintln!("   Try: docker rm -f {}", name);
+        }
+
+        thread::sleep(Duration::from_millis(100));  // Increased from 50ms to 100ms
     }
 }
 
@@ -146,42 +475,13 @@ impl ContainerHarness {
     ///
     /// Panics if Docker is unavailable, build fails, or the container doesn't become ready.
     fn start() -> Self {
-        // Register cleanup handler on first container start
-        CLEANUP_REGISTERED.get_or_init(|| {
-            // The Drop implementation will handle cleanup at process exit,
-            // but we also register an explicit cleanup for any orphaned containers
-            // from previous failed runs
-            cleanup_orphaned_containers();
-        });
+        // ALWAYS cleanup orphaned containers first (not just once)
+        // This is critical because if tests were cancelled, Drop may not have run
+        eprintln!("Cleaning up any orphaned containers from previous runs...");
+        cleanup_orphaned_containers();
 
-        // Ensure Docker is available
-        let docker_ok = Command::new("docker")
-            .arg("--version")
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false);
-        if !docker_ok {
-            panic!("Docker is required for curl e2e tests");
-        }
-
-        // Check if image already exists (e.g., pre-built in CI)
-        let image_exists = Command::new("docker")
-            .args(["image", "inspect", "brrtrouter-petstore:e2e"])
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false);
-
-        if !image_exists {
-            // Build image if it doesn't exist (local dev workflow)
-            eprintln!("Building brrtrouter-petstore:e2e image...");
-            let status = Command::new("docker")
-                .args(["build", "--no-cache", "-t", "brrtrouter-petstore:e2e", "."])
-                .status()
-                .expect("failed to build e2e image");
-            assert!(status.success(), "docker build failed");
-        } else {
-            eprintln!("Using existing brrtrouter-petstore:e2e image");
-        }
+        // Image setup is now handled by ensure_image_ready() called from base_url()
+        // This ensures the image is built once for all tests, not per-container
 
         // Run container detached with random host port for 8080
         // Use unique container name per process to allow parallel test execution

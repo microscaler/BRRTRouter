@@ -1,6 +1,7 @@
 vendor/*
 build/examples/pet_store/target/
 target/*
+!build_artifacts/pet_store
 *.logs
 *.log
 *.log.*
@@ -9,4 +10,10 @@ target/*
 .venv
 .idea
 .git
+
+# Sample UI source (we only need the built output in examples/pet_store/static_site/)
+sample-ui/src/
+sample-ui/node_modules/
+sample-ui/dist/
+sample-ui/scripts/
 
