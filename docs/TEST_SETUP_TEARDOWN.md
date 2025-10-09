@@ -630,56 +630,51 @@ impl Drop for SecurityTestServer {
 - Includes doc directory for comprehensive integration testing
 - Tests security (path traversal prevention) alongside functionality
 
-#### 4. multi_response_tests.rs - ❌ NO DROP IMPLEMENTATION
+#### 4. multi_response_tests.rs - ✅ **COMPLETE**
 
-| Test | Manual Cleanup | Should Use Drop | Priority | Notes |
-|------|----------------|-----------------|----------|-------|
-| `test_201_created_response` | `handle.stop()` | ✅ YES | MEDIUM | |
+| Test | Manual Cleanup | Should Use Drop | Priority | Status |
+|------|----------------|-----------------|----------|--------|
+| `test_select_content_type_from_spec` | ~~`handle.stop()`~~ | ✅ YES | MEDIUM | ✅ **DONE** |
 
-**Total**: 1 test needs Drop trait
+**Progress**: 1/1 test completed ✅
+**Implementation**: `MultiResponseTestServer` fixture for content negotiation tests
 
-**Recommendation**: Use `CustomServerTestFixture` (same as server_tests.rs).
+#### 5. sse_tests.rs - ✅ **COMPLETE**
 
-#### 5. sse_tests.rs - ❌ NO DROP IMPLEMENTATION
+| Test | Manual Cleanup | Should Use Drop | Priority | Status |
+|------|----------------|-----------------|----------|--------|
+| `test_event_stream` | ~~`handle.stop()`~~ | ✅ YES | MEDIUM | ✅ **DONE** |
 
-| Test | Manual Cleanup | Should Use Drop | Priority | Notes |
-|------|----------------|-----------------|----------|-------|
-| `test_sse_endpoint` | `handle.stop()` | ✅ YES | MEDIUM | |
+**Progress**: 1/1 test completed ✅
+**Implementation**: `SseTestServer` fixture with API key authentication
 
-**Total**: 1 test needs Drop trait
+#### 6. metrics_endpoint_tests.rs - ✅ **COMPLETE**
 
-**Recommendation**: Use `PetStoreTestServer` (already available).
+| Test | Manual Cleanup | Should Use Drop | Priority | Status |
+|------|----------------|-----------------|----------|--------|
+| `test_metrics_endpoint` | ~~`handle.stop()`~~ | ✅ YES | MEDIUM | ✅ **DONE** |
 
-#### 6. metrics_endpoint_tests.rs - ❌ NO DROP IMPLEMENTATION
+**Progress**: 1/1 test completed ✅
+**Implementation**: `MetricsTestServer` fixture with MetricsMiddleware
 
-| Test | Manual Cleanup | Should Use Drop | Priority | Notes |
-|------|----------------|-----------------|----------|-------|
-| `test_metrics_endpoint` | `handle.stop()` | ✅ YES | MEDIUM | |
+#### 7. health_endpoint_tests.rs - ✅ **COMPLETE**
 
-**Total**: 1 test needs Drop trait
+| Test | Manual Cleanup | Should Use Drop | Priority | Status |
+|------|----------------|-----------------|----------|--------|
+| `test_health_endpoint` | ~~`handle.stop()`~~ | ✅ YES | MEDIUM | ✅ **DONE** |
 
-**Recommendation**: Use `PetStoreTestServer` (already available).
+**Progress**: 1/1 test completed ✅
+**Implementation**: `HealthTestServer` fixture
 
-#### 7. health_endpoint_tests.rs - ❌ NO DROP IMPLEMENTATION
+#### 8. docs_endpoint_tests.rs - ✅ **COMPLETE**
 
-| Test | Manual Cleanup | Should Use Drop | Priority | Notes |
-|------|----------------|-----------------|----------|-------|
-| `test_health_endpoint` | `handle.stop()` | ✅ YES | MEDIUM | |
+| Test | Manual Cleanup | Should Use Drop | Priority | Status |
+|------|----------------|-----------------|----------|--------|
+| `test_openapi_endpoint` | ~~`handle.stop()`~~ | ✅ YES | MEDIUM | ✅ **DONE** |
+| `test_swagger_ui_endpoint` | ~~`handle.stop()`~~ | ✅ YES | MEDIUM | ✅ **DONE** |
 
-**Total**: 1 test needs Drop trait
-
-**Recommendation**: Use `PetStoreTestServer` (already available).
-
-#### 8. docs_endpoint_tests.rs - ❌ NO DROP IMPLEMENTATION
-
-| Test | Manual Cleanup | Should Use Drop | Priority | Notes |
-|------|----------------|-----------------|----------|-------|
-| `test_openapi_yaml_endpoint` | `handle.stop()` | ✅ YES | MEDIUM | |
-| `test_swagger_ui_endpoint` | `handle.stop()` | ✅ YES | MEDIUM | |
-
-**Total**: 2 tests need Drop trait
-
-**Recommendation**: Use `PetStoreTestServer` (already available).
+**Progress**: 2/2 tests completed ✅
+**Implementation**: `DocsTestServer` fixture for OpenAPI spec and Swagger UI
 
 #### 9. hot_reload_tests.rs - ⚠️ SPECIAL CASE
 
