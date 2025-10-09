@@ -23,15 +23,8 @@
 //!
 //! # Authentication
 //!
-//! For authenticated endpoints, configure headers globally:
-//!
-//! ```bash
-//! # Set API key header for all requests
-//! cargo run --release --example api_load_test -- \
-//!   --host http://localhost:8080 \
-//!   --users 20 \
-//!   --header "X-API-Key: test123"
-//! ```
+//! Authenticated endpoints (pets, users) automatically include the X-API-Key header.
+//! The API key is hardcoded in the test functions for simplicity.
 
 use goose::prelude::*;
 
@@ -53,43 +46,47 @@ async fn test_metrics(user: &mut GooseUser) -> TransactionResult {
     Ok(())
 }
 
-/// Test GET /pets endpoint
-/// Note: Add --header "X-API-Key: test123" to CLI for authentication
+/// Test GET /pets endpoint (authenticated)
 async fn test_list_pets(user: &mut GooseUser) -> TransactionResult {
-    user.get("pets")
-        .await?
-        .response?
-        .error_for_status()?;
+    let request_builder = user.get_request_builder(&GooseMethod::Get, "pets")?
+        .header("X-API-Key", "test123");
+    let goose_request = GooseRequest::builder()
+        .set_request_builder(request_builder)
+        .build();
+    user.request(goose_request).await?;
     Ok(())
 }
 
-/// Test GET /pets/{id} endpoint
-/// Note: Add --header "X-API-Key: test123" to CLI for authentication
+/// Test GET /pets/{id} endpoint (authenticated)
 async fn test_get_pet(user: &mut GooseUser) -> TransactionResult {
-    user.get("pets/12345")
-        .await?
-        .response?
-        .error_for_status()?;
+    let request_builder = user.get_request_builder(&GooseMethod::Get, "pets/12345")?
+        .header("X-API-Key", "test123");
+    let goose_request = GooseRequest::builder()
+        .set_request_builder(request_builder)
+        .build();
+    user.request(goose_request).await?;
     Ok(())
 }
 
-/// Test GET /users endpoint
-/// Note: Add --header "X-API-Key: test123" to CLI for authentication
+/// Test GET /users endpoint (authenticated)
 async fn test_list_users(user: &mut GooseUser) -> TransactionResult {
-    user.get("users")
-        .await?
-        .response?
-        .error_for_status()?;
+    let request_builder = user.get_request_builder(&GooseMethod::Get, "users")?
+        .header("X-API-Key", "test123");
+    let goose_request = GooseRequest::builder()
+        .set_request_builder(request_builder)
+        .build();
+    user.request(goose_request).await?;
     Ok(())
 }
 
-/// Test GET /users/{id} endpoint
-/// Note: Add --header "X-API-Key: test123" to CLI for authentication
+/// Test GET /users/{id} endpoint (authenticated)
 async fn test_get_user(user: &mut GooseUser) -> TransactionResult {
-    user.get("users/12345")
-        .await?
-        .response?
-        .error_for_status()?;
+    let request_builder = user.get_request_builder(&GooseMethod::Get, "users/12345")?
+        .header("X-API-Key", "test123");
+    let goose_request = GooseRequest::builder()
+        .set_request_builder(request_builder)
+        .build();
+    user.request(goose_request).await?;
     Ok(())
 }
 

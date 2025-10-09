@@ -354,7 +354,6 @@ jobs:
             --hatch-rate 5 \
             --run-time 2m \
             --no-reset-metrics \
-            --header "X-API-Key: test123" \
             --report-file goose-report.html \
             --report-file goose-report.json \
             | tee goose-metrics.txt
