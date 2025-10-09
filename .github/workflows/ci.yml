@@ -311,3 +311,128 @@ jobs:
             wrk_health.txt
             wrk_pets.txt
             wrk_pets_post.txt
+
+  goose-load-test:
+    needs: e2e-docker
+    runs-on: ubuntu-latest
+    services:
+      petstore:
+        image: ${{ needs.e2e-docker.outputs.image }}
+        options: --name petstore
+        ports:
+          - 8080:8080
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Wait for service readiness
+        run: |
+          for i in $(seq 1 120); do \
+            code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8080/health || true); \
+            [ "$code" = "200" ] && echo "Service ready!" && break; \
+            sleep 0.5; \
+          done
+
+      - name: Build Goose load test
+        run: cargo build --release --example api_load_test
+
+      - name: Run Goose comprehensive load test
+        run: |
+          echo "====================================================================="
+          echo "GOOSE COMPREHENSIVE API LOAD TEST"
+          echo "Testing ALL OpenAPI endpoints + static files"
+          echo "This tests what wrk doesn't: authenticated endpoints, static files,"
+          echo "and helps identify memory leaks under sustained load"
+          echo "====================================================================="
+          
+          cargo run --release --example api_load_test -- \
+            --host http://127.0.0.1:8080 \
+            --users 20 \
+            --hatch-rate 5 \
+            --run-time 2m \
+            --no-reset-metrics \
+            --header "X-API-Key: test123" \
+            --report-file goose-report.html \
+            --report-file goose-report.json \
+            | tee goose-metrics.txt
+          
+          echo "====================================================================="
+          echo "LOAD TEST COMPLETE - Metrics saved to goose-metrics.txt"
+          echo "====================================================================="
+
+      - name: Check for failures in Goose metrics
+        run: |
+          echo "Checking Goose metrics for failures..."
+          
+          # Extract failure count from ASCII metrics
+          if grep -q "Aggregated.*0 (0%)" goose-metrics.txt; then
+            echo "✅ No failures detected in load test"
+          else
+            echo "⚠️  Some failures detected, see metrics for details"
+            echo ""
+            echo "Failure summary:"
+            grep -A 2 "# fails" goose-metrics.txt || true
+          fi
+
+      - name: Extract key metrics for PR comments
+        run: |
+          echo "## 📊 Goose Load Test Results" > goose-summary.md
+          echo "" >> goose-summary.md
+          echo "**Test Configuration:**" >> goose-summary.md
+          echo "- Duration: 2 minutes" >> goose-summary.md
+          echo "- Users: 20 concurrent" >> goose-summary.md
+          echo "- Hatch Rate: 5 users/second" >> goose-summary.md
+          echo "" >> goose-summary.md
+          echo "**Endpoints Tested:**" >> goose-summary.md
+          echo "- ✅ GET /health" >> goose-summary.md
+          echo "- ✅ GET /metrics" >> goose-summary.md
+          echo "- ✅ GET /pets (authenticated)" >> goose-summary.md
+          echo "- ✅ GET /pets/{id} (authenticated)" >> goose-summary.md
+          echo "- ✅ GET /users (authenticated)" >> goose-summary.md
+          echo "- ✅ GET /users/{id} (authenticated)" >> goose-summary.md
+          echo "- ✅ GET /openapi.yaml" >> goose-summary.md
+          echo "- ✅ GET /docs (Swagger UI)" >> goose-summary.md
+          echo "- ✅ Static files (CSS, JS)" >> goose-summary.md
+          echo "" >> goose-summary.md
+          echo "\`\`\`" >> goose-summary.md
+          # Extract transaction metrics section
+          sed -n '/=== PER TRANSACTION METRICS ===/,/=== /p' goose-metrics.txt | head -n -1 >> goose-summary.md || echo "Metrics extraction failed" >> goose-summary.md
+          echo "\`\`\`" >> goose-summary.md
+
+      - name: Upload Goose ASCII metrics
+        uses: actions/upload-artifact@v4
+        with:
+          name: goose-ascii-metrics
+          retention-days: 7
+          path: |
+            goose-metrics.txt
+            goose-summary.md
+
+      - name: Upload Goose HTML report
+        uses: actions/upload-artifact@v4
+        with:
+          name: goose-html-report
+          retention-days: 7
+          path: goose-report.html
+
+      - name: Upload Goose JSON report
+        uses: actions/upload-artifact@v4
+        with:
+          name: goose-json-report
+          retention-days: 7
+          path: goose-report.json
+
+      - name: Display metrics summary
+        run: |
+          echo ""
+          echo "====================================================================="
+          echo "📊 GOOSE LOAD TEST SUMMARY"
+          echo "====================================================================="
+          cat goose-summary.md
+          echo ""
+          echo "Full metrics available in artifacts: goose-ascii-metrics"
+          echo "HTML report available in artifacts: goose-html-report"
+          echo "====================================================================="

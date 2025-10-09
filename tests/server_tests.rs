@@ -54,9 +54,117 @@ use tracing_util::TestTracing;
 mod common;
 use common::http::send_request;
 
+/// Test fixture with automatic setup and teardown using RAII
+///
+/// Implements Drop to ensure proper cleanup when test completes.
+/// This is the Rust equivalent of Python's setup/teardown.
+struct PetStoreTestServer {
+    _tracing: TestTracing,
+    handle: Option<ServerHandle>,
+    addr: SocketAddr,
+}
+
+impl PetStoreTestServer {
+    /// Setup: Create and start the pet store test server
+    fn new() -> Self {
+        // Setup: Configure coroutine stack size
+        may::config().set_stack_size(0x8000);
+        
+        // Setup: Initialize tracing
+        let tracing = TestTracing::init();
+        
+        // Setup: Load OpenAPI spec and create service
+        let (routes, schemes, _slug) = brrtrouter::load_spec_full("examples/openapi.yaml").unwrap();
+        let router = Arc::new(RwLock::new(Router::new(routes.clone())));
+        let mut dispatcher = Dispatcher::new();
+        unsafe {
+            registry::register_from_spec(&mut dispatcher, &routes);
+        }
+        dispatcher.add_middleware(Arc::new(TracingMiddleware));
+        let mut service = AppService::new(
+            router,
+            Arc::new(RwLock::new(dispatcher)),
+            schemes,
+            PathBuf::from("examples/openapi.yaml"),
+            None,
+            None,
+        );
+        
+        // Setup: Register API key provider for authentication
+        struct ApiKeyProvider {
+            key: String,
+        }
+        impl SecurityProvider for ApiKeyProvider {
+            fn validate(
+                &self,
+                scheme: &SecurityScheme,
+                _scopes: &[String],
+                req: &SecurityRequest,
+            ) -> bool {
+                match scheme {
+                    SecurityScheme::ApiKey { name, location, .. } => match location.as_str() {
+                        "header" => req.headers.get(&name.to_ascii_lowercase()) == Some(&self.key),
+                        "query" => req.query.get(name) == Some(&self.key),
+                        "cookie" => req.cookies.get(name) == Some(&self.key),
+                        _ => false,
+                    },
+                    _ => false,
+                }
+            }
+        }
+        for (name, scheme) in service.security_schemes.clone() {
+            if matches!(scheme, SecurityScheme::ApiKey { .. }) {
+                service.register_security_provider(
+                    &name,
+                    Arc::new(ApiKeyProvider {
+                        key: "test123".into(),
+                    }),
+                );
+            }
+        }
+        
+        // Setup: Start HTTP server on random port
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        drop(listener);
+        let handle = HttpServer(service).start(addr).unwrap();
+        handle.wait_ready().unwrap();
+        
+        Self {
+            _tracing: tracing,
+            handle: Some(handle),
+            addr,
+        }
+    }
+    
+    /// Get the server address for making requests
+    fn addr(&self) -> SocketAddr {
+        self.addr
+    }
+}
+
+impl Drop for PetStoreTestServer {
+    /// Teardown: Automatically stop server when test completes
+    ///
+    /// This ensures proper cleanup even if the test panics,
+    /// preventing resource leaks and port conflicts.
+    fn drop(&mut self) {
+        if let Some(handle) = self.handle.take() {
+            handle.stop();
+        }
+        // _tracing is automatically dropped here
+    }
+}
+
+/// Legacy function for backward compatibility
+/// 
+/// **Deprecated**: New tests should use `PetStoreTestServer` directly for automatic teardown.
+/// This function exists only for tests that need manual control over server lifecycle.
+#[allow(dead_code)]
 fn start_petstore_service() -> (TestTracing, ServerHandle, SocketAddr) {
-    // ensure coroutines have enough stack for tests
+    // Setup: Configure coroutine stack size
     may::config().set_stack_size(0x8000);
+    
     let tracing = TestTracing::init();
     let (routes, schemes, _slug) = brrtrouter::load_spec_full("examples/openapi.yaml").unwrap();
     let router = Arc::new(RwLock::new(Router::new(routes.clone())));
@@ -73,7 +181,7 @@ fn start_petstore_service() -> (TestTracing, ServerHandle, SocketAddr) {
         None,
         None,
     );
-    // Register a simple ApiKey provider to satisfy spec security in tests
+    
     struct ApiKeyProvider {
         key: String,
     }
@@ -105,11 +213,13 @@ fn start_petstore_service() -> (TestTracing, ServerHandle, SocketAddr) {
             );
         }
     }
+    
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     drop(listener);
     let handle = HttpServer(service).start(addr).unwrap();
     handle.wait_ready().unwrap();
+    
     (tracing, handle, addr)
 }
 
@@ -150,24 +260,31 @@ fn parse_response(resp: &str) -> (u16, Value) {
 
 #[test]
 fn test_dispatch_success() {
-    let (_tracing, handle, addr) = start_petstore_service();
+    // Setup happens automatically in PetStoreTestServer::new()
+    let server = PetStoreTestServer::new();
+    
     let resp = send_request(
-        &addr,
+        &server.addr(),
         "GET /pets HTTP/1.1\r\nHost: localhost\r\nX-API-Key: test123\r\n\r\n",
     );
-    handle.stop();
     let (status, body) = parse_response(&resp);
     assert_eq!(status, 200);
     assert!(body.is_array());
+    
+    // Teardown happens automatically when 'server' goes out of scope
+    // No need to call handle.stop() manually!
 }
 
 #[test]
 fn test_route_404() {
-    let (_tracing, handle, addr) = start_petstore_service();
-    let resp = send_request(&addr, "GET /nope HTTP/1.1\r\nHost: localhost\r\n\r\n");
-    handle.stop();
+    // Setup happens automatically
+    let server = PetStoreTestServer::new();
+    
+    let resp = send_request(&server.addr(), "GET /nope HTTP/1.1\r\nHost: localhost\r\n\r\n");
     let (status, _body) = parse_response(&resp);
     assert_eq!(status, 404);
+    
+    // Teardown happens automatically - no more manual handle.stop()!
 }
 
 #[test]

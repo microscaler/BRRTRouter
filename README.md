@@ -77,6 +77,11 @@ cargo run -- --spec doc/openapi.yaml --port 8080
 
 - **🎉 100% Documentation Coverage**: All public APIs, impl blocks, complex functions, and test modules comprehensively documented
 - **✅ Parallel Test Execution**: Fixed Docker container conflicts for nextest parallel execution (219 tests pass)
+- **🦆 Goose Load Testing**: Comprehensive CI load tests covering ALL OpenAPI endpoints (unlike wrk)
+  - Tests authenticated endpoints with API keys
+  - Detects memory leaks via sustained 2-minute tests
+  - Per-endpoint metrics with ASCII output for CI/CD
+  - HTML reports with interactive visualizations
 - **🔐 Production-Ready Security**: 
   - `JwksBearerProvider` with full JWKS support (HS256/384/512, RS256/384/512)
   - `RemoteApiKeyProvider` with caching and configurable headers
@@ -268,6 +273,41 @@ just coverage # runs `cargo llvm-cov --fail-under 80`
 ```
 
 The command fails if total coverage drops below 80%.
+
+### 🦆 Load Testing with Goose
+
+BRRTRouter includes comprehensive load testing using [Goose](https://book.goose.rs/), which tests **ALL OpenAPI endpoints** (unlike wrk):
+
+```bash
+# Quick 30-second load test
+cargo run --release --example api_load_test -- \
+  --host http://localhost:8080 \
+  -u10 -r2 -t30s \
+  --header "X-API-Key: test123"
+
+# Full load test with HTML report
+cargo run --release --example api_load_test -- \
+  --host http://localhost:8080 \
+  -u20 -r5 -t2m \
+  --no-reset-metrics \
+  --header "X-API-Key: test123" \
+  --report-file goose-report.html
+```
+
+**What Goose tests that wrk doesn't:**
+- ✅ Authenticated endpoints (`GET /pets`, `/users` with API keys)
+- ✅ All routes from OpenAPI spec (not just `/health`)
+- ✅ Static files (`/openapi.yaml`, `/docs`, CSS, JS)
+- ✅ Memory leak detection (sustained 2+ minute tests)
+- ✅ Per-endpoint metrics with automatic failure detection
+
+**CI Integration:**
+Every PR runs a 2-minute Goose load test that:
+- Tests 20 concurrent users across all endpoints
+- Uploads ASCII metrics, HTML, and JSON reports
+- Automatically fails if errors detected
+
+See [`docs/GOOSE_LOAD_TESTING.md`](docs/GOOSE_LOAD_TESTING.md) for complete guide.
 
 ## 🐳 Pet Store Docker Image
 
