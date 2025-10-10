@@ -18,21 +18,21 @@ os.putenv('TILT_PORT', tilt_port)
 # LOCAL BUILDS (Fast incremental compilation on host)
 # ============================================================================
 
-# 0. Build sample-ui (SolidJS + Tailwind) - DISABLED for testing
-# Uncomment to re-enable rich dashboard
-# local_resource(
-#     'build-sample-ui',
-#     'cd sample-ui && yarn install && yarn build:petstore',
-#     deps=[
-#         'sample-ui/src/',
-#         'sample-ui/index.html',
-#         'sample-ui/vite.config.js',
-#         'sample-ui/tailwind.config.js',
-#         'sample-ui/postcss.config.js',
-#     ],
-#     labels=['ui'],
-#     allow_parallel=True,
-# )
+# 0. Build sample-ui (SolidJS + Tailwind)
+# Builds the rich dashboard UI and outputs to examples/pet_store/static_site
+local_resource(
+    'build-sample-ui',
+    'cd sample-ui && npm install && npm run build:petstore',
+    deps=[
+        'sample-ui/src/',
+        'sample-ui/index.html',
+        'sample-ui/vite.config.js',
+        'sample-ui/tailwind.config.js',
+        'sample-ui/postcss.config.js',
+    ],
+    labels=['ui'],
+    allow_parallel=True,
+)
 
 # 1. Build BRRTRouter library locally for x86_64 Linux (cross-compile from Apple Silicon with zig)
 local_resource(
@@ -120,7 +120,7 @@ local_resource(
         './Dockerfile.dev',
     ],
     resource_deps=[
-        # 'build-sample-ui',  # ← DISABLED for testing (UI build commented out)
+        'build-sample-ui',  # ← UI must be built before Docker image
         'build-petstore',   # ← CRITICAL: Binary must be built first
     ],
     labels=['build'],

@@ -66,11 +66,20 @@ just dev-up
 curl -H "X-API-Key: test123" http://localhost:8080/pets
 curl http://localhost:8080/health
 
+# View the Rich Dashboard (SolidJS UI)
+open http://localhost:8080/
+
+# View OpenAPI/Swagger Docs
+open http://localhost:8080/docs
+
 # Query PostgreSQL
 psql -h localhost -U brrtrouter -d brrtrouter
 
 # Connect to Redis
 redis-cli -h localhost -p 6379
+
+# Build the UI manually (optional - Tilt does this automatically)
+just build-ui
 ```
 
 **Why Tilt + kind?**

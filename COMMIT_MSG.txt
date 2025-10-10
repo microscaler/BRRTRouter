@@ -1,0 +1,27 @@
+Fix TooManyHeaders crash by upgrading to may_minihttp fork with 32 header limit
+
+Problem:
+- Swagger /docs page crashed after multiple refreshes
+- TooManyHeaders errors in production traffic
+- Hardcoded 16 header limit too restrictive for modern HTTP traffic
+
+Solution:
+- Updated to use may_minihttp fork with HttpServerWithHeaders<_, 32>
+- Allows handling of API gateway, Kubernetes ingress, and browser traffic
+- Zero-cost abstraction using const generics
+
+Changes:
+- src/server/http_server.rs: Use HttpServerWithHeaders<_, 32> instead of HttpServer
+- Cargo.toml: Point to microscaler/may_minihttp fork (feat/configurable-max-headers)
+- docs/TOOMANYHEADERS_FIX.md: Complete documentation of the fix
+
+Verification:
+✅ Pet Store service stable in Tilt
+✅ Swagger UI handles repeated refreshes without crashes
+✅ No TooManyHeaders errors in logs
+✅ Full test suite passing
+
+Related:
+- may_minihttp fork: https://github.com/microscaler/may_minihttp
+- Upstream issue: https://github.com/Xudong-Huang/may_minihttp/issues/18
+

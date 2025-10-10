@@ -1,5 +1,5 @@
 use may::coroutine::JoinHandle;
-use may_minihttp::{HttpServer as MiniHttpServer, HttpService};
+use may_minihttp::{HttpServerWithHeaders, HttpService};
 use std::io;
 use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
 use std::thread;
@@ -8,6 +8,7 @@ use std::time::Duration;
 /// Wrapper around may_minihttp's HTTP server
 ///
 /// Provides a typed interface for starting and managing HTTP servers.
+/// Uses 32 max headers (Standard) to handle modern API gateway/proxy traffic.
 pub struct HttpServer<T>(pub T);
 
 /// Handle to a running HTTP server
@@ -89,7 +90,8 @@ impl<T: HttpService + Clone + Send + Sync + 'static> HttpServer<T> {
             .to_socket_addrs()?
             .next()
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "invalid address"))?;
-        let handle = MiniHttpServer(self.0).start(addr)?;
+        // Use HttpServerWithHeaders<_, 32> to handle modern API gateway/proxy traffic
+        let handle = HttpServerWithHeaders::<_, 32>(self.0).start(addr)?;
         Ok(ServerHandle { addr, handle })
     }
 }

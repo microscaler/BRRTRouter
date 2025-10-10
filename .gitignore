@@ -38,3 +38,7 @@ sample-ui/dist/
 sample-ui/yarn-error.log
 sample-ui/.yarn/
 
+examples/pet_store/static_site/assets/index-*.js
+examples/pet_store/static_site/assets/index-*.css
+examples/pet_store/static_site/assets/index.html
+

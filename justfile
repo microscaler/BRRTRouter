@@ -4,6 +4,12 @@
 default:
 	@just --list
 
+# Build the SolidJS sample UI and output to pet_store static_site
+build-ui:
+	@echo "[BUILD] Building SolidJS UI..."
+	cd sample-ui && npm install && npm run build:petstore
+	@echo "[OK] UI built to examples/pet_store/static_site"
+
 # Build Docker image for curl integration tests (cross-compiles for Linux, instant Docker copy)
 build-test-image:
 	cargo zigbuild --release -p pet_store --target x86_64-unknown-linux-musl
