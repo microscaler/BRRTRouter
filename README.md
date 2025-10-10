@@ -125,10 +125,13 @@ cargo run -- --spec doc/openapi.yaml --port 8080
 
 ## 📈 Recent Progress (October 2025)
 
-- **🎉 Tilt + kind Local Development**: Fast iteration (~1-2s) with full observability stack (Prometheus, Grafana, Jaeger)
+- **🎉 Tilt + kind Local Development**: Fast iteration (~1-2s) with full observability stack
+  - **Metrics**: Prometheus for request rates, latency, errors
+  - **Logs**: Loki + Promtail for centralized logging with LogQL
+  - **Traces**: Jaeger + OTEL Collector for distributed tracing
+  - **Unified UI**: Grafana with all datasources pre-configured
   - Cross-compilation support for Apple Silicon → x86_64 Linux
   - Live binary syncing without container rebuilds
-  - Production-like Kubernetes environment locally
   - PostgreSQL and Redis included for multi-service testing
 - **🎉 100% Documentation Coverage**: All public APIs, impl blocks, complex functions, and test modules comprehensively documented
 - **✅ Parallel Test Execution**: Fixed Docker container conflicts for nextest parallel execution (219 tests pass)

@@ -33,6 +33,12 @@ data:
       prometheus:
         endpoint: "0.0.0.0:8889"
       
+      # Export logs to Loki
+      loki:
+        endpoint: http://loki:3100/loki/api/v1/push
+        tls:
+          insecure: true
+      
       # Logging for debugging
       logging:
         loglevel: debug
@@ -48,6 +54,11 @@ data:
           receivers: [otlp]
           processors: [memory_limiter, batch]
           exporters: [prometheus, logging]
+        
+        logs:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters: [loki, logging]
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -68,7 +79,7 @@ spec:
     spec:
       containers:
         - name: otel-collector
-          image: otel/opentelemetry-collector:0.91.0
+          image: otel/opentelemetry-collector-contrib:0.93.0
           args:
             - "--config=/conf/otel-collector-config.yaml"
           ports:

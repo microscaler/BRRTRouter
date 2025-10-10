@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build --outDir ../examples/pet_store/static_site --emptyOutDir",
+    "build": "vite build",
+    "build:petstore": "vite build --outDir ../examples/pet_store/static_site --emptyOutDir",
     "preview": "vite preview"
   },
   "keywords": ["brrtrouter", "solidjs", "dashboard"],

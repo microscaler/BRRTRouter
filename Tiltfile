@@ -18,20 +18,21 @@ os.putenv('TILT_PORT', tilt_port)
 # LOCAL BUILDS (Fast incremental compilation on host)
 # ============================================================================
 
-# 0. Build sample-ui (SolidJS + Tailwind) - Vite builds directly to target
-local_resource(
-    'build-sample-ui',
-    'cd sample-ui && yarn install && yarn build',
-    deps=[
-        'sample-ui/src/',
-        'sample-ui/index.html',
-        'sample-ui/vite.config.js',
-        'sample-ui/tailwind.config.js',
-        'sample-ui/postcss.config.js',
-    ],
-    labels=['ui'],
-    allow_parallel=True,
-)
+# 0. Build sample-ui (SolidJS + Tailwind) - DISABLED for testing
+# Uncomment to re-enable rich dashboard
+# local_resource(
+#     'build-sample-ui',
+#     'cd sample-ui && yarn install && yarn build:petstore',
+#     deps=[
+#         'sample-ui/src/',
+#         'sample-ui/index.html',
+#         'sample-ui/vite.config.js',
+#         'sample-ui/tailwind.config.js',
+#         'sample-ui/postcss.config.js',
+#     ],
+#     labels=['ui'],
+#     allow_parallel=True,
+# )
 
 # 1. Build BRRTRouter library locally for x86_64 Linux (cross-compile from Apple Silicon with zig)
 local_resource(
@@ -80,7 +81,7 @@ local_resource(
         './Dockerfile.dev',
     ],
     resource_deps=[
-        'build-sample-ui',  # ← CRITICAL: UI must be built and copied first
+        # 'build-sample-ui',  # ← DISABLED for testing (UI build commented out)
         'build-petstore',   # ← CRITICAL: Binary must be built first
     ],
     labels=['build'],
@@ -126,6 +127,8 @@ k8s_yaml([
 # Load observability stack
 k8s_yaml([
     'k8s/prometheus.yaml',
+    'k8s/loki.yaml',
+    'k8s/promtail.yaml',
     'k8s/grafana.yaml',
     'k8s/jaeger.yaml',
     'k8s/otel-collector.yaml',
@@ -163,9 +166,22 @@ k8s_resource(
 )
 
 k8s_resource(
+    'loki',
+    port_forwards=['3100:3100'],
+    resource_deps=['postgres', 'redis'],
+    labels=['observability'],
+)
+
+k8s_resource(
+    'promtail',
+    resource_deps=['loki'],
+    labels=['observability'],
+)
+
+k8s_resource(
     'grafana',
     port_forwards=['3000:3000'],
-    resource_deps=['prometheus'],
+    resource_deps=['prometheus', 'loki', 'jaeger'],
     labels=['observability'],
 )
 
@@ -178,7 +194,7 @@ k8s_resource(
 
 k8s_resource(
     'otel-collector',
-    resource_deps=['jaeger', 'prometheus'],
+    resource_deps=['jaeger', 'prometheus', 'loki'],
     labels=['observability'],
 )
 
@@ -244,18 +260,19 @@ print("""
 
 🚀 Services will be available at:
 
-  📦 Pet Store API:    http://localhost:8080 (standard HTTP port)
-  📊 Grafana:          http://localhost:3000 (admin/admin)
-  📈 Prometheus:       http://localhost:9090 (standard Prometheus port)
+  📦 Pet Store API:    http://localhost:8080
+  📊 Grafana:          http://localhost:3000 (admin/admin - includes Loki/Jaeger datasources)
+  📈 Prometheus:       http://localhost:9090
+  📋 Loki (logs):      http://localhost:3100
   🔍 Jaeger UI:        http://localhost:16686
   🎛️  Tilt Dashboard:   http://localhost:{tilt_port} (press 'space' to open)
   
   🗄️  PostgreSQL:       localhost:5432 (user: brrtrouter, db: brrtrouter)
-  🔴 Redis:            localhost:6379 (exposed for external tools)""".format(tilt_port=tilt_port) + """
+  🔴 Redis:            localhost:6379""".format(tilt_port=tilt_port) + """
 
 🏗️  Startup Order:
   1. PostgreSQL & Redis (data stores)
-  2. Prometheus, Grafana, Jaeger, OTEL Collector (observability)
+  2. Prometheus, Loki + Promtail, Grafana, Jaeger, OTEL Collector (observability)
   3. Pet Store API (application)
 
 🔧 Quick Actions (in Tilt UI):
