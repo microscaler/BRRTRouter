@@ -1,7 +1,6 @@
 {
   "name": "brrtrouter-sample-ui",
   "version": "1.0.0",
-  "description": "Rich SolidJS dashboard for BRRTRouter Pet Store",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,16 +9,15 @@
     "build:petstore": "vite build --outDir ../examples/pet_store/static_site --emptyOutDir",
     "preview": "vite preview"
   },
-  "keywords": ["brrtrouter", "solidjs", "dashboard"],
-  "author": "BRRTRouter Team",
-  "license": "MIT",
+  "dependencies": {
+    "solid-js": "^1.9.9"
+  },
   "devDependencies": {
-    "solid-js": "^1.9.9",
     "vite": "^7.1.9",
     "vite-plugin-solid": "^2.11.9",
-    "tailwindcss": "^3.4.1",
+    "autoprefixer": "^10.4.17",
     "postcss": "^8.4.35",
-    "autoprefixer": "^10.4.17"
+    "tailwindcss": "^3.4.1"
   }
 }
 

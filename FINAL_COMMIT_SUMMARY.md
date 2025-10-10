@@ -31,6 +31,8 @@ Updated to use `may_minihttp` fork with `HttpServerWithHeaders<_, 32>`:
 ✅ Swagger UI handles repeated refreshes without crashes  
 ✅ No TooManyHeaders errors in logs  
 ✅ Full test suite passing  
+✅ **High-load testing with wrk and Goose**: Minimal failures (< 2%), no crashes  
+✅ **Extended load testing**: Zero TooManyHeaders errors under sustained load  
 
 ---
 
@@ -73,6 +75,7 @@ just build-ui
 
 ### Documentation
 - ✅ `docs/TOOMANYHEADERS_FIX.md` (new)
+- ✅ `docs/LOAD_TESTING_SUCCESS.md` (new)
 - ✅ `sample-ui/README.md` (new)
 - ✅ `SOLIDJS_UI_INTEGRATION.md` (new)
 - ✅ `README.md` (updated)
