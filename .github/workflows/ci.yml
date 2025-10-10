@@ -99,6 +99,141 @@ jobs:
         if: ${{ !env.ACT }}
         run: cargo llvm-cov  #--no-report
 
+  tilt-ci:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    env:
+      RUST_BACKTRACE: "1"
+      RUST_LOG: "info"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install musl target
+        run: rustup target add x86_64-unknown-linux-musl
+
+      - name: Install musl tools and dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+
+      - name: Install cargo-zigbuild for cross-compilation
+        run: cargo install cargo-zigbuild
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: brrtrouter-ci
+          wait: 60s
+
+      - name: Verify cluster
+        run: |
+          kubectl cluster-info
+          kubectl get nodes
+
+      - name: Install Tilt
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/tilt-dev/tilt/master/scripts/install.sh | bash
+          tilt version
+
+      - name: Build BRRTRouter and Pet Store binaries
+        run: |
+          cargo zigbuild --release --target x86_64-unknown-linux-musl
+          cargo run --bin brrtrouter-gen -- generate --spec examples/openapi.yaml --force
+          cargo zigbuild --release --target x86_64-unknown-linux-musl -p pet_store
+          mkdir -p build_artifacts
+          cp target/x86_64-unknown-linux-musl/release/pet_store build_artifacts/
+
+      - name: Build sample UI (if exists)
+        run: |
+          if [ -d "sample-ui" ]; then
+            cd sample-ui
+            if command -v yarn &> /dev/null && [ -f "package.json" ]; then
+              echo "Building sample UI with yarn..."
+              yarn install
+              yarn build:petstore || true
+            fi
+          fi
+
+      - name: Run Tilt CI
+        run: |
+          echo "Starting Tilt CI - will build, deploy, and wait for services to be healthy"
+          tilt ci --timeout 10m
+        timeout-minutes: 12
+
+      - name: Check deployment status
+        if: always()
+        run: |
+          echo "=== Kubernetes Resources ==="
+          kubectl get all -n brrtrouter-dev
+          
+          echo ""
+          echo "=== Pet Store Logs ==="
+          kubectl logs -n brrtrouter-dev deployment/petstore --tail=100 || true
+          
+          echo ""
+          echo "=== OTEL Collector Logs ==="
+          kubectl logs -n brrtrouter-dev deployment/otel-collector --tail=50 || true
+
+      - name: Test Pet Store API
+        run: |
+          echo "Forwarding Pet Store port..."
+          kubectl port-forward -n brrtrouter-dev service/petstore 8080:8080 &
+          PF_PID=$!
+          sleep 5
+          
+          echo "Testing health endpoint..."
+          curl -f http://localhost:8080/health || (echo "Health check failed" && exit 1)
+          
+          echo "Testing metrics endpoint..."
+          curl -f http://localhost:8080/metrics | grep brrtrouter || (echo "Metrics check failed" && exit 1)
+          
+          echo "Testing authenticated endpoint..."
+          curl -f -H "X-API-Key: test123" http://localhost:8080/pets || (echo "Auth test failed" && exit 1)
+          
+          echo "Checking per-path metrics..."
+          curl -f http://localhost:8080/metrics | grep brrtrouter_path_requests_total || (echo "Per-path metrics missing" && exit 1)
+          
+          kill $PF_PID || true
+          
+          echo "✅ All API tests passed!"
+
+      - name: Test observability stack
+        run: |
+          echo "Checking Prometheus..."
+          kubectl port-forward -n brrtrouter-dev service/prometheus 9090:9090 &
+          PROM_PID=$!
+          sleep 3
+          curl -f http://localhost:9090/-/healthy || echo "Prometheus not ready"
+          kill $PROM_PID || true
+          
+          echo "Checking Grafana..."
+          kubectl port-forward -n brrtrouter-dev service/grafana 3000:3000 &
+          GRAF_PID=$!
+          sleep 3
+          curl -f http://localhost:3000/api/health || echo "Grafana not ready"
+          kill $GRAF_PID || true
+          
+          echo "✅ Observability stack check complete"
+
+      - name: Upload Tilt logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tilt-ci-logs
+          retention-days: 3
+          path: |
+            ~/.tilt-dev/
+
+      - name: Cleanup
+        if: always()
+        run: |
+          tilt down || true
+          kind delete cluster --name brrtrouter-ci || true
+
   e2e-docker:
     needs: build-and-test
     runs-on: ubuntu-latest
