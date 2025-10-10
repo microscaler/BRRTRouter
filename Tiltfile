@@ -53,7 +53,44 @@ local_resource(
     allow_parallel=False,  # Must complete before petstore build
 )
 
-# 3. Build pet_store binary locally and copy to staging (fast incremental compilation for x86_64 Linux with zig)
+# =============================================================================
+# 3. Build pet_store binary locally and copy to staging
+# =============================================================================
+# CRITICAL PATTERN: Build Locally → Stage → Docker Copies
+# This same pattern is used in tests/curl_harness.rs for curl integration tests!
+#
+# THE PATTERN:
+# -----------
+# 1. Build locally:  cargo zigbuild → target/x86_64-unknown-linux-musl/release/pet_store
+# 2. Stage locally:  cp → build_artifacts/pet_store  
+# 3. Docker copies:  COPY build_artifacts/pet_store → /pet_store (see Dockerfile.dev)
+#
+# WHY THIS APPROACH?
+# -----------------
+# ✅ Fast iteration:  Incremental compilation (10-30s vs 5-10min in Docker)
+# ✅ Cargo cache:     Preserved on host between runs
+# ✅ Cross-compile:   cargo-zigbuild handles Linux x86_64 from macOS ARM64
+# ✅ Quick Docker:    Image build is <1s (just file copies)
+# ✅ Always current:  Can't accidentally deploy/test stale code
+#
+# WHY build_artifacts/ STAGING?
+# ----------------------------
+# Docker's .dockerignore blocks target/* for performance:
+#   target/*                    ← blocks all of target/ (GB of build cache)
+#   !build_artifacts/pet_store  ← but explicitly allows this file
+#
+# Without staging to build_artifacts/:
+#   - Docker can't access target/x86_64-unknown-linux-musl/release/pet_store
+#   - Build fails even though file exists on host!
+#
+# FOR FUTURE AI/CONTRIBUTORS:
+# --------------------------
+# - tests/curl_harness.rs uses the SAME pattern (see STEP 4 comments there)
+# - Dockerfile.test also documents this pattern extensively
+# - Do NOT remove staging step (cp to build_artifacts/)
+# - Do NOT try to COPY directly from target/ in Dockerfile
+# - Do NOT modify .dockerignore to allow target/*
+# =============================================================================
 local_resource(
     'build-petstore',
     'cargo zigbuild --release --target x86_64-unknown-linux-musl -p pet_store && mkdir -p build_artifacts && cp target/x86_64-unknown-linux-musl/release/pet_store build_artifacts/',
@@ -73,7 +110,8 @@ local_resource(
     'docker-build-and-push',
     # Build and push to local registry (much faster than 'kind load')
     # https://kind.sigs.k8s.io/docs/user/local-registry/
-    'docker build -t localhost:5001/brrtrouter-petstore:tilt -f Dockerfile.dev . && docker push localhost:5001/brrtrouter-petstore:tilt',
+    # --rm and --force-rm prevent <none>:<none> intermediate container accumulation
+    'docker build -t localhost:5001/brrtrouter-petstore:tilt --rm --force-rm -f Dockerfile.dev . && docker push localhost:5001/brrtrouter-petstore:tilt',
     deps=[
         './build_artifacts/pet_store',
         './examples/pet_store/config',

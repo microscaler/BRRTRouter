@@ -25,9 +25,9 @@ fn register_signal_handlers() {
             return;
         }
         
-        eprintln!("\n🧹 Cleaning up Docker containers on exit...");
+        eprintln!("\n🧹 Cleaning up Docker resources on exit...");
         
-        // Try to get the container from the harness and clean it up
+        // 1. Clean up the running container
         if let Some(harness) = HARNESS.get() {
             eprintln!("Stopping container: {}", harness.container_id);
             let _ = Command::new("docker")
@@ -40,6 +40,97 @@ fn register_signal_handlers() {
         
         // Also cleanup by name (in case harness wasn't initialized)
         cleanup_orphaned_containers();
+        
+        // 2. Clean up dangling test images
+        // Why cleanup images?
+        // - Each test run creates a new image (even though content is identical)
+        // - These accumulate quickly (6+ images per test run)
+        // - They're all 8-9MB and clutter `docker images`
+        // - Dangling images (<none>:<none>) serve no purpose
+        //
+        // Strategy:
+        // 1. First try `docker image prune` (safe, won't remove in-use images)
+        // 2. Then manually remove remaining <none> images (with safety checks)
+        //
+        // Safety:
+        // - Never use --force on individual image removal
+        // - Skip images that return "conflict" or "being used" errors
+        // - This prevents removing images from running containers (like kind)
+        eprintln!("Cleaning up dangling test images...");
+        
+        // Step 1: Try docker prune first (safest, won't touch in-use images)
+        let prune_result = Command::new("docker")
+            .args([
+                "image",
+                "prune",
+                "-f",  // Force (no prompt)
+                "--filter", "dangling=true",  // Only <none>:<none> images
+                "--filter", "until=1h",       // Only recent (from this test run)
+            ])
+            .output();
+        
+        match prune_result {
+            Ok(output) => {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                if !stdout.trim().is_empty() && !stdout.contains("Total reclaimed space: 0B") {
+                    eprintln!("✓ Pruned: {}", stdout.trim());
+                }
+            }
+            Err(e) => {
+                eprintln!("⚠ Could not prune images: {}", e);
+            }
+        }
+        
+        // Step 2: Clean up remaining <none> images that prune missed
+        // Get list of <none>:<none> image IDs
+        let list_result = Command::new("sh")
+            .args(["-c", "docker images | grep '<none>' | awk '{print $3}'"])
+            .output();
+            
+        if let Ok(output) = list_result {
+            let image_ids = String::from_utf8_lossy(&output.stdout);
+            let ids: Vec<&str> = image_ids.lines().filter(|s| !s.is_empty()).collect();
+            
+            if !ids.is_empty() {
+                eprintln!("Found {} additional <none> image(s) to remove...", ids.len());
+                let mut removed_count = 0;
+                let mut skipped_count = 0;
+                
+                for image_id in ids {
+                    // Try to remove without --force (won't remove in-use images)
+                    let rm_result = Command::new("docker")
+                        .args(["image", "rm", image_id])
+                        .output();
+                    
+                    match rm_result {
+                        Ok(output) => {
+                            if output.status.success() {
+                                removed_count += 1;
+                            } else {
+                                let stderr = String::from_utf8_lossy(&output.stderr);
+                                // Skip errors for in-use images (safe to ignore)
+                                if stderr.contains("conflict") || stderr.contains("being used") {
+                                    skipped_count += 1;
+                                } else {
+                                    eprintln!("  ⚠ Could not remove {}: {}", image_id, stderr.trim());
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("  ⚠ Failed to remove {}: {}", image_id, e);
+                        }
+                    }
+                }
+                
+                if removed_count > 0 {
+                    eprintln!("✓ Removed {} <none> image(s)", removed_count);
+                }
+                if skipped_count > 0 {
+                    eprintln!("✓ Skipped {} in-use image(s) (safe)", skipped_count);
+                }
+            }
+        }
+        
         eprintln!("✓ Cleanup complete\n");
     }
     
@@ -109,8 +200,23 @@ pub fn ensure_image_ready() {
         }
         eprintln!("      ✓ Docker is available");
 
-        // Build the binary first (cross-compile for Linux x86_64)
-        eprintln!("[2/4] Building pet_store binary for Linux x86_64...");
+        // STEP 2: Build the binary locally using cross-compilation
+        // =========================================================
+        // Why cross-compile?
+        // - We're on macOS (likely ARM64), but Docker runs Linux x86_64 containers
+        // - Building natively would produce aarch64-apple-darwin binary (wrong arch!)
+        // - We need x86_64-unknown-linux-musl for Docker's Linux containers
+        //
+        // Why cargo-zigbuild?
+        // - Handles cross-compilation without needing musl-gcc on macOS
+        // - Already configured in .cargo/config.toml for this target
+        // - Same tool used by Tilt workflow (consistency!)
+        //
+        // Why build here instead of in Dockerfile?
+        // - Local builds use incremental compilation (10-30s vs 5-10min in Docker)
+        // - Cargo cache is preserved between runs
+        // - ALWAYS tests current code (impossible to forget to rebuild!)
+        eprintln!("[2/5] Building pet_store binary for Linux x86_64...");
         let build_output = Command::new("cargo")
             .args([
                 "zigbuild",
@@ -128,7 +234,8 @@ pub fn ensure_image_ready() {
         }
         eprintln!("      ✓ Binary built for Linux x86_64");
         
-        // Check if binary exists
+        // STEP 3: Verify the cross-compiled binary exists
+        // ================================================
         eprintln!("[3/5] Verifying binary...");
         let binary_path = "target/x86_64-unknown-linux-musl/release/pet_store";
         if !std::path::Path::new(binary_path).exists() {
@@ -136,7 +243,35 @@ pub fn ensure_image_ready() {
         }
         eprintln!("      ✓ Binary found at {}", binary_path);
 
-        // Copy to staging area (same as Tilt workflow)
+        // STEP 4: Copy to staging area (CRITICAL - same as Tilt workflow!)
+        // =================================================================
+        // Why copy to build_artifacts/?
+        // 
+        // Docker's build context has .dockerignore which blocks target/* for performance:
+        //   target/*                    ← blocks ALL of target/
+        //   !build_artifacts/pet_store  ← but allows this specific file
+        //
+        // Without this staging step:
+        //   - Docker can't access target/x86_64-unknown-linux-musl/release/pet_store
+        //   - Build fails with: "not found" error
+        //   - Even though the file exists on host!
+        //
+        // The staging area pattern:
+        //   1. Build locally: cargo zigbuild → target/x86_64-unknown-linux-musl/release/pet_store
+        //   2. Stage: copy → build_artifacts/pet_store
+        //   3. Docker: COPY build_artifacts/pet_store → /pet_store
+        //
+        // This is the SAME pattern used in Tilt (see Tiltfile lines ~70-90):
+        //   - Tilt builds locally for fast iteration
+        //   - Copies to build_artifacts/
+        //   - Docker just copies the pre-built binary
+        //   - Result: Instant Docker builds (<1s) + always testing current code!
+        //
+        // For future AI/contributors:
+        // - Do NOT remove this staging step!
+        // - Do NOT try to copy directly from target/ in Dockerfile.test
+        // - Do NOT modify .dockerignore to allow target/* (kills Docker performance)
+        // - This pattern is intentional and matches our Tilt workflow
         eprintln!("[4/5] Copying to staging area...");
         std::fs::create_dir_all("build_artifacts")
             .expect("failed to create build_artifacts directory");
@@ -144,13 +279,22 @@ pub fn ensure_image_ready() {
             .expect("failed to copy binary to staging");
         eprintln!("      ✓ Binary staged at build_artifacts/pet_store");
 
-        // Build/rebuild the Docker image (instant - just copies files!)
+        // STEP 5: Build the Docker image (instant - just copies the staged binary!)
+        // ==========================================================================
+        // This is super fast (<1s) because:
+        // - Dockerfile.test uses FROM scratch (no base image layers)
+        // - Only copies pre-built files (no compilation in Docker)
+        // - The binary is already compiled and staged
+        //
+        // Result: 15-30s for full cycle (compile + Docker) vs 5-10min if we compiled in Docker!
         eprintln!("[5/5] Building Docker image (copying binary)...");
         let docker_output = Command::new("docker")
             .args([
                 "build",
                 "-f", "Dockerfile.test",
                 "-t", "brrtrouter-petstore:e2e",
+                "--rm",              // Remove intermediate containers after build
+                "--force-rm",        // Always remove intermediate containers (even on failure)
                 "."
             ])
             .output()

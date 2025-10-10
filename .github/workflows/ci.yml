@@ -291,11 +291,11 @@ jobs:
         run: ./target/release/brrtrouter-gen generate --spec examples/openapi.yaml --force
 
       - name: Build e2e Docker image (freshly generated app + provided binary)
-        run: docker build --build-arg PETSTORE_BIN=/build/dist/pet_store --no-cache -t brrtrouter-petstore:e2e .
+        run: docker build --build-arg PETSTORE_BIN=/build/dist/pet_store --no-cache --rm --force-rm -t brrtrouter-petstore:e2e .
 
       - name: Build e2e Docker image (ACT local binary)
         if: ${{ env.ACT }}
-        run: docker build --build-arg PETSTORE_BIN=/build/target/x86_64-unknown-linux-musl/release/pet_store --no-cache -t brrtrouter-petstore:e2e .
+        run: docker build --build-arg PETSTORE_BIN=/build/target/x86_64-unknown-linux-musl/release/pet_store --no-cache --rm --force-rm -t brrtrouter-petstore:e2e .
 
       - name: Install uuidgen
         run: sudo apt-get update && sudo apt-get install -y uuid-runtime

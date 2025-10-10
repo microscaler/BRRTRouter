@@ -9,7 +9,7 @@ build-test-image:
 	cargo zigbuild --release -p pet_store --target x86_64-unknown-linux-musl
 	mkdir -p build_artifacts
 	cp target/x86_64-unknown-linux-musl/release/pet_store build_artifacts/
-	docker build -f Dockerfile.test -t brrtrouter-petstore:e2e .
+	docker build -f Dockerfile.test -t brrtrouter-petstore:e2e --rm --force-rm .
 
 # Build the pet store example
 gen:
