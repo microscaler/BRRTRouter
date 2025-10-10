@@ -64,6 +64,9 @@ jobs:
       - name: Install musl tools (provides musl-gcc for ring)
         run: sudo apt-get update || apt-get update && (sudo apt-get install -y musl-tools || apt-get install -y musl-tools)
 
+      - name: Install cargo-zigbuild (for curl_harness cross-compilation)
+        run: cargo install cargo-zigbuild --locked
+
       - name: Build pet_store (musl, release)
         env:
           CC_x86_64_unknown_linux_musl: musl-gcc
@@ -88,7 +91,23 @@ jobs:
           RUSTDOCFLAGS="-D warnings -D rustdoc::broken_intra_doc_links --html-in-header doc/head.html" cargo doc --no-deps --lib || true
           echo "Documentation check complete (warnings are informational only)"
 
-      - name: Run tests (reqwest-based)
+      # Nextest provides faster, more reliable test execution
+      # - Parallel test execution with better isolation
+      # - Better output formatting and failure reporting
+      # - Handles flaky tests better with retries
+      # If nextest succeeds, we can phase out the legacy cargo test
+      - name: Install cargo-nextest
+        run: cargo install cargo-nextest --locked
+
+      - name: Run tests (nextest - primary)
+        run: cargo nextest run --workspace --all-targets --fail-fast --no-capture
+        env:
+          RUST_BACKTRACE: 1
+
+      # Legacy fallback: only runs if nextest fails
+      # Once we confirm nextest is stable in CI, we can remove this
+      - name: Run tests (cargo test - legacy fallback)
+        if: failure()
         run: cargo test -- --nocapture
 
       - name: Install cargo-llvm-cov

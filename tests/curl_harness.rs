@@ -83,51 +83,63 @@ fn register_signal_handlers() {
         
         // Step 2: Clean up remaining <none> images that prune missed
         // Get list of <none>:<none> image IDs
-        let list_result = Command::new("sh")
+        // Note: This uses shell commands which might not work in all environments
+        // If it fails, we just skip it (prune in Step 1 already did the main cleanup)
+        match Command::new("sh")
             .args(["-c", "docker images | grep '<none>' | awk '{print $3}'"])
-            .output();
-            
-        if let Ok(output) = list_result {
-            let image_ids = String::from_utf8_lossy(&output.stdout);
-            let ids: Vec<&str> = image_ids.lines().filter(|s| !s.is_empty()).collect();
-            
-            if !ids.is_empty() {
-                eprintln!("Found {} additional <none> image(s) to remove...", ids.len());
-                let mut removed_count = 0;
-                let mut skipped_count = 0;
+            .output()
+        {
+            Ok(output) if output.status.success() => {
+                let image_ids = String::from_utf8_lossy(&output.stdout);
+                let ids: Vec<&str> = image_ids.lines().filter(|s| !s.is_empty()).collect();
                 
-                for image_id in ids {
-                    // Try to remove without --force (won't remove in-use images)
-                    let rm_result = Command::new("docker")
-                        .args(["image", "rm", image_id])
-                        .output();
+                if !ids.is_empty() {
+                    eprintln!("Found {} additional <none> image(s) to remove...", ids.len());
+                    let mut removed_count = 0;
+                    let mut skipped_count = 0;
                     
-                    match rm_result {
-                        Ok(output) => {
-                            if output.status.success() {
-                                removed_count += 1;
-                            } else {
-                                let stderr = String::from_utf8_lossy(&output.stderr);
-                                // Skip errors for in-use images (safe to ignore)
-                                if stderr.contains("conflict") || stderr.contains("being used") {
-                                    skipped_count += 1;
+                    for image_id in ids {
+                        // Try to remove without --force (won't remove in-use images)
+                        match Command::new("docker")
+                            .args(["image", "rm", image_id])
+                            .output()
+                        {
+                            Ok(rm_output) => {
+                                if rm_output.status.success() {
+                                    removed_count += 1;
                                 } else {
-                                    eprintln!("  ⚠ Could not remove {}: {}", image_id, stderr.trim());
+                                    let stderr = String::from_utf8_lossy(&rm_output.stderr);
+                                    // Skip errors for in-use images (safe to ignore)
+                                    if stderr.contains("conflict") || stderr.contains("being used") {
+                                        skipped_count += 1;
+                                    } else {
+                                        eprintln!("  ⚠ Could not remove {}: {}", image_id, stderr.trim());
+                                    }
                                 }
                             }
-                        }
-                        Err(e) => {
-                            eprintln!("  ⚠ Failed to remove {}: {}", image_id, e);
+                            Err(e) => {
+                                eprintln!("  ⚠ Failed to remove {}: {}", image_id, e);
+                            }
                         }
                     }
+                    
+                    if removed_count > 0 {
+                        eprintln!("✓ Removed {} <none> image(s)", removed_count);
+                    }
+                    if skipped_count > 0 {
+                        eprintln!("✓ Skipped {} in-use image(s) (safe)", skipped_count);
+                    }
                 }
-                
-                if removed_count > 0 {
-                    eprintln!("✓ Removed {} <none> image(s)", removed_count);
-                }
-                if skipped_count > 0 {
-                    eprintln!("✓ Skipped {} in-use image(s) (safe)", skipped_count);
-                }
+            }
+            Ok(_) => {
+                // Command ran but returned non-zero (e.g., grep found no matches)
+                // This is fine, nothing to clean up
+            }
+            Err(e) => {
+                // Shell command not available or other error
+                // This is fine, Step 1 (prune) already did the main work
+                eprintln!("  ℹ️  Manual image cleanup unavailable: {}", e);
+                eprintln!("     (docker prune in Step 1 already cleaned up most images)");
             }
         }
         
