@@ -109,30 +109,55 @@ pub fn ensure_image_ready() {
         }
         eprintln!("      ✓ Docker is available");
 
-        // Check if image already exists
-        eprintln!("[2/2] Checking for image brrtrouter-petstore:e2e...");
-        let image_exists = Command::new("docker")
-            .args(["image", "inspect", "brrtrouter-petstore:e2e"])
+        // Build the binary first (cross-compile for Linux x86_64)
+        eprintln!("[2/4] Building pet_store binary for Linux x86_64...");
+        let build_output = Command::new("cargo")
+            .args([
+                "zigbuild",
+                "--release",
+                "-p", "pet_store",
+                "--target", "x86_64-unknown-linux-musl"
+            ])
             .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false);
-
-        if !image_exists {
-            eprintln!("      ❌ Image not found!");
-            eprintln!("");
-            eprintln!("The curl integration tests require a pre-built Docker image.");
-            eprintln!("Please build it first using:");
-            eprintln!("");
-            eprintln!("  docker build -t brrtrouter-petstore:e2e .");
-            eprintln!("");
-            eprintln!("This will take 5-10 minutes on first build (compiles Rust project).");
-            eprintln!("Subsequent builds will be faster due to Docker layer caching.");
-            eprintln!("");
-            return Err("Docker image brrtrouter-petstore:e2e not found. Build it first!".to_string());
-        }
+            .expect("failed to run cargo zigbuild");
         
-        eprintln!("      ✓ Image is ready");
-        eprintln!("=== Setup Complete in {:.2}s ===\n", start.elapsed().as_secs_f64());
+        if !build_output.status.success() {
+            eprintln!("      ❌ Build failed!");
+            eprintln!("{}", String::from_utf8_lossy(&build_output.stderr));
+            return Err("Failed to build pet_store binary. Do you have cargo-zigbuild installed?".to_string());
+        }
+        eprintln!("      ✓ Binary built for Linux x86_64");
+        
+        // Check if binary exists
+        eprintln!("[3/4] Verifying binary...");
+        let binary_path = "target/x86_64-unknown-linux-musl/release/pet_store";
+        if !std::path::Path::new(binary_path).exists() {
+            return Err(format!("Binary not found at {}", binary_path));
+        }
+        eprintln!("      ✓ Binary found at {}", binary_path);
+
+        // Build/rebuild the Docker image (instant - just copies files!)
+        eprintln!("[4/4] Building Docker image (copying binary)...");
+        let docker_output = Command::new("docker")
+            .args([
+                "build",
+                "-f", "Dockerfile.test",
+                "-t", "brrtrouter-petstore:e2e",
+                "."
+            ])
+            .output()
+            .expect("failed to run docker build");
+
+        if !docker_output.status.success() {
+            eprintln!("      ❌ Docker build failed!");
+            eprintln!("{}", String::from_utf8_lossy(&docker_output.stderr));
+            return Err("Docker build failed".to_string());
+        }
+        eprintln!("      ✓ Image ready");
+        eprintln!("");
+        eprintln!("=== Setup Complete in {:.2}s ===", start.elapsed().as_secs_f64());
+        eprintln!("    ✨ Testing CURRENT code (just compiled)");
+        eprintln!("");
         Ok(())
     });
     

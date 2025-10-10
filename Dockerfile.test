@@ -1,0 +1,18 @@
+# Fast test image using pre-built binary (like Tilt workflow)
+# Build the binary first with: cargo zigbuild --release -p pet_store --target x86_64-unknown-linux-musl
+FROM scratch
+
+# Copy the pre-built Linux x86_64 binary from host
+COPY target/x86_64-unknown-linux-musl/release/pet_store /pet_store
+
+# Copy assets
+COPY examples/pet_store/doc /doc
+COPY examples/pet_store/static_site /static_site
+COPY examples/pet_store/config /config
+
+EXPOSE 8080
+ENV RUST_BACKTRACE=1
+ENV RUST_LOG=debug
+
+ENTRYPOINT ["/pet_store", "--spec", "/doc/openapi.yaml", "--doc-dir", "/doc", "--static-dir", "/static_site", "--config", "/config/config.yaml"]
+

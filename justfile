@@ -4,6 +4,11 @@
 default:
 	@just --list
 
+# Build Docker image for curl integration tests (cross-compiles for Linux, instant Docker copy)
+build-test-image:
+	cargo zigbuild --release -p pet_store --target x86_64-unknown-linux-musl
+	docker build -f Dockerfile.test -t brrtrouter-petstore:e2e .
+
 # Build the pet store example
 gen:
 	cargo run --bin brrtrouter-gen -- generate --spec examples/openapi.yaml --force
