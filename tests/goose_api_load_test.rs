@@ -9,6 +9,9 @@
 //!
 //! Based on: https://docs.rs/goose/0.18.1/goose/
 
+#![cfg(test)]
+#![allow(dead_code)]
+
 use goose::prelude::*;
 
 /// Test GET /health endpoint (built-in, no auth required)
@@ -105,8 +108,6 @@ async fn test_static_js(user: &mut GooseUser) -> TransactionResult {
 /// ```
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_load_test_scenarios_defined() {
         // Verify all scenarios are defined

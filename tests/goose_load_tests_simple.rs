@@ -11,6 +11,9 @@
 //! - TransactionResult for error handling
 //! - Simplified prelude imports
 
+#![cfg(test)]
+#![allow(dead_code)]
+
 use goose::prelude::*;
 
 /// Load static CSS file
@@ -75,8 +78,6 @@ async fn health_check(user: &mut GooseUser) -> TransactionResult {
 /// ```
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_goose_compiles() {
         // This test just verifies the Goose code compiles

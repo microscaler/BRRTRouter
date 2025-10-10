@@ -107,6 +107,7 @@ impl TestTracing {
     }
 
     /// Wait for at least `count` spans to be collected, with timeout
+    #[allow(dead_code)]
     pub async fn collected_spans(&mut self, count: usize, timeout: Duration) -> Vec<SpanData> {
         let start = std::time::Instant::now();
         
