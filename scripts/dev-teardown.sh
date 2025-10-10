@@ -51,19 +51,37 @@ echo -e "${GREEN}✓${NC} kind cluster deleted"
 echo ""
 
 # ============================================================================
+# Local Registry (Preserved by default for fast rebuilds)
+# ============================================================================
+
+REG_NAME='kind-registry'
+
+echo -e "${BLUE}📦 Checking local registry...${NC}"
+
+if [ "$(docker inspect -f '{{.State.Running}}' "${REG_NAME}" 2>/dev/null || true)" = 'true' ]; then
+    echo -e "${GREEN}✓${NC} Local registry '${REG_NAME}' is running (preserved for fast rebuilds)"
+    echo -e "${BLUE}💡 Tip:${NC} Images in the registry will be reused on next setup"
+    echo -e "   To remove registry: ${YELLOW}docker rm -f ${REG_NAME}${NC}"
+else
+    echo -e "${BLUE}ℹ️  Local registry not running${NC}"
+fi
+
+echo ""
+
+# ============================================================================
 # Clean up Docker Images (Optional)
 # ============================================================================
 
 echo -e "${BLUE}🐳 Checking for BRRTRouter Docker images...${NC}"
 
-IMAGES=$(docker images --filter=reference='brrtrouter-petstore' --format '{{.Repository}}:{{.Tag}}' | wc -l)
+IMAGES=$(docker images --filter=reference='*brrtrouter-petstore*' --format '{{.Repository}}:{{.Tag}}' | wc -l)
 
 if [ "$IMAGES" -gt 0 ]; then
     echo -e "${YELLOW}Found $IMAGES BRRTRouter Docker image(s)${NC}"
     read -p "Do you want to remove them? (y/N): " -n 1 -r
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
-        docker images --filter=reference='brrtrouter-petstore' --format '{{.Repository}}:{{.Tag}}' | xargs -r docker rmi
+        docker images --filter=reference='*brrtrouter-petstore*' --format '{{.Repository}}:{{.Tag}}' | xargs -r docker rmi
         echo -e "${GREEN}✓${NC} Docker images removed"
     fi
 else

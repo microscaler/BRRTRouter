@@ -4,25 +4,51 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-fn temp_dir() -> PathBuf {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let dir = std::env::temp_dir().join(format!("gen_proj_test_{}_{}", std::process::id(), nanos));
-    fs::create_dir_all(&dir).unwrap();
-    dir
+/// Test fixture for project generation tests with automatic cleanup via RAII
+struct ProjectTestFixture {
+    dir: PathBuf,
+    prev_dir: PathBuf,
+}
+
+impl ProjectTestFixture {
+    /// Create a new temporary directory and change into it
+    fn new() -> Self {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("gen_proj_test_{}_{}", std::process::id(), nanos));
+        fs::create_dir_all(&dir).unwrap();
+        
+        let prev_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&dir).unwrap();
+        
+        Self { dir, prev_dir }
+    }
+
+    /// Get the path to the temporary directory
+    fn path(&self) -> &Path {
+        &self.dir
+    }
+}
+
+impl Drop for ProjectTestFixture {
+    fn drop(&mut self) {
+        // Restore previous directory
+        let _ = std::env::set_current_dir(&self.prev_dir);
+        // Clean up temp directory and all contents
+        let _ = fs::remove_dir_all(&self.dir);
+    }
 }
 
 #[test]
 fn test_generate_project_and_format() {
-    let dir = temp_dir();
+    // Use RAII fixture for automatic cleanup
+    let fixture = ProjectTestFixture::new();
+    let dir = fixture.path();
     let spec_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("examples")
         .join("openapi.yaml");
-
-    let prev_dir = std::env::current_dir().unwrap();
-    std::env::set_current_dir(&dir).unwrap();
 
     let project = generate_project_from_spec(&spec_path, true).expect("generate project");
 
@@ -47,6 +73,5 @@ fn test_generate_project_and_format() {
     std::env::set_var("PATH", old_path);
     assert!(fmt_result.is_ok());
 
-    std::env::set_current_dir(&prev_dir).unwrap();
-    fs::remove_dir_all(&dir).unwrap();
+    // Automatic cleanup when fixture drops (directory restored, files deleted)
 }

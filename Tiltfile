@@ -70,9 +70,10 @@ local_resource(
 # Build Docker image with proper dependencies
 # Split into separate stages to ensure correct ordering
 local_resource(
-    'docker-build-and-load',
-    # Wait for builds, then build and load image atomically
-    'docker build -t brrtrouter-petstore:tilt -f Dockerfile.dev . && kind load docker-image brrtrouter-petstore:tilt --name brrtrouter-dev',
+    'docker-build-and-push',
+    # Build and push to local registry (much faster than 'kind load')
+    # https://kind.sigs.k8s.io/docs/user/local-registry/
+    'docker build -t localhost:5001/brrtrouter-petstore:tilt -f Dockerfile.dev . && docker push localhost:5001/brrtrouter-petstore:tilt',
     deps=[
         './build_artifacts/pet_store',
         './examples/pet_store/config',
@@ -88,10 +89,11 @@ local_resource(
     allow_parallel=False,
 )
 
-# Tell Kubernetes about the image
+# Tell Tilt about the image from local registry
+# The image was already pushed by docker-build-and-push, so we just tag it
 custom_build(
-    'brrtrouter-petstore',
-    'docker tag brrtrouter-petstore:tilt $EXPECTED_REF',
+    'localhost:5001/brrtrouter-petstore',
+    'docker tag localhost:5001/brrtrouter-petstore:tilt $EXPECTED_REF && docker push $EXPECTED_REF',
     deps=[
         './build_artifacts',
         './examples/pet_store/config',
@@ -99,8 +101,6 @@ custom_build(
         './examples/pet_store/static_site',
     ],
     tag='tilt',
-    disable_push=True,
-    skips_local_docker=True,
     # Live update: sync files without full rebuild to writable /app directory
     live_update=[
         sync('./build_artifacts/pet_store', '/app/pet_store'),

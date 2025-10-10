@@ -1,11 +1,73 @@
 use std::net::SocketAddr;
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 #[path = "common/mod.rs"]
 mod common;
 use common::http::wait_for_http_200;
+
+/// Flag to track if signal handler cleanup is already running
+static SIGNAL_CLEANUP_RUNNING: AtomicBool = AtomicBool::new(false);
+
+/// Register signal handlers and atexit cleanup to ensure containers are always removed
+///
+/// This is critical because `HARNESS` is a static `OnceLock`, so its `Drop` is never
+/// called until process exit. We need explicit cleanup on:
+/// 1. Normal exit (atexit)
+/// 2. SIGINT (Ctrl+C)
+/// 3. SIGTERM (kill command)
+fn register_signal_handlers() {
+    extern "C" fn cleanup_handler() {
+        // Prevent recursive cleanup if multiple handlers fire
+        if SIGNAL_CLEANUP_RUNNING.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        
+        eprintln!("\n🧹 Cleaning up Docker containers on exit...");
+        
+        // Try to get the container from the harness and clean it up
+        if let Some(harness) = HARNESS.get() {
+            eprintln!("Stopping container: {}", harness.container_id);
+            let _ = Command::new("docker")
+                .args(["stop", "-t", "2", &harness.container_id])
+                .status();
+            let _ = Command::new("docker")
+                .args(["rm", "-f", &harness.container_id])
+                .status();
+        }
+        
+        // Also cleanup by name (in case harness wasn't initialized)
+        cleanup_orphaned_containers();
+        eprintln!("✓ Cleanup complete\n");
+    }
+    
+    extern "C" fn signal_handler(_: libc::c_int) {
+        cleanup_handler();
+        
+        // Re-raise the signal to allow normal termination
+        unsafe {
+            libc::signal(libc::SIGINT, libc::SIG_DFL);
+            libc::raise(libc::SIGINT);
+        }
+    }
+    
+    // Register signal handlers for SIGINT and SIGTERM
+    unsafe {
+        libc::signal(libc::SIGINT, signal_handler as libc::sighandler_t);
+        libc::signal(libc::SIGTERM, signal_handler as libc::sighandler_t);
+    }
+    
+    // ALSO register atexit handler for normal process termination
+    // This handles the case where tests complete successfully
+    extern "C" fn atexit_wrapper() {
+        cleanup_handler();
+    }
+    unsafe {
+        libc::atexit(atexit_wrapper);
+    }
+}
 
 /// Register a cleanup handler to ensure Docker containers are removed on test exit
 ///
@@ -13,13 +75,92 @@ use common::http::wait_for_http_200;
 /// The handler is registered once and persists for the entire test process.
 static CLEANUP_REGISTERED: OnceLock<()> = OnceLock::new();
 
+/// Singleton to ensure image setup runs exactly once across all test threads
+static IMAGE_SETUP: OnceLock<Result<(), String>> = OnceLock::new();
+
 static HARNESS: OnceLock<ContainerHarness> = OnceLock::new();
+
+/// Ensure Docker image exists before running tests
+///
+/// This function uses a singleton pattern to ensure the image check
+/// runs exactly once, even with parallel test execution. Other threads will
+/// block and wait for the first thread to complete the check.
+///
+/// # Panics
+///
+/// Panics if Docker is not available or the required image doesn't exist.
+pub fn ensure_image_ready() {
+    let result = IMAGE_SETUP.get_or_init(|| {
+        // Only ONE thread will execute this block
+        let start = Instant::now();
+        let thread_id = thread::current().id();
+        eprintln!("\n=== Docker Image Setup (Thread {:?}) ===", thread_id);
+        
+        // Ensure Docker is available
+        eprintln!("[1/2] Checking Docker availability...");
+        let docker_ok = Command::new("docker")
+            .arg("--version")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+        
+        if !docker_ok {
+            return Err("Docker is required for curl e2e tests. Please install Docker and ensure it's running.".to_string());
+        }
+        eprintln!("      ✓ Docker is available");
+
+        // Check if image already exists
+        eprintln!("[2/2] Checking for image brrtrouter-petstore:e2e...");
+        let image_exists = Command::new("docker")
+            .args(["image", "inspect", "brrtrouter-petstore:e2e"])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+
+        if !image_exists {
+            eprintln!("      ❌ Image not found!");
+            eprintln!("");
+            eprintln!("The curl integration tests require a pre-built Docker image.");
+            eprintln!("Please build it first using:");
+            eprintln!("");
+            eprintln!("  docker build -t brrtrouter-petstore:e2e .");
+            eprintln!("");
+            eprintln!("This will take 5-10 minutes on first build (compiles Rust project).");
+            eprintln!("Subsequent builds will be faster due to Docker layer caching.");
+            eprintln!("");
+            return Err("Docker image brrtrouter-petstore:e2e not found. Build it first!".to_string());
+        }
+        
+        eprintln!("      ✓ Image is ready");
+        eprintln!("=== Setup Complete in {:.2}s ===\n", start.elapsed().as_secs_f64());
+        Ok(())
+    });
+    
+    // All threads (including the one that ran setup) check the result
+    if let Err(e) = result {
+        panic!("{}", e);
+    }
+    
+    // If we get here, another thread might have done the setup - let them know
+    let thread_id = thread::current().id();
+    eprintln!("[Thread {:?}] Image setup complete, proceeding with test...", thread_id);
+}
 
 /// Get the base URL for the shared test container
 ///
 /// Lazily starts the container on first access and returns the URL for all subsequent calls.
 /// The container is automatically cleaned up when the test process exits.
+///
+/// **Important:** Call `ensure_image_ready()` before running tests to avoid setup timeouts.
 pub fn base_url() -> &'static str {
+    // Register signal handlers once to ensure cleanup on SIGINT/SIGTERM
+    CLEANUP_REGISTERED.get_or_init(|| {
+        register_signal_handlers();
+    });
+    
+    // Ensure image is ready before starting container
+    ensure_image_ready();
+    
     let h = HARNESS.get_or_init(ContainerHarness::start);
     h.base_url.as_str()
 }
@@ -38,56 +179,55 @@ fn container_name() -> String {
 /// manually if needed. Safe to call even if no container exists.
 pub fn cleanup_orphaned_containers() {
     let name = container_name();
-    eprintln!("Checking for orphaned test containers ({})...", name);
+    eprintln!("Cleaning up container: {}", name);
 
-    // First, try to stop the container (may not exist, that's OK)
-    let stop_output = Command::new("docker")
-        .args(["stop", "-t", "2", &name])
+    // Force kill and remove in one command (most aggressive)
+    let kill_output = Command::new("docker")
+        .args(["rm", "-f", &name])
         .output();
 
-    if let Ok(output) = &stop_output {
-        if output.status.success() {
-            eprintln!("Stopped orphaned container: {}", name);
+    match kill_output {
+        Ok(output) => {
+            if output.status.success() {
+                eprintln!("✓ Removed container: {}", name);
+            } else {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                if stderr.contains("No such container") {
+                    eprintln!("✓ No orphaned container found");
+                } else {
+                    eprintln!("⚠ Failed to remove container: {}", stderr);
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("⚠ Docker command failed: {}", e);
         }
     }
 
-    // Then force remove it (works on stopped or running containers)
-    let rm_output = Command::new("docker").args(["rm", "-f", &name]).output();
+    // Poll to verify the container is actually gone
+    // This is critical to prevent "name already in use" errors
+    for attempt in 1..=30 {  // Increased from 20 to 30 attempts
+        let check = Command::new("docker")
+            .args(["ps", "-a", "--filter", &format!("name=^/{}$", name), "-q"])
+            .output();
 
-    if let Ok(output) = &rm_output {
-        if output.status.success() {
-            eprintln!("Removed orphaned container: {}", name);
-
-            // Poll to verify the container name is actually released
-            // This prevents race conditions in parallel test execution
-            for attempt in 1..=20 {
-                let check = Command::new("docker")
-                    .args(["ps", "-a", "--filter", &format!("name=^/{}$", name), "-q"])
-                    .output();
-
-                if let Ok(output) = check {
-                    let container_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                    if container_id.is_empty() {
-                        eprintln!("Verified container name '{}' is released", name);
-                        break;
-                    }
+        if let Ok(output) = check {
+            let container_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if container_id.is_empty() {
+                if attempt > 1 {
+                    eprintln!("✓ Container name '{}' is released (took {} attempts)", name, attempt);
                 }
-
-                if attempt == 20 {
-                    eprintln!(
-                        "Warning: Container name '{}' may still be in use after cleanup",
-                        name
-                    );
-                }
-
-                thread::sleep(Duration::from_millis(50));
-            }
-        } else {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            if !stderr.contains("No such container") {
-                eprintln!("Warning: Failed to remove container: {}", stderr);
+                return;
             }
         }
+
+        if attempt == 30 {
+            eprintln!("❌ ERROR: Container name '{}' still in use after 30 attempts!", name);
+            eprintln!("   This will cause 'name already in use' errors");
+            eprintln!("   Try: docker rm -f {}", name);
+        }
+
+        thread::sleep(Duration::from_millis(100));  // Increased from 50ms to 100ms
     }
 }
 
@@ -146,42 +286,13 @@ impl ContainerHarness {
     ///
     /// Panics if Docker is unavailable, build fails, or the container doesn't become ready.
     fn start() -> Self {
-        // Register cleanup handler on first container start
-        CLEANUP_REGISTERED.get_or_init(|| {
-            // The Drop implementation will handle cleanup at process exit,
-            // but we also register an explicit cleanup for any orphaned containers
-            // from previous failed runs
-            cleanup_orphaned_containers();
-        });
+        // ALWAYS cleanup orphaned containers first (not just once)
+        // This is critical because if tests were cancelled, Drop may not have run
+        eprintln!("Cleaning up any orphaned containers from previous runs...");
+        cleanup_orphaned_containers();
 
-        // Ensure Docker is available
-        let docker_ok = Command::new("docker")
-            .arg("--version")
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false);
-        if !docker_ok {
-            panic!("Docker is required for curl e2e tests");
-        }
-
-        // Check if image already exists (e.g., pre-built in CI)
-        let image_exists = Command::new("docker")
-            .args(["image", "inspect", "brrtrouter-petstore:e2e"])
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false);
-
-        if !image_exists {
-            // Build image if it doesn't exist (local dev workflow)
-            eprintln!("Building brrtrouter-petstore:e2e image...");
-            let status = Command::new("docker")
-                .args(["build", "--no-cache", "-t", "brrtrouter-petstore:e2e", "."])
-                .status()
-                .expect("failed to build e2e image");
-            assert!(status.success(), "docker build failed");
-        } else {
-            eprintln!("Using existing brrtrouter-petstore:e2e image");
-        }
+        // Image setup is now handled by ensure_image_ready() called from base_url()
+        // This ensures the image is built once for all tests, not per-container
 
         // Run container detached with random host port for 8080
         // Use unique container name per process to allow parallel test execution

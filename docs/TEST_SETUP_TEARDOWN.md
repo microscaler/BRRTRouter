@@ -4,6 +4,8 @@
 
 Rust provides several patterns for test setup and teardown, similar to Python's `setUp()` and `tearDown()` methods. The most idiomatic approach uses **RAII (Resource Acquisition Is Initialization)** with the `Drop` trait.
 
+**⚠️ Critical Addition**: For resources stored in static `OnceLock`, the `Drop` trait alone is insufficient when tests are interrupted with SIGINT (Ctrl+C). See [Signal Handling for Static Resources](#signal-handling-for-static-resources) below.
+
 ## Comparison with Python
 
 | Python | Rust Equivalent | Description |
@@ -1000,9 +1002,193 @@ fn test_fixture_cleans_up_on_panic() {
 }
 ```
 
+### 10. ✅ `spec_tests.rs` - Spec Parsing Tests
+
+**Status:** ✅ **COMPLETED** - Refactored to use `tempfile::NamedTempFile`
+
+**Resources:**
+- Temporary OpenAPI spec files (YAML, JSON)
+
+**Previous Approach:**
+- Custom `write_temp()` function created files
+- **Never cleaned up** - leaked files to `/tmp`
+
+**New Approach:**
+All tests now use `tempfile::NamedTempFile`:
+
+```rust
+#[test]
+fn test_load_spec_yaml_and_json() {
+    use std::io::Write;
+    
+    // YAML spec - automatic cleanup via RAII
+    let mut yaml_temp = tempfile::NamedTempFile::new().unwrap();
+    yaml_temp.write_all(YAML_SPEC.as_bytes()).unwrap();
+    yaml_temp.flush().unwrap();
+    let (routes_yaml, slug_yaml) = load_spec(yaml_temp.path()).unwrap();
+    
+    // JSON spec - automatic cleanup via RAII
+    let mut json_temp = tempfile::NamedTempFile::new().unwrap();
+    json_temp.write_all(json_str.as_bytes()).unwrap();
+    json_temp.flush().unwrap();
+    let (routes_json, slug_json) = load_spec(json_temp.path()).unwrap();
+    
+    // Tests...
+    
+    // Temp files automatically cleaned up when variables drop
+}
+```
+
+**Tests Refactored:**
+- `test_load_spec_yaml_and_json` - 2 temp files, now auto-cleaned
+- `test_missing_operation_id_exits` - 1 temp file, now auto-cleaned  
+- `test_unsupported_method_ignored` - 1 temp file, now auto-cleaned
+- `test_sse_spec_loading` - Already using `NamedTempFile` ✅
+
+**Benefits:**
+- ✅ No more `/tmp` pollution
+- ✅ Consistent with `test_sse_spec_loading`
+- ✅ Removed custom `write_temp()` helper and its dependencies
+- ✅ Cleaner, more idiomatic code
+- ✅ Automatic cleanup even on test failure/panic
+
+**Files Modified:**
+- Removed: `TEMP_COUNTER`, `TEMP_LOCK`, `write_temp()` function
+- Updated: All 4 tests to use `tempfile::NamedTempFile`
+
+## Signal Handling for Static Resources
+
+### Problem: Static Resources and SIGINT
+
+When resources are stored in static `OnceLock` (common for shared test fixtures), the `Drop` trait is **not sufficient** for cleanup when tests are interrupted:
+
+```rust
+static HARNESS: OnceLock<ContainerHarness> = OnceLock::new();
+
+pub fn base_url() -> &'static str {
+    let h = HARNESS.get_or_init(ContainerHarness::start);
+    h.base_url.as_str()
+}
+```
+
+**Why Drop Doesn't Work:**
+1. Static variables have `'static` lifetime
+2. They exist until process termination
+3. When SIGINT is received (Ctrl+C), the process exits immediately
+4. The static `OnceLock` never goes out of scope
+5. The `Drop` implementation is **never called**
+
+**Observed Issue:**
+- Running `just nt` (nextest)
+- Pressing Ctrl+C
+- Docker containers left running
+- Next test run hangs for 60+ seconds trying to use the same container name
+
+### Solution: POSIX Signal Handling
+
+For static resources that **must** be cleaned up on interruption, register signal handlers:
+
+```rust
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// Flag to prevent recursive cleanup
+static SIGNAL_CLEANUP_RUNNING: AtomicBool = AtomicBool::new(false);
+
+fn register_signal_handlers() {
+    extern "C" fn signal_handler(_: libc::c_int) {
+        // Prevent recursive cleanup if multiple signals arrive
+        if SIGNAL_CLEANUP_RUNNING.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        
+        eprintln!("\n🛑 Signal received - cleaning up Docker containers...");
+        cleanup_orphaned_containers();
+        eprintln!("✓ Cleanup complete");
+        
+        // Re-raise the signal to allow normal termination
+        unsafe {
+            libc::signal(libc::SIGINT, libc::SIG_DFL);
+            libc::raise(libc::SIGINT);
+        }
+    }
+    
+    unsafe {
+        libc::signal(libc::SIGINT, signal_handler as libc::sighandler_t);
+        libc::signal(libc::SIGTERM, signal_handler as libc::sighandler_t);
+    }
+}
+
+// Register once on first use
+static CLEANUP_REGISTERED: OnceLock<()> = OnceLock::new();
+
+pub fn base_url() -> &'static str {
+    CLEANUP_REGISTERED.get_or_init(|| {
+        register_signal_handlers();
+    });
+    
+    let h = HARNESS.get_or_init(ContainerHarness::start);
+    h.base_url.as_str()
+}
+```
+
+### Implementation in BRRTRouter
+
+**File:** `tests/curl_harness.rs`
+
+The Docker integration tests use signal handling to ensure cleanup even when `just nt` is interrupted:
+
+1. **Signal Handler Registration**: Registers SIGINT/SIGTERM handlers on first test
+2. **Cleanup Callback**: Calls `cleanup_orphaned_containers()` before process exit
+3. **Aggressive Cleanup**: Always cleanup on container start (defense in depth)
+
+**Benefits:**
+- ✅ No orphaned containers on Ctrl+C
+- ✅ Immediate feedback to users
+- ✅ Fast test iteration (no manual cleanup needed)
+- ✅ Works with nextest's parallel execution
+
+**Testing:**
+```bash
+# Start tests
+just nt curl
+
+# Press Ctrl+C
+# You should see:
+# 🛑 Signal received - cleaning up Docker containers...
+# ✓ Removed container: brrtrouter-e2e-12345
+# ✓ Cleanup complete
+
+# Verify cleanup
+docker ps -a | grep brrtrouter-e2e
+# (should return nothing)
+```
+
+### When to Use Signal Handling
+
+Use signal handlers when **all** of these are true:
+
+1. ✅ Resources stored in static `OnceLock` or `lazy_static!`
+2. ✅ Cleanup is **critical** (e.g., Docker containers, network ports, file locks)
+3. ✅ Tests may be interrupted with SIGINT (Ctrl+C)
+4. ✅ Normal `Drop` is insufficient
+
+**Don't use signal handlers when:**
+- ❌ Resources are test-local (regular RAII with `Drop` is sufficient)
+- ❌ Cleanup is non-critical (e.g., temporary files cleaned by OS)
+- ❌ Resources are managed by external systems (e.g., Kubernetes pods)
+
+### Dependencies
+
+```toml
+[dev-dependencies]
+libc = "0.2"  # For signal handling in tests (SIGINT cleanup)
+```
+
 ## Related Documentation
 
+- `docs/SIGINT_CLEANUP_FIX.md` - Detailed explanation of signal handling fix
 - `docs/MEMORY_LEAK_FIX.md` - Why proper teardown prevents leaks
 - `docs/TEST_DOCUMENTATION.md` - Overview of all test modules
 - `tests/server_tests.rs` - Implementation examples
+- `tests/spec_tests.rs` - Temporary file cleanup example
 

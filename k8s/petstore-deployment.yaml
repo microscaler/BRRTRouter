@@ -104,7 +104,7 @@ spec:
     spec:
       containers:
         - name: petstore
-          image: brrtrouter-petstore
+          image: localhost:5001/brrtrouter-petstore
           imagePullPolicy: IfNotPresent
           ports:
             - name: http

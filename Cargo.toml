@@ -79,6 +79,7 @@ futures = "0.3"
 once_cell = "1"
 goose = "0.18.1"  # Load testing framework for static sites and APIs
 parking_lot = "0.12"  # For RwLock in test utilities
+libc = "0.2"  # For signal handling in tests (SIGINT cleanup)
 
 [[bin]]
 name = "brrtrouter-gen"
