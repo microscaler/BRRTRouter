@@ -7,6 +7,8 @@ default:
 # Build Docker image for curl integration tests (cross-compiles for Linux, instant Docker copy)
 build-test-image:
 	cargo zigbuild --release -p pet_store --target x86_64-unknown-linux-musl
+	mkdir -p build_artifacts
+	cp target/x86_64-unknown-linux-musl/release/pet_store build_artifacts/
 	docker build -f Dockerfile.test -t brrtrouter-petstore:e2e .
 
 # Build the pet store example

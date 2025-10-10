@@ -1,9 +1,9 @@
 # Fast test image using pre-built binary (like Tilt workflow)
-# Build the binary first with: cargo zigbuild --release -p pet_store --target x86_64-unknown-linux-musl
+# The test harness copies the binary to build_artifacts/ before building this image
 FROM scratch
 
-# Copy the pre-built Linux x86_64 binary from host
-COPY target/x86_64-unknown-linux-musl/release/pet_store /pet_store
+# Copy the staged Linux x86_64 binary (same as Tilt workflow)
+COPY build_artifacts/pet_store /pet_store
 
 # Copy assets
 COPY examples/pet_store/doc /doc

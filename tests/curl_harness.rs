@@ -129,15 +129,23 @@ pub fn ensure_image_ready() {
         eprintln!("      ✓ Binary built for Linux x86_64");
         
         // Check if binary exists
-        eprintln!("[3/4] Verifying binary...");
+        eprintln!("[3/5] Verifying binary...");
         let binary_path = "target/x86_64-unknown-linux-musl/release/pet_store";
         if !std::path::Path::new(binary_path).exists() {
             return Err(format!("Binary not found at {}", binary_path));
         }
         eprintln!("      ✓ Binary found at {}", binary_path);
 
+        // Copy to staging area (same as Tilt workflow)
+        eprintln!("[4/5] Copying to staging area...");
+        std::fs::create_dir_all("build_artifacts")
+            .expect("failed to create build_artifacts directory");
+        std::fs::copy(binary_path, "build_artifacts/pet_store")
+            .expect("failed to copy binary to staging");
+        eprintln!("      ✓ Binary staged at build_artifacts/pet_store");
+
         // Build/rebuild the Docker image (instant - just copies files!)
-        eprintln!("[4/4] Building Docker image (copying binary)...");
+        eprintln!("[5/5] Building Docker image (copying binary)...");
         let docker_output = Command::new("docker")
             .args([
                 "build",
