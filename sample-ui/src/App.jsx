@@ -2,6 +2,7 @@ import { createSignal, createEffect, onCleanup, For, Show } from 'solid-js';
 
 const API_KEY = 'test123';
 const API_BASE = window.location.origin;
+const MOCK_BEARER_TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c';
 
 function App() {
   const [pets, setPets] = createSignal([]);
@@ -21,6 +22,9 @@ function App() {
   const [requestBody, setRequestBody] = createSignal('');
   const [showParamsModal, setShowParamsModal] = createSignal(false);
   const [paramValues, setParamValues] = createSignal({});
+  const [showBearerModal, setShowBearerModal] = createSignal(false);
+  const [bearerToken, setBearerToken] = createSignal(MOCK_BEARER_TOKEN);
+  const [useBearerToken, setUseBearerToken] = createSignal(false);
 
   const loadData = async () => {
     console.log('Loading data from:', API_BASE);
@@ -249,6 +253,11 @@ function App() {
         headers: { 'X-API-Key': API_KEY }
       };
       
+      // Add Bearer token if enabled
+      if (useBearerToken() && bearerToken()) {
+        options.headers['Authorization'] = `Bearer ${bearerToken()}`;
+      }
+      
       if (body) {
         options.headers['Content-Type'] = 'application/json';
         options.body = body;
@@ -272,7 +281,8 @@ function App() {
         duration: Math.round(endTime - startTime),
         headers: Object.fromEntries(response.headers.entries()),
         path: finalPath,
-        method: method
+        method: method,
+        error: response.status === 401 ? 'Unauthorized - This endpoint requires additional authentication' : null
       });
       
       // Scroll to results
@@ -515,7 +525,9 @@ function App() {
                   <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
                     <For each={getApiPaths()}>
                       {endpoint => (
-                        <div class="border border-gray-200 rounded-lg p-3 hover:shadow-md transition bg-white">
+                        <div class={`border rounded-lg p-3 hover:shadow-md transition ${
+                          endpoint.path.includes('/secure') ? 'border-yellow-300 bg-yellow-50' : 'border-gray-200 bg-white'
+                        }`}>
                           <div class="flex items-start gap-2 flex-col">
                             <div class="flex items-center gap-2 w-full">
                               <span class={`px-2 py-1 rounded font-bold text-xs ${
@@ -528,6 +540,22 @@ function App() {
                                 {endpoint.method}
                               </span>
                               <code class="text-gray-700 font-mono text-xs flex-1 break-all">{endpoint.path}</code>
+                              <Show when={endpoint.path.includes('/secure')}>
+                                <button
+                                  class={`px-2 py-0.5 text-xs rounded font-medium transition ${
+                                    useBearerToken() 
+                                      ? 'bg-green-200 text-green-800 hover:bg-green-300' 
+                                      : 'bg-yellow-200 text-yellow-800 hover:bg-yellow-300'
+                                  }`}
+                                  title={useBearerToken() ? "Bearer Token Active - Click to edit" : "Requires Bearer Token - Click to configure"}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setShowBearerModal(true);
+                                  }}
+                                >
+                                  🔐
+                                </button>
+                              </Show>
                             </div>
                             <button 
                               class={`w-full px-3 py-1.5 text-white text-xs rounded transition font-medium ${
@@ -634,6 +662,23 @@ function App() {
                         <div class="bg-red-50 rounded-lg p-4">
                           <p class="text-red-700 font-semibold">Error:</p>
                           <p class="text-red-600 text-sm mt-1">{apiTestResult().error}</p>
+                          <Show when={apiTestResult().status === 401 && apiTestResult().path.includes('secure')}>
+                            <div class="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded">
+                              <p class="text-yellow-800 text-xs">
+                                <strong>ℹ️ Note:</strong> We sent a mock Bearer token with this request. 
+                                The <code>/secure</code> endpoint demonstrates BRRTRouter's support for advanced authentication schemes (JWT/OAuth2).
+                                You can configure valid tokens in your production setup.
+                              </p>
+                              <details class="mt-2">
+                                <summary class="cursor-pointer text-yellow-700 hover:text-yellow-900 text-xs font-semibold">
+                                  Show Mock Token
+                                </summary>
+                                <code class="block mt-1 p-2 bg-yellow-100 rounded text-xs break-all">
+                                  {MOCK_BEARER_TOKEN}
+                                </code>
+                              </details>
+                            </div>
+                          </Show>
                         </div>
                       </Show>
                     </div>
@@ -752,6 +797,71 @@ function App() {
                       onClick={() => setShowParamsModal(false)}
                     >
                       Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </Show>
+
+            {/* Bearer Token Modal */}
+            <Show when={showBearerModal()}>
+              <div 
+                class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]"
+                onClick={() => setShowBearerModal(false)}
+              >
+                <div class="bg-white rounded-2xl p-6 max-w-2xl w-full m-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                  <h3 class="text-2xl font-bold text-yellow-600 mb-4 flex items-center gap-2">
+                    <span>🔐</span>
+                    <span>Bearer Token Configuration</span>
+                  </h3>
+                  <p class="text-sm text-gray-600 mb-4">
+                    Configure a Bearer token (JWT) for endpoints that require advanced authentication.
+                  </p>
+                  
+                  <div class="mb-4 p-4 bg-blue-50 rounded-lg">
+                    <label class="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={useBearerToken()}
+                        onChange={(e) => setUseBearerToken(e.target.checked)}
+                        class="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                      />
+                      <span class="text-sm font-medium text-gray-700">
+                        Enable Bearer Token Authentication
+                      </span>
+                    </label>
+                  </div>
+                  
+                  <label class="block text-sm font-medium text-gray-700 mb-2">
+                    Bearer Token (JWT):
+                  </label>
+                  <textarea
+                    class="w-full h-40 p-3 border border-gray-300 rounded-lg font-mono text-xs focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
+                    value={bearerToken()}
+                    onInput={(e) => setBearerToken(e.target.value)}
+                    placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                    disabled={!useBearerToken()}
+                  />
+                  
+                  <div class="mt-3 text-xs text-gray-500">
+                    <strong>Default Mock Token:</strong> Standard JWT.io example token (sub: "1234567890", name: "John Doe")
+                  </div>
+                  
+                  <div class="flex gap-3 mt-6">
+                    <button 
+                      class="flex-1 bg-yellow-600 text-white py-3 px-4 rounded-lg hover:bg-yellow-700 transition font-medium"
+                      onClick={() => setShowBearerModal(false)}
+                    >
+                      ✅ Save & Close
+                    </button>
+                    <button 
+                      class="px-4 bg-gray-200 text-gray-700 py-3 rounded-lg hover:bg-gray-300 transition font-medium"
+                      onClick={() => {
+                        setBearerToken(MOCK_BEARER_TOKEN);
+                        setUseBearerToken(false);
+                      }}
+                    >
+                      Reset
                     </button>
                   </div>
                 </div>
