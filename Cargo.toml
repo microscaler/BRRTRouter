@@ -33,7 +33,8 @@ oas3 = { version = "0.16.1", features = ["yaml-spec"] }
 anyhow = "1.0"
 http = "1.0"  # Do not update to newer version, it that is not compatible with may_minihttp
 may = "0.3"
-may_minihttp = "0.1"
+# Using our fork until PR #21 is merged upstream
+may_minihttp = { git = "https://github.com/microscaler/may_minihttp.git", branch = "feat/configurable-max-headers" }
 regex = "1.11.1"
 url = "2.5.4"
 clap = { version = "4.5.38", features = ["cargo", "env", "derive"] }

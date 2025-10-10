@@ -51,11 +51,8 @@ This documentation is published for **review and feedback purposes**, not for pr
 git clone https://github.com/microscaler/BRRTRouter.git
 cd BRRTRouter
 
-# One-time setup: Create kind cluster
-./scripts/dev-setup.sh
-
-# Start Tilt (press 'space' for web UI)
-tilt up
+# One command: Create cluster + start everything
+just dev-up
 
 # 🎉 Services are now live!
 # - Pet Store API: http://localhost:8080 (standard HTTP)
@@ -78,6 +75,7 @@ redis-cli -h localhost -p 6379
 
 **Why Tilt + kind?**
 - ✅ **1-2 second iteration cycle** - edit code, see changes instantly
+- ✅ **Docker Hub proxy cache** - 70% faster startup, saves ~4GB bandwidth/day
 - ✅ **Cross-platform** - works reliably on macOS (Apple Silicon), Linux, Windows
 - ✅ **Production-like** - Full Kubernetes environment locally
 - ✅ **Observability built-in** - Prometheus, Grafana, Jaeger, OTEL
@@ -595,8 +593,7 @@ We welcome contributions from developers at all levels!
    ```bash
    git clone https://github.com/microscaler/BRRTRouter.git
    cd BRRTRouter
-   ./scripts/dev-setup.sh  # One-time: creates kind cluster
-   tilt up                 # Start full dev stack
+   just dev-up  # Creates cluster + starts everything
    ```
 
 2. **✅ Verify everything works**:
@@ -658,7 +655,7 @@ Benchmark goal:
 
 | Task | Command | Notes |
 |------|---------|-------|
-| **Setup dev environment** | `./scripts/dev-setup.sh && tilt up` | One-time cluster creation, then start Tilt |
+| **Setup dev environment** | `just dev-up` | Creates cluster + starts Tilt |
 | **Start development** | `tilt up` | All services with hot reload |
 | **Stop development** | `Ctrl-C` or `tilt down` | Clean shutdown |
 | **View Tilt UI** | Press `space` in terminal | Interactive dashboard |

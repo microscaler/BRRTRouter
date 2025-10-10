@@ -15,6 +15,22 @@ spec:
       labels:
         app: jaeger
     spec:
+      # Init container to fix permissions on persistent volume
+      initContainers:
+        - name: fix-permissions
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              mkdir -p /badger/data /badger/key
+              chmod -R 777 /badger
+              chown -R 10001:10001 /badger
+          volumeMounts:
+            - name: storage
+              mountPath: /badger
+          securityContext:
+            runAsUser: 0
       containers:
         - name: jaeger
           image: jaegertracing/all-in-one:1.52
@@ -47,7 +63,21 @@ spec:
             - name: COLLECTOR_OTLP_ENABLED
               value: "true"
             - name: SPAN_STORAGE_TYPE
-              value: "memory"
+              value: "badger"
+            - name: BADGER_EPHEMERAL
+              value: "false"
+            - name: BADGER_DIRECTORY_VALUE
+              value: "/badger/data"
+            - name: BADGER_DIRECTORY_KEY
+              value: "/badger/key"
+          volumeMounts:
+            - name: storage
+              mountPath: /badger
+          securityContext:
+            runAsUser: 10001
+            runAsGroup: 10001
+            fsGroup: 10001
+            runAsNonRoot: true
           resources:
             requests:
               memory: "256Mi"
@@ -55,6 +85,10 @@ spec:
             limits:
               memory: "512Mi"
               cpu: "500m"
+      volumes:
+        - name: storage
+          persistentVolumeClaim:
+            claimName: jaeger-storage
 ---
 apiVersion: v1
 kind: Service

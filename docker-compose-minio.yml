@@ -1,0 +1,56 @@
+version: '3.8'
+
+# MinIO for Velero backups - runs OUTSIDE KIND cluster
+# This ensures backups survive even if KIND cluster is deleted
+
+services:
+  minio:
+    image: minio/minio:latest
+    container_name: brrtrouter-minio
+    ports:
+      - "9000:9000"      # MinIO API
+      - "9001:9001"      # MinIO Console
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+      MINIO_BROWSER_REDIRECT_URL: http://localhost:9001
+    volumes:
+      - minio-data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - brrtrouter-backup
+
+  # Create the velero bucket automatically
+  createbuckets:
+    image: minio/mc:latest
+    container_name: brrtrouter-minio-setup
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      sleep 5;
+      /usr/bin/mc alias set myminio http://minio:9000 minioadmin minioadmin123;
+      /usr/bin/mc mb myminio/velero --ignore-existing;
+      /usr/bin/mc policy set download myminio/velero;
+      echo 'MinIO bucket velero created successfully';
+      exit 0;
+      "
+    networks:
+      - brrtrouter-backup
+
+volumes:
+  minio-data:
+    driver: local
+    name: brrtrouter-minio-data
+
+networks:
+  brrtrouter-backup:
+    name: brrtrouter-backup
+    driver: bridge
+

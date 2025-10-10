@@ -153,8 +153,25 @@ custom_build(
 # KUBERNETES RESOURCES
 # ============================================================================
 
-# Load namespace first
-k8s_yaml('k8s/namespace.yaml')
+# Load namespaces first
+k8s_yaml([
+    'k8s/namespace.yaml',
+    'k8s/velero-namespace.yaml',
+])
+
+# Load Velero backup system (CRDs, credentials, deployment, backup schedules)
+# Note: Run 'just download-velero-crds' once to get velero-crds.yaml
+velero_enabled = os.path.exists('k8s/velero-crds.yaml')
+if velero_enabled:
+    k8s_yaml('k8s/velero-crds.yaml')
+    k8s_yaml([
+        'k8s/velero-credentials.yaml',
+        'k8s/velero-deployment.yaml',
+        'k8s/velero-backups.yaml',  # Backup schedules for all persistent volumes
+    ])
+    print('Velero backup system loaded with automated schedules')
+else:
+    print('[OPTIONAL] Velero CRDs not found. Run: just download-velero-crds to enable backups')
 
 # Load data stores (PostgreSQL, Redis) - these must start first
 k8s_yaml([
@@ -162,12 +179,16 @@ k8s_yaml([
     'k8s/redis.yaml',
 ])
 
+# Load observability stack storage (PVCs first)
+k8s_yaml('k8s/observability-storage.yaml')
+
 # Load observability stack
 k8s_yaml([
     'k8s/prometheus.yaml',
     'k8s/loki.yaml',
     'k8s/promtail.yaml',
     'k8s/grafana.yaml',
+    'k8s/grafana-dashboard-unified.yaml',
     'k8s/jaeger.yaml',
     'k8s/otel-collector.yaml',
 ])
@@ -182,6 +203,13 @@ k8s_yaml([
 # RESOURCE CONFIGURATION
 # ============================================================================
 
+# Velero backup system - independent, starts early (only if enabled)
+if velero_enabled:
+    k8s_resource(
+        'velero',
+        labels=['backup'],
+    )
+
 # Data stores - start first
 k8s_resource(
     'postgres',
@@ -195,18 +223,16 @@ k8s_resource(
     labels=['data'],
 )
 
-# Observability stack - depends on data stores
+# Observability stack - independent of data stores
 k8s_resource(
     'prometheus',
     port_forwards=['9090:9090'],
-    resource_deps=['postgres', 'redis'],
     labels=['observability'],
 )
 
 k8s_resource(
     'loki',
     port_forwards=['3100:3100'],
-    resource_deps=['postgres', 'redis'],
     labels=['observability'],
 )
 

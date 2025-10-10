@@ -57,39 +57,52 @@ metadata:
 data:
   petstore.json: |
     {
-      "dashboard": {
-        "title": "BRRTRouter Pet Store",
-        "tags": ["brrtrouter", "petstore"],
-        "timezone": "browser",
-        "panels": [
-          {
-            "id": 1,
-            "title": "Request Rate",
-            "type": "graph",
-            "targets": [
-              {
-                "expr": "rate(brrtrouter_requests_total[5m])",
-                "legendFormat": "{{method}} {{path}}"
-              }
-            ]
+      "title": "BRRTRouter Pet Store - Quick View",
+      "tags": ["brrtrouter", "petstore"],
+      "timezone": "browser",
+      "refresh": "30s",
+      "panels": [
+        {
+          "id": 1,
+          "gridPos": {
+            "x": 0,
+            "y": 0,
+            "w": 12,
+            "h": 8
           },
-          {
-            "id": 2,
-            "title": "Response Latency",
-            "type": "graph",
-            "targets": [
-              {
-                "expr": "histogram_quantile(0.95, rate(brrtrouter_request_duration_seconds_bucket[5m]))",
-                "legendFormat": "p95"
-              },
-              {
-                "expr": "histogram_quantile(0.50, rate(brrtrouter_request_duration_seconds_bucket[5m]))",
-                "legendFormat": "p50"
-              }
-            ]
-          }
-        ]
-      }
+          "title": "Request Rate",
+          "type": "graph",
+          "datasource": "Prometheus",
+          "targets": [
+            {
+              "expr": "rate(brrtrouter_requests_total[5m])",
+              "legendFormat": "{{method}} {{path}}"
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "gridPos": {
+            "x": 12,
+            "y": 0,
+            "w": 12,
+            "h": 8
+          },
+          "title": "Response Latency",
+          "type": "graph",
+          "datasource": "Prometheus",
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.95, rate(brrtrouter_request_duration_seconds_bucket[5m]))",
+              "legendFormat": "p95"
+            },
+            {
+              "expr": "histogram_quantile(0.50, rate(brrtrouter_request_duration_seconds_bucket[5m]))",
+              "legendFormat": "p50"
+            }
+          ]
+        }
+      ]
     }
 ---
 apiVersion: apps/v1
@@ -109,6 +122,22 @@ spec:
       labels:
         app: grafana
     spec:
+      # Init container to fix permissions on persistent volume
+      initContainers:
+        - name: fix-permissions
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              mkdir -p /var/lib/grafana/plugins /var/lib/grafana/dashboards
+              chmod -R 777 /var/lib/grafana
+              chown -R 472:472 /var/lib/grafana
+          volumeMounts:
+            - name: storage
+              mountPath: /var/lib/grafana
+          securityContext:
+            runAsUser: 0
       containers:
         - name: grafana
           image: grafana/grafana:10.2.2
@@ -127,10 +156,19 @@ spec:
               mountPath: /etc/grafana/provisioning/datasources
             - name: dashboards-config
               mountPath: /etc/grafana/provisioning/dashboards
-            - name: dashboards
-              mountPath: /var/lib/grafana/dashboards
+            - name: dashboard-petstore
+              mountPath: /var/lib/grafana/dashboards/petstore.json
+              subPath: petstore.json
+            - name: dashboard-unified
+              mountPath: /var/lib/grafana/dashboards/unified-observability.json
+              subPath: unified-observability.json
             - name: storage
               mountPath: /var/lib/grafana
+          securityContext:
+            runAsUser: 472
+            runAsGroup: 472
+            fsGroup: 472
+            runAsNonRoot: true
           resources:
             requests:
               memory: "128Mi"
@@ -145,11 +183,15 @@ spec:
         - name: dashboards-config
           configMap:
             name: grafana-dashboards-config
-        - name: dashboards
+        - name: dashboard-petstore
           configMap:
             name: grafana-dashboard-petstore
+        - name: dashboard-unified
+          configMap:
+            name: grafana-dashboard-unified
         - name: storage
-          emptyDir: {}
+          persistentVolumeClaim:
+            claimName: grafana-storage
 ---
 apiVersion: v1
 kind: Service

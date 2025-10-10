@@ -62,6 +62,22 @@ spec:
       labels:
         app: loki
     spec:
+      # Init container to fix permissions on persistent volume
+      initContainers:
+        - name: fix-permissions
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              mkdir -p /loki/chunks /loki/rules
+              chmod -R 777 /loki
+              chown -R 10001:10001 /loki
+          volumeMounts:
+            - name: storage
+              mountPath: /loki
+          securityContext:
+            runAsUser: 0
       containers:
         - name: loki
           image: grafana/loki:2.9.3
@@ -79,6 +95,11 @@ spec:
               mountPath: /etc/loki
             - name: storage
               mountPath: /loki
+          securityContext:
+            runAsUser: 10001
+            runAsGroup: 10001
+            fsGroup: 10001
+            runAsNonRoot: true
           resources:
             requests:
               memory: "128Mi"
@@ -91,7 +112,8 @@ spec:
           configMap:
             name: loki-config
         - name: storage
-          emptyDir: {}
+          persistentVolumeClaim:
+            claimName: loki-storage
 
 ---
 apiVersion: v1

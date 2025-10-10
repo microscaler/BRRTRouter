@@ -5,8 +5,8 @@ metadata:
   namespace: brrtrouter-dev
 data:
   init.sql: |
-    -- Create database for BRRTRouter
-    CREATE DATABASE IF NOT EXISTS brrtrouter;
+    -- The database 'brrtrouter' is already created by POSTGRES_DB env var
+    -- So we just connect to it and create tables
     
     -- Create pets table
     CREATE TABLE IF NOT EXISTS pets (
