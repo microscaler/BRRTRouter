@@ -1,0 +1,14 @@
+# Local Registry Hosting ConfigMap
+# Documents the local registry for KIND cluster
+# This tells Kubernetes tools where to find the local registry
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: local-registry-hosting
+  namespace: kube-public
+data:
+  localRegistryHosting.v1: |
+    host: "localhost:5001"
+    help: "https://kind.sigs.k8s.io/docs/user/local-registry/"
+

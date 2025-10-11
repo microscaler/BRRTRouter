@@ -1,3 +1,4 @@
+#[allow(dead_code)]
 pub mod temp_files {
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -47,6 +48,7 @@ pub mod temp_files {
     }
 }
 
+#[allow(dead_code)]
 pub mod test_server {
     use std::sync::Once;
 
@@ -60,6 +62,7 @@ pub mod test_server {
     }
 }
 
+#[allow(dead_code)]
 pub mod http {
     use std::io::{Read, Write};
     use std::net::{SocketAddr, TcpStream};

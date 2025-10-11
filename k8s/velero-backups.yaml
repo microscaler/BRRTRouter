@@ -1,0 +1,442 @@
+---
+# Velero Backup Schedules for All Persistent Volumes
+# This file defines backup schedules for each service with persistent storage
+#
+# Services with persistent volumes:
+# - Prometheus (5Gi) - Metrics data
+# - Loki (5Gi) - Log aggregation
+# - Grafana (1Gi) - Dashboards and datasources
+# - Jaeger (2Gi) - Distributed traces
+# - PostgreSQL - Application database
+# - Redis - Cache and session data
+# - Pet Store - Application logs and data
+
+---
+# Complete namespace backup (daily)
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: brrtrouter-complete
+  namespace: velero
+  labels:
+    backup-type: complete
+    scope: namespace
+spec:
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  template:
+    includedNamespaces:
+      - brrtrouter-dev
+    includedResources:
+      - "*"
+    storageLocation: default
+    volumeSnapshotLocations:
+      - default
+    ttl: 720h0m0s  # 30 days retention
+    hooks:
+      resources:
+        # Ensure databases are consistent during backup
+        - name: postgres-backup-hook
+          includedNamespaces:
+            - brrtrouter-dev
+          labelSelector:
+            matchLabels:
+              app: postgres
+          pre:
+            - exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - pg_dump -U brrtrouter brrtrouter > /var/lib/postgresql/data/backup.sql
+                container: postgres
+                timeout: 5m
+        - name: redis-backup-hook
+          includedNamespaces:
+            - brrtrouter-dev
+          labelSelector:
+            matchLabels:
+              app: redis
+          pre:
+            - exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - redis-cli BGSAVE
+                container: redis
+                timeout: 2m
+
+---
+# Observability stack backup (every 6 hours)
+# High frequency for metrics, logs, and traces
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: observability-stack
+  namespace: velero
+  labels:
+    backup-type: observability
+    scope: component
+spec:
+  schedule: "0 */6 * * *"  # Every 6 hours
+  template:
+    includedNamespaces:
+      - brrtrouter-dev
+    labelSelector:
+      matchLabels:
+        component: observability
+    includedResources:
+      - persistentvolumeclaims
+      - persistentvolumes
+      - deployments
+      - services
+      - configmaps
+      - secrets
+    storageLocation: default
+    volumeSnapshotLocations:
+      - default
+    ttl: 168h0m0s  # 7 days retention
+
+---
+# Prometheus metrics backup (every 4 hours)
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: prometheus-data
+  namespace: velero
+  labels:
+    backup-type: metrics
+    service: prometheus
+spec:
+  schedule: "0 */4 * * *"  # Every 4 hours
+  template:
+    includedNamespaces:
+      - brrtrouter-dev
+    labelSelector:
+      matchLabels:
+        app: prometheus
+    includedResources:
+      - deployments
+      - services
+      - configmaps
+      - persistentvolumeclaims
+    storageLocation: default
+    volumeSnapshotLocations:
+      - default
+    ttl: 168h0m0s  # 7 days retention
+
+---
+# Grafana dashboards backup (daily)
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: grafana-dashboards
+  namespace: velero
+  labels:
+    backup-type: dashboards
+    service: grafana
+spec:
+  schedule: "30 3 * * *"  # Daily at 3:30 AM
+  template:
+    includedNamespaces:
+      - brrtrouter-dev
+    labelSelector:
+      matchLabels:
+        app: grafana
+    includedResources:
+      - deployments
+      - services
+      - configmaps
+      - secrets
+      - persistentvolumeclaims
+    storageLocation: default
+    volumeSnapshotLocations:
+      - default
+    ttl: 2160h0m0s  # 90 days retention (dashboards are valuable)
+
+---
+# Loki logs backup (every 12 hours)
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: loki-logs
+  namespace: velero
+  labels:
+    backup-type: logs
+    service: loki
+spec:
+  schedule: "0 */12 * * *"  # Every 12 hours
+  template:
+    includedNamespaces:
+      - brrtrouter-dev
+    labelSelector:
+      matchLabels:
+        app: loki
+    includedResources:
+      - deployments
+      - services
+      - configmaps
+      - persistentvolumeclaims
+    storageLocation: default
+    volumeSnapshotLocations:
+      - default
+    ttl: 336h0m0s  # 14 days retention
+
+---
+# Jaeger traces backup (every 8 hours)
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: jaeger-traces
+  namespace: velero
+  labels:
+    backup-type: traces
+    service: jaeger
+spec:
+  schedule: "0 */8 * * *"  # Every 8 hours
+  template:
+    includedNamespaces:
+      - brrtrouter-dev
+    labelSelector:
+      matchLabels:
+        app: jaeger
+    includedResources:
+      - deployments
+      - services
+      - persistentvolumeclaims
+    storageLocation: default
+    volumeSnapshotLocations:
+      - default
+    ttl: 168h0m0s  # 7 days retention
+
+---
+# PostgreSQL database backup (every 6 hours)
+# Critical data - high frequency, long retention
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: postgres-database
+  namespace: velero
+  labels:
+    backup-type: database
+    service: postgres
+    priority: critical
+spec:
+  schedule: "0 */6 * * *"  # Every 6 hours
+  template:
+    includedNamespaces:
+      - brrtrouter-dev
+    labelSelector:
+      matchLabels:
+        app: postgres
+    includedResources:
+      - deployments
+      - services
+      - configmaps
+      - secrets
+      - persistentvolumeclaims
+    storageLocation: default
+    volumeSnapshotLocations:
+      - default
+    ttl: 2160h0m0s  # 90 days retention
+    hooks:
+      resources:
+        - name: postgres-consistent-backup
+          includedNamespaces:
+            - brrtrouter-dev
+          labelSelector:
+            matchLabels:
+              app: postgres
+          pre:
+            - exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - |
+                    echo "Creating consistent PostgreSQL backup..."
+                    pg_dump -U brrtrouter brrtrouter > /var/lib/postgresql/data/backup-$(date +%Y%m%d-%H%M%S).sql
+                    echo "Backup complete"
+                container: postgres
+                timeout: 10m
+          post:
+            - exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - |
+                    echo "Cleaning up old backup files (keep last 5)..."
+                    cd /var/lib/postgresql/data && ls -t backup-*.sql | tail -n +6 | xargs -r rm
+                container: postgres
+                timeout: 1m
+
+---
+# Redis cache/session backup (every 4 hours)
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: redis-cache
+  namespace: velero
+  labels:
+    backup-type: cache
+    service: redis
+spec:
+  schedule: "15 */4 * * *"  # Every 4 hours at :15 past
+  template:
+    includedNamespaces:
+      - brrtrouter-dev
+    labelSelector:
+      matchLabels:
+        app: redis
+    includedResources:
+      - deployments
+      - services
+      - configmaps
+      - persistentvolumeclaims
+    storageLocation: default
+    volumeSnapshotLocations:
+      - default
+    ttl: 168h0m0s  # 7 days retention
+    hooks:
+      resources:
+        - name: redis-save
+          includedNamespaces:
+            - brrtrouter-dev
+          labelSelector:
+            matchLabels:
+              app: redis
+          pre:
+            - exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - redis-cli BGSAVE && sleep 5
+                container: redis
+                timeout: 2m
+
+---
+# Pet Store application backup (daily)
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: petstore-app
+  namespace: velero
+  labels:
+    backup-type: application
+    service: petstore
+spec:
+  schedule: "45 3 * * *"  # Daily at 3:45 AM
+  template:
+    includedNamespaces:
+      - brrtrouter-dev
+    labelSelector:
+      matchLabels:
+        app: petstore
+    includedResources:
+      - deployments
+      - services
+      - configmaps
+      - secrets
+      # Note: Pet Store uses emptyDir in dev, but include PVCs for production
+      - persistentvolumeclaims
+    storageLocation: default
+    volumeSnapshotLocations:
+      - default
+    ttl: 720h0m0s  # 30 days retention
+
+---
+# Pre-upgrade backup (manual trigger via label)
+# Usage: kubectl label namespace brrtrouter-dev velero.io/backup=pre-upgrade
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: pre-upgrade
+  namespace: velero
+  labels:
+    backup-type: pre-upgrade
+    trigger: manual
+spec:
+  # This schedule will never run automatically (Feb 30 doesn't exist)
+  # Trigger manually with: velero backup create <name> --from-schedule pre-upgrade
+  schedule: "0 0 30 2 *"
+  paused: true  # Paused by default, trigger manually
+  template:
+    includedNamespaces:
+      - brrtrouter-dev
+    includedResources:
+      - "*"
+    storageLocation: default
+    volumeSnapshotLocations:
+      - default
+    ttl: 2160h0m0s  # 90 days retention (important for rollback)
+    labelSelector:
+      matchLabels:
+        velero.io/backup: pre-upgrade
+
+---
+# Configuration backup (weekly)
+# Backs up all ConfigMaps and Secrets
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: configuration
+  namespace: velero
+  labels:
+    backup-type: configuration
+    scope: namespace
+spec:
+  schedule: "0 4 * * 0"  # Weekly on Sunday at 4 AM
+  template:
+    includedNamespaces:
+      - brrtrouter-dev
+    includedResources:
+      - configmaps
+      - secrets
+    storageLocation: default
+    ttl: 4320h0m0s  # 180 days retention (long-term config history)
+
+---
+# Disaster recovery backup (weekly)
+# Complete backup for disaster recovery scenarios
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: disaster-recovery
+  namespace: velero
+  labels:
+    backup-type: disaster-recovery
+    priority: critical
+spec:
+  schedule: "0 1 * * 0"  # Weekly on Sunday at 1 AM
+  template:
+    includedNamespaces:
+      - brrtrouter-dev
+      - velero  # Include Velero itself
+    includedResources:
+      - "*"
+    includeClusterResources: true  # Include cluster-level resources
+    storageLocation: default
+    volumeSnapshotLocations:
+      - default
+    ttl: 8760h0m0s  # 365 days retention (1 year)
+    hooks:
+      resources:
+        # Ensure all databases are consistent
+        - name: all-databases-backup
+          includedNamespaces:
+            - brrtrouter-dev
+          labelSelector:
+            matchLabels:
+              component: data
+          pre:
+            - exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - |
+                    echo "Pre-backup hook: Ensuring data consistency"
+                    if command -v pg_dump >/dev/null 2>&1; then
+                      pg_dump -U brrtrouter brrtrouter > /var/lib/postgresql/data/dr-backup.sql
+                    fi
+                    if command -v redis-cli >/dev/null 2>&1; then
+                      redis-cli BGSAVE
+                    fi
+                timeout: 10m
+

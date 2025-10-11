@@ -12,36 +12,59 @@ use tracing_util::TestTracing;
 mod common;
 use common::http::send_request;
 
-fn start_service() -> (TestTracing, ServerHandle, SocketAddr) {
-    // ensure coroutines have enough stack for tests
-    std::env::set_var("BRRTR_STACK_SIZE", "0x8000");
-    let config = brrtrouter::runtime_config::RuntimeConfig::from_env();
-    may::config().set_stack_size(config.stack_size);
-    let tracing = TestTracing::init();
-    let (routes, _slug) = brrtrouter::load_spec("examples/openapi.yaml").unwrap();
-    let router = Arc::new(RwLock::new(Router::new(routes.clone())));
-    let mut dispatcher = Dispatcher::new();
-    unsafe {
-        registry::register_from_spec(&mut dispatcher, &routes);
-    }
-    dispatcher.add_middleware(Arc::new(TracingMiddleware));
-    let service = AppService::new(
-        router,
-        Arc::new(RwLock::new(dispatcher)),
-        HashMap::new(),
-        PathBuf::from("examples/openapi.yaml"),
-        None,
-        None,
-    );
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let addr = listener.local_addr().unwrap();
-    drop(listener);
-    let handle = HttpServer(service).start(addr).unwrap();
-    handle.wait_ready().unwrap();
-    (tracing, handle, addr)
+/// Test fixture for health endpoint tests with automatic setup and teardown using RAII
+struct HealthTestServer {
+    _tracing: TestTracing,
+    handle: Option<ServerHandle>,
+    addr: SocketAddr,
 }
 
-// send_request moved to common::http
+impl HealthTestServer {
+    fn new() -> Self {
+        std::env::set_var("BRRTR_STACK_SIZE", "0x8000");
+        let config = brrtrouter::runtime_config::RuntimeConfig::from_env();
+        may::config().set_stack_size(config.stack_size);
+        let tracing = TestTracing::init();
+        let (routes, _slug) = brrtrouter::load_spec("examples/openapi.yaml").unwrap();
+        let router = Arc::new(RwLock::new(Router::new(routes.clone())));
+        let mut dispatcher = Dispatcher::new();
+        unsafe {
+            registry::register_from_spec(&mut dispatcher, &routes);
+        }
+        dispatcher.add_middleware(Arc::new(TracingMiddleware));
+        let service = AppService::new(
+            router,
+            Arc::new(RwLock::new(dispatcher)),
+            HashMap::new(),
+            PathBuf::from("examples/openapi.yaml"),
+            Some(PathBuf::from("examples/pet_store/static_site")),
+            Some(PathBuf::from("examples/pet_store/doc")),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        drop(listener);
+        let handle = HttpServer(service).start(addr).unwrap();
+        handle.wait_ready().unwrap();
+        
+        Self {
+            _tracing: tracing,
+            handle: Some(handle),
+            addr,
+        }
+    }
+    
+    fn addr(&self) -> SocketAddr {
+        self.addr
+    }
+}
+
+impl Drop for HealthTestServer {
+    fn drop(&mut self) {
+        if let Some(handle) = self.handle.take() {
+            handle.stop();
+        }
+    }
+}
 
 fn parse_response(resp: &str) -> (u16, serde_json::Value) {
     let mut parts = resp.split("\r\n\r\n");
@@ -64,10 +87,11 @@ fn parse_response(resp: &str) -> (u16, serde_json::Value) {
 
 #[test]
 fn test_health_endpoint() {
-    let (_tracing, handle, addr) = start_service();
-    let resp = send_request(&addr, "GET /health HTTP/1.1\r\nHost: localhost\r\n\r\n");
-    handle.stop();
+    let server = HealthTestServer::new();
+    let resp = send_request(&server.addr(), "GET /health HTTP/1.1\r\nHost: localhost\r\n\r\n");
     let (status, body) = parse_response(&resp);
     assert_eq!(status, 200);
     assert_eq!(body["status"], "ok");
+    
+    // Automatic cleanup!
 }

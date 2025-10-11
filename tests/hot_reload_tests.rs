@@ -32,11 +32,58 @@
 
 use brrtrouter::{dispatcher::Dispatcher, hot_reload::watch_spec, load_spec, router::Router};
 use may::sync::mpsc;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
-mod common;
-use common::temp_files;
+/// RAII test fixture for hot reload tests
+/// 
+/// Manages a temporary spec file that needs to exist for the duration of the test
+/// (for watching, reading, and modifying), then automatically cleans up.
+/// 
+/// Unlike NamedTempFile, this creates a plain file that can be freely read/written
+/// without worrying about file handle state.
+struct HotReloadTestFixture {
+    path: PathBuf,
+}
+
+impl HotReloadTestFixture {
+    /// Create a new hot reload test fixture with initial spec content
+    fn new(initial_content: &str) -> Self {
+        // Create a unique temp file path (but don't use NamedTempFile)
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "brrtrouter_hot_reload_test_{}_{}.yaml",
+            std::process::id(),
+            nanos
+        ));
+        
+        // Write the initial content
+        std::fs::write(&path, initial_content.as_bytes()).unwrap();
+        
+        Self { path }
+    }
+    
+    /// Get the path to the spec file
+    fn path(&self) -> &PathBuf {
+        &self.path
+    }
+    
+    /// Update the spec file content (for testing hot reload)
+    fn update_content(&self, new_content: &str) {
+        std::fs::write(&self.path, new_content.as_bytes()).unwrap();
+    }
+}
+
+impl Drop for HotReloadTestFixture {
+    fn drop(&mut self) {
+        // Clean up the temp file when fixture is dropped
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
 
 #[test]
 fn test_watch_spec_reload() {
@@ -63,7 +110,9 @@ paths:
         '200': { description: OK }
 "#;
 
-    let path = temp_files::create_temp_yaml(SPEC_V1);
+    // Use RAII fixture for automatic cleanup
+    let fixture = HotReloadTestFixture::new(SPEC_V1);
+    let path = fixture.path();
     let (routes, _slug) = load_spec(path.to_str().unwrap()).unwrap();
     let router = Arc::new(RwLock::new(Router::new(routes.clone())));
     let dispatcher = Arc::new(RwLock::new(Dispatcher::new()));
@@ -71,41 +120,61 @@ paths:
     let updates: Arc<Mutex<Vec<Vec<String>>>> = Arc::new(Mutex::new(Vec::new()));
     let updates_clone = updates.clone();
 
-    let watcher = watch_spec(
-        &path,
-        router,
-        dispatcher.clone(),
-        move |disp, new_routes| {
-            for r in &new_routes {
-                let (tx, _rx) = mpsc::channel();
-                disp.add_route(r.clone(), tx);
+    {
+        // Scope the watcher to ensure it drops before file cleanup
+        let watcher = watch_spec(
+            &path,
+            router,
+            dispatcher.clone(),
+            move |disp, new_routes| {
+                for r in &new_routes {
+                    let (tx, _rx) = mpsc::channel();
+                    disp.add_route(r.clone(), tx);
+                }
+                let names = new_routes.iter().map(|r| r.handler_name.clone()).collect();
+                updates_clone.lock().unwrap().push(names);
+            },
+        )
+        .expect("watch_spec");
+
+        // allow watcher thread to start
+        std::thread::sleep(Duration::from_millis(100));
+
+        // modify the spec using the fixture's update method
+        fixture.update_content(SPEC_V2);
+
+        // wait for callback to receive update (with timeout)
+        let start = std::time::Instant::now();
+        let timeout = Duration::from_secs(5); // Reduced from potential 50s (20 * 50ms)
+        
+        loop {
+            {
+                let ups = updates.lock().unwrap();
+                if ups.iter().any(|v| v.contains(&"foo_two".to_string())) {
+                    break;
+                }
             }
-            let names = new_routes.iter().map(|r| r.handler_name.clone()).collect();
-            updates_clone.lock().unwrap().push(names);
-        },
-    )
-    .expect("watch_spec");
-
-    // allow watcher thread to start
-    std::thread::sleep(Duration::from_millis(100));
-
-    // modify the spec
-    std::fs::write(&path, SPEC_V2).unwrap();
-
-    // wait for callback to receive update
-    for _ in 0..20 {
-        {
-            let ups = updates.lock().unwrap();
-            if ups.iter().any(|v| v.contains(&"foo_two".to_string())) {
-                break;
+            
+            if start.elapsed() > timeout {
+                break; // Timeout - let assertion below handle failure
             }
+            
+            std::thread::sleep(Duration::from_millis(50));
         }
-        std::thread::sleep(Duration::from_millis(50));
+
+        // Explicitly drop watcher before assertions and cleanup
+        drop(watcher);
+        
+        // Give filesystem watcher time to fully stop
+        std::thread::sleep(Duration::from_millis(100));
     }
 
     let ups = updates.lock().unwrap();
-    assert!(ups.iter().any(|v| v.contains(&"foo_two".to_string())));
+    assert!(
+        ups.iter().any(|v| v.contains(&"foo_two".to_string())),
+        "Expected 'foo_two' in updates, got: {:?}",
+        ups
+    );
 
-    drop(watcher);
-    std::fs::remove_file(&path).unwrap();
+    // Fixture automatically cleaned up when it drops (RAII)!
 }

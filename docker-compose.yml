@@ -1,3 +1,18 @@
+# ============================================================================
+# DEPRECATED: This docker-compose.yml is deprecated in favor of Tilt + kind
+# ============================================================================
+#
+# For local development, please use:
+#   ./scripts/dev-setup.sh && tilt up
+#
+# Or with justfile:
+#   just dev-up
+#
+# See docs/LOCAL_DEVELOPMENT.md for more information.
+#
+# This file is kept for backward compatibility but may be removed in future.
+# ============================================================================
+
 version: '3.8'
 services:
   petstore:

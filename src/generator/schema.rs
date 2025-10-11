@@ -97,6 +97,7 @@ pub fn is_named_type(ty: &str) -> bool {
 /// assert_eq!(sanitize_rust_identifier("type"), "r#type");
 /// assert_eq!(sanitize_rust_identifier("user_id"), "user_id");
 /// ```
+#[allow(dead_code)]
 fn sanitize_rust_identifier(name: &str) -> String {
     const KEYWORDS: &[&str] = &[
         "as", "break", "const", "continue", "crate", "else", "enum", "extern", "false", "fn",
@@ -438,7 +439,7 @@ pub fn extract_fields(schema: &Value) -> Vec<FieldDef> {
         for (name, prop) in props {
             // COMPLEX: Detect oneOf with null pattern: oneOf: [{type: null}, {type: T}]
             // This indicates an optional field in OpenAPI 3.1 style
-            let (mut inferred_ty, mut nullable_oneof) =
+            let (inferred_ty, nullable_oneof) =
                 if let Some(one_of) = prop.get("oneOf").and_then(|v| v.as_array()) {
                     let mut inner_ty: Option<String> = None;
                     let mut has_null = false;

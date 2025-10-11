@@ -9,7 +9,7 @@ use tracing_util::TestTracing;
 
 #[test]
 fn test_tracing_middleware_emits_spans() {
-    let mut tracing = TestTracing::init();
+    let tracing = TestTracing::init();
 
     let (routes, _slug) = load_spec("examples/openapi.yaml").unwrap();
     let router = Router::new(routes.clone());

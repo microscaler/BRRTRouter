@@ -64,6 +64,9 @@ jobs:
       - name: Install musl tools (provides musl-gcc for ring)
         run: sudo apt-get update || apt-get update && (sudo apt-get install -y musl-tools || apt-get install -y musl-tools)
 
+      - name: Install cargo-zigbuild (for curl_harness cross-compilation)
+        run: cargo install cargo-zigbuild --locked
+
       - name: Build pet_store (musl, release)
         env:
           CC_x86_64_unknown_linux_musl: musl-gcc
@@ -88,7 +91,23 @@ jobs:
           RUSTDOCFLAGS="-D warnings -D rustdoc::broken_intra_doc_links --html-in-header doc/head.html" cargo doc --no-deps --lib || true
           echo "Documentation check complete (warnings are informational only)"
 
-      - name: Run tests (reqwest-based)
+      # Nextest provides faster, more reliable test execution
+      # - Parallel test execution with better isolation
+      # - Better output formatting and failure reporting
+      # - Handles flaky tests better with retries
+      # If nextest succeeds, we can phase out the legacy cargo test
+      - name: Install cargo-nextest
+        run: cargo install cargo-nextest --locked
+
+      - name: Run tests (nextest - primary)
+        run: cargo nextest run --workspace --all-targets --fail-fast --no-capture
+        env:
+          RUST_BACKTRACE: 1
+
+      # Legacy fallback: only runs if nextest fails
+      # Once we confirm nextest is stable in CI, we can remove this
+      - name: Run tests (cargo test - legacy fallback)
+        if: failure()
         run: cargo test -- --nocapture
 
       - name: Install cargo-llvm-cov
@@ -98,6 +117,141 @@ jobs:
       - name: Measure coverage
         if: ${{ !env.ACT }}
         run: cargo llvm-cov  #--no-report
+
+  tilt-ci:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    env:
+      RUST_BACKTRACE: "1"
+      RUST_LOG: "info"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install musl target
+        run: rustup target add x86_64-unknown-linux-musl
+
+      - name: Install musl tools and dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+
+      - name: Install cargo-zigbuild for cross-compilation
+        run: cargo install cargo-zigbuild
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: brrtrouter-ci
+          wait: 60s
+
+      - name: Verify cluster
+        run: |
+          kubectl cluster-info
+          kubectl get nodes
+
+      - name: Install Tilt
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/tilt-dev/tilt/master/scripts/install.sh | bash
+          tilt version
+
+      - name: Build BRRTRouter and Pet Store binaries
+        run: |
+          cargo zigbuild --release --target x86_64-unknown-linux-musl
+          cargo run --bin brrtrouter-gen -- generate --spec examples/openapi.yaml --force
+          cargo zigbuild --release --target x86_64-unknown-linux-musl -p pet_store
+          mkdir -p build_artifacts
+          cp target/x86_64-unknown-linux-musl/release/pet_store build_artifacts/
+
+      - name: Build sample UI (if exists)
+        run: |
+          if [ -d "sample-ui" ]; then
+            cd sample-ui
+            if command -v yarn &> /dev/null && [ -f "package.json" ]; then
+              echo "Building sample UI with yarn..."
+              yarn install
+              yarn build:petstore || true
+            fi
+          fi
+
+      - name: Run Tilt CI
+        run: |
+          echo "Starting Tilt CI - will build, deploy, and wait for services to be healthy"
+          tilt ci --timeout 10m
+        timeout-minutes: 12
+
+      - name: Check deployment status
+        if: always()
+        run: |
+          echo "=== Kubernetes Resources ==="
+          kubectl get all -n brrtrouter-dev
+          
+          echo ""
+          echo "=== Pet Store Logs ==="
+          kubectl logs -n brrtrouter-dev deployment/petstore --tail=100 || true
+          
+          echo ""
+          echo "=== OTEL Collector Logs ==="
+          kubectl logs -n brrtrouter-dev deployment/otel-collector --tail=50 || true
+
+      - name: Test Pet Store API
+        run: |
+          echo "Forwarding Pet Store port..."
+          kubectl port-forward -n brrtrouter-dev service/petstore 8080:8080 &
+          PF_PID=$!
+          sleep 5
+          
+          echo "Testing health endpoint..."
+          curl -f http://localhost:8080/health || (echo "Health check failed" && exit 1)
+          
+          echo "Testing metrics endpoint..."
+          curl -f http://localhost:8080/metrics | grep brrtrouter || (echo "Metrics check failed" && exit 1)
+          
+          echo "Testing authenticated endpoint..."
+          curl -f -H "X-API-Key: test123" http://localhost:8080/pets || (echo "Auth test failed" && exit 1)
+          
+          echo "Checking per-path metrics..."
+          curl -f http://localhost:8080/metrics | grep brrtrouter_path_requests_total || (echo "Per-path metrics missing" && exit 1)
+          
+          kill $PF_PID || true
+          
+          echo "✅ All API tests passed!"
+
+      - name: Test observability stack
+        run: |
+          echo "Checking Prometheus..."
+          kubectl port-forward -n brrtrouter-dev service/prometheus 9090:9090 &
+          PROM_PID=$!
+          sleep 3
+          curl -f http://localhost:9090/-/healthy || echo "Prometheus not ready"
+          kill $PROM_PID || true
+          
+          echo "Checking Grafana..."
+          kubectl port-forward -n brrtrouter-dev service/grafana 3000:3000 &
+          GRAF_PID=$!
+          sleep 3
+          curl -f http://localhost:3000/api/health || echo "Grafana not ready"
+          kill $GRAF_PID || true
+          
+          echo "✅ Observability stack check complete"
+
+      - name: Upload Tilt logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tilt-ci-logs
+          retention-days: 3
+          path: |
+            ~/.tilt-dev/
+
+      - name: Cleanup
+        if: always()
+        run: |
+          tilt down || true
+          kind delete cluster --name brrtrouter-ci || true
 
   e2e-docker:
     needs: build-and-test
@@ -131,6 +285,9 @@ jobs:
         if: ${{ env.ACT }}
         run: sudo apt-get update || apt-get update && (sudo apt-get install -y musl-tools || apt-get install -y musl-tools)
 
+      - name: Install cargo-zigbuild (for curl_integration_tests)
+        run: cargo install cargo-zigbuild --locked
+
       - name: Build pet_store (musl, release) (ACT local)
         if: ${{ env.ACT }}
         env:
@@ -156,11 +313,11 @@ jobs:
         run: ./target/release/brrtrouter-gen generate --spec examples/openapi.yaml --force
 
       - name: Build e2e Docker image (freshly generated app + provided binary)
-        run: docker build --build-arg PETSTORE_BIN=/build/dist/pet_store --no-cache -t brrtrouter-petstore:e2e .
+        run: docker build --build-arg PETSTORE_BIN=/build/dist/pet_store --no-cache --rm --force-rm -t brrtrouter-petstore:e2e .
 
       - name: Build e2e Docker image (ACT local binary)
         if: ${{ env.ACT }}
-        run: docker build --build-arg PETSTORE_BIN=/build/target/x86_64-unknown-linux-musl/release/pet_store --no-cache -t brrtrouter-petstore:e2e .
+        run: docker build --build-arg PETSTORE_BIN=/build/target/x86_64-unknown-linux-musl/release/pet_store --no-cache --rm --force-rm -t brrtrouter-petstore:e2e .
 
       - name: Install uuidgen
         run: sudo apt-get update && sudo apt-get install -y uuid-runtime
@@ -311,3 +468,117 @@ jobs:
             wrk_health.txt
             wrk_pets.txt
             wrk_pets_post.txt
+
+  goose-load-test:
+    needs: e2e-docker
+    runs-on: ubuntu-latest
+    services:
+      petstore:
+        image: ${{ needs.e2e-docker.outputs.image }}
+        options: --name petstore
+        ports:
+          - 8080:8080
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Wait for service readiness
+        run: |
+          for i in $(seq 1 120); do \
+            code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8080/health || true); \
+            [ "$code" = "200" ] && echo "Service ready!" && break; \
+            sleep 0.5; \
+          done
+
+      - name: Build Goose load test
+        run: cargo build --release --example api_load_test
+
+      - name: Run Goose comprehensive load test
+        run: |
+          echo "====================================================================="
+          echo "GOOSE COMPREHENSIVE API LOAD TEST"
+          echo "Testing ALL OpenAPI endpoints + static files"
+          echo "This tests what wrk doesn't: authenticated endpoints, static files,"
+          echo "and helps identify memory leaks under sustained load"
+          echo "====================================================================="
+          
+          cargo run --release --example api_load_test -- \
+            --host http://127.0.0.1:8080 \
+            --users 20 \
+            --hatch-rate 5 \
+            --run-time 2m \
+            --no-reset-metrics \
+            --report-file goose-report.html \
+            --report-file goose-report.json \
+            | tee goose-metrics.txt
+          
+          echo "====================================================================="
+          echo "LOAD TEST COMPLETE - Metrics saved to goose-metrics.txt"
+          echo "====================================================================="
+
+      - name: Check for failures in Goose metrics
+        run: |
+          echo "Checking Goose metrics for failures..."
+          
+          # Extract failure count from ASCII metrics
+          if grep -q "Aggregated.*0 (0%)" goose-metrics.txt; then
+            echo "✅ No failures detected in load test"
+          else
+            echo "⚠️  Some failures detected, see metrics for details"
+            echo ""
+            echo "Failure summary:"
+            grep -A 2 "# fails" goose-metrics.txt || true
+          fi
+
+      - name: Extract key metrics for PR comments
+        run: |
+          echo "## 📊 Goose Load Test Results" > goose-summary.md
+          echo "" >> goose-summary.md
+          echo "Full metrics available in ASCII report artifact." >> goose-summary.md
+          echo "" >> goose-summary.md
+          
+          # Extract actual aggregated metrics from Goose output
+          if grep -q "All Transactions" goose-metrics.txt; then
+            echo "### Summary Statistics" >> goose-summary.md
+            echo "\`\`\`" >> goose-summary.md
+            grep -A 10 "All Transactions" goose-metrics.txt >> goose-summary.md || echo "Could not extract summary" >> goose-summary.md
+            echo "\`\`\`" >> goose-summary.md
+          fi
+
+      - name: Upload Goose ASCII metrics
+        uses: actions/upload-artifact@v4
+        with:
+          name: goose-ascii-metrics
+          retention-days: 7
+          path: |
+            goose-metrics.txt
+            goose-summary.md
+
+      - name: Upload Goose HTML report
+        uses: actions/upload-artifact@v4
+        with:
+          name: goose-html-report
+          retention-days: 7
+          path: goose-report.html
+
+      - name: Upload Goose JSON report
+        uses: actions/upload-artifact@v4
+        with:
+          name: goose-json-report
+          retention-days: 7
+          path: goose-report.json
+
+      - name: Display metrics summary
+        run: |
+          echo ""
+          echo "====================================================================="
+          echo "📊 GOOSE LOAD TEST SUMMARY"
+          echo "====================================================================="
+          cat goose-summary.md
+          echo ""
+          echo "Full metrics available in artifacts: goose-ascii-metrics"
+          echo "HTML report available in artifacts: goose-html-report"
+          echo "====================================================================="

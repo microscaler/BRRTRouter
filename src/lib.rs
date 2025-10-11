@@ -829,6 +829,7 @@ mod echo;
 pub mod generator;
 pub mod hot_reload;
 pub mod middleware;
+pub mod otel;
 pub mod router;
 pub mod runtime_config;
 pub mod security;

@@ -284,7 +284,7 @@ pub fn health_endpoint(res: &mut Response) -> io::Result<()> {
 /// Metrics endpoint returning Prometheus text format statistics.
 pub fn metrics_endpoint(res: &mut Response, metrics: &MetricsMiddleware) -> io::Result<()> {
     let (stack_size, used_stack) = metrics.stack_usage();
-    let body = format!(
+    let mut body = format!(
         "# HELP brrtrouter_requests_total Total number of handled requests\n\
          # TYPE brrtrouter_requests_total counter\n\
          brrtrouter_requests_total {}\n\
@@ -310,6 +310,42 @@ pub fn metrics_endpoint(res: &mut Response, metrics: &MetricsMiddleware) -> io::
         stack_size,
         used_stack
     );
+    
+    // Add per-path metrics
+    body.push_str("# HELP brrtrouter_path_requests_total Total requests per path\n");
+    body.push_str("# TYPE brrtrouter_path_requests_total counter\n");
+    
+    let path_stats = metrics.path_stats();
+    for (path, (count, _avg_ns, _min_ns, _max_ns)) in &path_stats {
+        // Escape path for Prometheus label format
+        let escaped_path = path.replace('\\', "\\\\").replace('"', "\\\"");
+        body.push_str(&format!("brrtrouter_path_requests_total{{path=\"{}\"}} {}\n", escaped_path, count));
+    }
+    
+    body.push_str("# HELP brrtrouter_path_latency_seconds_avg Average latency per path\n");
+    body.push_str("# TYPE brrtrouter_path_latency_seconds_avg gauge\n");
+    for (path, (_, avg_ns, _, _)) in &path_stats {
+        let escaped_path = path.replace('\\', "\\\\").replace('"', "\\\"");
+        let avg_secs = (*avg_ns as f64) / 1_000_000_000.0;
+        body.push_str(&format!("brrtrouter_path_latency_seconds_avg{{path=\"{}\"}} {:.6}\n", escaped_path, avg_secs));
+    }
+    
+    body.push_str("# HELP brrtrouter_path_latency_seconds_min Minimum latency per path\n");
+    body.push_str("# TYPE brrtrouter_path_latency_seconds_min gauge\n");
+    for (path, (_, _, min_ns, _)) in &path_stats {
+        let escaped_path = path.replace('\\', "\\\\").replace('"', "\\\"");
+        let min_secs = (*min_ns as f64) / 1_000_000_000.0;
+        body.push_str(&format!("brrtrouter_path_latency_seconds_min{{path=\"{}\"}} {:.6}\n", escaped_path, min_secs));
+    }
+    
+    body.push_str("# HELP brrtrouter_path_latency_seconds_max Maximum latency per path\n");
+    body.push_str("# TYPE brrtrouter_path_latency_seconds_max gauge\n");
+    for (path, (_, _, _, max_ns)) in &path_stats {
+        let escaped_path = path.replace('\\', "\\\\").replace('"', "\\\"");
+        let max_secs = (*max_ns as f64) / 1_000_000_000.0;
+        body.push_str(&format!("brrtrouter_path_latency_seconds_max{{path=\"{}\"}} {:.6}\n", escaped_path, max_secs));
+    }
+    
     write_handler_response(
         res,
         200,
@@ -422,6 +458,49 @@ impl HttpService for AppService {
     /// This method is called from multiple coroutines concurrently.
     /// All shared state (Router, Dispatcher, etc.) uses Arc + Mutex/RwLock.
     fn call(&mut self, req: Request, res: &mut Response) -> io::Result<()> {
+        use tracing::{info, info_span, debug, Span};
+        
+        /// Helper struct that logs request completion when dropped
+        /// This ensures we log timing even if we return early
+        struct RequestLogger {
+            method: String,
+            path: String,
+            start: std::time::Instant,
+            span: Span,
+        }
+        
+        impl Drop for RequestLogger {
+            fn drop(&mut self) {
+                let duration_ms = self.start.elapsed().as_millis() as u64;
+                
+                // Get current coroutine stack usage if available
+                // Note: May coroutines don't expose actual stack usage, only size
+                let stack_used_kb = if may::coroutine::is_coroutine() {
+                    let co = may::coroutine::current();
+                    let size = co.stack_size();
+                    (size / 1024) as u64
+                } else {
+                    0
+                };
+                
+                // Record in span
+                self.span.record("duration_ms", duration_ms);
+                self.span.record("stack_used_kb", stack_used_kb);
+                
+                // Log completion with all metrics
+                info!(
+                    method = %self.method,
+                    path = %self.path,
+                    duration_ms = duration_ms,
+                    stack_used_kb = stack_used_kb,
+                    "Request completed"
+                );
+            }
+        }
+        
+        // Start timing immediately
+        let request_start = std::time::Instant::now();
+        
         let ParsedRequest {
             method,
             path,
@@ -430,6 +509,38 @@ impl HttpService for AppService {
             query_params,
             body,
         } = parse_request(req);
+
+        // Create a span for this request with key fields
+        let span = info_span!(
+            "http_request",
+            method = %method,
+            path = %path,
+            header_count = headers.len(),
+            status = tracing::field::Empty,
+            duration_ms = tracing::field::Empty,
+            stack_used_kb = tracing::field::Empty,
+        );
+        let _enter = span.enter();
+        
+        // Create request logger that will log completion on drop (RAII pattern)
+        let _request_logger = RequestLogger {
+            method: method.clone(),
+            path: path.clone(),
+            start: request_start,
+            span: span.clone(),
+        };
+        
+        // Log incoming request with all headers (for debugging TooManyHeaders)
+        debug!(
+            method = %method,
+            path = %path,
+            header_count = headers.len(),
+            headers = ?headers,
+            query_params = ?query_params,
+            cookies = ?cookies,
+            body_size = body.as_ref().map(|v| v.as_object().map(|o| o.len())),
+            "Request received"
+        );
 
         // Apply keep-alive headers early so all responses inherit them
         if let Some(ka) = self.keep_alive_header {

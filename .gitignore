@@ -21,3 +21,24 @@ test_results.json
 #  and can be added to the global gitignore or merged into this file.  For a more nuclear
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
+
+# Tilt local development
+.tilt-cache/
+tilt_modules/
+
+# Kubernetes secrets (if any are generated locally)
+k8s/secrets/
+*.secret.yaml
+build_artifacts/
+.tilt-build/
+
+# Sample UI (SolidJS)
+sample-ui/node_modules/
+sample-ui/dist/
+sample-ui/yarn-error.log
+sample-ui/.yarn/
+
+examples/pet_store/static_site/assets/index-*.js
+examples/pet_store/static_site/assets/index-*.css
+examples/pet_store/static_site/assets/index.html
+

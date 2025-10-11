@@ -38,46 +38,24 @@ This documentation is published for **review and feedback purposes**, not for pr
 
 ---
 
-## 🚀 Quick Start
-
-```bash
-# Clone the repository
-git clone https://github.com/microscaler/BRRTRouter.git
-cd BRRTRouter
-
-# Run the pet store example
-just start-petstore
-
-# In another terminal, test the API
-curl -H "X-API-Key: test123" http://localhost:8080/pets
-curl http://localhost:8080/health
-curl http://localhost:8080/metrics
-
-# Visit Swagger UI
-open http://localhost:8080/docs
-```
-
-**Generate your own service:**
-
-```bash
-# Install the generator
-cargo install --path . --bin brrtrouter-gen
-
-# Generate a new service from your OpenAPI spec
-brrtrouter-gen generate --spec your-api.yaml
-
-# Your service is ready in the generated directory!
-cd your_service
-cargo run -- --spec doc/openapi.yaml --port 8080
-```
-
----
-
 ## 📈 Recent Progress (October 2025)
 
+- **🎉 Tilt + kind Local Development**: Fast iteration (~1-2s) with full observability stack
+  - **Metrics**: Prometheus for request rates, latency, errors
+  - **Logs**: Loki + Promtail for centralized logging with LogQL
+  - **Traces**: Jaeger + OTEL Collector for distributed tracing
+  - **Unified UI**: Grafana with all datasources pre-configured
+  - Cross-compilation support for Apple Silicon → x86_64 Linux
+  - Live binary syncing without container rebuilds
+  - PostgreSQL and Redis included for multi-service testing
 - **🎉 100% Documentation Coverage**: All public APIs, impl blocks, complex functions, and test modules comprehensively documented
 - **✅ Parallel Test Execution**: Fixed Docker container conflicts for nextest parallel execution (219 tests pass)
-- **🔐 Production-Ready Security**: 
+- **🦆 Goose Load Testing**: Comprehensive CI load tests covering ALL OpenAPI endpoints (unlike wrk)
+  - Tests authenticated endpoints with API keys
+  - Detects memory leaks via sustained 2-minute tests
+  - Per-endpoint metrics with ASCII output for CI/CD
+  - HTML reports with interactive visualizations
+- **🔐 Progress towards achieving Production-Ready Security**: 
   - `JwksBearerProvider` with full JWKS support (HS256/384/512, RS256/384/512)
   - `RemoteApiKeyProvider` with caching and configurable headers
   - OpenAPI-driven auto-registration of security providers
@@ -108,7 +86,7 @@ cargo run -- --spec doc/openapi.yaml --port 8080
 
 * **40 k req/s** with JSON encode/parse on every call is respectable for a coroutine runtime that **doesn’t** use a thread-per-core model.
 * The concept of a Hello World is not really possible with BRRTRouter, as you always have a complete controller/handler path. Tests against the health endpoint match Axum; however, this is not a valuable example.
-* It is, however, ~4–6× slower than the fastest Rust HTTP frameworks that exploit per-core threads, `mio`/epoll, and pre-allocated arenas.
+* It is, however, ~4–6× slower than the fastest Rust HTTP frameworks `Hello Worlds` due to the amount of safeguarding a simple api route implements on **BRRTRouter**
 * Socket-level errors (`connect 555`, `read 38 307`) show the client saturated or the server closed connections under load – this artificially deflates RPS a bit.
 
 ---
@@ -243,8 +221,17 @@ Run:
 ```bash
 just build-pet-store
 ```
+or 
 
-Builds the Pet Store example; you can pass cargo flags after the task.
+```bash
+just dev-up
+```
+
+Builds the Pet Store example; 
+
+Sample Petstore App:
+
+![petstore.png](docs/images/petstore.png)
 
 ## 🧪 Running Tests
 
@@ -258,6 +245,100 @@ just nt
 # All 219 tests pass reliably with parallel execution ✅
 ```
 
+## 🚀 Quick Start
+
+### Option 1: Local Development with Tilt + kind ⭐ **RECOMMENDED**
+
+**Fast iteration with full observability stack** (Prometheus, Grafana, Jaeger):
+
+```bash
+# Prerequisites: Docker, kind, kubectl, tilt (see docs/LOCAL_DEVELOPMENT.md)
+
+# Clone the repository
+git clone https://github.com/microscaler/BRRTRouter.git
+cd BRRTRouter
+
+# One command: Create cluster + start everything
+just dev-up
+
+# 🎉 Services are now live!
+# - Pet Store API: http://localhost:8080 (standard HTTP)
+# - Grafana:       http://localhost:3000 (admin/admin)
+# - Prometheus:    http://localhost:9090 (standard Prometheus)
+# - Jaeger UI:     http://localhost:16686
+# - PostgreSQL:    localhost:5432 (user: brrtrouter, db: brrtrouter)
+# - Redis:         localhost:6379
+
+# Test the API
+curl -H "X-API-Key: test123" http://localhost:8080/pets
+curl http://localhost:8080/health
+
+# View the Rich Dashboard (SolidJS UI)
+open http://localhost:8080/
+
+# View OpenAPI/Swagger Docs
+open http://localhost:8080/docs
+
+# Query PostgreSQL
+psql -h localhost -U brrtrouter -d brrtrouter
+
+# Connect to Redis
+redis-cli -h localhost -p 6379
+
+# Build the UI manually (optional - Tilt does this automatically)
+just build-ui
+```
+
+**Why Tilt + kind?**
+- ✅ **1-2 second iteration cycle** - edit code, see changes instantly
+- ✅ **Docker Hub proxy cache** - 70% faster startup, saves ~4GB bandwidth/day
+- ✅ **Cross-platform** - works reliably on macOS (Apple Silicon), Linux, Windows
+- ✅ **Production-like** - Full Kubernetes environment locally
+- ✅ **Observability built-in** - Prometheus, Grafana, Jaeger, OTEL
+- ✅ **Multi-service testing** - PostgreSQL, Redis included
+- ✅ **No port conflicts** - Isolated in kind cluster
+
+📚 **[Complete Setup Guide →](docs/LOCAL_DEVELOPMENT.md)** | **[Architecture Details →](docs/TILT_IMPLEMENTATION.md)**
+
+![Screenshot 2025-10-11 at 02.16.59.png](docs/images/tilt.png)
+
+### Option 2: Simple cargo run
+
+For quick testing without Kubernetes (single-service only):
+
+```bash
+# Clone the repository
+git clone https://github.com/microscaler/BRRTRouter.git
+cd BRRTRouter
+
+# Run the pet store example
+just start-petstore
+
+# In another terminal, test the API
+curl -H "X-API-Key: test123" http://localhost:8080/pets
+curl http://localhost:8080/health
+curl http://localhost:8080/metrics
+
+# Visit Swagger UI
+open http://localhost:8080/docs
+```
+
+### Generate Your Own Service
+
+```bash
+# Install the generator
+cargo install --path . --bin brrtrouter-gen
+
+# Generate a new service from your OpenAPI spec
+brrtrouter-gen generate --spec your-api.yaml
+
+# Your service is ready in the generated directory!
+cd your_service
+cargo run -- --spec doc/openapi.yaml --port 8080
+```
+
+
+
 ### 📈 Measuring Coverage
 
 Install [cargo-llvm-cov](https://github.com/taiki-e/cargo-llvm-cov):
@@ -269,29 +350,53 @@ just coverage # runs `cargo llvm-cov --fail-under 80`
 
 The command fails if total coverage drops below 80%.
 
-## 🐳 Pet Store Docker Image
+### 🦆 Load Testing with Goose
 
-The `examples/pet_store` application can be packaged as a Docker image for
-integration testing or deployment. A `Dockerfile` and `docker-compose.yml` are
-included. Build and run the container with:
+BRRTRouter includes comprehensive load testing using [Goose](https://book.goose.rs/), which tests **ALL OpenAPI endpoints** (unlike wrk):
 
 ```bash
-docker compose up -d --build
+# Quick 30-second load test
+cargo run --release --example api_load_test -- \
+  --host http://localhost:8080 \
+  -u10 -r2 -t30s \
+  --header "X-API-Key: test123"
+
+# Full load test with HTML report
+cargo run --release --example api_load_test -- \
+  --host http://localhost:8080 \
+  -u20 -r5 -t2m \
+  --no-reset-metrics \
+  --header "X-API-Key: test123" \
+  --report-file goose-report.html
 ```
 
-The Dockerfile automatically runs the `brrtrouter-gen` generator so the example
-code is always up to date. The generated `doc` and `static_site` directories are
-copied into the final image. The service listens on port `8080` and exposes the
-`/health` endpoint for readiness checks.
+**What Goose tests that wrk doesn't:**
+- ✅ Authenticated endpoints (`GET /pets`, `/users` with API keys)
+- ✅ All routes from OpenAPI spec (not just `/health`)
+- ✅ Static files (`/openapi.yaml`, `/docs`, CSS, JS)
+- ✅ Memory leak detection (sustained 2+ minute tests)
+- ✅ Per-endpoint metrics with automatic failure detection
 
+**CI Integration:**
+Every PR runs a 2-minute Goose load test that:
+- Tests 20 concurrent users across all endpoints
+- Uploads ASCII metrics, HTML, and JSON reports
+- Automatically fails if errors detected
 
-Unit tests validate:
+See [`docs/GOOSE_LOAD_TESTING.md`](docs/GOOSE_LOAD_TESTING.md) for complete guide.
 
-- All HTTP verbs: `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`, `OPTIONS`, `TRACE`
-- Static and parameterized paths
-- Deeply nested routes
-- Handler resolution
-- Fallbacks (404/500) for Unknown paths and fallback behavior
+## 🐳 Docker & Container Deployment
+
+### ⭐ Recommended: Tilt + kind (Local Development)
+
+For **local development**, use the [Tilt + kind setup](#option-1-local-development-with-tilt--kind--recommended) which provides:
+- Fast iteration with live updates
+- Full observability stack
+- Multi-service testing (PostgreSQL, Redis)
+- Production-like Kubernetes environment
+
+See [docs/LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md) for complete setup.
+
 
 ### 📊 Running Benchmarks
 
@@ -326,61 +431,6 @@ The command produces `flamegraph.svg` in `target/flamegraphs/`. Open the file in
 your browser to inspect hot code paths.
 See [docs/flamegraph.md](docs/flamegraph.md) for tips on reading the output.
 
-
-
-
-## 🔧 Handler Registration Example
-
-```rust
-use brrrouter::dispatcher::{Dispatcher, echo_handler};
-
-let mut dispatcher = Dispatcher::new();
-
-unsafe {
-dispatcher.register_handler("list_pets", echo_handler);
-dispatcher.register_handler("get_user", echo_handler);
-dispatcher.register_handler("post_item", echo_handler);
-}
-```
-
-Each handler runs in its own coroutine, receiving requests via a channel and sending back structured HandlerResponse.
-
-### Using `#[handler]`
-
-Controllers can derive the `Handler` trait automatically with the procedural macro:
-
-```rust
-use brrtrouter_macros::handler;
-use brrtrouter::typed::TypedHandlerRequest;
-
-#[handler(MyController)]
-pub fn handle(req: TypedHandlerRequest<MyRequest>) -> MyResponse {
-    // ...
-}
-```
-
----
-## 🔌 Middleware
-
-Middlewares run before and after each handler. Register them on the dispatcher:
-
-```rust
-use brrrouter::middleware::{
-    AuthMiddleware, CorsMiddleware, MetricsMiddleware, TracingMiddleware,
-};
-use std::sync::Arc;
-
-let mut dispatcher = Dispatcher::new();
-dispatcher.add_middleware(Arc::new(MetricsMiddleware::new()));
-dispatcher.add_middleware(Arc::new(TracingMiddleware));
-dispatcher.add_middleware(Arc::new(AuthMiddleware::new("Bearer secret".into())));
-dispatcher.add_middleware(Arc::new(CorsMiddleware));
-```
-
-`MetricsMiddleware` tracks request counts and average latency. `TracingMiddleware`
-creates spans for each request, and `CorsMiddleware` adds CORS headers to responses.
-
-Note: `AuthMiddleware` in examples is development-only. Prefer OpenAPI-driven `SecurityProvider`s (`BearerJwtProvider`, `OAuth2Provider`, `JwksBearerProvider`, `RemoteApiKeyProvider`) for production authentication.
 
 ---
 ## 🔐 Security & Authentication
@@ -439,10 +489,18 @@ TODO
 
 BRRTRouter has **100% comprehensive documentation** across all levels:
 
+### For Contributors
+
+- **🚀 Local Development**: [docs/LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md) - **START HERE** for Tilt + kind setup
+- **🏗️ Tilt Implementation**: [docs/TILT_IMPLEMENTATION.md](docs/TILT_IMPLEMENTATION.md) - Architecture of the dev environment
+- **🤝 Contributing Guide**: [CONTRIBUTING.md](CONTRIBUTING.md) - Development workflow and standards
+- **🧪 Test Documentation**: [docs/TEST_DOCUMENTATION.md](docs/TEST_DOCUMENTATION.md) - Complete test suite overview
+- **🦆 Load Testing**: [docs/GOOSE_LOAD_TESTING.md](docs/GOOSE_LOAD_TESTING.md) - Goose load testing guide
+
+### For API Users
+
 - **📖 API Documentation**: `cargo doc --open` - All public APIs documented
 - **🏗️ Architecture**: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) - System design with Mermaid diagrams
-- **🧪 Test Coverage**: [docs/TEST_DOCUMENTATION.md](docs/TEST_DOCUMENTATION.md) - Complete test suite overview
-- **🤝 Contributing**: [CONTRIBUTING.md](CONTRIBUTING.md) - Development workflow and standards
 - **🚀 Publishing**: [docs/PUBLISHING.md](docs/PUBLISHING.md) - Release process for crates.io
 - **📊 Roadmap**: [docs/ROADMAP.md](docs/ROADMAP.md) - Future plans and completed work
 
@@ -464,11 +522,47 @@ return `text/event-stream` content. Handlers use `brrrouter::sse::channel()` to 
 See [`examples/openapi.yaml`](examples/openapi.yaml) for the sample `/events` endpoint.
 
 ---
-## 📈 Contributing & Benchmarks
-For a detailed view of completed and upcoming work, see [docs/ROADMAP.md](docs/ROADMAP.md).
-Please read [CONTRIBUTING.md](CONTRIBUTING.md) for instructions on generating the example code.
+## 🤝 Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow and repository layout.
+We welcome contributions from developers at all levels! 
+
+### Getting Started as a Contributor
+
+1. **🚀 Set up your development environment** (5 minutes):
+   ```bash
+   git clone https://github.com/microscaler/BRRTRouter.git
+   cd BRRTRouter
+   just dev-up  # Creates cluster + starts everything
+   ```
+
+2. **✅ Verify everything works**:
+   ```bash
+   curl http://localhost:9090/health
+   curl -H "X-API-Key: test123" http://localhost:9090/pets
+   ```
+
+3. **📖 Read the contribution guide**: [CONTRIBUTING.md](CONTRIBUTING.md)
+
+4. **🔍 Pick an issue**: Look for [`good first issue`](https://github.com/microscaler/BRRTRouter/labels/good%20first%20issue) labels
+
+5. **🧪 Run tests before committing**:
+   ```bash
+   just nt        # Fast parallel tests with nextest
+   cargo fmt      # Format code
+   ```
+
+### Development Workflow
+
+- **Edit code** in `src/` or `examples/pet_store/src/`
+- **Tilt auto-rebuilds** and syncs (~1-2s)
+- **Test immediately** with `curl` or Swagger UI
+- **View logs**: `kubectl logs -f -n brrtrouter-dev deployment/petstore`
+- **Check metrics**: http://localhost:3000 (Grafana)
+- **Trace requests**: http://localhost:16686 (Jaeger)
+
+See [docs/LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md) for complete workflow.
+
+### Areas for Contribution
 
 We welcome contributions that improve:
 - 🧵 Typed handler deserialization
@@ -493,3 +587,54 @@ Benchmark goal:
 - Raspberry Pi 5
 - 100k route matches/sec
 - ≤8ms latency (excluding handler execution)
+
+---
+
+## 📋 Quick Reference for Contributors
+
+| Task | Command | Notes |
+|------|---------|-------|
+| **Setup dev environment** | `just dev-up` | Creates cluster + starts Tilt |
+| **Start development** | `tilt up` | All services with hot reload |
+| **Stop development** | `Ctrl-C` or `tilt down` | Clean shutdown |
+| **View Tilt UI** | Press `space` in terminal | Interactive dashboard |
+| **Run tests** | `just nt` | Fast parallel execution (recommended) |
+| **Run tests (standard)** | `just test` | Standard cargo test |
+| **Format code** | `cargo fmt` | Required before commit |
+| **Check coverage** | `just coverage` | Must be ≥80% |
+| **Build docs** | `just docs` | Opens in browser |
+| **Load test** | `cargo run --release --example api_load_test -- --host http://localhost:9090 -u10 -r2 -t30s` | Tests all endpoints |
+| **View service logs** | `kubectl logs -f -n brrtrouter-dev deployment/petstore` | Real-time logs |
+| **Restart service** | `kubectl rollout restart deployment/petstore -n brrtrouter-dev` | Force restart |
+| **Check cluster status** | `just dev-status` | View all pods/services |
+| **Teardown cluster** | `just dev-down` | Remove everything |
+
+### Service URLs (when Tilt is running)
+
+| Service | URL | Purpose |
+|---------|-----|---------|
+| **Pet Store API** | http://localhost:8080 | Main API (standard HTTP port) |
+| **Swagger UI** | http://localhost:8080/docs | Interactive API docs |
+| **Health Check** | http://localhost:8080/health | Readiness probe |
+| **Metrics** | http://localhost:8080/metrics | Prometheus metrics |
+| **Grafana** | http://localhost:3000 | Dashboards (admin/admin) |
+| **Prometheus** | http://localhost:9090 | Metrics database (standard Prometheus port) |
+| **Jaeger** | http://localhost:16686 | Distributed tracing |
+| **PostgreSQL** | localhost:5432 | Database (user: brrtrouter, db: brrtrouter, pass: dev_password) |
+| **Redis** | localhost:6379 | Cache/session store |
+| **Tilt Web UI** | http://localhost:10351 | Dev dashboard (press 'space' in terminal) |
+
+---
+
+## 📞 Community & Support
+
+- **Issues**: [GitHub Issues](https://github.com/microscaler/BRRTRouter/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/microscaler/BRRTRouter/discussions)
+- **Roadmap**: [docs/ROADMAP.md](docs/ROADMAP.md)
+
+**Found a bug?** Open an issue with:
+- Steps to reproduce
+- Expected vs actual behavior
+- Output of `just dev-status` and relevant logs
+
+**Have an idea?** Start a discussion or open a feature request!

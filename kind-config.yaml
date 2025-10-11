@@ -1,0 +1,61 @@
+# kind cluster configuration for BRRTRouter local development
+# Creates a single-node cluster with port mappings for services
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: brrtrouter-dev
+# Use stable Kubernetes version (v1.33.1 may have issues on some systems)
+# Uncomment to use a specific version:
+# nodes:
+#   - role: control-plane
+#     image: kindest/node:v1.29.2
+# Enable local registry support for project images
+# See: https://kind.sigs.k8s.io/docs/user/local-registry/
+containerdConfigPatches:
+  - |-
+    [plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:5001"]
+      endpoint = ["http://kind-registry:5000"]
+nodes:
+  - role: control-plane
+    # Mount Docker volumes for persistent observability data
+    # These volumes survive cluster recreation
+    extraMounts:
+      - hostPath: /var/lib/docker/volumes/brrtrouter-prometheus-data/_data
+        containerPath: /mnt/prometheus-data
+      - hostPath: /var/lib/docker/volumes/brrtrouter-loki-data/_data
+        containerPath: /mnt/loki-data
+      - hostPath: /var/lib/docker/volumes/brrtrouter-grafana-data/_data
+        containerPath: /mnt/grafana-data
+      - hostPath: /var/lib/docker/volumes/brrtrouter-jaeger-data/_data
+        containerPath: /mnt/jaeger-data
+    # Port mappings for local access to services
+    extraPortMappings:
+      # Pet Store API
+      - containerPort: 30900
+        hostPort: 9090
+        protocol: TCP
+      # Grafana UI
+      - containerPort: 30300
+        hostPort: 3000
+        protocol: TCP
+      # Prometheus UI
+      - containerPort: 30090
+        hostPort: 8080
+        protocol: TCP
+      # Jaeger UI
+      - containerPort: 30686
+        hostPort: 16686
+        protocol: TCP
+    # Resource limits for local development
+    kubeadmConfigPatches:
+      - |
+        kind: ClusterConfiguration
+        apiServer:
+          extraArgs:
+            # Increase API server timeout for debugging
+            request-timeout: "300s"
+        controllerManager:
+          extraArgs:
+            # Faster reconciliation for development
+            node-monitor-period: "2s"
+            node-monitor-grace-period: "16s"
+

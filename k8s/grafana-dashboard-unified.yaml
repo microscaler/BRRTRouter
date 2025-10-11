@@ -1,0 +1,315 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-unified
+  namespace: brrtrouter-dev
+  labels:
+    grafana_dashboard: "1"
+data:
+  unified-observability.json: |
+    {
+      "title": "BRRTRouter - Unified Observability",
+        "tags": ["brrtrouter", "unified", "observability"],
+        "timezone": "browser",
+        "refresh": "10s",
+        "time": {
+          "from": "now-15m",
+          "to": "now"
+        },
+        "panels": [
+          {
+            "id": 1,
+            "gridPos": {
+              "x": 0,
+              "y": 0,
+              "w": 12,
+              "h": 8
+            },
+            "title": "Request Rate (requests/sec)",
+            "type": "graph",
+            "datasource": "Prometheus",
+            "targets": [
+              {
+                "expr": "rate(brrtrouter_requests_total[1m])",
+                "legendFormat": "{{method}} {{path}}",
+                "refId": "A"
+              }
+            ],
+            "yaxes": [
+              {
+                "format": "reqps",
+                "label": "Requests/sec"
+              },
+              {}
+            ]
+          },
+          {
+            "id": 2,
+            "gridPos": {
+              "x": 12,
+              "y": 0,
+              "w": 12,
+              "h": 8
+            },
+            "title": "Response Latency (p50, p95, p99)",
+            "type": "graph",
+            "datasource": "Prometheus",
+            "targets": [
+              {
+                "expr": "histogram_quantile(0.50, rate(brrtrouter_request_duration_seconds_bucket[1m]))",
+                "legendFormat": "p50",
+                "refId": "A"
+              },
+              {
+                "expr": "histogram_quantile(0.95, rate(brrtrouter_request_duration_seconds_bucket[1m]))",
+                "legendFormat": "p95",
+                "refId": "B"
+              },
+              {
+                "expr": "histogram_quantile(0.99, rate(brrtrouter_request_duration_seconds_bucket[1m]))",
+                "legendFormat": "p99",
+                "refId": "C"
+              }
+            ],
+            "yaxes": [
+              {
+                "format": "s",
+                "label": "Latency"
+              },
+              {}
+            ]
+          },
+          {
+            "id": 3,
+            "gridPos": {
+              "x": 0,
+              "y": 8,
+              "w": 8,
+              "h": 8
+            },
+            "title": "Active Requests",
+            "type": "stat",
+            "datasource": "Prometheus",
+            "targets": [
+              {
+                "expr": "brrtrouter_active_requests",
+                "refId": "A"
+              }
+            ],
+            "options": {
+              "graphMode": "area",
+              "colorMode": "value"
+            }
+          },
+          {
+            "id": 4,
+            "gridPos": {
+              "x": 8,
+              "y": 8,
+              "w": 8,
+              "h": 8
+            },
+            "title": "Total Requests",
+            "type": "stat",
+            "datasource": "Prometheus",
+            "targets": [
+              {
+                "expr": "sum(brrtrouter_requests_total)",
+                "refId": "A"
+              }
+            ],
+            "options": {
+              "graphMode": "area",
+              "colorMode": "value"
+            }
+          },
+          {
+            "id": 5,
+            "gridPos": {
+              "x": 16,
+              "y": 8,
+              "w": 8,
+              "h": 8
+            },
+            "title": "Error Rate",
+            "type": "stat",
+            "datasource": "Prometheus",
+            "targets": [
+              {
+                "expr": "rate(brrtrouter_requests_total{status=~\"5..\"}[1m])",
+                "refId": "A"
+              }
+            ],
+            "options": {
+              "graphMode": "area",
+              "colorMode": "value"
+            },
+            "fieldConfig": {
+              "defaults": {
+                "thresholds": {
+                  "steps": [
+                    {
+                      "value": 0,
+                      "color": "green"
+                    },
+                    {
+                      "value": 0.01,
+                      "color": "yellow"
+                    },
+                    {
+                      "value": 0.05,
+                      "color": "red"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "id": 6,
+            "gridPos": {
+              "x": 0,
+              "y": 16,
+              "w": 24,
+              "h": 12
+            },
+            "title": "Application Logs (Last 100 lines)",
+            "type": "logs",
+            "datasource": "Loki",
+            "targets": [
+              {
+                "expr": "{app=\"petstore\"}",
+                "refId": "A"
+              }
+            ],
+            "options": {
+              "showLabels": true,
+              "showTime": true,
+              "wrapLogMessage": true,
+              "sortOrder": "Descending",
+              "dedupStrategy": "none"
+            }
+          },
+          {
+            "id": 7,
+            "gridPos": {
+              "x": 0,
+              "y": 28,
+              "w": 12,
+              "h": 8
+            },
+            "title": "HTTP Status Codes",
+            "type": "piechart",
+            "datasource": "Prometheus",
+            "targets": [
+              {
+                "expr": "sum by(status) (rate(brrtrouter_requests_total[5m]))",
+                "legendFormat": "{{status}}",
+                "refId": "A"
+              }
+            ]
+          },
+          {
+            "id": 8,
+            "gridPos": {
+              "x": 12,
+              "y": 28,
+              "w": 12,
+              "h": 8
+            },
+            "title": "Top Endpoints by Request Count",
+            "type": "bargauge",
+            "datasource": "Prometheus",
+            "targets": [
+              {
+                "expr": "topk(10, sum by(path) (rate(brrtrouter_requests_total[5m])))",
+                "legendFormat": "{{path}}",
+                "refId": "A"
+              }
+            ],
+            "options": {
+              "displayMode": "gradient",
+              "orientation": "horizontal"
+            }
+          },
+          {
+            "id": 9,
+            "gridPos": {
+              "x": 0,
+              "y": 36,
+              "w": 24,
+              "h": 10
+            },
+            "title": "Request Duration Heatmap",
+            "type": "heatmap",
+            "datasource": "Prometheus",
+            "targets": [
+              {
+                "expr": "sum(rate(brrtrouter_request_duration_seconds_bucket[1m])) by (le)",
+                "format": "heatmap",
+                "legendFormat": "{{le}}",
+                "refId": "A"
+              }
+            ],
+            "options": {
+              "color": {
+                "mode": "spectrum",
+                "scheme": "Spectral"
+              }
+            }
+          },
+          {
+            "id": 10,
+            "gridPos": {
+              "x": 0,
+              "y": 46,
+              "w": 12,
+              "h": 8
+            },
+            "title": "Memory Usage",
+            "type": "graph",
+            "datasource": "Prometheus",
+            "targets": [
+              {
+                "expr": "process_resident_memory_bytes{job=\"petstore\"}",
+                "legendFormat": "RSS Memory",
+                "refId": "A"
+              }
+            ],
+            "yaxes": [
+              {
+                "format": "bytes",
+                "label": "Memory"
+              },
+              {}
+            ]
+          },
+          {
+            "id": 11,
+            "gridPos": {
+              "x": 12,
+              "y": 46,
+              "w": 12,
+              "h": 8
+            },
+            "title": "CPU Usage",
+            "type": "graph",
+            "datasource": "Prometheus",
+            "targets": [
+              {
+                "expr": "rate(process_cpu_seconds_total{job=\"petstore\"}[1m])",
+                "legendFormat": "CPU Usage",
+                "refId": "A"
+              }
+            ],
+            "yaxes": [
+              {
+                "format": "percentunit",
+                "label": "CPU"
+              },
+              {}
+            ]
+          }
+        ]
+    }
+
