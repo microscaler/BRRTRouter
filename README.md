@@ -38,98 +38,6 @@ This documentation is published for **review and feedback purposes**, not for pr
 
 ---
 
-## 🚀 Quick Start
-
-### Option 1: Local Development with Tilt + kind ⭐ **RECOMMENDED**
-
-**Fast iteration with full observability stack** (Prometheus, Grafana, Jaeger):
-
-```bash
-# Prerequisites: Docker, kind, kubectl, tilt (see docs/LOCAL_DEVELOPMENT.md)
-
-# Clone the repository
-git clone https://github.com/microscaler/BRRTRouter.git
-cd BRRTRouter
-
-# One command: Create cluster + start everything
-just dev-up
-
-# 🎉 Services are now live!
-# - Pet Store API: http://localhost:8080 (standard HTTP)
-# - Grafana:       http://localhost:3000 (admin/admin)
-# - Prometheus:    http://localhost:9090 (standard Prometheus)
-# - Jaeger UI:     http://localhost:16686
-# - PostgreSQL:    localhost:5432 (user: brrtrouter, db: brrtrouter)
-# - Redis:         localhost:6379
-
-# Test the API
-curl -H "X-API-Key: test123" http://localhost:8080/pets
-curl http://localhost:8080/health
-
-# View the Rich Dashboard (SolidJS UI)
-open http://localhost:8080/
-
-# View OpenAPI/Swagger Docs
-open http://localhost:8080/docs
-
-# Query PostgreSQL
-psql -h localhost -U brrtrouter -d brrtrouter
-
-# Connect to Redis
-redis-cli -h localhost -p 6379
-
-# Build the UI manually (optional - Tilt does this automatically)
-just build-ui
-```
-
-**Why Tilt + kind?**
-- ✅ **1-2 second iteration cycle** - edit code, see changes instantly
-- ✅ **Docker Hub proxy cache** - 70% faster startup, saves ~4GB bandwidth/day
-- ✅ **Cross-platform** - works reliably on macOS (Apple Silicon), Linux, Windows
-- ✅ **Production-like** - Full Kubernetes environment locally
-- ✅ **Observability built-in** - Prometheus, Grafana, Jaeger, OTEL
-- ✅ **Multi-service testing** - PostgreSQL, Redis included
-- ✅ **No port conflicts** - Isolated in kind cluster
-
-📚 **[Complete Setup Guide →](docs/LOCAL_DEVELOPMENT.md)** | **[Architecture Details →](docs/TILT_IMPLEMENTATION.md)**
-
-### Option 2: Simple cargo run
-
-For quick testing without Kubernetes (single-service only):
-
-```bash
-# Clone the repository
-git clone https://github.com/microscaler/BRRTRouter.git
-cd BRRTRouter
-
-# Run the pet store example
-just start-petstore
-
-# In another terminal, test the API
-curl -H "X-API-Key: test123" http://localhost:8080/pets
-curl http://localhost:8080/health
-curl http://localhost:8080/metrics
-
-# Visit Swagger UI
-open http://localhost:8080/docs
-```
-
-### Generate Your Own Service
-
-```bash
-# Install the generator
-cargo install --path . --bin brrtrouter-gen
-
-# Generate a new service from your OpenAPI spec
-brrtrouter-gen generate --spec your-api.yaml
-
-# Your service is ready in the generated directory!
-cd your_service
-cargo run -- --spec doc/openapi.yaml --port 8080
-```
-
----
-
 ## 📈 Recent Progress (October 2025)
 
 - **🎉 Tilt + kind Local Development**: Fast iteration (~1-2s) with full observability stack
@@ -147,7 +55,7 @@ cargo run -- --spec doc/openapi.yaml --port 8080
   - Detects memory leaks via sustained 2-minute tests
   - Per-endpoint metrics with ASCII output for CI/CD
   - HTML reports with interactive visualizations
-- **🔐 Production-Ready Security**: 
+- **🔐 Progress towards achieving Production-Ready Security**: 
   - `JwksBearerProvider` with full JWKS support (HS256/384/512, RS256/384/512)
   - `RemoteApiKeyProvider` with caching and configurable headers
   - OpenAPI-driven auto-registration of security providers
@@ -178,7 +86,7 @@ cargo run -- --spec doc/openapi.yaml --port 8080
 
 * **40 k req/s** with JSON encode/parse on every call is respectable for a coroutine runtime that **doesn’t** use a thread-per-core model.
 * The concept of a Hello World is not really possible with BRRTRouter, as you always have a complete controller/handler path. Tests against the health endpoint match Axum; however, this is not a valuable example.
-* It is, however, ~4–6× slower than the fastest Rust HTTP frameworks that exploit per-core threads, `mio`/epoll, and pre-allocated arenas.
+* It is, however, ~4–6× slower than the fastest Rust HTTP frameworks `Hello Worlds` due to the amount of safeguarding a simple api route implements on **BRRTRouter**
 * Socket-level errors (`connect 555`, `read 38 307`) show the client saturated or the server closed connections under load – this artificially deflates RPS a bit.
 
 ---
@@ -313,8 +221,17 @@ Run:
 ```bash
 just build-pet-store
 ```
+or 
 
-Builds the Pet Store example; you can pass cargo flags after the task.
+```bash
+just dev-up
+```
+
+Builds the Pet Store example; 
+
+Sample Petstore App:
+
+![petstore.png](docs/images/petstore.png)
 
 ## 🧪 Running Tests
 
@@ -327,6 +244,100 @@ just nt
 
 # All 219 tests pass reliably with parallel execution ✅
 ```
+
+## 🚀 Quick Start
+
+### Option 1: Local Development with Tilt + kind ⭐ **RECOMMENDED**
+
+**Fast iteration with full observability stack** (Prometheus, Grafana, Jaeger):
+
+```bash
+# Prerequisites: Docker, kind, kubectl, tilt (see docs/LOCAL_DEVELOPMENT.md)
+
+# Clone the repository
+git clone https://github.com/microscaler/BRRTRouter.git
+cd BRRTRouter
+
+# One command: Create cluster + start everything
+just dev-up
+
+# 🎉 Services are now live!
+# - Pet Store API: http://localhost:8080 (standard HTTP)
+# - Grafana:       http://localhost:3000 (admin/admin)
+# - Prometheus:    http://localhost:9090 (standard Prometheus)
+# - Jaeger UI:     http://localhost:16686
+# - PostgreSQL:    localhost:5432 (user: brrtrouter, db: brrtrouter)
+# - Redis:         localhost:6379
+
+# Test the API
+curl -H "X-API-Key: test123" http://localhost:8080/pets
+curl http://localhost:8080/health
+
+# View the Rich Dashboard (SolidJS UI)
+open http://localhost:8080/
+
+# View OpenAPI/Swagger Docs
+open http://localhost:8080/docs
+
+# Query PostgreSQL
+psql -h localhost -U brrtrouter -d brrtrouter
+
+# Connect to Redis
+redis-cli -h localhost -p 6379
+
+# Build the UI manually (optional - Tilt does this automatically)
+just build-ui
+```
+
+**Why Tilt + kind?**
+- ✅ **1-2 second iteration cycle** - edit code, see changes instantly
+- ✅ **Docker Hub proxy cache** - 70% faster startup, saves ~4GB bandwidth/day
+- ✅ **Cross-platform** - works reliably on macOS (Apple Silicon), Linux, Windows
+- ✅ **Production-like** - Full Kubernetes environment locally
+- ✅ **Observability built-in** - Prometheus, Grafana, Jaeger, OTEL
+- ✅ **Multi-service testing** - PostgreSQL, Redis included
+- ✅ **No port conflicts** - Isolated in kind cluster
+
+📚 **[Complete Setup Guide →](docs/LOCAL_DEVELOPMENT.md)** | **[Architecture Details →](docs/TILT_IMPLEMENTATION.md)**
+
+![Screenshot 2025-10-11 at 02.16.59.png](docs/images/tilt.png)
+
+### Option 2: Simple cargo run
+
+For quick testing without Kubernetes (single-service only):
+
+```bash
+# Clone the repository
+git clone https://github.com/microscaler/BRRTRouter.git
+cd BRRTRouter
+
+# Run the pet store example
+just start-petstore
+
+# In another terminal, test the API
+curl -H "X-API-Key: test123" http://localhost:8080/pets
+curl http://localhost:8080/health
+curl http://localhost:8080/metrics
+
+# Visit Swagger UI
+open http://localhost:8080/docs
+```
+
+### Generate Your Own Service
+
+```bash
+# Install the generator
+cargo install --path . --bin brrtrouter-gen
+
+# Generate a new service from your OpenAPI spec
+brrtrouter-gen generate --spec your-api.yaml
+
+# Your service is ready in the generated directory!
+cd your_service
+cargo run -- --spec doc/openapi.yaml --port 8080
+```
+
+
 
 ### 📈 Measuring Coverage
 
@@ -386,32 +397,6 @@ For **local development**, use the [Tilt + kind setup](#option-1-local-developme
 
 See [docs/LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md) for complete setup.
 
-### Legacy: Docker Compose (Deprecated)
-
-⚠️ **The `docker-compose.yml` setup is deprecated** in favor of Tilt + kind for local development.
-
-For simple single-container testing, you can still use:
-
-```bash
-docker compose up -d --build
-```
-
-However, this approach:
-- ❌ Lacks observability (no Prometheus, Grafana, Jaeger)
-- ❌ Slower iteration (full rebuild required)
-- ❌ No multi-service support
-- ❌ Less production-like
-
-**For contributors**: Please use `tilt up` instead of `docker compose`.
-
-
-Unit tests validate:
-
-- All HTTP verbs: `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`, `OPTIONS`, `TRACE`
-- Static and parameterized paths
-- Deeply nested routes
-- Handler resolution
-- Fallbacks (404/500) for Unknown paths and fallback behavior
 
 ### 📊 Running Benchmarks
 
@@ -446,61 +431,6 @@ The command produces `flamegraph.svg` in `target/flamegraphs/`. Open the file in
 your browser to inspect hot code paths.
 See [docs/flamegraph.md](docs/flamegraph.md) for tips on reading the output.
 
-
-
-
-## 🔧 Handler Registration Example
-
-```rust
-use brrrouter::dispatcher::{Dispatcher, echo_handler};
-
-let mut dispatcher = Dispatcher::new();
-
-unsafe {
-dispatcher.register_handler("list_pets", echo_handler);
-dispatcher.register_handler("get_user", echo_handler);
-dispatcher.register_handler("post_item", echo_handler);
-}
-```
-
-Each handler runs in its own coroutine, receiving requests via a channel and sending back structured HandlerResponse.
-
-### Using `#[handler]`
-
-Controllers can derive the `Handler` trait automatically with the procedural macro:
-
-```rust
-use brrtrouter_macros::handler;
-use brrtrouter::typed::TypedHandlerRequest;
-
-#[handler(MyController)]
-pub fn handle(req: TypedHandlerRequest<MyRequest>) -> MyResponse {
-    // ...
-}
-```
-
----
-## 🔌 Middleware
-
-Middlewares run before and after each handler. Register them on the dispatcher:
-
-```rust
-use brrrouter::middleware::{
-    AuthMiddleware, CorsMiddleware, MetricsMiddleware, TracingMiddleware,
-};
-use std::sync::Arc;
-
-let mut dispatcher = Dispatcher::new();
-dispatcher.add_middleware(Arc::new(MetricsMiddleware::new()));
-dispatcher.add_middleware(Arc::new(TracingMiddleware));
-dispatcher.add_middleware(Arc::new(AuthMiddleware::new("Bearer secret".into())));
-dispatcher.add_middleware(Arc::new(CorsMiddleware));
-```
-
-`MetricsMiddleware` tracks request counts and average latency. `TracingMiddleware`
-creates spans for each request, and `CorsMiddleware` adds CORS headers to responses.
-
-Note: `AuthMiddleware` in examples is development-only. Prefer OpenAPI-driven `SecurityProvider`s (`BearerJwtProvider`, `OAuth2Provider`, `JwksBearerProvider`, `RemoteApiKeyProvider`) for production authentication.
 
 ---
 ## 🔐 Security & Authentication
