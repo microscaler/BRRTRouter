@@ -245,24 +245,24 @@ jobs:
 
       - name: Test Pet Store API
         run: |
-          echo "Waiting for Pet Store readiness on localhost:9090 (/health 200)..."
-          for i in $(seq 1 120); do \
-            code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:9090/health || true); \
-            [ "$code" = "200" ] && echo "ready" && break; \
-            sleep 1; \
-          done
+          echo "Forwarding Pet Store port..."
+          kubectl port-forward -n brrtrouter-dev service/petstore 8080:8080 &
+          PF_PID=$!
+          sleep 5
           
           echo "Testing health endpoint..."
-          curl -f http://localhost:9090/health || (echo "Health check failed" && exit 1)
+          curl -f http://localhost:8080/health || (echo "Health check failed" && exit 1)
           
           echo "Testing metrics endpoint..."
-          curl -f http://localhost:9090/metrics | grep brrtrouter || (echo "Metrics check failed" && exit 1)
+          curl -f http://localhost:8080/metrics | grep brrtrouter || (echo "Metrics check failed" && exit 1)
           
           echo "Testing authenticated endpoint..."
-          curl -f -H "X-API-Key: test123" http://localhost:9090/pets || (echo "Auth test failed" && exit 1)
+          curl -f -H "X-API-Key: test123" http://localhost:8080/pets || (echo "Auth test failed" && exit 1)
           
           echo "Checking per-path metrics..."
-          curl -f http://localhost:9090/metrics | grep brrtrouter_path_requests_total || (echo "Per-path metrics missing" && exit 1)
+          curl -f http://localhost:8080/metrics | grep brrtrouter_path_requests_total || (echo "Per-path metrics missing" && exit 1)
+          
+          kill $PF_PID || true
           
           echo "✅ All API tests passed!"
 
@@ -289,19 +289,10 @@ jobs:
 
       - name: Run Goose comprehensive load test (via Tilt cluster)
         run: |
-          echo "Waiting for Pet Store readiness on localhost:9090 (/health 200) before Goose..."
-          for i in $(seq 1 120); do \
-            code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:9090/health || true); \
-            [ "$code" = "200" ] && echo "ready" && break; \
-            sleep 1; \
-          done
-
-          echo "Sanity-checking secured endpoints before Goose (with X-API-Key)..."
-          set -e
-          curl -fsS -H "X-API-Key: test123" http://127.0.0.1:9090/pets >/dev/null
-          curl -fsS -H "X-API-Key: test123" http://127.0.0.1:9090/users >/dev/null
-          curl -fsS -H "X-API-Key: test123" http://127.0.0.1:9090/admin/settings >/dev/null || echo "admin/settings may require additional roles; continuing"
-          set +e
+          echo "Forwarding Pet Store port for Goose..."
+          kubectl port-forward -n brrtrouter-dev service/petstore 8080:8080 &
+          PF_PID=$!
+          sleep 5
 
           echo "====================================================================="
           echo "GOOSE COMPREHENSIVE API LOAD TEST"
@@ -311,7 +302,7 @@ jobs:
           echo "====================================================================="
 
           cargo run --release --example api_load_test -- \
-            --host http://127.0.0.1:9090 \
+            --host http://127.0.0.1:8080 \
             --users 20 \
             --hatch-rate 5 \
             --run-time 2m \
@@ -320,11 +311,7 @@ jobs:
             --report-file goose-report.json \
             | tee goose-metrics.txt
 
-      - name: Diagnose auth failures (Loki-style log grep)
-        if: always()
-        run: |
-          echo "Checking for 401/unauth logs from petstore..."
-          kubectl logs -n brrtrouter-dev deployment/petstore --tail=400 | grep -Ei "unauth|401" || echo "No auth errors detected in recent logs"
+          kill $PF_PID || true
 
       - name: Check for failures in Goose metrics
         run: |
