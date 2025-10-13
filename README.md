@@ -43,20 +43,7 @@ Hot reload, live metrics, comprehensive testing, 1-2s iteration cycle
 
 ## 🏗️ Architecture at a Glance
 
-```
-OpenAPI Spec → Code Generator → Type-Safe Handlers → Production Server
-                                          ↓
-                              Observability Stack
-                         (Metrics/Traces/Logs/Dashboard)
-```
-
-**Key Technologies:**
-- **Core**: Rust 1.75+, `may` coroutines (async runtime), OpenAPI 3.1.0
-- **Local Dev**: Tilt + kind (fast iteration), cross-compilation (macOS → Linux)
-- **Observability**: Prometheus + Grafana (metrics), Jaeger + OTEL (traces), Loki + Promtail (logs)
-- **Storage**: PostgreSQL, Redis (included in dev environment)
-- **Backup**: Velero + MinIO (optional)
-- **Load Testing**: Goose (tests all endpoints, not just `/health`)
+Detailed information on the systems architecture can be found in [Architecture Docs](./docs/ARCHITECTURE.md)
 
 ---
 ## ⚠️ Alpha Stage Notice
@@ -285,10 +272,11 @@ Build the fastest, most predictable OpenAPI-native router in Rust — capable of
   - Per-endpoint metrics with ASCII output for CI/CD
   - HTML reports with interactive visualizations
 
-- **🔐 Production-Ready Security**:
+- **🔐 Security implementation - WIP**:
   - `JwksBearerProvider` with full JWKS support (HS256/384/512, RS256/384/512)
   - `RemoteApiKeyProvider` with caching and configurable headers
   - OpenAPI-driven auto-registration of security providers
+  - Further testing with security backends required
 
 - **📊 Enhanced Metrics**: Request counts, latency tracking, auth failure counters, stack usage monitoring
 
