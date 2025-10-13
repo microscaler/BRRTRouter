@@ -18,6 +18,41 @@ use walkdir::WalkDir;
 mod common;
 use common::http::wait_for_http_200;
 
+/// RAII wrapper for Docker test containers to ensure cleanup
+/// 
+/// Automatically removes the container when dropped, even on panic.
+/// This prevents the accumulation of orphaned containers from test failures.
+struct DockerTestContainer {
+    docker: Docker,
+    container_id: String,
+}
+
+impl DockerTestContainer {
+    /// Wrap an existing container ID for automatic cleanup
+    fn from_id(docker: Docker, container_id: String) -> Self {
+        Self { docker, container_id }
+    }
+
+    /// Get the container ID
+    fn id(&self) -> &str {
+        &self.container_id
+    }
+}
+
+impl Drop for DockerTestContainer {
+    fn drop(&mut self) {
+        // Always clean up container, even on panic
+        // This is the fix for "dozens of uncleaned containers"!
+        let _ = block_on(self.docker.remove_container(
+            &self.container_id,
+            Some(RemoveContainerOptions {
+                force: true,
+                ..Default::default()
+            }),
+        ));
+    }
+}
+
 //
 
 /// Check if Docker is available
@@ -63,7 +98,7 @@ fn test_petstore_container_health() {
         let allow_prefixes = [
             "./Cargo.toml",
             "./Cargo.lock",
-            "./Dockerfile",
+            "./dockerfiles/Dockerfile",
             "./src/",
             "./templates/",
             "./brrtrouter_macros/",
@@ -90,7 +125,7 @@ fn test_petstore_container_health() {
         builder.finish().unwrap();
     }
     let build_opts = BuildImageOptions::<String> {
-        dockerfile: "Dockerfile".to_string(),
+        dockerfile: "dockerfiles/Dockerfile".to_string(),
         t: "brrtrouter-petstore:e2e".to_string(),
         rm: true,
         nocache: true,
@@ -125,13 +160,17 @@ fn test_petstore_container_health() {
         cfg,
     ))
     .unwrap();
-    block_on(docker.start_container(&created.id, None::<StartContainerOptions<String>>)).unwrap();
+    
+    // Wrap container in RAII guard for automatic cleanup
+    let container = DockerTestContainer::from_id(docker.clone(), created.id);
+    
+    block_on(docker.start_container(container.id(), None::<StartContainerOptions<String>>)).unwrap();
 
     // Give the container a moment to start
     sleep(Duration::from_secs(2));
 
     // Poll health endpoint via raw TCP to avoid curl dependency
-    let inspect = block_on(docker.inspect_container(&created.id, None)).unwrap();
+    let inspect = block_on(docker.inspect_container(container.id(), None)).unwrap();
     let mapped = inspect
         .network_settings
         .and_then(|ns| ns.ports)
@@ -146,14 +185,8 @@ fn test_petstore_container_health() {
         final_status = 200;
     }
 
-    // Stop and remove container
-    let _ = block_on(docker.remove_container(
-        &created.id,
-        Some(RemoveContainerOptions {
-            force: true,
-            ..Default::default()
-        }),
-    ));
+    // Container will be automatically stopped and removed when `container` drops!
+    // No more orphaned containers! 🎉
 
     // --- JUnit XML report (for GitHub PRs) ---
     let duration = started_at.elapsed().as_secs_f64();

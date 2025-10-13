@@ -58,6 +58,96 @@ use tracing_util::TestTracing;
 mod common;
 use common::temp_files;
 
+/// Test fixture with automatic setup and teardown using RAII
+///
+/// This is the Rust equivalent of Python's setup/teardown for security tests.
+/// Implements Drop to ensure proper cleanup when test completes.
+struct SecurityTestServer {
+    _tracing: TestTracing,
+    handle: Option<ServerHandle>,
+    addr: SocketAddr,
+}
+
+impl SecurityTestServer {
+    /// Create a security test server from existing start_service() pattern
+    fn from_start_service() -> Self {
+        let (tracing, handle, addr) = start_service();
+        Self {
+            _tracing: tracing,
+            handle: Some(handle),
+            addr,
+        }
+    }
+    
+    /// Create from start_service_default_provider()
+    fn from_default_provider() -> Self {
+        let (tracing, handle, addr) = start_service_default_provider();
+        Self {
+            _tracing: tracing,
+            handle: Some(handle),
+            addr,
+        }
+    }
+    
+    /// Create from start_service_with_jwks()
+    fn from_jwks(jwks_url: &str, issuer: &str, audience: &str) -> Self {
+        let (tracing, handle, addr) = start_service_with_jwks(jwks_url, issuer, audience);
+        Self {
+            _tracing: tracing,
+            handle: Some(handle),
+            addr,
+        }
+    }
+    
+    /// Create from start_multi_service()
+    fn from_multi_service() -> Self {
+        let (tracing, handle, addr) = start_multi_service();
+        Self {
+            _tracing: tracing,
+            handle: Some(handle),
+            addr,
+        }
+    }
+    
+    /// Create from start_token_service()
+    fn from_token_service() -> Self {
+        let (tracing, handle, addr) = start_token_service();
+        Self {
+            _tracing: tracing,
+            handle: Some(handle),
+            addr,
+        }
+    }
+    
+    /// Create from start_service_with_remote_apikey()
+    fn from_remote_apikey(verify_url: &str) -> Self {
+        let (tracing, handle, addr) = start_service_with_remote_apikey(verify_url);
+        Self {
+            _tracing: tracing,
+            handle: Some(handle),
+            addr,
+        }
+    }
+    
+    /// Get the server address for making requests
+    fn addr(&self) -> SocketAddr {
+        self.addr
+    }
+}
+
+impl Drop for SecurityTestServer {
+    /// Teardown: Automatically stop server when test completes
+    ///
+    /// This ensures proper cleanup even if the test panics,
+    /// preventing resource leaks and port conflicts.
+    fn drop(&mut self) {
+        if let Some(handle) = self.handle.take() {
+            handle.stop();
+        }
+        // _tracing is automatically dropped here
+    }
+}
+
 struct ApiKeyProvider {
     key: String,
 }
@@ -124,8 +214,8 @@ paths:
         Arc::new(RwLock::new(dispatcher)),
         schemes,
         PathBuf::from("examples/openapi.yaml"),
-        None,
-        None,
+        Some(PathBuf::from("examples/pet_store/static_site")),
+        Some(PathBuf::from("examples/pet_store/doc")),
     );
     service.register_security_provider(
         "ApiKeyAuth",
@@ -201,8 +291,8 @@ paths:
         Arc::new(RwLock::new(dispatcher)),
         schemes,
         PathBuf::from("examples/openapi.yaml"),
-        None,
-        None,
+        Some(PathBuf::from("examples/pet_store/static_site")),
+        Some(PathBuf::from("examples/pet_store/doc")),
     );
     service.register_security_provider("KeyOne", Arc::new(ApiKeyProvider { key: "one".into() }));
     service.register_security_provider("KeyTwo", Arc::new(ApiKeyProvider { key: "two".into() }));
@@ -275,8 +365,8 @@ paths:
         Arc::new(RwLock::new(dispatcher)),
         schemes,
         PathBuf::from("examples/openapi.yaml"),
-        None,
-        None,
+        Some(PathBuf::from("examples/pet_store/static_site")),
+        Some(PathBuf::from("examples/pet_store/doc")),
     );
     service.register_security_provider("BearerAuth", Arc::new(BearerJwtProvider::new("sig")));
     service.register_security_provider(
@@ -397,19 +487,22 @@ fn parse_status(resp: &str) -> u16 {
 
 #[test]
 fn test_api_key_auth() {
-    let (_tracing, handle, addr) = start_service();
-    let resp = send_request(&addr, "GET /secret HTTP/1.1\r\nHost: localhost\r\n\r\n");
+    // Setup happens automatically in SecurityTestServer::from_start_service()
+    let server = SecurityTestServer::from_start_service();
+    
+    let resp = send_request(&server.addr(), "GET /secret HTTP/1.1\r\nHost: localhost\r\n\r\n");
     let status = parse_status(&resp);
     assert_eq!(status, 401);
 
     let resp = send_request(
-        &addr,
+        &server.addr(),
         "GET /secret HTTP/1.1\r\nHost: localhost\r\nX-API-Key: secret\r\n\r\n",
     );
     let status = parse_status(&resp);
     assert_eq!(status, 200);
 
-    handle.stop();
+    // Teardown happens automatically when 'server' goes out of scope
+    // No need to call handle.stop() manually!
 }
 
 fn start_service_default_provider() -> (TestTracing, ServerHandle, SocketAddr) {
@@ -454,8 +547,8 @@ paths:
         Arc::new(RwLock::new(dispatcher)),
         schemes,
         PathBuf::from("examples/openapi.yaml"),
-        None,
-        None,
+        Some(PathBuf::from("examples/pet_store/static_site")),
+        Some(PathBuf::from("examples/pet_store/doc")),
     );
     // Use default provider wiring with a test key
     service.register_default_security_providers_from_env(Some("secret".into()));
@@ -469,14 +562,14 @@ paths:
 
 #[test]
 fn test_api_key_auth_via_authorization_bearer() {
-    let (_tracing, handle, addr) = start_service_default_provider();
+    let server = SecurityTestServer::from_default_provider();
     let resp = send_request(
-        &addr,
+        &server.addr(),
         "GET /secret HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer secret\r\n\r\n",
     );
-    handle.stop();
     let status = parse_status(&resp);
     assert_eq!(status, 200);
+    // Automatic cleanup!
 }
 
 // --- JWKS Bearer provider tests ---
@@ -569,8 +662,8 @@ paths:
         Arc::new(RwLock::new(dispatcher)),
         schemes,
         PathBuf::from("examples/openapi.yaml"),
-        None,
-        None,
+        Some(PathBuf::from("examples/pet_store/static_site")),
+        Some(PathBuf::from("examples/pet_store/doc")),
     );
     let provider = brrtrouter::security::JwksBearerProvider::new(jwks_url.to_string())
         .issuer(iss.to_string())
@@ -599,15 +692,15 @@ fn test_bearer_jwks_success() {
     let iss = "https://issuer.example";
     let aud = "my-audience";
     let token = make_hs256_jwt(secret, iss, aud, "k1", 3600);
-    let (_t, handle, addr) = start_service_with_jwks(&jwks_url, iss, aud);
+    let server = SecurityTestServer::from_jwks(&jwks_url, iss, aud);
     let req = format!(
         "GET /header HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer {}\r\n\r\n",
         token
     );
-    let resp = send_request(&addr, &req);
-    handle.stop();
+    let resp = send_request(&server.addr(), &req);
     let status_ok = parse_status(&resp);
     assert_eq!(status_ok, 200);
+    // Automatic cleanup!
 }
 
 #[test]
@@ -625,15 +718,15 @@ fn test_bearer_jwks_invalid_signature() {
     let aud = "my-audience";
     // token signed with different secret
     let token = make_hs256_jwt(b"wrong", iss, aud, "k1", 3600);
-    let (_t, handle, addr) = start_service_with_jwks(&jwks_url, iss, aud);
+    let server = SecurityTestServer::from_jwks(&jwks_url, iss, aud);
     let req = format!(
         "GET /header HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer {}\r\n\r\n",
         token
     );
-    let resp = send_request(&addr, &req);
-    handle.stop();
+    let resp = send_request(&server.addr(), &req);
     let status = parse_status(&resp);
     assert_eq!(status, 401);
+    // Automatic cleanup!
 }
 
 // --- Remote API key verification tests ---
@@ -707,8 +800,8 @@ paths:
         Arc::new(RwLock::new(dispatcher)),
         schemes,
         PathBuf::from("examples/openapi.yaml"),
-        None,
-        None,
+        Some(PathBuf::from("examples/pet_store/static_site")),
+        Some(PathBuf::from("examples/pet_store/doc")),
     );
     let provider = brrtrouter::security::RemoteApiKeyProvider::new(verify_url.to_string())
         .header_name("X-API-Key")
@@ -726,53 +819,60 @@ paths:
 #[test]
 fn test_remote_apikey_success_and_failure() {
     let (url, handle_verify) = start_mock_apikey_verify_server();
-    let (_t, handle, addr) = start_service_with_remote_apikey(&url);
+    let server = SecurityTestServer::from_remote_apikey(&url);
+    
     // success
     let req_ok = "GET /secret HTTP/1.1\r\nHost: localhost\r\nX-API-Key: validkey\r\n\r\n";
-    let resp_ok = send_request(&addr, req_ok);
+    let resp_ok = send_request(&server.addr(), req_ok);
     let status_ok = parse_status(&resp_ok);
     assert_eq!(status_ok, 200);
+    
     // failure
     let req_bad = "GET /secret HTTP/1.1\r\nHost: localhost\r\nX-API-Key: wrong\r\n\r\n";
-    let resp_bad = send_request(&addr, req_bad);
-    handle.stop();
-    handle_verify.join().ok();
+    let resp_bad = send_request(&server.addr(), req_bad);
     let status_bad = parse_status(&resp_bad);
     assert_eq!(status_bad, 401);
+    
+    // Cleanup both servers
+    drop(server); // Explicitly drop main server first
+    handle_verify.join().ok(); // Then cleanup verification server
 }
 
 // TODO: This test fails intermittently due to timing issues with the coroutine cancellation.
 #[test]
 fn test_multiple_security_providers() {
-    let (_tracing, handle, addr) = start_multi_service();
+    let server = SecurityTestServer::from_multi_service();
+    
     let resp = send_request(
-        &addr,
+        &server.addr(),
         "GET /one HTTP/1.1\r\nHost: localhost\r\nX-Key-One: one\r\n\r\n",
     );
     let status = parse_status(&resp);
     assert_eq!(status, 200);
 
     let resp = send_request(
-        &addr,
+        &server.addr(),
         "GET /two HTTP/1.1\r\nHost: localhost\r\nX-Key-Two: two\r\n\r\n",
     );
     let status_two = parse_status(&resp);
     assert_eq!(status_two, 200);
 
     let resp = send_request(
-        &addr,
+        &server.addr(),
         "GET /one HTTP/1.1\r\nHost: localhost\r\nX-Key-Two: two\r\n\r\n",
     );
-    handle.stop();
     let status_wrong = parse_status(&resp);
     assert_eq!(status_wrong, 401);
+    
+    // Automatic cleanup!
 }
 
 #[test]
 fn test_bearer_header_and_oauth_cookie() {
-    let (_tracing, handle, addr) = start_token_service();
+    let server = SecurityTestServer::from_token_service();
+    
     // Missing token should fail
-    let resp = send_request(&addr, "GET /header HTTP/1.1\r\nHost: localhost\r\n\r\n");
+    let resp = send_request(&server.addr(), "GET /header HTTP/1.1\r\nHost: localhost\r\n\r\n");
     let status = parse_status(&resp);
     assert_eq!(status, 401);
 
@@ -782,7 +882,7 @@ fn test_bearer_header_and_oauth_cookie() {
         "GET /header HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer {}\r\n\r\n",
         token
     );
-    let resp = send_request(&addr, &req);
+    let resp = send_request(&server.addr(), &req);
     let status_ok = parse_status(&resp);
     assert_eq!(status_ok, 200);
 
@@ -792,10 +892,11 @@ fn test_bearer_header_and_oauth_cookie() {
         "GET /cookie HTTP/1.1\r\nHost: localhost\r\nCookie: auth={}\r\n\r\n",
         token
     );
-    let resp = send_request(&addr, &req);
-    handle.stop();
+    let resp = send_request(&server.addr(), &req);
     let status_cookie = parse_status(&resp);
     assert_eq!(status_cookie, 200);
+    
+    // Automatic cleanup!
 }
 
 #[test]

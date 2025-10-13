@@ -1,0 +1,67 @@
+# =============================================================================
+# Fast Test Image Using Pre-Built Binary (Tilt-Inspired Pattern)
+# =============================================================================
+#
+# This Dockerfile is used ONLY for curl integration tests (tests/curl_harness.rs)
+# It's designed for SPEED and testing CURRENT code automatically.
+#
+# THE PATTERN (same as Tilt - see Tiltfile for comparison):
+# ----------
+# 1. Build locally:  cargo zigbuild → target/x86_64-unknown-linux-musl/release/pet_store
+# 2. Stage locally:  cp → build_artifacts/pet_store
+# 3. Docker copies:  COPY build_artifacts/pet_store → /pet_store
+#
+# WHY THIS APPROACH?
+# -----------------
+# ✅ Fast iteration: Local builds use incremental compilation (10-30s)
+# ✅ Always current: Tests automatically build latest code
+# ✅ No staleness:   Impossible to test old code by mistake
+# ✅ Consistency:    Same workflow as Tilt (developers learn once)
+# ✅ Quick Docker:   Image build is <1s (just file copies)
+#
+# WHY NOT BUILD IN DOCKER?
+# ------------------------
+# ❌ Slow: 5-10 minutes for full Rust compilation
+# ❌ No cache: Cargo cache doesn't persist well in Docker layers
+# ❌ Wrong arch: macOS can't build Linux binaries without cross-compilation
+#
+# WHY build_artifacts/ STAGING?
+# -----------------------------
+# The .dockerignore file blocks target/* for performance (don't want GB of build artifacts):
+#   target/*                    ← blocks all of target/
+#   !build_artifacts/pet_store  ← but explicitly allows this file
+#
+# Without staging to build_artifacts/:
+#   - Docker can't see target/x86_64-unknown-linux-musl/release/pet_store
+#   - Build fails: "not found" error
+#   - Even though file exists on host!
+#
+# The staging step (done by curl_harness.rs before calling docker build):
+#   std::fs::copy("target/.../pet_store", "build_artifacts/pet_store")
+#
+# FOR FUTURE AI/CONTRIBUTORS:
+# ---------------------------
+# - Do NOT change COPY path to target/* (won't work due to .dockerignore)
+# - Do NOT modify .dockerignore to allow target/* (kills Docker build performance)
+# - Do NOT add RUN cargo build (defeats the purpose of local compilation)
+# - This pattern is intentional and battle-tested via Tilt!
+#
+# =============================================================================
+
+FROM scratch
+
+# Copy the staged Linux x86_64 binary from build_artifacts/
+# (The test harness stages it there before running docker build)
+COPY build_artifacts/pet_store /pet_store
+
+# Copy OpenAPI spec and assets
+COPY examples/pet_store/doc /doc
+COPY examples/pet_store/static_site /static_site
+COPY examples/pet_store/config /config
+
+EXPOSE 8080
+ENV RUST_BACKTRACE=1
+ENV RUST_LOG=debug
+
+ENTRYPOINT ["/pet_store", "--spec", "/doc/openapi.yaml", "--doc-dir", "/doc", "--static-dir", "/static_site", "--config", "/config/config.yaml"]
+

@@ -1,40 +1,98 @@
-# Contributing
+# Contributing to BRRTRouter
 
-Thank you for your interest in contributing! This project includes a code generator and example output. Please do **not** edit files under `examples/` manually; they are generated from templates.
+Thank you for your interest in contributing to **BRRTRouter**! 🎉
 
-Thank you for helping improve **BRRTRouter**! The example application in
-`examples/pet_store` is automatically generated from `examples/openapi.yaml`.
+This guide will help you get started quickly with our local development environment.
 
-The generator logic lives in `src/generator` and uses templates from
-`templates/`.
+## 🚀 Quick Start (5 Minutes)
 
-## Development Workflow
+### Prerequisites
 
-1. Modify templates under `templates/` or the generator logic in `src/generator/`.
-2. Regenerate the example project with:
+Install these tools before starting:
+
+```bash
+# macOS
+brew install docker kind kubectl tilt just
+
+# Linux (Ubuntu/Debian)
+sudo apt-get install docker.io kubectl
+curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-amd64
+chmod +x ./kind && sudo mv ./kind /usr/local/bin/
+curl -fsSL https://github.com/tilt-dev/tilt/releases/latest/download/tilt.$(uname -s)-$(uname -m).tar.gz | tar -xzv tilt && sudo mv tilt /usr/local/bin/
+```
+
+### Setup Development Environment
+
+```bash
+# 1. Clone and enter the repository
+git clone https://github.com/microscaler/BRRTRouter.git
+cd BRRTRouter
+
+# 2. Create kind cluster (one-time setup)
+./scripts/dev-setup.sh
+
+# 3. Start Tilt with full observability stack
+tilt up
+
+# 4. Verify everything works (in another terminal)
+curl http://localhost:9090/health
+curl -H "X-API-Key: test123" http://localhost:9090/pets
+```
+
+**🎉 You're ready to contribute!**
+
+### Development Cycle
+
+1. **Edit code** in `src/` or `examples/pet_store/src/`
+2. **Tilt auto-rebuilds** and syncs changes (~1-2 seconds!)
+3. **Test immediately**: `curl` or visit http://localhost:9090/docs
+4. **View logs**: `kubectl logs -f -n brrtrouter-dev deployment/petstore`
+5. **Check metrics**: http://localhost:3000 (Grafana: admin/admin)
+
+See [docs/LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md) for full details.
+
+## 📋 Before Submitting a Pull Request
+
+```bash
+# 1. Format your code
+cargo fmt
+
+# 2. Run all tests (fast parallel execution)
+just nt
+
+# 3. Check test coverage (must be ≥80%)
+just coverage
+
+# 4. Verify docs build
+just docs
+
+# 5. (Optional) Load test if you modified performance-critical code
+cargo run --release --example api_load_test -- --host http://localhost:9090 -u10 -r2 -t30s
+```
+
+## 🛠 Working with Generated Code
+
+**IMPORTANT**: Files under `examples/pet_store/` are **auto-generated**. Do not edit them directly!
+
+### Generator Architecture
+
+- **Generator logic**: `src/generator/`
+- **Templates**: `templates/`
+- **OpenAPI spec**: `examples/openapi.yaml`
+- **Output**: `examples/pet_store/` (generated)
+
+### Modifying Generated Code
+
+1. Edit templates in `templates/` or generator logic in `src/generator/`
+2. Regenerate the pet store example:
    ```bash
+   just gen
+   # or
    cargo run --bin brrtrouter-gen -- generate --spec examples/openapi.yaml --force
    ```
-   or simply run `just gen` if you have `just` installed.
-
-`examples/pet_store` is automatically generated from
-`examples/openapi.yaml`.
-
-Direct edits to files inside `examples/pet_store` will be overwritten the
-next time the generator runs.
-
-## Updating the generated examples
-
-1. Update the templates or generator code.
-2. Run the generator:
-
-   ```bash
-   cargo run --bin brrtrouter-gen -- generate --spec examples/openapi.yaml --force
-   ```
-   *(or run `just gen`)*
-3. Commit any regenerated files as part of your change.
-
-4. Run `cargo fmt` and `cargo test` before submitting a pull request.
+3. Verify the generated code compiles: `cargo build -p pet_store`
+4. Run tests: `just nt`
+5. Commit both template changes AND regenerated files together
 
 ## Documentation Standards
 

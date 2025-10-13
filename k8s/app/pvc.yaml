@@ -1,0 +1,56 @@
+# Optional: Persistent Volume Claims for production deployments
+# For local dev with kind, we use emptyDir volumes (defined in petstore-deployment.yaml)
+# For production, uncomment and apply these PVCs, then update the deployment to use them
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: petstore-logs
+  namespace: brrtrouter-dev
+  labels:
+    app: petstore
+    component: logs
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  # storageClassName: standard  # Uncomment and set your storage class
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: petstore-data
+  namespace: brrtrouter-dev
+  labels:
+    app: petstore
+    component: data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  # storageClassName: standard  # Uncomment and set your storage class
+
+---
+# To use PVCs instead of emptyDir, update petstore-deployment.yaml volumes section:
+#
+# volumes:
+#   - name: config
+#     configMap:
+#       name: petstore-config
+#   - name: logs
+#     persistentVolumeClaim:
+#       claimName: petstore-logs
+#   - name: data
+#     persistentVolumeClaim:
+#       claimName: petstore-data
+#   - name: tmp
+#     emptyDir:
+#       medium: Memory
+#       sizeLimit: 128Mi
+

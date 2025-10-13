@@ -1,0 +1,183 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: petstore-config
+  namespace: brrtrouter-dev
+data:
+  config.yaml: |
+    # BRRTRouter Pet Store Configuration
+    # This ConfigMap contains the full application configuration for Kubernetes deployment
+    
+    security:
+      # Static API keys bound to specific OpenAPI security scheme names
+      # Example: 'ApiKeyAuth' corresponds to components.securitySchemes.ApiKeyAuth
+      api_keys:
+        # Development default for Pet Store example: OpenAPI scheme name is 'ApiKeyHeader'
+        ApiKeyHeader:
+          key: "test123"
+          # header_name: "X-API-Key"  # optional override for header-based schemes
+      
+      # Remote API key verification by scheme name (commented out for local dev)
+      # remote_api_keys:
+      #   ApiKeyAuth:
+      #     verify_url: "https://auth.example/verify"
+      #     timeout_ms: 500
+      #     header_name: "X-API-Key"
+      #     cache_ttl_secs: 60
+      
+      # Simple bearer signature (dev only) and optional cookie name
+      # bearer:
+      #   signature: "sig"
+      #   cookie_name: "auth_token"
+      
+      # Simple oauth2 signature (dev only) and optional cookie name
+      # oauth2:
+      #   signature: "sig"
+      #   cookie_name: "oauth_token"
+      
+      # Per-scheme JWKS configuration (production)
+      # jwks:
+      #   BearerAuth:
+      #     jwks_url: "https://issuer.example/.well-known/jwks.json"
+      #     iss: "https://issuer.example/"
+      #     aud: "my-audience"
+      #     leeway_secs: 30
+      #     cache_ttl_secs: 300
+      
+      # PropelAuth integration (recommended as first provider)
+      # propelauth:
+      #   auth_url: "https://auth.yourdomain.com"
+      #   audience: "your-api-audience"
+      #   issuer: "https://auth.yourdomain.com/"
+      #   leeway_secs: 30
+      #   cache_ttl_secs: 300
+    
+    http:
+      # Enable HTTP/1.1 keep-alive (default true in generated apps for testing)
+      keep_alive: true
+      timeout_secs: 5
+      max_requests: 1000
+    
+    # Database connection (PostgreSQL)
+    database:
+      host: "postgres"
+      port: 5432
+      name: "brrtrouter"
+      user: "brrtrouter"
+      password: "dev_password_change_in_prod"
+      max_connections: 10
+    
+    # Redis cache configuration
+    redis:
+      host: "redis"
+      port: 6379
+      db: 0
+      max_connections: 10
+    
+    # Observability configuration
+    observability:
+      metrics_enabled: true
+      tracing_enabled: true
+      otlp_endpoint: "http://otel-collector:4317"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: petstore
+  namespace: brrtrouter-dev
+  labels:
+    app: petstore
+    version: dev
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: petstore
+  template:
+    metadata:
+      labels:
+        app: petstore
+        version: dev
+      annotations:
+        # Force pod restart when config changes
+        checksum/config: "{{ .Values.configChecksum }}"
+    spec:
+      containers:
+        - name: petstore
+          image: localhost:5001/brrtrouter-petstore
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: RUST_LOG
+              value: "debug"
+            - name: RUST_BACKTRACE
+              value: "1"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector:4317"
+            - name: OTEL_SERVICE_NAME
+              value: "petstore"
+            # Increase stack size for serving large static assets (64KB instead of 16KB default)
+            - name: BRRTR_STACK_SIZE
+              value: "0x10000"
+          # Liveness probe - is the service alive?
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          # Readiness probe - is the service ready to accept traffic?
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "1000m"
+          volumeMounts:
+            # Configuration from ConfigMap (Kubernetes-native, matches production)
+            - name: config
+              mountPath: /app/config
+              readOnly: true
+            
+            # Application logs (writable)
+            - name: logs
+              mountPath: /app/logs
+            # Application data/cache (writable)
+            - name: data
+              mountPath: /app/data
+            # Temporary files (writable, in-memory for speed)
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        # Configuration from ConfigMap (Kubernetes-native approach)
+        # Edit the ConfigMap above to change config, then restart pod
+        - name: config
+          configMap:
+            name: petstore-config
+        
+        # Logs volume (emptyDir for local dev, PVC for production)
+        - name: logs
+          emptyDir: {}
+        # Data volume (emptyDir for local dev, PVC for production)
+        - name: data
+          emptyDir: {}
+        # Temporary files (in-memory for performance)
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 128Mi
+

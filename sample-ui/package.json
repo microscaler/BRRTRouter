@@ -1,0 +1,23 @@
+{
+  "name": "brrtrouter-sample-ui",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:petstore": "vite build --outDir ../examples/pet_store/static_site --emptyOutDir",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "solid-js": "^1.9.9"
+  },
+  "devDependencies": {
+    "vite": "^7.1.9",
+    "vite-plugin-solid": "^2.11.9",
+    "autoprefixer": "^10.4.17",
+    "postcss": "^8.4.35",
+    "tailwindcss": "^3.4.1"
+  }
+}
+

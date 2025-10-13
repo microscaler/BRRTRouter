@@ -4,3 +4,9 @@
 # Enable Mermaid diagram rendering in documentation
 rustdocflags = ["--html-in-header", "doc/head.html"]
 
+# Cross-compilation configuration for x86_64 Linux on Apple Silicon
+# Using zig as linker (more reliable than musl-gcc on macOS)
+[target.x86_64-unknown-linux-musl]
+linker = "cargo-zigbuild"
+rustflags = ["-C", "target-cpu=x86-64"]
+
