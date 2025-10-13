@@ -5,13 +5,14 @@
 
 use opentelemetry::trace::TracerProvider as _;
 use opentelemetry_sdk::error::OTelSdkError;
-use opentelemetry_sdk::trace::{RandomIdGenerator, Sampler, SdkTracerProvider, SpanProcessor};
 use opentelemetry_sdk::trace::SpanData;
+use opentelemetry_sdk::trace::{RandomIdGenerator, Sampler, SdkTracerProvider, SpanProcessor};
 use parking_lot::RwLock;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::{prelude::*, Registry};
+use tracing::subscriber::DefaultGuard;
 
 /// In-memory span processor for testing
 /// Collects spans synchronously without batching for predictable testing
@@ -27,11 +28,7 @@ impl InMemorySpanProcessor {
 }
 
 impl SpanProcessor for InMemorySpanProcessor {
-    fn on_start(
-        &self,
-        _span: &mut opentelemetry_sdk::trace::Span,
-        _cx: &opentelemetry::Context,
-    ) {
+    fn on_start(&self, _span: &mut opentelemetry_sdk::trace::Span, _cx: &opentelemetry::Context) {
         // No-op for testing
     }
 
@@ -56,6 +53,7 @@ impl SpanProcessor for InMemorySpanProcessor {
 pub struct TestTracing {
     spans: Arc<RwLock<Vec<SpanData>>>,
     tracer_provider: SdkTracerProvider,
+    _guard: Option<DefaultGuard>,
 }
 
 impl Drop for TestTracing {
@@ -83,12 +81,10 @@ impl TestTracing {
         let tracer = tracer_provider.tracer("brrtrouter-test");
         let telemetry_layer = OpenTelemetryLayer::new(tracer);
         let subscriber = Registry::default().with(telemetry_layer);
-        let _ = tracing::subscriber::set_global_default(subscriber);
+        // Prefer a scoped default so tests don't conflict on global subscriber
+        let guard = Some(tracing::subscriber::set_default(subscriber));
 
-        Self {
-            spans,
-            tracer_provider,
-        }
+        Self { spans, tracer_provider, _guard: guard }
     }
 
     /// Get all collected spans (returns a clone)
@@ -110,7 +106,7 @@ impl TestTracing {
     #[allow(dead_code)]
     pub async fn collected_spans(&mut self, count: usize, timeout: Duration) -> Vec<SpanData> {
         let start = std::time::Instant::now();
-        
+
         loop {
             {
                 let spans = self.spans.read();
@@ -118,11 +114,11 @@ impl TestTracing {
                     return spans.clone();
                 }
             }
-            
+
             if start.elapsed() > timeout {
                 return self.spans.read().clone();
             }
-            
+
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
     }
@@ -131,7 +127,7 @@ impl TestTracing {
     pub fn wait_for_span(&mut self, name: &str) {
         let start = std::time::Instant::now();
         let timeout = Duration::from_secs(3);
-        
+
         loop {
             {
                 let spans = self.spans.read();
@@ -139,7 +135,7 @@ impl TestTracing {
                     return;
                 }
             }
-            
+
             if start.elapsed() > timeout {
                 let spans = self.spans.read();
                 let span_names: Vec<&str> = spans.iter().map(|s| s.name.as_ref()).collect();
@@ -148,7 +144,7 @@ impl TestTracing {
                     name, timeout, span_names
                 );
             }
-            
+
             std::thread::sleep(Duration::from_millis(10));
         }
     }
@@ -172,22 +168,22 @@ impl TestTracing {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tracing::{info_span, info};
+    use tracing::{info, info_span};
 
     #[test]
     fn test_collect_spans() {
         let tracing = TestTracing::init();
-        
+
         {
             let _span = info_span!("test_span").entered();
             info!("test message");
         }
-        
+
         tracing.force_flush();
-        
+
         let spans = tracing.spans();
         assert!(!spans.is_empty(), "Should collect at least one span");
-        
+
         let test_spans = tracing.spans_named("test_span");
         assert_eq!(test_spans.len(), 1, "Should have exactly one 'test_span'");
     }
@@ -195,30 +191,30 @@ mod tests {
     #[test]
     fn test_wait_for_span() {
         let mut tracing = TestTracing::init();
-        
+
         {
             let _span = info_span!("my_span").entered();
             info!("message");
         }
-        
+
         tracing.force_flush();
         tracing.wait_for_span("my_span");
-        
+
         // Should not panic - span was found
     }
 
     #[test]
     fn test_clear_spans() {
         let mut tracing = TestTracing::init();
-        
+
         {
             let _span = info_span!("span1").entered();
             info!("message");
         }
-        
+
         tracing.force_flush();
         assert!(tracing.span_count() > 0);
-        
+
         tracing.clear_spans();
         assert_eq!(tracing.span_count(), 0);
     }

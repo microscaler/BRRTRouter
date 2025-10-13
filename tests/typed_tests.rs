@@ -46,6 +46,7 @@ fn test_from_handler_non_string_params() {
     query_params.insert("active".to_string(), "true".to_string());
 
     let req = HandlerRequest {
+        request_id: brrtrouter::ids::RequestId::new(),
         method: Method::GET,
         path: "/items/42".to_string(),
         handler_name: "test".to_string(),
@@ -95,6 +96,7 @@ fn test_header_cookie_params() {
     cookies.insert("session".to_string(), "abc123".to_string());
 
     let req = HandlerRequest {
+        request_id: brrtrouter::ids::RequestId::new(),
         method: Method::GET,
         path: "/items".to_string(),
         handler_name: "test".to_string(),
@@ -162,6 +164,7 @@ fn test_spawn_typed_success_and_error() {
         q.insert("a".to_string(), "2".to_string());
         q.insert("b".to_string(), "3".to_string());
         tx.send(HandlerRequest {
+            request_id: brrtrouter::ids::RequestId::new(),
             method: Method::GET,
             path: "/sum".into(),
             handler_name: "sum".into(),
@@ -181,6 +184,7 @@ fn test_spawn_typed_success_and_error() {
         let mut bad_q = HashMap::new();
         bad_q.insert("a".to_string(), "2".to_string());
         tx.send(HandlerRequest {
+            request_id: brrtrouter::ids::RequestId::new(),
             method: Method::GET,
             path: "/sum".into(),
             handler_name: "sum".into(),

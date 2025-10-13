@@ -47,11 +47,36 @@ data:
           - source_labels: [__meta_kubernetes_namespace]
             target_label: namespace
           
-          # Set path to container log
+          # Set path to pod logs
           - source_labels: [__meta_kubernetes_pod_uid, __meta_kubernetes_pod_container_name]
             target_label: __path__
             separator: /
             replacement: /var/log/pods/*$1/*.log
+
+      # Scrape container log symlinks for containerd/docker
+      - job_name: kubernetes-containers
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names:
+                - brrtrouter-dev
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_namespace]
+            action: keep
+            regex: brrtrouter-dev
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+          - source_labels: [__meta_kubernetes_pod_container_name]
+            target_label: container
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            target_label: app
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          # /var/log/containers/<pod>_<namespace>_<container>-<id>.log
+          - source_labels: [__meta_kubernetes_pod_name, __meta_kubernetes_namespace, __meta_kubernetes_pod_container_name]
+            target_label: __path__
+            separator: _
+            replacement: /var/log/containers/$1_$2_$3-*.log
 
 ---
 apiVersion: apps/v1

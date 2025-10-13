@@ -1,10 +1,75 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicI64, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use super::Middleware;
 use crate::dispatcher::{HandlerRequest, HandlerResponse};
+
+/// Histogram buckets for latency tracking (in seconds)
+/// Buckets: 1ms, 5ms, 10ms, 50ms, 100ms, 500ms, 1s, 5s, 10s, +Inf
+const HISTOGRAM_BUCKETS: &[f64] = &[0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 10.0];
+
+/// Histogram metric for tracking request duration distribution
+struct HistogramMetric {
+    /// Bucket counts (one per bucket + one for +Inf)
+    buckets: Vec<AtomicU64>,
+    /// Sum of all observed values
+    sum: AtomicU64,
+    /// Total count of observations
+    count: AtomicU64,
+}
+
+impl HistogramMetric {
+    fn new() -> Self {
+        let mut buckets = Vec::with_capacity(HISTOGRAM_BUCKETS.len() + 1);
+        for _ in 0..=HISTOGRAM_BUCKETS.len() {
+            buckets.push(AtomicU64::new(0));
+        }
+        Self {
+            buckets,
+            sum: AtomicU64::new(0),
+            count: AtomicU64::new(0),
+        }
+    }
+
+    /// Record a duration observation (in seconds)
+    fn observe(&self, duration_secs: f64) {
+        // Find the appropriate bucket
+        let bucket_idx = HISTOGRAM_BUCKETS
+            .iter()
+            .position(|&b| duration_secs <= b)
+            .unwrap_or(HISTOGRAM_BUCKETS.len());
+
+        // Increment all buckets from this one to +Inf (cumulative histogram)
+        for i in bucket_idx..self.buckets.len() {
+            self.buckets[i].fetch_add(1, Ordering::Relaxed);
+        }
+
+        // Update sum and count
+        let duration_nanos = (duration_secs * 1_000_000_000.0) as u64;
+        self.sum.fetch_add(duration_nanos, Ordering::Relaxed);
+        self.count.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Get bucket counts for Prometheus export
+    fn get_buckets(&self) -> Vec<u64> {
+        self.buckets
+            .iter()
+            .map(|b| b.load(Ordering::Relaxed))
+            .collect()
+    }
+
+    /// Get sum in nanoseconds
+    fn get_sum_ns(&self) -> u64 {
+        self.sum.load(Ordering::Relaxed)
+    }
+
+    /// Get total count
+    fn get_count(&self) -> u64 {
+        self.count.load(Ordering::Relaxed)
+    }
+}
 
 /// Per-path metrics tracking
 #[derive(Default)]
@@ -24,11 +89,12 @@ impl PathMetrics {
             min_latency_ns: AtomicU64::new(u64::MAX), // Start high for min
         }
     }
-    
+
     fn record(&self, latency_ns: u64) {
         self.count.fetch_add(1, Ordering::Relaxed);
-        self.total_latency_ns.fetch_add(latency_ns, Ordering::Relaxed);
-        
+        self.total_latency_ns
+            .fetch_add(latency_ns, Ordering::Relaxed);
+
         // Update max
         let mut current_max = self.max_latency_ns.load(Ordering::Relaxed);
         while latency_ns > current_max {
@@ -42,7 +108,7 @@ impl PathMetrics {
                 Err(x) => current_max = x,
             }
         }
-        
+
         // Update min
         let mut current_min = self.min_latency_ns.load(Ordering::Relaxed);
         while latency_ns < current_min {
@@ -65,7 +131,9 @@ impl PathMetrics {
 /// All counters use atomic operations for thread-safe updates without locks.
 ///
 /// Metrics collected:
-/// - Total request count
+/// - Total request count (with status code labels)
+/// - Active requests (concurrent in-flight requests)
+/// - Request duration histogram (for percentile calculations)
 /// - Average latency (request processing time)
 /// - Stack size and usage (for coroutine monitoring)
 /// - Top-level request count (non-handler requests like /health, /metrics)
@@ -78,8 +146,14 @@ pub struct MetricsMiddleware {
     used_stack: AtomicUsize,
     top_level_requests: AtomicUsize,
     auth_failures: AtomicUsize,
+    /// Active requests currently being processed (incremented on start, decremented on completion)
+    active_requests: AtomicI64,
     /// Per-path metrics for detailed monitoring
     path_metrics: Arc<RwLock<HashMap<String, Arc<PathMetrics>>>>,
+    /// Per-(path, status) request counts for status code tracking
+    status_metrics: Arc<RwLock<HashMap<(String, u16), AtomicUsize>>>,
+    /// Histogram for request duration (for percentile calculations)
+    duration_histogram: Arc<HistogramMetric>,
 }
 
 /// Default initialization for metrics middleware
@@ -98,7 +172,10 @@ impl Default for MetricsMiddleware {
             used_stack: AtomicUsize::new(0),
             top_level_requests: AtomicUsize::new(0),
             auth_failures: AtomicUsize::new(0),
+            active_requests: AtomicI64::new(0),
             path_metrics: Arc::new(RwLock::new(HashMap::new())),
+            status_metrics: Arc::new(RwLock::new(HashMap::new())),
+            duration_histogram: Arc::new(HistogramMetric::new()),
         }
     }
 }
@@ -164,7 +241,7 @@ impl MetricsMiddleware {
     pub fn auth_failures(&self) -> usize {
         self.auth_failures.load(Ordering::Relaxed)
     }
-    
+
     /// Record metrics for a specific path
     ///
     /// This is called internally by the middleware to track per-path statistics.
@@ -177,7 +254,7 @@ impl MetricsMiddleware {
                     pm.clone()
                 } else {
                     drop(map); // Release read lock before upgrading
-                    // Slow path: need to create new entry
+                               // Slow path: need to create new entry
                     let mut map = self.path_metrics.write().unwrap();
                     map.entry(path.to_string())
                         .or_insert_with(|| Arc::new(PathMetrics::new()))
@@ -191,10 +268,10 @@ impl MetricsMiddleware {
                     .clone()
             }
         };
-        
+
         metrics.record(latency_ns);
     }
-    
+
     /// Get all per-path metrics for Prometheus export
     ///
     /// Returns a snapshot of metrics for all paths that have been accessed.
@@ -212,6 +289,53 @@ impl MetricsMiddleware {
             })
             .collect()
     }
+
+    /// Get the current number of active (in-flight) requests
+    pub fn active_requests(&self) -> i64 {
+        self.active_requests.load(Ordering::Relaxed)
+    }
+
+    /// Get all status code metrics for Prometheus export
+    ///
+    /// Returns a HashMap mapping (path, status_code) -> count
+    pub fn status_stats(&self) -> HashMap<(String, u16), usize> {
+        let map = self.status_metrics.read().unwrap();
+        map.iter()
+            .map(|((path, status), count)| {
+                ((path.clone(), *status), count.load(Ordering::Relaxed))
+            })
+            .collect()
+    }
+
+    /// Get histogram data for Prometheus export
+    ///
+    /// Returns (buckets, sum_ns, count) where buckets is a Vec of cumulative counts
+    pub fn histogram_data(&self) -> (Vec<u64>, u64, u64) {
+        let buckets = self.duration_histogram.get_buckets();
+        let sum = self.duration_histogram.get_sum_ns();
+        let count = self.duration_histogram.get_count();
+        (buckets, sum, count)
+    }
+
+    /// Get histogram bucket boundaries (in seconds)
+    pub fn histogram_buckets() -> &'static [f64] {
+        HISTOGRAM_BUCKETS
+    }
+
+    /// Record status code for a request
+    fn record_status(&self, path: &str, status: u16) {
+        let key = (path.to_string(), status);
+        let map = self.status_metrics.read().unwrap();
+        if let Some(counter) = map.get(&key) {
+            counter.fetch_add(1, Ordering::Relaxed);
+        } else {
+            drop(map);
+            let mut map = self.status_metrics.write().unwrap();
+            map.entry(key)
+                .or_insert_with(|| AtomicUsize::new(0))
+                .fetch_add(1, Ordering::Relaxed);
+        }
+    }
 }
 
 /// Metrics collection middleware implementation
@@ -221,7 +345,9 @@ impl MetricsMiddleware {
 ///
 /// # Metrics Collected
 ///
-/// - **Request count**: Total requests processed
+/// - **Request count**: Total requests processed (with status code labels)
+/// - **Active requests**: Current number of in-flight requests
+/// - **Duration histogram**: Request duration distribution for percentile calculations
 /// - **Latency**: Average processing time (calculated from `after()`)
 /// - **Stack usage**: Coroutine stack size and peak usage
 /// - **Top-level requests**: Infrastructure endpoints (health, metrics, docs)
@@ -232,10 +358,10 @@ impl MetricsMiddleware {
 /// Uses `Ordering::Relaxed` for atomic operations to minimize overhead.
 /// Metrics are eventually consistent but extremely low-cost to collect.
 impl Middleware for MetricsMiddleware {
-    /// Increment request counter before processing
+    /// Increment request counters before processing
     ///
     /// Called for every request that reaches the dispatcher.
-    /// Increments the total request count atomically.
+    /// Increments the total request count and active requests atomically.
     ///
     /// # Arguments
     ///
@@ -246,20 +372,24 @@ impl Middleware for MetricsMiddleware {
     /// Always returns `None` (never blocks requests)
     fn before(&self, _req: &HandlerRequest) -> Option<HandlerResponse> {
         self.request_count.fetch_add(1, Ordering::Relaxed);
+        self.active_requests.fetch_add(1, Ordering::Relaxed);
         None
     }
 
-    /// Record latency and stack metrics after processing
+    /// Record latency, status, histogram, and stack metrics after processing
     ///
     /// Called after the handler completes. Updates:
-    /// 1. Total latency (for average calculation)
-    /// 2. Per-path latency and counters
-    /// 3. Stack size and usage (if running in a coroutine)
+    /// 1. Active requests (decrement)
+    /// 2. Total latency (for average calculation)
+    /// 3. Per-path latency and counters
+    /// 4. Status code counters (for error rate tracking)
+    /// 5. Duration histogram (for percentile calculations)
+    /// 6. Stack size and usage (if running in a coroutine)
     ///
     /// # Arguments
     ///
     /// * `req` - The original request (used for path tracking)
-    /// * `_res` - The response (unused)
+    /// * `res` - The response (used for status code tracking)
     /// * `latency` - Time taken to process the request
     ///
     /// # Stack Tracking
@@ -267,15 +397,25 @@ impl Middleware for MetricsMiddleware {
     /// - If in coroutine context: Records actual stack size from coroutine
     /// - If not in coroutine: Records global stack size from May config
     /// - Used stack is always 0 (May doesn't expose actual usage)
-    fn after(&self, req: &HandlerRequest, _res: &mut HandlerResponse, latency: Duration) {
+    fn after(&self, req: &HandlerRequest, res: &mut HandlerResponse, latency: Duration) {
+        // Decrement active requests
+        self.active_requests.fetch_sub(1, Ordering::Relaxed);
+
         let latency_ns = latency.as_nanos() as u64;
-        
+        let latency_secs = latency.as_secs_f64();
+
         self.total_latency_ns
             .fetch_add(latency_ns, Ordering::Relaxed);
-        
+
         // Record per-path metrics
         self.record_path_metrics(&req.path, latency_ns);
-        
+
+        // Record status code metrics
+        self.record_status(&req.path, res.status);
+
+        // Record duration histogram (for percentiles)
+        self.duration_histogram.observe(latency_secs);
+
         // record stack metrics for the current coroutine when available
         if may::coroutine::is_coroutine() {
             let co = may::coroutine::current();

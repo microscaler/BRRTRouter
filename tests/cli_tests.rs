@@ -72,11 +72,11 @@ fn test_cli_generate_creates_project() {
     // Use RAII fixture for automatic cleanup
     let fixture = CliTestFixture::new();
     let dir = fixture.path();
-    
+
     let spec_src = Path::new("examples/openapi.yaml");
     let spec_dest = dir.join("openapi.yaml");
     fs::copy(spec_src, &spec_dest).unwrap();
-    
+
     // Stub cargo binary
     let stub = dir.join("cargo");
     fs::write(&stub, "#!/bin/sh\nexit 0\n").unwrap();
@@ -95,10 +95,10 @@ fn test_cli_generate_creates_project() {
         .status()
         .expect("run cli");
     assert!(status.success());
-    
+
     let project = dir.join("examples").join("pet_store");
     assert!(project.join("Cargo.toml").exists());
     assert!(project.join("src").join("main.rs").exists());
-    
+
     // Automatic cleanup when fixture drops!
 }

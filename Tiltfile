@@ -14,6 +14,10 @@ tilt_port = cfg.get('tilt_port', '10351')  # Default to 10351 to avoid common co
 # Set the Tilt UI port
 os.putenv('TILT_PORT', tilt_port)
 
+# Host-aware build selection via shell script (exception approved)
+brr_build_cmd = 'scripts/host-aware-build.sh brr'
+pet_build_cmd = 'scripts/host-aware-build.sh pet'
+
 # ============================================================================
 # LOCAL BUILDS (Fast incremental compilation on host)
 # ============================================================================
@@ -37,7 +41,7 @@ local_resource(
 # 1. Build BRRTRouter library locally for x86_64 Linux (cross-compile from Apple Silicon with zig)
 local_resource(
     'build-brrtrouter',
-    'cargo zigbuild --release --target x86_64-unknown-linux-musl --lib',
+    brr_build_cmd,
     deps=['src/', 'Cargo.toml', 'Cargo.lock'],
     labels=['build'],
     allow_parallel=True,
@@ -93,7 +97,7 @@ local_resource(
 # =============================================================================
 local_resource(
     'build-petstore',
-    'cargo zigbuild --release --target x86_64-unknown-linux-musl -p pet_store && mkdir -p build_artifacts && cp target/x86_64-unknown-linux-musl/release/pet_store build_artifacts/',
+    pet_build_cmd + ' && mkdir -p build_artifacts && cp target/x86_64-unknown-linux-musl/release/pet_store build_artifacts/',
     deps=['examples/pet_store/src/', 'examples/pet_store/Cargo.toml'],
     resource_deps=['gen-petstore'],
     labels=['build'],
@@ -278,7 +282,7 @@ k8s_resource(
     'petstore',
     port_forwards=['8080:8080'],
     resource_deps=[
-        'docker-build-and-load',  # Image must be built and loaded FIRST
+        'docker-build-and-push',  # Image must be built and pushed FIRST
         'postgres',
         'redis',
         'prometheus',
@@ -314,10 +318,23 @@ local_resource(
     auto_init=False,
 )
 
-# Button to run Goose load test
+# Button to run standard Goose API load test (all endpoints)
 local_resource(
-    'run-goose-test',
+    'run-goose-api-test',
     'cargo run --release --example api_load_test -- --host http://localhost:8080 --users 10 --hatch-rate 2 --run-time 30s',
+    resource_deps=['petstore'],
+    trigger_mode=TRIGGER_MODE_MANUAL,
+    labels=['tools'],
+    auto_init=False,
+)
+
+
+# Button to run adaptive Goose load test (finds breaking point via Prometheus)
+# Uses optimized defaults: START_USERS=100, STAGE_DURATION=60s, HATCH_RATE=1000
+# Customize with env vars: START_USERS, RAMP_STEP, HATCH_RATE, STAGE_DURATION, MAX_USERS
+local_resource(
+    'run-goose-adaptive',
+    'cargo run --release --example adaptive_load_test -- --host http://localhost:8080',
     resource_deps=['petstore'],
     trigger_mode=TRIGGER_MODE_MANUAL,
     labels=['tools'],
@@ -353,7 +370,8 @@ print("""
 🔧 Quick Actions (in Tilt UI):
   - Click "regenerate-petstore" to rebuild from OpenAPI spec
   - Click "run-curl-tests" to test all endpoints
-  - Click "run-goose-test" to run load test
+  - Click "run-goose-api-test" to run standard API load test (all endpoints)
+  - Click "run-goose-adaptive" to auto-find breaking point (Prometheus-driven)
 
 📝 Fast Iteration Workflow:
   1. Edit Rust source code

@@ -106,6 +106,12 @@ struct Args {
 }
 
 fn main() -> io::Result<()> {
+    // Initialize structured logging early so all subsequent logs (including request logs)
+    // are emitted and scraped by Promtail/Loki. Honors RUST_LOG via EnvFilter.
+    if let Err(e) = brrtrouter::otel::init_logging_with_config(&brrtrouter::otel::LogConfig::from_env()) {
+        eprintln!("[logging][error] failed to init tracing subscriber: {e}");
+    }
+
     let args = Args::parse();
     // configure coroutine stack size
     let config = RuntimeConfig::from_env();

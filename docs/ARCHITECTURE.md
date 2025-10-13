@@ -9,6 +9,7 @@ This document provides detailed architectural diagrams and explanations of how B
 - [Request Handling Flow](#request-handling-flow)
 - [Key Components](#key-components)
 - [Architectural Patterns](#architectural-patterns)
+- [Observability & Logging](#observability--logging)
 
 ## Overview
 
@@ -412,6 +413,131 @@ sequenceDiagram
 - All input validated against OpenAPI spec
 - Path traversal protection for static files
 - JSON schema validation for request bodies
+
+
+## Observability & Logging
+
+BRRTRouter includes comprehensive structured logging and observability features built on the `tracing` crate ecosystem.
+
+### Logging Architecture
+
+```mermaid
+graph TD
+    A[Application Code] -->|tracing macros| B[tracing-subscriber]
+    B --> C{Log Format}
+    C -->|JSON| D[Production<br/>Loki/Elasticsearch]
+    C -->|Pretty| E[Development<br/>stdout]
+    B --> F[Sampling Layer]
+    B --> G[Redaction Layer]
+    F --> H[Rate Limited Output]
+    G --> I[Sensitive Data Masked]
+    B --> J[OpenTelemetry Layer]
+    J --> K[Jaeger/Zipkin]
+```
+
+### Logging Touchpoints (49 Runtime)
+
+BRRTRouter instruments all critical paths with structured logging:
+
+| Component | Touchpoints | Description |
+|-----------|-------------|-------------|
+| **Request Lifecycle** | 8 | HTTP parsing, headers, body, query params |
+| **Routing** | 6 | Route matching, regex evaluation, 404s |
+| **Security** | 7 | Auth validation, provider lookup, 401/403 |
+| **Validation** | 5 | Request/response schema validation |
+| **Dispatcher** | 7 | Handler lookup, dispatch, timeouts |
+| **Handler Execution** | 6 | Execution start/complete, panics with backtraces |
+| **Hot Reload** | 4 | Spec changes, reload success/failure (dual output) |
+| **Response Flow** | 5 | Serialization, header injection, HTTP response |
+| **Middleware** | 1 | CORS, Metrics, Tracing spans |
+
+### Log Format
+
+All runtime logs use structured JSON format in production:
+
+```json
+{
+  "timestamp": "2025-10-13T12:34:56.789Z",
+  "level": "INFO",
+  "target": "brrtrouter::dispatcher::core",
+  "message": "Request dispatched to handler",
+  "request_id": "req_7f8d9e0a",
+  "handler_name": "get_pet_by_id",
+  "method": "GET",
+  "path": "/pets/123",
+  "span": {
+    "trace_id": "0af7651916cd43dd8448eb211c80319c",
+    "span_id": "00f067aa0ba902b7"
+  }
+}
+```
+
+### Sensitive Data Redaction
+
+Automatic redaction of credentials and PII:
+
+- **API Keys**: First 4 chars visible (e.g., `test***`)
+- **JWT Tokens**: Completely masked (`<REDACTED>`)
+- **Authorization Headers**: Redacted
+- **Cookie Values**: Redacted
+- **Passwords**: Never logged
+
+Configurable via `BRRTR_LOG_REDACT_LEVEL` environment variable:
+- `none` - No redaction (development only)
+- `credentials` - Mask auth tokens (default)
+- `full` - Mask all potentially sensitive fields
+
+### Sampling & Performance
+
+Log volume control for high-traffic production:
+
+- **Sampling Modes**:
+  - `all` - Log everything (development)
+  - `error-only` - Only errors and warnings
+  - `sampled` - Sample by rate (e.g., 10% of requests)
+
+- **Performance Impact**: <5% latency overhead with async buffering
+- **Async Buffering**: Non-blocking writes with configurable buffer size (default: 8192)
+
+### Configuration
+
+Configure logging via environment variables:
+
+```bash
+# Log level (default: info)
+BRRTR_LOG_LEVEL=debug
+
+# Format: json (production) or pretty (development)
+BRRTR_LOG_FORMAT=json
+
+# Redaction level (default: credentials)
+BRRTR_LOG_REDACT_LEVEL=credentials
+
+# Sampling (default: sampled at 10%)
+BRRTR_LOG_SAMPLING_MODE=sampled
+BRRTR_LOG_SAMPLING_RATE=0.1
+
+# Async buffering (default: true)
+BRRTR_LOG_ASYNC=true
+BRRTR_LOG_BUFFER_SIZE=8192
+```
+
+### Hot Reload Logging
+
+Hot reload events use **dual output** strategy:
+- **stdout**: Immediate developer feedback with emojis (🔄📖✅❌)
+- **Loki**: Observability for production spec changes
+
+### Development vs Production
+
+| Component | Development | Production |
+|-----------|-------------|------------|
+| **Runtime Logging** | Pretty format, DEBUG level | JSON format, INFO level |
+| **Startup/Bootstrap** | stdout only | stdout only |
+| **Code Generation** | stdout only | stdout only |
+| **Hot Reload** | stdout + Loki | stdout + Loki |
+
+See [Logging PRD](../docs/wip/LOGGING_PRD.md) for complete documentation of all 78 touchpoints.
 
 ## Extension Points
 

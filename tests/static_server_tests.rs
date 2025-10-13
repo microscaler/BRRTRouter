@@ -21,14 +21,14 @@ impl StaticFileTestServer {
     fn new() -> Self {
         // Setup: Configure coroutine stack size
         may::config().set_stack_size(0x8000);
-        
+
         let (routes, _slug) = brrtrouter::load_spec("examples/openapi.yaml").unwrap();
         let router = Arc::new(RwLock::new(Router::new(routes.clone())));
         let mut dispatcher = Dispatcher::new();
         unsafe {
             registry::register_from_spec(&mut dispatcher, &routes);
         }
-        
+
         // Important: Uses tests/staticdata for static files and includes doc directory
         // for comprehensive integration testing
         let service = AppService::new(
@@ -39,19 +39,19 @@ impl StaticFileTestServer {
             Some(PathBuf::from("tests/staticdata")),
             Some(PathBuf::from("examples/pet_store/doc")),
         );
-        
+
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
         drop(listener);
         let handle = HttpServer(service).start(addr).unwrap();
         handle.wait_ready().unwrap();
-        
+
         Self {
             handle: Some(handle),
             addr,
         }
     }
-    
+
     /// Get the server address for making requests
     fn addr(&self) -> SocketAddr {
         self.addr
@@ -102,7 +102,7 @@ fn test_js_served() {
     let (status, ct) = parse_parts(&resp);
     assert_eq!(status, 200);
     assert_eq!(ct, "application/javascript");
-    
+
     // Automatic cleanup!
 }
 
@@ -113,16 +113,19 @@ fn test_root_served() {
     let (status, ct) = parse_parts(&resp);
     assert_eq!(status, 200);
     assert_eq!(ct, "text/html");
-    
+
     // Automatic cleanup!
 }
 
 #[test]
 fn test_traversal_blocked() {
     let server = StaticFileTestServer::new();
-    let resp = send_request(&server.addr(), "GET /../Cargo.toml HTTP/1.1\r\nHost: x\r\n\r\n");
+    let resp = send_request(
+        &server.addr(),
+        "GET /../Cargo.toml HTTP/1.1\r\nHost: x\r\n\r\n",
+    );
     let (status, _) = parse_parts(&resp);
     assert_eq!(status, 404);
-    
+
     // Automatic cleanup!
 }

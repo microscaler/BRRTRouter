@@ -45,14 +45,14 @@ impl HealthTestServer {
         drop(listener);
         let handle = HttpServer(service).start(addr).unwrap();
         handle.wait_ready().unwrap();
-        
+
         Self {
             _tracing: tracing,
             handle: Some(handle),
             addr,
         }
     }
-    
+
     fn addr(&self) -> SocketAddr {
         self.addr
     }
@@ -88,10 +88,13 @@ fn parse_response(resp: &str) -> (u16, serde_json::Value) {
 #[test]
 fn test_health_endpoint() {
     let server = HealthTestServer::new();
-    let resp = send_request(&server.addr(), "GET /health HTTP/1.1\r\nHost: localhost\r\n\r\n");
+    let resp = send_request(
+        &server.addr(),
+        "GET /health HTTP/1.1\r\nHost: localhost\r\n\r\n",
+    );
     let (status, body) = parse_response(&resp);
     assert_eq!(status, 200);
     assert_eq!(body["status"], "ok");
-    
+
     // Automatic cleanup!
 }

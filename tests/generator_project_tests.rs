@@ -17,12 +17,13 @@ impl ProjectTestFixture {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let dir = std::env::temp_dir().join(format!("gen_proj_test_{}_{}", std::process::id(), nanos));
+        let dir =
+            std::env::temp_dir().join(format!("gen_proj_test_{}_{}", std::process::id(), nanos));
         fs::create_dir_all(&dir).unwrap();
-        
+
         let prev_dir = std::env::current_dir().unwrap();
         std::env::set_current_dir(&dir).unwrap();
-        
+
         Self { dir, prev_dir }
     }
 

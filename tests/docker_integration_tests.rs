@@ -19,7 +19,7 @@ mod common;
 use common::http::wait_for_http_200;
 
 /// RAII wrapper for Docker test containers to ensure cleanup
-/// 
+///
 /// Automatically removes the container when dropped, even on panic.
 /// This prevents the accumulation of orphaned containers from test failures.
 struct DockerTestContainer {
@@ -30,7 +30,10 @@ struct DockerTestContainer {
 impl DockerTestContainer {
     /// Wrap an existing container ID for automatic cleanup
     fn from_id(docker: Docker, container_id: String) -> Self {
-        Self { docker, container_id }
+        Self {
+            docker,
+            container_id,
+        }
     }
 
     /// Get the container ID
@@ -160,11 +163,12 @@ fn test_petstore_container_health() {
         cfg,
     ))
     .unwrap();
-    
+
     // Wrap container in RAII guard for automatic cleanup
     let container = DockerTestContainer::from_id(docker.clone(), created.id);
-    
-    block_on(docker.start_container(container.id(), None::<StartContainerOptions<String>>)).unwrap();
+
+    block_on(docker.start_container(container.id(), None::<StartContainerOptions<String>>))
+        .unwrap();
 
     // Give the container a moment to start
     sleep(Duration::from_secs(2));

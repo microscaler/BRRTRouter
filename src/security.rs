@@ -450,15 +450,11 @@ impl JwksBearerProvider {
         };
         let mut body_opt: Option<String> = None;
         for _ in 0..3 {
-            match client.get(&self.jwks_url).send() {
-                Ok(r) => match r.text() {
-                    Ok(t) => {
-                        body_opt = Some(t);
-                        break;
-                    }
-                    Err(_) => {}
-                },
-                Err(_) => {}
+            if let Ok(r) = client.get(&self.jwks_url).send() {
+                if let Ok(t) = r.text() {
+                    body_opt = Some(t);
+                    break;
+                }
             }
         }
         let body = match body_opt {

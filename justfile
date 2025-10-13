@@ -247,7 +247,7 @@ dev-up:
 		kind create cluster --config k8s/cluster/kind-config.yaml --wait 60s
 		
 		# Document the local registry
-		kubectl apply -f k8s/cluster/local-registry-hosting.yaml
+		kubectl apply -f k8s/core/local-registry-hosting.yaml
 		echo "[OK] Kind cluster created"
 	else
 		echo "[OK] Kind cluster already exists"

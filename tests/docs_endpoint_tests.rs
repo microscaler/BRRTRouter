@@ -45,14 +45,14 @@ impl DocsTestServer {
         drop(listener);
         let handle = HttpServer(service).start(addr).unwrap();
         handle.wait_ready().unwrap();
-        
+
         Self {
             _tracing: tracing,
             handle: Some(handle),
             addr,
         }
     }
-    
+
     fn addr(&self) -> SocketAddr {
         self.addr
     }
@@ -100,18 +100,21 @@ fn test_openapi_endpoint() {
     assert_eq!(status, 200);
     assert_eq!(ct, "text/yaml");
     assert!(body.contains("openapi: 3.1.0"));
-    
+
     // Automatic cleanup!
 }
 
 #[test]
 fn test_swagger_ui_endpoint() {
     let server = DocsTestServer::new();
-    let resp = send_request(&server.addr(), "GET /docs HTTP/1.1\r\nHost: localhost\r\n\r\n");
+    let resp = send_request(
+        &server.addr(),
+        "GET /docs HTTP/1.1\r\nHost: localhost\r\n\r\n",
+    );
     let (status, ct, body) = parse_parts(&resp);
     assert_eq!(status, 200);
     assert!(ct.starts_with("text/html"));
     assert!(body.contains("SwaggerUIBundle"));
-    
+
     // Automatic cleanup!
 }
