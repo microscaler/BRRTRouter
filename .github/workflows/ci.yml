@@ -248,7 +248,11 @@ jobs:
           echo "Forwarding Pet Store port..."
           kubectl port-forward -n brrtrouter-dev service/petstore 8080:8080 &
           PF_PID=$!
-          sleep 5
+          echo "Waiting for Pet Store readiness (index page)..."
+          for i in $(seq 1 120); do \
+            curl -fsS http://127.0.0.1:8080/ >/dev/null && echo "ready" && break; \
+            sleep 0.5; \
+          done
           
           echo "Testing health endpoint..."
           curl -f http://localhost:8080/health || (echo "Health check failed" && exit 1)
@@ -292,7 +296,18 @@ jobs:
           echo "Forwarding Pet Store port for Goose..."
           kubectl port-forward -n brrtrouter-dev service/petstore 8080:8080 &
           PF_PID=$!
-          sleep 5
+          echo "Waiting for Pet Store readiness (index page) before Goose..."
+          for i in $(seq 1 120); do \
+            curl -fsS http://127.0.0.1:8080/ >/dev/null && echo "ready" && break; \
+            sleep 1; \
+          done
+
+          echo "Sanity-checking secured endpoints before Goose (with X-API-Key)..."
+          set -e
+          curl -fsS -H "X-API-Key: test123" http://127.0.0.1:8080/pets >/dev/null
+          curl -fsS -H "X-API-Key: test123" http://127.0.0.1:8080/users >/dev/null
+          curl -fsS -H "X-API-Key: test123" http://127.0.0.1:8080/admin/settings >/dev/null || echo "admin/settings may require additional roles; continuing"
+          set +e
 
           echo "====================================================================="
           echo "GOOSE COMPREHENSIVE API LOAD TEST"
@@ -312,6 +327,12 @@ jobs:
             | tee goose-metrics.txt
 
           kill $PF_PID || true
+
+      - name: Diagnose auth failures (Loki-style log grep)
+        if: always()
+        run: |
+          echo "Checking for 401/unauth logs from petstore..."
+          kubectl logs -n brrtrouter-dev deployment/petstore --tail=400 | grep -Ei "unauth|401" || echo "No auth errors detected in recent logs"
 
       - name: Check for failures in Goose metrics
         run: |
