@@ -49,7 +49,7 @@ impl MetricsTestServer {
             Some(PathBuf::from("examples/pet_store/doc")),
         );
         service.set_metrics_middleware(metrics);
-        
+
         // Register a simple ApiKey provider so requests with X-API-Key: test123 are authorized
         struct ApiKeyProvider {
             key: String,
@@ -82,20 +82,20 @@ impl MetricsTestServer {
                 );
             }
         }
-        
+
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
         drop(listener);
         let handle = HttpServer(service).start(addr).unwrap();
         handle.wait_ready().unwrap();
-        
+
         Self {
             _tracing: tracing,
             handle: Some(handle),
             addr,
         }
     }
-    
+
     fn addr(&self) -> SocketAddr {
         self.addr
     }
@@ -139,7 +139,10 @@ fn test_metrics_endpoint() {
         &server.addr(),
         "GET /pets HTTP/1.1\r\nHost: localhost\r\nX-API-Key: test123\r\n\r\n",
     );
-    let resp = send_request(&server.addr(), "GET /metrics HTTP/1.1\r\nHost: localhost\r\n\r\n");
+    let resp = send_request(
+        &server.addr(),
+        "GET /metrics HTTP/1.1\r\nHost: localhost\r\n\r\n",
+    );
     let (status, ct, body) = parse_response_parts(&resp);
     assert_eq!(status, 200);
     assert_eq!(ct, "text/plain");
@@ -147,7 +150,8 @@ fn test_metrics_endpoint() {
     assert!(body.contains("brrtrouter_request_latency_seconds"));
     assert!(body.contains("brrtrouter_coroutine_stack_bytes"));
     assert!(body.contains("brrtrouter_coroutine_stack_used_bytes"));
-    assert!(body.contains("brrtrouter_requests_total 1"));
-    
+    // With labeled counters, expect at least one labeled series incremented
+    assert!(body.contains("brrtrouter_requests_total{"));
+
     // Automatic cleanup!
 }

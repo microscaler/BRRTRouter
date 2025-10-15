@@ -29,6 +29,7 @@ mod tests {
     use may::sync::mpsc;
     use serde_json::json;
     use std::collections::HashMap;
+    use crate::ids::RequestId;
 
     #[test]
     fn test_echo_handler() {
@@ -40,6 +41,7 @@ mod tests {
         let body = json!({"name": "test"});
 
         let req = HandlerRequest {
+            request_id: RequestId::new(),
             method: Method::POST,
             path: "/items/123".to_string(),
             handler_name: "echo".to_string(),

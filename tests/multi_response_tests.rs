@@ -27,7 +27,7 @@ impl MultiResponseTestServer {
     /// Create a new multi-response test server with custom response specs
     fn new() -> Self {
         may::config().set_stack_size(0x8000);
-        
+
         let responses = {
             let mut m = HashMap::new();
             let mut inner = HashMap::new();
@@ -41,7 +41,7 @@ impl MultiResponseTestServer {
             m.insert(201u16, inner);
             m
         };
-        
+
         let route = RouteMeta {
             method: Method::POST,
             path_pattern: "/resp".to_string(),
@@ -59,7 +59,7 @@ impl MultiResponseTestServer {
             base_path: String::new(),
             sse: false,
         };
-        
+
         let router = Arc::new(RwLock::new(Router::new(vec![route.clone()])));
         let mut dispatcher = Dispatcher::new();
         unsafe {
@@ -72,7 +72,7 @@ impl MultiResponseTestServer {
                 let _ = _req.reply_tx.send(resp);
             });
         }
-        
+
         // Include static and doc directories for comprehensive integration testing
         let service = AppService::new(
             router,
@@ -82,19 +82,19 @@ impl MultiResponseTestServer {
             Some(PathBuf::from("examples/pet_store/static_site")),
             Some(PathBuf::from("examples/pet_store/doc")),
         );
-        
+
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
         drop(listener);
         let handle = HttpServer(service).start(addr).unwrap();
         handle.wait_ready().unwrap();
-        
+
         Self {
             handle: Some(handle),
             addr,
         }
     }
-    
+
     fn addr(&self) -> SocketAddr {
         self.addr
     }
@@ -137,6 +137,6 @@ fn test_select_content_type_from_spec() {
     let (status, ct) = parse_parts(&resp);
     assert_eq!(status, 201);
     assert_eq!(ct, "text/plain");
-    
+
     // Automatic cleanup!
 }

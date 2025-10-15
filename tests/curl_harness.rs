@@ -24,9 +24,9 @@ fn register_signal_handlers() {
         if SIGNAL_CLEANUP_RUNNING.swap(true, Ordering::SeqCst) {
             return;
         }
-        
+
         eprintln!("\n🧹 Cleaning up Docker resources on exit...");
-        
+
         // 1. Clean up the running container
         if let Some(harness) = HARNESS.get() {
             eprintln!("Stopping container: {}", harness.container_id);
@@ -37,10 +37,10 @@ fn register_signal_handlers() {
                 .args(["rm", "-f", &harness.container_id])
                 .status();
         }
-        
+
         // Also cleanup by name (in case harness wasn't initialized)
         cleanup_orphaned_containers();
-        
+
         // 2. Clean up dangling test images
         // Why cleanup images?
         // - Each test run creates a new image (even though content is identical)
@@ -57,18 +57,20 @@ fn register_signal_handlers() {
         // - Skip images that return "conflict" or "being used" errors
         // - This prevents removing images from running containers (like kind)
         eprintln!("Cleaning up dangling test images...");
-        
+
         // Step 1: Try docker prune first (safest, won't touch in-use images)
         let prune_result = Command::new("docker")
             .args([
                 "image",
                 "prune",
-                "-f",  // Force (no prompt)
-                "--filter", "dangling=true",  // Only <none>:<none> images
-                "--filter", "until=1h",       // Only recent (from this test run)
+                "-f", // Force (no prompt)
+                "--filter",
+                "dangling=true", // Only <none>:<none> images
+                "--filter",
+                "until=1h", // Only recent (from this test run)
             ])
             .output();
-        
+
         match prune_result {
             Ok(output) => {
                 let stdout = String::from_utf8_lossy(&output.stdout);
@@ -80,7 +82,7 @@ fn register_signal_handlers() {
                 eprintln!("⚠ Could not prune images: {}", e);
             }
         }
-        
+
         // Step 2: Clean up remaining <none> images that prune missed
         // Get list of <none>:<none> image IDs
         // Note: This uses shell commands which might not work in all environments
@@ -92,12 +94,15 @@ fn register_signal_handlers() {
             Ok(output) if output.status.success() => {
                 let image_ids = String::from_utf8_lossy(&output.stdout);
                 let ids: Vec<&str> = image_ids.lines().filter(|s| !s.is_empty()).collect();
-                
+
                 if !ids.is_empty() {
-                    eprintln!("Found {} additional <none> image(s) to remove...", ids.len());
+                    eprintln!(
+                        "Found {} additional <none> image(s) to remove...",
+                        ids.len()
+                    );
                     let mut removed_count = 0;
                     let mut skipped_count = 0;
-                    
+
                     for image_id in ids {
                         // Try to remove without --force (won't remove in-use images)
                         match Command::new("docker")
@@ -110,10 +115,15 @@ fn register_signal_handlers() {
                                 } else {
                                     let stderr = String::from_utf8_lossy(&rm_output.stderr);
                                     // Skip errors for in-use images (safe to ignore)
-                                    if stderr.contains("conflict") || stderr.contains("being used") {
+                                    if stderr.contains("conflict") || stderr.contains("being used")
+                                    {
                                         skipped_count += 1;
                                     } else {
-                                        eprintln!("  ⚠ Could not remove {}: {}", image_id, stderr.trim());
+                                        eprintln!(
+                                            "  ⚠ Could not remove {}: {}",
+                                            image_id,
+                                            stderr.trim()
+                                        );
                                     }
                                 }
                             }
@@ -122,7 +132,7 @@ fn register_signal_handlers() {
                             }
                         }
                     }
-                    
+
                     if removed_count > 0 {
                         eprintln!("✓ Removed {} <none> image(s)", removed_count);
                     }
@@ -142,26 +152,26 @@ fn register_signal_handlers() {
                 eprintln!("     (docker prune in Step 1 already cleaned up most images)");
             }
         }
-        
+
         eprintln!("✓ Cleanup complete\n");
     }
-    
+
     extern "C" fn signal_handler(_: libc::c_int) {
         cleanup_handler();
-        
+
         // Re-raise the signal to allow normal termination
         unsafe {
             libc::signal(libc::SIGINT, libc::SIG_DFL);
             libc::raise(libc::SIGINT);
         }
     }
-    
+
     // Register signal handlers for SIGINT and SIGTERM
     unsafe {
         libc::signal(libc::SIGINT, signal_handler as libc::sighandler_t);
         libc::signal(libc::SIGTERM, signal_handler as libc::sighandler_t);
     }
-    
+
     // ALSO register atexit handler for normal process termination
     // This handles the case where tests complete successfully
     extern "C" fn atexit_wrapper() {
@@ -229,20 +239,74 @@ pub fn ensure_image_ready() {
         // - Cargo cache is preserved between runs
         // - ALWAYS tests current code (impossible to forget to rebuild!)
         eprintln!("[2/5] Building pet_store binary for Linux x86_64...");
-        let build_output = Command::new("cargo")
-            .args([
-                "zigbuild",
-                "--release",
-                "-p", "pet_store",
-                "--target", "x86_64-unknown-linux-musl"
-            ])
-            .output()
-            .expect("failed to run cargo zigbuild");
-        
+        // Determine host OS/arch to choose build strategy
+        let uname_s = Command::new("uname").arg("-s").output().ok()
+            .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+            .unwrap_or_default();
+        let uname_m = Command::new("uname").arg("-m").output().ok()
+            .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+            .unwrap_or_default();
+
+        // On macOS, use cargo-zigbuild for cross-compilation to musl.
+        // On Linux x86_64 runners, build normally for musl without zig.
+        let build_output = if uname_s.contains("Darwin") {
+            eprintln!("      → Detected macOS host; using cargo zigbuild for cross-compilation");
+            Command::new("cargo")
+                .args([
+                    "zigbuild",
+                    "--release",
+                    "-p", "pet_store",
+                    "--target", "x86_64-unknown-linux-musl",
+                ])
+                .output()
+                .expect("failed to run cargo zigbuild")
+        } else if uname_s.contains("Linux") && uname_m.contains("x86_64") {
+            eprintln!("      → Detected Linux x86_64 runner; using standard cargo build for musl");
+            // Prefer musl-gcc if available to ensure compatibility with crates like ring
+            let mut cmd = Command::new("cargo");
+            let cmd = cmd
+                .args([
+                    "build",
+                    "--release",
+                    "-p", "pet_store",
+                    "--target", "x86_64-unknown-linux-musl",
+                ])
+                .env("CC_x86_64_unknown_linux_musl", "musl-gcc")
+                .env("CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER", "musl-gcc");
+            cmd.output().expect("failed to run cargo build for musl target")
+        } else {
+            // Fallback: try zigbuild first; if that fails, try normal build
+            eprintln!("      → Unknown host ({uname_s} {uname_m}); trying cargo zigbuild, then cargo build if needed");
+            let zig_attempt = Command::new("cargo")
+                .args([
+                    "zigbuild",
+                    "--release",
+                    "-p", "pet_store",
+                    "--target", "x86_64-unknown-linux-musl",
+                ])
+                .output();
+            match zig_attempt {
+                Ok(out) if out.status.success() => out,
+                _ => {
+                    Command::new("cargo")
+                        .args([
+                            "build",
+                            "--release",
+                            "-p", "pet_store",
+                            "--target", "x86_64-unknown-linux-musl",
+                        ])
+                        .env("CC_x86_64_unknown_linux_musl", "musl-gcc")
+                        .env("CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER", "musl-gcc")
+                        .output()
+                        .expect("failed to run cargo build for musl target")
+                }
+            }
+        };
+
         if !build_output.status.success() {
             eprintln!("      ❌ Build failed!");
             eprintln!("{}", String::from_utf8_lossy(&build_output.stderr));
-            return Err("Failed to build pet_store binary. Do you have cargo-zigbuild installed?".to_string());
+            return Err("Failed to build pet_store binary for musl target".to_string());
         }
         eprintln!("      ✓ Binary built for Linux x86_64");
         
@@ -324,15 +388,18 @@ pub fn ensure_image_ready() {
         eprintln!("");
         Ok(())
     });
-    
+
     // All threads (including the one that ran setup) check the result
     if let Err(e) = result {
         panic!("{}", e);
     }
-    
+
     // If we get here, another thread might have done the setup - let them know
     let thread_id = thread::current().id();
-    eprintln!("[Thread {:?}] Image setup complete, proceeding with test...", thread_id);
+    eprintln!(
+        "[Thread {:?}] Image setup complete, proceeding with test...",
+        thread_id
+    );
 }
 
 /// Get the base URL for the shared test container
@@ -346,10 +413,10 @@ pub fn base_url() -> &'static str {
     CLEANUP_REGISTERED.get_or_init(|| {
         register_signal_handlers();
     });
-    
+
     // Ensure image is ready before starting container
     ensure_image_ready();
-    
+
     let h = HARNESS.get_or_init(ContainerHarness::start);
     h.base_url.as_str()
 }
@@ -371,9 +438,7 @@ pub fn cleanup_orphaned_containers() {
     eprintln!("Cleaning up container: {}", name);
 
     // Force kill and remove in one command (most aggressive)
-    let kill_output = Command::new("docker")
-        .args(["rm", "-f", &name])
-        .output();
+    let kill_output = Command::new("docker").args(["rm", "-f", &name]).output();
 
     match kill_output {
         Ok(output) => {
@@ -395,7 +460,8 @@ pub fn cleanup_orphaned_containers() {
 
     // Poll to verify the container is actually gone
     // This is critical to prevent "name already in use" errors
-    for attempt in 1..=30 {  // Increased from 20 to 30 attempts
+    for attempt in 1..=30 {
+        // Increased from 20 to 30 attempts
         let check = Command::new("docker")
             .args(["ps", "-a", "--filter", &format!("name=^/{}$", name), "-q"])
             .output();
@@ -404,19 +470,25 @@ pub fn cleanup_orphaned_containers() {
             let container_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if container_id.is_empty() {
                 if attempt > 1 {
-                    eprintln!("✓ Container name '{}' is released (took {} attempts)", name, attempt);
+                    eprintln!(
+                        "✓ Container name '{}' is released (took {} attempts)",
+                        name, attempt
+                    );
                 }
                 return;
             }
         }
 
         if attempt == 30 {
-            eprintln!("❌ ERROR: Container name '{}' still in use after 30 attempts!", name);
+            eprintln!(
+                "❌ ERROR: Container name '{}' still in use after 30 attempts!",
+                name
+            );
             eprintln!("   This will cause 'name already in use' errors");
             eprintln!("   Try: docker rm -f {}", name);
         }
 
-        thread::sleep(Duration::from_millis(100));  // Increased from 50ms to 100ms
+        thread::sleep(Duration::from_millis(100)); // Increased from 50ms to 100ms
     }
 }
 

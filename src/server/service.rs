@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::sync::{Arc, RwLock};
 use tracing::{info, warn};
+use crate::ids::RequestId;
 
 /// HTTP application service that handles all incoming requests
 ///
@@ -82,7 +83,7 @@ impl Clone for AppService {
             static_files: self.static_files.clone(),
             doc_files: self.doc_files.clone(),
             watcher: None,
-            keep_alive_header: self.keep_alive_header.clone(),
+            keep_alive_header: self.keep_alive_header,
         }
     }
 }
@@ -170,7 +171,7 @@ impl AppService {
     pub fn set_keep_alive(&mut self, enable: bool, timeout_secs: u64, max_requests: u64) {
         if enable {
             // Build the desired header value and intern it to reuse any previously leaked instance.
-            let new_value = format!("Keep-Alive: timeout={}, max={}", timeout_secs, max_requests);
+            let new_value = format!("Keep-Alive: timeout={timeout_secs}, max={max_requests}");
             let interned = Self::intern_keep_alive(new_value);
             if self.keep_alive_header == Some(interned) {
                 return;
@@ -282,70 +283,133 @@ pub fn health_endpoint(res: &mut Response) -> io::Result<()> {
 }
 
 /// Metrics endpoint returning Prometheus text format statistics.
+///
+/// Exposes metrics compatible with Grafana dashboards:
+/// - Active requests gauge
+/// - Request counts with status code labels (for error rate)
+/// - Request duration histogram (for p50/p95/p99 percentiles)
+/// - Legacy per-path metrics (backward compatible)
 pub fn metrics_endpoint(res: &mut Response, metrics: &MetricsMiddleware) -> io::Result<()> {
     let (stack_size, used_stack) = metrics.stack_usage();
-    let mut body = format!(
-        "# HELP brrtrouter_requests_total Total number of handled requests\n\
-         # TYPE brrtrouter_requests_total counter\n\
-         brrtrouter_requests_total {}\n\
-         # HELP brrtrouter_top_level_requests_total Total number of received requests\n\
-         # TYPE brrtrouter_top_level_requests_total counter\n\
-         brrtrouter_top_level_requests_total {}\n\
-         # HELP brrtrouter_auth_failures_total Total number of authentication failures\n\
-         # TYPE brrtrouter_auth_failures_total counter\n\
-         brrtrouter_auth_failures_total {}\n\
-         # HELP brrtrouter_request_latency_seconds Average request latency in seconds\n\
-         # TYPE brrtrouter_request_latency_seconds gauge\n\
-         brrtrouter_request_latency_seconds {}\n\
-         # HELP brrtrouter_coroutine_stack_bytes Configured coroutine stack size\n\
-         # TYPE brrtrouter_coroutine_stack_bytes gauge\n\
-         brrtrouter_coroutine_stack_bytes {}\n\
-         # HELP brrtrouter_coroutine_stack_used_bytes Coroutine stack bytes used\n\
-         # TYPE brrtrouter_coroutine_stack_used_bytes gauge\n\
-         brrtrouter_coroutine_stack_used_bytes {}\n",
-        metrics.request_count(),
-        metrics.top_level_request_count(),
-        metrics.auth_failures(),
-        metrics.average_latency().as_secs_f64(),
-        stack_size,
-        used_stack
-    );
-    
-    // Add per-path metrics
-    body.push_str("# HELP brrtrouter_path_requests_total Total requests per path\n");
-    body.push_str("# TYPE brrtrouter_path_requests_total counter\n");
-    
-    let path_stats = metrics.path_stats();
-    for (path, (count, _avg_ns, _min_ns, _max_ns)) in &path_stats {
-        // Escape path for Prometheus label format
+    let mut body = String::with_capacity(8192); // Pre-allocate for performance
+
+    // Active requests (NEW - for Grafana "Active Requests" panel)
+    body.push_str("# HELP brrtrouter_active_requests Number of requests currently being processed\n");
+    body.push_str("# TYPE brrtrouter_active_requests gauge\n");
+    body.push_str(&format!("brrtrouter_active_requests {}\n", metrics.active_requests()));
+
+    // Requests with status code labels (NEW - for Grafana "Error Rate" panel)
+    body.push_str("# HELP brrtrouter_requests_total Total number of HTTP requests by path and status\n");
+    body.push_str("# TYPE brrtrouter_requests_total counter\n");
+    let status_stats = metrics.status_stats();
+    for ((path, status), count) in &status_stats {
         let escaped_path = path.replace('\\', "\\\\").replace('"', "\\\"");
-        body.push_str(&format!("brrtrouter_path_requests_total{{path=\"{}\"}} {}\n", escaped_path, count));
+        body.push_str(&format!(
+            "brrtrouter_requests_total{{path=\"{escaped_path}\",status=\"{status}\"}} {count}\n",
+        ));
     }
+
+    // Request duration histogram (NEW - for Grafana "Response Latency" p50/p95/p99 panel)
+    body.push_str("# HELP brrtrouter_request_duration_seconds Request duration in seconds\n");
+    body.push_str("# TYPE brrtrouter_request_duration_seconds histogram\n");
+    let (buckets, sum_ns, count) = metrics.histogram_data();
+    let bucket_boundaries = MetricsMiddleware::histogram_buckets();
     
+    // Emit histogram buckets
+    for (i, &boundary) in bucket_boundaries.iter().enumerate() {
+        body.push_str(&format!(
+            "brrtrouter_request_duration_seconds_bucket{{le=\"{boundary}\"}} {}\n",
+            buckets[i]
+        ));
+    }
+    // +Inf bucket (cumulative)
+    body.push_str(&format!(
+        "brrtrouter_request_duration_seconds_bucket{{le=\"+Inf\"}} {}\n",
+        buckets[bucket_boundaries.len()]
+    ));
+    // Histogram sum and count
+    let sum_secs = sum_ns as f64 / 1_000_000_000.0;
+    body.push_str(&format!(
+        "brrtrouter_request_duration_seconds_sum {sum_secs:.6}\n",
+    ));
+    body.push_str(&format!(
+        "brrtrouter_request_duration_seconds_count {count}\n",
+    ));
+
+    // Legacy metrics (backward compatible)
+    body.push_str("# HELP brrtrouter_top_level_requests_total Total number of received requests\n");
+    body.push_str("# TYPE brrtrouter_top_level_requests_total counter\n");
+    body.push_str(&format!(
+        "brrtrouter_top_level_requests_total {}\n",
+        metrics.top_level_request_count()
+    ));
+
+    body.push_str("# HELP brrtrouter_auth_failures_total Total number of authentication failures\n");
+    body.push_str("# TYPE brrtrouter_auth_failures_total counter\n");
+    body.push_str(&format!(
+        "brrtrouter_auth_failures_total {}\n",
+        metrics.auth_failures()
+    ));
+
+    body.push_str("# HELP brrtrouter_request_latency_seconds Average request latency in seconds\n");
+    body.push_str("# TYPE brrtrouter_request_latency_seconds gauge\n");
+    let avg = metrics.average_latency().as_secs_f64();
+    body.push_str(&format!(
+        "brrtrouter_request_latency_seconds {avg:.6}\n",
+    ));
+
+    body.push_str("# HELP brrtrouter_coroutine_stack_bytes Configured coroutine stack size\n");
+    body.push_str("# TYPE brrtrouter_coroutine_stack_bytes gauge\n");
+    body.push_str(&format!("brrtrouter_coroutine_stack_bytes {stack_size}\n"));
+
+    body.push_str("# HELP brrtrouter_coroutine_stack_used_bytes Coroutine stack bytes used\n");
+    body.push_str("# TYPE brrtrouter_coroutine_stack_used_bytes gauge\n");
+    body.push_str(&format!(
+        "brrtrouter_coroutine_stack_used_bytes {used_stack}\n",
+    ));
+
+    // Legacy per-path metrics (backward compatible)
+    let path_stats = metrics.path_stats();
+    
+    body.push_str("# HELP brrtrouter_path_requests_total Total requests per path (legacy)\n");
+    body.push_str("# TYPE brrtrouter_path_requests_total counter\n");
+    for (path, (count, _, _, _)) in &path_stats {
+        let escaped_path = path.replace('\\', "\\\\").replace('"', "\\\"");
+        body.push_str(&format!(
+            "brrtrouter_path_requests_total{{path=\"{escaped_path}\"}} {count}\n",
+        ));
+    }
+
     body.push_str("# HELP brrtrouter_path_latency_seconds_avg Average latency per path\n");
     body.push_str("# TYPE brrtrouter_path_latency_seconds_avg gauge\n");
     for (path, (_, avg_ns, _, _)) in &path_stats {
         let escaped_path = path.replace('\\', "\\\\").replace('"', "\\\"");
         let avg_secs = (*avg_ns as f64) / 1_000_000_000.0;
-        body.push_str(&format!("brrtrouter_path_latency_seconds_avg{{path=\"{}\"}} {:.6}\n", escaped_path, avg_secs));
+        body.push_str(&format!(
+            "brrtrouter_path_latency_seconds_avg{{path=\"{escaped_path}\"}} {avg_secs:.6}\n",
+        ));
     }
-    
+
     body.push_str("# HELP brrtrouter_path_latency_seconds_min Minimum latency per path\n");
     body.push_str("# TYPE brrtrouter_path_latency_seconds_min gauge\n");
     for (path, (_, _, min_ns, _)) in &path_stats {
         let escaped_path = path.replace('\\', "\\\\").replace('"', "\\\"");
         let min_secs = (*min_ns as f64) / 1_000_000_000.0;
-        body.push_str(&format!("brrtrouter_path_latency_seconds_min{{path=\"{}\"}} {:.6}\n", escaped_path, min_secs));
+        body.push_str(&format!(
+            "brrtrouter_path_latency_seconds_min{{path=\"{escaped_path}\"}} {min_secs:.6}\n",
+        ));
     }
-    
+
     body.push_str("# HELP brrtrouter_path_latency_seconds_max Maximum latency per path\n");
     body.push_str("# TYPE brrtrouter_path_latency_seconds_max gauge\n");
     for (path, (_, _, _, max_ns)) in &path_stats {
         let escaped_path = path.replace('\\', "\\\\").replace('"', "\\\"");
         let max_secs = (*max_ns as f64) / 1_000_000_000.0;
-        body.push_str(&format!("brrtrouter_path_latency_seconds_max{{path=\"{}\"}} {:.6}\n", escaped_path, max_secs));
+        body.push_str(&format!(
+            "brrtrouter_path_latency_seconds_max{{path=\"{escaped_path}\"}} {max_secs:.6}\n",
+        ));
     }
-    
+
     write_handler_response(
         res,
         200,
@@ -458,21 +522,23 @@ impl HttpService for AppService {
     /// This method is called from multiple coroutines concurrently.
     /// All shared state (Router, Dispatcher, etc.) uses Arc + Mutex/RwLock.
     fn call(&mut self, req: Request, res: &mut Response) -> io::Result<()> {
-        use tracing::{info, info_span, debug, Span};
-        
+        use tracing::{debug, error, info, info_span, warn, Span};
+
         /// Helper struct that logs request completion when dropped
         /// This ensures we log timing even if we return early
         struct RequestLogger {
+            request_id: Option<RequestId>,
             method: String,
             path: String,
             start: std::time::Instant,
+            total_size_bytes: usize,
             span: Span,
         }
-        
+
         impl Drop for RequestLogger {
             fn drop(&mut self) {
                 let duration_ms = self.start.elapsed().as_millis() as u64;
-                
+
                 // Get current coroutine stack usage if available
                 // Note: May coroutines don't expose actual stack usage, only size
                 let stack_used_kb = if may::coroutine::is_coroutine() {
@@ -482,25 +548,38 @@ impl HttpService for AppService {
                 } else {
                     0
                 };
-                
+
                 // Record in span
                 self.span.record("duration_ms", duration_ms);
                 self.span.record("stack_used_kb", stack_used_kb);
-                
-                // Log completion with all metrics
-                info!(
-                    method = %self.method,
-                    path = %self.path,
-                    duration_ms = duration_ms,
-                    stack_used_kb = stack_used_kb,
-                    "Request completed"
-                );
+
+                // R8: Request complete - Critical logging with full context
+                if let Some(ref request_id) = self.request_id {
+                    info!(
+                        request_id = %request_id,
+                        method = %self.method,
+                        path = %self.path,
+                        duration_ms = duration_ms,
+                        stack_used_kb = stack_used_kb,
+                        total_size_bytes = self.total_size_bytes,
+                        "Request completed"
+                    );
+                } else {
+                    info!(
+                        method = %self.method,
+                        path = %self.path,
+                        duration_ms = duration_ms,
+                        stack_used_kb = stack_used_kb,
+                        total_size_bytes = self.total_size_bytes,
+                        "Request completed"
+                    );
+                }
             }
         }
-        
+
         // Start timing immediately
         let request_start = std::time::Instant::now();
-        
+
         let ParsedRequest {
             method,
             path,
@@ -521,15 +600,25 @@ impl HttpService for AppService {
             stack_used_kb = tracing::field::Empty,
         );
         let _enter = span.enter();
-        
+
+        // Calculate total request size (approximate)
+        let total_size_bytes = headers
+            .iter()
+            .map(|(k, v)| k.len() + v.len())
+            .sum::<usize>()
+            + body.as_ref().map(|v| v.to_string().len()).unwrap_or(0);
+
         // Create request logger that will log completion on drop (RAII pattern)
-        let _request_logger = RequestLogger {
+        // Note: request_id will be set to None initially, updated when dispatch occurs
+        let mut _request_logger = RequestLogger {
+            request_id: None,
             method: method.clone(),
             path: path.clone(),
             start: request_start,
+            total_size_bytes,
             span: span.clone(),
         };
-        
+
         // Log incoming request with all headers (for debugging TooManyHeaders)
         debug!(
             method = %method,
@@ -598,6 +687,12 @@ impl HttpService for AppService {
             }
         }
 
+        // Determine/accept request id from headers; fallback to generated
+        let inbound_req_id = headers
+            .get("x-request-id")
+            .and_then(|s| if s.trim().is_empty() { None } else { Some(s.as_str()) });
+        let canonical_req_id = RequestId::from_header_or_new(inbound_req_id);
+
         let route_opt = {
             let router = self.router.read().unwrap();
             router.route(method.parse().unwrap(), &path)
@@ -606,6 +701,27 @@ impl HttpService for AppService {
             route_match.query_params = query_params.clone();
             // Perform security validation first
             if !route_match.route.security.is_empty() {
+                // S1: Security check start
+                let schemes_required: Vec<String> = route_match
+                    .route
+                    .security
+                    .iter()
+                    .flat_map(|req| req.0.keys().cloned())
+                    .collect();
+                let scopes_required: Vec<String> = route_match
+                    .route
+                    .security
+                    .iter()
+                    .flat_map(|req| req.0.values().flatten().cloned())
+                    .collect();
+
+                debug!(
+                    handler = %route_match.handler_name,
+                    schemes_required = ?schemes_required,
+                    scopes_required = ?scopes_required,
+                    "Security check start"
+                );
+
                 let sec_req = SecurityRequest {
                     headers: &headers,
                     query: &query_params,
@@ -613,12 +729,31 @@ impl HttpService for AppService {
                 };
                 let mut authorized = false;
                 let mut insufficient_scope = false;
+                let mut attempted_schemes: Vec<String> = Vec::new();
+
                 'outer: for requirement in &route_match.route.security {
                     let mut ok = true;
                     for (scheme_name, scopes) in &requirement.0 {
+                        attempted_schemes.push(scheme_name.clone());
+
+                        // S2: Security scheme lookup
+                        debug!(
+                            scheme_name = %scheme_name,
+                            scheme_type = "lookup",
+                            "Security scheme lookup"
+                        );
+
                         let scheme = match self.security_schemes.get(scheme_name) {
                             Some(s) => s,
                             None => {
+                                // S3: Provider not found
+                                let available_providers: Vec<&String> =
+                                    self.security_providers.keys().collect();
+                                warn!(
+                                    scheme_name = %scheme_name,
+                                    available_providers = ?available_providers,
+                                    "Security provider not found"
+                                );
                                 ok = false;
                                 break;
                             }
@@ -626,10 +761,25 @@ impl HttpService for AppService {
                         let provider = match self.security_providers.get(scheme_name) {
                             Some(p) => p,
                             None => {
+                                // S3: Provider not found (duplicate logging for consistency)
+                                let available_providers: Vec<&String> =
+                                    self.security_providers.keys().collect();
+                                warn!(
+                                    scheme_name = %scheme_name,
+                                    available_providers = ?available_providers,
+                                    "Security provider not found"
+                                );
                                 ok = false;
                                 break;
                             }
                         };
+
+                        // S4: Provider validation start
+                        debug!(
+                            provider_type = %scheme_name,
+                            scopes = ?scopes,
+                            "Provider validation start"
+                        );
                         if !provider.validate(scheme, scopes, &sec_req) {
                             // Detect insufficient scope for Bearer/OAuth2: token valid but scopes missing
                             match scheme {
@@ -657,13 +807,12 @@ impl HttpService for AppService {
                         break 'outer;
                     }
                 }
+
                 if !authorized {
                     if let Some(metrics) = &self.metrics {
                         metrics.inc_auth_failure();
                     }
-                    let debug = std::env::var("BRRTR_DEBUG_VALIDATION")
-                        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-                        .unwrap_or(false);
+
                     let status = if insufficient_scope { 403 } else { 401 };
                     let title = if status == 403 {
                         "Forbidden"
@@ -675,6 +824,39 @@ impl HttpService for AppService {
                     } else {
                         "Missing or invalid credentials"
                     };
+
+                    // S7: Validation failed (401) or S8: Insufficient scope (403)
+                    if status == 403 {
+                        // S8: Insufficient scope (403)
+                        warn!(
+                            method = %method,
+                            path = %path,
+                            handler = %route_match.handler_name,
+                            status = 403,
+                            reason = "insufficient_scope",
+                            schemes_required = ?schemes_required,
+                            scopes_required = ?scopes_required,
+                            attempted_schemes = ?attempted_schemes,
+                            "Insufficient scope (403 forbidden)"
+                        );
+                    } else {
+                        // S7: Validation failed (401)
+                        warn!(
+                            method = %method,
+                            path = %path,
+                            handler = %route_match.handler_name,
+                            status = 401,
+                            reason = "invalid_credentials",
+                            schemes_required = ?schemes_required,
+                            attempted_schemes = ?attempted_schemes,
+                            "Authentication failed (401 unauthorized)"
+                        );
+                    }
+
+                    let debug = std::env::var("BRRTR_DEBUG_VALIDATION")
+                        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                        .unwrap_or(false);
+
                     if status == 401 {
                         res.header("WWW-Authenticate: Bearer error=\"invalid_token\"");
                     } else {
@@ -696,57 +878,144 @@ impl HttpService for AppService {
                             );
                         }
                     }
-                    if status == 401 {
-                        warn!(method=%method, path=%path, handler=%route_match.route.handler_name, "auth failed: 401 unauthorized");
-                    } else {
-                        warn!(method=%method, path=%path, handler=%route_match.route.handler_name, "auth failed: 403 forbidden");
-                    }
                     write_json_error(res, status as u16, body);
                     return Ok(());
+                } else {
+                    // S6: Validation success
+                    info!(
+                        method = %method,
+                        path = %path,
+                        handler = %route_match.handler_name,
+                        scheme_name = ?attempted_schemes.last(),
+                        scopes_granted = ?scopes_required,
+                        "Authentication success"
+                    );
                 }
-                info!(method=%method, path=%path, handler=%route_match.route.handler_name, "auth success");
             }
-            // Enforce required request body when specified in spec
+
+            // V2: Required body missing
             if route_match.route.request_body_required && body.is_none() {
+                let expected_content_type = "application/json";
+                warn!(
+                    method = %method,
+                    path = %path,
+                    handler = %route_match.handler_name,
+                    expected_content_type = %expected_content_type,
+                    "Required body missing"
+                );
                 write_json_error(res, 400, json!({"error": "Request body required"}));
                 return Ok(());
             }
+
+            // V1 & V3: Request validation start and failure
             if let (Some(schema), Some(body_val)) = (&route_match.route.request_schema, &body) {
+                // V1: Request validation start
+                let schema_path = "#/components/schemas/request";
+                let required_fields: Vec<String> = schema
+                    .get("required")
+                    .and_then(|r| r.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                debug!(
+                    handler = %route_match.handler_name,
+                    schema_present = true,
+                    required_fields = ?required_fields,
+                    "Request validation start"
+                );
+
                 let compiled = JSONSchema::compile(schema).expect("invalid request schema");
                 let validation = compiled.validate(body_val);
                 if let Err(errors) = validation {
-                    let details: Vec<String> = errors.map(|e| e.to_string()).collect();
+                    // V3: Schema validation failed
+                    let error_details: Vec<String> = errors.map(|e| e.to_string()).collect();
+                    let invalid_fields: Vec<String> = error_details
+                        .iter()
+                        .filter_map(|e| {
+                            // Extract field names from error messages
+                            e.split('\'').nth(1).map(String::from)
+                        })
+                        .collect();
+
+                    warn!(
+                        method = %method,
+                        path = %path,
+                        handler = %route_match.handler_name,
+                        errors = ?error_details,
+                        schema_path = %schema_path,
+                        invalid_fields = ?invalid_fields,
+                        "Request schema validation failed"
+                    );
+
                     write_json_error(
                         res,
                         400,
-                        json!({"error": "Request validation failed", "details": details}),
+                        json!({"error": "Request validation failed", "details": error_details}),
                     );
                     return Ok(());
                 }
             }
             let is_sse = route_match.route.sse;
+            // Ensure RequestLogger has the request_id for completion logs
+            if _request_logger.request_id.is_none() {
+                _request_logger.request_id = Some(canonical_req_id);
+            }
+
             let handler_response = {
                 let dispatcher = self.dispatcher.read().unwrap();
-                dispatcher.dispatch(route_match.clone(), body, headers, cookies)
+                // Determine or generate request id to pass into dispatcher
+                let req_id = _request_logger
+                    .request_id
+                    .unwrap_or(canonical_req_id)
+                    .to_string();
+                dispatcher.dispatch_with_request_id(route_match.clone(), body, headers.clone(), cookies, req_id)
             };
             match handler_response {
                 Some(hr) => {
                     let mut headers = hr.headers.clone();
+                    // Always echo X-Request-ID on the response if we have one
+                    if let Some(ref rid) = _request_logger.request_id {
+                        headers.insert("X-Request-ID".to_string(), rid.to_string());
+                    }
                     if !headers.contains_key("Content-Type") {
                         if let Some(ct) = route_match.route.content_type_for(hr.status) {
                             headers.insert("Content-Type".to_string(), ct);
                         }
                     }
                     if let Some(schema) = &route_match.route.response_schema {
+                        // V6: Response validation start
+                        debug!(
+                            handler = %route_match.handler_name,
+                            status = hr.status,
+                            schema_present = true,
+                            "Response validation start"
+                        );
+
                         let compiled =
                             JSONSchema::compile(schema).expect("invalid response schema");
                         let validation = compiled.validate(&hr.body);
                         if let Err(errors) = validation {
-                            let details: Vec<String> = errors.map(|e| e.to_string()).collect();
+                            // V7: Response validation failed
+                            let error_details: Vec<String> =
+                                errors.map(|e| e.to_string()).collect();
+                            let schema_path = "#/components/schemas/response";
+
+                            error!(
+                                handler = %route_match.handler_name,
+                                status = hr.status,
+                                errors = ?error_details,
+                                schema_path = %schema_path,
+                                "Response validation failed"
+                            );
+
                             write_json_error(
                                 res,
-                                400,
-                                json!({"error": "Response validation failed", "details": details}),
+                                500, // Changed from 400 to 500 since this is a server error
+                                json!({"error": "Response validation failed", "details": error_details}),
                             );
                             return Ok(());
                         }

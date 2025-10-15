@@ -106,7 +106,7 @@ fn sanitize_rust_identifier(name: &str) -> String {
         "use", "where", "while", "async", "await", "dyn",
     ];
     if KEYWORDS.contains(&name) {
-        format!("r#{}", name)
+        format!("r#{name}")
     } else {
         name.to_string()
     }

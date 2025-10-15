@@ -52,4 +52,4 @@ http:
   # Enable HTTP/1.1 keep-alive (default true in generated apps for testing)
   keep_alive: true
   timeout_secs: 5
-  max_requests: 1000
+  max_requests: 5000

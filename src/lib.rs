@@ -828,6 +828,7 @@
 pub mod cli;
 
 pub mod dispatcher;
+pub mod ids;
 mod dummy_value;
 mod echo;
 pub mod generator;

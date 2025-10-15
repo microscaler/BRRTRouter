@@ -24,6 +24,7 @@ fn create_test_request(
 ) -> HandlerRequest {
     let (tx, _rx) = mpsc::channel::<HandlerResponse>();
     HandlerRequest {
+        request_id: brrtrouter::ids::RequestId::new(),
         method,
         path: path.to_string(),
         handler_name: "test_handler".to_string(),

@@ -37,10 +37,10 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
 /// RAII test fixture for hot reload tests
-/// 
+///
 /// Manages a temporary spec file that needs to exist for the duration of the test
 /// (for watching, reading, and modifying), then automatically cleans up.
-/// 
+///
 /// Unlike NamedTempFile, this creates a plain file that can be freely read/written
 /// without worrying about file handle state.
 struct HotReloadTestFixture {
@@ -60,18 +60,18 @@ impl HotReloadTestFixture {
             std::process::id(),
             nanos
         ));
-        
+
         // Write the initial content
         std::fs::write(&path, initial_content.as_bytes()).unwrap();
-        
+
         Self { path }
     }
-    
+
     /// Get the path to the spec file
     fn path(&self) -> &PathBuf {
         &self.path
     }
-    
+
     /// Update the spec file content (for testing hot reload)
     fn update_content(&self, new_content: &str) {
         std::fs::write(&self.path, new_content.as_bytes()).unwrap();
@@ -146,7 +146,7 @@ paths:
         // wait for callback to receive update (with timeout)
         let start = std::time::Instant::now();
         let timeout = Duration::from_secs(5); // Reduced from potential 50s (20 * 50ms)
-        
+
         loop {
             {
                 let ups = updates.lock().unwrap();
@@ -154,17 +154,17 @@ paths:
                     break;
                 }
             }
-            
+
             if start.elapsed() > timeout {
                 break; // Timeout - let assertion below handle failure
             }
-            
+
             std::thread::sleep(Duration::from_millis(50));
         }
 
         // Explicitly drop watcher before assertions and cleanup
         drop(watcher);
-        
+
         // Give filesystem watcher time to fully stop
         std::thread::sleep(Duration::from_millis(100));
     }

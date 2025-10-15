@@ -128,8 +128,21 @@ fn curl_auth_api_key_unauthorized_then_authorized() {
 
 #[test]
 fn curl_static_index_html_served() {
-    // The container ships a static index only; verify it's served.
+    // The container ships a static index. This could be either:
+    // 1. Simple "It works!" HTML (default static_site/index.html)
+    // 2. SolidJS Pet Store Dashboard (if sample-ui has been built)
     let (ok, body, headers) = run_http(&format!("{}/index.html", curl_harness::base_url()));
     assert!(ok, "GET /index.html failed: headers=\n{}", headers);
-    assert!(body.contains("It works!"));
+    
+    // Accept either the simple static HTML or the Pet Store Dashboard
+    let is_simple_html = body.contains("It works!");
+    let is_pet_store_dashboard = body.contains("Pet Store") || 
+                                   body.contains("pet-store") || 
+                                   body.contains("BRRTRouter");
+    
+    assert!(
+        is_simple_html || is_pet_store_dashboard,
+        "Expected either simple 'It works!' HTML or Pet Store Dashboard, got body snippet: {}",
+        &body[..body.len().min(200)]
+    );
 }

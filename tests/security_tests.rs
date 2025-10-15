@@ -78,7 +78,7 @@ impl SecurityTestServer {
             addr,
         }
     }
-    
+
     /// Create from start_service_default_provider()
     fn from_default_provider() -> Self {
         let (tracing, handle, addr) = start_service_default_provider();
@@ -88,7 +88,7 @@ impl SecurityTestServer {
             addr,
         }
     }
-    
+
     /// Create from start_service_with_jwks()
     fn from_jwks(jwks_url: &str, issuer: &str, audience: &str) -> Self {
         let (tracing, handle, addr) = start_service_with_jwks(jwks_url, issuer, audience);
@@ -98,7 +98,7 @@ impl SecurityTestServer {
             addr,
         }
     }
-    
+
     /// Create from start_multi_service()
     fn from_multi_service() -> Self {
         let (tracing, handle, addr) = start_multi_service();
@@ -108,7 +108,7 @@ impl SecurityTestServer {
             addr,
         }
     }
-    
+
     /// Create from start_token_service()
     fn from_token_service() -> Self {
         let (tracing, handle, addr) = start_token_service();
@@ -118,7 +118,7 @@ impl SecurityTestServer {
             addr,
         }
     }
-    
+
     /// Create from start_service_with_remote_apikey()
     fn from_remote_apikey(verify_url: &str) -> Self {
         let (tracing, handle, addr) = start_service_with_remote_apikey(verify_url);
@@ -128,7 +128,7 @@ impl SecurityTestServer {
             addr,
         }
     }
-    
+
     /// Get the server address for making requests
     fn addr(&self) -> SocketAddr {
         self.addr
@@ -489,8 +489,11 @@ fn parse_status(resp: &str) -> u16 {
 fn test_api_key_auth() {
     // Setup happens automatically in SecurityTestServer::from_start_service()
     let server = SecurityTestServer::from_start_service();
-    
-    let resp = send_request(&server.addr(), "GET /secret HTTP/1.1\r\nHost: localhost\r\n\r\n");
+
+    let resp = send_request(
+        &server.addr(),
+        "GET /secret HTTP/1.1\r\nHost: localhost\r\n\r\n",
+    );
     let status = parse_status(&resp);
     assert_eq!(status, 401);
 
@@ -820,19 +823,19 @@ paths:
 fn test_remote_apikey_success_and_failure() {
     let (url, handle_verify) = start_mock_apikey_verify_server();
     let server = SecurityTestServer::from_remote_apikey(&url);
-    
+
     // success
     let req_ok = "GET /secret HTTP/1.1\r\nHost: localhost\r\nX-API-Key: validkey\r\n\r\n";
     let resp_ok = send_request(&server.addr(), req_ok);
     let status_ok = parse_status(&resp_ok);
     assert_eq!(status_ok, 200);
-    
+
     // failure
     let req_bad = "GET /secret HTTP/1.1\r\nHost: localhost\r\nX-API-Key: wrong\r\n\r\n";
     let resp_bad = send_request(&server.addr(), req_bad);
     let status_bad = parse_status(&resp_bad);
     assert_eq!(status_bad, 401);
-    
+
     // Cleanup both servers
     drop(server); // Explicitly drop main server first
     handle_verify.join().ok(); // Then cleanup verification server
@@ -842,7 +845,7 @@ fn test_remote_apikey_success_and_failure() {
 #[test]
 fn test_multiple_security_providers() {
     let server = SecurityTestServer::from_multi_service();
-    
+
     let resp = send_request(
         &server.addr(),
         "GET /one HTTP/1.1\r\nHost: localhost\r\nX-Key-One: one\r\n\r\n",
@@ -863,16 +866,19 @@ fn test_multiple_security_providers() {
     );
     let status_wrong = parse_status(&resp);
     assert_eq!(status_wrong, 401);
-    
+
     // Automatic cleanup!
 }
 
 #[test]
 fn test_bearer_header_and_oauth_cookie() {
     let server = SecurityTestServer::from_token_service();
-    
+
     // Missing token should fail
-    let resp = send_request(&server.addr(), "GET /header HTTP/1.1\r\nHost: localhost\r\n\r\n");
+    let resp = send_request(
+        &server.addr(),
+        "GET /header HTTP/1.1\r\nHost: localhost\r\n\r\n",
+    );
     let status = parse_status(&resp);
     assert_eq!(status, 401);
 
@@ -895,7 +901,7 @@ fn test_bearer_header_and_oauth_cookie() {
     let resp = send_request(&server.addr(), &req);
     let status_cookie = parse_status(&resp);
     assert_eq!(status_cookie, 200);
-    
+
     // Automatic cleanup!
 }
 

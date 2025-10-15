@@ -14,7 +14,7 @@
 //!
 //! 1. **Unit Tests**: Isolated dispatcher logic with mock handlers
 //! 2. **Integration Tests**: Full router → dispatcher → handler flow
-//! 3. **Typed Tests**: Type-safe handler conversion and validation
+//! 3. **Typed Tests**: Type-safe request handling
 //! 4. **Error Tests**: Panic handling, timeout behavior
 //!
 //! # Key Test Cases
@@ -46,6 +46,7 @@ use std::sync::Arc;
 mod tracing_util;
 use brrtrouter::middleware::TracingMiddleware;
 use tracing_util::TestTracing;
+use brrtrouter::ids::RequestId;
 
 fn set_stack_size() -> TestTracing {
     let size = std::env::var("BRRTR_STACK_SIZE")
@@ -132,6 +133,7 @@ fn test_dispatch_post_item() {
     let body = json!({"name": "New Item"});
 
     let request = HandlerRequest {
+        request_id: RequestId::new(),
         method: Method::POST,
         path: route.path_pattern.clone(),
         handler_name: handler_name.clone(),
@@ -174,6 +176,7 @@ fn test_dispatch_get_pet() {
     query_params.insert("include".to_string(), "stats".to_string());
 
     let request = HandlerRequest {
+        request_id: RequestId::new(),
         method: Method::GET,
         path: route.path_pattern.clone(),
         handler_name: handler_name.clone(),
@@ -222,6 +225,7 @@ fn test_typed_controller_params() {
     query_params.insert("debug".to_string(), "true".to_string());
 
     let request = HandlerRequest {
+        request_id: RequestId::new(),
         method: Method::GET,
         path: "/items/{id}".to_string(),
         handler_name: "assert_controller".to_string(),
@@ -261,6 +265,7 @@ fn test_typed_controller_invalid_params() {
     query_params.insert("debug".to_string(), "true".to_string());
 
     let request = HandlerRequest {
+        request_id: RequestId::new(),
         method: Method::GET,
         path: "/items/{id}".to_string(),
         handler_name: "assert_controller".to_string(),
@@ -299,6 +304,7 @@ fn test_panic_handler_returns_500() {
     let (reply_tx, reply_rx) = mpsc::channel();
 
     let request = HandlerRequest {
+        request_id: RequestId::new(),
         method: Method::GET,
         path: "/panic".to_string(),
         handler_name: "panic".to_string(),

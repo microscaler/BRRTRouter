@@ -4,6 +4,7 @@ use http::Method;
 use may::sync::mpsc;
 use std::collections::HashMap;
 use std::time::Duration;
+use brrtrouter::ids::RequestId;
 
 #[test]
 fn test_auth_middleware_allows_valid_token() {
@@ -12,6 +13,7 @@ fn test_auth_middleware_allows_valid_token() {
     let mut headers = HashMap::new();
     headers.insert("authorization".to_string(), "secret".to_string());
     let req = HandlerRequest {
+        request_id: RequestId::new(),
         method: Method::GET,
         path: "/".into(),
         handler_name: "test".into(),
@@ -31,6 +33,7 @@ fn test_auth_middleware_blocks_invalid_token() {
     let (tx, _rx) = mpsc::channel::<HandlerResponse>();
     let headers = HashMap::new();
     let req = HandlerRequest {
+        request_id: RequestId::new(),
         method: Method::GET,
         path: "/".into(),
         handler_name: "test".into(),
@@ -51,6 +54,7 @@ fn test_cors_middleware_sets_headers() {
     let mw = CorsMiddleware::default();
     let (tx, _rx) = mpsc::channel::<HandlerResponse>();
     let req = HandlerRequest {
+        request_id: RequestId::new(),
         method: Method::GET,
         path: "/".into(),
         handler_name: "test".into(),

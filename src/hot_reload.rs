@@ -78,7 +78,8 @@ use crate::{
 use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
-use tracing::info;
+use std::time::Instant;
+use tracing::{debug, error, info, warn};
 
 /// Watch an OpenAPI spec file and rebuild the [`Router`] when it changes.
 ///
@@ -101,22 +102,103 @@ where
         move |res: Result<notify::Event, notify::Error>| match res {
             Ok(event) => {
                 if matches!(event.kind, EventKind::Modify(_) | EventKind::Create(_)) {
-                    if let Ok((routes, _)) = spec::load_spec(watch_path.to_str().unwrap()) {
-                        let new_router = Router::new(routes.clone());
-                        if let Ok(mut r) = router.write() {
-                            *r = new_router;
-                        }
-                        if let Ok(mut d) = dispatcher.write() {
+                    // HR1: Spec change detected
+                    let event_kind = format!("{:?}", event.kind);
+                    let spec_path_str = watch_path.to_str().unwrap_or("unknown");
+
+                    info!(
+                        event_type = %event_kind,
+                        spec_path = %spec_path_str,
+                        "Spec change detected"
+                    );
+                    println!("🔄 Hot reload: Spec change detected at {spec_path_str}");
+
+                    // HR2: Spec reload started
+                    debug!(
+                        spec_path = %spec_path_str,
+                        "Spec reload started"
+                    );
+                    println!("📖 Hot reload: Loading spec from {spec_path_str}");
+
+                    let reload_start = Instant::now();
+
+                    match spec::load_spec(spec_path_str) {
+                        Ok((routes, _spec)) => {
+                            let routes_count = routes.len();
+                            let route_paths: Vec<String> = routes
+                                .iter()
+                                .map(|r| format!("{} {}", r.method, r.path_pattern))
+                                .collect();
+
+                            // Build new router
+                            let new_router = Router::new(routes.clone());
+
+                            // Update router
+                            if let Ok(mut r) = router.write() {
+                                *r = new_router;
+                            } else {
+                                warn!(
+                                    spec_path = %spec_path_str,
+                                    "Failed to acquire router write lock"
+                                );
+                                println!("⚠️  Hot reload: Failed to acquire router write lock");
+                                return;
+                            }
+
+                            // Update dispatcher
+                            if let Ok(mut d) = dispatcher.write() {
+                                on_reload(&mut d, routes);
+                            } else {
+                                warn!(
+                                    spec_path = %spec_path_str,
+                                    "Failed to acquire dispatcher write lock"
+                                );
+                                println!("⚠️  Hot reload: Failed to acquire dispatcher write lock");
+                                return;
+                            }
+
+                            // HR3: Spec reload success
+                            let reload_time_ms = reload_start.elapsed().as_millis() as u64;
                             info!(
-                                "hot-reload: applying route updates ({} routes)",
-                                routes.len()
+                                spec_path = %spec_path_str,
+                                routes_count = routes_count,
+                                reload_time_ms = reload_time_ms,
+                                routes = ?route_paths,
+                                "Spec reload success"
                             );
-                            on_reload(&mut d, routes);
+                            println!(
+                                "✅ Hot reload: Successfully reloaded {routes_count} routes in {reload_time_ms}ms",
+                            );
+                        }
+                        Err(e) => {
+                            // HR4: Spec reload failed
+                            let reload_time_ms = reload_start.elapsed().as_millis() as u64;
+                            let error_message = format!("{e}");
+
+                            error!(
+                                spec_path = %spec_path_str,
+                                reload_time_ms = reload_time_ms,
+                                error = %error_message,
+                                error_type = std::any::type_name_of_val(&e),
+                                "Spec reload failed"
+                            );
+                            println!(
+                                "❌ Hot reload: Failed to reload spec from {spec_path_str} ({reload_time_ms}ms): {error_message}",
+                            );
+                            println!("   Previous spec remains active - server continues running");
                         }
                     }
                 }
             }
-            Err(e) => eprintln!("watch error: {e:?}"),
+            Err(e) => {
+                // Filesystem watcher error
+                let error_message = format!("{e:?}");
+                error!(
+                    error = %error_message,
+                    "Filesystem watcher error"
+                );
+                eprintln!("❌ Hot reload: Filesystem watcher error: {error_message}");
+            }
         },
         Config::default(),
     )?;

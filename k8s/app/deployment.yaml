@@ -56,7 +56,7 @@ data:
       # Enable HTTP/1.1 keep-alive (default true in generated apps for testing)
       keep_alive: true
       timeout_secs: 5
-      max_requests: 1000
+      max_requests: 50000
     
     # Database connection (PostgreSQL)
     database:
@@ -115,6 +115,15 @@ spec:
               value: "debug"
             - name: RUST_BACKTRACE
               value: "1"
+            # Structured logging configuration for Loki/Promtail ingestion
+            - name: BRRTR_LOG_FORMAT
+              value: "json"
+            - name: BRRTR_LOG_SAMPLING_MODE
+              value: "all"
+            - name: BRRTR_LOG_ASYNC
+              value: "true"
+            - name: BRRTR_LOG_INCLUDE_LOCATION
+              value: "false"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector:4317"
             - name: OTEL_SERVICE_NAME
@@ -145,8 +154,8 @@ spec:
               memory: "128Mi"
               cpu: "100m"
             limits:
-              memory: "512Mi"
-              cpu: "1000m"
+              memory: "1Gi"
+              cpu: "4000m"
           volumeMounts:
             # Configuration from ConfigMap (Kubernetes-native, matches production)
             - name: config

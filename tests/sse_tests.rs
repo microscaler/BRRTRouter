@@ -46,7 +46,7 @@ impl SseTestServer {
             Some(PathBuf::from("examples/pet_store/static_site")),
             Some(PathBuf::from("examples/pet_store/doc")),
         );
-        
+
         // Register ApiKey provider so /events (secured) can be accessed in test
         struct ApiKeyProvider {
             key: String,
@@ -79,20 +79,20 @@ impl SseTestServer {
                 );
             }
         }
-        
+
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
         drop(listener);
         let handle = HttpServer(service).start(addr).unwrap();
         handle.wait_ready().unwrap();
-        
+
         Self {
             _tracing: tracing,
             handle: Some(handle),
             addr,
         }
     }
-    
+
     fn addr(&self) -> SocketAddr {
         self.addr
     }
@@ -145,6 +145,6 @@ fn test_event_stream() {
         .map(|l| l[6..].trim())
         .collect();
     assert_eq!(events, ["tick 0", "tick 1", "tick 2"]);
-    
+
     // Automatic cleanup!
 }

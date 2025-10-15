@@ -2,6 +2,7 @@ use crate::spec::RouteMeta;
 use http::Method;
 use regex::Regex;
 use std::collections::HashMap;
+use tracing::{debug, info, warn};
 
 /// Result of successfully matching a request path to a route
 ///
@@ -75,23 +76,34 @@ impl Router {
         //     .collect();
 
         if routes.is_empty() {
+            info!(routes_count = 0, "Routing table loaded with no routes");
             return Self {
                 routes: Vec::new(),
                 base_path: String::new(),
             };
         }
+
+        // RT6: Route sorting applied
+        let routes_before = routes.len();
         // Ensure routes are sorted by path length (longest first) to optimize matching
         // This is useful for cases where paths may overlap, e.g. "/pets" and "/pets/{id}"
         let mut routes = routes;
         routes.sort_by_key(|r| r.path_pattern.len());
         routes.reverse();
+
+        debug!(
+            routes_before = routes_before,
+            routes_after = routes.len(),
+            sort_strategy = "longest_first",
+            "Route sorting applied"
+        );
         // Convert each route's path pattern to a regex and collect param names
         // Each route is represented as (method, compiled regex, RouteMeta, param names)
         let base_path = routes
             .first()
             .map(|r| r.base_path.clone())
             .unwrap_or_default();
-        let routes = routes
+        let routes: Vec<_> = routes
             .into_iter()
             .map(|route| {
                 let full_path = format!("{}{}", base_path, route.path_pattern);
@@ -99,6 +111,20 @@ impl Router {
                 (route.method.clone(), regex, route, param_names)
             })
             .collect();
+
+        // RT5: Routing table loaded
+        let routes_summary: Vec<String> = routes
+            .iter()
+            .take(10) // Limit to first 10 routes to avoid log spam
+            .map(|(method, _, meta, _)| format!("{} {}{}", method, base_path, meta.path_pattern))
+            .collect();
+
+        info!(
+            routes_count = routes.len(),
+            base_path = %base_path,
+            routes_summary = ?routes_summary,
+            "Routing table loaded"
+        );
 
         Self { routes, base_path }
     }
@@ -114,9 +140,8 @@ impl Router {
         );
         for (method, _re, meta, _params) in &self.routes {
             println!(
-                "[route] {} {} -> {}",
-                method,
-                format!("{}{}", self.base_path, meta.path_pattern),
+                "[route] {method} {} -> {}",
+                format_args!("{}{}", self.base_path, meta.path_pattern),
                 meta.handler_name
             );
         }
@@ -148,17 +173,43 @@ impl Router {
     /// }
     /// ```
     pub fn route(&self, method: Method, path: &str) -> Option<RouteMatch> {
+        // RT1: Route match attempt
+        debug!(
+            method = %method,
+            path = %path,
+            routes_count = self.routes.len(),
+            "Route match attempt"
+        );
+
         for (m, regex, route, param_names) in &self.routes {
             if *m != method {
                 continue;
             }
             if let Some(captures) = regex.captures(path) {
+                // RT2: Regex match success
+                debug!(
+                    pattern = %regex,
+                    params_extracted = param_names.len(),
+                    "Regex match success"
+                );
+
                 let mut params = HashMap::with_capacity(param_names.len());
                 for (i, name) in param_names.iter().enumerate() {
                     if let Some(val) = captures.get(i + 1) {
                         params.insert(name.clone(), val.as_str().to_string());
                     }
                 }
+
+                // RT3: Route matched
+                info!(
+                    method = %method,
+                    path = %path,
+                    handler_name = %route.handler_name,
+                    route_pattern = %route.path_pattern,
+                    path_params = ?params,
+                    "Route matched"
+                );
+
                 return Some(RouteMatch {
                     route: route.clone(),
                     path_params: params,
@@ -167,6 +218,23 @@ impl Router {
                 });
             }
         }
+
+        // RT4: No route found (404)
+        let attempted_patterns: Vec<String> = self
+            .routes
+            .iter()
+            .filter(|(m, _, _, _)| *m == method)
+            .take(5) // Limit to avoid log spam
+            .map(|(_, _, route, _)| route.path_pattern.clone())
+            .collect();
+
+        warn!(
+            method = %method,
+            path = %path,
+            attempted_patterns = ?attempted_patterns,
+            "No route matched"
+        );
+
         None
     }
     /// Convert an OpenAPI path pattern to a regex and extract parameter names

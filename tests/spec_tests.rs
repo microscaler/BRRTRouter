@@ -54,10 +54,13 @@ fn test_load_spec_yaml_and_json() {
     let yaml_path = std::env::temp_dir().join(format!(
         "spec_test_yaml_{}_{}.yaml",
         std::process::id(),
-        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
     ));
     std::fs::write(&yaml_path, YAML_SPEC.as_bytes()).unwrap();
-    
+
     let (routes_yaml, slug_yaml) = load_spec(yaml_path.to_str().unwrap()).unwrap();
 
     // JSON spec
@@ -66,10 +69,13 @@ fn test_load_spec_yaml_and_json() {
     let json_path = std::env::temp_dir().join(format!(
         "spec_test_json_{}_{}.json",
         std::process::id(),
-        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
     ));
     std::fs::write(&json_path, json_str.as_bytes()).unwrap();
-    
+
     let (routes_json, slug_json) = load_spec(json_path.to_str().unwrap()).unwrap();
 
     assert_eq!(slug_yaml, "test_api");
@@ -104,7 +110,7 @@ fn test_load_spec_yaml_and_json() {
     assert!(route_y.responses.contains_key(&200));
     assert_eq!(route_y.example, route_j.example);
     assert_eq!(route_y.example_name, "test_api_example");
-    
+
     // Manual cleanup
     let _ = std::fs::remove_file(&yaml_path);
     let _ = std::fs::remove_file(&json_path);
@@ -136,15 +142,18 @@ paths:
 #[test]
 fn test_missing_operation_id_exits() {
     use std::process::Command;
-    
+
     // Create manual temp file (NamedTempFile doesn't work reliably in nextest)
     let temp_path = std::env::temp_dir().join(format!(
         "spec_test_bad_{}_{}.yaml",
         std::process::id(),
-        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
     ));
     std::fs::write(&temp_path, YAML_NO_OPID.as_bytes()).unwrap();
-    
+
     let exe = env!("CARGO_BIN_EXE_spec_helper");
     let output = Command::new(exe)
         .arg(&temp_path)
@@ -152,7 +161,7 @@ fn test_missing_operation_id_exits() {
         .expect("run spec_helper");
     assert!(!output.status.success());
     assert_eq!(output.status.code(), Some(1));
-    
+
     // Manual cleanup
     let _ = std::fs::remove_file(&temp_path);
 }
@@ -160,15 +169,18 @@ fn test_missing_operation_id_exits() {
 #[test]
 fn test_unsupported_method_ignored() {
     use std::process::Command;
-    
+
     // Create manual temp file (NamedTempFile doesn't work reliably in nextest)
     let temp_path = std::env::temp_dir().join(format!(
         "spec_test_unsup_{}_{}.yaml",
         std::process::id(),
-        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
     ));
     std::fs::write(&temp_path, YAML_UNSUPPORTED_METHOD.as_bytes()).unwrap();
-    
+
     let exe = env!("CARGO_BIN_EXE_spec_helper");
     let output = Command::new(exe)
         .arg(&temp_path)
@@ -177,7 +189,7 @@ fn test_unsupported_method_ignored() {
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("routes: 0"));
-    
+
     // Manual cleanup
     let _ = std::fs::remove_file(&temp_path);
 }
@@ -212,24 +224,28 @@ fn test_sse_spec_loading() {
     let temp_path = std::env::temp_dir().join(format!(
         "spec_test_sse_{}_{}.yaml",
         std::process::id(),
-        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
     ));
     std::fs::write(&temp_path, YAML_SSE.as_bytes()).unwrap();
-    
+
     // Load spec from the temp file
-    let (routes, _schemes, _slug) = brrtrouter::load_spec_full(temp_path.to_str().unwrap()).unwrap();
-    
+    let (routes, _schemes, _slug) =
+        brrtrouter::load_spec_full(temp_path.to_str().unwrap()).unwrap();
+
     // Should have one route: GET /events
     assert_eq!(routes.len(), 1);
-    
+
     let route = &routes[0];
     assert_eq!(route.method.as_str(), "GET");
     assert_eq!(route.path_pattern, "/events");
     assert_eq!(route.handler_name, "stream");
-    
+
     // Most importantly: should have SSE flag set
     assert!(route.sse, "Route should be marked as SSE stream");
-    
+
     // Manual cleanup
     let _ = std::fs::remove_file(&temp_path);
 }

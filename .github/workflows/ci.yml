@@ -22,6 +22,18 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Override Cargo config (disable zig linker)
+        if: ${{ !env.ACT }}
+        run: |
+          mkdir -p .cargo
+          cat > .cargo/config.toml <<'EOF'
+          # Cargo configuration for BRRTRouter (CI override)
+          
+          [build]
+          # Enable Mermaid diagram rendering in documentation
+          rustdocflags = ["--html-in-header", "doc/head.html"]
+          EOF
+
       - name: Cache cargo registry
         if: ${{ !env.ACT }}
         uses: actions/cache@v4
@@ -64,8 +76,7 @@ jobs:
       - name: Install musl tools (provides musl-gcc for ring)
         run: sudo apt-get update || apt-get update && (sudo apt-get install -y musl-tools || apt-get install -y musl-tools)
 
-      - name: Install cargo-zigbuild (for curl_harness cross-compilation)
-        run: cargo install cargo-zigbuild --locked
+      # zigbuild not required on Linux runners; curl harness uses standard cargo build
 
       - name: Build pet_store (musl, release)
         env:
@@ -95,28 +106,33 @@ jobs:
       # - Parallel test execution with better isolation
       # - Better output formatting and failure reporting
       # - Handles flaky tests better with retries
-      # If nextest succeeds, we can phase out the legacy cargo test
-      - name: Install cargo-nextest
-        run: cargo install cargo-nextest --locked
-
-      - name: Run tests (nextest - primary)
-        run: cargo nextest run --workspace --all-targets --fail-fast --no-capture
-        env:
-          RUST_BACKTRACE: 1
-
-      # Legacy fallback: only runs if nextest fails
-      # Once we confirm nextest is stable in CI, we can remove this
-      - name: Run tests (cargo test - legacy fallback)
-        if: failure()
-        run: cargo test -- --nocapture
+      # Tests are executed once via cargo-llvm-cov using nextest as the runner
+      - name: Install nextest (prebuilt)
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nextest
 
       - name: Install cargo-llvm-cov
         if: ${{ !env.ACT }}
-        run: cargo install cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
 
-      - name: Measure coverage
+      - name: Prepare test report output directory
         if: ${{ !env.ACT }}
-        run: cargo llvm-cov  #--no-report
+        run: mkdir -p target/nextest
+
+      - name: Measure coverage (runs tests via nextest)
+        if: ${{ !env.ACT }}
+        run: cargo llvm-cov nextest --workspace --all-targets --fail-fast
+
+      - name: Upload JUnit report
+        if: ${{ !env.ACT }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-unit
+          path: target/nextest/junit.xml
+          retention-days: 7
 
   tilt-ci:
     needs: build-and-test
@@ -131,6 +147,18 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Override Cargo config (disable zig linker)
+        if: ${{ !env.ACT }}
+        run: |
+          mkdir -p .cargo
+          cat > .cargo/config.toml <<'EOF'
+          # Cargo configuration for BRRTRouter (CI override)
+          
+          [build]
+          # Enable Mermaid diagram rendering in documentation
+          rustdocflags = ["--html-in-header", "doc/head.html"]
+          EOF
+
       - name: Install musl target
         run: rustup target add x86_64-unknown-linux-musl
 
@@ -139,14 +167,29 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y musl-tools
 
-      - name: Install cargo-zigbuild for cross-compilation
-        run: cargo install cargo-zigbuild
+      # zigbuild is unnecessary for Linux-hosted Tilt CI; rely on musl-gcc builds
 
-      - name: Create kind cluster
+      - name: Start local registry for Kind (localhost:5001)
+        run: |
+          docker ps -a
+          RUNNING=$(docker inspect -f '{{.State.Running}}' kind-registry 2>/dev/null || echo "false")
+          if [ "$RUNNING" != "true" ]; then
+            docker rm -f kind-registry 2>/dev/null || true
+            docker run -d --restart=always -p 5001:5000 --name kind-registry registry:2
+          fi
+
+      - name: Create kind cluster (with local registry mirror)
         uses: helm/kind-action@v1
         with:
           cluster_name: brrtrouter-ci
           wait: 60s
+          config: k8s/cluster/kind-config.yaml
+
+      - name: Connect registry to kind network
+        run: |
+          docker network connect kind kind-registry 2>/dev/null || true
+          kubectl get nodes
+          kubectl get pods -A || true
 
       - name: Verify cluster
         run: |
@@ -159,10 +202,13 @@ jobs:
           tilt version
 
       - name: Build BRRTRouter and Pet Store binaries
+        env:
+          CC_x86_64_unknown_linux_musl: musl-gcc
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
         run: |
-          cargo zigbuild --release --target x86_64-unknown-linux-musl
+          cargo build --release --target x86_64-unknown-linux-musl
           cargo run --bin brrtrouter-gen -- generate --spec examples/openapi.yaml --force
-          cargo zigbuild --release --target x86_64-unknown-linux-musl -p pet_store
+          cargo build --release --target x86_64-unknown-linux-musl -p pet_store
           mkdir -p build_artifacts
           cp target/x86_64-unknown-linux-musl/release/pet_store build_artifacts/
 
@@ -199,24 +245,24 @@ jobs:
 
       - name: Test Pet Store API
         run: |
-          echo "Forwarding Pet Store port..."
-          kubectl port-forward -n brrtrouter-dev service/petstore 8080:8080 &
-          PF_PID=$!
-          sleep 5
+          echo "Waiting for Pet Store readiness on localhost:9090 (/health 200)..."
+          for i in $(seq 1 120); do \
+            code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:9090/health || true); \
+            [ "$code" = "200" ] && echo "ready" && break; \
+            sleep 1; \
+          done
           
           echo "Testing health endpoint..."
-          curl -f http://localhost:8080/health || (echo "Health check failed" && exit 1)
+          curl -f http://localhost:9090/health || (echo "Health check failed" && exit 1)
           
           echo "Testing metrics endpoint..."
-          curl -f http://localhost:8080/metrics | grep brrtrouter || (echo "Metrics check failed" && exit 1)
+          curl -f http://localhost:9090/metrics | grep brrtrouter || (echo "Metrics check failed" && exit 1)
           
           echo "Testing authenticated endpoint..."
-          curl -f -H "X-API-Key: test123" http://localhost:8080/pets || (echo "Auth test failed" && exit 1)
+          curl -f -H "X-API-Key: test123" http://localhost:9090/pets || (echo "Auth test failed" && exit 1)
           
           echo "Checking per-path metrics..."
-          curl -f http://localhost:8080/metrics | grep brrtrouter_path_requests_total || (echo "Per-path metrics missing" && exit 1)
-          
-          kill $PF_PID || true
+          curl -f http://localhost:9090/metrics | grep brrtrouter_path_requests_total || (echo "Per-path metrics missing" && exit 1)
           
           echo "✅ All API tests passed!"
 
@@ -238,275 +284,34 @@ jobs:
           
           echo "✅ Observability stack check complete"
 
-      - name: Upload Tilt logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: tilt-ci-logs
-          retention-days: 3
-          path: |
-            ~/.tilt-dev/
-
-      - name: Cleanup
-        if: always()
-        run: |
-          tilt down || true
-          kind delete cluster --name brrtrouter-ci || true
-
-  e2e-docker:
-    needs: build-and-test
-    runs-on: ubuntu-latest
-    env:
-      RUST_BACKTRACE: "1"
-      RUST_LOG: "debug"
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Build generator (ACT local)
-        if: ${{ env.ACT }}
-        run: cargo build --release --bin brrtrouter-gen
-
-      - name: Download generator artifact
-        if: ${{ !env.ACT }}
-        uses: actions/download-artifact@v4
-        with:
-          name: brrtrouter-gen-linux
-          path: ./dist
-
-      - name: Install musl target (ACT local)
-        if: ${{ env.ACT }}
-        run: rustup target add x86_64-unknown-linux-musl
-
-      - name: Install musl tools (ACT local)
-        if: ${{ env.ACT }}
-        run: sudo apt-get update || apt-get update && (sudo apt-get install -y musl-tools || apt-get install -y musl-tools)
-
-      - name: Install cargo-zigbuild (for curl_integration_tests)
-        run: cargo install cargo-zigbuild --locked
-
-      - name: Build pet_store (musl, release) (ACT local)
-        if: ${{ env.ACT }}
-        env:
-          CC_x86_64_unknown_linux_musl: musl-gcc
-          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
-        run: cargo build --release -p pet_store --target x86_64-unknown-linux-musl
-
-      - name: Download pet_store binary artifact
-        if: ${{ !env.ACT }}
-        uses: actions/download-artifact@v4
-        with:
-          name: pet_store-musl
-          path: ./dist
-
-      - name: Make generator executable
-        run: chmod +x ./dist/brrtrouter-gen
-
-      - name: Regenerate pet_store example (artifact)
-        run: ./dist/brrtrouter-gen generate --spec examples/openapi.yaml --force
-
-      - name: Regenerate pet_store example (ACT local)
-        if: ${{ env.ACT }}
-        run: ./target/release/brrtrouter-gen generate --spec examples/openapi.yaml --force
-
-      - name: Build e2e Docker image (freshly generated app + provided binary)
-        run: docker build --build-arg PETSTORE_BIN=/build/dist/pet_store --no-cache --rm --force-rm -t brrtrouter-petstore:e2e .
-
-      - name: Build e2e Docker image (ACT local binary)
-        if: ${{ env.ACT }}
-        run: docker build --build-arg PETSTORE_BIN=/build/target/x86_64-unknown-linux-musl/release/pet_store --no-cache --rm --force-rm -t brrtrouter-petstore:e2e .
-
-      - name: Install uuidgen
-        run: sudo apt-get update && sudo apt-get install -y uuid-runtime
-
-      - name: Tag and push ttl.sh ephemeral image
-        id: ttl
-        run: |
-          IMAGE_NAME=$(uuidgen)
-          IMAGE="ttl.sh/${IMAGE_NAME}:1h"
-          echo "Tagging $IMAGE"
-          docker tag brrtrouter-petstore:e2e "$IMAGE"
-          docker push "$IMAGE"
-          echo "image=$IMAGE" >> $GITHUB_OUTPUT
-
-      - name: Run e2e tests (docker integration)
-        env:
-          E2E_DOCKER: "1"
-        run: cargo test --test docker_integration_tests -- --nocapture
-
-      - name: Run HTTP integration tests
-        run: cargo test --test curl_integration_tests -- --test-threads=1 --nocapture
-
-      - name: Upload JUnit report
-        if: ${{ !env.ACT }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: junit-e2e
-          path: target/e2e/junit-e2e.xml
-          retention-days: 1
-
-    outputs:
-      image: ${{ steps.ttl.outputs.image }}
-
-  perf-wrk:
-    needs: e2e-docker
-    runs-on: ubuntu-latest
-    services:
-      petstore:
-        image: ${{ needs.e2e-docker.outputs.image }}
-        options: --name petstore
-        ports:
-          - 8080:8080
-        env:
-          # Enable jemalloc heap profiling in the service container
-          MALLOC_CONF: prof:true,prof_active:true,prof_prefix:/tmp/jeprof,lg_prof_sample:20
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install wrk
-        run: sudo apt-get update && sudo apt-get install -y wrk curl
-
-      - name: Install perf and FlameGraph tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y linux-tools-common linux-tools-generic linux-tools-$(uname -r) git perl
-          git clone https://github.com/brendangregg/FlameGraph.git
-
-      - name: Wait for readiness
-        run: |
-          for i in $(seq 1 120); do \
-            code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8080/health || true); \
-            [ "$code" = "200" ] && echo "ready" && break; \
-            sleep 0.5; \
-          done
-
-      - name: Resolve service container PID
-        id: svc
-        run: |
-          CID=$(docker ps --filter "name=^/petstore$" -q)
-          echo "Container: $CID"
-          PID=$(docker inspect -f '{{.State.Pid}}' "$CID")
-          echo "pid=$PID" >> $GITHUB_OUTPUT
-
-      - name: Start perf recording (background)
-        run: |
-          sudo sysctl kernel.perf_event_paranoid=1 || true
-          sudo sysctl kernel.kptr_restrict=0 || true
-          sudo perf record -F 99 -g -p ${{ steps.svc.outputs.pid }} -- sleep 70 &
-
-      - name: Compute perf params (threads and connections)
-        id: perf
-        run: |
-          CORES=$(nproc || getconf _NPROCESSORS_ONLN || echo 2)
-          THREADS="$CORES"
-          CONNS=$((CORES * 50))
-          echo "Detected cores: $CORES; threads=$THREADS; connections=$CONNS"
-          echo "threads=$THREADS" >> $GITHUB_OUTPUT
-          echo "connections=$CONNS" >> $GITHUB_OUTPUT
-
-      - name: wrk GET /health
-        run: |
-            wrk -t${{ steps.perf.outputs.threads }} -c${{ steps.perf.outputs.connections }} -d60s http://127.0.0.1:8080/health | tee wrk_health.txt
-
-      - name: wrk GET /pets
-        run: |
-            wrk -t${{ steps.perf.outputs.threads }} -c${{ steps.perf.outputs.connections }} -d60s -H "X-API-Key: test123" http://127.0.0.1:8080/pets | tee wrk_pets.txt
-
-      - name: Use repo post.lua if present
-        id: postlua
-        run: |
-          if [ -f scripts/post.lua ]; then echo "path=scripts/post.lua" >> $GITHUB_OUTPUT; else echo "path=post.lua" >> $GITHUB_OUTPUT; fi
-
-      - name: Create post.lua (fallback)
-        if: steps.postlua.outputs.path == 'post.lua'
-        run: |
-          cat > post.lua <<'LUA'
-          wrk.method = "POST"
-          wrk.body   = '{"name":"Bella"}'
-          wrk.headers["Content-Type"] = "application/json"
-          wrk.headers["X-API-Key"]    = "test123"
-          LUA
-
-      - name: wrk POST /pets
-        run: wrk -t${{ steps.perf.outputs.threads }} -c${{ steps.perf.outputs.connections }} -d60s -s ${{ steps.postlua.outputs.path }} http://127.0.0.1:8080/pets | tee wrk_pets_post.txt
-
-      - name: Build flamegraph
-        run: |
-          sudo perf script | ./FlameGraph/stackcollapse-perf.pl > out.folded || true
-          ./FlameGraph/flamegraph.pl out.folded > flame.svg || true
-
-      - name: Copy jemalloc profiles from container
-        run: |
-          CID=$(docker ps --filter "name=^/petstore$" -q)
-          mkdir -p jemalloc_profiles
-          # Copy /tmp directory and extract jeprof files
-          docker cp "$CID":/tmp jemalloc_tmp 2>/dev/null || true
-          if ls jemalloc_tmp 1>/dev/null 2>&1; then
-            find jemalloc_tmp -maxdepth 1 -type f -name 'jeprof.*' -exec mv {} jemalloc_profiles/ \; || true
-          fi
-
-      - name: Upload profiling artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: profiling-artifacts
-          retention-days: 1
-          path: |
-            flame.svg
-            out.folded
-            jemalloc_profiles
-
-      - name: Upload wrk artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: wrk-results
-          retention-days: 1
-          path: |
-            wrk_health.txt
-            wrk_pets.txt
-            wrk_pets_post.txt
-
-  goose-load-test:
-    needs: e2e-docker
-    runs-on: ubuntu-latest
-    services:
-      petstore:
-        image: ${{ needs.e2e-docker.outputs.image }}
-        options: --name petstore
-        ports:
-          - 8080:8080
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Wait for service readiness
-        run: |
-          for i in $(seq 1 120); do \
-            code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8080/health || true); \
-            [ "$code" = "200" ] && echo "Service ready!" && break; \
-            sleep 0.5; \
-          done
-
       - name: Build Goose load test
         run: cargo build --release --example api_load_test
 
-      - name: Run Goose comprehensive load test
+      - name: Run Goose comprehensive load test (via Tilt cluster)
         run: |
+          echo "Waiting for Pet Store readiness on localhost:9090 (/health 200) before Goose..."
+          for i in $(seq 1 120); do \
+            code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:9090/health || true); \
+            [ "$code" = "200" ] && echo "ready" && break; \
+            sleep 1; \
+          done
+
+          echo "Sanity-checking secured endpoints before Goose (with X-API-Key)..."
+          set -e
+          curl -fsS -H "X-API-Key: test123" http://127.0.0.1:9090/pets >/dev/null
+          curl -fsS -H "X-API-Key: test123" http://127.0.0.1:9090/users >/dev/null
+          curl -fsS -H "X-API-Key: test123" http://127.0.0.1:9090/admin/settings >/dev/null || echo "admin/settings may require additional roles; continuing"
+          set +e
+
           echo "====================================================================="
           echo "GOOSE COMPREHENSIVE API LOAD TEST"
           echo "Testing ALL OpenAPI endpoints + static files"
           echo "This tests what wrk doesn't: authenticated endpoints, static files,"
           echo "and helps identify memory leaks under sustained load"
           echo "====================================================================="
-          
+
           cargo run --release --example api_load_test -- \
-            --host http://127.0.0.1:8080 \
+            --host http://127.0.0.1:9090 \
             --users 20 \
             --hatch-rate 5 \
             --run-time 2m \
@@ -514,16 +319,16 @@ jobs:
             --report-file goose-report.html \
             --report-file goose-report.json \
             | tee goose-metrics.txt
-          
-          echo "====================================================================="
-          echo "LOAD TEST COMPLETE - Metrics saved to goose-metrics.txt"
-          echo "====================================================================="
+
+      - name: Diagnose auth failures (Loki-style log grep)
+        if: always()
+        run: |
+          echo "Checking for 401/unauth logs from petstore..."
+          kubectl logs -n brrtrouter-dev deployment/petstore --tail=400 | grep -Ei "unauth|401" || echo "No auth errors detected in recent logs"
 
       - name: Check for failures in Goose metrics
         run: |
           echo "Checking Goose metrics for failures..."
-          
-          # Extract failure count from ASCII metrics
           if grep -q "Aggregated.*0 (0%)" goose-metrics.txt; then
             echo "✅ No failures detected in load test"
           else
@@ -539,8 +344,6 @@ jobs:
           echo "" >> goose-summary.md
           echo "Full metrics available in ASCII report artifact." >> goose-summary.md
           echo "" >> goose-summary.md
-          
-          # Extract actual aggregated metrics from Goose output
           if grep -q "All Transactions" goose-metrics.txt; then
             echo "### Summary Statistics" >> goose-summary.md
             echo "\`\`\`" >> goose-summary.md
@@ -571,14 +374,19 @@ jobs:
           retention-days: 7
           path: goose-report.json
 
-      - name: Display metrics summary
+      - name: Upload Tilt logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tilt-ci-logs
+          retention-days: 3
+          path: |
+            ~/.tilt-dev/
+
+      - name: Cleanup
+        if: always()
         run: |
-          echo ""
-          echo "====================================================================="
-          echo "📊 GOOSE LOAD TEST SUMMARY"
-          echo "====================================================================="
-          cat goose-summary.md
-          echo ""
-          echo "Full metrics available in artifacts: goose-ascii-metrics"
-          echo "HTML report available in artifacts: goose-html-report"
-          echo "====================================================================="
+          tilt down || true
+          kind delete cluster --name brrtrouter-ci || true
+          docker rm -f kind-registry || true
+

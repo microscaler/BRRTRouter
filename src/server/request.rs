@@ -2,6 +2,7 @@ use crate::spec::ParameterStyle;
 use may_minihttp::Request;
 use std::collections::HashMap;
 use std::io::Read;
+use tracing::{debug, info};
 
 /// Parsed HTTP request data used by `AppService`.
 ///
@@ -148,7 +149,9 @@ pub fn parse_request(req: Request) -> ParsedRequest {
     let method = req.method().to_string();
     let raw_path = req.path().to_string();
     let path = raw_path.split('?').next().unwrap_or("/").to_string();
+    let http_version = format!("{:?}", req.version());
 
+    // R3: Headers extracted
     let headers: HashMap<String, String> = req
         .headers()
         .iter()
@@ -160,14 +163,71 @@ pub fn parse_request(req: Request) -> ParsedRequest {
         })
         .collect();
 
-    let cookies = parse_cookies(&headers);
-    let query_params = parse_query_params(&raw_path);
+    let header_names: Vec<&String> = headers.keys().take(20).collect(); // Limit for log size
+    let header_count = headers.len();
+    let size_bytes: usize = headers.iter().map(|(k, v)| k.len() + v.len()).sum();
 
+    debug!(
+        header_count = header_count,
+        size_bytes = size_bytes,
+        header_names = ?header_names,
+        "Headers extracted"
+    );
+
+    // R7: Cookies extracted
+    let cookies = parse_cookies(&headers);
+    debug!(
+        cookie_count = cookies.len(),
+        cookie_names = ?cookies.keys().collect::<Vec<_>>(),
+        "Cookies extracted"
+    );
+
+    // R4: Query params parsed
+    let query_params = parse_query_params(&raw_path);
+    debug!(
+        param_count = query_params.len(),
+        query_params = ?query_params,
+        "Query params parsed"
+    );
+
+    // R5 & R6: Request body read and JSON body parsed
+    let parse_start = std::time::Instant::now();
     let body = {
         let mut body_str = String::new();
         if let Ok(size) = req.body().read_to_string(&mut body_str) {
             if size > 0 {
-                serde_json::from_str(&body_str).ok()
+                let content_type = headers
+                    .get("content-type")
+                    .map(|s| s.as_str())
+                    .unwrap_or("");
+
+                // R5: Request body read
+                info!(
+                    content_length = size,
+                    content_type = %content_type,
+                    body_size_bytes = size,
+                    "Request body read"
+                );
+
+                // R6: JSON body parsed
+                let body_result: Result<serde_json::Value, _> = serde_json::from_str(&body_str);
+                let parse_duration_ms = parse_start.elapsed().as_millis() as u64;
+
+                if let Ok(ref json) = body_result {
+                    debug!(
+                        parse_duration_ms = parse_duration_ms,
+                        body_fields = json.as_object().map(|o| o.len()),
+                        "JSON body parsed"
+                    );
+                } else if body_result.is_err() {
+                    debug!(
+                        parse_duration_ms = parse_duration_ms,
+                        error = "JSON parse failed",
+                        "JSON body parse attempted"
+                    );
+                }
+
+                body_result.ok()
             } else {
                 None
             }
@@ -175,6 +235,15 @@ pub fn parse_request(req: Request) -> ParsedRequest {
             None
         }
     };
+
+    // R2: HTTP request parsed
+    info!(
+        method = %method,
+        path = %path,
+        http_version = %http_version,
+        headers_count = header_count,
+        "HTTP request parsed"
+    );
 
     ParsedRequest {
         method,
