@@ -248,10 +248,11 @@ jobs:
           echo "Forwarding Pet Store port..."
           kubectl port-forward -n brrtrouter-dev service/petstore 8080:8080 &
           PF_PID=$!
-          echo "Waiting for Pet Store readiness (index page)..."
+          echo "Waiting for Pet Store readiness (/health 200)..."
           for i in $(seq 1 120); do \
-            curl -fsS http://127.0.0.1:8080/ >/dev/null && echo "ready" && break; \
-            sleep 0.5; \
+            code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8080/health || true); \
+            [ "$code" = "200" ] && echo "ready" && break; \
+            sleep 1; \
           done
           
           echo "Testing health endpoint..."
@@ -296,9 +297,10 @@ jobs:
           echo "Forwarding Pet Store port for Goose..."
           kubectl port-forward -n brrtrouter-dev service/petstore 8080:8080 &
           PF_PID=$!
-          echo "Waiting for Pet Store readiness (index page) before Goose..."
+          echo "Waiting for Pet Store readiness (/health 200) before Goose..."
           for i in $(seq 1 120); do \
-            curl -fsS http://127.0.0.1:8080/ >/dev/null && echo "ready" && break; \
+            code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8080/health || true); \
+            [ "$code" = "200" ] && echo "ready" && break; \
             sleep 1; \
           done
 
