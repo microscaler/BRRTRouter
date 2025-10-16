@@ -112,27 +112,6 @@
 7) Production Logging Volume (R4/R6)
 - Ensure production preset uses async buffered logging and sampling; audit INFO logs in hottest paths; demote to DEBUG if non-essential.
 
-8) Routing Optimization – Phase 1 (Hybrid: Static Map + Segment Matcher)
-- Per-method static map for fully static paths (exact match O(1)).
-- Fallback segment-wise matcher for parameterized routes (no regex), with static-before-dynamic precedence.
-- Zero regex in the common path; keep regex only for exotic or legacy patterns behind a feature flag.
-- Config: `BRRTR_ROUTER_MODE=regex|hybrid|trie` (default: hybrid once proven); `BRRTR_ROUTER_LOG=basic|trace` for debug.
-
-9) Routing Optimization – Phase 2 (Trie/Radix)
-- Build a trie/radix tree at startup from the OpenAPI spec (static-over-dynamic priority, catch-alls at leaves).
-- Atomic swap on hot reload (build off-thread, replace pointer). No route lookup locks at runtime.
-- Deterministic matching with param index/types recorded for zero-copy extraction.
-
-10) Allocation Cuts in Hot Path
-- Avoid per-request `HashMap`/`String` allocations for path params; use `SmallVec`/stack locals for small N, and borrow slices from the request path.
-- Precompute param indices/types from OpenAPI; parse with `str::parse` by type where applicable.
-- Reuse small buffers where safe; minimize intermediate JSON/value cloning.
-
-11) Middleware Hygiene (Metrics/Tracing/Auth)
-- Metrics: atomics only; bounded label cardinality; avoid locks. Keep histograms via pre-sized structures.
-- Tracing: default to sampled + async; keep span fields minimal in hot paths.
-- Auth: fast-path unauthenticated routes; avoid heavy token work when not required; cache JWKS securely.
-
 ### Non-Goals / Out of Scope
 
 - Swapping out `may_minihttp` runtime or changing HTTP protocol stack.
@@ -172,23 +151,6 @@
 - AC7: Regression safety
   - All existing tests pass; response/request validation behavior unchanged.
 
-- AC8: Routing Phase 1 (Hybrid)
-  - Static paths matched via O(1) map; dynamic paths matched without regex.
-  - Benchmarks with 50/100/200 routes show ≥5–20× match speedup vs regex scan; no correctness regressions.
-  - Feature flag allows toggling between regex and hybrid for A/B.
-
-- AC9: Routing Phase 2 (Trie)
-  - Trie enabled behind flag; atomic swap on hot reload; deterministic static-over-dynamic precedence.
-  - Benchmarks show additional ≥2× improvement over hybrid on large dynamic route-sets; parity on small sets.
-
-- AC10: Allocation Cuts
-  - Allocations/request reduced measurably (heap profiles); param extraction zero-copy for typical routes.
-  - No regressions in param correctness; types parsed per OpenAPI metadata.
-
-- AC11: Middleware Hygiene
-  - Metrics hot path free of locks; label cardinality bounded; tracing overhead ≤ configured sampling target.
-  - Auth fast-paths verified on public routes; secure behavior maintained on protected routes.
-
 
 ### Rollout Plan
 
@@ -198,12 +160,6 @@
 4. Introduce worker pools with bounded queues behind feature flags/env.
 5. Switch metrics per-path map to sharded/pre-registered approach.
 6. Tune defaults in production presets; verify with load tests.
-7. Spike branches (isolated) for:
-   - router-phase1-hybrid (static map + segment matcher)
-   - router-phase2-trie (trie/radix with atomic swap)
-   - alloc-cuts-hotpath (param SmallVec/stack, no per-request HashMap)
-   - middleware-hygiene (metrics/tracing/auth refinements)
-   Each branch benchmarked independently against main/hybrid; no cross-edits.
 
 
 ### Configuration Summary
@@ -220,9 +176,6 @@
 - Body size estimate:
 - OpenAPI vendor extension `x-brrtrouter-body-size-bytes` at operation level
 - Optional env override `BRRTR_BODY_SIZE__<HANDLER_NAME>=<bytes>` (if present, overrides vendor/heuristic)
- - Routing mode:
- - `BRRTR_ROUTER_MODE=regex|hybrid|trie` (feature flag for A/B)
- - `BRRTR_ROUTER_LOG=basic|trace` (debug verbosity for matching)
 
 ### Risks & Mitigations
 
@@ -247,179 +200,12 @@
 - [ ] Remove body `to_string()` in size accounting; rely on Content-Length or omit.
  - [ ] Compute `estimated_body_bytes` from OpenAPI schema during generation; emit into generated code.
  - [ ] Add vendor extension `x-brrtrouter-body-size-bytes` support and optional env override handling.
-- [x] Introduce handler worker pools with bounded queues and env config.
-- [x] Add per-handler queue depth and shed metrics; dashboards.
+- [ ] Introduce handler worker pools with bounded queues and env config.
+- [ ] Add per-handler queue depth and shed metrics; dashboards.
 - [ ] Guard sampling-rate zero/invalid in `SamplingLayer`.
 - [ ] Reduce INFO logs in hot path or confirm production sampling/async buffering presets.
 - [ ] Optimize metrics per-path storage (dashmap or pre-registration).
 - [ ] Load testing: reproduce >5k sustained users; document results and tuning.
-- [ ] Implement router Phase 1 (hybrid): per-method static map + segment matcher; flag-gated.
-- [ ] Implement router Phase 2 (trie): radix/trie build + atomic swap; flag-gated.
-- [ ] Apply allocation cuts in routing/param extraction (SmallVec/stack, zero-copy slices).
-- [ ] Middleware hygiene: metrics hot path atomics only; tracing sampling verified; auth fast-paths.
 
 
-
-
-## R3 Implementation: Worker Pools with Bounded Queues
-
-### Overview
-
-R3 has been successfully implemented, introducing bounded worker pools with backpressure handling for all handler operations. This eliminates the single-coroutine bottleneck and prevents unbounded memory growth under high load.
-
-### Implementation Details
-
-#### 1. Worker Pool Module (`src/worker_pool.rs`)
-
-Created a comprehensive worker pool infrastructure with:
-
-- **WorkerPoolConfig**: Configuration struct supporting environment variables
-  - `BRRTR_HANDLER_WORKERS` (default: 4) - Number of worker coroutines per handler
-  - `BRRTR_HANDLER_QUEUE_BOUND` (default: 1024) - Maximum queue depth
-  - `BRRTR_BACKPRESSURE_MODE` (block | shed, default: block) - Backpressure strategy
-  - `BRRTR_BACKPRESSURE_TIMEOUT_MS` (default: 50ms) - Timeout for block mode
-
-- **BackpressureMode**: Two strategies for handling queue overflow
-  - **Block**: Wait with timeout before retrying (default, safe for most use cases)
-  - **Shed**: Return 429 (Too Many Requests) immediately (aggressive load shedding)
-
-- **WorkerPoolMetrics**: Real-time monitoring of worker pool health
-  - `queue_depth` - Current number of requests in queue (gauge)
-  - `shed_count` - Total requests shed due to backpressure (counter)
-  - `dispatched_count` - Total requests dispatched to pool (counter)
-  - `completed_count` - Total requests completed by workers (counter)
-
-- **WorkerPool**: Core implementation
-  - Spawns N worker coroutines sharing a single MPSC channel
-  - Implements bounded queue behavior using atomic counters (may's MPSC is unbounded)
-  - Provides `dispatch()` method with backpressure handling
-
-#### 2. Dispatcher Integration (`src/dispatcher/core.rs`)
-
-Extended Dispatcher with worker pool support:
-
-- Added `worker_pools: HashMap<String, Arc<WorkerPool>>` field to track worker pools
-- New methods:
-  - `register_handler_with_pool()` - Register handler with default config from env vars
-  - `register_handler_with_pool_config()` - Register handler with custom config
-  - `worker_pool_metrics()` - Get metrics for all worker pools
-- Updated `dispatch()` method to check for worker pools and apply backpressure
-- Maintains backward compatibility with single-coroutine handlers
-
-#### 3. Typed Handler Support (`src/typed/core.rs`)
-
-Added worker pool support for typed handlers:
-
-- New method: `register_typed_with_pool()` for typed handlers with worker pools
-- Wraps typed handler logic in a closure compatible with worker pool dispatch
-- Maintains type safety and automatic validation
-
-#### 4. Metrics Exposure (`src/server/service.rs`)
-
-Exposed worker pool metrics in `/metrics` endpoint:
-
-```prometheus
-# Worker Pool Metrics
-brrtrouter_worker_pool_queue_depth{handler="handler_name"} gauge
-brrtrouter_worker_pool_shed_total{handler="handler_name"} counter
-brrtrouter_worker_pool_dispatched_total{handler="handler_name"} counter
-brrtrouter_worker_pool_completed_total{handler="handler_name"} counter
-```
-
-#### 5. Comprehensive Testing (`tests/worker_pool_tests.rs`)
-
-Added 5 integration tests:
-- `test_worker_pool_creation` - Verifies pool creation and configuration
-- `test_worker_pool_shed_mode` - Tests immediate shedding with 429 responses
-- `test_worker_pool_block_mode` - Tests blocking with timeout
-- `test_worker_pool_metrics` - Validates metrics tracking
-- `test_worker_pool_config_from_env` - Tests environment variable configuration
-
-### Usage Examples
-
-#### Basic Usage (Default Configuration)
-
-```rust
-let mut dispatcher = Dispatcher::new();
-
-unsafe {
-    dispatcher.register_handler_with_pool("my_handler", |req: HandlerRequest| {
-        // Handle request with parallel processing
-        // ...
-    });
-}
-```
-
-This creates a worker pool with 4 workers, queue bound of 1024, and block mode backpressure.
-
-#### Custom Configuration
-
-```rust
-let config = WorkerPoolConfig::new(
-    8,      // 8 workers for high throughput
-    2048,   // larger queue
-    BackpressureMode::Shed,  // aggressive shedding
-    100,    // 100ms timeout (not used in shed mode)
-    0x10000, // 64KB stack size
-);
-
-unsafe {
-    dispatcher.register_handler_with_pool_config("high_load_handler", handler_fn, config);
-}
-```
-
-#### Monitoring
-
-Worker pool metrics are automatically exposed at `/metrics`:
-
-```bash
-curl http://localhost:8080/metrics | grep worker_pool
-```
-
-Expected metrics:
-- Queue depth should stay well below queue_bound under normal load
-- Shed count should be zero or very low in block mode
-- Dispatched and completed counts should track closely (queue draining)
-
-### Performance Characteristics
-
-#### Benefits
-
-1. **Parallel Processing**: Multiple workers process requests concurrently per handler
-2. **Bounded Memory**: Queue depth cap prevents unbounded growth
-3. **Graceful Degradation**: Backpressure provides controlled behavior under overload
-4. **Observable**: Metrics enable proactive monitoring and capacity planning
-
-#### Tradeoffs
-
-1. **Memory**: N workers * stack_size per handler (default: 4 * 64KB = 256KB per handler)
-2. **Latency**: Block mode adds up to timeout_ms latency under extreme load
-3. **Complexity**: More coroutines to manage vs. single-coroutine model
-
-#### When to Use Worker Pools
-
-- **Use worker pools for**:
-  - Handlers with high request volume
-  - Handlers that perform I/O or blocking operations
-  - Handlers where parallel processing improves throughput
-  
-- **Use single coroutine for**:
-  - Low-traffic handlers
-  - Handlers that must serialize requests (e.g., stateful operations)
-  - Handlers with very short execution time (<1ms)
-
-### Validation
-
-All existing tests pass (140 tests), plus 5 new worker pool tests. The implementation:
-- Maintains backward compatibility with existing handlers
-- Provides smooth upgrade path (handlers can opt-in to worker pools)
-- Exposes comprehensive metrics for monitoring
-- Supports both aggressive (shed) and conservative (block) backpressure modes
-
-### Next Steps
-
-1. **Load Testing**: Run goose tests with >5k concurrent users to validate stability
-2. **Production Tuning**: Gather metrics to tune worker count and queue depth per handler
-3. **Documentation**: Update user-facing docs with best practices
-4. **Code Generation**: Integrate worker pool config into OpenAPI-driven code generation (future work)
 
