@@ -7,7 +7,7 @@ metadata:
     app: petstore
   annotations:
     prometheus.io/scrape: "true"
-    prometheus.io/port: "8080"
+    prometheus.io/port: "9090"
     prometheus.io/path: "/metrics"
 spec:
   type: NodePort
