@@ -44,9 +44,9 @@ use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::sync::Arc;
 mod tracing_util;
+use brrtrouter::ids::RequestId;
 use brrtrouter::middleware::TracingMiddleware;
 use tracing_util::TestTracing;
-use brrtrouter::ids::RequestId;
 
 fn set_stack_size() -> TestTracing {
     let size = std::env::var("BRRTR_STACK_SIZE")

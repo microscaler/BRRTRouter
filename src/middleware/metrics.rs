@@ -301,9 +301,7 @@ impl MetricsMiddleware {
     pub fn status_stats(&self) -> HashMap<(String, u16), usize> {
         let map = self.status_metrics.read().unwrap();
         map.iter()
-            .map(|((path, status), count)| {
-                ((path.clone(), *status), count.load(Ordering::Relaxed))
-            })
+            .map(|((path, status), count)| ((path.clone(), *status), count.load(Ordering::Relaxed)))
             .collect()
     }
 

@@ -124,14 +124,10 @@ pub fn generate_project_with_options(
     let dest_path = doc_dir_canon.join("openapi.yaml");
 
     if source_canon == dest_path {
-        println!(
-            "⚠️  Skipping spec copy: source and destination are the same → {dest_path:?}",
-        );
+        println!("⚠️  Skipping spec copy: source and destination are the same → {dest_path:?}",);
         skipped.push(format!("spec: same-path → {dest_path:?}"));
     } else if !spec_copy_path.exists() || force {
-        println!(
-            "📄 Copying spec from {source_canon:?} → {spec_copy_path:?}",
-        );
+        println!("📄 Copying spec from {source_canon:?} → {spec_copy_path:?}",);
         if dry_run {
             println!("🔎 Dry-run: would copy spec (skipped)");
             if spec_copy_path.exists() {
@@ -141,9 +137,7 @@ pub fn generate_project_with_options(
             }
         } else {
             fs::copy(&source_canon, &spec_copy_path).with_context(|| {
-                format!(
-                    "Failed to copy spec from {source_canon:?} to {spec_copy_path:?}"
-                )
+                format!("Failed to copy spec from {source_canon:?} to {spec_copy_path:?}")
             })?;
             println!("✅ Copied spec to {spec_copy_path:?}");
             if spec_copy_path.exists() {
@@ -156,9 +150,7 @@ pub fn generate_project_with_options(
             }
         }
     } else {
-        println!(
-            "ℹ️  Spec already present at {spec_copy_path:?} (use --force to overwrite)",
-        );
+        println!("ℹ️  Spec already present at {spec_copy_path:?} (use --force to overwrite)",);
         skipped.push(format!("spec: exists → {spec_copy_path:?}"));
     }
 
