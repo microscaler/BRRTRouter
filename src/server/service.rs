@@ -10,10 +10,12 @@ use jsonschema::JSONSchema;
 use may_minihttp::{HttpService, Request, Response};
 use serde_json::json;
 use std::collections::HashMap;
+use std::collections::hash_map::DefaultHasher;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::sync::{Arc, RwLock};
+use std::hash::{Hash, Hasher};
 use tracing::{info, warn};
 use crate::ids::RequestId;
 
@@ -43,6 +45,10 @@ pub struct AppService {
     pub watcher: Option<notify::RecommendedWatcher>,
     /// Precomputed Keep-Alive header (to avoid per-request allocations/leaks)
     pub keep_alive_header: Option<&'static str>,
+    /// Cache for compiled JSON Schema validators for request bodies
+    pub request_schema_cache: Arc<RwLock<HashMap<String, Arc<JSONSchema>>>>,
+    /// Cache for compiled JSON Schema validators for response bodies
+    pub response_schema_cache: Arc<RwLock<HashMap<String, Arc<JSONSchema>>>>,
 }
 
 /// Clone implementation for `AppService`
@@ -84,6 +90,8 @@ impl Clone for AppService {
             doc_files: self.doc_files.clone(),
             watcher: None,
             keep_alive_header: self.keep_alive_header,
+            request_schema_cache: self.request_schema_cache.clone(),
+            response_schema_cache: self.response_schema_cache.clone(),
         }
     }
 }
@@ -136,6 +144,8 @@ impl AppService {
             doc_files: doc_dir.map(StaticFiles::new),
             watcher: None,
             keep_alive_header: None,
+            request_schema_cache: Arc::new(RwLock::new(HashMap::new())),
+            response_schema_cache: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -180,6 +190,58 @@ impl AppService {
         } else {
             self.keep_alive_header = None;
         }
+    }
+
+    /// Get or compile and cache a request JSONSchema validator for a given handler/schema
+    pub(crate) fn get_or_compile_request_validator(
+        &self,
+        handler_name: &str,
+        schema: &serde_json::Value,
+    ) -> Arc<JSONSchema> {
+        let mut hasher = DefaultHasher::new();
+        if let Ok(s) = serde_json::to_string(schema) {
+            s.hash(&mut hasher);
+        }
+        let schema_fingerprint = hasher.finish();
+        let cache_key = format!("req:{}:{}", handler_name, schema_fingerprint);
+
+        if let Ok(map) = self.request_schema_cache.read() {
+            if let Some(v) = map.get(&cache_key) {
+                return v.clone();
+            }
+        }
+
+        let compiled = Arc::new(JSONSchema::compile(schema).expect("invalid request schema"));
+        if let Ok(mut map) = self.request_schema_cache.write() {
+            map.entry(cache_key).or_insert_with(|| compiled.clone());
+        }
+        compiled
+    }
+
+    /// Get or compile and cache a response JSONSchema validator for a given handler/schema
+    pub(crate) fn get_or_compile_response_validator(
+        &self,
+        handler_name: &str,
+        schema: &serde_json::Value,
+    ) -> Arc<JSONSchema> {
+        let mut hasher = DefaultHasher::new();
+        if let Ok(s) = serde_json::to_string(schema) {
+            s.hash(&mut hasher);
+        }
+        let schema_fingerprint = hasher.finish();
+        let cache_key = format!("res:{}:{}", handler_name, schema_fingerprint);
+
+        if let Ok(map) = self.response_schema_cache.read() {
+            if let Some(v) = map.get(&cache_key) {
+                return v.clone();
+            }
+        }
+
+        let compiled = Arc::new(JSONSchema::compile(schema).expect("invalid response schema"));
+        if let Ok(mut map) = self.response_schema_cache.write() {
+            map.entry(cache_key).or_insert_with(|| compiled.clone());
+        }
+        compiled
     }
 
     /// Register default security providers based on loaded OpenAPI security schemes.
@@ -928,8 +990,27 @@ impl HttpService for AppService {
                     "Request validation start"
                 );
 
-                let compiled = JSONSchema::compile(schema).expect("invalid request schema");
-                let validation = compiled.validate(body_val);
+            // Compute a stable cache key using handler name and schema fingerprint
+            let mut hasher = DefaultHasher::new();
+            // Serialize schema to string for fingerprinting (bounded by schema size)
+            if let Ok(s) = serde_json::to_string(schema) {
+                s.hash(&mut hasher);
+            }
+            let schema_fingerprint = hasher.finish();
+            let cache_key = format!("req:{}:{}", route_match.handler_name, schema_fingerprint);
+
+            // Lookup or compile and cache
+            let compiled = if let Ok(map) = self.request_schema_cache.read() {
+                if let Some(v) = map.get(&cache_key) { v.clone() } else { Arc::new(JSONSchema::compile(schema).expect("invalid request schema")) }
+            } else {
+                Arc::new(JSONSchema::compile(schema).expect("invalid request schema"))
+            };
+
+            // Insert if missing
+            if let Ok(mut map) = self.request_schema_cache.write() {
+                map.entry(cache_key).or_insert_with(|| compiled.clone());
+            }
+            let validation = compiled.validate(body_val);
                 if let Err(errors) = validation {
                     // V3: Schema validation failed
                     let error_details: Vec<String> = errors.map(|e| e.to_string()).collect();
@@ -995,9 +1076,24 @@ impl HttpService for AppService {
                             "Response validation start"
                         );
 
-                        let compiled =
-                            JSONSchema::compile(schema).expect("invalid response schema");
-                        let validation = compiled.validate(&hr.body);
+                    // Compute a stable cache key using handler name and schema fingerprint
+                    let mut hasher = DefaultHasher::new();
+                    if let Ok(s) = serde_json::to_string(schema) {
+                        s.hash(&mut hasher);
+                    }
+                    let schema_fingerprint = hasher.finish();
+                    let cache_key = format!("res:{}:{}", route_match.handler_name, schema_fingerprint);
+
+                    let compiled = if let Ok(map) = self.response_schema_cache.read() {
+                        if let Some(v) = map.get(&cache_key) { v.clone() } else { Arc::new(JSONSchema::compile(schema).expect("invalid response schema")) }
+                    } else {
+                        Arc::new(JSONSchema::compile(schema).expect("invalid response schema"))
+                    };
+                    if let Ok(mut map) = self.response_schema_cache.write() {
+                        map.entry(cache_key).or_insert_with(|| compiled.clone());
+                    }
+
+                    let validation = compiled.validate(&hr.body);
                         if let Err(errors) = validation {
                             // V7: Response validation failed
                             let error_details: Vec<String> =
