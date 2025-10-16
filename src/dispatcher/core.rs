@@ -1,9 +1,9 @@
 #[allow(unused_imports)]
 use crate::echo::echo_handler;
+use crate::ids::RequestId;
 use crate::router::RouteMatch;
 use crate::spec::RouteMeta;
 use http::Method;
-use crate::ids::RequestId;
 use may::coroutine;
 use may::sync::mpsc;
 use serde::Serialize;

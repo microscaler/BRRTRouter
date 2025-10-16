@@ -1,6 +1,7 @@
 use super::request::{parse_request, ParsedRequest};
 use super::response::{write_handler_response, write_json_error};
 use crate::dispatcher::Dispatcher;
+use crate::ids::RequestId;
 use crate::middleware::MetricsMiddleware;
 use crate::router::Router;
 use crate::security::{SecurityProvider, SecurityRequest};
@@ -9,13 +10,14 @@ use crate::static_files::StaticFiles;
 use jsonschema::JSONSchema;
 use may_minihttp::{HttpService, Request, Response};
 use serde_json::json;
+use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::sync::{Arc, RwLock};
 use tracing::{info, warn};
-use crate::ids::RequestId;
 
 /// HTTP application service that handles all incoming requests
 ///
@@ -43,6 +45,10 @@ pub struct AppService {
     pub watcher: Option<notify::RecommendedWatcher>,
     /// Precomputed Keep-Alive header (to avoid per-request allocations/leaks)
     pub keep_alive_header: Option<&'static str>,
+    /// Cache for compiled JSON Schema validators for request bodies
+    pub request_schema_cache: Arc<RwLock<HashMap<String, Arc<JSONSchema>>>>,
+    /// Cache for compiled JSON Schema validators for response bodies
+    pub response_schema_cache: Arc<RwLock<HashMap<String, Arc<JSONSchema>>>>,
 }
 
 /// Clone implementation for `AppService`
@@ -84,6 +90,8 @@ impl Clone for AppService {
             doc_files: self.doc_files.clone(),
             watcher: None,
             keep_alive_header: self.keep_alive_header,
+            request_schema_cache: self.request_schema_cache.clone(),
+            response_schema_cache: self.response_schema_cache.clone(),
         }
     }
 }
@@ -136,6 +144,8 @@ impl AppService {
             doc_files: doc_dir.map(StaticFiles::new),
             watcher: None,
             keep_alive_header: None,
+            request_schema_cache: Arc::new(RwLock::new(HashMap::new())),
+            response_schema_cache: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -180,6 +190,58 @@ impl AppService {
         } else {
             self.keep_alive_header = None;
         }
+    }
+
+    /// Get or compile and cache a request JSONSchema validator for a given handler/schema
+    pub(crate) fn get_or_compile_request_validator(
+        &self,
+        handler_name: &str,
+        schema: &serde_json::Value,
+    ) -> Arc<JSONSchema> {
+        let mut hasher = DefaultHasher::new();
+        if let Ok(s) = serde_json::to_string(schema) {
+            s.hash(&mut hasher);
+        }
+        let schema_fingerprint = hasher.finish();
+        let cache_key = format!("req:{}:{}", handler_name, schema_fingerprint);
+
+        if let Ok(map) = self.request_schema_cache.read() {
+            if let Some(v) = map.get(&cache_key) {
+                return v.clone();
+            }
+        }
+
+        let compiled = Arc::new(JSONSchema::compile(schema).expect("invalid request schema"));
+        if let Ok(mut map) = self.request_schema_cache.write() {
+            map.entry(cache_key).or_insert_with(|| compiled.clone());
+        }
+        compiled
+    }
+
+    /// Get or compile and cache a response JSONSchema validator for a given handler/schema
+    pub(crate) fn get_or_compile_response_validator(
+        &self,
+        handler_name: &str,
+        schema: &serde_json::Value,
+    ) -> Arc<JSONSchema> {
+        let mut hasher = DefaultHasher::new();
+        if let Ok(s) = serde_json::to_string(schema) {
+            s.hash(&mut hasher);
+        }
+        let schema_fingerprint = hasher.finish();
+        let cache_key = format!("res:{}:{}", handler_name, schema_fingerprint);
+
+        if let Ok(map) = self.response_schema_cache.read() {
+            if let Some(v) = map.get(&cache_key) {
+                return v.clone();
+            }
+        }
+
+        let compiled = Arc::new(JSONSchema::compile(schema).expect("invalid response schema"));
+        if let Ok(mut map) = self.response_schema_cache.write() {
+            map.entry(cache_key).or_insert_with(|| compiled.clone());
+        }
+        compiled
     }
 
     /// Register default security providers based on loaded OpenAPI security schemes.
@@ -294,12 +356,19 @@ pub fn metrics_endpoint(res: &mut Response, metrics: &MetricsMiddleware) -> io::
     let mut body = String::with_capacity(8192); // Pre-allocate for performance
 
     // Active requests (NEW - for Grafana "Active Requests" panel)
-    body.push_str("# HELP brrtrouter_active_requests Number of requests currently being processed\n");
+    body.push_str(
+        "# HELP brrtrouter_active_requests Number of requests currently being processed\n",
+    );
     body.push_str("# TYPE brrtrouter_active_requests gauge\n");
-    body.push_str(&format!("brrtrouter_active_requests {}\n", metrics.active_requests()));
+    body.push_str(&format!(
+        "brrtrouter_active_requests {}\n",
+        metrics.active_requests()
+    ));
 
     // Requests with status code labels (NEW - for Grafana "Error Rate" panel)
-    body.push_str("# HELP brrtrouter_requests_total Total number of HTTP requests by path and status\n");
+    body.push_str(
+        "# HELP brrtrouter_requests_total Total number of HTTP requests by path and status\n",
+    );
     body.push_str("# TYPE brrtrouter_requests_total counter\n");
     let status_stats = metrics.status_stats();
     for ((path, status), count) in &status_stats {
@@ -314,7 +383,7 @@ pub fn metrics_endpoint(res: &mut Response, metrics: &MetricsMiddleware) -> io::
     body.push_str("# TYPE brrtrouter_request_duration_seconds histogram\n");
     let (buckets, sum_ns, count) = metrics.histogram_data();
     let bucket_boundaries = MetricsMiddleware::histogram_buckets();
-    
+
     // Emit histogram buckets
     for (i, &boundary) in bucket_boundaries.iter().enumerate() {
         body.push_str(&format!(
@@ -344,7 +413,9 @@ pub fn metrics_endpoint(res: &mut Response, metrics: &MetricsMiddleware) -> io::
         metrics.top_level_request_count()
     ));
 
-    body.push_str("# HELP brrtrouter_auth_failures_total Total number of authentication failures\n");
+    body.push_str(
+        "# HELP brrtrouter_auth_failures_total Total number of authentication failures\n",
+    );
     body.push_str("# TYPE brrtrouter_auth_failures_total counter\n");
     body.push_str(&format!(
         "brrtrouter_auth_failures_total {}\n",
@@ -354,9 +425,7 @@ pub fn metrics_endpoint(res: &mut Response, metrics: &MetricsMiddleware) -> io::
     body.push_str("# HELP brrtrouter_request_latency_seconds Average request latency in seconds\n");
     body.push_str("# TYPE brrtrouter_request_latency_seconds gauge\n");
     let avg = metrics.average_latency().as_secs_f64();
-    body.push_str(&format!(
-        "brrtrouter_request_latency_seconds {avg:.6}\n",
-    ));
+    body.push_str(&format!("brrtrouter_request_latency_seconds {avg:.6}\n",));
 
     body.push_str("# HELP brrtrouter_coroutine_stack_bytes Configured coroutine stack size\n");
     body.push_str("# TYPE brrtrouter_coroutine_stack_bytes gauge\n");
@@ -370,7 +439,7 @@ pub fn metrics_endpoint(res: &mut Response, metrics: &MetricsMiddleware) -> io::
 
     // Legacy per-path metrics (backward compatible)
     let path_stats = metrics.path_stats();
-    
+
     body.push_str("# HELP brrtrouter_path_requests_total Total requests per path (legacy)\n");
     body.push_str("# TYPE brrtrouter_path_requests_total counter\n");
     for (path, (count, _, _, _)) in &path_stats {
@@ -688,9 +757,13 @@ impl HttpService for AppService {
         }
 
         // Determine/accept request id from headers; fallback to generated
-        let inbound_req_id = headers
-            .get("x-request-id")
-            .and_then(|s| if s.trim().is_empty() { None } else { Some(s.as_str()) });
+        let inbound_req_id = headers.get("x-request-id").and_then(|s| {
+            if s.trim().is_empty() {
+                None
+            } else {
+                Some(s.as_str())
+            }
+        });
         let canonical_req_id = RequestId::from_header_or_new(inbound_req_id);
 
         let route_opt = {
@@ -928,7 +1001,8 @@ impl HttpService for AppService {
                     "Request validation start"
                 );
 
-                let compiled = JSONSchema::compile(schema).expect("invalid request schema");
+                // Use helper to ensure write lock only on misses
+                let compiled = self.get_or_compile_request_validator(&route_match.handler_name, schema);
                 let validation = compiled.validate(body_val);
                 if let Err(errors) = validation {
                     // V3: Schema validation failed
@@ -972,7 +1046,13 @@ impl HttpService for AppService {
                     .request_id
                     .unwrap_or(canonical_req_id)
                     .to_string();
-                dispatcher.dispatch_with_request_id(route_match.clone(), body, headers.clone(), cookies, req_id)
+                dispatcher.dispatch_with_request_id(
+                    route_match.clone(),
+                    body,
+                    headers.clone(),
+                    cookies,
+                    req_id,
+                )
             };
             match handler_response {
                 Some(hr) => {
@@ -995,8 +1075,8 @@ impl HttpService for AppService {
                             "Response validation start"
                         );
 
-                        let compiled =
-                            JSONSchema::compile(schema).expect("invalid response schema");
+                        // Use helper to ensure write lock only on misses
+                        let compiled = self.get_or_compile_response_validator(&route_match.handler_name, schema);
                         let validation = compiled.validate(&hr.body);
                         if let Err(errors) = validation {
                             // V7: Response validation failed

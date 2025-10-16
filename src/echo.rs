@@ -25,11 +25,11 @@ pub fn echo_handler(req: HandlerRequest) {
 mod tests {
     use super::echo_handler;
     use crate::dispatcher::{HandlerRequest, HandlerResponse};
+    use crate::ids::RequestId;
     use http::Method;
     use may::sync::mpsc;
     use serde_json::json;
     use std::collections::HashMap;
-    use crate::ids::RequestId;
 
     #[test]
     fn test_echo_handler() {

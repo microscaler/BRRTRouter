@@ -10,9 +10,9 @@ use opentelemetry_sdk::trace::{RandomIdGenerator, Sampler, SdkTracerProvider, Sp
 use parking_lot::RwLock;
 use std::sync::Arc;
 use std::time::Duration;
+use tracing::subscriber::DefaultGuard;
 use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::{prelude::*, Registry};
-use tracing::subscriber::DefaultGuard;
 
 /// In-memory span processor for testing
 /// Collects spans synchronously without batching for predictable testing
@@ -84,7 +84,11 @@ impl TestTracing {
         // Prefer a scoped default so tests don't conflict on global subscriber
         let guard = Some(tracing::subscriber::set_default(subscriber));
 
-        Self { spans, tracer_provider, _guard: guard }
+        Self {
+            spans,
+            tracer_provider,
+            _guard: guard,
+        }
     }
 
     /// Get all collected spans (returns a clone)

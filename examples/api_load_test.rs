@@ -156,7 +156,10 @@ async fn test_admin_settings(user: &mut GooseUser) -> TransactionResult {
 /// Test GET /items/{id} endpoint
 async fn test_get_item(user: &mut GooseUser) -> TransactionResult {
     let request_builder = user
-        .get_request_builder(&GooseMethod::Get, "items/550e8400-e29b-41d4-a716-446655440000")?
+        .get_request_builder(
+            &GooseMethod::Get,
+            "items/550e8400-e29b-41d4-a716-446655440000",
+        )?
         .header("X-API-Key", "test123");
     let goose_request = GooseRequest::builder()
         .set_request_builder(request_builder)
@@ -198,7 +201,10 @@ async fn test_index(user: &mut GooseUser) -> TransactionResult {
 /// Test POST /items/{id} endpoint (create/update item)
 async fn test_post_item(user: &mut GooseUser) -> TransactionResult {
     let request_builder = user
-        .get_request_builder(&GooseMethod::Post, "items/550e8400-e29b-41d4-a716-446655440000")?
+        .get_request_builder(
+            &GooseMethod::Post,
+            "items/550e8400-e29b-41d4-a716-446655440000",
+        )?
         .header("X-API-Key", "test123")
         .header("Content-Type", "application/json")
         .body(r#"{"name":"New Item"}"#);
@@ -212,7 +218,10 @@ async fn test_post_item(user: &mut GooseUser) -> TransactionResult {
 /// Test GET /download/{id} endpoint
 async fn test_download(user: &mut GooseUser) -> TransactionResult {
     let request_builder = user
-        .get_request_builder(&GooseMethod::Get, "download/550e8400-e29b-41d4-a716-446655440000")?
+        .get_request_builder(
+            &GooseMethod::Get,
+            "download/550e8400-e29b-41d4-a716-446655440000",
+        )?
         .header("X-API-Key", "test123");
     let goose_request = GooseRequest::builder()
         .set_request_builder(request_builder)
@@ -282,10 +291,12 @@ async fn main() -> Result<(), GooseError> {
                     transaction!(test_get_user).set_name("GET /users/{id} (with auth)"),
                 )
                 .register_transaction(
-                    transaction!(test_list_user_posts).set_name("GET /users/{id}/posts (with auth)"),
+                    transaction!(test_list_user_posts)
+                        .set_name("GET /users/{id}/posts (with auth)"),
                 )
                 .register_transaction(
-                    transaction!(test_get_user_post).set_name("GET /users/{id}/posts/{post_id} (with auth)"),
+                    transaction!(test_get_user_post)
+                        .set_name("GET /users/{id}/posts/{post_id} (with auth)"),
                 )
                 .register_transaction(
                     transaction!(test_delete_user).set_name("DELETE /users/{id} (with auth)"),
@@ -330,9 +341,7 @@ async fn main() -> Result<(), GooseError> {
                 .register_transaction(
                     transaction!(test_swagger_ui).set_name("GET /docs (Swagger UI)"),
                 )
-                .register_transaction(
-                    transaction!(test_index).set_name("GET / (root)"),
-                ),
+                .register_transaction(transaction!(test_index).set_name("GET / (root)")),
         )
         .execute()
         .await?;

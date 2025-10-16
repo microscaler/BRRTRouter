@@ -241,13 +241,13 @@ pub fn extract_response_schema_and_example(
         statuses.sort_unstable();
         'outer: for s in statuses.iter().filter(|s| **s >= 200 && **s < 300) {
             if let Some(mt_map) = all.get(s) {
-        for spec in mt_map.values() {
-            if spec.schema.is_some() || spec.example.is_some() {
-                default_schema = spec.schema.clone();
-                default_example = spec.example.clone();
-                break 'outer;
-            }
-        }
+                for spec in mt_map.values() {
+                    if spec.schema.is_some() || spec.example.is_some() {
+                        default_schema = spec.schema.clone();
+                        default_example = spec.example.clone();
+                        break 'outer;
+                    }
+                }
             }
         }
     }

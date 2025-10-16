@@ -828,11 +828,11 @@
 pub mod cli;
 
 pub mod dispatcher;
-pub mod ids;
 mod dummy_value;
 mod echo;
 pub mod generator;
 pub mod hot_reload;
+pub mod ids;
 pub mod middleware;
 pub mod otel;
 pub mod router;

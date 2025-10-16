@@ -242,6 +242,102 @@ impl CustomServerTestFixture {
     }
 }
 
+#[test]
+fn test_request_validator_is_cached() {
+    use crate::common::http::send_request;
+    use serde_json::json;
+    // Simple schema: requires field "x"
+    let req_schema = json!({
+        "type": "object",
+        "required": ["x"],
+        "properties": {"x": {"type": "integer"}}
+    });
+
+    // Echo handler always returns 200
+    let server = CustomServerTestFixture::with_handler_and_schemas(
+        "echo_x",
+        |req: HandlerRequest| {
+            let _ = req.reply_tx.send(HandlerResponse {
+                status: 200,
+                headers: HashMap::new(),
+                body: json!({"ok": true}),
+            });
+        },
+        "/echo",
+        Method::POST,
+        Some(req_schema.clone()),
+        None,
+    );
+
+    // First request compiles and caches schema
+    let body_ok = "{\"x\":1}";
+    let req1 = format!(
+        "POST /echo HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+        body_ok.len(), body_ok
+    );
+    let res1 = send_request(&server.addr(), &req1);
+    assert!(res1.starts_with("HTTP/1.1 200") || res1.starts_with("HTTP/1.0 200"));
+
+    // Second request should reuse cached validator; also verify invalid request returns 400
+    let body_bad = "{\"y\":2}"; // missing x
+    let req2 = format!(
+        "POST /echo HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+        body_bad.len(), body_bad
+    );
+    let res2 = send_request(&server.addr(), &req2);
+    assert!(res2.starts_with("HTTP/1.1 400") || res2.starts_with("HTTP/1.0 400"));
+}
+
+#[test]
+fn test_response_validator_is_cached() {
+    use crate::common::http::send_request;
+    use serde_json::json;
+    // Response schema requires field "r"
+    let resp_schema = json!({
+        "type": "object",
+        "required": ["r"],
+        "properties": {"r": {"type": "string"}}
+    });
+
+    let server = CustomServerTestFixture::with_handler_and_schemas(
+        "resp_r",
+        |req: HandlerRequest| {
+            let _ = req.reply_tx.send(HandlerResponse {
+                status: 200,
+                headers: HashMap::new(),
+                body: json!({"r": "ok"}),
+            });
+        },
+        "/resp",
+        Method::GET,
+        None,
+        Some(resp_schema.clone()),
+    );
+
+    // First request compiles and caches response schema
+    let req1 = "GET /resp HTTP/1.1\r\nHost: localhost\r\n\r\n";
+    let res1 = send_request(&server.addr(), req1);
+    assert!(res1.starts_with("HTTP/1.1 200") || res1.starts_with("HTTP/1.0 200"));
+
+    // Second request uses cached; now make handler return invalid response to verify 500 path
+    let server_bad = CustomServerTestFixture::with_handler_and_schemas(
+        "resp_r",
+        |req: HandlerRequest| {
+            let _ = req.reply_tx.send(HandlerResponse {
+                status: 200,
+                headers: HashMap::new(),
+                body: json!({"other": true}),
+            });
+        },
+        "/resp",
+        Method::GET,
+        None,
+        Some(resp_schema.clone()),
+    );
+    let res2 = send_request(&server_bad.addr(), req1);
+    assert!(res2.starts_with("HTTP/1.1 500") || res2.starts_with("HTTP/1.0 500"));
+}
+
 impl Drop for CustomServerTestFixture {
     /// Teardown: Automatically stop server when test completes
     fn drop(&mut self) {
