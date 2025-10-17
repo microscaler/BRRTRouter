@@ -189,10 +189,19 @@ impl Dispatcher {
     /// - The May coroutine runtime is properly initialized
     pub unsafe fn register_typed<H>(&mut self, name: &str, handler: H)
     where
-        H: Handler + Send + 'static,
+        H: Handler + Send + 'static + Clone,
     {
         let name = name.to_string();
-        let tx = spawn_typed(handler);
-        self.handlers.insert(name, tx);
+        let workers = std::env::var("BRRTR_HANDLER_WORKERS")
+            .ok()
+            .and_then(|s| s.parse::<usize>().ok())
+            .map(|n| n.max(1))
+            .unwrap_or(4);
+        let mut senders = Vec::with_capacity(workers);
+        for _ in 0..workers {
+            let tx = spawn_typed(handler.clone());
+            senders.push(tx);
+        }
+        self.insert_sender_pool(name, senders);
     }
 }

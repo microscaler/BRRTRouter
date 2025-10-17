@@ -13,6 +13,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tracing::{debug, error, info};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::middleware::Middleware;
 
@@ -66,14 +67,40 @@ pub struct HandlerResponse {
 /// Type alias for a channel sender that dispatches requests to a handler
 pub type HandlerSender = mpsc::Sender<HandlerRequest>;
 
+/// Pool of worker coroutines for a single handler
+struct HandlerPool {
+    senders: Vec<HandlerSender>,
+    rr: AtomicUsize,
+    inflight: AtomicUsize,
+    capacity: usize,
+}
+
+impl HandlerPool {
+    fn new(senders: Vec<HandlerSender>, capacity: usize) -> Self {
+        Self {
+            senders,
+            rr: AtomicUsize::new(0),
+            inflight: AtomicUsize::new(0),
+            capacity,
+        }
+    }
+
+    fn pick(&self) -> &HandlerSender {
+        let len = self.senders.len();
+        let idx = self.rr.fetch_add(1, Ordering::Relaxed) % len.max(1);
+        &self.senders[idx]
+    }
+}
+
+// Intentionally NOT Clone to avoid accidental copies of counters
+
 /// Dispatcher that routes requests to registered handler coroutines
 ///
-/// Maintains a registry of handler names to their corresponding channel senders,
+/// Maintains a registry of handler names to their worker pools,
 /// and manages middleware that processes requests/responses.
-#[derive(Clone, Default)]
 pub struct Dispatcher {
-    /// Map of handler names to their channel senders
-    pub handlers: HashMap<String, HandlerSender>,
+    /// Map of handler names to their worker pools
+    pub handlers: HashMap<String, HandlerPool>,
     /// Ordered list of middleware to apply to requests/responses
     pub middlewares: Vec<Arc<dyn Middleware>>,
 }
@@ -97,7 +124,12 @@ impl Dispatcher {
     /// Add a handler sender for the given route metadata. This allows handlers
     /// to be registered after the dispatcher has been created.
     pub fn add_route(&mut self, route: RouteMeta, sender: HandlerSender) {
-        self.handlers.insert(route.handler_name, sender);
+        let capacity = std::env::var("BRRTR_HANDLER_QUEUE_BOUND")
+            .ok()
+            .and_then(|s| s.parse::<usize>().ok())
+            .unwrap_or(1024);
+        self.handlers
+            .insert(route.handler_name, HandlerPool::new(vec![sender], capacity));
     }
 
     /// Add middleware to the processing pipeline
@@ -110,6 +142,15 @@ impl Dispatcher {
     /// * `mw` - Middleware implementation to add
     pub fn add_middleware(&mut self, mw: Arc<dyn Middleware>) {
         self.middlewares.push(mw);
+    }
+
+    /// Insert a pool of senders for a handler (used by typed registration)
+    pub fn insert_sender_pool(&mut self, name: String, senders: Vec<HandlerSender>) {
+        let capacity = std::env::var("BRRTR_HANDLER_QUEUE_BOUND")
+            .ok()
+            .and_then(|s| s.parse::<usize>().ok())
+            .unwrap_or(1024);
+        self.handlers.insert(name, HandlerPool::new(senders, capacity));
     }
 
     /// Registers a handler function that will process incoming requests with the given name.
@@ -126,79 +167,69 @@ impl Dispatcher {
     where
         F: Fn(HandlerRequest) + Send + 'static + Clone,
     {
-        let (tx, rx) = mpsc::channel::<HandlerRequest>();
-        let name = name.to_string();
-        let handler_name_for_logging = name.clone();
-
-        coroutine::Builder::new()
-            .stack_size(may::config().get_stack_size())
-            .spawn(move || {
-                // H1: Handler coroutine start
-                debug!(
-                    handler_name = %handler_name_for_logging,
-                    "Handler coroutine start"
-                );
-
-                for req in rx.iter() {
-                    // Extract what we need for error handling
-                    let reply_tx = req.reply_tx.clone();
-                    let handler_name = req.handler_name.clone();
-                    let request_id = req.request_id;
-
-                    // H2: Handler execution start
-                    info!(
-                        request_id = %request_id,
-                        handler_name = %handler_name,
-                        path_params = ?req.path_params,
-                        query_params = ?req.query_params,
-                        "Handler execution start"
-                    );
-
-                    let execution_start = Instant::now();
-
-                    if let Err(panic) =
-                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                            handler_fn(req);
-                        }))
-                    {
-                        // H3: Handler panic caught - CRITICAL ERROR
-                        let panic_message = format!("{panic:?}");
-                        let backtrace = std::backtrace::Backtrace::capture();
-
-                        error!(
-                            request_id = %request_id,
-                            handler_name = %handler_name,
-                            panic_message = %panic_message,
-                            backtrace = %backtrace,
-                            "Handler panicked - CRITICAL"
-                        );
-
-                        // Send an error response if the handler panicked
-                        let error_response = HandlerResponse {
-                            status: 500,
-                            headers: HashMap::new(),
-                            body: serde_json::json!({
-                                "error": "Handler panicked",
-                                "details": panic_message,
-                                "request_id": request_id,
-                            }),
-                        };
-                        let _ = reply_tx.send(error_response);
-                    } else {
-                        // H4: Handler execution complete
-                        let execution_time_ms = execution_start.elapsed().as_millis() as u64;
+        let workers = std::env::var("BRRTR_HANDLER_WORKERS")
+            .ok()
+            .and_then(|s| s.parse::<usize>().ok())
+            .map(|n| n.max(1))
+            .unwrap_or(4);
+        let mut senders = Vec::with_capacity(workers);
+        for _ in 0..workers {
+            let (tx, rx) = mpsc::channel::<HandlerRequest>();
+            let handler_name_for_logging = name.to_string();
+            let hf = handler_fn.clone();
+            coroutine::Builder::new()
+                .stack_size(may::config().get_stack_size())
+                .spawn(move || {
+                    debug!(handler_name = %handler_name_for_logging, "Handler coroutine start");
+                    for req in rx.iter() {
+                        let reply_tx = req.reply_tx.clone();
+                        let handler_name = req.handler_name.clone();
+                        let request_id = req.request_id;
                         info!(
                             request_id = %request_id,
                             handler_name = %handler_name,
-                            execution_time_ms = execution_time_ms,
-                            "Handler execution complete"
+                            path_params = ?req.path_params,
+                            query_params = ?req.query_params,
+                            "Handler execution start"
                         );
+                        let execution_start = Instant::now();
+                        if let Err(panic) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            hf(req);
+                        })) {
+                            let panic_message = format!("{panic:?}");
+                            let backtrace = std::backtrace::Backtrace::capture();
+                            error!(
+                                request_id = %request_id,
+                                handler_name = %handler_name,
+                                panic_message = %panic_message,
+                                backtrace = %backtrace,
+                                "Handler panicked - CRITICAL"
+                            );
+                            let error_response = HandlerResponse {
+                                status: 500,
+                                headers: HashMap::new(),
+                                body: serde_json::json!({
+                                    "error": "Handler panicked",
+                                    "details": panic_message,
+                                    "request_id": request_id,
+                                }),
+                            };
+                            let _ = reply_tx.send(error_response);
+                        } else {
+                            let execution_time_ms = execution_start.elapsed().as_millis() as u64;
+                            info!(
+                                request_id = %request_id,
+                                handler_name = %handler_name,
+                                execution_time_ms = execution_time_ms,
+                                "Handler execution complete"
+                            );
+                        }
                     }
-                }
-            })
-            .unwrap();
-
-        self.handlers.insert(name, tx);
+                })
+                .unwrap();
+            senders.push(tx);
+        }
+        self.insert_sender_pool(name.to_string(), senders);
     }
 
     /// Dispatch a request to the appropriate handler
@@ -253,8 +284,8 @@ impl Dispatcher {
             "Handler lookup"
         );
 
-        let tx = match self.handlers.get(handler_name) {
-            Some(tx) => tx,
+        let pool = match self.handlers.get(handler_name) {
+            Some(pool) => pool,
             None => {
                 // D2: Handler not found - CRITICAL ERROR
                 let available_handlers: Vec<&String> = self.handlers.keys().collect();
@@ -279,6 +310,20 @@ impl Dispatcher {
             body,
             reply_tx,
         };
+
+        // Backpressure: bound in-flight per handler
+        let prev = pool.inflight.fetch_add(1, Ordering::AcqRel);
+        if prev >= pool.capacity {
+            pool.inflight.fetch_sub(1, Ordering::AcqRel);
+            return Some(HandlerResponse {
+                status: 429,
+                headers: HashMap::new(),
+                body: serde_json::json!({
+                    "error": "Too Many Requests",
+                    "message": "Handler concurrency limit reached"
+                }),
+            });
+        }
 
         // D4: Middleware before execution
         let middleware_count = self.middlewares.len();
@@ -320,6 +365,7 @@ impl Dispatcher {
             let start = Instant::now();
 
             // Send request to handler coroutine
+            let tx = pool.pick();
             if let Err(e) = tx.send(request.clone()) {
                 error!(
                     request_id = %request_id,
@@ -327,6 +373,7 @@ impl Dispatcher {
                     error = %e,
                     "Failed to send request to handler"
                 );
+                pool.inflight.fetch_sub(1, Ordering::AcqRel);
                 return None;
             }
 
@@ -348,6 +395,7 @@ impl Dispatcher {
                         status = response.status,
                         "Handler response received"
                     );
+                    pool.inflight.fetch_sub(1, Ordering::AcqRel);
                     response
                 }
                 Err(e) => {
@@ -360,6 +408,7 @@ impl Dispatcher {
                         error = %e,
                         "Handler timeout or channel closed"
                     );
+                    pool.inflight.fetch_sub(1, Ordering::AcqRel);
                     return None;
                 }
             };
