@@ -14,6 +14,10 @@ use std::io;
 use std::path::PathBuf;
 use std::fs;
 use tikv_jemallocator::Jemalloc;
+use pyroscope::PyroscopeAgent;
+use pyroscope_pprofrs::{pprof_backend, PprofConfig};
+use std::sync::mpsc;
+use std::thread;
 
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
@@ -113,6 +117,9 @@ fn main() -> io::Result<()> {
     }
 
     let args = Args::parse();
+    // Optional: Start Pyroscope profiling if configured (on its own thread)
+    let (pyro_tx, pyro_rx) = std::sync::mpsc::channel::<()>();
+    let pyro_handle = std::thread::spawn(move || start_pyroscope_worker(pyro_rx));
     // configure coroutine stack size
     let config = RuntimeConfig::from_env();
     may::config().set_stack_size(config.stack_size);
@@ -363,11 +370,45 @@ fn main() -> io::Result<()> {
         "0.0.0.0:8080"
     };
     println!("🚀 {{ name }} example server listening on {addr}");
-    let server = HttpServer(service).start(addr).map_err(io::Error::other)?;
-    println!("Server started successfully on {addr}");
+    // Run the HTTP server on its own thread
+    let server_handle = std::thread::spawn(move || -> io::Result<()> {
+        let server = HttpServer(service).start(addr).map_err(io::Error::other)?;
+        println!("Server started successfully on {addr}");
+        server
+            .join()
+            .map_err(|e| io::Error::other(format!("Server encountered an error: {e:?}")))
+    });
 
-    server
-        .join()
-        .map_err(|e| io::Error::other(format!("Server encountered an error: {e:?}")))?;
-    Ok(())
+    // Wait for the server thread to exit, then signal Pyroscope to shutdown
+    let server_result = match server_handle.join() {
+        Ok(r) => r,
+        Err(_) => Err(io::Error::other("Server thread panicked")),
+    };
+    let _ = pyro_tx.send(());
+    let _ = pyro_handle.join();
+    server_result
+}
+
+fn start_pyroscope_worker(shutdown_rx: std::sync::mpsc::Receiver<()>) {
+    let url = match std::env::var("PYROSCOPE_URL") { Ok(u) => u, Err(_) => return };
+    let app = std::env::var("PYROSCOPE_APP").unwrap_or_else(|_| "{{ name }}".to_string());
+    let sample_rate: u32 = std::env::var("PYROSCOPE_SAMPLE_RATE").ok().and_then(|s| s.parse().ok()).unwrap_or(100);
+
+    let backend = pprof_backend(PprofConfig::new().sample_rate(sample_rate));
+    let mut builder = PyroscopeAgent::builder(url, app).backend(backend);
+    if let (Ok(user), Ok(pass)) = (std::env::var("PYROSCOPE_USER"), std::env::var("PYROSCOPE_PASSWORD")) {
+        builder = builder.basic_auth(user, pass);
+    }
+    let tags = std::env::var("PYROSCOPE_TAGS").ok();
+    if let Ok(agent) = builder.build() {
+        if let Ok(running) = agent.start() {
+            if let Some(tag_str) = tags {
+                let pairs = tag_str.split(',').filter_map(|p| p.split_once('='));
+                let (add_tag, _) = running.tag_wrapper();
+                for (k, v) in pairs { add_tag(k.to_string(), v.to_string()); }
+            }
+            let _ = shutdown_rx.recv();
+            if let Ok(ready) = running.stop() { let _ = ready.shutdown(); }
+        }
+    }
 }

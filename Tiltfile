@@ -204,6 +204,7 @@ k8s_yaml([
     'k8s/observability/grafana-dashboard.yaml',
     'k8s/observability/jaeger.yaml',
     'k8s/observability/otel-collector.yaml',
+    'k8s/observability/pyroscope.yaml',
 ])
 
 # ============================================================================
@@ -274,6 +275,12 @@ k8s_resource(
 k8s_resource(
     'otel-collector',
     resource_deps=['jaeger', 'prometheus', 'loki'],
+    labels=['observability'],
+)
+
+k8s_resource(
+    'pyroscope',
+    port_forwards=['4040:4040'],
     labels=['observability'],
 )
 

@@ -128,6 +128,13 @@ spec:
               value: "http://otel-collector:4317"
             - name: OTEL_SERVICE_NAME
               value: "petstore"
+            # Pyroscope profiling (enabled by default in local dev)
+            - name: PYROSCOPE_URL
+              value: "http://pyroscope:4040"
+            - name: PYROSCOPE_APP
+              value: "pet_store"
+            - name: PYROSCOPE_SAMPLE_RATE
+              value: "100"
             # Increase stack size for serving large static assets (64KB instead of 16KB default)
             - name: BRRTR_STACK_SIZE
               value: "0x10000"

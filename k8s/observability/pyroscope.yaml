@@ -1,0 +1,53 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pyroscope
+  namespace: brrtrouter-dev
+  labels:
+    app: pyroscope
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pyroscope
+  template:
+    metadata:
+      labels:
+        app: pyroscope
+    spec:
+      containers:
+        - name: pyroscope
+          image: grafana/pyroscope:latest
+          args:
+            - server
+          ports:
+            - name: http
+              containerPort: 4040
+              protocol: TCP
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pyroscope
+  namespace: brrtrouter-dev
+  labels:
+    app: pyroscope
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 4040
+      targetPort: http
+      protocol: TCP
+  selector:
+    app: pyroscope
+
+
