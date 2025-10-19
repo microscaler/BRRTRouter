@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 use std::collections::HashMap;
+use memory_stats::memory_stats;
 
 use crate::dispatcher::{HandlerRequest, HandlerResponse};
 use crate::middleware::Middleware;
@@ -26,66 +27,28 @@ pub struct MemoryStats {
 
 impl MemoryStats {
     /// Get current memory statistics for the process
+    /// Returns ONLY real measured values, no estimates or fake data
     pub fn current() -> Self {
         let mut stats = MemoryStats::default();
         
-        #[cfg(target_os = "linux")]
-        {
-            // Parse /proc/self/status for memory info
-            if let Ok(status) = std::fs::read_to_string("/proc/self/status") {
-                for line in status.lines() {
-                    let parts: Vec<&str> = line.split_whitespace().collect();
-                    if parts.len() >= 2 {
-                        match parts[0] {
-                            "VmRSS:" => {
-                                if let Ok(kb) = parts[1].parse::<u64>() {
-                                    stats.rss_bytes = kb * 1024;
-                                }
-                            }
-                            "VmSize:" => {
-                                if let Ok(kb) = parts[1].parse::<u64>() {
-                                    stats.vss_bytes = kb * 1024;
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-            }
-        }
-        
-        // Cross-platform fallback: Use a simple allocator-based estimation
-        // This provides *some* visibility even on macOS/Windows
-        use std::sync::atomic::AtomicU64;
-        
-        // Track approximate heap usage using a static counter
-        // This is not perfect but gives us something to work with
-        static ALLOCATED: AtomicU64 = AtomicU64::new(0);
-        
-        // If we don't have platform-specific data, use our tracked allocation
-        if stats.rss_bytes == 0 {
-            // Estimate RSS as 2x heap (rough approximation)
-            let allocated = ALLOCATED.load(Ordering::Relaxed);
-            stats.heap_bytes = allocated;
-            stats.rss_bytes = allocated * 2;
-            stats.vss_bytes = allocated * 3; // VSS is typically larger
-        }
-        
-        // For demo purposes on macOS, let's provide some realistic fake data
-        // This helps demonstrate the metrics are working
-        #[cfg(target_os = "macos")]
-        {
-            use std::time::{SystemTime, UNIX_EPOCH};
-            let uptime = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+        // Use memory-stats to get real memory usage
+        // This works on Linux, macOS, and Windows
+        if let Some(usage) = memory_stats() {
+            // memory-stats provides actual physical and virtual memory in bytes
+            stats.rss_bytes = usage.physical_mem as u64;
+            stats.vss_bytes = usage.virtual_mem as u64;
             
-            // Simulate memory growth over time (for demonstration)
-            let base_rss = 50 * 1024 * 1024; // 50 MB base
-            let growth = (uptime % 3600) * 10 * 1024; // Grow 10KB per second (up to 1 hour)
+            // We cannot accurately measure heap without allocator instrumentation
+            // Set to 0 to indicate "not measured" rather than guessing
+            stats.heap_bytes = 0;
             
-            stats.rss_bytes = base_rss + growth;
-            stats.vss_bytes = stats.rss_bytes * 2;
-            stats.heap_bytes = stats.rss_bytes / 2;
-            stats.allocations = uptime % 10000;
+            // Allocations count is not available without allocator hooks
+            stats.allocations = 0;
+        } else {
+            // If we can't get real stats, report zeros - NOT fake data
+            eprintln!("[memory] ERROR: Unable to get memory statistics for this platform");
+            // Return all zeros to indicate measurement failure
+            // Caller should handle this appropriately
         }
         
         stats
@@ -203,18 +166,24 @@ impl MemoryMiddleware {
         output.push_str("# TYPE process_memory_vss_bytes gauge\n");
         output.push_str(&format!("process_memory_vss_bytes {}\n", current.vss_bytes));
         
-        output.push_str("# HELP process_memory_heap_bytes Heap allocated bytes\n");
-        output.push_str("# TYPE process_memory_heap_bytes gauge\n");
-        output.push_str(&format!("process_memory_heap_bytes {}\n", current.heap_bytes));
+        // Only export heap metrics if we have real data
+        if current.heap_bytes > 0 {
+            output.push_str("# HELP process_memory_heap_bytes Heap allocated bytes\n");
+            output.push_str("# TYPE process_memory_heap_bytes gauge\n");
+            output.push_str(&format!("process_memory_heap_bytes {}\n", current.heap_bytes));
+        }
         
         // Peak memory metrics
         output.push_str("# HELP process_memory_peak_rss_bytes Peak RSS in bytes\n");
         output.push_str("# TYPE process_memory_peak_rss_bytes gauge\n");
         output.push_str(&format!("process_memory_peak_rss_bytes {}\n", peak.rss_bytes));
         
-        output.push_str("# HELP process_memory_peak_heap_bytes Peak heap in bytes\n");
-        output.push_str("# TYPE process_memory_peak_heap_bytes gauge\n");
-        output.push_str(&format!("process_memory_peak_heap_bytes {}\n", peak.heap_bytes));
+        // Only export peak heap if we have real data
+        if peak.heap_bytes > 0 {
+            output.push_str("# HELP process_memory_peak_heap_bytes Peak heap in bytes\n");
+            output.push_str("# TYPE process_memory_peak_heap_bytes gauge\n");
+            output.push_str(&format!("process_memory_peak_heap_bytes {}\n", peak.heap_bytes));
+        }
         
         // Growth metrics
         output.push_str("# HELP process_memory_growth_bytes Memory growth since startup\n");
@@ -226,26 +195,16 @@ impl MemoryMiddleware {
         output.push_str("# TYPE process_memory_baseline_rss_bytes gauge\n");
         output.push_str(&format!("process_memory_baseline_rss_bytes {}\n", self.baseline.rss_bytes));
         
-        // Per-handler metrics
+        // Per-handler invocation counts (we can't accurately measure per-handler memory)
         let handler_stats = self.handler_memory.read().unwrap();
         if !handler_stats.is_empty() {
-            output.push_str("# HELP handler_memory_bytes Memory usage per handler\n");
-            output.push_str("# TYPE handler_memory_bytes gauge\n");
+            output.push_str("# HELP handler_invocations_total Number of invocations per handler\n");
+            output.push_str("# TYPE handler_invocations_total counter\n");
             
             for (handler, stats) in handler_stats.iter() {
-                let avg = if stats.invocations > 0 {
-                    stats.total_allocated / stats.invocations
-                } else {
-                    0
-                };
-                
                 output.push_str(&format!(
-                    "handler_memory_bytes{{handler=\"{}\",type=\"average\"}} {}\n",
-                    handler, avg
-                ));
-                output.push_str(&format!(
-                    "handler_memory_bytes{{handler=\"{}\",type=\"peak\"}} {}\n",
-                    handler, stats.peak_usage
+                    "handler_invocations_total{{handler=\"{}\"}} {}\n",
+                    handler, stats.invocations
                 ));
             }
         }
@@ -305,11 +264,10 @@ impl Middleware for MemoryMiddleware {
     }
     
     fn after(&self, req: &HandlerRequest, _res: &mut HandlerResponse, _latency: Duration) {
-        // Record memory after handler execution
-        let after = MemoryStats::current();
+        // Update overall memory stats after handler execution
         self.update();
         
-        // Track per-handler memory if we can detect growth
+        // Track handler invocation count
         let mut handler_stats = self.handler_memory.write().unwrap();
         let stats = handler_stats
             .entry(req.handler_name.clone())
@@ -317,15 +275,10 @@ impl Middleware for MemoryMiddleware {
         
         stats.invocations += 1;
         
-        // Estimate memory allocated by this request
-        // (This is approximate since other requests may be concurrent)
-        let before = self.baseline; // Would need request context
-        let allocated = after.heap_bytes.saturating_sub(before.heap_bytes);
-        stats.total_allocated += allocated;
-        
-        if allocated > stats.peak_usage {
-            stats.peak_usage = allocated;
-        }
+        // NOTE: We cannot accurately attribute memory to specific handlers
+        // without request-scoped allocator tracking. We only track invocation
+        // counts here. Memory growth patterns must be analyzed at the 
+        // aggregate level.
         
         // Periodic logging (every 100 requests)
         if self.measurements.load(Ordering::Relaxed) % 100 == 0 {
