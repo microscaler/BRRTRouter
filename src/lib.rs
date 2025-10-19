@@ -825,6 +825,12 @@
 //! http_requests_total{method="GET",path="/health",status="200"} 120
 //! ```
 
+// Use jemalloc as the global allocator when the feature is enabled
+// This provides accurate heap statistics via tikv-jemalloc-ctl
+#[cfg(feature = "jemalloc")]
+#[global_allocator]
+static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
 pub mod cli;
 
 pub mod dispatcher;
