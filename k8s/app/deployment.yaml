@@ -151,8 +151,8 @@ spec:
             failureThreshold: 2
           resources:
             requests:
-              memory: "128Mi"
-              cpu: "100m"
+              memory: "512Mi"
+              cpu: "1000m"
             limits:
               memory: "1Gi"
               cpu: "4000m"

@@ -204,6 +204,7 @@ k8s_yaml([
     'k8s/observability/grafana-dashboard.yaml',
     'k8s/observability/jaeger.yaml',
     'k8s/observability/otel-collector.yaml',
+    'k8s/observability/pyroscope.yaml',
 ])
 
 # ============================================================================
@@ -277,6 +278,12 @@ k8s_resource(
     labels=['observability'],
 )
 
+k8s_resource(
+    'pyroscope',
+    port_forwards=['4040:4040'],
+    labels=['observability'],
+)
+
 # Petstore application - depends on everything
 k8s_resource(
     'petstore',
@@ -321,7 +328,7 @@ local_resource(
 # Button to run standard Goose API load test (all endpoints)
 local_resource(
     'run-goose-api-test',
-    'cargo run --release --example api_load_test -- --host http://localhost:8080 --users 10 --hatch-rate 2 --run-time 30s',
+    'cargo run --release --example api_load_test -- --host http://localhost:8080 --users 25 --hatch-rate 2 --run-time 300s',
     resource_deps=['petstore'],
     trigger_mode=TRIGGER_MODE_MANUAL,
     labels=['tools'],

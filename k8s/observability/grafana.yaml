@@ -22,6 +22,12 @@ data:
         editable: true
         jsonData:
           maxLines: 1000
+      - name: Pyroscope
+        type: grafana-pyroscope-datasource
+        access: proxy
+        url: http://pyroscope:4040
+        isDefault: false
+        editable: true
       
       - name: Jaeger
         type: jaeger
@@ -29,6 +35,36 @@ data:
         url: http://jaeger:16686
         isDefault: false
         editable: true
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-pyroscope
+  namespace: brrtrouter-dev
+data:
+  pyroscope.json: |
+    {
+      "title": "Pyroscope - Flamegraph",
+      "tags": ["pyroscope", "profiling"],
+      "timezone": "browser",
+      "refresh": "30s",
+      "panels": [
+        {
+          "id": 1,
+          "gridPos": { "x": 0, "y": 0, "w": 24, "h": 20 },
+          "title": "CPU Flamegraph",
+          "type": "pyroscope-panel",
+          "datasource": "Pyroscope",
+          "options": {
+            "query": {
+              "queryType": "series",
+              "profileTypeId": "process_cpu:cpu:nanoseconds:cpu:nanoseconds"
+            },
+            "legend": true
+          }
+        }
+      ]
+    }
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -162,6 +198,9 @@ spec:
             - name: dashboard-unified
               mountPath: /var/lib/grafana/dashboards/unified-observability.json
               subPath: unified-observability.json
+            - name: dashboard-pyroscope
+              mountPath: /var/lib/grafana/dashboards/pyroscope.json
+              subPath: pyroscope.json
             - name: storage
               mountPath: /var/lib/grafana
           securityContext:
@@ -189,6 +228,9 @@ spec:
         - name: dashboard-unified
           configMap:
             name: grafana-dashboard-unified
+        - name: dashboard-pyroscope
+          configMap:
+            name: grafana-dashboard-pyroscope
         - name: storage
           persistentVolumeClaim:
             claimName: grafana-storage
