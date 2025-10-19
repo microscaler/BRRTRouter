@@ -180,8 +180,13 @@ impl Router {
             routes_count = self.routes.len(),
             "Route match attempt"
         );
+        
+        // Track route matching performance
+        let match_start = std::time::Instant::now();
+        let mut iterations = 0;
 
         for (m, regex, route, param_names) in &self.routes {
+            iterations += 1;
             if *m != method {
                 continue;
             }
@@ -201,14 +206,32 @@ impl Router {
                 }
 
                 // RT3: Route matched
-                info!(
-                    method = %method,
-                    path = %path,
-                    handler_name = %route.handler_name,
-                    route_pattern = %route.path_pattern,
-                    path_params = ?params,
-                    "Route matched"
-                );
+                let match_duration = match_start.elapsed();
+                
+                // Warn if route matching is slow
+                if match_duration > std::time::Duration::from_millis(1) {
+                    warn!(
+                        method = %method,
+                        path = %path,
+                        handler_name = %route.handler_name,
+                        route_pattern = %route.path_pattern,
+                        path_params = ?params,
+                        duration_us = match_duration.as_micros(),
+                        iterations = iterations,
+                        "Slow route matching detected"
+                    );
+                } else {
+                    info!(
+                        method = %method,
+                        path = %path,
+                        handler_name = %route.handler_name,
+                        route_pattern = %route.path_pattern,
+                        path_params = ?params,
+                        duration_us = match_duration.as_micros(),
+                        iterations = iterations,
+                        "Route matched"
+                    );
+                }
 
                 return Some(RouteMatch {
                     route: route.clone(),
@@ -220,6 +243,7 @@ impl Router {
         }
 
         // RT4: No route found (404)
+        let match_duration = match_start.elapsed();
         let attempted_patterns: Vec<String> = self
             .routes
             .iter()
@@ -231,6 +255,8 @@ impl Router {
         warn!(
             method = %method,
             path = %path,
+            duration_us = match_duration.as_micros(),
+            iterations = iterations,
             attempted_patterns = ?attempted_patterns,
             "No route matched"
         );
