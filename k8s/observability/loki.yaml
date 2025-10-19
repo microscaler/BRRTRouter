@@ -37,11 +37,6 @@ data:
             prefix: index_
             period: 24h
     
-    querier:
-     engine:
-         timeout: 5m
-     query_timeout: 5m
-
     ruler:
       alertmanager_url: http://localhost:9093
     
@@ -129,11 +124,11 @@ spec:
             runAsNonRoot: true
           resources:
             requests:
-              memory: "128Mi"
-              cpu: "50m"
+              memory: "256Mi"
+              cpu: "300m"
             limits:
-              memory: "512Mi"
-              cpu: "200m"
+              memory: "2Gi"
+              cpu: "1000m"
       volumes:
         - name: config
           configMap:
@@ -151,12 +146,11 @@ metadata:
   labels:
     app: loki
 spec:
-  type: NodePort
+  type: ClusterIP
   ports:
     - name: http
       port: 3100
       targetPort: http
-      nodePort: 31310
       protocol: TCP
     - name: grpc
       port: 9096
