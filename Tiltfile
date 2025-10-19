@@ -42,18 +42,16 @@ local_resource(
 local_resource(
     'build-brrtrouter',
     brr_build_cmd,
-    resource_deps=['prometheus', 'loki', 'promtail'],
     deps=['src/', 'Cargo.toml', 'Cargo.lock'],
     labels=['build'],
     allow_parallel=True,
 )
 
 # 2. Generate pet_store from OpenAPI spec locally
-# Use the built debug binary directly for speed (instant vs minutes for cargo run)
 local_resource(
     'gen-petstore',
-    './target/debug/brrtrouter-gen generate --spec examples/openapi.yaml --output examples/pet_store --force || cargo run --bin brrtrouter-gen -- generate --spec examples/openapi.yaml --output examples/pet_store --force',
-    deps=['examples/openapi.yaml', 'templates/', 'src/generator/', 'sample-ui/'],
+    'cargo run --release --bin brrtrouter-gen -- generate --spec examples/openapi.yaml --force',
+    deps=['examples/openapi.yaml', 'templates/', 'src/generator/'],
     resource_deps=['build-brrtrouter'],
     labels=['build'],
     allow_parallel=False,  # Must complete before petstore build
@@ -97,21 +95,9 @@ local_resource(
 # - Do NOT try to COPY directly from target/ in Dockerfile
 # - Do NOT modify .dockerignore to allow target/*
 # =============================================================================
-# Detect GitHub CI environment for glibc vs musl builds
-is_github_ci = os.getenv('GITHUB_ACTIONS', '') != ''
-target_triple = 'x86_64-unknown-linux-gnu' if is_github_ci else 'x86_64-unknown-linux-musl'
-build_type = 'glibc (GitHub CI)' if is_github_ci else 'musl (local)'
-
-print('🔨 Build target: {} ({})'.format(target_triple, build_type))
-
-# Build petstore: cross-compiled for Docker (Linux x86_64)
-# Docker containers need Linux binaries, so we always cross-compile for containerized deployment.
-# For local native testing, use: SKIP_CROSS_COMPILE=1 scripts/host-aware-build.sh pet
-# GitHub CI: Uses glibc (x86_64-unknown-linux-gnu) for 2-3x performance improvement
-# Local dev: Uses musl (x86_64-unknown-linux-musl) for portability
 local_resource(
     'build-petstore',
-    pet_build_cmd + ' && mkdir -p build_artifacts && cp target/{}/debug/pet_store build_artifacts/'.format(target_triple),
+    pet_build_cmd + ' && mkdir -p build_artifacts && cp target/x86_64-unknown-linux-musl/release/pet_store build_artifacts/',
     deps=['examples/pet_store/src/', 'examples/pet_store/Cargo.toml'],
     resource_deps=['gen-petstore'],
     labels=['build'],
@@ -122,25 +108,20 @@ local_resource(
 # DOCKER IMAGE (Minimal runtime-only image with pre-built binary)
 # ============================================================================
 
-# Select Dockerfile based on environment
-dockerfile_path = 'dockerfiles/Dockerfile.dev-glibc' if is_github_ci else 'dockerfiles/Dockerfile.dev'
-
 # Build Docker image with proper dependencies
 # Split into separate stages to ensure correct ordering
-# GitHub CI: Uses glibc-based Ubuntu image for performance testing
-# Local dev: Uses musl-based Alpine image for portability
 local_resource(
     'docker-build-and-push',
     # Build and push to local registry (much faster than 'kind load')
     # https://kind.sigs.k8s.io/docs/user/local-registry/
     # --rm and --force-rm prevent <none>:<none> intermediate container accumulation
-    'docker build -t localhost:5001/brrtrouter-petstore:tilt --rm --force-rm -f {} . && docker push localhost:5001/brrtrouter-petstore:tilt'.format(dockerfile_path),
+    'docker build -t localhost:5001/brrtrouter-petstore:tilt --rm --force-rm -f dockerfiles/Dockerfile.dev . && docker push localhost:5001/brrtrouter-petstore:tilt',
     deps=[
         './build_artifacts/pet_store',
         './examples/pet_store/config',
         './examples/pet_store/doc',
         './examples/pet_store/static_site',
-        dockerfile_path,
+        './dockerfiles/Dockerfile.dev',
     ],
     resource_deps=[
         'build-sample-ui',  # ← UI must be built before Docker image
@@ -259,17 +240,15 @@ k8s_resource(
 )
 
 # Observability stack - independent of data stores
-# Note: Port forwarding handled by Kind NodePort mappings (see kind-config.yaml)
-# NodePorts: Prometheus 31090, Grafana 31300, Jaeger 31166, Loki 31310, OTEL 31417/31418/31889, Pyroscope 31404
-# Host ports: 9090, 3000, 16686, 3100, 4317/4318/8889, 4040
 k8s_resource(
     'prometheus',
+    port_forwards=['9090:9090'],
     labels=['observability'],
 )
 
 k8s_resource(
     'loki',
-    resource_deps=['prometheus'],
+    port_forwards=['3100:3100'],
     labels=['observability'],
 )
 
@@ -281,12 +260,14 @@ k8s_resource(
 
 k8s_resource(
     'grafana',
+    port_forwards=['3000:3000'],
     resource_deps=['prometheus', 'loki', 'jaeger'],
     labels=['observability'],
 )
 
 k8s_resource(
     'jaeger',
+    port_forwards=['16686:16686'],
     resource_deps=['postgres', 'redis'],
     labels=['observability'],
 )
@@ -299,14 +280,14 @@ k8s_resource(
 
 k8s_resource(
     'pyroscope',
+    port_forwards=['4040:4040'],
     labels=['observability'],
 )
 
 # Petstore application - depends on everything
-# Port forwarding: Tilt port forward 8080:8080 (also available via Kind NodePort 31080 -> host 8080)
 k8s_resource(
     'petstore',
-    port_forwards='8080:8080',
+    port_forwards=['8080:8080'],
     resource_deps=[
         'docker-build-and-push',  # Image must be built and pushed FIRST
         'postgres',
@@ -325,10 +306,9 @@ k8s_resource(
 # ============================================================================
 
 # Button to manually regenerate petstore code
-# Use the built debug binary directly for speed (instant vs minutes for cargo run)
 local_resource(
     'regenerate-petstore',
-    './target/debug/brrtrouter-gen generate --spec examples/openapi.yaml --output examples/pet_store --force || cargo run --bin brrtrouter-gen -- generate --spec examples/openapi.yaml --output examples/pet_store --force',
+    'cargo run --release --bin brrtrouter-gen -- generate --spec examples/openapi.yaml --force',
     deps=['examples/openapi.yaml', 'templates/'],
     trigger_mode=TRIGGER_MODE_MANUAL,
     labels=['tools'],
@@ -348,7 +328,7 @@ local_resource(
 # Button to run standard Goose API load test (all endpoints)
 local_resource(
     'run-goose-api-test',
-    'cargo run --example api_load_test -- --host http://localhost:8080 --users 25 --hatch-rate 2 --run-time 300s',
+    'cargo run --release --example api_load_test -- --host http://localhost:8080 --users 25 --hatch-rate 2 --run-time 300s',
     resource_deps=['petstore'],
     trigger_mode=TRIGGER_MODE_MANUAL,
     labels=['tools'],
@@ -361,7 +341,7 @@ local_resource(
 # Customize with env vars: START_USERS, RAMP_STEP, HATCH_RATE, STAGE_DURATION, MAX_USERS
 local_resource(
     'run-goose-adaptive',
-    'cargo run --example adaptive_load_test -- --host http://localhost:8080',
+    'cargo run --release --example adaptive_load_test -- --host http://localhost:8080',
     resource_deps=['petstore'],
     trigger_mode=TRIGGER_MODE_MANUAL,
     labels=['tools'],

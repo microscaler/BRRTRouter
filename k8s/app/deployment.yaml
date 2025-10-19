@@ -8,11 +8,6 @@ data:
     # BRRTRouter Pet Store Configuration
     # This ConfigMap contains the full application configuration for Kubernetes deployment
     
-    # Server port configuration
-    # Note: The PORT environment variable takes precedence over this setting
-    # This is included for documentation and fallback purposes
-    port: 8080
-    
     security:
       # Static API keys bound to specific OpenAPI security scheme names
       # Example: 'ApiKeyAuth' corresponds to components.securitySchemes.ApiKeyAuth
@@ -116,29 +111,19 @@ spec:
               containerPort: 8080
               protocol: TCP
           env:
-            # PORT environment variable: Set from containerPort
-            # The application reads this to determine which port to listen on.
-            # Priority: config.yaml port > PORT env var > default 8080
-            - name: PORT
-              value: "8080"
-            # Reduce RUST_LOG to error level for performance testing
             - name: RUST_LOG
-              value: "error"
+              value: "debug"
             - name: RUST_BACKTRACE
               value: "1"
-            # Structured logging configuration - optimized for performance testing
-            # Minimize logging overhead by only logging errors
+            # Structured logging configuration for Loki/Promtail ingestion
             - name: BRRTR_LOG_FORMAT
               value: "json"
             - name: BRRTR_LOG_SAMPLING_MODE
-              value: "error-only"  # Changed from "all" to "error-only" for performance
+              value: "all"
             - name: BRRTR_LOG_ASYNC
               value: "true"
             - name: BRRTR_LOG_INCLUDE_LOCATION
               value: "false"
-            # Reduce log verbosity to error level only for performance testing
-            - name: BRRTR_LOG_LEVEL
-              value: "error"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector:4317"
             - name: OTEL_SERVICE_NAME
@@ -146,9 +131,6 @@ spec:
             # Increase stack size for serving large static assets (64KB instead of 16KB default)
             - name: BRRTR_STACK_SIZE
               value: "0x10000"
-            # Set worker pool size to 1 for performance testing (isolate worker pool overhead)
-            - name: BRRTR_HANDLER_WORKERS
-              value: "1"
           # Liveness probe - is the service alive?
           livenessProbe:
             httpGet:
@@ -169,10 +151,10 @@ spec:
             failureThreshold: 2
           resources:
             requests:
-              memory: "1Gi"
+              memory: "512Mi"
               cpu: "1000m"
             limits:
-              memory: "2Gi"
+              memory: "1Gi"
               cpu: "4000m"
           volumeMounts:
             # Configuration from ConfigMap (Kubernetes-native, matches production)
