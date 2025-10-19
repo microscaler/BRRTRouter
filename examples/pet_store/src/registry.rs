@@ -82,7 +82,14 @@ pub unsafe fn register_all(dispatcher: &mut Dispatcher) {
 /// Dynamically register handlers for the provided routes using their handler names.
 /// # Safety
 /// This function spawns handler coroutines. Callers must ensure coroutine runtime is set up.
+///
+/// **IMPORTANT**: This function will clear ALL existing handlers before registering new ones
+/// to prevent memory leaks from accumulating coroutines.
 pub unsafe fn register_from_spec(dispatcher: &mut Dispatcher, routes: &[RouteMeta]) {
+    // Clear all existing handlers to prevent memory leaks
+    // The old senders will be dropped, causing their coroutines to exit
+    dispatcher.handlers.clear();
+
     for route in routes {
         match route.handler_name.as_str() {
             "admin_settings" => {
