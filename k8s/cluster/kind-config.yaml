@@ -31,7 +31,7 @@ nodes:
     extraPortMappings:
       # Pet Store API
       - containerPort: 30900
-        hostPort: 9090
+        hostPort: 8080
         protocol: TCP
       # Grafana UI
       - containerPort: 30300
@@ -39,7 +39,7 @@ nodes:
         protocol: TCP
       # Prometheus UI
       - containerPort: 30090
-        hostPort: 8080
+        hostPort: 9090
         protocol: TCP
       # Jaeger UI
       - containerPort: 30686
