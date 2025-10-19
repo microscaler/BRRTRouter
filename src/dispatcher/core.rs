@@ -12,7 +12,7 @@ use std::collections::HashMap;
 #[allow(unused_imports)]
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use crate::middleware::Middleware;
 
@@ -105,12 +105,20 @@ impl Dispatcher {
         if let Some(old_sender) = self.handlers.remove(&route.handler_name) {
             // Drop the old sender explicitly to ensure the channel closes
             drop(old_sender);
-            debug!(
+            warn!(
                 handler_name = %route.handler_name,
+                total_handlers = self.handlers.len(),
                 "Replaced existing handler - old coroutine will exit"
             );
         }
-        self.handlers.insert(route.handler_name, sender);
+        
+        self.handlers.insert(route.handler_name.clone(), sender);
+        
+        info!(
+            handler_name = %route.handler_name,
+            total_handlers = self.handlers.len() + 1,
+            "Handler registered successfully"
+        );
     }
 
     /// Add middleware to the processing pipeline
