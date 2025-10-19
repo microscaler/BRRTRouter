@@ -38,12 +38,37 @@ impl MemoryStats {
             stats.rss_bytes = usage.physical_mem as u64;
             stats.vss_bytes = usage.virtual_mem as u64;
             
-            // We cannot accurately measure heap without allocator instrumentation
-            // Set to 0 to indicate "not measured" rather than guessing
-            stats.heap_bytes = 0;
+            // Get real heap statistics if using jemalloc
+            #[cfg(feature = "jemalloc")]
+            {
+                use tikv_jemalloc_ctl::{epoch, stats};
+                
+                // Update jemalloc statistics
+                if let Ok(e) = epoch::mib() {
+                    let _ = e.advance();
+                }
+                
+                // Get allocated bytes (actual heap usage)
+                if let Ok(allocated) = stats::allocated::mib() {
+                    if let Ok(bytes) = allocated.read() {
+                        stats.heap_bytes = bytes as u64;
+                    }
+                }
+                
+                // Get active allocations count
+                if let Ok(active) = stats::active::mib() {
+                    if let Ok(count) = active.read() {
+                        stats.allocations = count as u64;
+                    }
+                }
+            }
             
-            // Allocations count is not available without allocator hooks
-            stats.allocations = 0;
+            // Without jemalloc, we can't measure heap accurately
+            #[cfg(not(feature = "jemalloc"))]
+            {
+                stats.heap_bytes = 0;  // 0 means "not measured"
+                stats.allocations = 0;
+            }
         } else {
             // If we can't get real stats, report zeros - NOT fake data
             eprintln!("[memory] ERROR: Unable to get memory statistics for this platform");
