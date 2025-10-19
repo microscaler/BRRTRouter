@@ -59,8 +59,21 @@ where
 {
     let (tx, rx) = mpsc::channel::<HandlerRequest>();
 
-    may::coroutine::Builder::new()
-        .stack_size(may::config().get_stack_size())
+    // Use a larger default stack size to prevent stack overflows
+    // 64KB is more reasonable for complex handlers
+    let stack_size = std::env::var("BRRTR_STACK_SIZE")
+        .ok()
+        .and_then(|s| {
+            if let Some(hex) = s.strip_prefix("0x") {
+                usize::from_str_radix(hex, 16).ok()
+            } else {
+                s.parse().ok()
+            }
+        })
+        .unwrap_or(0x10000); // 64KB default instead of 16KB
+
+    let spawn_result = may::coroutine::Builder::new()
+        .stack_size(stack_size)
         .spawn(move || {
             let handler = handler;
             // Main event loop: process requests until channel closes
@@ -69,6 +82,7 @@ where
                 // We need them in the outer scope for error reporting
                 let reply_tx = req.reply_tx.clone();
                 let handler_name = req.handler_name.clone();
+                let request_id = req.request_id;
 
                 // COMPLEX PANIC HANDLING: Wrap entire request processing in catch_unwind
                 // This prevents a panicking handler from killing the entire coroutine
@@ -88,7 +102,8 @@ where
                                 headers: HashMap::new(),
                                 body: serde_json::json!({
                                     "error": "Invalid request data",
-                                    "message": err.to_string()
+                                    "message": err.to_string(),
+                                    "request_id": request_id.to_string(),
                                 }),
                             });
                             return; // Early return from closure
@@ -113,7 +128,11 @@ where
                         status: 200,
                         headers: HashMap::new(),
                         body: serde_json::to_value(result).unwrap_or_else(
-                            |_| serde_json::json!({"error": "Failed to serialize response"}),
+                            |e| serde_json::json!({
+                                "error": "Failed to serialize response",
+                                "details": e.to_string(),
+                                "request_id": request_id.to_string(),
+                            }),
                         ),
                     });
                 }));
@@ -125,16 +144,24 @@ where
                         headers: HashMap::new(),
                         body: serde_json::json!({
                             "error": "Handler panicked",
-                            "details": format!("{:?}", panic)
+                            "details": format!("{:?}", panic),
+                            "request_id": request_id.to_string(),
                         }),
                     });
                     eprintln!("Handler '{handler_name}' panicked: {panic:?}");
                 }
             }
-        })
-        .unwrap();
+        });
 
-    tx
+    // Handle coroutine spawn failures gracefully
+    match spawn_result {
+        Ok(_) => tx,
+        Err(e) => {
+            // Log the error and panic since we can't return an error from this function
+            // In production, you might want to handle this differently
+            panic!("Failed to spawn typed handler coroutine: {e}. Stack size: {stack_size} bytes. Consider increasing BRRTR_STACK_SIZE environment variable.");
+        }
+    }
 }
 
 /// Typed request data passed to a Handler
@@ -192,6 +219,14 @@ impl Dispatcher {
         H: Handler + Send + 'static,
     {
         let name = name.to_string();
+        
+        // Check if we're replacing an existing handler
+        if let Some(old_sender) = self.handlers.remove(&name) {
+            // Drop the old sender to close its channel and stop the old coroutine
+            drop(old_sender);
+            eprintln!("Warning: Replacing existing typed handler '{}' - old coroutine will exit", name);
+        }
+        
         let tx = spawn_typed(handler);
         self.handlers.insert(name, tx);
     }
