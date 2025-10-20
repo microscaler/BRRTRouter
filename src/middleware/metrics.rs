@@ -154,6 +154,10 @@ pub struct MetricsMiddleware {
     status_metrics: Arc<RwLock<HashMap<(String, u16), AtomicUsize>>>,
     /// Histogram for request duration (for percentile calculations)
     duration_histogram: Arc<HistogramMetric>,
+    /// Connection close events (client disconnects, timeouts, etc.)
+    connection_closes: AtomicUsize,
+    /// Connection errors (broken pipe, reset, etc.)
+    connection_errors: AtomicUsize,
 }
 
 /// Default initialization for metrics middleware
@@ -176,6 +180,8 @@ impl Default for MetricsMiddleware {
             path_metrics: Arc::new(RwLock::new(HashMap::new())),
             status_metrics: Arc::new(RwLock::new(HashMap::new())),
             duration_histogram: Arc::new(HistogramMetric::new()),
+            connection_closes: AtomicUsize::new(0),
+            connection_errors: AtomicUsize::new(0),
         }
     }
 }
@@ -240,6 +246,37 @@ impl MetricsMiddleware {
     /// Get the total number of authentication failures
     pub fn auth_failures(&self) -> usize {
         self.auth_failures.load(Ordering::Relaxed)
+    }
+
+    /// Increment the connection close counter
+    pub fn inc_connection_close(&self) {
+        self.connection_closes.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Get the total number of connection closes
+    pub fn connection_closes(&self) -> usize {
+        self.connection_closes.load(Ordering::Relaxed)
+    }
+
+    /// Increment the connection error counter
+    pub fn inc_connection_error(&self) {
+        self.connection_errors.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Get the total number of connection errors
+    pub fn connection_errors(&self) -> usize {
+        self.connection_errors.load(Ordering::Relaxed)
+    }
+
+    /// Get connection health ratio (successful requests vs connection issues)
+    pub fn connection_health_ratio(&self) -> f64 {
+        let total_requests = self.request_count() as f64;
+        let total_issues = (self.connection_closes() + self.connection_errors()) as f64;
+        if total_requests + total_issues > 0.0 {
+            total_requests / (total_requests + total_issues)
+        } else {
+            1.0 // No data yet, assume healthy
+        }
     }
 
     /// Record metrics for a specific path
