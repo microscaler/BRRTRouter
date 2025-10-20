@@ -8,7 +8,6 @@ set -euo pipefail
 # Selects the correct build strategy based on host OS/arch:
 # - macOS: cargo zigbuild --target x86_64-unknown-linux-musl
 # - Linux x86_64: cargo build --target x86_64-unknown-linux-musl with musl-gcc linker
-# - GitHub CI: cargo build --target x86_64-unknown-linux-gnu (glibc for performance testing)
 #
 # The first argument selects which build to perform:
 #   brr → build BRRTRouter library
@@ -25,54 +24,26 @@ shift || true
 os_name=$(uname -s || echo unknown)
 arch=$(uname -m || echo unknown)
 
-# Detect GitHub CI environment - use glibc for performance testing
-is_github_ci=false
-if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
-  is_github_ci=true
-  echo "🔍 GitHub CI detected - using glibc target for performance testing"
-fi
-
 use_zigbuild=true
 if [[ ${os_name} == Linux && ${arch} == x86_64 ]]; then
   use_zigbuild=false
 fi
 
 if [[ ${target} == "brr" ]]; then
-  if [[ ${is_github_ci} == true ]]; then
-    # GitHub CI: build with glibc for performance testing
-    exec cargo build --release --features jemalloc --target x86_64-unknown-linux-gnu --lib "$@"
-  elif [[ ${use_zigbuild} == true ]]; then
-    exec cargo zigbuild --release --features jemalloc --target x86_64-unknown-linux-musl --lib "$@"
+  if [[ ${use_zigbuild} == true ]]; then
+    exec cargo zigbuild --release --target x86_64-unknown-linux-musl --lib "$@"
   else
     exec env CC_x86_64_unknown_linux_musl=musl-gcc \
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc \
-      cargo build --release --features jemalloc --target x86_64-unknown-linux-musl --lib "$@"
+      cargo build --release --target x86_64-unknown-linux-musl --lib "$@"
   fi
 elif [[ ${target} == "pet" ]]; then
-  # Note: pet_store has its own tikv-jemallocator dependency, no feature flag needed
-  # Using debug builds for active development (faster compilation, better debugging)
-  # 
-  # Build strategy:
-  # - If SKIP_CROSS_COMPILE is set: build natively (fast for local dev/testing)
-  # - GitHub CI: build with glibc for performance testing
-  # - Otherwise: cross-compile for Docker (Linux x86_64 musl)
-  # 
-  # Docker needs Linux binaries, so cross-compilation is required for containerized deployment.
-  # Native builds are useful for local testing and debugging.
-  if [[ -n "${SKIP_CROSS_COMPILE:-}" ]]; then
-    # Native build for local development (fast, no cross-compilation overhead)
-    exec cargo build -p pet_store
-  elif [[ ${is_github_ci} == true ]]; then
-    # GitHub CI: build with glibc for performance testing (2-3x faster than musl)
-    exec cargo build --target x86_64-unknown-linux-gnu -p pet_store
-  elif [[ ${use_zigbuild} == true ]]; then
-    # Cross-compile for Docker (Linux x86_64 musl)
-    exec cargo zigbuild --target x86_64-unknown-linux-musl -p pet_store
+  if [[ ${use_zigbuild} == true ]]; then
+    exec cargo zigbuild --release --features jemalloc --target x86_64-unknown-linux-musl -p pet_store "$@"
   else
-    # Cross-compile for Docker (Linux x86_64 musl) using musl-gcc
     exec env CC_x86_64_unknown_linux_musl=musl-gcc \
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc \
-      cargo build --target x86_64-unknown-linux-musl -p pet_store
+      cargo build --release --features jemalloc --target x86_64-unknown-linux-musl -p pet_store "$@"
   fi
 else
   echo "unknown build target: ${target} (expected 'brr' or 'pet')" >&2
