@@ -59,9 +59,142 @@ coverage:
 bench:
 	cargo bench
 
-# Profile with flamegraph
-flamegraph:
-	cargo flamegraph -p pet_store --bin pet_store
+
+# ============================================================================
+# Instrumentation & Profiling (cargo-instruments)
+# ============================================================================
+
+# Profile with Time Profiler (default) - shows where CPU time is spent
+profile:
+	@echo "🔬 Profiling pet_store with Time Profiler..."
+	@echo "Building release binary with debug symbols..."
+	cargo build --release --features jemalloc
+	cd examples/pet_store && cargo build --release
+	@echo "Starting profiling (will run for ~10 seconds)..."
+	cargo instruments -t "Time Profiler" \
+		-p pet_store \
+		--bin pet_store \
+		--release \
+		--no-open \
+		--time-limit 10000 \
+		--output target/instruments/time-profile \
+		-- --spec examples/pet_store/doc/openapi.yaml \
+		   --addr 127.0.0.1:8090 \
+		   --config examples/pet_store/config/config.yaml \
+		   --static-dir examples/pet_store/static_site \
+		   --doc-dir examples/pet_store/doc
+	@echo "✅ Profile saved to target/instruments/time-profile.trace"
+	@echo "Run 'open target/instruments/time-profile.trace' to view in Instruments"
+
+# Profile memory allocations - track heap allocations and deallocations
+profile-alloc:
+	@echo "🔬 Profiling memory allocations..."
+	cargo build --release --features jemalloc
+	cd examples/pet_store && cargo build --release
+	cargo instruments -t "Allocations" \
+		-p pet_store \
+		--bin pet_store \
+		--release \
+		--no-open \
+		--time-limit 10000 \
+		--output target/instruments/allocations \
+		-- --spec examples/pet_store/doc/openapi.yaml \
+		   --addr 127.0.0.1:8090 \
+		   --test-api-key test123
+	@echo "✅ Profile saved to target/instruments/allocations.trace"
+
+# Profile for memory leaks - detect unreleased memory
+profile-leaks:
+	@echo "🔬 Checking for memory leaks..."
+	cargo build --release --features jemalloc
+	cd examples/pet_store && cargo build --release
+	cargo instruments -t "Leaks" \
+		-p pet_store \
+		--bin pet_store \
+		--release \
+		--no-open \
+		--time-limit 15000 \
+		--output target/instruments/leaks \
+		-- --spec examples/pet_store/doc/openapi.yaml \
+		   --addr 127.0.0.1:8090 \
+		   --test-api-key test123
+	@echo "✅ Profile saved to target/instruments/leaks.trace"
+
+# Profile system calls - see what system resources are being used
+profile-syscalls:
+	@echo "🔬 Profiling system calls..."
+	cargo build --release --features jemalloc
+	cd examples/pet_store && cargo build --release
+	cargo instruments -t "System Trace" \
+		-p pet_store \
+		--bin pet_store \
+		--release \
+		--no-open \
+		--time-limit 10000 \
+		--output target/instruments/syscalls \
+		-- --spec examples/pet_store/doc/openapi.yaml \
+		   --addr 127.0.0.1:8090 \
+		   --test-api-key test123
+	@echo "✅ Profile saved to target/instruments/syscalls.trace"
+
+# Profile with Activity Monitor - track CPU, memory, disk, network usage
+profile-activity:
+	@echo "🔬 Monitoring system activity..."
+	cargo build --release --features jemalloc
+	cd examples/pet_store && cargo build --release
+	cargo instruments -t "Activity Monitor" \
+		-p pet_store \
+		--bin pet_store \
+		--release \
+		--no-open \
+		--time-limit 10000 \
+		--output target/instruments/activity \
+		-- --spec examples/pet_store/doc/openapi.yaml \
+		   --addr 127.0.0.1:8090 \
+		   --test-api-key test123
+	@echo "✅ Profile saved to target/instruments/activity.trace"
+
+# List all available instrument templates
+profile-list:
+	@echo "📋 Available Instruments templates:"
+	@cargo instruments --list-templates
+
+# Clean up instrument traces
+profile-clean:
+	@echo "🧹 Cleaning instrument traces..."
+	rm -rf target/instruments
+	@echo "✅ Cleaned"
+
+# Run pet_store under load and profile simultaneously
+profile-load:
+	@echo "🔬 Profiling under load..."
+	@echo "Building release binary..."
+	cargo build --release --features jemalloc
+	cd examples/pet_store && cargo build --release
+	@echo "Starting profiling with load generation..."
+	# Start the server with profiling in background
+	cargo instruments -t "Time Profiler" \
+		-p pet_store \
+		--bin pet_store \
+		--release \
+		--no-open \
+		--time-limit 30000 \
+		--output target/instruments/load-profile \
+		-- --spec examples/pet_store/doc/openapi.yaml \
+		   --addr 127.0.0.1:8090 \
+		   --test-api-key test123 &
+	# Wait for server to start
+	@sleep 3
+	# Generate load
+	@echo "Generating load..."
+	@for i in {1..5}; do \
+		(curl -s -H "x-api-key: test123" http://127.0.0.1:8090/pets > /dev/null &); \
+		(curl -s -H "x-api-key: test123" http://127.0.0.1:8090/users > /dev/null &); \
+		(curl -s -H "x-api-key: test123" http://127.0.0.1:8090/metrics > /dev/null &); \
+	done
+	@echo "Load generation started. Waiting for profile to complete..."
+	@wait
+	@echo "✅ Profile saved to target/instruments/load-profile.trace"
 
 # ============================================================================
 # Documentation

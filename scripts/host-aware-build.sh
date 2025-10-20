@@ -39,11 +39,11 @@ if [[ ${target} == "brr" ]]; then
   fi
 elif [[ ${target} == "pet" ]]; then
   if [[ ${use_zigbuild} == true ]]; then
-    exec cargo zigbuild --release --target x86_64-unknown-linux-musl -p pet_store "$@"
+    exec cargo zigbuild --release --features jemalloc --target x86_64-unknown-linux-musl -p pet_store "$@"
   else
     exec env CC_x86_64_unknown_linux_musl=musl-gcc \
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc \
-      cargo build --release --target x86_64-unknown-linux-musl -p pet_store "$@"
+      cargo build --release --features jemalloc --target x86_64-unknown-linux-musl -p pet_store "$@"
   fi
 else
   echo "unknown build target: ${target} (expected 'brr' or 'pet')" >&2

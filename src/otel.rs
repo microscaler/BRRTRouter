@@ -368,8 +368,30 @@ pub fn init_logging_with_config(config: &LogConfig) -> Result<()> {
         _ => Level::INFO,
     };
 
-    let env_filter =
+    let mut env_filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(level.as_str()));
+
+    // Suppress noisy connection close errors from may_minihttp
+    // These are normal client disconnections, not real errors
+    env_filter = env_filter.add_directive(
+        "may_minihttp::http_server=warn"
+            .parse()
+            .expect("valid directive"),
+    );
+
+    // Apply custom target filters if provided
+    if let Some(target_filter) = &config.target_filter {
+        for filter in target_filter.split(',') {
+            let filter = filter.trim();
+            if !filter.is_empty() {
+                if let Ok(directive) = filter.parse() {
+                    env_filter = env_filter.add_directive(directive);
+                } else {
+                    eprintln!("Warning: Invalid log filter directive: {}", filter);
+                }
+            }
+        }
+    }
 
     // Create sampling layer
     let sampling_layer = SamplingLayer::new(config.sampling_mode, config.sampling_rate);

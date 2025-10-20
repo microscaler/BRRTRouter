@@ -12,8 +12,12 @@ use pet_store::registry;
 use std::fs;
 use std::io;
 use std::path::PathBuf;
+
+// Only use jemalloc if BRRTRouter isn't already providing it
+#[cfg(not(feature = "brrtrouter/jemalloc"))]
 use tikv_jemallocator::Jemalloc;
 
+#[cfg(not(feature = "brrtrouter/jemalloc"))]
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
