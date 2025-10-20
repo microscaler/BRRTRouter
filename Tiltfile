@@ -42,6 +42,7 @@ local_resource(
 local_resource(
     'build-brrtrouter',
     brr_build_cmd,
+    resource_deps=['prometheus', 'loki', 'promtail'],
     deps=['src/', 'Cargo.toml', 'Cargo.lock'],
     labels=['build'],
     allow_parallel=True,
@@ -51,7 +52,7 @@ local_resource(
 local_resource(
     'gen-petstore',
     'cargo run --release --bin brrtrouter-gen -- generate --spec examples/openapi.yaml --force',
-    deps=['examples/openapi.yaml', 'templates/', 'src/generator/'],
+    deps=['examples/openapi.yaml', 'templates/', 'src/generator/', 'sample-ui/'],
     resource_deps=['build-brrtrouter'],
     labels=['build'],
     allow_parallel=False,  # Must complete before petstore build
@@ -249,6 +250,7 @@ k8s_resource(
 k8s_resource(
     'loki',
     port_forwards=['3100:3100'],
+    resource_deps=['prometheus'],
     labels=['observability'],
 )
 
@@ -280,6 +282,7 @@ k8s_resource(
 
 k8s_resource(
     'pyroscope',
+    resource_deps=['prometheus'],
     port_forwards=['4040:4040'],
     labels=['observability'],
 )

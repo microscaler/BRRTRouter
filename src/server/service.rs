@@ -368,6 +368,28 @@ pub fn metrics_endpoint(res: &mut Response, metrics: &MetricsMiddleware, memory:
         metrics.auth_failures()
     ));
 
+    // Connection metrics
+    body.push_str("# HELP brrtrouter_connection_closes_total Total number of connection close events (client disconnects)\n");
+    body.push_str("# TYPE brrtrouter_connection_closes_total counter\n");
+    body.push_str(&format!(
+        "brrtrouter_connection_closes_total {}\n",
+        metrics.connection_closes()
+    ));
+
+    body.push_str("# HELP brrtrouter_connection_errors_total Total number of connection errors (broken pipe, reset, etc.)\n");
+    body.push_str("# TYPE brrtrouter_connection_errors_total counter\n");
+    body.push_str(&format!(
+        "brrtrouter_connection_errors_total {}\n",
+        metrics.connection_errors()
+    ));
+
+    body.push_str("# HELP brrtrouter_connection_health_ratio Ratio of successful requests to total connection events\n");
+    body.push_str("# TYPE brrtrouter_connection_health_ratio gauge\n");
+    body.push_str(&format!(
+        "brrtrouter_connection_health_ratio {:.4}\n",
+        metrics.connection_health_ratio()
+    ));
+
     body.push_str("# HELP brrtrouter_request_latency_seconds Average request latency in seconds\n");
     body.push_str("# TYPE brrtrouter_request_latency_seconds gauge\n");
     let avg = metrics.average_latency().as_secs_f64();
