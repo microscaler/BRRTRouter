@@ -23,34 +23,6 @@ pub struct RegistryEntry {
     pub controller_struct: String,
     /// Route parameters
     pub parameters: Vec<ParameterMeta>,
-    /// Computed stack size for the coroutine in bytes
-    pub stack_size_bytes: usize,
-}
-
-/// Parameters for writing implementation controller stub files
-///
-/// Groups related parameters to avoid functions with too many arguments.
-pub struct ImplControllerStubParams<'a> {
-    /// Path where the stub file should be written
-    pub path: &'a Path,
-    /// Handler name
-    pub handler: &'a str,
-    /// Struct name for the controller
-    pub struct_name: &'a str,
-    /// Crate name for imports
-    pub crate_name: &'a str,
-    /// Request field definitions
-    pub req_fields: &'a [FieldDef],
-    /// Response field definitions
-    pub res_fields: &'a [FieldDef],
-    /// Import statements needed
-    pub imports: &'a BTreeSet<String>,
-    /// Whether this is a server-sent events endpoint
-    pub sse: bool,
-    /// Optional example data for the response
-    pub example: Option<Value>,
-    /// Whether to overwrite existing files
-    pub force: bool,
 }
 
 /// Route information for display in generated code comments
@@ -560,8 +532,8 @@ pub(crate) fn write_cargo_toml_with_options(
                 .join(brrtrouter_base)
         };
         
-        let base_canon = base_abs.canonicalize().unwrap_or(base_abs);
-        let brrtrouter_canon = brrtrouter_abs.canonicalize().unwrap_or(brrtrouter_abs);
+        let base_canon = base_abs.canonicalize().unwrap_or_else(|_| base_abs);
+        let brrtrouter_canon = brrtrouter_abs.canonicalize().unwrap_or_else(|_| brrtrouter_abs);
         
         // Calculate relative path from base to brrtrouter_base
         // base is typically a subdirectory of brrtrouter_base (e.g., examples/pet_store is under BRRTRouter root)
@@ -789,13 +761,24 @@ pub struct ImplMainRsTemplateData {
 ///
 /// Creates a starting point for user implementation.
 /// Stubs are NOT auto-regenerated - user must use --force to overwrite.
-pub fn write_impl_controller_stub(params: ImplControllerStubParams) -> anyhow::Result<()> {
-    if params.path.exists() && !params.force {
+pub fn write_impl_controller_stub(
+    path: &Path,
+    handler: &str,
+    struct_name: &str,
+    crate_name: &str,
+    req_fields: &[FieldDef],
+    res_fields: &[FieldDef],
+    imports: &BTreeSet<String>,
+    sse: bool,
+    example: Option<Value>,
+    force: bool,
+) -> anyhow::Result<()> {
+    if path.exists() && !force {
         return Ok(()); // Already handled in generate_impl_stubs
     }
 
     // Extract example data if available
-    let example_map = params.example
+    let example_map = example
         .as_ref()
         .and_then(|v| match v {
             Value::Object(map) => Some(map.clone()),
@@ -804,7 +787,7 @@ pub fn write_impl_controller_stub(params: ImplControllerStubParams) -> anyhow::R
         .unwrap_or_default();
 
     // Enrich response fields with example data
-    let enriched_fields = params.res_fields
+    let enriched_fields = res_fields
         .iter()
         .map(|field| {
             // Use original_name for lookup (JSON key) but name for code generation (Rust identifier)
@@ -824,16 +807,16 @@ pub fn write_impl_controller_stub(params: ImplControllerStubParams) -> anyhow::R
         .collect::<Vec<_>>();
 
     // Detect if response is an array
-    let response_is_array = params.res_fields.len() == 1 && params.res_fields[0].name == "items";
+    let response_is_array = res_fields.len() == 1 && res_fields[0].name == "items";
 
     // Generate array literal if needed
     let response_array_literal = if response_is_array {
-        if let Some(ref ex) = params.example {
+        if let Some(ref ex) = example {
             if ex.is_array() {
                 let items_field = FieldDef {
                     name: "items".to_string(),
                     original_name: "items".to_string(),
-                    ty: params.res_fields[0].ty.clone(),
+                    ty: res_fields[0].ty.clone(),
                     optional: false,
                     value: String::new(),
                 };
@@ -848,28 +831,28 @@ pub fn write_impl_controller_stub(params: ImplControllerStubParams) -> anyhow::R
         String::new()
     };
 
-    let example_json = params.example
+    let example_json = example
         .as_ref()
         .map(|v| serde_json::to_string_pretty(v).unwrap_or_default())
         .unwrap_or_default();
 
     let stub_data = ImplControllerStubTemplateData {
-        handler_name: params.handler.to_string(),
-        struct_name: params.struct_name.to_string(),
-        crate_name: params.crate_name.to_string(),
-        request_fields: params.req_fields.to_vec(),
+        handler_name: handler.to_string(),
+        struct_name: struct_name.to_string(),
+        crate_name: crate_name.to_string(),
+        request_fields: req_fields.to_vec(),
         response_fields: enriched_fields,
-        imports: params.imports.iter().cloned().collect(),
-        sse: params.sse,
+        imports: imports.iter().cloned().collect(),
+        sse,
         response_is_array,
         response_array_literal,
-        has_example: params.example.is_some(),
+        has_example: example.is_some(),
         example_json,
     };
 
     let rendered = stub_data.render()?;
-    fs::write(params.path, rendered)?;
-    println!("✅ Generated implementation stub: {:?}", params.path);
+    fs::write(path, rendered)?;
+    println!("✅ Generated implementation stub: {path:?}");
 
     Ok(())
 }
