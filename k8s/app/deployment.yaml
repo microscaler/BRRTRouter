@@ -8,6 +8,11 @@ data:
     # BRRTRouter Pet Store Configuration
     # This ConfigMap contains the full application configuration for Kubernetes deployment
     
+    # Server port configuration
+    # Note: The PORT environment variable takes precedence over this setting
+    # This is included for documentation and fallback purposes
+    port: 8080
+    
     security:
       # Static API keys bound to specific OpenAPI security scheme names
       # Example: 'ApiKeyAuth' corresponds to components.securitySchemes.ApiKeyAuth
@@ -111,6 +116,11 @@ spec:
               containerPort: 8080
               protocol: TCP
           env:
+            # PORT environment variable: Set from containerPort
+            # The application reads this to determine which port to listen on.
+            # Priority: config.yaml port > PORT env var > default 8080
+            - name: PORT
+              value: "8080"
             - name: RUST_LOG
               value: "debug"
             - name: RUST_BACKTRACE
