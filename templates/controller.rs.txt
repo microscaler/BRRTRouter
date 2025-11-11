@@ -1,9 +1,9 @@
 {# controller.rs.txt #}
 // User-owned controller for handler '{{ handler_name }}'.
 use brrtrouter_macros::handler;
-use crate::brrtrouter::typed::TypedHandlerRequest;
+use brrtrouter::typed::TypedHandlerRequest;
 use crate::handlers::{{ handler_name }}::{ Request, Response };
-{% if sse %}use crate::brrtrouter::sse;{% endif %}
+{% if sse %}use brrtrouter::sse;{% endif %}
 {% if imports.len() > 0 %}
 {% for import in imports -%}
 #[allow(unused_imports)]

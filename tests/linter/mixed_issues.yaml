@@ -1,0 +1,46 @@
+openapi: 3.1.0
+info:
+  title: Mixed Issues Example
+  version: 1.0.0
+paths:
+  /orders:
+    get:
+      operationId: getOrders  # Error: should be snake_case
+      summary: Get orders
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderList'  # Error: missing schema
+    post:
+      # Error: missing operationId
+      summary: Create order
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrderRequest'  # Error: missing schema
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+components:
+  schemas:
+    Order:
+      type: object
+      required: [id, status]  # Valid format
+      properties:
+        id:
+          type: string
+        status:
+          # Warning: missing type (only has enum, but enum is valid without type)
+          enum: [pending, completed, cancelled]
+        customer:
+          $ref: '#/components/schemas/Customer'  # Error: missing schema
+

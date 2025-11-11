@@ -1,0 +1,36 @@
+openapi: 3.1.0
+info:
+  title: Invalid Schema Format Example
+  version: 1.0.0
+paths:
+  /products:
+    get:
+      operationId: get_products
+      summary: Get products
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductList'
+components:
+  schemas:
+    Product:
+      type: object
+      required: [id, name]  # Valid format
+      properties:
+        id:
+          type: string
+        name:
+          # Missing type field - will trigger warning
+          description: Product name
+        price:
+          # Missing type field - will trigger warning
+          format: number
+          description: Product price
+    ProductList:
+      type: array
+      items:
+        $ref: '#/components/schemas/Product'
+

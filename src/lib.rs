@@ -850,6 +850,10 @@ pub mod sse;
 pub mod static_files;
 pub mod typed;
 pub mod validator;
+#[cfg(test)]
+#[path = "linter/tests.rs"]
+mod linter_tests;
+pub mod linter;
 
 pub use security::{BearerJwtProvider, OAuth2Provider, SecurityProvider, SecurityRequest};
 pub use spec::{

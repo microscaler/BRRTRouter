@@ -1,6 +1,6 @@
 // User-owned controller for handler 'list_user_posts'.
-use crate::brrtrouter::typed::TypedHandlerRequest;
 use crate::handlers::list_user_posts::{Request, Response};
+use brrtrouter::typed::TypedHandlerRequest;
 use brrtrouter_macros::handler;
 
 #[allow(unused_imports)]

@@ -79,7 +79,7 @@ spec:
             runAsNonRoot: true
           resources:
             requests:
-              memory: "256Mi"
+              memory: "128Mi"
               cpu: "100m"
             limits:
               memory: "512Mi"
@@ -104,7 +104,7 @@ spec:
   ports:
     - port: 9090
       targetPort: web
-      nodePort: 30090
+      nodePort: 31090
       protocol: TCP
       name: web
   selector:

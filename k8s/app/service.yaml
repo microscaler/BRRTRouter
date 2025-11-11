@@ -14,7 +14,7 @@ spec:
   ports:
     - port: 8080
       targetPort: http
-      nodePort: 30900
+      nodePort: 31080
       protocol: TCP
       name: http
   selector:

@@ -28,22 +28,43 @@ nodes:
       - hostPath: /var/lib/docker/volumes/brrtrouter-jaeger-data/_data
         containerPath: /mnt/jaeger-data
     # Port mappings for local access to services
+    # All BRRTRouter services use 31xxx NodePort range (Kubernetes requires 30000-32767)
     extraPortMappings:
-      # Pet Store API
-      - containerPort: 30900
+      # Pet Store API (NodePort 31080 -> host 8080)
+      - containerPort: 31080
         hostPort: 8080
         protocol: TCP
-      # Grafana UI
-      - containerPort: 30300
+      # Grafana UI (NodePort 31300 -> host 3000)
+      - containerPort: 31300
         hostPort: 3000
         protocol: TCP
-      # Prometheus UI
-      - containerPort: 30090
+      # Prometheus UI (NodePort 31090 -> host 9090)
+      - containerPort: 31090
         hostPort: 9090
         protocol: TCP
-      # Jaeger UI
-      - containerPort: 30686
+      # Jaeger UI (NodePort 31166 -> host 16686)
+      - containerPort: 31166
         hostPort: 16686
+        protocol: TCP
+      # Loki (NodePort 31310 -> host 3100)
+      - containerPort: 31310
+        hostPort: 3100
+        protocol: TCP
+      # OTEL Collector OTLP gRPC (NodePort 31417 -> host 4317)
+      - containerPort: 31417
+        hostPort: 4317
+        protocol: TCP
+      # OTEL Collector OTLP HTTP (NodePort 31418 -> host 4318)
+      - containerPort: 31418
+        hostPort: 4318
+        protocol: TCP
+      # OTEL Collector Prometheus metrics (NodePort 31889 -> host 8889)
+      - containerPort: 31889
+        hostPort: 8889
+        protocol: TCP
+      # Pyroscope (NodePort 31404 -> host 4040)
+      - containerPort: 31404
+        hostPort: 4040
         protocol: TCP
     # Resource limits for local development
     kubeadmConfigPatches:

@@ -1,6 +1,6 @@
 // User-owned controller for handler 'upload_file'.
-use crate::brrtrouter::typed::TypedHandlerRequest;
 use crate::handlers::upload_file::{Request, Response};
+use brrtrouter::typed::TypedHandlerRequest;
 use brrtrouter_macros::handler;
 
 #[handler(UploadFileController)]

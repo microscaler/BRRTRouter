@@ -71,13 +71,14 @@ name: brrtrouter-dev
 nodes:
   - role: control-plane
     extraPortMappings:
-      - containerPort: 30900
-        hostPort: 9090
-      - containerPort: 30300
-        hostPort: 3000
-      - containerPort: 30090
+      # All BRRTRouter services use 31xxx NodePort range (Kubernetes requires 30000-32767)
+      - containerPort: 31080
         hostPort: 8080
-      - containerPort: 30686
+      - containerPort: 31300
+        hostPort: 3000
+      - containerPort: 31090
+        hostPort: 9090
+      - containerPort: 31166
         hostPort: 16686
 EOF
 
