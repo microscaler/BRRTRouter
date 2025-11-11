@@ -4,8 +4,22 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-brrtrouter = { path = "../.." }
-brrtrouter_macros = { path = "../../brrtrouter_macros" }
+{% if use_workspace_deps %}
+brrtrouter = { workspace = true }
+brrtrouter_macros = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+config = { workspace = true }
+http = { workspace = true }
+may = { workspace = true }
+may_minihttp = { workspace = true }
+anyhow = { workspace = true }
+clap = { workspace = true }
+tikv-jemallocator = { workspace = true }
+{% else %}
+brrtrouter = { path = "{{ brrtrouter_path }}" }
+brrtrouter_macros = { path = "{{ brrtrouter_macros_path }}" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
@@ -16,3 +30,4 @@ may_minihttp = "0.1"
 anyhow = "1.0"
 clap = { version = "4.5.39", features = ["derive"] }
 tikv-jemallocator = { version = "0.5", features = ["profiling"] }
+{% endif %}

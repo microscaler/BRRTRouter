@@ -210,11 +210,11 @@ spec:
             runAsNonRoot: true
           resources:
             requests:
-              memory: "128Mi"
-              cpu: "100m"
+              memory: "64Mi"
+              cpu: "50m"
             limits:
               memory: "256Mi"
-              cpu: "500m"
+              cpu: "200m"
       volumes:
         - name: datasources
           configMap:
@@ -247,7 +247,7 @@ spec:
   ports:
     - port: 3000
       targetPort: web
-      nodePort: 30300
+      nodePort: 31300
       protocol: TCP
       name: web
   selector:

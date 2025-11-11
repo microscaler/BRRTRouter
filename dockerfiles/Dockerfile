@@ -11,9 +11,10 @@ ENV CC_x86_64_unknown_linux_musl=gcc \
 COPY . .
 
 # Build the example crate with musl target unless an external binary is provided at build time
+# Note: BRRTRouter is built with jemalloc feature for accurate memory profiling
 ARG PETSTORE_BIN=
 RUN if [ -z "$PETSTORE_BIN" ]; then \
-      cargo build --release -p pet_store --target x86_64-unknown-linux-musl && \
+      cargo build --release --features brrtrouter/jemalloc -p pet_store --target x86_64-unknown-linux-musl && \
       chmod +x /build/target/x86_64-unknown-linux-musl/release/pet_store ; \
     else \
       echo "Using provided pet_store binary: $PETSTORE_BIN" && \

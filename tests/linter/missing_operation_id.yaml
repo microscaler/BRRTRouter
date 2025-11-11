@@ -1,0 +1,20 @@
+openapi: 3.1.0
+info:
+  title: Missing Operation ID Example
+  version: 1.0.0
+paths:
+  /pets:
+    get:
+      summary: List pets
+      # Missing operationId
+      responses:
+        '200':
+          description: OK
+  /pets/{id}:
+    delete:
+      summary: Delete pet
+      # Missing operationId
+      responses:
+        '204':
+          description: No content
+

@@ -1,6 +1,6 @@
 // User-owned controller for handler 'search'.
-use crate::brrtrouter::typed::TypedHandlerRequest;
 use crate::handlers::search::{Request, Response};
+use brrtrouter::typed::TypedHandlerRequest;
 use brrtrouter_macros::handler;
 
 #[allow(unused_imports)]

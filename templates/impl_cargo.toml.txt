@@ -1,0 +1,25 @@
+{# impl_cargo.toml.txt #}
+[package]
+name = "{{ impl_crate_name }}"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "{{ crate_name }}"
+path = "src/main.rs"
+
+[dependencies]
+{{ crate_name }} = { path = "../{{ crate_name }}" }
+{% if use_workspace_deps %}
+brrtrouter = { workspace = true }
+brrtrouter_macros = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+{% else %}
+brrtrouter = { path = "{{ brrtrouter_path }}" }
+brrtrouter_macros = { path = "{{ brrtrouter_macros_path }}" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+{% endif %}
+# Add your additional dependencies here
+

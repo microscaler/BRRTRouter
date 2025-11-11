@@ -1,6 +1,6 @@
 // User-owned controller for handler 'list_users'.
-use crate::brrtrouter::typed::TypedHandlerRequest;
 use crate::handlers::list_users::{Request, Response};
+use brrtrouter::typed::TypedHandlerRequest;
 use brrtrouter_macros::handler;
 
 #[allow(unused_imports)]

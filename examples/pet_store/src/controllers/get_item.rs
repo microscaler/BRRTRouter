@@ -1,6 +1,6 @@
 // User-owned controller for handler 'get_item'.
-use crate::brrtrouter::typed::TypedHandlerRequest;
 use crate::handlers::get_item::{Request, Response};
+use brrtrouter::typed::TypedHandlerRequest;
 use brrtrouter_macros::handler;
 
 #[handler(GetItemController)]

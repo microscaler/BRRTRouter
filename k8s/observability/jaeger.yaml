@@ -80,11 +80,11 @@ spec:
             runAsNonRoot: true
           resources:
             requests:
-              memory: "256Mi"
-              cpu: "100m"
+              memory: "128Mi"
+              cpu: "50m"
             limits:
               memory: "512Mi"
-              cpu: "500m"
+              cpu: "200m"
       volumes:
         - name: storage
           persistentVolumeClaim:
@@ -103,7 +103,7 @@ spec:
     # UI
     - port: 16686
       targetPort: ui
-      nodePort: 30686
+      nodePort: 31166
       protocol: TCP
       name: ui
     # OTLP gRPC

@@ -1,5 +1,6 @@
 use crate::dummy_value;
 use crate::spec::{resolve_schema_ref, ParameterMeta};
+use oas3;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 
@@ -236,8 +237,21 @@ pub fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
                 format!("{s:?}.to_string()")
             }
         }
-        // Numbers and bools can be used as-is
-        Value::Number(n) => n.to_string(),
+        // Numbers need type-aware conversion
+        Value::Number(n) => {
+            // If field type is f64 but number is integer, add .0 to make it a float literal
+            if field.ty == "f64" || field.ty == "Option<f64>" {
+                if let Some(i) = n.as_i64() {
+                    format!("{}.0", i)
+                } else if let Some(u) = n.as_u64() {
+                    format!("{}.0", u)
+                } else {
+                    n.to_string()
+                }
+            } else {
+                n.to_string()
+            }
+        },
         Value::Bool(b) => b.to_string(),
         // Arrays require complex processing based on element type
         Value::Array(items) => {
@@ -266,8 +280,25 @@ pub fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
                             format!("{s:?}.to_string().parse().unwrap()")
                         }
                     }
-                    // Numbers and bools can be used directly in arrays
-                    Value::Number(n) => n.to_string(),
+                    // Numbers need type-aware conversion in arrays
+                    Value::Number(n) => {
+                        // If array element type is f64 but number is integer, add .0
+                        if let Some(inner_ty) = inner_ty_opt {
+                            if inner_ty == "f64" {
+                                if let Some(i) = n.as_i64() {
+                                    format!("{}.0", i)
+                                } else if let Some(u) = n.as_u64() {
+                                    format!("{}.0", u)
+                                } else {
+                                    n.to_string()
+                                }
+                            } else {
+                                n.to_string()
+                            }
+                        } else {
+                            n.to_string()
+                        }
+                    },
                     Value::Bool(b) => b.to_string(),
                     // Object items require deserialization or dummy values
                     Value::Object(_) => {
@@ -341,24 +372,106 @@ pub fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
 ///
 /// Extracts fields from the schema and adds the resulting type to the types map.
 /// Skips schemas that don't define any fields or are already processed.
+/// Recursively processes all referenced types to ensure they're included.
 ///
 /// # Arguments
 ///
 /// * `name` - Schema name from OpenAPI spec
 /// * `schema` - JSON Schema definition
 /// * `types` - Mutable map of generated types (updated in-place)
+/// * `spec` - Optional OpenAPI spec for resolving $ref references
 pub fn process_schema_type(
     name: &str,
     schema: &Value,
     types: &mut HashMap<String, TypeDefinition>,
 ) {
+    process_schema_type_with_spec(name, schema, types, None);
+}
+
+/// Process an OpenAPI schema with spec context for resolving $ref
+///
+/// This version can resolve $ref references to ensure all referenced types are collected.
+pub fn process_schema_type_with_spec(
+    name: &str,
+    schema: &Value,
+    types: &mut HashMap<String, TypeDefinition>,
+    spec: Option<&oas3::OpenApiV3Spec>,
+) {
     let name = to_camel_case(name);
     if types.contains_key(&name) {
         return;
     }
+    
+    // First, recursively collect all referenced types from this schema
+    if let Some(spec_ref) = spec {
+        collect_referenced_types(schema, spec_ref, types);
+    }
+    
     let fields = extract_fields(schema);
     if !fields.is_empty() {
         types.insert(name.clone(), TypeDefinition { name, fields });
+    }
+}
+
+/// Recursively collect all types referenced via $ref in a schema
+///
+/// This ensures that when a schema references another type (e.g., Account, AccountRole),
+/// that referenced type is also added to the types map.
+fn collect_referenced_types(
+    schema: &Value,
+    spec: &oas3::OpenApiV3Spec,
+    types: &mut HashMap<String, TypeDefinition>,
+) {
+    // Check if this schema itself is a $ref
+    if let Some(ref_path) = schema.get("$ref").and_then(|v| v.as_str()) {
+        if let Some(schema_name) = ref_path.strip_prefix("#/components/schemas/") {
+            let camel_name = to_camel_case(schema_name);
+            if !types.contains_key(&camel_name) {
+                // Resolve the referenced schema and process it
+                if let Some(components) = spec.components.as_ref() {
+                    if let Some(schema_obj) = components.schemas.get(schema_name) {
+                        match schema_obj {
+                            oas3::spec::ObjectOrReference::Object(obj) => {
+                                let json = serde_json::to_value(obj).unwrap_or_default();
+                                process_schema_type_with_spec(schema_name, &json, types, Some(spec));
+                            }
+                            oas3::spec::ObjectOrReference::Ref { ref_path: nested_ref } => {
+                                if let Some(resolved) = resolve_schema_ref(spec, nested_ref) {
+                                    let json = serde_json::to_value(resolved).unwrap_or_default();
+                                    process_schema_type_with_spec(schema_name, &json, types, Some(spec));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Recursively check properties for $ref
+    if let Some(props) = schema.get("properties").and_then(|p| p.as_object()) {
+        for (_prop_name, prop_schema) in props {
+            collect_referenced_types(prop_schema, spec, types);
+        }
+    }
+    
+    // Check items for arrays
+    if let Some(items) = schema.get("items") {
+        collect_referenced_types(items, spec, types);
+    }
+    
+    // Check oneOf variants
+    if let Some(one_of) = schema.get("oneOf").and_then(|v| v.as_array()) {
+        for variant in one_of {
+            collect_referenced_types(variant, spec, types);
+        }
+    }
+    
+    // Check allOf variants
+    if let Some(all_of) = schema.get("allOf").and_then(|v| v.as_array()) {
+        for variant in all_of {
+            collect_referenced_types(variant, spec, types);
+        }
     }
 }
 
@@ -509,8 +622,11 @@ pub fn extract_fields(schema: &Value) -> Vec<FieldDef> {
                 .unwrap_or_else(|_| "Default::default()".to_string());
 
             // Create the field definition with sanitized name and original name for serde
+            // Sanitize the field name and escape Rust keywords
+            let sanitized = sanitize_field_name(name);
+            let rust_safe_name = sanitize_rust_identifier(&sanitized);
             fields.push(FieldDef {
-                name: sanitize_field_name(name), // Rust-safe identifier
+                name: rust_safe_name,            // Rust-safe identifier (escapes keywords)
                 original_name: name.clone(),     // Original JSON name for #[serde(rename)]
                 ty,
                 optional,
@@ -641,12 +757,14 @@ pub fn collect_component_schemas(
             match schema {
                 oas3::spec::ObjectOrReference::Object(obj) => {
                     let json = serde_json::to_value(obj).unwrap_or_default();
-                    process_schema_type(name, &json, &mut types);
+                    // Pass spec context to recursively collect referenced types
+                    process_schema_type_with_spec(name, &json, &mut types, Some(&spec));
                 }
                 oas3::spec::ObjectOrReference::Ref { ref_path } => {
                     if let Some(resolved) = resolve_schema_ref(&spec, ref_path) {
                         let json = serde_json::to_value(resolved).unwrap_or_default();
-                        process_schema_type(name, &json, &mut types);
+                        // Pass spec context to recursively collect referenced types
+                        process_schema_type_with_spec(name, &json, &mut types, Some(&spec));
                     }
                 }
             }
