@@ -28,7 +28,7 @@ Inspired by the *GAU-8/A Avenger* on the A-10 Warthog, this router delivers prec
 | Build admin/testing UI | Included (Sample SolidJS dashboard) |
 | Setup local infrastructure | One command: `just dev-up` (Tilt + kind) |
 | Test with curl scripts | Interactive dashboard with API testing |
-| Memory leak hunting | Goose load tests with detailed performance metrics |
+| Memory leak hunting | Goose load tests (2+ minute sustained tests) |
 
 ✅ **Design Once, Deploy Everywhere**  
 OpenAPI spec generates server, client SDKs, and docs
@@ -50,11 +50,11 @@ Detailed information on the systems architecture can be found in [Architecture D
 
 **BRRTRouter has reached Early Stage MVP status!**
 
-This marks a **monumental milestone** - BRRTRouter has successfully transitioned from conceptual stage to early stage MVP. The tool now supports running both the **petstore** example crate and **Consumer Systems** production crates, demonstrating real-world viability across different use cases.
+This marks a **monumental milestone** - BRRTRouter has successfully transitioned from conceptual stage to early stage MVP. The tool now supports running both the **petstore** example crate and **PriceWhisperer** production crates, demonstrating real-world viability across different use cases.
 
 **Status:**
 - ✅ Core functionality working
-- ✅ Multi-crate support (petstore + Consumer Systems)
+- ✅ Multi-crate support (petstore + PriceWhisperer)
 - ✅ Real-world production crate validation
 - 🔧 API may change (breaking changes expected)
 - 🔧 Performance optimization ongoing
@@ -78,7 +78,7 @@ This marks a **monumental milestone** - BRRTRouter has successfully transitioned
 - **🔐 Security Built-In**: JWT/JWKS, OAuth2, API Keys with auto-registration from OpenAPI `securitySchemes`
 - **📊 Zero-Config Observability**: Prometheus metrics, OpenTelemetry tracing, health checks out of the box
 - **🔥 Hot Reload**: Live spec reloading without server restart
-- **🧪 Well-Tested**: 425 tests, 80%+ coverage, parallel execution support
+- **🧪 Well-Tested**: 219 tests, 80%+ coverage, parallel execution support
 
 ---
 
@@ -230,34 +230,27 @@ open http://localhost:8080/
 * It's ~4–6× slower than the fastest Rust HTTP frameworks due to the comprehensive safeguarding and validation that BRRTRouter implements on every route.
 * Socket-level errors show the client saturated or the server closed connections under load – this artificially deflates RPS a bit.
 
-### Recent Performance Improvements
+### Why BRRTRouter is currently slower
 
-| Optimization | Impact | Status |
-|-------------|--------|--------|
-| **JSON Schema Validator Caching** | 20-40% reduction in CPU usage under load | ✅ Implemented (v0.1.0-alpha.2) |
-| **Radix Tree Router** | O(k) path matching vs O(n) linear scan | ✅ Implemented |
-| **Connection Keep-Alive** | Reduced connection overhead | ✅ Implemented |
-
-### Why BRRTRouter is currently slower than bare-metal frameworks
-
-| Factor                                                                                                                    | Mitigation |
+| Factor                                                                                                                    | Impact |
 | ------------------------------------------------------------------------------------------------------------------------- | ------ |
-| **may_minihttp** does its own tiny HTTP parse; not as tuned as hyper/actix.                                               | Exploring alternatives |
-| Each request still goes through **MPSC** channel → coroutine context switch → `serde_json` parse even for small bodies. | Acceptable for OpenAPI validation |
-| Default coroutine **stack size** = 64 KB; 800 concurrent requests ⇒ 50 MB virtual memory.                                | Configurable via `BRRTR_STACK_SIZE` |
+| **may_minihttp** does its own tiny HTTP parse; not as tuned as hyper/actix.                                               |        |
+| Each request still goes through **MPSC** channel → coroutine context switch → `serde_json` parse even for small bodies. |        |
+| Default coroutine **stack size** = 1 MB; 800 concurrent requests ⇒ 800 MB virtual memory ⇒ minor kernel pressure.       |        |
+| No **connection pooling / keep-alive tuning** yet.                                                                        |        |
 
 ### 🔭 Performance Vision
 
-Build the fastest, most predictable OpenAPI-native router in Rust — capable of **thousands of requests per second**, entirely spec-driven, and friendly to coroutine runtimes.
+Build the fastest, most predictable OpenAPI-native router in Rust — capable of **millions of requests per second**, entirely spec-driven, and friendly to coroutine runtimes.
 
-> **Goal: 10K route matches/sec on a four-core host**, with sub-millisecond latency (excluding handler execution cost).
+> **Goal: 100K route matches/sec on a single-core**, with sub-millisecond latency (excluding handler execution cost).
 
 
 ---
 
 ## 📈 Recent Progress (October 2025)
 
-- **🚀 Early Stage MVP Achievement**: BRRTRouter successfully supports both **petstore** example crate and **Consumer Systems** production crates
+- **🚀 Early Stage MVP Achievement**: BRRTRouter successfully supports both **petstore** example crate and **PriceWhisperer** production crates
   - Validated real-world production use cases beyond examples
   - Multi-crate support demonstrates tool maturity and flexibility
   - One step closer to beta release
@@ -351,20 +344,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed development guide.
 
 ### Environment Variables
 
-| Variable | Values | Default | Description |
-|----------|--------|---------|-------------|
-| `BRRTR_STACK_SIZE` | Decimal or hex (e.g., `65536` or `0x10000`) | `0x10000` (64 KB) | Stack size for coroutine handlers |
-| `BRRTR_SCHEMA_CACHE` | `on`, `off`, `true`, `false`, `1`, `0` | `on` | Enable/disable JSON Schema validator caching |
-| `BRRTR_HANDLER_WORKERS` | Integer (e.g., `4`, `8`) | `4` | **NEW**: Number of worker coroutines per handler (worker pools enabled by default) |
-| `BRRTR_HANDLER_QUEUE_BOUND` | Integer (e.g., `1024`, `2048`) | `1024` | **NEW**: Maximum queue depth for worker pool handlers |
-| `BRRTR_BACKPRESSURE_MODE` | `block`, `shed` | `block` | **NEW**: Backpressure strategy when queue is full |
-| `BRRTR_BACKPRESSURE_TIMEOUT_MS` | Integer milliseconds (e.g., `50`, `100`) | `50` | **NEW**: Timeout for block mode before shedding request |
-
-**Performance Tips:**
-- **Schema Caching** (default: enabled): Eliminates per-request schema compilation, reducing CPU usage by 20-40% under high load
-- **Stack Size**: Tune based on handler complexity - simple handlers: 16KB, complex logic: 32KB, deep recursion: 64KB
-- **Worker Pools** (default: enabled): **NEW DEFAULT BEHAVIOR** - All handlers now use worker pools for parallel request processing with bounded queues and backpressure handling. This provides better concurrency and prevents unbounded memory growth under load.
-- **Backpressure**: Block mode (default) waits and retries; shed mode returns 429 immediately when overloaded
+BRRTRouter reads `BRRTR_STACK_SIZE` to determine the stack size for coroutines. The value can be a decimal number or a hex string like `0x8000`. If unset, the default stack size is `0x4000` bytes.
 
 ---
 
