@@ -12,7 +12,7 @@ use std::collections::HashMap;
 #[allow(unused_imports)]
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use crate::middleware::Middleware;
 
@@ -96,8 +96,29 @@ impl Dispatcher {
 
     /// Add a handler sender for the given route metadata. This allows handlers
     /// to be registered after the dispatcher has been created.
+    /// 
+    /// **IMPORTANT**: If a handler with the same name already exists, it will be
+    /// replaced. The old sender will be dropped, which closes its channel and
+    /// causes the old handler coroutine to exit when it tries to receive.
     pub fn add_route(&mut self, route: RouteMeta, sender: HandlerSender) {
-        self.handlers.insert(route.handler_name, sender);
+        // Check if we're replacing an existing handler
+        if let Some(old_sender) = self.handlers.remove(&route.handler_name) {
+            // Drop the old sender explicitly to ensure the channel closes
+            drop(old_sender);
+            warn!(
+                handler_name = %route.handler_name,
+                total_handlers = self.handlers.len(),
+                "Replaced existing handler - old coroutine will exit"
+            );
+        }
+        
+        self.handlers.insert(route.handler_name.clone(), sender);
+        
+        info!(
+            handler_name = %route.handler_name,
+            total_handlers = self.handlers.len() + 1,
+            "Handler registered successfully"
+        );
     }
 
     /// Add middleware to the processing pipeline
@@ -130,12 +151,26 @@ impl Dispatcher {
         let name = name.to_string();
         let handler_name_for_logging = name.clone();
 
-        coroutine::Builder::new()
-            .stack_size(may::config().get_stack_size())
+        // Use a larger default stack size to prevent stack overflows
+        // 64KB is more reasonable for complex handlers
+        let stack_size = std::env::var("BRRTR_STACK_SIZE")
+            .ok()
+            .and_then(|s| {
+                if let Some(hex) = s.strip_prefix("0x") {
+                    usize::from_str_radix(hex, 16).ok()
+                } else {
+                    s.parse().ok()
+                }
+            })
+            .unwrap_or(0x10000); // 64KB default instead of 16KB
+
+        let spawn_result = coroutine::Builder::new()
+            .stack_size(stack_size)
             .spawn(move || {
                 // H1: Handler coroutine start
                 debug!(
                     handler_name = %handler_name_for_logging,
+                    stack_size = stack_size,
                     "Handler coroutine start"
                 );
 
@@ -195,8 +230,20 @@ impl Dispatcher {
                         );
                     }
                 }
-            })
-            .unwrap();
+            });
+
+        // Handle coroutine spawn failures gracefully
+        if let Err(e) = spawn_result {
+            error!(
+                handler_name = %name,
+                error = %e,
+                stack_size = stack_size,
+                "Failed to spawn handler coroutine - CRITICAL"
+            );
+            // Return early without registering the handler
+            // This prevents crashes when resources are exhausted
+            return;
+        }
 
         self.handlers.insert(name, tx);
     }
@@ -338,6 +385,8 @@ impl Dispatcher {
             );
 
             // Receive response with timeout detection
+            // Note: may::sync::mpsc doesn't have recv_timeout, so we use recv()
+            // and rely on handler-side timeouts and panic recovery
             let r = match reply_rx.recv() {
                 Ok(response) => {
                     let elapsed = start.elapsed();
@@ -351,16 +400,27 @@ impl Dispatcher {
                     response
                 }
                 Err(e) => {
-                    // D7: Handler timeout or channel closed
+                    // D7: Handler channel closed - likely handler panic or resource exhaustion
                     let elapsed = start.elapsed();
                     error!(
                         request_id = %request_id,
                         handler_name = %handler_name,
                         elapsed_ms = elapsed.as_millis() as u64,
                         error = %e,
-                        "Handler timeout or channel closed"
+                        "Handler channel closed - handler may have crashed"
                     );
-                    return None;
+                    
+                    // Return a 503 Service Unavailable response instead of None
+                    // This prevents connection drops and indicates server issue
+                    return Some(HandlerResponse {
+                        status: 503,
+                        headers: HashMap::new(),
+                        body: serde_json::json!({
+                            "error": "Service unavailable",
+                            "details": format!("Handler '{}' is not responding - possible crash or resource exhaustion", handler_name),
+                            "request_id": request_id,
+                        }),
+                    });
                 }
             };
             (r, start.elapsed())

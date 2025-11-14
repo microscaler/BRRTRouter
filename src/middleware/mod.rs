@@ -87,11 +87,13 @@
 mod auth;
 mod core;
 mod cors;
+pub mod memory;
 mod metrics;
 mod tracing;
 
 pub use auth::AuthMiddleware;
 pub use core::Middleware;
 pub use cors::CorsMiddleware;
+pub use memory::MemoryMiddleware;
 pub use metrics::MetricsMiddleware;
 pub use tracing::TracingMiddleware;

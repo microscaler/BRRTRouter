@@ -1,0 +1,20 @@
+openapi: 3.1.0
+info:
+  title: Bad Operation ID Casing Example
+  version: 1.0.0
+paths:
+  /users:
+    get:
+      operationId: getUsers  # Should be snake_case: get_users
+      summary: Get users
+      responses:
+        '200':
+          description: OK
+  /users/{id}:
+    post:
+      operationId: createUser  # Should be snake_case: create_user
+      summary: Create user
+      responses:
+        '201':
+          description: Created
+

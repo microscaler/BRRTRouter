@@ -1,19 +1,49 @@
 use std::collections::{BTreeSet, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::io::Read;
 
+use oas3;
 use crate::spec::load_spec;
 
 use crate::generator::schema::{
     collect_component_schemas, extract_fields, is_named_type, parameter_to_field,
-    process_schema_type, to_camel_case, unique_handler_name,
+    process_schema_type_with_spec, to_camel_case, unique_handler_name,
 };
 use crate::generator::templates::{
-    write_cargo_toml, write_controller, write_handler, write_main_rs, write_mod_rs,
+    write_cargo_toml, write_controller, write_handler, write_main_rs_with_options, write_mod_rs,
     write_openapi_index, write_registry_rs, write_static_index, write_types_rs, RegistryEntry,
 };
 
 use anyhow::Context;
+
+/// Detect if the output directory is part of a workspace
+///
+/// Checks parent directories for a Cargo.toml with a [workspace] section.
+/// This indicates we should use `crate::registry` instead of `{{ name }}::registry`.
+fn detect_workspace_context(output_dir: &Path) -> bool {
+    let mut current = output_dir;
+    loop {
+        let cargo_toml = current.join("Cargo.toml");
+        if cargo_toml.exists() {
+            if let Ok(mut file) = std::fs::File::open(&cargo_toml) {
+                let mut contents = String::new();
+                if file.read_to_string(&mut contents).is_ok() {
+                    // Check if it contains [workspace]
+                    if contents.contains("[workspace]") {
+                        return true;
+                    }
+                }
+            }
+        }
+        // Check parent directory
+        match current.parent() {
+            Some(parent) => current = parent,
+            None => break,
+        }
+    }
+    false
+}
 
 /// Configuration for selective code generation
 ///
@@ -67,7 +97,7 @@ impl GenerationScope {
 ///
 /// Returns an error if spec loading, code generation, or file I/O fails.
 pub fn generate_project_from_spec(spec_path: &Path, force: bool) -> anyhow::Result<PathBuf> {
-    generate_project_with_options(spec_path, force, false, &GenerationScope::all())
+    generate_project_with_options(spec_path, None, force, false, &GenerationScope::all())
 }
 
 /// Generate a Rust project with fine-grained control over what gets generated
@@ -78,6 +108,7 @@ pub fn generate_project_from_spec(spec_path: &Path, force: bool) -> anyhow::Resu
 /// # Arguments
 ///
 /// * `spec_path` - Path to the OpenAPI specification file
+/// * `output_dir` - Optional output directory (default: examples/{slug})
 /// * `force` - Overwrite existing files without prompting
 /// * `dry_run` - Show what would be generated without writing files
 /// * `scope` - Which parts of the project to generate
@@ -91,6 +122,7 @@ pub fn generate_project_from_spec(spec_path: &Path, force: bool) -> anyhow::Resu
 /// Returns an error if spec loading, code generation, or file I/O fails.
 pub fn generate_project_with_options(
     spec_path: &Path,
+    output_dir: Option<&Path>,
     force: bool,
     dry_run: bool,
     scope: &GenerationScope,
@@ -99,7 +131,9 @@ pub fn generate_project_with_options(
     let mut updated: Vec<String> = Vec::new();
     let mut skipped: Vec<String> = Vec::new();
     let (mut routes, slug) = load_spec(spec_path.to_str().unwrap())?;
-    let base_dir = Path::new("examples").join(&slug);
+    let base_dir = output_dir
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| Path::new("examples").join(&slug));
     let src_dir = base_dir.join("src");
     let handler_dir = src_dir.join("handlers");
     let controller_dir = src_dir.join("controllers");
@@ -163,6 +197,26 @@ pub fn generate_project_with_options(
     }
 
     let mut schema_types = collect_component_schemas(spec_path)?;
+    
+    // Load spec once for resolving $ref in request/response schemas
+    let spec: oas3::OpenApiV3Spec = if spec_path.extension().map(|s| s == "yaml").unwrap_or(false) {
+        serde_yaml::from_str(&std::fs::read_to_string(spec_path)?)?
+    } else {
+        serde_json::from_str(&std::fs::read_to_string(spec_path)?)?
+    };
+
+    // Process request/response schemas with spec context for $ref resolution
+    // Do this before the main loop so we have all types available
+    for route in routes.iter() {
+        if let Some(schema) = &route.request_schema {
+            let name = format!("{}Request", route.handler_name);
+            process_schema_type_with_spec(&name, schema, &mut schema_types, Some(&spec));
+        }
+        if let Some(schema) = &route.response_schema {
+            let name = format!("{}Response", route.handler_name);
+            process_schema_type_with_spec(&name, schema, &mut schema_types, Some(&spec));
+        }
+    }
 
     let mut seen = HashSet::new();
     let mut modules_handlers = Vec::new();
@@ -271,15 +325,6 @@ pub fn generate_project_with_options(
             controller_struct: controller_struct.clone(),
             parameters: route.parameters.clone(),
         });
-
-        if let Some(schema) = &route.request_schema {
-            let name = format!("{handler}Request");
-            process_schema_type(&name, schema, &mut schema_types);
-        }
-        if let Some(schema) = &route.response_schema {
-            let name = format!("{handler}Response");
-            process_schema_type(&name, schema, &mut schema_types);
-        }
     }
 
     if scope.main {
@@ -304,7 +349,10 @@ pub fn generate_project_with_options(
             }
         } else {
             write_cargo_toml(&base_dir, &slug)?;
-            write_main_rs(&src_dir, &slug, routes.clone())?;
+            // Detect if we're in a workspace context (e.g., microservices/crates/...)
+            // by checking if there's a Cargo.toml with [workspace] in a parent directory
+            let use_crate_prefix = detect_workspace_context(&base_dir);
+            write_main_rs_with_options(&src_dir, &slug, routes.clone(), use_crate_prefix)?;
             if cargo_existed && force {
                 updated.push(format!("cargo: {cargo_path:?}"));
             } else if !cargo_existed {
@@ -445,4 +493,175 @@ pub fn generate_project_with_options(
     }
     println!("──────────────────────────────────────────────────\n");
     Ok(base_dir)
+}
+
+/// Generate implementation stubs in the impl crate
+///
+/// Creates stub files for controllers that don't have implementations yet.
+/// Stubs are NOT auto-regenerated - they are user-owned once created.
+/// Use --force to overwrite existing stubs.
+///
+/// # Arguments
+///
+/// * `spec_path` - Path to OpenAPI specification
+/// * `impl_output_dir` - Path to impl crate directory (e.g., `crates/bff_impl`)
+/// * `handler_name` - Optional: generate stub for specific handler only (per-path)
+/// * `force` - Overwrite existing stubs
+///
+/// # Behavior
+///
+/// - If stub doesn't exist → create it
+/// - If stub exists and --force → overwrite it (with warning)
+/// - If stub exists and no --force → skip it (protect user implementation)
+/// - Updates mod.rs to include new modules
+/// - Creates Cargo.toml and main.rs if impl crate doesn't exist
+pub fn generate_impl_stubs(
+    spec_path: &Path,
+    impl_output_dir: &Path,
+    handler_name: Option<&str>,
+    force: bool,
+) -> anyhow::Result<()> {
+    use crate::generator::templates::{
+        write_impl_cargo_toml, write_impl_controller_stub, write_impl_main_rs,
+        update_impl_mod_rs,
+    };
+
+    // Load spec
+    let (routes, _slug) = load_spec(spec_path.to_str().unwrap())?;
+
+    // Derive component name from output directory
+    let component_name = impl_output_dir
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| anyhow::anyhow!("Invalid output directory"))?
+        .strip_suffix("_impl")
+        .ok_or_else(|| anyhow::anyhow!("Impl crate name must end with _impl"))?;
+
+    // Create directory structure
+    let impl_src_dir = impl_output_dir.join("src");
+    let impl_controllers_dir = impl_src_dir.join("controllers");
+    if !impl_controllers_dir.exists() {
+        fs::create_dir_all(&impl_controllers_dir)?;
+    }
+
+    // Generate Cargo.toml if it doesn't exist
+    let cargo_toml = impl_output_dir.join("Cargo.toml");
+    if !cargo_toml.exists() {
+        write_impl_cargo_toml(impl_output_dir, component_name)?;
+        println!("✅ Created impl crate Cargo.toml: {cargo_toml:?}");
+    }
+
+    // Generate main.rs if it doesn't exist
+    let main_rs = impl_src_dir.join("main.rs");
+    if !main_rs.exists() {
+        write_impl_main_rs(&impl_src_dir, component_name, &routes)?;
+        println!("✅ Created impl crate main.rs: {main_rs:?}");
+    }
+
+    // Determine which handlers to generate stubs for
+    let handlers_to_generate: Vec<String> = if let Some(handler) = handler_name {
+        // Per-path: only generate stub for specified handler
+        vec![handler.to_string()]
+    } else {
+        // Generate stubs for all handlers
+        routes.iter().map(|r| r.handler_name.clone()).collect()
+    };
+
+    let mut created = Vec::new();
+    let mut skipped = Vec::new();
+    let mut overwritten = Vec::new();
+
+    // Generate stubs for each handler
+    for handler in handlers_to_generate {
+        let stub_path = impl_controllers_dir.join(format!("{handler}.rs"));
+        let existed = stub_path.exists();
+
+        // Check if we should skip
+        if existed && !force {
+            skipped.push(handler.clone());
+            println!("⚠️  Skipping existing stub: {stub_path:?} (use --force to overwrite)");
+            continue;
+        }
+
+        // Find route for this handler
+        let route = routes
+            .iter()
+            .find(|r| r.handler_name == handler)
+            .ok_or_else(|| anyhow::anyhow!("Handler not found in spec: {}", handler))?;
+
+        // Extract fields and types
+        let mut request_fields = route
+            .request_schema
+            .as_ref()
+            .map_or(vec![], extract_fields);
+        for param in &route.parameters {
+            request_fields.push(parameter_to_field(param));
+        }
+        let response_fields = route
+            .response_schema
+            .as_ref()
+            .map_or(vec![], extract_fields);
+
+        let mut imports = BTreeSet::new();
+        for field in request_fields.iter().chain(response_fields.iter()) {
+            let inner = field
+                .ty
+                .strip_prefix("Vec<")
+                .and_then(|s| s.strip_suffix(">"))
+                .unwrap_or(&field.ty);
+            if is_named_type(inner) {
+                imports.insert(to_camel_case(inner));
+            }
+        }
+
+        // Generate stub
+        if existed && force {
+            println!(
+                "⚠️  Overwriting existing stub: {stub_path:?} (user implementation will be lost)"
+            );
+        }
+
+        write_impl_controller_stub(
+            &stub_path,
+            &handler,
+            &format!("{}Controller", to_camel_case(&handler)),
+            component_name,
+            &request_fields,
+            &response_fields,
+            &imports,
+            route.sse,
+            route.example.clone(),
+            force,
+        )?;
+
+        if existed && force {
+            overwritten.push(handler.clone());
+        } else {
+            created.push(handler.clone());
+        }
+
+        // Update mod.rs to include the module
+        update_impl_mod_rs(&impl_controllers_dir, &handler, force)?;
+    }
+
+    // Print summary
+    if !created.is_empty() {
+        println!("✅ Created {} stub(s): {:?}", created.len(), created);
+    }
+    if !overwritten.is_empty() {
+        println!(
+            "⚠️  Overwritten {} stub(s): {:?}",
+            overwritten.len(),
+            overwritten
+        );
+    }
+    if !skipped.is_empty() {
+        println!(
+            "ℹ️  Skipped {} existing stub(s): {:?} (use --force to overwrite)",
+            skipped.len(),
+            skipped
+        );
+    }
+
+    Ok(())
 }

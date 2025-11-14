@@ -40,6 +40,9 @@ url = "2.5.4"
 clap = { version = "4.5.38", features = ["cargo", "env", "derive"] }
 askama = { version = "0.14.0", features = ["full"] }
 notify = "6"
+memory-stats = "1.1"  # For cross-platform memory monitoring
+tikv-jemallocator = { version = "0.5", optional = true }
+tikv-jemalloc-ctl = { version = "0.5", optional = true }
 minijinja = "1"
 
 # OpenTelemetry observability (PROVEN VERSIONS from obsctl)
@@ -94,6 +97,7 @@ harness = false
 
 [features]
 default = []
+jemalloc = ["tikv-jemallocator", "tikv-jemalloc-ctl"]  # Enable jemalloc for accurate heap tracking
 stack_usage = []
 
 [workspace]

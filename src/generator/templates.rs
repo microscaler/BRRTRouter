@@ -3,7 +3,7 @@ use askama::Template;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::schema::{
     is_named_type, rust_literal_for_example, to_camel_case, FieldDef, TypeDefinition,
@@ -42,6 +42,12 @@ pub struct RouteDisplay {
 pub struct CargoTomlTemplateData {
     /// Project name
     pub name: String,
+    /// Whether to use workspace dependencies (true) or direct path dependencies (false)
+    pub use_workspace_deps: bool,
+    /// Relative path to BRRTRouter (only used when use_workspace_deps is false)
+    pub brrtrouter_path: String,
+    /// Relative path to brrtrouter_macros (only used when use_workspace_deps is false)
+    pub brrtrouter_macros_path: String,
 }
 
 /// Template for generating config.yaml with default settings
@@ -57,6 +63,9 @@ pub struct MainRsTemplateData {
     pub name: String,
     /// Routes for displaying in comments
     pub routes: Vec<RouteDisplay>,
+    /// Whether to use `crate::registry` (true) or `{{ name }}::registry` (false)
+    /// Defaults to false for backward compatibility with petstore example
+    pub use_crate_prefix: bool,
 }
 
 /// Template for generating OpenAPI documentation HTML
@@ -243,8 +252,9 @@ pub fn write_controller(
         .iter()
         .map(|field| {
             // Try to find this field in the example data
+            // Use original_name for lookup (JSON key) but name for code generation (Rust identifier)
             let value = example_map
-                .get(&field.name) // Look up field by name in example
+                .get(&field.original_name) // Look up by original JSON name (e.g., "type" not "r#type")
                 .map(|val| rust_literal_for_example(field, val)) // Convert JSON → Rust literal
                 .unwrap_or_else(|| field.value.clone()); // Fallback to dummy value
 
@@ -431,8 +441,156 @@ pub(crate) fn write_types_rs(
 ///
 /// Returns an error if template rendering or file writing fails
 pub(crate) fn write_cargo_toml(base: &Path, slug: &str) -> anyhow::Result<()> {
+    // Detect if we're in a workspace and if workspace has brrtrouter dependencies
+    let use_workspace_deps = detect_workspace_with_brrtrouter_deps(base);
+    write_cargo_toml_with_options(base, slug, use_workspace_deps, None)
+}
+
+/// Detect if output directory is in a workspace that has brrtrouter in workspace.dependencies
+fn detect_workspace_with_brrtrouter_deps(output_dir: &Path) -> bool {
+    let mut current = output_dir;
+    loop {
+        let cargo_toml = current.join("Cargo.toml");
+        if cargo_toml.exists() {
+            if let Ok(contents) = std::fs::read_to_string(&cargo_toml) {
+                // Check if it's a workspace AND has brrtrouter in workspace.dependencies
+                if contents.contains("[workspace]") && contents.contains("brrtrouter") && contents.contains("workspace.dependencies") {
+                    return true;
+                }
+            }
+        }
+        match current.parent() {
+            Some(parent) => current = parent,
+            None => break,
+        }
+    }
+    false
+}
+
+/// Write Cargo.toml with options
+///
+/// # Arguments
+///
+/// * `base` - Project root directory
+/// * `slug` - Project name slug
+/// * `use_workspace_deps` - If true, use workspace dependencies; if false, calculate relative paths
+/// * `brrtrouter_root` - Optional path to BRRTRouter root (for calculating relative paths)
+pub(crate) fn write_cargo_toml_with_options(
+    base: &Path,
+    slug: &str,
+    use_workspace_deps: bool,
+    brrtrouter_root: Option<&Path>,
+) -> anyhow::Result<()> {
+    eprintln!("DEBUG: use_workspace_deps={}, base={:?}, brrtrouter_root={:?}", 
+               use_workspace_deps, base, brrtrouter_root);
+    let (brrtrouter_path, brrtrouter_macros_path) = if use_workspace_deps {
+        (String::new(), String::new())
+    } else {
+        // Calculate relative path from output directory to BRRTRouter
+        let brrtrouter_base = brrtrouter_root
+            .map(|p| p.to_path_buf())
+            .or_else(|| {
+                // Try to find BRRTRouter by looking for its Cargo.toml in parent directories
+                // This handles the case where we're generating from within BRRTRouter
+                let mut current = base;
+                loop {
+                    let cargo_toml = current.join("Cargo.toml");
+                    if cargo_toml.exists() {
+                        if let Ok(content) = std::fs::read_to_string(&cargo_toml) {
+                            if content.contains("name = \"brrtrouter\"") {
+                                return Some(current.to_path_buf());
+                            }
+                        }
+                    }
+                    match current.parent() {
+                        Some(parent) => current = parent,
+                        None => break,
+                    }
+                }
+                None
+            })
+            .unwrap_or_else(|| {
+                // Default fallback: assume BRRTRouter is at ../.. (petstore case)
+                base.parent().and_then(|p| p.parent()).unwrap_or(base).to_path_buf()
+            });
+        
+        // Calculate relative path from base to brrtrouter_base
+        // Ensure both paths are absolute for reliable calculation
+        let brrtrouter_base_clone = brrtrouter_base.clone(); // Clone for debug output
+        let base_abs = if base.is_absolute() {
+            base.to_path_buf()
+        } else {
+            std::env::current_dir()
+                .unwrap_or_else(|_| PathBuf::from("."))
+                .join(base)
+        };
+        let brrtrouter_abs = if brrtrouter_base.is_absolute() {
+            brrtrouter_base.to_path_buf()
+        } else {
+            std::env::current_dir()
+                .unwrap_or_else(|_| PathBuf::from("."))
+                .join(brrtrouter_base)
+        };
+        
+        let base_canon = base_abs.canonicalize().unwrap_or_else(|_| base_abs);
+        let brrtrouter_canon = brrtrouter_abs.canonicalize().unwrap_or_else(|_| brrtrouter_abs);
+        
+        // Calculate relative path from base to brrtrouter_base
+        // base is typically a subdirectory of brrtrouter_base (e.g., examples/pet_store is under BRRTRouter root)
+        let rel_path = if let Ok(rel) = base_canon.strip_prefix(&brrtrouter_canon) {
+            // base is a subdirectory of brrtrouter_base (normal case)
+            // Count depth and build ../.. path
+            let depth = rel.components().count();
+            let mut rel_path = PathBuf::new();
+            for _ in 0..depth {
+                rel_path.push("..");
+            }
+            rel_path
+        } else if let Ok(rel) = brrtrouter_canon.strip_prefix(&base_canon) {
+            // brrtrouter_base is a subdirectory of base (unusual, but handle it)
+            rel.to_path_buf()
+        } else {
+            // No direct relationship - calculate manually
+            // Find common prefix
+            let base_parts: Vec<_> = base_canon.components().collect();
+            let brrtrouter_parts: Vec<_> = brrtrouter_canon.components().collect();
+            let mut common_len = 0;
+            let min_len = base_parts.len().min(brrtrouter_parts.len());
+            for i in 0..min_len {
+                if base_parts[i] == brrtrouter_parts[i] {
+                    common_len += 1;
+                } else {
+                    break;
+                }
+            }
+            // Build path: go up (base_depth - common_len) times, then down (brrtrouter_parts - common_len)
+            let mut rel_path = PathBuf::new();
+            let up_levels = base_parts.len() - common_len;
+            for _ in 0..up_levels {
+                rel_path.push("..");
+            }
+            for part in brrtrouter_parts.iter().skip(common_len) {
+                rel_path.push(part);
+            }
+            rel_path
+        };
+        
+        let rel_path_str = rel_path.to_string_lossy().to_string();
+        let macros_path = rel_path.join("brrtrouter_macros");
+        let macros_path_str = macros_path.to_string_lossy().to_string();
+        
+        // Debug: log the calculated paths
+        eprintln!("DEBUG: base={:?}, brrtrouter_base={:?}, rel_path={:?}, rel_path_str={:?}", 
+                 base, &brrtrouter_base_clone, rel_path, rel_path_str);
+        
+        (rel_path_str, macros_path_str)
+    };
+    
     let rendered = CargoTomlTemplateData {
         name: slug.to_string(),
+        use_workspace_deps,
+        brrtrouter_path,
+        brrtrouter_macros_path,
     }
     .render()?;
     fs::write(base.join("Cargo.toml"), rendered)?;
@@ -454,6 +612,23 @@ pub(crate) fn write_cargo_toml(base: &Path, slug: &str) -> anyhow::Result<()> {
 ///
 /// Returns an error if file writing fails
 pub fn write_main_rs(dir: &Path, slug: &str, routes: Vec<RouteMeta>) -> anyhow::Result<()> {
+    write_main_rs_with_options(dir, slug, routes, false)
+}
+
+/// Write the main.rs entry point with options
+///
+/// # Arguments
+///
+/// * `dir` - Output directory (typically `src/`)
+/// * `slug` - Project name slug
+/// * `routes` - All routes from the OpenAPI spec
+/// * `use_crate_prefix` - If true, use `crate::registry`, else use `{{ name }}::registry`
+pub fn write_main_rs_with_options(
+    dir: &Path,
+    slug: &str,
+    routes: Vec<RouteMeta>,
+    use_crate_prefix: bool,
+) -> anyhow::Result<()> {
     let routes = routes
         .into_iter()
         .map(|r| RouteDisplay {
@@ -465,6 +640,7 @@ pub fn write_main_rs(dir: &Path, slug: &str, routes: Vec<RouteMeta>) -> anyhow::
     let rendered = MainRsTemplateData {
         name: slug.to_string(),
         routes,
+        use_crate_prefix,
     }
     .render()?;
     fs::write(dir.join("main.rs"), rendered)?;
@@ -524,5 +700,326 @@ pub fn write_default_config(dir: &Path) -> anyhow::Result<()> {
     std::fs::create_dir_all(dir)?;
     std::fs::write(dir.join("config.yaml"), rendered)?;
     println!("✅ Wrote default config → {:?}", dir.join("config.yaml"));
+    Ok(())
+}
+
+/// Template data for generating implementation controller stubs
+#[derive(Template)]
+#[template(path = "impl_controller_stub.rs.txt", escape = "none")]
+pub struct ImplControllerStubTemplateData {
+    /// Handler function name
+    pub handler_name: String,
+    /// Controller struct name
+    pub struct_name: String,
+    /// Generated crate name (e.g., "bff")
+    pub crate_name: String,
+    /// Request struct fields
+    pub request_fields: Vec<FieldDef>,
+    /// Response struct fields
+    pub response_fields: Vec<FieldDef>,
+    /// Types to import
+    pub imports: Vec<String>,
+    /// Whether this handler uses Server-Sent Events
+    pub sse: bool,
+    /// Whether the response is an array
+    pub response_is_array: bool,
+    /// Array literal for response (if array)
+    pub response_array_literal: String,
+    /// Whether an example response is available
+    pub has_example: bool,
+    /// Example response as JSON string
+    pub example_json: String,
+}
+
+/// Template data for generating implementation crate Cargo.toml
+#[derive(Template)]
+#[template(path = "impl_cargo.toml.txt", escape = "none")]
+pub struct ImplCargoTomlTemplateData {
+    /// Implementation crate name (e.g., "bff_impl")
+    pub impl_crate_name: String,
+    /// Generated crate name (e.g., "bff")
+    pub crate_name: String,
+    /// Whether to use workspace dependencies
+    pub use_workspace_deps: bool,
+    /// Relative path to BRRTRouter (only used when use_workspace_deps is false)
+    pub brrtrouter_path: String,
+    /// Relative path to brrtrouter_macros (only used when use_workspace_deps is false)
+    pub brrtrouter_macros_path: String,
+}
+
+/// Template data for generating implementation crate main.rs
+#[derive(Template)]
+#[template(path = "impl_main.rs.txt", escape = "none")]
+pub struct ImplMainRsTemplateData {
+    /// Generated crate name (e.g., "bff")
+    pub crate_name: String,
+    /// Routes for displaying in comments
+    pub routes: Vec<RouteDisplay>,
+}
+
+/// Write an implementation controller stub file
+///
+/// Creates a starting point for user implementation.
+/// Stubs are NOT auto-regenerated - user must use --force to overwrite.
+pub fn write_impl_controller_stub(
+    path: &Path,
+    handler: &str,
+    struct_name: &str,
+    crate_name: &str,
+    req_fields: &[FieldDef],
+    res_fields: &[FieldDef],
+    imports: &BTreeSet<String>,
+    sse: bool,
+    example: Option<Value>,
+    force: bool,
+) -> anyhow::Result<()> {
+    if path.exists() && !force {
+        return Ok(()); // Already handled in generate_impl_stubs
+    }
+
+    // Extract example data if available
+    let example_map = example
+        .as_ref()
+        .and_then(|v| match v {
+            Value::Object(map) => Some(map.clone()),
+            _ => None,
+        })
+        .unwrap_or_default();
+
+    // Enrich response fields with example data
+    let enriched_fields = res_fields
+        .iter()
+        .map(|field| {
+            // Use original_name for lookup (JSON key) but name for code generation (Rust identifier)
+            let value = example_map
+                .get(&field.original_name) // Look up by original JSON name (e.g., "type" not "r#type")
+                .map(|val| rust_literal_for_example(field, val))
+                .unwrap_or_else(|| field.value.clone());
+
+            FieldDef {
+                name: field.name.clone(),
+                original_name: field.original_name.clone(),
+                ty: field.ty.clone(),
+                optional: field.optional,
+                value,
+            }
+        })
+        .collect::<Vec<_>>();
+
+    // Detect if response is an array
+    let response_is_array = res_fields.len() == 1 && res_fields[0].name == "items";
+
+    // Generate array literal if needed
+    let response_array_literal = if response_is_array {
+        if let Some(ref ex) = example {
+            if ex.is_array() {
+                let items_field = FieldDef {
+                    name: "items".to_string(),
+                    original_name: "items".to_string(),
+                    ty: res_fields[0].ty.clone(),
+                    optional: false,
+                    value: String::new(),
+                };
+                rust_literal_for_example(&items_field, ex)
+            } else {
+                "vec![]".to_string()
+            }
+        } else {
+            "vec![]".to_string()
+        }
+    } else {
+        String::new()
+    };
+
+    let example_json = example
+        .as_ref()
+        .map(|v| serde_json::to_string_pretty(v).unwrap_or_default())
+        .unwrap_or_default();
+
+    let stub_data = ImplControllerStubTemplateData {
+        handler_name: handler.to_string(),
+        struct_name: struct_name.to_string(),
+        crate_name: crate_name.to_string(),
+        request_fields: req_fields.to_vec(),
+        response_fields: enriched_fields,
+        imports: imports.iter().cloned().collect(),
+        sse,
+        response_is_array,
+        response_array_literal,
+        has_example: example.is_some(),
+        example_json,
+    };
+
+    let rendered = stub_data.render()?;
+    fs::write(path, rendered)?;
+    println!("✅ Generated implementation stub: {path:?}");
+
+    Ok(())
+}
+
+/// Write implementation crate Cargo.toml
+pub fn write_impl_cargo_toml(
+    impl_output_dir: &Path,
+    component_name: &str,
+) -> anyhow::Result<()> {
+    let cargo_toml_path = impl_output_dir.join("Cargo.toml");
+
+    // Detect workspace context - check parent directories for workspace Cargo.toml
+    let mut use_workspace_deps = false;
+    let mut current = impl_output_dir;
+    loop {
+        let cargo_toml = current.join("Cargo.toml");
+        if cargo_toml.exists() {
+            if let Ok(contents) = std::fs::read_to_string(&cargo_toml) {
+                if contents.contains("[workspace]") {
+                    use_workspace_deps = true;
+                    break;
+                }
+            }
+        }
+        match current.parent() {
+            Some(parent) => current = parent,
+            None => break,
+        }
+    }
+
+    // Calculate relative paths if not using workspace deps
+    let (brrtrouter_path, brrtrouter_macros_path) = if use_workspace_deps {
+        (String::new(), String::new())
+    } else {
+        // Try to find BRRTRouter by looking for its Cargo.toml in parent directories
+        let mut current = impl_output_dir;
+        let mut brrtrouter_root = None;
+        loop {
+            let cargo_toml = current.join("Cargo.toml");
+            if cargo_toml.exists() {
+                if let Ok(content) = std::fs::read_to_string(&cargo_toml) {
+                    if content.contains("name = \"brrtrouter\"") {
+                        brrtrouter_root = Some(current.to_path_buf());
+                        break;
+                    }
+                }
+            }
+            match current.parent() {
+                Some(parent) => current = parent,
+                None => break,
+            }
+        }
+
+        if let Some(brrtrouter_base) = brrtrouter_root {
+            // Calculate relative path manually
+            let mut relative = PathBuf::new();
+            let mut current = impl_output_dir;
+            while let Some(parent) = current.parent() {
+                if parent == brrtrouter_base {
+                    break;
+                }
+                relative.push("..");
+                current = parent;
+            }
+            let base_str = if relative.as_os_str().is_empty() {
+                "../BRRTRouter".to_string()
+            } else {
+                relative.join("BRRTRouter").to_string_lossy().to_string()
+            };
+            (base_str.clone(), format!("{}/brrtrouter_macros", base_str))
+        } else {
+            ("../BRRTRouter".to_string(), "../BRRTRouter/brrtrouter_macros".to_string())
+        }
+    };
+
+    let template_data = ImplCargoTomlTemplateData {
+        impl_crate_name: format!("{}_impl", component_name),
+        crate_name: component_name.to_string(),
+        use_workspace_deps,
+        brrtrouter_path,
+        brrtrouter_macros_path,
+    };
+
+    let rendered = template_data.render()?;
+    fs::write(&cargo_toml_path, rendered)?;
+
+    Ok(())
+}
+
+/// Write implementation crate main.rs
+pub fn write_impl_main_rs(
+    impl_src_dir: &Path,
+    component_name: &str,
+    routes: &[RouteMeta],
+) -> anyhow::Result<()> {
+    let main_rs_path = impl_src_dir.join("main.rs");
+
+    let route_displays: Vec<RouteDisplay> = routes
+        .iter()
+        .map(|r| RouteDisplay {
+            method: format!("{:?}", r.method),
+            path: r.path_pattern.clone(),
+            handler: r.handler_name.clone(),
+        })
+        .collect();
+
+    let template_data = ImplMainRsTemplateData {
+        crate_name: component_name.to_string(),
+        routes: route_displays,
+    };
+
+    let rendered = template_data.render()?;
+    fs::write(&main_rs_path, rendered)?;
+
+    Ok(())
+}
+
+/// Update impl crate's controllers/mod.rs to include a new module
+///
+/// If mod.rs doesn't exist, create it with the module declaration.
+/// If it exists, add the module declaration if not already present.
+/// Use --force to overwrite existing declarations.
+pub fn update_impl_mod_rs(
+    controllers_dir: &Path,
+    handler: &str,
+    force: bool,
+) -> anyhow::Result<()> {
+    let mod_rs_path = controllers_dir.join("mod.rs");
+
+    if !mod_rs_path.exists() {
+        // Create new mod.rs
+        let content = format!(
+            "// Controller module declarations\n// This file is automatically updated when stubs are generated\n// You can manually add/remove module declarations as needed\n\npub mod {};\n",
+            handler
+        );
+        fs::write(&mod_rs_path, content)?;
+        return Ok(());
+    }
+
+    // Read existing mod.rs
+    let content = fs::read_to_string(&mod_rs_path)?;
+    let module_decl = format!("pub mod {};", handler);
+
+    // Check if module already declared
+    if content.contains(&module_decl) {
+        if force {
+            // Force mode: replace existing declaration (in case handler name changed)
+            let new_content = content.replace(
+                &format!("pub mod {};", handler),
+                &module_decl,
+            );
+            fs::write(&mod_rs_path, new_content)?;
+        }
+        // Already exists, no need to add
+        return Ok(());
+    }
+
+    // Add module declaration
+    let new_content = if content.trim().is_empty() {
+        format!(
+            "// Controller module declarations\n// This file is automatically updated when stubs are generated\n\n{}\n",
+            module_decl
+        )
+    } else {
+        format!("{}\n{}", content.trim_end(), module_decl)
+    };
+
+    fs::write(&mod_rs_path, new_content)?;
     Ok(())
 }

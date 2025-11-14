@@ -41,18 +41,18 @@ use std::time::Duration;
 // ============================================================================
 
 async fn health_check(user: &mut GooseUser) -> TransactionResult {
-    user.get("health").await?.response?.error_for_status()?;
+    user.get("/health").await?.response?.error_for_status()?;
     Ok(())
 }
 
 async fn test_metrics(user: &mut GooseUser) -> TransactionResult {
-    user.get("metrics").await?.response?.error_for_status()?;
+    user.get("/metrics").await?.response?.error_for_status()?;
     Ok(())
 }
 
 async fn list_pets(user: &mut GooseUser) -> TransactionResult {
     let request_builder = user
-        .get_request_builder(&GooseMethod::Get, "pets")?
+        .get_request_builder(&GooseMethod::Get, "/pets")?
         .header("X-API-Key", "test123");
     let goose_request = GooseRequest::builder()
         .set_request_builder(request_builder)
@@ -63,7 +63,7 @@ async fn list_pets(user: &mut GooseUser) -> TransactionResult {
 
 async fn get_pet(user: &mut GooseUser) -> TransactionResult {
     let request_builder = user
-        .get_request_builder(&GooseMethod::Get, "pets/12345")?
+        .get_request_builder(&GooseMethod::Get, "/pets/12345")?
         .header("X-API-Key", "test123");
     let goose_request = GooseRequest::builder()
         .set_request_builder(request_builder)
@@ -74,7 +74,7 @@ async fn get_pet(user: &mut GooseUser) -> TransactionResult {
 
 async fn search_pets(user: &mut GooseUser) -> TransactionResult {
     let request_builder = user
-        .get_request_builder(&GooseMethod::Get, "pets?name=fluffy")?
+        .get_request_builder(&GooseMethod::Get, "/pets?name=fluffy")?
         .header("X-API-Key", "test123");
     let goose_request = GooseRequest::builder()
         .set_request_builder(request_builder)
@@ -85,7 +85,7 @@ async fn search_pets(user: &mut GooseUser) -> TransactionResult {
 
 async fn list_users(user: &mut GooseUser) -> TransactionResult {
     let request_builder = user
-        .get_request_builder(&GooseMethod::Get, "users")?
+        .get_request_builder(&GooseMethod::Get, "/users")?
         .header("X-API-Key", "test123");
     let goose_request = GooseRequest::builder()
         .set_request_builder(request_builder)
@@ -96,7 +96,7 @@ async fn list_users(user: &mut GooseUser) -> TransactionResult {
 
 async fn get_user(user: &mut GooseUser) -> TransactionResult {
     let request_builder = user
-        .get_request_builder(&GooseMethod::Get, "users/abc-123")?
+        .get_request_builder(&GooseMethod::Get, "/users/abc-123")?
         .header("X-API-Key", "test123");
     let goose_request = GooseRequest::builder()
         .set_request_builder(request_builder)
@@ -106,7 +106,7 @@ async fn get_user(user: &mut GooseUser) -> TransactionResult {
 }
 
 async fn load_openapi(user: &mut GooseUser) -> TransactionResult {
-    user.get("openapi.yaml")
+    user.get("/openapi.yaml")
         .await?
         .response?
         .error_for_status()?;
@@ -120,7 +120,7 @@ async fn load_index(user: &mut GooseUser) -> TransactionResult {
 
 async fn add_pet(user: &mut GooseUser) -> TransactionResult {
     let request_builder = user
-        .get_request_builder(&GooseMethod::Post, "pets")?
+        .get_request_builder(&GooseMethod::Post, "/pets")?
         .header("X-API-Key", "test123")
         .header("Content-Type", "application/json")
         .body(r#"{"name":"Fluffy","species":"dog"}"#);
@@ -133,7 +133,7 @@ async fn add_pet(user: &mut GooseUser) -> TransactionResult {
 
 async fn list_user_posts(user: &mut GooseUser) -> TransactionResult {
     let request_builder = user
-        .get_request_builder(&GooseMethod::Get, "users/abc-123/posts")?
+        .get_request_builder(&GooseMethod::Get, "/users/abc-123/posts")?
         .header("X-API-Key", "test123");
     let goose_request = GooseRequest::builder()
         .set_request_builder(request_builder)
@@ -144,7 +144,7 @@ async fn list_user_posts(user: &mut GooseUser) -> TransactionResult {
 
 async fn get_user_post(user: &mut GooseUser) -> TransactionResult {
     let request_builder = user
-        .get_request_builder(&GooseMethod::Get, "users/abc-123/posts/post1")?
+        .get_request_builder(&GooseMethod::Get, "/users/abc-123/posts/post1")?
         .header("X-API-Key", "test123");
     let goose_request = GooseRequest::builder()
         .set_request_builder(request_builder)
@@ -155,7 +155,7 @@ async fn get_user_post(user: &mut GooseUser) -> TransactionResult {
 
 async fn get_admin_settings(user: &mut GooseUser) -> TransactionResult {
     let request_builder = user
-        .get_request_builder(&GooseMethod::Get, "admin/settings")?
+        .get_request_builder(&GooseMethod::Get, "/admin/settings")?
         .header("X-API-Key", "test123");
     let goose_request = GooseRequest::builder()
         .set_request_builder(request_builder)
@@ -166,7 +166,7 @@ async fn get_admin_settings(user: &mut GooseUser) -> TransactionResult {
 
 async fn get_item(user: &mut GooseUser) -> TransactionResult {
     let request_builder = user
-        .get_request_builder(&GooseMethod::Get, "items/550e8400-e29b-41d4-a716-446655440000")?
+        .get_request_builder(&GooseMethod::Get, "/items/550e8400-e29b-41d4-a716-446655440000")?
         .header("X-API-Key", "test123");
     let goose_request = GooseRequest::builder()
         .set_request_builder(request_builder)
@@ -177,7 +177,7 @@ async fn get_item(user: &mut GooseUser) -> TransactionResult {
 
 async fn search_api(user: &mut GooseUser) -> TransactionResult {
     let request_builder = user
-        .get_request_builder(&GooseMethod::Get, "search?q=test&category=all&limit=10")?
+        .get_request_builder(&GooseMethod::Get, "/search?q=test&category=all&limit=10")?
         .header("X-API-Key", "test123");
     let goose_request = GooseRequest::builder()
         .set_request_builder(request_builder)
@@ -188,7 +188,7 @@ async fn search_api(user: &mut GooseUser) -> TransactionResult {
 
 async fn label_path(user: &mut GooseUser) -> TransactionResult {
     let request_builder = user
-        .get_request_builder(&GooseMethod::Get, "labels/.red")?
+        .get_request_builder(&GooseMethod::Get, "/labels/.red")?
         .header("X-API-Key", "test123");
     let goose_request = GooseRequest::builder()
         .set_request_builder(request_builder)
@@ -198,13 +198,13 @@ async fn label_path(user: &mut GooseUser) -> TransactionResult {
 }
 
 async fn test_swagger_ui(user: &mut GooseUser) -> TransactionResult {
-    user.get("docs").await?.response?.error_for_status()?;
+    user.get("/docs").await?.response?.error_for_status()?;
     Ok(())
 }
 
 async fn post_item(user: &mut GooseUser) -> TransactionResult {
     let request_builder = user
-        .get_request_builder(&GooseMethod::Post, "items/550e8400-e29b-41d4-a716-446655440000")?
+        .get_request_builder(&GooseMethod::Post, "/items/550e8400-e29b-41d4-a716-446655440000")?
         .header("X-API-Key", "test123")
         .header("Content-Type", "application/json")
         .body(r#"{"name":"New Item"}"#);
@@ -217,7 +217,7 @@ async fn post_item(user: &mut GooseUser) -> TransactionResult {
 
 async fn get_download(user: &mut GooseUser) -> TransactionResult {
     let request_builder = user
-        .get_request_builder(&GooseMethod::Get, "download/550e8400-e29b-41d4-a716-446655440000")?
+        .get_request_builder(&GooseMethod::Get, "/download/550e8400-e29b-41d4-a716-446655440000")?
         .header("X-API-Key", "test123");
     let goose_request = GooseRequest::builder()
         .set_request_builder(request_builder)
@@ -228,7 +228,7 @@ async fn get_download(user: &mut GooseUser) -> TransactionResult {
 
 async fn post_webhook(user: &mut GooseUser) -> TransactionResult {
     let request_builder = user
-        .get_request_builder(&GooseMethod::Post, "webhooks")?
+        .get_request_builder(&GooseMethod::Post, "/webhooks")?
         .header("X-API-Key", "test123")
         .header("Content-Type", "application/json")
         .body(r#"{"url":"https://example.com/webhook"}"#);
@@ -241,7 +241,7 @@ async fn post_webhook(user: &mut GooseUser) -> TransactionResult {
 
 async fn delete_user(user: &mut GooseUser) -> TransactionResult {
     let request_builder = user
-        .get_request_builder(&GooseMethod::Delete, "users/abc-123")?
+        .get_request_builder(&GooseMethod::Delete, "/users/abc-123")?
         .header("X-API-Key", "test123");
     let goose_request = GooseRequest::builder()
         .set_request_builder(request_builder)
@@ -278,7 +278,7 @@ impl Default for AdaptiveConfig {
             start_users: std::env::var("START_USERS")
                 .ok()
                 .and_then(|s| s.parse().ok())
-                .unwrap_or(4000), // Start low for better discovery
+                .unwrap_or(500), // Start low for better discovery
             max_users: std::env::var("MAX_USERS")
                 .ok()
                 .and_then(|s| s.parse().ok())
@@ -290,7 +290,7 @@ impl Default for AdaptiveConfig {
             hatch_rate: std::env::var("HATCH_RATE")
                 .ok()
                 .and_then(|s| s.parse().ok())
-                .unwrap_or(250), // Users spawned per second - higher for faster ramp
+                .unwrap_or(50), // Users spawned per second - higher for faster ramp
             stage_duration_secs: std::env::var("STAGE_DURATION")
                 .ok()
                 .and_then(|s| s.parse().ok())

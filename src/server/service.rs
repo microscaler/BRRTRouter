@@ -14,6 +14,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::sync::{Arc, RwLock};
+use std::time::Duration;
 use tracing::{info, warn};
 use crate::ids::RequestId;
 
@@ -33,6 +34,8 @@ pub struct AppService {
     pub security_providers: HashMap<String, Arc<dyn SecurityProvider>>,
     /// Optional metrics collection middleware
     pub metrics: Option<Arc<crate::middleware::MetricsMiddleware>>,
+    /// Optional memory tracking middleware
+    pub memory: Option<Arc<crate::middleware::MemoryMiddleware>>,
     /// Path to the OpenAPI specification file
     pub spec_path: PathBuf,
     /// Optional static file server for application files
@@ -79,6 +82,7 @@ impl Clone for AppService {
             security_schemes: self.security_schemes.clone(),
             security_providers: self.security_providers.clone(),
             metrics: self.metrics.clone(),
+            memory: self.memory.clone(),
             spec_path: self.spec_path.clone(),
             static_files: self.static_files.clone(),
             doc_files: self.doc_files.clone(),
@@ -131,6 +135,7 @@ impl AppService {
             security_schemes,
             security_providers: HashMap::new(),
             metrics: None,
+            memory: None,
             spec_path,
             static_files: static_dir.map(StaticFiles::new),
             doc_files: doc_dir.map(StaticFiles::new),
@@ -161,6 +166,17 @@ impl AppService {
     /// * `metrics` - Metrics middleware instance
     pub fn set_metrics_middleware(&mut self, metrics: Arc<MetricsMiddleware>) {
         self.metrics = Some(metrics);
+    }
+    
+    /// Set the memory tracking middleware
+    ///
+    /// Enables memory usage tracking and export to OpenTelemetry/Prometheus.
+    ///
+    /// # Arguments
+    ///
+    /// * `memory` - Memory middleware instance
+    pub fn set_memory_middleware(&mut self, memory: Arc<crate::middleware::MemoryMiddleware>) {
+        self.memory = Some(memory);
     }
 
     /// Configure HTTP/1.1 keep-alive headers to be sent on responses.
@@ -288,8 +304,9 @@ pub fn health_endpoint(res: &mut Response) -> io::Result<()> {
 /// - Active requests gauge
 /// - Request counts with status code labels (for error rate)
 /// - Request duration histogram (for p50/p95/p99 percentiles)
+/// - Memory usage metrics (RSS, heap, growth)
 /// - Legacy per-path metrics (backward compatible)
-pub fn metrics_endpoint(res: &mut Response, metrics: &MetricsMiddleware) -> io::Result<()> {
+pub fn metrics_endpoint(res: &mut Response, metrics: &MetricsMiddleware, memory: Option<&crate::middleware::MemoryMiddleware>) -> io::Result<()> {
     let (stack_size, used_stack) = metrics.stack_usage();
     let mut body = String::with_capacity(8192); // Pre-allocate for performance
 
@@ -351,6 +368,28 @@ pub fn metrics_endpoint(res: &mut Response, metrics: &MetricsMiddleware) -> io::
         metrics.auth_failures()
     ));
 
+    // Connection metrics
+    body.push_str("# HELP brrtrouter_connection_closes_total Total number of connection close events (client disconnects)\n");
+    body.push_str("# TYPE brrtrouter_connection_closes_total counter\n");
+    body.push_str(&format!(
+        "brrtrouter_connection_closes_total {}\n",
+        metrics.connection_closes()
+    ));
+
+    body.push_str("# HELP brrtrouter_connection_errors_total Total number of connection errors (broken pipe, reset, etc.)\n");
+    body.push_str("# TYPE brrtrouter_connection_errors_total counter\n");
+    body.push_str(&format!(
+        "brrtrouter_connection_errors_total {}\n",
+        metrics.connection_errors()
+    ));
+
+    body.push_str("# HELP brrtrouter_connection_health_ratio Ratio of successful requests to total connection events\n");
+    body.push_str("# TYPE brrtrouter_connection_health_ratio gauge\n");
+    body.push_str(&format!(
+        "brrtrouter_connection_health_ratio {:.4}\n",
+        metrics.connection_health_ratio()
+    ));
+
     body.push_str("# HELP brrtrouter_request_latency_seconds Average request latency in seconds\n");
     body.push_str("# TYPE brrtrouter_request_latency_seconds gauge\n");
     let avg = metrics.average_latency().as_secs_f64();
@@ -408,6 +447,12 @@ pub fn metrics_endpoint(res: &mut Response, metrics: &MetricsMiddleware) -> io::
         body.push_str(&format!(
             "brrtrouter_path_latency_seconds_max{{path=\"{escaped_path}\"}} {max_secs:.6}\n",
         ));
+    }
+    
+    // Add memory metrics if middleware is available
+    if let Some(memory_mw) = memory {
+        body.push_str("\n# Memory Metrics\n");
+        body.push_str(&memory_mw.export_metrics());
     }
 
     write_handler_response(
@@ -647,7 +692,7 @@ impl HttpService for AppService {
         }
         if method == "GET" && path == "/metrics" {
             if let Some(metrics) = &self.metrics {
-                return metrics_endpoint(res, metrics);
+                return metrics_endpoint(res, metrics, self.memory.as_deref());
             } else {
                 write_json_error(
                     res,
@@ -780,7 +825,30 @@ impl HttpService for AppService {
                             scopes = ?scopes,
                             "Provider validation start"
                         );
-                        if !provider.validate(scheme, scopes, &sec_req) {
+                        
+                        // Measure authentication/authorization performance
+                        let auth_start = std::time::Instant::now();
+                        let auth_result = provider.validate(scheme, scopes, &sec_req);
+                        let auth_duration = auth_start.elapsed();
+                        
+                        // Log slow authentication
+                        if auth_duration > Duration::from_millis(100) {
+                            warn!(
+                                provider_type = %scheme_name,
+                                duration_ms = auth_duration.as_millis(),
+                                success = auth_result,
+                                "Slow authentication detected"
+                            );
+                        } else {
+                            info!(
+                                provider_type = %scheme_name,
+                                duration_us = auth_duration.as_micros(),
+                                success = auth_result,
+                                "Authentication completed"
+                            );
+                        }
+                        
+                        if !auth_result {
                             // Detect insufficient scope for Bearer/OAuth2: token valid but scopes missing
                             match scheme {
                                 SecurityScheme::Http {

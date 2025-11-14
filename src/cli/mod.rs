@@ -82,4 +82,7 @@
 
 mod commands;
 
+#[cfg(test)]
+mod tests;
+
 pub use commands::{run_cli, Cli, Commands};

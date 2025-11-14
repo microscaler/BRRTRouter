@@ -1,6 +1,6 @@
 // User-owned controller for handler 'get_post'.
-use crate::brrtrouter::typed::TypedHandlerRequest;
 use crate::handlers::get_post::{Request, Response};
+use brrtrouter::typed::TypedHandlerRequest;
 use brrtrouter_macros::handler;
 
 #[handler(GetPostController)]

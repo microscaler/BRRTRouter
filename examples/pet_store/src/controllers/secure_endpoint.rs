@@ -1,6 +1,6 @@
 // User-owned controller for handler 'secure_endpoint'.
-use crate::brrtrouter::typed::TypedHandlerRequest;
 use crate::handlers::secure_endpoint::{Request, Response};
+use brrtrouter::typed::TypedHandlerRequest;
 use brrtrouter_macros::handler;
 
 #[handler(SecureEndpointController)]

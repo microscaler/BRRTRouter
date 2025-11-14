@@ -34,6 +34,10 @@ pub enum Commands {
         #[arg(short, long)]
         spec: PathBuf,
 
+        /// Output directory for generated project (default: examples/{slug})
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+
         /// Overwrite existing files without prompting
         #[arg(short, long, default_value_t = false)]
         force: bool,
@@ -45,6 +49,50 @@ pub enum Commands {
         /// Limit regeneration to specific parts (comma-separated or repeated)
         #[arg(long, value_enum, num_args = 1.., value_delimiter = ',')]
         only: Option<Vec<OnlyPart>>,
+    },
+    /// Generate implementation stubs in impl crate
+    /// 
+    /// Creates stub files for controllers in the {component}_impl crate.
+    /// Stubs are NOT auto-regenerated - they are user-owned once created.
+    /// Use --force to overwrite existing stubs (per-path basis).
+    GenerateStubs {
+        /// Path to the OpenAPI specification file (YAML or JSON)
+        #[arg(short, long)]
+        spec: PathBuf,
+        
+        /// Output directory for impl crate (e.g., crates/bff_impl)
+        #[arg(short, long)]
+        output: PathBuf,
+        
+        /// Generate stub for specific handler only (per-path basis)
+        #[arg(short, long)]
+        path: Option<String>,
+        
+        /// Overwrite existing stub files (required to regenerate)
+        #[arg(short, long, default_value_t = false)]
+        force: bool,
+    },
+    /// Lint an OpenAPI specification
+    ///
+    /// Checks the specification for common issues and best practices:
+    /// - operationId casing (must be snake_case)
+    /// - Schema format consistency
+    /// - Missing type definitions
+    /// - Schema completeness
+    /// - Missing operationId
+    /// - Schema reference resolution
+    Lint {
+        /// Path to the OpenAPI specification file (YAML or JSON)
+        #[arg(short, long)]
+        spec: PathBuf,
+
+        /// Exit with error code if any errors are found
+        #[arg(long, default_value_t = false)]
+        fail_on_error: bool,
+
+        /// Show only errors (hide warnings and info)
+        #[arg(long, default_value_t = false)]
+        errors_only: bool,
     },
     /// Run the server for a spec using echo handlers
     Serve {
@@ -95,6 +143,7 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
     match &cli.command {
         Commands::Generate {
             spec,
+            output,
             force,
             dry_run,
             only,
@@ -103,6 +152,7 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
             let scope = map_only_to_scope(only.as_deref());
             let project_dir = crate::generator::generate_project_with_options(
                 spec.as_path(),
+                output.as_deref(),
                 *force,
                 *dry_run,
                 &scope,
@@ -114,6 +164,45 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
                     eprintln!("cargo fmt failed: {e}");
                 }
             }
+            Ok(())
+        }
+        Commands::GenerateStubs {
+            spec,
+            output,
+            path,
+            force,
+        } => {
+            crate::generator::generate_impl_stubs(
+                spec.as_path(),
+                output.as_path(),
+                path.as_deref(),
+                *force,
+            )?;
+            Ok(())
+        }
+        Commands::Lint {
+            spec,
+            fail_on_error,
+            errors_only,
+        } => {
+            let issues = crate::linter::lint_spec(spec.as_path())?;
+            
+            if *errors_only {
+                let errors: Vec<_> = issues.iter()
+                    .filter(|i| i.severity == crate::linter::LintSeverity::Error)
+                    .cloned()
+                    .collect();
+                crate::linter::print_lint_issues(&errors);
+                if *fail_on_error && !errors.is_empty() {
+                    crate::linter::fail_if_errors(&errors);
+                }
+            } else {
+                crate::linter::print_lint_issues(&issues);
+                if *fail_on_error {
+                    crate::linter::fail_if_errors(&issues);
+                }
+            }
+            
             Ok(())
         }
         Commands::Serve { spec, watch, addr } => {

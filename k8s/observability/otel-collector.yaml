@@ -100,11 +100,11 @@ spec:
               mountPath: /conf
           resources:
             requests:
-              memory: "128Mi"
-              cpu: "100m"
+              memory: "64Mi"
+              cpu: "50m"
             limits:
-              memory: "512Mi"
-              cpu: "500m"
+              memory: "256Mi"
+              cpu: "200m"
       volumes:
         - name: config
           configMap:
@@ -118,21 +118,24 @@ metadata:
   labels:
     app: otel-collector
 spec:
-  type: ClusterIP
+  type: NodePort
   ports:
     # OTLP gRPC
     - port: 4317
       targetPort: otlp-grpc
+      nodePort: 31417
       protocol: TCP
       name: otlp-grpc
     # OTLP HTTP
     - port: 4318
       targetPort: otlp-http
+      nodePort: 31418
       protocol: TCP
       name: otlp-http
     # Prometheus metrics
     - port: 8889
       targetPort: prometheus
+      nodePort: 31889
       protocol: TCP
       name: prometheus
   selector:

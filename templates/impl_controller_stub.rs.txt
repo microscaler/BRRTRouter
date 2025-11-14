@@ -1,0 +1,49 @@
+{# impl_controller_stub.rs.txt #}
+// Implementation stub for handler '{{ handler_name }}'
+// This file is a starting point for your implementation.
+// You can modify this file freely - it will NOT be auto-regenerated.
+// To regenerate this stub, use: brrtrouter-gen generate-stubs --path {{ handler_name }} --force
+
+use brrtrouter_macros::handler;
+use {{ crate_name }}::handlers::{{ handler_name }}::{Request, Response};
+use brrtrouter::typed::TypedHandlerRequest;
+{% if sse %}use brrtrouter::sse;{% endif %}
+{% if imports.len() > 0 %}
+{% for import in imports -%}
+#[allow(unused_imports)]
+use {{ crate_name }}::handlers::types::{{ import }};
+{% endfor %}
+{% endif %}
+
+#[handler({{ struct_name }})]
+pub fn handle(req: TypedHandlerRequest<Request>) -> Response {
+    // TODO: Implement your business logic here
+    // 
+    // Example: Access request data
+    {% for field in request_fields -%}
+    // let {{ field.name }} = req.inner.{{ field.name }};
+    {% endfor %}
+    // 
+    // Example: Database query, validation, etc.
+    // let result = your_service.process(&req.inner)?;
+    // 
+    // Example: Return response
+    {% if sse %}
+    // TODO: Implement Server-Sent Events logic
+    let (tx, rx) = sse::channel();
+    // Your SSE implementation here
+    // Example: tx.send("data".to_string());
+    drop(tx);
+    Response(rx.collect())
+    {% elif response_is_array %}
+    // TODO: Return array of items from your business logic
+    Response({{ response_array_literal }})
+    {% else %}
+    Response {
+        {% for field in response_fields -%}
+        {{ field.name }}: {% if field.optional %}None{% else %}{{ field.value }}{% endif %},  // TODO: Set from your business logic
+        {% endfor %}
+    }
+    {% endif %}
+}
+
