@@ -106,7 +106,7 @@ pub fn lint_spec(spec_path: &Path) -> anyhow::Result<Vec<LintIssue>> {
     // Collect all defined schema names
     let mut defined_schemas = HashSet::new();
     if let Some(components) = spec.components.as_ref() {
-        for (name, _) in &components.schemas {
+        for name in components.schemas.keys() {
             defined_schemas.insert(name.clone());
         }
     }
@@ -212,7 +212,9 @@ fn lint_operation(
         return; // Can't check casing if no operationId
     }
 
-    let operation_id = operation.operation_id.as_ref().unwrap();
+    // Safe to unwrap here because we already checked is_none() and returned early above
+    let operation_id = operation.operation_id.as_ref()
+        .expect("operation_id should be Some - we checked and returned early if None");
 
     // Check operationId casing (must be snake_case)
     if !is_snake_case(operation_id) {
@@ -246,7 +248,7 @@ fn lint_request_body(
     spec: &OpenApiV3Spec,
     issues: &mut Vec<LintIssue>,
     path_context: &str,
-    operation_location: &str,
+    _operation_location: &str,
     request_body: &oas3::spec::ObjectOrReference<oas3::spec::RequestBody>,
     defined_schemas: &HashSet<String>,
 ) {
@@ -265,7 +267,7 @@ fn lint_request_body(
         }
     };
 
-    for (_content_type, media_type) in &body.content {
+    for media_type in body.content.values() {
         if let Some(schema_ref) = &media_type.schema {
             lint_schema_ref(spec, issues, &format!("{} (requestBody)", path_context), schema_ref, defined_schemas);
         }
@@ -277,7 +279,7 @@ fn lint_response(
     spec: &OpenApiV3Spec,
     issues: &mut Vec<LintIssue>,
     path_context: &str,
-    operation_location: &str,
+    _operation_location: &str,
     status_code: &str,
     response: &oas3::spec::ObjectOrReference<oas3::spec::Response>,
     defined_schemas: &HashSet<String>,
@@ -297,7 +299,7 @@ fn lint_response(
         }
     };
 
-    for (_content_type, media_type) in &resp.content {
+    for media_type in resp.content.values() {
         if let Some(schema_ref) = &media_type.schema {
             lint_schema_ref(spec, issues, &format!("{} (response {})", path_context, status_code), schema_ref, defined_schemas);
         }
@@ -407,7 +409,7 @@ fn lint_schema_object(
             if let Some(name) = ref_path.strip_prefix("#/components/schemas/") {
                 if !defined_schemas.contains(name) {
                     issues.push(LintIssue::new(
-                        &format!("{}.items", location),
+                        format!("{}.items", location),
                         LintSeverity::Error,
                         "missing_schema_ref",
                         format!("items $ref '{}' not found", name),
@@ -425,7 +427,7 @@ fn lint_schema_object(
                     if let Some(name) = ref_path.strip_prefix("#/components/schemas/") {
                         if !defined_schemas.contains(name) {
                             issues.push(LintIssue::new(
-                                &format!("{}.allOf[{}]", location, idx),
+                                format!("{}.allOf[{}]", location, idx),
                                 LintSeverity::Error,
                                 "missing_schema_ref",
                                 format!("allOf reference '{}' not found", name),
@@ -500,9 +502,9 @@ pub(crate) fn is_snake_case(s: &str) -> bool {
 /// Convert a string to snake_case
 pub(crate) fn to_snake_case(s: &str) -> String {
     let mut result = String::new();
-    let mut chars = s.chars().peekable();
+    let chars = s.chars().peekable();
     
-    while let Some(ch) = chars.next() {
+    for ch in chars {
         if ch.is_uppercase() {
             if !result.is_empty() && !result.ends_with('_') {
                 result.push('_');

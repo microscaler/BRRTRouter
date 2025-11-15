@@ -51,7 +51,16 @@ pub fn write_handler_response(
         }
         other => {
             res.header("Content-Type: application/json");
-            res.body_vec(serde_json::to_vec(&other).unwrap());
+            // Serialize to JSON - if this fails, use fallback error response
+            match serde_json::to_vec(&other) {
+                Ok(json_bytes) => res.body_vec(json_bytes),
+                Err(e) => {
+                    // Serialization failed - send error message as plain text
+                    res.status_code(500, "Internal Server Error");
+                    res.header("Content-Type: text/plain");
+                    res.body_vec(format!("Failed to serialize response: {}", e).into_bytes());
+                }
+            }
         }
     }
 }

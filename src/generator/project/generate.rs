@@ -130,7 +130,9 @@ pub fn generate_project_with_options(
     let mut created: Vec<String> = Vec::new();
     let mut updated: Vec<String> = Vec::new();
     let mut skipped: Vec<String> = Vec::new();
-    let (mut routes, slug) = load_spec(spec_path.to_str().unwrap())?;
+    let spec_str = spec_path.to_str()
+        .ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 in spec path"))?;
+    let (mut routes, slug) = load_spec(spec_str)?;
     let base_dir = output_dir
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| Path::new("examples").join(&slug));
@@ -527,7 +529,9 @@ pub fn generate_impl_stubs(
     };
 
     // Load spec
-    let (routes, _slug) = load_spec(spec_path.to_str().unwrap())?;
+    let spec_str = spec_path.to_str()
+        .ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 in spec path"))?;
+    let (routes, _slug) = load_spec(spec_str)?;
 
     // Derive component name from output directory
     let component_name = impl_output_dir
@@ -621,18 +625,18 @@ pub fn generate_impl_stubs(
             );
         }
 
-        write_impl_controller_stub(
-            &stub_path,
-            &handler,
-            &format!("{}Controller", to_camel_case(&handler)),
-            component_name,
-            &request_fields,
-            &response_fields,
-            &imports,
-            route.sse,
-            route.example.clone(),
+        write_impl_controller_stub(crate::generator::templates::ImplControllerStubParams {
+            path: &stub_path,
+            handler: &handler,
+            struct_name: &format!("{}Controller", to_camel_case(&handler)),
+            crate_name: component_name,
+            req_fields: &request_fields,
+            res_fields: &response_fields,
+            imports: &imports,
+            sse: route.sse,
+            example: route.example.clone(),
             force,
-        )?;
+        })?;
 
         if existed && force {
             overwritten.push(handler.clone());

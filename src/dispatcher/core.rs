@@ -135,13 +135,29 @@ impl Dispatcher {
 
     /// Registers a handler function that will process incoming requests with the given name.
     ///
+    /// Spawns a coroutine that processes requests from a channel. The handler is automatically
+    /// wrapped with panic recovery to prevent one failing handler from crashing the server.
+    ///
     /// # Safety
     ///
-    /// The caller must ensure that the provided handler function is safe to execute in a
-    /// concurrent context and properly handles all requests without panicking. The handler
-    /// will run in a separate coroutine and must properly manage its own resources.
-    /// Additionally, the handler must send a response through the reply channel for every
-    /// request it receives to avoid resource leaks.
+    /// This function is marked unsafe because it calls `may::coroutine::Builder::spawn()`,
+    /// which is unsafe in the `may` runtime. The unsafety comes from the coroutine runtime's
+    /// requirements, not from this function's logic.
+    ///
+    /// The caller must ensure:
+    /// - The May coroutine runtime is properly initialized before calling this
+    /// - The handler sends a response through the reply channel for every request (to avoid resource leaks)
+    ///
+    /// # Handler Requirements
+    ///
+    /// The handler function should:
+    /// - Be safe to execute in a concurrent context
+    /// - Avoid long-running synchronous operations that could block the coroutine
+    /// - Send exactly one response per request
+    ///
+    /// # Panics
+    ///
+    /// Handler panics are caught and converted to 500 error responses automatically.
     ///
     pub unsafe fn register_handler<F>(&mut self, name: &str, handler_fn: F)
     where
