@@ -9,8 +9,8 @@ use tracing::{debug, info, warn};
 /// Contains the matched route metadata and extracted parameters.
 #[derive(Debug, Clone)]
 pub struct RouteMatch {
-    /// The matched route metadata from the OpenAPI spec
-    pub route: RouteMeta,
+    /// The matched route metadata from the OpenAPI spec (Arc to avoid expensive clones)
+    pub route: std::sync::Arc<RouteMeta>,
     /// Path parameters extracted from the URL (e.g., `{id}` → `{"id": "123"}`)
     pub path_params: HashMap<String, String>,
     /// Name of the handler that should process this request
@@ -32,7 +32,7 @@ pub struct RouteMatch {
 #[derive(Clone)]
 pub struct Router {
     /// List of routes: (method, regex, metadata, param_names)
-    routes: Vec<(Method, Regex, RouteMeta, Vec<String>)>,
+    routes: Vec<(Method, Regex, std::sync::Arc<RouteMeta>, Vec<String>)>,
     /// Base path prefix for all routes (e.g., `/api/v1`)
     #[allow(dead_code)]
     base_path: String,
@@ -108,7 +108,8 @@ impl Router {
             .map(|route| {
                 let full_path = format!("{}{}", base_path, route.path_pattern);
                 let (regex, param_names) = Self::path_to_regex(&full_path);
-                (route.method.clone(), regex, route, param_names)
+                let method = route.method.clone();
+                (method, regex, std::sync::Arc::new(route), param_names)
             })
             .collect();
 
@@ -234,7 +235,7 @@ impl Router {
                 }
 
                 return Some(RouteMatch {
-                    route: route.clone(),
+                    route: std::sync::Arc::clone(route),
                     path_params: params,
                     handler_name: route.handler_name.clone(),
                     query_params: Default::default(),
