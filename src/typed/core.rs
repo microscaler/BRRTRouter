@@ -101,13 +101,22 @@ where
                 // COMPLEX PANIC HANDLING: Wrap entire request processing in catch_unwind
                 // This prevents a panicking handler from killing the entire coroutine
                 // and allows us to send a 500 error response instead
+                //
+                // OPTIMIZATION: Move owned `req` into closure to avoid per-request clone.
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     // Clone reply_tx for use inside the closure (different scope)
                     let reply_tx_inner = reply_tx.clone();
 
                     // STEP 1: Type conversion - HandlerRequest → H::Request
                     // This validates the request data against the handler's expected type
-                    let data = match H::Request::try_from(req.clone()) {
+                    // OPTIMIZATION: Consume `req` instead of cloning it (req.clone() removed)
+                    let method = req.method.clone();
+                    let path = req.path.clone();
+                    let handler_name_owned = req.handler_name.clone();
+                    let path_params = req.path_params.clone();
+                    let query_params = req.query_params.clone();
+
+                    let data = match H::Request::try_from(req) {
                         Ok(v) => v,
                         Err(err) => {
                             // Validation failed - send 400 Bad Request
@@ -126,11 +135,11 @@ where
 
                     // STEP 2: Build typed request with validated data
                     let typed_req = TypedHandlerRequest {
-                        method: req.method,
-                        path: req.path,
-                        handler_name: req.handler_name,
-                        path_params: req.path_params,
-                        query_params: req.query_params,
+                        method,
+                        path,
+                        handler_name: handler_name_owned,
+                        path_params,
+                        query_params,
                         data, // Strongly-typed request data
                     };
 
@@ -203,14 +212,22 @@ where
     T: TryFrom<HandlerRequest, Error = anyhow::Error>,
 {
     fn from_handler(req: HandlerRequest) -> Result<TypedHandlerRequest<T>> {
-        let data = T::try_from(req.clone())?;
+        // Extract metadata before consuming req in T::try_from
+        let method = req.method.clone();
+        let path = req.path.clone();
+        let handler_name = req.handler_name.clone();
+        let path_params = req.path_params.clone();
+        let query_params = req.query_params.clone();
+
+        // Consume req to get typed data (avoid clone)
+        let data = T::try_from(req)?;
 
         Ok(TypedHandlerRequest {
-            method: req.method,
-            path: req.path,
-            handler_name: req.handler_name,
-            path_params: req.path_params,
-            query_params: req.query_params,
+            method,
+            path,
+            handler_name,
+            path_params,
+            query_params,
             data,
         })
     }
