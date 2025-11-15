@@ -81,6 +81,12 @@ struct PathMetrics {
     min_latency_ns: AtomicU64,
 }
 
+/// Type alias for path metrics storage
+type PathMetricsMap = HashMap<Cow<'static, str>, Arc<PathMetrics>>;
+
+/// Type alias for status metrics storage
+type StatusMetricsMap = HashMap<(Cow<'static, str>, u16), AtomicUsize>;
+
 impl PathMetrics {
     fn new() -> Self {
         Self {
@@ -150,9 +156,9 @@ pub struct MetricsMiddleware {
     /// Active requests currently being processed (incremented on start, decremented on completion)
     active_requests: AtomicI64,
     /// Per-path metrics for detailed monitoring
-    path_metrics: Arc<RwLock<HashMap<Cow<'static, str>, Arc<PathMetrics>>>>,
+    path_metrics: Arc<RwLock<PathMetricsMap>>,
     /// Per-(path, status) request counts for status code tracking
-    status_metrics: Arc<RwLock<HashMap<(Cow<'static, str>, u16), AtomicUsize>>>,
+    status_metrics: Arc<RwLock<StatusMetricsMap>>,
     /// Histogram for request duration (for percentile calculations)
     duration_histogram: Arc<HistogramMetric>,
     /// Connection close events (client disconnects, timeouts, etc.)
