@@ -1,4 +1,6 @@
-// typed.rs
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! Typed handler runtime helpers - optimized to avoid per-request cloning
+
 #[allow(unused_imports)]
 use crate::dispatcher::{Dispatcher, HandlerRequest, HandlerResponse};
 use anyhow::Result;
