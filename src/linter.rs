@@ -212,7 +212,9 @@ fn lint_operation(
         return; // Can't check casing if no operationId
     }
 
-    let operation_id = operation.operation_id.as_ref().unwrap();
+    // Safe to unwrap here because we already checked is_none() and returned early above
+    let operation_id = operation.operation_id.as_ref()
+        .expect("operation_id should be Some - we checked and returned early if None");
 
     // Check operationId casing (must be snake_case)
     if !is_snake_case(operation_id) {

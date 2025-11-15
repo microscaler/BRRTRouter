@@ -180,7 +180,8 @@ impl BearerJwtProvider {
         if header.is_none() || payload.is_none() || sig != Some(self.signature.as_str()) {
             return false;
         }
-        let payload_bytes = match general_purpose::STANDARD.decode(payload.unwrap()) {
+        // Safe to unwrap here because we checked is_none() above
+        let payload_bytes = match general_purpose::STANDARD.decode(payload.expect("payload already validated as Some")) {
             Ok(b) => b,
             Err(_) => return false,
         };
@@ -434,7 +435,8 @@ impl JwksBearerProvider {
     }
 
     fn refresh_jwks_if_needed(&self) {
-        let mut guard = self.cache.lock().unwrap();
+        let mut guard = self.cache.lock()
+            .expect("JWKS cache Mutex poisoned - critical error");
         let (last, map) = &mut *guard;
         if last.elapsed() < self.cache_ttl && !map.is_empty() {
             return;
@@ -511,13 +513,15 @@ impl JwksBearerProvider {
                 // Unsupported kty/alg combinations are skipped
             }
         }
-        let mut guard = self.cache.lock().unwrap();
+        let mut guard = self.cache.lock()
+            .expect("JWKS cache Mutex poisoned - critical error");
         *guard = (Instant::now(), new_map);
     }
 
     fn get_key_for(&self, kid: &str) -> Option<jsonwebtoken::DecodingKey> {
         self.refresh_jwks_if_needed();
-        let guard = self.cache.lock().unwrap();
+        let guard = self.cache.lock()
+            .expect("JWKS cache Mutex poisoned - critical error");
         guard.1.get(kid).cloned()
     }
 }
@@ -814,7 +818,9 @@ impl SecurityProvider for RemoteApiKeyProvider {
             None => return false,
         };
         // Cache lookup
-        if let Some((ts, ok)) = self.cache.lock().unwrap().get(key).cloned() {
+        if let Some((ts, ok)) = self.cache.lock()
+            .expect("API key cache Mutex poisoned - critical error")
+            .get(key).cloned() {
             if ts.elapsed() < self.cache_ttl {
                 return ok;
             }
@@ -832,7 +838,7 @@ impl SecurityProvider for RemoteApiKeyProvider {
         };
         self.cache
             .lock()
-            .unwrap()
+            .expect("API key cache Mutex poisoned - critical error")
             .insert(key.to_string(), (Instant::now(), ok));
         ok
     }

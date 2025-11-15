@@ -148,7 +148,9 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
             dry_run,
             only,
         } => {
-            let (_routes, _slug) = load_spec(spec.to_str().unwrap())?;
+            let spec_path = spec.to_str()
+                .ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 in spec path"))?;
+            let (_routes, _slug) = load_spec(spec_path)?;
             let scope = map_only_to_scope(only.as_deref());
             let project_dir = crate::generator::generate_project_with_options(
                 spec.as_path(),
@@ -206,7 +208,9 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
             Ok(())
         }
         Commands::Serve { spec, watch, addr } => {
-            let (routes, schemes, _slug) = crate::spec::load_spec_full(spec.to_str().unwrap())?;
+            let spec_path = spec.to_str()
+                .ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 in spec path"))?;
+            let (routes, schemes, _slug) = crate::spec::load_spec_full(spec_path)?;
             let router = Arc::new(RwLock::new(Router::new(routes.clone())));
             let mut dispatcher = Dispatcher::new();
             for r in &routes {

@@ -739,8 +739,11 @@ impl HttpService for AppService {
         let canonical_req_id = RequestId::from_header_or_new(inbound_req_id);
 
         let route_opt = {
-            let router = self.router.read().unwrap();
-            router.route(method.parse().unwrap(), &path)
+            let router = self.router.read()
+                .expect("router RwLock poisoned - critical error");
+            let http_method = method.parse()
+                .expect("invalid HTTP method - should be validated earlier");
+            router.route(http_method, &path)
         };
         if let Some(mut route_match) = route_opt {
             route_match.query_params = query_params.clone();
@@ -1034,7 +1037,8 @@ impl HttpService for AppService {
             }
 
             let handler_response = {
-                let dispatcher = self.dispatcher.read().unwrap();
+                let dispatcher = self.dispatcher.read()
+                    .expect("dispatcher RwLock poisoned - critical error");
                 // Determine or generate request id to pass into dispatcher
                 let req_id = _request_logger
                     .request_id

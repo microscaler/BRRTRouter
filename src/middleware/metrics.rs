@@ -292,14 +292,16 @@ impl MetricsMiddleware {
                 } else {
                     drop(map); // Release read lock before upgrading
                                // Slow path: need to create new entry
-                    let mut map = self.path_metrics.write().unwrap();
+                    let mut map = self.path_metrics.write()
+                        .expect("metrics RwLock poisoned - critical error");
                     map.entry(path.to_string())
                         .or_insert_with(|| Arc::new(PathMetrics::new()))
                         .clone()
                 }
             } else {
                 // Fallback if read lock fails
-                let mut map = self.path_metrics.write().unwrap();
+                let mut map = self.path_metrics.write()
+                    .expect("metrics RwLock poisoned - critical error");
                 map.entry(path.to_string())
                     .or_insert_with(|| Arc::new(PathMetrics::new()))
                     .clone()
@@ -314,7 +316,8 @@ impl MetricsMiddleware {
     /// Returns a snapshot of metrics for all paths that have been accessed.
     /// The returned HashMap maps path -> (count, avg_latency_ns, min_ns, max_ns).
     pub fn path_stats(&self) -> HashMap<String, (usize, u64, u64, u64)> {
-        let map = self.path_metrics.read().unwrap();
+        let map = self.path_metrics.read()
+            .expect("metrics RwLock poisoned - critical error");
         map.iter()
             .map(|(path, pm)| {
                 let count = pm.count.load(Ordering::Relaxed);
@@ -336,7 +339,8 @@ impl MetricsMiddleware {
     ///
     /// Returns a HashMap mapping (path, status_code) -> count
     pub fn status_stats(&self) -> HashMap<(String, u16), usize> {
-        let map = self.status_metrics.read().unwrap();
+        let map = self.status_metrics.read()
+            .expect("metrics RwLock poisoned - critical error");
         map.iter()
             .map(|((path, status), count)| {
                 ((path.clone(), *status), count.load(Ordering::Relaxed))
@@ -362,12 +366,14 @@ impl MetricsMiddleware {
     /// Record status code for a request
     fn record_status(&self, path: &str, status: u16) {
         let key = (path.to_string(), status);
-        let map = self.status_metrics.read().unwrap();
+        let map = self.status_metrics.read()
+            .expect("metrics RwLock poisoned - critical error");
         if let Some(counter) = map.get(&key) {
             counter.fetch_add(1, Ordering::Relaxed);
         } else {
             drop(map);
-            let mut map = self.status_metrics.write().unwrap();
+            let mut map = self.status_metrics.write()
+                .expect("metrics RwLock poisoned - critical error");
             map.entry(key)
                 .or_insert_with(|| AtomicUsize::new(0))
                 .fetch_add(1, Ordering::Relaxed);
