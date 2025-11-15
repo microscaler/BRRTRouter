@@ -307,22 +307,20 @@ impl Dispatcher {
     ) -> Option<HandlerResponse> {
         let (reply_tx, reply_rx) = mpsc::channel();
 
-        let handler_name = &route_match.handler_name;
-
         // D1: Handler lookup
         debug!(
-            handler_name = %handler_name,
+            handler_name = %route_match.handler_name,
             available_handlers = self.handlers.len(),
             "Handler lookup"
         );
 
-        let tx = match self.handlers.get(handler_name) {
+        let tx = match self.handlers.get(&route_match.handler_name) {
             Some(tx) => tx,
             None => {
                 // D2: Handler not found - CRITICAL ERROR
                 let available_handlers: Vec<&String> = self.handlers.keys().collect();
                 error!(
-                    handler_name = %handler_name,
+                    handler_name = %route_match.handler_name,
                     available_handlers = ?available_handlers,
                     "Handler not found - CRITICAL"
                 );
@@ -334,9 +332,9 @@ impl Dispatcher {
             request_id: request_id.parse().unwrap_or_else(|_| RequestId::new()),
             method: route_match.route.method.clone(),
             path: route_match.route.path_pattern.clone(),
-            handler_name: handler_name.clone(),
-            path_params: route_match.path_params.clone(),
-            query_params: route_match.query_params.clone(),
+            handler_name: route_match.handler_name,
+            path_params: route_match.path_params,
+            query_params: route_match.query_params,
             headers,
             cookies,
             body,
@@ -374,7 +372,7 @@ impl Dispatcher {
             // D3: Request dispatched to handler
             info!(
                 request_id = %request_id,
-                handler_name = %handler_name,
+                handler_name = %request.handler_name,
                 method = %request.method,
                 path = %request.path,
                 "Request dispatched to handler"
@@ -386,7 +384,7 @@ impl Dispatcher {
             if let Err(e) = tx.send(request.clone()) {
                 error!(
                     request_id = %request_id,
-                    handler_name = %handler_name,
+                    handler_name = %request.handler_name,
                     error = %e,
                     "Failed to send request to handler"
                 );
@@ -396,7 +394,7 @@ impl Dispatcher {
             // D6: Waiting for handler response
             debug!(
                 request_id = %request_id,
-                handler_name = %handler_name,
+                handler_name = %request.handler_name,
                 "Waiting for handler response"
             );
 
@@ -408,7 +406,7 @@ impl Dispatcher {
                     let elapsed = start.elapsed();
                     info!(
                         request_id = %request_id,
-                        handler_name = %handler_name,
+                        handler_name = %request.handler_name,
                         latency_ms = elapsed.as_millis() as u64,
                         status = response.status,
                         "Handler response received"
@@ -420,7 +418,7 @@ impl Dispatcher {
                     let elapsed = start.elapsed();
                     error!(
                         request_id = %request_id,
-                        handler_name = %handler_name,
+                        handler_name = %request.handler_name,
                         elapsed_ms = elapsed.as_millis() as u64,
                         error = %e,
                         "Handler channel closed - handler may have crashed"
@@ -433,7 +431,7 @@ impl Dispatcher {
                         headers: HashMap::new(),
                         body: serde_json::json!({
                             "error": "Service unavailable",
-                            "details": format!("Handler '{}' is not responding - possible crash or resource exhaustion", handler_name),
+                            "details": format!("Handler '{}' is not responding - possible crash or resource exhaustion", request.handler_name),
                             "request_id": request_id,
                         }),
                     });
