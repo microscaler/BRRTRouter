@@ -101,24 +101,26 @@ impl Dispatcher {
     /// replaced. The old sender will be dropped, which closes its channel and
     /// causes the old handler coroutine to exit when it tries to receive.
     pub fn add_route(&mut self, route: RouteMeta, sender: HandlerSender) {
+        let handler_name = route.handler_name;
+        
         // Check if we're replacing an existing handler
-        if let Some(old_sender) = self.handlers.remove(&route.handler_name) {
+        if let Some(old_sender) = self.handlers.remove(&handler_name) {
             // Drop the old sender explicitly to ensure the channel closes
             drop(old_sender);
             warn!(
-                handler_name = %route.handler_name,
+                handler_name = %handler_name,
                 total_handlers = self.handlers.len(),
                 "Replaced existing handler - old coroutine will exit"
             );
         }
         
-        self.handlers.insert(route.handler_name.clone(), sender);
-        
         info!(
-            handler_name = %route.handler_name,
+            handler_name = %handler_name,
             total_handlers = self.handlers.len() + 1,
             "Handler registered successfully"
         );
+        
+        self.handlers.insert(handler_name, sender);
     }
 
     /// Add middleware to the processing pipeline

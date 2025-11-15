@@ -108,7 +108,8 @@ impl Router {
             .map(|route| {
                 let full_path = format!("{}{}", base_path, route.path_pattern);
                 let (regex, param_names) = Self::path_to_regex(&full_path);
-                (route.method.clone(), regex, std::sync::Arc::new(route), param_names)
+                let method = route.method.clone();
+                (method, regex, std::sync::Arc::new(route), param_names)
             })
             .collect();
 
