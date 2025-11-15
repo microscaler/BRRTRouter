@@ -45,14 +45,28 @@ pub trait TypedHandlerFor<T>: Sized {
 
 /// Spawn a typed handler coroutine and return a sender to communicate with it.
 ///
+/// Creates a coroutine that processes incoming requests with automatic type conversion
+/// and validation. Panics in handlers are caught and converted to 500 error responses.
+///
 /// # Safety
 ///
-/// This function is unsafe because it spawns a coroutine that will run indefinitely
-/// and handle requests. The caller must ensure that:
-/// - The handler is safe to execute in a concurrent context
-/// - The handler properly handles all requests without panicking
-/// - The handler sends a response for every request to avoid resource leaks
-/// - The May coroutine runtime is properly initialized
+/// This function is marked unsafe because it calls `may::coroutine::Builder::spawn()`,
+/// which is unsafe in the `may` runtime. The unsafety comes from the coroutine runtime's
+/// requirements, not from this function's logic.
+///
+/// The caller must ensure the May coroutine runtime is properly initialized.
+///
+/// # Handler Requirements
+///
+/// The handler must:
+/// - Implement the `Handler` trait with typed request/response types
+/// - Be safe to execute in a concurrent context
+/// - Avoid long-running synchronous operations that could block the coroutine
+///
+/// # Panics
+///
+/// Handler panics are automatically caught and converted to 500 error responses.
+/// The coroutine will continue processing subsequent requests.
 pub unsafe fn spawn_typed<H>(handler: H) -> mpsc::Sender<HandlerRequest>
 where
     H: Handler + Send + 'static,
@@ -206,14 +220,24 @@ impl Dispatcher {
     /// Register a typed handler that converts [`HandlerRequest`] into the handler's
     /// associated request type using `TryFrom`.
     ///
+    /// This spawns a coroutine that automatically validates incoming requests against
+    /// the handler's expected type and converts them. Invalid requests receive a 400
+    /// Bad Request response automatically.
+    ///
     /// # Safety
     ///
-    /// This function is unsafe because it internally calls `spawn_typed` which spawns
-    /// a coroutine. The caller must ensure the same safety requirements as `spawn_typed`:
-    /// - The handler is safe to execute in a concurrent context
-    /// - The handler properly handles all requests without panicking
-    /// - The handler sends a response for every request to avoid resource leaks
-    /// - The May coroutine runtime is properly initialized
+    /// This function is marked unsafe because it internally calls `spawn_typed()` which
+    /// uses `may::coroutine::Builder::spawn()`. The unsafety comes from the coroutine
+    /// runtime's requirements.
+    ///
+    /// The caller must ensure the May coroutine runtime is properly initialized.
+    ///
+    /// # Handler Requirements
+    ///
+    /// The handler must:
+    /// - Implement the `Handler` trait with typed request/response types
+    /// - Be safe to execute in a concurrent context
+    /// - Avoid long-running synchronous operations
     pub unsafe fn register_typed<H>(&mut self, name: &str, handler: H)
     where
         H: Handler + Send + 'static,
