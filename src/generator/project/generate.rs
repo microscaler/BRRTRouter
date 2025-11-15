@@ -621,18 +621,18 @@ pub fn generate_impl_stubs(
             );
         }
 
-        write_impl_controller_stub(
-            &stub_path,
-            &handler,
-            &format!("{}Controller", to_camel_case(&handler)),
-            component_name,
-            &request_fields,
-            &response_fields,
-            &imports,
-            route.sse,
-            route.example.clone(),
+        write_impl_controller_stub(crate::generator::templates::ImplControllerStubParams {
+            path: &stub_path,
+            handler: &handler,
+            struct_name: &format!("{}Controller", to_camel_case(&handler)),
+            crate_name: component_name,
+            req_fields: &request_fields,
+            res_fields: &response_fields,
+            imports: &imports,
+            sse: route.sse,
+            example: route.example.clone(),
             force,
-        )?;
+        })?;
 
         if existed && force {
             overwritten.push(handler.clone());

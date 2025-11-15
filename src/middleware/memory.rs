@@ -107,10 +107,12 @@ pub struct MemoryMiddleware {
 #[derive(Debug, Clone, Default)]
 struct HandlerMemoryStats {
     /// Total memory allocated by this handler
+    #[allow(dead_code)]
     total_allocated: u64,
     /// Number of invocations
     invocations: u64,
     /// Peak memory usage
+    #[allow(dead_code)]
     peak_usage: u64,
 }
 
@@ -296,7 +298,7 @@ impl Middleware for MemoryMiddleware {
         let mut handler_stats = self.handler_memory.write().unwrap();
         let stats = handler_stats
             .entry(req.handler_name.clone())
-            .or_insert_with(HandlerMemoryStats::default);
+            .or_default();
         
         stats.invocations += 1;
         
@@ -306,7 +308,7 @@ impl Middleware for MemoryMiddleware {
         // aggregate level.
         
         // Periodic logging (every 100 requests)
-        if self.measurements.load(Ordering::Relaxed) % 100 == 0 {
+        if self.measurements.load(Ordering::Relaxed).is_multiple_of(100) {
             self.log_stats();
         }
     }
