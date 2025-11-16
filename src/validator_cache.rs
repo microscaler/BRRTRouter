@@ -221,6 +221,61 @@ impl ValidatorCache {
         cache.clear();
         info!("Schema validator cache cleared");
     }
+
+    /// Pre-compile and cache all schemas from routes at startup
+    ///
+    /// This method compiles all request and response schemas from the given routes
+    /// and stores them in the cache. This eliminates compilation overhead during
+    /// the first requests and ensures all schemas are valid at startup.
+    ///
+    /// # Arguments
+    ///
+    /// * `routes` - List of route metadata from the OpenAPI spec
+    ///
+    /// # Returns
+    ///
+    /// Number of schemas successfully compiled and cached
+    ///
+    /// # Panics
+    ///
+    /// Does not panic - logs errors for invalid schemas but continues
+    pub fn precompile_schemas(&self, routes: &[crate::spec::RouteMeta]) -> usize {
+        if !self.enabled {
+            info!("Schema cache disabled, skipping precompilation");
+            return 0;
+        }
+
+        let mut compiled_count = 0;
+        
+        for route in routes {
+            // Compile request schema if present
+            if let Some(ref request_schema) = route.request_schema {
+                if self.get_or_compile(&route.handler_name, "request", None, request_schema).is_some() {
+                    compiled_count += 1;
+                }
+            }
+            
+            // Compile response schemas for all status codes
+            for (status_code, content_types) in &route.responses {
+                for response_spec in content_types.values() {
+                    if let Some(ref response_schema) = response_spec.schema {
+                        if self.get_or_compile(&route.handler_name, "response", Some(*status_code), response_schema).is_some() {
+                            compiled_count += 1;
+                        }
+                    }
+                }
+            }
+        }
+        
+        info!(
+            compiled_count = compiled_count,
+            cache_size = self.size(),
+            routes_count = routes.len(),
+            "Precompiled schemas at startup"
+        );
+        
+        compiled_count
+    }
 }
 
 #[cfg(test)]
@@ -321,5 +376,192 @@ mod tests {
 
         cache.clear();
         assert_eq!(cache.size(), 0);
+    }
+
+    #[test]
+    fn test_precompile_schemas() {
+        use crate::spec::RouteMeta;
+        use http::Method;
+        use std::collections::HashMap;
+        use std::path::PathBuf;
+
+        let cache = ValidatorCache::new(true);
+        
+        // Create a mock route with request and response schemas
+        let mut responses = HashMap::new();
+        let mut response_content = HashMap::new();
+        response_content.insert(
+            "application/json".to_string(),
+            crate::spec::ResponseSpec {
+                schema: Some(json!({
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "integer"},
+                        "name": {"type": "string"}
+                    }
+                })),
+                example: None,
+            }
+        );
+        responses.insert(200, response_content);
+
+        let route = RouteMeta {
+            method: Method::POST,
+            path_pattern: "/test".to_string(),
+            handler_name: "test_handler".to_string(),
+            parameters: vec![],
+            request_schema: Some(json!({
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"}
+                },
+                "required": ["name"]
+            })),
+            request_body_required: true,
+            response_schema: None,
+            example: None,
+            responses,
+            security: vec![],
+            example_name: "test".to_string(),
+            project_slug: "test".to_string(),
+            output_dir: PathBuf::from("/tmp"),
+            base_path: "".to_string(),
+            sse: false,
+        };
+
+        let routes = vec![route];
+        
+        // Precompile schemas
+        let compiled = cache.precompile_schemas(&routes);
+        
+        // Should compile request schema + response schema for 200 status
+        assert_eq!(compiled, 2, "Should compile 2 schemas (1 request + 1 response)");
+        assert_eq!(cache.size(), 2, "Cache should contain 2 entries");
+        
+        // Verify schemas are cached by trying to retrieve them
+        let request_key = "test_handler:request";
+        let response_key = "test_handler:response:200";
+        
+        {
+            let cache_map = cache.cache.read().unwrap();
+            assert!(cache_map.contains_key(request_key), "Request schema should be cached");
+            assert!(cache_map.contains_key(response_key), "Response schema should be cached");
+        }
+    }
+
+    #[test]
+    fn test_precompile_schemas_disabled_cache() {
+        use crate::spec::RouteMeta;
+        use http::Method;
+        use std::collections::HashMap;
+        use std::path::PathBuf;
+
+        let cache = ValidatorCache::new(false); // Cache disabled
+        
+        let mut responses = HashMap::new();
+        let mut response_content = HashMap::new();
+        response_content.insert(
+            "application/json".to_string(),
+            crate::spec::ResponseSpec {
+                schema: Some(json!({"type": "object"})),
+                example: None,
+            }
+        );
+        responses.insert(200, response_content);
+
+        let route = RouteMeta {
+            method: Method::POST,
+            path_pattern: "/test".to_string(),
+            handler_name: "test_handler".to_string(),
+            parameters: vec![],
+            request_schema: Some(json!({"type": "object"})),
+            request_body_required: true,
+            response_schema: None,
+            example: None,
+            responses,
+            security: vec![],
+            example_name: "test".to_string(),
+            project_slug: "test".to_string(),
+            output_dir: PathBuf::from("/tmp"),
+            base_path: "".to_string(),
+            sse: false,
+        };
+
+        let routes = vec![route];
+        
+        // Precompile should return 0 when cache is disabled
+        let compiled = cache.precompile_schemas(&routes);
+        assert_eq!(compiled, 0, "Should not compile any schemas when cache is disabled");
+        assert_eq!(cache.size(), 0, "Cache should remain empty");
+    }
+
+    #[test]
+    fn test_precompile_with_multiple_response_statuses() {
+        use crate::spec::RouteMeta;
+        use http::Method;
+        use std::collections::HashMap;
+        use std::path::PathBuf;
+
+        let cache = ValidatorCache::new(true);
+        
+        // Create route with multiple response status codes
+        let mut responses = HashMap::new();
+        
+        let mut response_200 = HashMap::new();
+        response_200.insert(
+            "application/json".to_string(),
+            crate::spec::ResponseSpec {
+                schema: Some(json!({"type": "object", "properties": {"success": {"type": "boolean"}}})),
+                example: None,
+            }
+        );
+        responses.insert(200, response_200);
+        
+        let mut response_400 = HashMap::new();
+        response_400.insert(
+            "application/json".to_string(),
+            crate::spec::ResponseSpec {
+                schema: Some(json!({"type": "object", "properties": {"error": {"type": "string"}}})),
+                example: None,
+            }
+        );
+        responses.insert(400, response_400);
+        
+        let mut response_500 = HashMap::new();
+        response_500.insert(
+            "application/json".to_string(),
+            crate::spec::ResponseSpec {
+                schema: Some(json!({"type": "object", "properties": {"message": {"type": "string"}}})),
+                example: None,
+            }
+        );
+        responses.insert(500, response_500);
+
+        let route = RouteMeta {
+            method: Method::POST,
+            path_pattern: "/multi".to_string(),
+            handler_name: "multi_handler".to_string(),
+            parameters: vec![],
+            request_schema: Some(json!({"type": "object"})),
+            request_body_required: true,
+            response_schema: None,
+            example: None,
+            responses,
+            security: vec![],
+            example_name: "multi".to_string(),
+            project_slug: "test".to_string(),
+            output_dir: PathBuf::from("/tmp"),
+            base_path: "".to_string(),
+            sse: false,
+        };
+
+        let routes = vec![route];
+        
+        // Precompile schemas
+        let compiled = cache.precompile_schemas(&routes);
+        
+        // Should compile 1 request + 3 response schemas (200, 400, 500)
+        assert_eq!(compiled, 4, "Should compile 4 schemas (1 request + 3 responses)");
+        assert_eq!(cache.size(), 4, "Cache should contain 4 entries");
     }
 }

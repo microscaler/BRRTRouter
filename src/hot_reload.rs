@@ -74,6 +74,7 @@ use crate::{
     dispatcher::Dispatcher,
     router::Router,
     spec::{self, RouteMeta},
+    validator_cache::ValidatorCache,
 };
 use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::{Path, PathBuf};
@@ -85,10 +86,19 @@ use tracing::{debug, error, info, warn};
 ///
 /// The provided callback will receive the reloaded routes so the caller can
 /// rebuild dispatcher mappings or perform additional work.
+///
+/// # Arguments
+///
+/// * `spec_path` - Path to the OpenAPI specification file
+/// * `router` - Shared router instance
+/// * `dispatcher` - Shared dispatcher instance
+/// * `validator_cache` - Optional validator cache to clear on reload
+/// * `on_reload` - Callback invoked after successful reload
 pub fn watch_spec<P, F>(
     spec_path: P,
     router: Arc<RwLock<Router>>,
     dispatcher: Arc<RwLock<Dispatcher>>,
+    validator_cache: Option<ValidatorCache>,
     mut on_reload: F,
 ) -> notify::Result<RecommendedWatcher>
 where
@@ -143,6 +153,18 @@ where
                                 );
                                 println!("⚠️  Hot reload: Failed to acquire router write lock");
                                 return;
+                            }
+
+                            // Clear validator cache to force recompilation with new schemas
+                            if let Some(ref cache) = validator_cache {
+                                let cache_size_before = cache.size();
+                                cache.clear();
+                                info!(
+                                    spec_path = %spec_path_str,
+                                    cache_entries_cleared = cache_size_before,
+                                    "Validator cache cleared for hot reload"
+                                );
+                                println!("🗑️  Hot reload: Cleared {cache_size_before} cached schema validators");
                             }
 
                             // Update dispatcher

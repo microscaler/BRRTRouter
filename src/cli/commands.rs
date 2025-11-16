@@ -238,6 +238,7 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
                     spec.clone(),
                     router.clone(),
                     dispatcher.clone(),
+                    Some(service.validator_cache.clone()),
                     |disp, new_routes| {
                         for r in &new_routes {
                             let (tx, rx) = mpsc::channel();
