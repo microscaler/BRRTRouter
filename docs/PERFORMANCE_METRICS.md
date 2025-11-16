@@ -319,7 +319,24 @@ python3 scripts/compare_metrics.py baseline-metrics.json metrics-*.json
 
 ### Creating a Benchmark Report
 
-A complete benchmark report should include:
+Use the automated report generator:
+
+```bash
+# Generate a comprehensive benchmark report
+python3 scripts/generate_benchmark_report.py
+
+# With custom configuration
+python3 scripts/generate_benchmark_report.py \
+  --users 500 \
+  --run-time 10m \
+  --output-dir ./my-reports
+
+# Compare with baseline
+python3 scripts/generate_benchmark_report.py \
+  --baseline baseline-metrics.json
+```
+
+The generated report includes:
 
 1. **Test Configuration**
    - User count, duration, ramp rate
