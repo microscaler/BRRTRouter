@@ -234,6 +234,32 @@ impl Router {
 
         None
     }
+    /// Get all registered path patterns for metrics pre-registration
+    ///
+    /// Returns a list of all path patterns (with base path prepended) that are
+    /// registered in this router. This is useful for pre-registering paths in
+    /// the metrics middleware at startup to avoid runtime allocation.
+    ///
+    /// # Returns
+    ///
+    /// A vector of path patterns (e.g., `["/api/users", "/api/posts/{id}"]`)
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let router = Router::new(routes);
+    /// let paths = router.get_all_path_patterns();
+    /// metrics.pre_register_paths(&paths);
+    /// ```
+    pub fn get_all_path_patterns(&self) -> Vec<String> {
+        self.routes
+            .iter()
+            .map(|(_method, _regex, meta, _params)| {
+                format!("{}{}", self.base_path, meta.path_pattern)
+            })
+            .collect()
+    }
+
     /// Convert an OpenAPI path pattern to a regex and extract parameter names
     ///
     /// Transforms path patterns like `/users/{id}` into regex patterns like
