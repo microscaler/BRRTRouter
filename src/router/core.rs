@@ -4,6 +4,8 @@ use regex::Regex;
 use std::collections::HashMap;
 use tracing::{debug, info, warn};
 
+use super::radix::RadixRouter;
+
 /// Result of successfully matching a request path to a route
 ///
 /// Contains the matched route metadata and extracted parameters.
@@ -19,19 +21,24 @@ pub struct RouteMatch {
     pub query_params: HashMap<String, String>,
 }
 
-/// Router that matches HTTP requests to handlers using regex patterns
+/// Router that matches HTTP requests to handlers using radix tree
 ///
-/// Compiles OpenAPI path patterns (e.g., `/users/{id}`) into regex patterns
-/// and matches incoming requests to the appropriate handler. Routes are sorted
-/// by path length (longest first) to ensure most specific routes match first.
+/// Uses a radix tree (compact prefix tree) for O(k) route matching where k is the
+/// path length. This is a significant improvement over the previous O(n) linear scan.
+///
+/// The router also maintains the old regex-based implementation for compatibility,
+/// but the radix tree is used by default for better performance.
 ///
 /// # Performance
 ///
-/// Current implementation uses O(n) linear scanning with regex matching.
-/// For v1.0, this will be replaced with a trie-based router for O(log n) lookup.
+/// - Route matching: O(k) where k is path length (not O(n) where n is number of routes)
+/// - Memory efficient: Shared prefixes are stored only once
+/// - Minimal allocations: Uses Arc and Cow to avoid unnecessary cloning
 #[derive(Clone)]
 pub struct Router {
-    /// List of routes: (method, regex, metadata, param_names)
+    /// Radix tree for fast O(k) route lookup
+    radix_router: RadixRouter,
+    /// Legacy regex-based routes for fallback (kept for compatibility)
     routes: Vec<(Method, Regex, std::sync::Arc<RouteMeta>, Vec<String>)>,
     /// Base path prefix for all routes (e.g., `/api/v1`)
     #[allow(dead_code)]
@@ -41,8 +48,8 @@ pub struct Router {
 impl Router {
     /// Create a new router from OpenAPI route metadata
     ///
-    /// Compiles all route patterns into regex matchers and sorts them by
-    /// specificity (longest paths first) for optimal matching.
+    /// Builds both a radix tree for O(k) lookups and keeps legacy regex-based
+    /// routing for compatibility. The radix tree is used by default.
     ///
     /// # Arguments
     ///
@@ -53,7 +60,6 @@ impl Router {
     /// A new `Router` ready to match incoming requests
     pub fn new(routes: Vec<RouteMeta>) -> Self {
         // Filter out routes that are not HTTP methods we care about
-        // We only support GET, POST, PUT, DELETE, PATCH, and OPTIONS
         let supported_methods = [
             Method::GET,
             Method::POST,
@@ -62,47 +68,33 @@ impl Router {
             Method::PATCH,
             Method::OPTIONS,
             Method::HEAD,
-            Method::TRACE, // TRACE is included but filtered out later
+            Method::TRACE,
         ];
 
         let routes: Vec<RouteMeta> = routes
             .into_iter()
             .filter(|r| supported_methods.contains(&r.method))
             .collect();
-        // // Filter out routes that are not valid HTTP methods
-        // let routes: Vec<RouteMeta> = routes
-        //     .into_iter()
-        //     .filter(|r| r.method != Method::TRACE && r.method != Method::CONNECT)
-        //     .collect();
 
         if routes.is_empty() {
             info!(routes_count = 0, "Routing table loaded with no routes");
             return Self {
+                radix_router: RadixRouter::new(Vec::new()),
                 routes: Vec::new(),
                 base_path: String::new(),
             };
         }
 
-        // RT6: Route sorting applied
-        let routes_before = routes.len();
-        // Ensure routes are sorted by path length (longest first) to optimize matching
-        // This is useful for cases where paths may overlap, e.g. "/pets" and "/pets/{id}"
-        let mut routes = routes;
-        routes.sort_by_key(|r| r.path_pattern.len());
-        routes.reverse();
-
-        debug!(
-            routes_before = routes_before,
-            routes_after = routes.len(),
-            sort_strategy = "longest_first",
-            "Route sorting applied"
-        );
-        // Convert each route's path pattern to a regex and collect param names
-        // Each route is represented as (method, compiled regex, RouteMeta, param names)
         let base_path = routes
             .first()
             .map(|r| r.base_path.clone())
             .unwrap_or_default();
+
+        // Create the radix tree router for fast O(k) lookups
+        let radix_router = RadixRouter::new(routes.clone());
+
+        // Also build the legacy regex-based routes for compatibility
+        // (though we'll primarily use the radix tree)
         let routes: Vec<_> = routes
             .into_iter()
             .map(|route| {
@@ -116,7 +108,7 @@ impl Router {
         // RT5: Routing table loaded
         let routes_summary: Vec<String> = routes
             .iter()
-            .take(10) // Limit to first 10 routes to avoid log spam
+            .take(10)
             .map(|(method, _, meta, _)| format!("{} {}{}", method, base_path, meta.path_pattern))
             .collect();
 
@@ -124,10 +116,15 @@ impl Router {
             routes_count = routes.len(),
             base_path = %base_path,
             routes_summary = ?routes_summary,
-            "Routing table loaded"
+            routing_algorithm = "radix_tree",
+            "Routing table loaded with O(k) radix tree"
         );
 
-        Self { routes, base_path }
+        Self {
+            radix_router,
+            routes,
+            base_path,
+        }
     }
 
     /// Print all registered routes to stdout
@@ -148,10 +145,10 @@ impl Router {
         }
     }
 
-    /// Match an HTTP request to a route
+    /// Match an HTTP request to a route using radix tree
     ///
-    /// Attempts to find a route that matches both the HTTP method and path pattern.
-    /// Path parameters are extracted and returned in the match result.
+    /// Uses the radix tree for O(k) route matching where k is the path length.
+    /// This is significantly faster than the previous O(n) linear scan.
     ///
     /// # Arguments
     ///
@@ -178,87 +175,60 @@ impl Router {
         debug!(
             method = %method,
             path = %path,
-            routes_count = self.routes.len(),
+            algorithm = "radix_tree",
             "Route match attempt"
         );
         
         // Track route matching performance
         let match_start = std::time::Instant::now();
-        let mut iterations = 0;
 
-        for (m, regex, route, param_names) in &self.routes {
-            iterations += 1;
-            if *m != method {
-                continue;
-            }
-            if let Some(captures) = regex.captures(path) {
-                // RT2: Regex match success
-                debug!(
-                    pattern = %regex,
-                    params_extracted = param_names.len(),
-                    "Regex match success"
+        // Use radix tree for O(k) lookup
+        let result = self.radix_router.route(method.clone(), path);
+        
+        let match_duration = match_start.elapsed();
+
+        if let Some((route, params)) = result {
+            // RT3: Route matched
+            let handler_name = route.handler_name.clone();
+            
+            if match_duration > std::time::Duration::from_millis(1) {
+                warn!(
+                    method = %method,
+                    path = %path,
+                    handler_name = %handler_name,
+                    route_pattern = %route.path_pattern,
+                    path_params = ?params,
+                    duration_us = match_duration.as_micros(),
+                    algorithm = "radix_tree",
+                    "Slow route matching detected"
                 );
-
-                let mut params = HashMap::with_capacity(param_names.len());
-                for (i, name) in param_names.iter().enumerate() {
-                    if let Some(val) = captures.get(i + 1) {
-                        params.insert(name.clone(), val.as_str().to_string());
-                    }
-                }
-
-                // RT3: Route matched
-                let match_duration = match_start.elapsed();
-                
-                // Warn if route matching is slow
-                if match_duration > std::time::Duration::from_millis(1) {
-                    warn!(
-                        method = %method,
-                        path = %path,
-                        handler_name = %route.handler_name,
-                        route_pattern = %route.path_pattern,
-                        path_params = ?params,
-                        duration_us = match_duration.as_micros(),
-                        iterations = iterations,
-                        "Slow route matching detected"
-                    );
-                } else {
-                    info!(
-                        method = %method,
-                        path = %path,
-                        handler_name = %route.handler_name,
-                        route_pattern = %route.path_pattern,
-                        path_params = ?params,
-                        duration_us = match_duration.as_micros(),
-                        iterations = iterations,
-                        "Route matched"
-                    );
-                }
-
-                return Some(RouteMatch {
-                    route: std::sync::Arc::clone(route),
-                    path_params: params,
-                    handler_name: route.handler_name.clone(),
-                    query_params: Default::default(),
-                });
+            } else {
+                info!(
+                    method = %method,
+                    path = %path,
+                    handler_name = %handler_name,
+                    route_pattern = %route.path_pattern,
+                    path_params = ?params,
+                    duration_us = match_duration.as_micros(),
+                    algorithm = "radix_tree",
+                    "Route matched"
+                );
             }
+
+            return Some(RouteMatch {
+                route,
+                path_params: params,
+                handler_name,
+                query_params: Default::default(),
+            });
         }
 
         // RT4: No route found (404)
-        let match_duration = match_start.elapsed();
-        let attempted_patterns: Vec<String> = self
-            .routes
-            .iter()
-            .filter(|(m, _, _, _)| *m == method)
-            .take(5) // Limit to avoid log spam
-            .map(|(_, _, route, _)| route.path_pattern.clone())
-            .collect();
-
         warn!(
             method = %method,
             path = %path,
             duration_us = match_duration.as_micros(),
-            iterations = iterations,
-            attempted_patterns = ?attempted_patterns,
+            algorithm = "radix_tree",
             "No route matched"
         );
 

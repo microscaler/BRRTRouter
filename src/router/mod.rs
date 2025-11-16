@@ -53,7 +53,10 @@
 //! - O(n) complexity where n is the number of routes (not request complexity)
 
 mod core;
+mod radix;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod performance_tests;
 
 pub use core::{RouteMatch, Router};
