@@ -106,5 +106,46 @@ fn bench_route_throughput(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, bench_route_throughput);
+fn bench_route_scalability(c: &mut Criterion) {
+    // Test performance with increasing number of routes
+    let mut group = c.benchmark_group("route_scalability");
+    
+    for route_count in [10, 50, 100, 200, 500].iter() {
+        let mut routes = Vec::new();
+        // Create many routes to test scalability
+        for i in 0..*route_count {
+            routes.push(RouteMeta {
+                method: Method::GET,
+                path_pattern: format!("/api/v1/resource{}/{{id}}", i),
+                handler_name: format!("handler_{}", i),
+                base_path: String::new(),
+                parameters: Vec::new(),
+                request_schema: None,
+                request_body_required: false,
+                response_schema: None,
+                example: None,
+                responses: std::collections::HashMap::new(),
+                security: Vec::new(),
+                example_name: "test".to_string(),
+                project_slug: "test".to_string(),
+                output_dir: std::path::PathBuf::from("test"),
+                sse: false,
+            });
+        }
+        
+        let router = Router::new(routes);
+        
+        group.bench_function(format!("{}_routes", route_count), |b| {
+            // Test matching a route in the middle of the tree
+            let test_path = format!("/api/v1/resource{}/123", route_count / 2);
+            b.iter(|| {
+                let res = router.route(Method::GET, &test_path);
+                black_box(&res);
+            })
+        });
+    }
+    group.finish();
+}
+
+criterion_group!(benches, bench_route_throughput, bench_route_scalability);
 criterion_main!(benches);
