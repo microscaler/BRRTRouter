@@ -337,9 +337,10 @@ pub fn health_endpoint(res: &mut Response) -> io::Result<()> {
 /// - Active requests gauge
 /// - Request counts with status code labels (for error rate)
 /// - Request duration histogram (for p50/p95/p99 percentiles)
+/// - Worker pool metrics (queue depth, shed count)
 /// - Memory usage metrics (RSS, heap, growth)
 /// - Legacy per-path metrics (backward compatible)
-pub fn metrics_endpoint(res: &mut Response, metrics: &MetricsMiddleware, memory: Option<&crate::middleware::MemoryMiddleware>) -> io::Result<()> {
+pub fn metrics_endpoint(res: &mut Response, metrics: &MetricsMiddleware, memory: Option<&crate::middleware::MemoryMiddleware>, dispatcher: Option<&Dispatcher>) -> io::Result<()> {
     let (stack_size, used_stack) = metrics.stack_usage();
     let mut body = String::with_capacity(8192); // Pre-allocate for performance
 
@@ -439,6 +440,50 @@ pub fn metrics_endpoint(res: &mut Response, metrics: &MetricsMiddleware, memory:
     body.push_str(&format!(
         "brrtrouter_coroutine_stack_used_bytes {used_stack}\n",
     ));
+
+    // Worker pool metrics (NEW - for backpressure monitoring)
+    if let Some(disp) = dispatcher {
+        let worker_metrics = disp.worker_pool_metrics();
+        if !worker_metrics.is_empty() {
+            body.push_str("\n# Worker Pool Metrics\n");
+            
+            body.push_str("# HELP brrtrouter_worker_pool_queue_depth Current queue depth for worker pool handlers\n");
+            body.push_str("# TYPE brrtrouter_worker_pool_queue_depth gauge\n");
+            for (handler, (queue_depth, _, _, _)) in &worker_metrics {
+                let escaped_handler = handler.replace('\\', "\\\\").replace('"', "\\\"");
+                body.push_str(&format!(
+                    "brrtrouter_worker_pool_queue_depth{{handler=\"{escaped_handler}\"}} {queue_depth}\n",
+                ));
+            }
+            
+            body.push_str("# HELP brrtrouter_worker_pool_shed_total Total requests shed due to backpressure\n");
+            body.push_str("# TYPE brrtrouter_worker_pool_shed_total counter\n");
+            for (handler, (_, shed_count, _, _)) in &worker_metrics {
+                let escaped_handler = handler.replace('\\', "\\\\").replace('"', "\\\"");
+                body.push_str(&format!(
+                    "brrtrouter_worker_pool_shed_total{{handler=\"{escaped_handler}\"}} {shed_count}\n",
+                ));
+            }
+            
+            body.push_str("# HELP brrtrouter_worker_pool_dispatched_total Total requests dispatched to worker pool\n");
+            body.push_str("# TYPE brrtrouter_worker_pool_dispatched_total counter\n");
+            for (handler, (_, _, dispatched, _)) in &worker_metrics {
+                let escaped_handler = handler.replace('\\', "\\\\").replace('"', "\\\"");
+                body.push_str(&format!(
+                    "brrtrouter_worker_pool_dispatched_total{{handler=\"{escaped_handler}\"}} {dispatched}\n",
+                ));
+            }
+            
+            body.push_str("# HELP brrtrouter_worker_pool_completed_total Total requests completed by worker pool\n");
+            body.push_str("# TYPE brrtrouter_worker_pool_completed_total counter\n");
+            for (handler, (_, _, _, completed)) in &worker_metrics {
+                let escaped_handler = handler.replace('\\', "\\\\").replace('"', "\\\"");
+                body.push_str(&format!(
+                    "brrtrouter_worker_pool_completed_total{{handler=\"{escaped_handler}\"}} {completed}\n",
+                ));
+            }
+        }
+    }
 
     // Legacy per-path metrics (backward compatible)
     let path_stats = metrics.path_stats();
@@ -725,7 +770,9 @@ impl HttpService for AppService {
         }
         if method == "GET" && path == "/metrics" {
             if let Some(metrics) = &self.metrics {
-                return metrics_endpoint(res, metrics, self.memory.as_deref());
+                // Get dispatcher for worker pool metrics
+                let dispatcher = self.dispatcher.read().unwrap();
+                return metrics_endpoint(res, metrics, self.memory.as_deref(), Some(&*dispatcher));
             } else {
                 write_json_error(
                     res,
