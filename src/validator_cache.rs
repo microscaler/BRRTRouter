@@ -92,8 +92,14 @@ use tracing::{debug, info};
 ///
 /// # Fields
 ///
-/// * `version` - Monotonic counter incremented on each spec reload
+/// * `version` - Monotonic counter incremented on each spec reload (starts at 1)
 /// * `hash` - SHA-256 hash of the spec file content (first 16 chars for readability)
+///
+/// # Cache Invalidation Strategy
+///
+/// The dual-key approach (version + hash) provides defense in depth:
+/// - **Version counter**: Simple, fast check that spec has changed
+/// - **Content hash**: Ensures validators match exact spec content
 ///
 /// # Example
 ///
@@ -103,6 +109,11 @@ use tracing::{debug, info};
 /// let v1 = SpecVersion::new(1, "abc123def456");
 /// let v2 = SpecVersion::new(2, "789ghi012jkl");
 /// assert_ne!(v1, v2);
+///
+/// // Create from content
+/// let content = b"openapi: 3.1.0\ninfo:\n  title: API\n";
+/// let v3 = SpecVersion::from_content(1, content);
+/// assert_eq!(v3.hash.len(), 16); // Truncated SHA-256
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SpecVersion {
