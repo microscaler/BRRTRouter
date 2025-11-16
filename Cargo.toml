@@ -67,6 +67,7 @@ jsonwebtoken = "9"
 reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls", "blocking"] }
 urlencoding = "2.1"
 ulid = "1.1"
+sha2 = "0.10"
 
 
 
