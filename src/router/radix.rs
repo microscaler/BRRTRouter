@@ -484,4 +484,334 @@ mod tests {
         assert_eq!(params3.get("api_version"), Some(&"v3".to_string()));
         assert_eq!(params3.get("order_id"), Some(&"789".to_string()));
     }
+
+    #[test]
+    fn test_radix_router_deep_params_3_levels() {
+        // Test routes with 3 levels of parameters to verify depth-first building
+        let routes = vec![
+            create_route_meta(
+                Method::GET,
+                "/orgs/{org_id}/projects/{project_id}/issues/{issue_id}",
+                "get_org_project_issue",
+            ),
+            create_route_meta(
+                Method::GET,
+                "/orgs/{organization}/repos/{repository}/commits/{commit_sha}",
+                "get_org_repo_commit",
+            ),
+            create_route_meta(
+                Method::GET,
+                "/orgs/{org}/teams/{team}/members/{member}",
+                "get_org_team_member",
+            ),
+        ];
+        let router = RadixRouter::new(routes);
+
+        // Test first route - should extract org_id, project_id, issue_id
+        let result1 = router.route(Method::GET, "/orgs/acme/projects/web-app/issues/42");
+        assert!(result1.is_some());
+        let (route1, params1) = result1.unwrap();
+        assert_eq!(route1.handler_name, "get_org_project_issue");
+        assert_eq!(params1.get("org_id"), Some(&"acme".to_string()));
+        assert_eq!(params1.get("project_id"), Some(&"web-app".to_string()));
+        assert_eq!(params1.get("issue_id"), Some(&"42".to_string()));
+        assert_eq!(params1.len(), 3);
+
+        // Test second route - should extract organization, repository, commit_sha
+        let result2 = router.route(Method::GET, "/orgs/github/repos/rust/commits/abc123");
+        assert!(result2.is_some());
+        let (route2, params2) = result2.unwrap();
+        assert_eq!(route2.handler_name, "get_org_repo_commit");
+        assert_eq!(params2.get("organization"), Some(&"github".to_string()));
+        assert_eq!(params2.get("repository"), Some(&"rust".to_string()));
+        assert_eq!(params2.get("commit_sha"), Some(&"abc123".to_string()));
+        assert_eq!(params2.len(), 3);
+
+        // Test third route - should extract org, team, member
+        let result3 = router.route(Method::GET, "/orgs/mycompany/teams/engineering/members/alice");
+        assert!(result3.is_some());
+        let (route3, params3) = result3.unwrap();
+        assert_eq!(route3.handler_name, "get_org_team_member");
+        assert_eq!(params3.get("org"), Some(&"mycompany".to_string()));
+        assert_eq!(params3.get("team"), Some(&"engineering".to_string()));
+        assert_eq!(params3.get("member"), Some(&"alice".to_string()));
+        assert_eq!(params3.len(), 3);
+    }
+
+    #[test]
+    fn test_radix_router_deep_params_4_levels() {
+        // Test routes with 4 levels of parameters to verify depth-first building
+        let routes = vec![
+            create_route_meta(
+                Method::GET,
+                "/api/{version}/users/{user_id}/posts/{post_id}/comments/{comment_id}",
+                "get_user_post_comment",
+            ),
+            create_route_meta(
+                Method::GET,
+                "/api/{v}/orgs/{org}/repos/{repo}/issues/{issue_num}",
+                "get_org_repo_issue",
+            ),
+            create_route_meta(
+                Method::GET,
+                "/api/{api_ver}/companies/{company_id}/departments/{dept_id}/employees/{emp_id}",
+                "get_company_dept_employee",
+            ),
+        ];
+        let router = RadixRouter::new(routes);
+
+        // Test first route - 4 levels of parameters
+        let result1 = router.route(Method::GET, "/api/v1/users/john/posts/100/comments/5");
+        assert!(result1.is_some());
+        let (route1, params1) = result1.unwrap();
+        assert_eq!(route1.handler_name, "get_user_post_comment");
+        assert_eq!(params1.get("version"), Some(&"v1".to_string()));
+        assert_eq!(params1.get("user_id"), Some(&"john".to_string()));
+        assert_eq!(params1.get("post_id"), Some(&"100".to_string()));
+        assert_eq!(params1.get("comment_id"), Some(&"5".to_string()));
+        assert_eq!(params1.len(), 4);
+
+        // Test second route - 4 levels with different parameter names
+        let result2 = router.route(Method::GET, "/api/v2/orgs/github/repos/rust-lang/issues/42");
+        assert!(result2.is_some());
+        let (route2, params2) = result2.unwrap();
+        assert_eq!(route2.handler_name, "get_org_repo_issue");
+        assert_eq!(params2.get("v"), Some(&"v2".to_string()));
+        assert_eq!(params2.get("org"), Some(&"github".to_string()));
+        assert_eq!(params2.get("repo"), Some(&"rust-lang".to_string()));
+        assert_eq!(params2.get("issue_num"), Some(&"42".to_string()));
+        assert_eq!(params2.len(), 4);
+
+        // Test third route - 4 levels with yet another set of parameter names
+        let result3 = router.route(Method::GET, "/api/v3/companies/acme/departments/engineering/employees/alice");
+        assert!(result3.is_some());
+        let (route3, params3) = result3.unwrap();
+        assert_eq!(route3.handler_name, "get_company_dept_employee");
+        assert_eq!(params3.get("api_ver"), Some(&"v3".to_string()));
+        assert_eq!(params3.get("company_id"), Some(&"acme".to_string()));
+        assert_eq!(params3.get("dept_id"), Some(&"engineering".to_string()));
+        assert_eq!(params3.get("emp_id"), Some(&"alice".to_string()));
+        assert_eq!(params3.len(), 4);
+    }
+
+    #[test]
+    fn test_radix_router_mixed_static_and_params() {
+        // Test routes with parameters at various depths mixed with static segments
+        let routes = vec![
+            create_route_meta(
+                Method::GET,
+                "/api/v1/users/{user_id}/profile",
+                "get_user_profile",
+            ),
+            create_route_meta(
+                Method::GET,
+                "/api/v1/users/{id}/posts",
+                "get_user_posts",
+            ),
+            create_route_meta(
+                Method::GET,
+                "/api/v1/users/{user_id}/posts/{post_id}",
+                "get_user_post",
+            ),
+            create_route_meta(
+                Method::GET,
+                "/api/v1/users/{uid}/settings/{setting_key}",
+                "get_user_setting",
+            ),
+            create_route_meta(
+                Method::GET,
+                "/api/v1/posts/{post_id}/comments/{comment_id}/replies/{reply_id}",
+                "get_post_comment_reply",
+            ),
+        ];
+        let router = RadixRouter::new(routes);
+
+        // Test route with parameter followed by static segment
+        let result1 = router.route(Method::GET, "/api/v1/users/alice/profile");
+        assert!(result1.is_some());
+        let (route1, params1) = result1.unwrap();
+        assert_eq!(route1.handler_name, "get_user_profile");
+        assert_eq!(params1.get("user_id"), Some(&"alice".to_string()));
+        assert_eq!(params1.len(), 1);
+
+        // Test similar route with different parameter name
+        let result2 = router.route(Method::GET, "/api/v1/users/bob/posts");
+        assert!(result2.is_some());
+        let (route2, params2) = result2.unwrap();
+        assert_eq!(route2.handler_name, "get_user_posts");
+        assert_eq!(params2.get("id"), Some(&"bob".to_string()));
+        assert_eq!(params2.len(), 1);
+
+        // Test 2-level parameters
+        let result3 = router.route(Method::GET, "/api/v1/users/charlie/posts/123");
+        assert!(result3.is_some());
+        let (route3, params3) = result3.unwrap();
+        assert_eq!(route3.handler_name, "get_user_post");
+        assert_eq!(params3.get("user_id"), Some(&"charlie".to_string()));
+        assert_eq!(params3.get("post_id"), Some(&"123".to_string()));
+        assert_eq!(params3.len(), 2);
+
+        // Test 2-level parameters with different names
+        let result4 = router.route(Method::GET, "/api/v1/users/dave/settings/theme");
+        assert!(result4.is_some());
+        let (route4, params4) = result4.unwrap();
+        assert_eq!(route4.handler_name, "get_user_setting");
+        assert_eq!(params4.get("uid"), Some(&"dave".to_string()));
+        assert_eq!(params4.get("setting_key"), Some(&"theme".to_string()));
+        assert_eq!(params4.len(), 2);
+
+        // Test 3-level parameters
+        let result5 = router.route(Method::GET, "/api/v1/posts/456/comments/789/replies/101");
+        assert!(result5.is_some());
+        let (route5, params5) = result5.unwrap();
+        assert_eq!(route5.handler_name, "get_post_comment_reply");
+        assert_eq!(params5.get("post_id"), Some(&"456".to_string()));
+        assert_eq!(params5.get("comment_id"), Some(&"789".to_string()));
+        assert_eq!(params5.get("reply_id"), Some(&"101".to_string()));
+        assert_eq!(params5.len(), 3);
+    }
+
+    #[test]
+    fn test_radix_router_param_backtracking() {
+        // Test that parameter matching correctly backtracks when a route doesn't match
+        let routes = vec![
+            create_route_meta(
+                Method::GET,
+                "/api/{version}/users/{user_id}/posts/{post_id}/edit",
+                "edit_user_post",
+            ),
+            create_route_meta(
+                Method::GET,
+                "/api/{v}/users/{id}/posts/{pid}/delete",
+                "delete_user_post",
+            ),
+            create_route_meta(
+                Method::GET,
+                "/api/{api_v}/users/{uid}/comments/{cid}/approve",
+                "approve_user_comment",
+            ),
+        ];
+        let router = RadixRouter::new(routes);
+
+        // Each route should match correctly despite similar prefixes
+        let result1 = router.route(Method::GET, "/api/v1/users/alice/posts/123/edit");
+        assert!(result1.is_some());
+        let (route1, params1) = result1.unwrap();
+        assert_eq!(route1.handler_name, "edit_user_post");
+        assert_eq!(params1.get("version"), Some(&"v1".to_string()));
+        assert_eq!(params1.get("user_id"), Some(&"alice".to_string()));
+        assert_eq!(params1.get("post_id"), Some(&"123".to_string()));
+
+        let result2 = router.route(Method::GET, "/api/v2/users/bob/posts/456/delete");
+        assert!(result2.is_some());
+        let (route2, params2) = result2.unwrap();
+        assert_eq!(route2.handler_name, "delete_user_post");
+        assert_eq!(params2.get("v"), Some(&"v2".to_string()));
+        assert_eq!(params2.get("id"), Some(&"bob".to_string()));
+        assert_eq!(params2.get("pid"), Some(&"456".to_string()));
+
+        let result3 = router.route(Method::GET, "/api/v3/users/charlie/comments/789/approve");
+        assert!(result3.is_some());
+        let (route3, params3) = result3.unwrap();
+        assert_eq!(route3.handler_name, "approve_user_comment");
+        assert_eq!(params3.get("api_v"), Some(&"v3".to_string()));
+        assert_eq!(params3.get("uid"), Some(&"charlie".to_string()));
+        assert_eq!(params3.get("cid"), Some(&"789".to_string()));
+    }
+
+    #[test]
+    fn test_radix_router_duplicate_param_names_different_depths() {
+        // Test route with the same parameter name appearing at different depths
+        // This is a real-world edge case: /org/{id}/team/{team_id}/user/{id}
+        // The second {id} should overwrite the first one
+        let routes = vec![
+            create_route_meta(
+                Method::GET,
+                "/org/{id}/team/{team_id}/user/{id}",
+                "get_org_team_user",
+            ),
+            create_route_meta(
+                Method::GET,
+                "/org/{id}/projects",
+                "get_org_projects",
+            ),
+            create_route_meta(
+                Method::GET,
+                "/company/{id}/dept/{dept_id}/employee/{id}",
+                "get_company_dept_employee",
+            ),
+        ];
+        let router = RadixRouter::new(routes);
+
+        // Test route with duplicate {id} parameter at different depths
+        // The last occurrence should win (user id = "alice")
+        let result1 = router.route(Method::GET, "/org/org123/team/team456/user/alice");
+        assert!(result1.is_some());
+        let (route1, params1) = result1.unwrap();
+        assert_eq!(route1.handler_name, "get_org_team_user");
+        // The second {id} (user id) should overwrite the first {id} (org id)
+        assert_eq!(params1.get("id"), Some(&"alice".to_string()));
+        assert_eq!(params1.get("team_id"), Some(&"team456".to_string()));
+        // Should have 2 unique parameters (id and team_id)
+        assert_eq!(params1.len(), 2);
+
+        // Test simpler route with single {id}
+        let result2 = router.route(Method::GET, "/org/org789/projects");
+        assert!(result2.is_some());
+        let (route2, params2) = result2.unwrap();
+        assert_eq!(route2.handler_name, "get_org_projects");
+        assert_eq!(params2.get("id"), Some(&"org789".to_string()));
+        assert_eq!(params2.len(), 1);
+
+        // Test another route with duplicate {id} at different depths
+        let result3 = router.route(Method::GET, "/company/comp999/dept/engineering/employee/bob");
+        assert!(result3.is_some());
+        let (route3, params3) = result3.unwrap();
+        assert_eq!(route3.handler_name, "get_company_dept_employee");
+        // The second {id} (employee id) should overwrite the first {id} (company id)
+        assert_eq!(params3.get("id"), Some(&"bob".to_string()));
+        assert_eq!(params3.get("dept_id"), Some(&"engineering".to_string()));
+        assert_eq!(params3.len(), 2);
+    }
+
+    #[test]
+    fn test_radix_router_same_param_name_different_routes() {
+        // Test that the same parameter name can be used in different routes
+        // at the same depth without collision
+        let routes = vec![
+            create_route_meta(Method::GET, "/users/{id}", "get_user"),
+            create_route_meta(Method::GET, "/posts/{id}", "get_post"),
+            create_route_meta(Method::GET, "/comments/{id}", "get_comment"),
+            create_route_meta(Method::GET, "/users/{id}/posts/{id}", "get_user_post"),
+        ];
+        let router = RadixRouter::new(routes);
+
+        // Each route should correctly extract its {id} parameter
+        let result1 = router.route(Method::GET, "/users/user123");
+        assert!(result1.is_some());
+        let (route1, params1) = result1.unwrap();
+        assert_eq!(route1.handler_name, "get_user");
+        assert_eq!(params1.get("id"), Some(&"user123".to_string()));
+
+        let result2 = router.route(Method::GET, "/posts/post456");
+        assert!(result2.is_some());
+        let (route2, params2) = result2.unwrap();
+        assert_eq!(route2.handler_name, "get_post");
+        assert_eq!(params2.get("id"), Some(&"post456".to_string()));
+
+        let result3 = router.route(Method::GET, "/comments/comment789");
+        assert!(result3.is_some());
+        let (route3, params3) = result3.unwrap();
+        assert_eq!(route3.handler_name, "get_comment");
+        assert_eq!(params3.get("id"), Some(&"comment789".to_string()));
+
+        // Route with duplicate {id} - second one should overwrite first
+        let result4 = router.route(Method::GET, "/users/user999/posts/post111");
+        assert!(result4.is_some());
+        let (route4, params4) = result4.unwrap();
+        assert_eq!(route4.handler_name, "get_user_post");
+        // The second {id} should overwrite the first
+        assert_eq!(params4.get("id"), Some(&"post111".to_string()));
+        assert_eq!(params4.len(), 1);
+    }
 }
