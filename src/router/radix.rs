@@ -877,4 +877,45 @@ mod tests {
         assert_eq!(params2.get("id"), Some(&"team888".to_string()));
         assert_eq!(params2.len(), 1);
     }
+
+    #[test]
+    fn test_radix_router_backtracking_multiple_levels() {
+        // Test that backtracking works correctly with multiple levels of parameter nesting
+        // and multiple failed attempts before finding the correct route.
+        let routes = vec![
+            // Route 1: Will fail at the deepest level
+            create_route_meta(
+                Method::GET,
+                "/api/{version}/org/{id}/team/{id}/data",
+                "get_team_data_v1",
+            ),
+            // Route 2: Will fail at middle level
+            create_route_meta(
+                Method::GET,
+                "/api/{version}/org/{id}/team/{team_id}/info",
+                "get_team_info",
+            ),
+            // Route 3: Should match
+            create_route_meta(
+                Method::GET,
+                "/api/{version}/org/{id}/team/{team_id}/stats",
+                "get_team_stats_v2",
+            ),
+        ];
+        let router = RadixRouter::new(routes);
+
+        // Test that all three parameters are preserved correctly
+        let result = router.route(Method::GET, "/api/v2/org/org456/team/team789/stats");
+        assert!(result.is_some());
+        let (route, params) = result.unwrap();
+        assert_eq!(route.handler_name, "get_team_stats_v2");
+        
+        // All three parameters should be present and correct
+        assert_eq!(params.get("version"), Some(&"v2".to_string()),
+                   "version parameter should be preserved after multiple backtracks");
+        assert_eq!(params.get("id"), Some(&"org456".to_string()),
+                   "org id should be preserved after multiple backtracks");
+        assert_eq!(params.get("team_id"), Some(&"team789".to_string()));
+        assert_eq!(params.len(), 3);
+    }
 }
