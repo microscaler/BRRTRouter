@@ -180,12 +180,20 @@ impl RadixNode {
         // If no exact match, try all parameter children
         for param_child in &self.param_children {
             if let Some(ref param_name) = param_child.param_name {
-                params.insert(param_name.to_string(), segment.to_string());
+                // Save the previous value (if any) before overwriting
+                let previous_value = params.insert(param_name.to_string(), segment.to_string());
                 if let Some(route) = param_child.search(remaining, method, params) {
                     return Some(route);
                 }
-                // Backtrack: remove the parameter if the search fails
-                params.remove(param_name.as_ref());
+                // Backtrack: restore the previous value instead of removing it
+                match previous_value {
+                    Some(prev) => {
+                        params.insert(param_name.to_string(), prev);
+                    }
+                    None => {
+                        params.remove(param_name.as_ref());
+                    }
+                }
             }
         }
 
@@ -813,5 +821,60 @@ mod tests {
         // The second {id} should overwrite the first
         assert_eq!(params4.get("id"), Some(&"post111".to_string()));
         assert_eq!(params4.len(), 1);
+    }
+
+    #[test]
+    fn test_radix_router_backtracking_with_overlapping_param_names() {
+        // This test demonstrates the bug where backtracking incorrectly removes
+        // a parent parameter instead of restoring its previous value.
+        // 
+        // Scenario:
+        // - Route 1: /org/{id}/team/{id}/members (inserted first, will fail to match)
+        // - Route 2: /org/{id}/team/{team_id}/stats (inserted second, should match)
+        // 
+        // When matching /org/org123/team/team456/stats:
+        // 1. First, {id} at /org level is set to "org123"
+        // 2. Then we try the first param_child: {id} at /team level, overwriting to "team456"
+        // 3. The route fails because "stats" != "members"
+        // 4. BUG: params.remove("id") removes the parameter entirely, losing "org123"
+        // 5. Then we try the second param_child: {team_id} at /team level
+        // 6. The route matches but "id" (org parameter) is missing!
+        //
+        // Expected behavior: Step 4 should restore "id" to "org123" instead of removing it.
+        let routes = vec![
+            create_route_meta(
+                Method::GET,
+                "/org/{id}/team/{id}/members",
+                "get_org_team_members",
+            ),
+            create_route_meta(
+                Method::GET,
+                "/org/{id}/team/{team_id}/stats",
+                "get_team_stats",
+            ),
+        ];
+        let router = RadixRouter::new(routes);
+
+        // Test the second route that should match
+        let result = router.route(Method::GET, "/org/org123/team/team456/stats");
+        assert!(result.is_some());
+        let (route, params) = result.unwrap();
+        assert_eq!(route.handler_name, "get_team_stats");
+        
+        // The bug manifests here: "id" parameter is missing because it was removed
+        // during backtracking instead of being restored to "org123"
+        assert_eq!(params.get("id"), Some(&"org123".to_string()), 
+                   "org id should be preserved after backtracking from failed route");
+        assert_eq!(params.get("team_id"), Some(&"team456".to_string()));
+        assert_eq!(params.len(), 2);
+
+        // Test the first route that should also work
+        let result2 = router.route(Method::GET, "/org/org999/team/team888/members");
+        assert!(result2.is_some());
+        let (route2, params2) = result2.unwrap();
+        assert_eq!(route2.handler_name, "get_org_team_members");
+        // In this case, the second {id} overwrites the first, which is expected
+        assert_eq!(params2.get("id"), Some(&"team888".to_string()));
+        assert_eq!(params2.len(), 1);
     }
 }
