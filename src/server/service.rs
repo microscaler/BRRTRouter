@@ -6,7 +6,7 @@ use crate::router::Router;
 use crate::security::{SecurityProvider, SecurityRequest};
 use crate::spec::SecurityScheme;
 use crate::static_files::StaticFiles;
-use jsonschema::JSONSchema;
+use crate::validator_cache::ValidatorCache;
 use may_minihttp::{HttpService, Request, Response};
 use serde_json::json;
 use std::collections::HashMap;
@@ -46,6 +46,8 @@ pub struct AppService {
     pub watcher: Option<notify::RecommendedWatcher>,
     /// Precomputed Keep-Alive header (to avoid per-request allocations/leaks)
     pub keep_alive_header: Option<&'static str>,
+    /// JSON Schema validator cache for eliminating per-request compilation
+    pub validator_cache: ValidatorCache,
 }
 
 /// Clone implementation for `AppService`
@@ -88,6 +90,7 @@ impl Clone for AppService {
             doc_files: self.doc_files.clone(),
             watcher: None,
             keep_alive_header: self.keep_alive_header,
+            validator_cache: self.validator_cache.clone(),
         }
     }
 }
@@ -129,6 +132,10 @@ impl AppService {
         static_dir: Option<PathBuf>,
         doc_dir: Option<PathBuf>,
     ) -> Self {
+        // Load runtime config to determine if caching is enabled
+        let runtime_config = crate::runtime_config::RuntimeConfig::from_env();
+        let validator_cache = ValidatorCache::new(runtime_config.schema_cache_enabled);
+        
         Self {
             router,
             dispatcher,
@@ -141,6 +148,7 @@ impl AppService {
             doc_files: doc_dir.map(StaticFiles::new),
             watcher: None,
             keep_alive_header: None,
+            validator_cache,
         }
     }
 
@@ -999,7 +1007,10 @@ impl HttpService for AppService {
                     "Request validation start"
                 );
 
-                let compiled = JSONSchema::compile(schema).expect("invalid request schema");
+                // Use cached validator instead of compiling on every request
+                let compiled = self.validator_cache
+                    .get_or_compile(&route_match.handler_name, "request", None, schema)
+                    .expect("invalid request schema");
                 let validation = compiled.validate(body_val);
                 if let Err(errors) = validation {
                     // V3: Schema validation failed
@@ -1067,8 +1078,10 @@ impl HttpService for AppService {
                             "Response validation start"
                         );
 
-                        let compiled =
-                            JSONSchema::compile(schema).expect("invalid response schema");
+                        // Use cached validator instead of compiling on every response
+                        let compiled = self.validator_cache
+                            .get_or_compile(&route_match.handler_name, "response", Some(hr.status), schema)
+                            .expect("invalid response schema");
                         let validation = compiled.validate(&hr.body);
                         if let Err(errors) = validation {
                             // V7: Response validation failed

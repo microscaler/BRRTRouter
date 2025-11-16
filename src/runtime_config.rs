@@ -26,6 +26,19 @@
 //! - 800 concurrent requests × 1 MB stack = 800 MB virtual memory
 //! - Tune based on your handler complexity and concurrency needs
 //!
+//! ### `BRRTR_SCHEMA_CACHE`
+//!
+//! Controls whether JSON Schema validators are cached across requests.
+//! Accepts values: `on`, `off`, `true`, `false`, `1`, `0`
+//!
+//! Default: `on` (enabled)
+//!
+//! **Why this matters:**
+//! - Eliminates per-request schema compilation overhead
+//! - Significantly reduces CPU usage under high load
+//! - Reduces memory allocations for validation
+//! - Can be disabled for debugging or if issues arise
+//!
 //! ## Usage
 //!
 //! ```rust
@@ -71,6 +84,9 @@ pub struct RuntimeConfig {
     /// Stack size for coroutines in bytes (default: 64 KB / 0x10000)
     /// Increased from 16KB to prevent stack overflows in complex handlers
     pub stack_size: usize,
+    /// Whether to cache JSON Schema validators (default: true)
+    /// Eliminates per-request schema compilation overhead
+    pub schema_cache_enabled: bool,
 }
 
 impl RuntimeConfig {
@@ -98,6 +114,18 @@ impl RuntimeConfig {
             eprintln!("[telemetry] Adjusted stack size to {} (odd) to enable usage tracking", stack_size);
         }
         
-        RuntimeConfig { stack_size }
+        // Parse schema cache configuration (default: enabled)
+        let schema_cache_enabled = match env::var("BRRTR_SCHEMA_CACHE") {
+            Ok(val) => {
+                let val_lower = val.to_lowercase();
+                !matches!(val_lower.as_str(), "off" | "false" | "0" | "no")
+            }
+            Err(_) => true, // Default to enabled
+        };
+        
+        RuntimeConfig {
+            stack_size,
+            schema_cache_enabled,
+        }
     }
 }
