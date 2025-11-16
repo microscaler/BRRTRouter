@@ -27,6 +27,7 @@ fn create_route_meta(method: Method, path: &str, handler: &str) -> RouteMeta {
         project_slug: "test_project".to_string(),
         output_dir: PathBuf::from("test_output"),
         sse: false,
+        estimated_request_body_bytes: None,
     }
 }
 

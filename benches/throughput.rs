@@ -130,6 +130,7 @@ fn bench_route_scalability(c: &mut Criterion) {
                 project_slug: "test".to_string(),
                 output_dir: std::path::PathBuf::from("test"),
                 sse: false,
+                estimated_request_body_bytes: None,
             });
         }
         
