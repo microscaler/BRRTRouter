@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicI64, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
@@ -80,6 +81,12 @@ struct PathMetrics {
     min_latency_ns: AtomicU64,
 }
 
+/// Type alias for path metrics storage
+type PathMetricsMap = HashMap<Cow<'static, str>, Arc<PathMetrics>>;
+
+/// Type alias for status metrics storage
+type StatusMetricsMap = HashMap<(Cow<'static, str>, u16), AtomicUsize>;
+
 impl PathMetrics {
     fn new() -> Self {
         Self {
@@ -149,9 +156,9 @@ pub struct MetricsMiddleware {
     /// Active requests currently being processed (incremented on start, decremented on completion)
     active_requests: AtomicI64,
     /// Per-path metrics for detailed monitoring
-    path_metrics: Arc<RwLock<HashMap<String, Arc<PathMetrics>>>>,
+    path_metrics: Arc<RwLock<PathMetricsMap>>,
     /// Per-(path, status) request counts for status code tracking
-    status_metrics: Arc<RwLock<HashMap<(String, u16), AtomicUsize>>>,
+    status_metrics: Arc<RwLock<StatusMetricsMap>>,
     /// Histogram for request duration (for percentile calculations)
     duration_histogram: Arc<HistogramMetric>,
     /// Connection close events (client disconnects, timeouts, etc.)
@@ -283,18 +290,21 @@ impl MetricsMiddleware {
     ///
     /// This is called internally by the middleware to track per-path statistics.
     pub(crate) fn record_path_metrics(&self, path: &str, latency_ns: u64) {
+        // Use Cow to avoid allocating if the key already exists
+        let path_key: Cow<'static, str> = Cow::Owned(path.to_string());
+        
         // Get or create path metrics
         let metrics = {
             // Fast path: try read lock first
             if let Ok(map) = self.path_metrics.read() {
-                if let Some(pm) = map.get(path) {
+                if let Some(pm) = map.get(&path_key) {
                     pm.clone()
                 } else {
                     drop(map); // Release read lock before upgrading
                                // Slow path: need to create new entry
                     let mut map = self.path_metrics.write()
                         .expect("metrics RwLock poisoned - critical error");
-                    map.entry(path.to_string())
+                    map.entry(path_key)
                         .or_insert_with(|| Arc::new(PathMetrics::new()))
                         .clone()
                 }
@@ -302,7 +312,7 @@ impl MetricsMiddleware {
                 // Fallback if read lock fails
                 let mut map = self.path_metrics.write()
                     .expect("metrics RwLock poisoned - critical error");
-                map.entry(path.to_string())
+                map.entry(path_key)
                     .or_insert_with(|| Arc::new(PathMetrics::new()))
                     .clone()
             }
@@ -325,7 +335,7 @@ impl MetricsMiddleware {
                 let min = pm.min_latency_ns.load(Ordering::Relaxed);
                 let max = pm.max_latency_ns.load(Ordering::Relaxed);
                 let avg = if count > 0 { total / count as u64 } else { 0 };
-                (path.clone(), (count, avg, min, max))
+                (path.to_string(), (count, avg, min, max))
             })
             .collect()
     }
@@ -343,7 +353,7 @@ impl MetricsMiddleware {
             .expect("metrics RwLock poisoned - critical error");
         map.iter()
             .map(|((path, status), count)| {
-                ((path.clone(), *status), count.load(Ordering::Relaxed))
+                ((path.to_string(), *status), count.load(Ordering::Relaxed))
             })
             .collect()
     }
@@ -365,7 +375,10 @@ impl MetricsMiddleware {
 
     /// Record status code for a request
     fn record_status(&self, path: &str, status: u16) {
-        let key = (path.to_string(), status);
+        // Use Cow to avoid allocating if the key already exists
+        let path_key: Cow<'static, str> = Cow::Owned(path.to_string());
+        let key = (path_key, status);
+        
         let map = self.status_metrics.read()
             .expect("metrics RwLock poisoned - critical error");
         if let Some(counter) = map.get(&key) {
