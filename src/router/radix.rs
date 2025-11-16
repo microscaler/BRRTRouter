@@ -70,8 +70,10 @@ struct RadixNode {
     param_name: Option<Cow<'static, str>>,
     /// Child nodes for more specific paths
     children: Vec<RadixNode>,
-    /// Wildcard child node for parameterized paths (e.g., {id})
-    param_child: Option<Box<RadixNode>>,
+    /// Wildcard child nodes for parameterized paths (e.g., {id}, {user_id})
+    /// Multiple parameter children are supported to handle routes with different
+    /// parameter names at the same position (e.g., /users/{id}/posts vs /users/{user_id}/comments)
+    param_children: Vec<RadixNode>,
 }
 
 impl RadixNode {
@@ -82,7 +84,7 @@ impl RadixNode {
             routes: HashMap::new(),
             param_name: None,
             children: Vec::new(),
-            param_child: None,
+            param_children: Vec::new(),
         }
     }
 
@@ -93,7 +95,7 @@ impl RadixNode {
             routes: HashMap::new(),
             param_name: Some(param_name),
             children: Vec::new(),
-            param_child: None,
+            param_children: Vec::new(),
         }
     }
 
@@ -118,16 +120,21 @@ impl RadixNode {
         if segment.starts_with('{') && segment.ends_with('}') {
             let param_name = segment.trim_start_matches('{').trim_end_matches('}');
             
-            // Use the param_child for this parameter
-            if self.param_child.is_none() {
-                self.param_child = Some(Box::new(RadixNode::new_param(
-                    Cow::Owned(param_name.to_string())
-                )));
+            // Look for an existing param_child with the same parameter name
+            for param_child in &mut self.param_children {
+                if let Some(ref existing_param_name) = param_child.param_name {
+                    if existing_param_name.as_ref() == param_name {
+                        // Found matching parameter name, reuse this child
+                        param_child.insert(remaining, method, route);
+                        return;
+                    }
+                }
             }
             
-            if let Some(ref mut child) = self.param_child {
-                child.insert(remaining, method, route);
-            }
+            // No matching param_child found, create a new one
+            let mut new_param_child = RadixNode::new_param(Cow::Owned(param_name.to_string()));
+            new_param_child.insert(remaining, method, route);
+            self.param_children.push(new_param_child);
             return;
         }
 
@@ -170,11 +177,11 @@ impl RadixNode {
             }
         }
 
-        // If no exact match, try the parameter child
-        if let Some(ref child) = self.param_child {
-            if let Some(ref param_name) = child.param_name {
+        // If no exact match, try all parameter children
+        for param_child in &self.param_children {
+            if let Some(ref param_name) = param_child.param_name {
                 params.insert(param_name.to_string(), segment.to_string());
-                if let Some(route) = child.search(remaining, method, params) {
+                if let Some(route) = param_child.search(remaining, method, params) {
                     return Some(route);
                 }
                 // Backtrack: remove the parameter if the search fails
@@ -407,5 +414,66 @@ mod tests {
         let result3 = router.route(Method::GET, "/users/123/posts");
         assert!(result3.is_some());
         assert_eq!(result3.unwrap().0.handler_name, "get_user_posts");
+    }
+
+    #[test]
+    fn test_radix_router_different_param_names_same_position() {
+        // This test demonstrates the bug where routes with different parameter names
+        // at the same path position incorrectly share the same param_child node.
+        // Example: /users/{user_id}/posts and /users/{id}/comments
+        let routes = vec![
+            create_route_meta(Method::GET, "/users/{user_id}/posts", "get_user_posts"),
+            create_route_meta(Method::GET, "/users/{id}/comments", "get_user_comments"),
+        ];
+        let router = RadixRouter::new(routes);
+
+        // Test first route - should extract user_id parameter
+        let result1 = router.route(Method::GET, "/users/123/posts");
+        assert!(result1.is_some());
+        let (route1, params1) = result1.unwrap();
+        assert_eq!(route1.handler_name, "get_user_posts");
+        assert_eq!(params1.get("user_id"), Some(&"123".to_string()));
+        assert!(params1.get("id").is_none()); // Should NOT have 'id' parameter
+
+        // Test second route - should extract id parameter
+        let result2 = router.route(Method::GET, "/users/456/comments");
+        assert!(result2.is_some());
+        let (route2, params2) = result2.unwrap();
+        assert_eq!(route2.handler_name, "get_user_comments");
+        assert_eq!(params2.get("id"), Some(&"456".to_string()));
+        assert!(params2.get("user_id").is_none()); // Should NOT have 'user_id' parameter
+    }
+
+    #[test]
+    fn test_radix_router_multiple_divergent_params() {
+        // Test more complex scenario with multiple routes having different parameter names
+        let routes = vec![
+            create_route_meta(Method::GET, "/api/{version}/users/{user_id}", "get_user_v1"),
+            create_route_meta(Method::GET, "/api/{v}/products/{product_id}", "get_product"),
+            create_route_meta(Method::GET, "/api/{api_version}/orders/{order_id}", "get_order"),
+        ];
+        let router = RadixRouter::new(routes);
+
+        // Each route should extract its own parameter names
+        let result1 = router.route(Method::GET, "/api/v1/users/123");
+        assert!(result1.is_some());
+        let (route1, params1) = result1.unwrap();
+        assert_eq!(route1.handler_name, "get_user_v1");
+        assert_eq!(params1.get("version"), Some(&"v1".to_string()));
+        assert_eq!(params1.get("user_id"), Some(&"123".to_string()));
+
+        let result2 = router.route(Method::GET, "/api/v2/products/456");
+        assert!(result2.is_some());
+        let (route2, params2) = result2.unwrap();
+        assert_eq!(route2.handler_name, "get_product");
+        assert_eq!(params2.get("v"), Some(&"v2".to_string()));
+        assert_eq!(params2.get("product_id"), Some(&"456".to_string()));
+
+        let result3 = router.route(Method::GET, "/api/v3/orders/789");
+        assert!(result3.is_some());
+        let (route3, params3) = result3.unwrap();
+        assert_eq!(route3.handler_name, "get_order");
+        assert_eq!(params3.get("api_version"), Some(&"v3".to_string()));
+        assert_eq!(params3.get("order_id"), Some(&"789".to_string()));
     }
 }
