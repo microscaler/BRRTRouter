@@ -234,6 +234,9 @@ pub struct RouteMeta {
     pub base_path: String,
     /// Whether this route uses Server-Sent Events
     pub sse: bool,
+    /// Estimated request body size in bytes (derived from OpenAPI schema)
+    /// Used as fallback when Content-Length header is not available
+    pub estimated_request_body_bytes: Option<usize>,
 }
 
 impl RouteMeta {

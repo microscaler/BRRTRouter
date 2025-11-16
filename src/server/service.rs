@@ -724,15 +724,28 @@ impl HttpService for AppService {
         );
         let _enter = span.enter();
 
-        // Calculate total request size (approximate)
-        let total_size_bytes = headers
+        // Calculate header size (always accurate)
+        let header_size_bytes: usize = headers
             .iter()
             .map(|(k, v)| k.len() + v.len())
-            .sum::<usize>()
-            + body.as_ref().map(|v| v.to_string().len()).unwrap_or(0);
+            .sum();
+
+        // Calculate body size using Content-Length header if available
+        // This avoids expensive JSON serialization in the hot path
+        let body_size_bytes = if let Some(content_length_str) = headers.get("content-length") {
+            // Prefer Content-Length header when available (most accurate and cheap)
+            content_length_str.parse::<usize>().unwrap_or(0)
+        } else {
+            // Fallback: will use estimated size from route or 0 if not available
+            // This will be updated after routing if an estimate is available
+            0
+        };
+
+        let total_size_bytes = header_size_bytes + body_size_bytes;
 
         // Create request logger that will log completion on drop (RAII pattern)
         // Note: request_id will be set to None initially, updated when dispatch occurs
+        // Note: total_size_bytes will be updated after routing if estimate is available
         let mut _request_logger = RequestLogger {
             request_id: None,
             method: method.clone(),
@@ -827,6 +840,14 @@ impl HttpService for AppService {
         };
         if let Some(mut route_match) = route_opt {
             route_match.query_params = query_params.clone();
+            
+            // Update total_size_bytes with estimated body size if Content-Length was not available
+            if body_size_bytes == 0 && body.is_some() {
+                if let Some(estimated) = route_match.route.estimated_request_body_bytes {
+                    _request_logger.total_size_bytes = header_size_bytes + estimated;
+                }
+            }
+            
             // Perform security validation first
             if !route_match.route.security.is_empty() {
                 // S1: Security check start

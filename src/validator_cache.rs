@@ -665,6 +665,7 @@ mod tests {
             output_dir: PathBuf::from("/tmp"),
             base_path: "".to_string(),
             sse: false,
+            estimated_request_body_bytes: None,
         };
 
         let routes = vec![route];
@@ -724,6 +725,7 @@ mod tests {
             output_dir: PathBuf::from("/tmp"),
             base_path: "".to_string(),
             sse: false,
+            estimated_request_body_bytes: None,
         };
 
         let routes = vec![route];
@@ -792,6 +794,7 @@ mod tests {
             output_dir: PathBuf::from("/tmp"),
             base_path: "".to_string(),
             sse: false,
+            estimated_request_body_bytes: None,
         };
 
         let routes = vec![route];

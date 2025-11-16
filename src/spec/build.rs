@@ -6,6 +6,13 @@ use crate::validator::{fail_if_issues, ValidationIssue};
 use oas3::spec::{MediaTypeExamples, ObjectOrReference, Parameter};
 use oas3::OpenApiV3Spec;
 use serde_json::Value;
+use std::cmp;
+
+/// Maximum estimated size for unbounded types (arrays/strings without maxItems/maxLength)
+const DEFAULT_MAX_ARRAY_ITEMS: usize = 100;
+const DEFAULT_MAX_STRING_LENGTH: usize = 1024;
+const DEFAULT_OBJECT_PROPERTY_SIZE: usize = 50;
+const MAX_ESTIMATED_BODY_SIZE: usize = 10 * 1024 * 1024; // 10MB cap
 
 /// Resolve a JSON Schema `$ref` to the actual schema definition
 ///
@@ -76,6 +83,114 @@ pub fn expand_schema_refs(spec: &OpenApiV3Spec, value: &mut Value) {
         }
         _ => {}
     }
+}
+
+/// Estimate the maximum size in bytes of a JSON body based on OpenAPI schema
+///
+/// This provides a conservative estimate by analyzing schema constraints:
+/// - String: uses `maxLength` or defaults to DEFAULT_MAX_STRING_LENGTH
+/// - Array: uses `maxItems * item_size` or defaults to DEFAULT_MAX_ARRAY_ITEMS
+/// - Object: sums property sizes, clamped to reasonable bounds
+/// - Number/Integer: assumes 20 bytes for JSON representation
+/// - Boolean: assumes 5 bytes ("true" or "false")
+///
+/// The function also checks for vendor extension `x-brrtrouter-body-size-bytes`
+/// which allows explicit size overrides in the OpenAPI spec.
+///
+/// # Arguments
+///
+/// * `schema` - The JSON Schema to analyze
+///
+/// # Returns
+///
+/// Estimated maximum body size in bytes, or None if schema is absent
+pub fn estimate_body_size(schema: Option<&Value>) -> Option<usize> {
+    fn estimate_schema_size(schema: &Value, depth: usize) -> usize {
+        // Prevent infinite recursion
+        if depth > 10 {
+            return DEFAULT_OBJECT_PROPERTY_SIZE;
+        }
+
+        let obj = match schema.as_object() {
+            Some(o) => o,
+            None => return DEFAULT_OBJECT_PROPERTY_SIZE,
+        };
+
+        // Check for vendor extension override
+        if let Some(override_size) = obj
+            .get("x-brrtrouter-body-size-bytes")
+            .and_then(|v| v.as_u64())
+        {
+            return cmp::min(override_size as usize, MAX_ESTIMATED_BODY_SIZE);
+        }
+
+        let type_str = obj.get("type").and_then(|v| v.as_str());
+
+        match type_str {
+            Some("string") => {
+                let max_len = obj
+                    .get("maxLength")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(DEFAULT_MAX_STRING_LENGTH as u64) as usize;
+                // Account for JSON quotes and potential escaping
+                cmp::min(max_len * 2 + 2, MAX_ESTIMATED_BODY_SIZE)
+            }
+            Some("integer") | Some("number") => {
+                // JSON numbers can be large, but typically around 20 bytes
+                20
+            }
+            Some("boolean") => {
+                // "true" or "false"
+                5
+            }
+            Some("array") => {
+                let max_items = obj
+                    .get("maxItems")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(DEFAULT_MAX_ARRAY_ITEMS as u64) as usize;
+                let item_size = obj
+                    .get("items")
+                    .map(|items| estimate_schema_size(items, depth + 1))
+                    .unwrap_or(DEFAULT_OBJECT_PROPERTY_SIZE);
+                // Array overhead: brackets, commas
+                let overhead = 2 + max_items.saturating_sub(1);
+                cmp::min(
+                    max_items.saturating_mul(item_size).saturating_add(overhead),
+                    MAX_ESTIMATED_BODY_SIZE,
+                )
+            }
+            Some("object") | None => {
+                // For objects, sum up property sizes
+                let properties = obj.get("properties").and_then(|v| v.as_object());
+                let additional_props = obj.get("additionalProperties");
+
+                let mut total: usize = 2; // {} brackets
+
+                if let Some(props) = properties {
+                    for (key, prop_schema) in props {
+                        // Key length + quotes + colon + space
+                        let key_overhead = key.len() + 4;
+                        let value_size = estimate_schema_size(prop_schema, depth + 1);
+                        // Add comma overhead
+                        total = total
+                            .saturating_add(key_overhead)
+                            .saturating_add(value_size)
+                            .saturating_add(1);
+                    }
+                }
+
+                // If additionalProperties is true or a schema, add some buffer
+                if additional_props.is_some() {
+                    total = total.saturating_add(DEFAULT_OBJECT_PROPERTY_SIZE * 5);
+                }
+
+                cmp::min(total, MAX_ESTIMATED_BODY_SIZE)
+            }
+            _ => DEFAULT_OBJECT_PROPERTY_SIZE,
+        }
+    }
+
+    schema.map(|s| estimate_schema_size(s, 0))
 }
 
 fn resolve_handler_name(
@@ -448,6 +563,9 @@ pub fn build_routes(spec: &OpenApiV3Spec, slug: &str) -> anyhow::Result<Vec<Rout
                 parameters.extend(extract_parameters(spec, &item.parameters));
                 parameters.extend(extract_parameters(spec, &operation.parameters));
 
+                // Estimate request body size from schema
+                let estimated_request_body_bytes = estimate_body_size(request_schema.as_ref());
+
                 routes.push(RouteMeta {
                     method,
                     path_pattern: path.clone(),
@@ -464,6 +582,7 @@ pub fn build_routes(spec: &OpenApiV3Spec, slug: &str) -> anyhow::Result<Vec<Rout
                     output_dir: std::path::PathBuf::from("examples").join(slug).join("src"),
                     base_path: base_path.clone(),
                     sse: extract_sse_flag(operation),
+                    estimated_request_body_bytes,
                 });
             }
         }
@@ -471,4 +590,167 @@ pub fn build_routes(spec: &OpenApiV3Spec, slug: &str) -> anyhow::Result<Vec<Rout
 
     fail_if_issues(issues);
     Ok(routes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_estimate_body_size_string() {
+        let schema = json!({
+            "type": "string",
+            "maxLength": 100
+        });
+        let size = estimate_body_size(Some(&schema));
+        assert!(size.is_some());
+        // String with maxLength 100 should estimate to 100*2 + 2 (quotes) = 202
+        assert_eq!(size.unwrap(), 202);
+    }
+
+    #[test]
+    fn test_estimate_body_size_string_no_max() {
+        let schema = json!({
+            "type": "string"
+        });
+        let size = estimate_body_size(Some(&schema));
+        assert!(size.is_some());
+        // Should use DEFAULT_MAX_STRING_LENGTH (1024)
+        assert_eq!(size.unwrap(), 1024 * 2 + 2);
+    }
+
+    #[test]
+    fn test_estimate_body_size_integer() {
+        let schema = json!({
+            "type": "integer"
+        });
+        let size = estimate_body_size(Some(&schema));
+        assert_eq!(size, Some(20));
+    }
+
+    #[test]
+    fn test_estimate_body_size_boolean() {
+        let schema = json!({
+            "type": "boolean"
+        });
+        let size = estimate_body_size(Some(&schema));
+        assert_eq!(size, Some(5));
+    }
+
+    #[test]
+    fn test_estimate_body_size_array() {
+        let schema = json!({
+            "type": "array",
+            "maxItems": 10,
+            "items": {
+                "type": "string",
+                "maxLength": 50
+            }
+        });
+        let size = estimate_body_size(Some(&schema));
+        assert!(size.is_some());
+        // 10 items * (50*2+2) + 2 (brackets) + 9 (commas)
+        let expected = 10 * 102 + 2 + 9;
+        assert_eq!(size.unwrap(), expected);
+    }
+
+    #[test]
+    fn test_estimate_body_size_array_no_max() {
+        let schema = json!({
+            "type": "array",
+            "items": {
+                "type": "integer"
+            }
+        });
+        let size = estimate_body_size(Some(&schema));
+        assert!(size.is_some());
+        // Should use DEFAULT_MAX_ARRAY_ITEMS (100)
+        let expected = 100 * 20 + 2 + 99;
+        assert_eq!(size.unwrap(), expected);
+    }
+
+    #[test]
+    fn test_estimate_body_size_object() {
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "maxLength": 50},
+                "age": {"type": "integer"},
+                "active": {"type": "boolean"}
+            }
+        });
+        let size = estimate_body_size(Some(&schema));
+        assert!(size.is_some());
+        // {} brackets: 2
+        // "name" key: 4 + 4 = 8, value: 102, comma: 1 = 111
+        // "age" key: 3 + 4 = 7, value: 20, comma: 1 = 28
+        // "active" key: 6 + 4 = 10, value: 5, comma: 1 = 16
+        // Total: 2 + 111 + 28 + 16 = 157
+        assert_eq!(size.unwrap(), 157);
+    }
+
+    #[test]
+    fn test_estimate_body_size_nested_object() {
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "user": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "maxLength": 30}
+                    }
+                }
+            }
+        });
+        let size = estimate_body_size(Some(&schema));
+        assert!(size.is_some());
+        // Nested structure should be estimated
+        assert!(size.unwrap() > 0);
+    }
+
+    #[test]
+    fn test_estimate_body_size_vendor_extension() {
+        let schema = json!({
+            "type": "object",
+            "x-brrtrouter-body-size-bytes": 5000
+        });
+        let size = estimate_body_size(Some(&schema));
+        assert_eq!(size, Some(5000));
+    }
+
+    #[test]
+    fn test_estimate_body_size_vendor_extension_capped() {
+        let schema = json!({
+            "type": "object",
+            "x-brrtrouter-body-size-bytes": 50000000
+        });
+        let size = estimate_body_size(Some(&schema));
+        // Should be capped at MAX_ESTIMATED_BODY_SIZE (10MB)
+        assert_eq!(size, Some(MAX_ESTIMATED_BODY_SIZE));
+    }
+
+    #[test]
+    fn test_estimate_body_size_none() {
+        let size = estimate_body_size(None);
+        assert_eq!(size, None);
+    }
+
+    #[test]
+    fn test_estimate_body_size_prevents_recursion() {
+        // Create a deeply nested structure
+        let mut schema = json!({"type": "integer"});
+        for _ in 0..20 {
+            schema = json!({
+                "type": "object",
+                "properties": {
+                    "nested": schema
+                }
+            });
+        }
+        let size = estimate_body_size(Some(&schema));
+        assert!(size.is_some());
+        // Should not panic or overflow
+        assert!(size.unwrap() > 0);
+    }
 }
