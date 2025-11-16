@@ -94,6 +94,7 @@ fn test_template_writers() {
         output_dir: PathBuf::new(),
         base_path: String::new(),
         sse: false,
+        estimated_request_body_bytes: None,
     };
     write_main_rs(&src_dir, "tester", vec![route]).unwrap();
 
