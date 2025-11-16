@@ -290,18 +290,16 @@ impl MetricsMiddleware {
     ///
     /// This is called internally by the middleware to track per-path statistics.
     pub(crate) fn record_path_metrics(&self, path: &str, latency_ns: u64) {
-        // Use Cow to avoid allocating if the key already exists
-        let path_key: Cow<'static, str> = Cow::Owned(path.to_string());
-        
         // Get or create path metrics
         let metrics = {
-            // Fast path: try read lock first
+            // Fast path: try read lock first with borrowed Cow (zero allocation)
             if let Ok(map) = self.path_metrics.read() {
-                if let Some(pm) = map.get(&path_key) {
+                if let Some(pm) = map.get(path) {
                     pm.clone()
                 } else {
                     drop(map); // Release read lock before upgrading
-                               // Slow path: need to create new entry
+                               // Slow path: need to create new entry with owned Cow
+                    let path_key: Cow<'static, str> = Cow::Owned(path.to_string());
                     let mut map = self.path_metrics.write()
                         .expect("metrics RwLock poisoned - critical error");
                     map.entry(path_key)
@@ -310,6 +308,7 @@ impl MetricsMiddleware {
                 }
             } else {
                 // Fallback if read lock fails
+                let path_key: Cow<'static, str> = Cow::Owned(path.to_string());
                 let mut map = self.path_metrics.write()
                     .expect("metrics RwLock poisoned - critical error");
                 map.entry(path_key)
@@ -375,16 +374,19 @@ impl MetricsMiddleware {
 
     /// Record status code for a request
     fn record_status(&self, path: &str, status: u16) {
-        // Use Cow to avoid allocating if the key already exists
-        let path_key: Cow<'static, str> = Cow::Owned(path.to_string());
-        let key = (path_key, status);
-        
+        // Fast path: try lookup with borrowed key (zero allocation)
         let map = self.status_metrics.read()
             .expect("metrics RwLock poisoned - critical error");
-        if let Some(counter) = map.get(&key) {
+        
+        // Try lookup with a temporary borrowed tuple
+        let temp_key = (Cow::Borrowed(path), status);
+        if let Some(counter) = map.get(&temp_key) {
             counter.fetch_add(1, Ordering::Relaxed);
         } else {
             drop(map);
+            // Slow path: create owned key only when inserting new entry
+            let path_key: Cow<'static, str> = Cow::Owned(path.to_string());
+            let key = (path_key, status);
             let mut map = self.status_metrics.write()
                 .expect("metrics RwLock poisoned - critical error");
             map.entry(key)
@@ -484,5 +486,109 @@ impl Middleware for MetricsMiddleware {
                 .store(may::config().get_stack_size(), Ordering::Relaxed);
             self.used_stack.store(0, Ordering::Relaxed);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_record_path_metrics_same_path() {
+        let metrics = MetricsMiddleware::new();
+        let path = "/users/{id}";
+        
+        // Record metrics for the same path multiple times
+        metrics.record_path_metrics(path, 1000);
+        metrics.record_path_metrics(path, 2000);
+        metrics.record_path_metrics(path, 3000);
+        
+        let stats = metrics.path_stats();
+        assert_eq!(stats.len(), 1);
+        assert!(stats.contains_key(path));
+        
+        let (count, avg, min, max) = stats.get(path).unwrap();
+        assert_eq!(*count, 3);
+        assert_eq!(*avg, 2000); // (1000 + 2000 + 3000) / 3
+        assert_eq!(*min, 1000);
+        assert_eq!(*max, 3000);
+    }
+
+    #[test]
+    fn test_record_path_metrics_different_paths() {
+        let metrics = MetricsMiddleware::new();
+        
+        // Record metrics for different paths
+        metrics.record_path_metrics("/users/{id}", 1000);
+        metrics.record_path_metrics("/pets", 2000);
+        metrics.record_path_metrics("/users/{id}", 1500);
+        
+        let stats = metrics.path_stats();
+        assert_eq!(stats.len(), 2);
+        assert!(stats.contains_key("/users/{id}"));
+        assert!(stats.contains_key("/pets"));
+        
+        let (count, avg, min, max) = stats.get("/users/{id}").unwrap();
+        assert_eq!(*count, 2);
+        assert_eq!(*avg, 1250); // (1000 + 1500) / 2
+        assert_eq!(*min, 1000);
+        assert_eq!(*max, 1500);
+        
+        let (count, avg, min, max) = stats.get("/pets").unwrap();
+        assert_eq!(*count, 1);
+        assert_eq!(*avg, 2000);
+        assert_eq!(*min, 2000);
+        assert_eq!(*max, 2000);
+    }
+
+    #[test]
+    fn test_record_status_same_path_status() {
+        let metrics = MetricsMiddleware::new();
+        let path = "/users/{id}";
+        
+        // Record same status for same path multiple times
+        metrics.record_status(path, 200);
+        metrics.record_status(path, 200);
+        metrics.record_status(path, 200);
+        
+        let stats = metrics.status_stats();
+        assert_eq!(stats.len(), 1);
+        assert_eq!(*stats.get(&(path.to_string(), 200)).unwrap(), 3);
+    }
+
+    #[test]
+    fn test_record_status_different_statuses() {
+        let metrics = MetricsMiddleware::new();
+        let path = "/users/{id}";
+        
+        // Record different statuses for same path
+        metrics.record_status(path, 200);
+        metrics.record_status(path, 200);
+        metrics.record_status(path, 404);
+        metrics.record_status(path, 500);
+        metrics.record_status(path, 500);
+        metrics.record_status(path, 500);
+        
+        let stats = metrics.status_stats();
+        assert_eq!(stats.len(), 3);
+        assert_eq!(*stats.get(&(path.to_string(), 200)).unwrap(), 2);
+        assert_eq!(*stats.get(&(path.to_string(), 404)).unwrap(), 1);
+        assert_eq!(*stats.get(&(path.to_string(), 500)).unwrap(), 3);
+    }
+
+    #[test]
+    fn test_record_status_different_paths() {
+        let metrics = MetricsMiddleware::new();
+        
+        // Record statuses for different paths
+        metrics.record_status("/users/{id}", 200);
+        metrics.record_status("/pets", 200);
+        metrics.record_status("/users/{id}", 404);
+        
+        let stats = metrics.status_stats();
+        assert_eq!(stats.len(), 3);
+        assert_eq!(*stats.get(&("/users/{id}".to_string(), 200)).unwrap(), 1);
+        assert_eq!(*stats.get(&("/users/{id}".to_string(), 404)).unwrap(), 1);
+        assert_eq!(*stats.get(&("/pets".to_string(), 200)).unwrap(), 1);
     }
 }
