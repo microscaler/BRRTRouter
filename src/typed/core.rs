@@ -270,4 +270,83 @@ impl Dispatcher {
         let tx = spawn_typed(handler);
         self.handlers.insert(name, tx);
     }
+
+    /// Register a typed handler with a worker pool for parallel request processing
+    ///
+    /// This creates a pool of N worker coroutines (configured via environment variables)
+    /// with a bounded queue. When the queue is full, backpressure is applied according
+    /// to the configured mode (block or shed).
+    ///
+    /// # Safety
+    ///
+    /// This function is marked unsafe because it spawns coroutines. The caller must ensure
+    /// the May coroutine runtime is properly initialized.
+    ///
+    /// # Configuration
+    ///
+    /// The worker pool behavior is configured via environment variables:
+    /// - `BRRTR_HANDLER_WORKERS`: Number of worker coroutines (default: 4)
+    /// - `BRRTR_HANDLER_QUEUE_BOUND`: Maximum queue depth (default: 1024)
+    /// - `BRRTR_BACKPRESSURE_MODE`: "block" or "shed" (default: "block")
+    /// - `BRRTR_BACKPRESSURE_TIMEOUT_MS`: Timeout for block mode (default: 50ms)
+    pub unsafe fn register_typed_with_pool<H>(&mut self, name: &str, handler: H)
+    where
+        H: Handler + Send + 'static + Clone,
+    {
+        use crate::worker_pool::WorkerPoolConfig;
+        
+        let config = WorkerPoolConfig::from_env();
+        
+        // Create a closure that wraps the typed handler
+        let handler_fn = move |req: HandlerRequest| {
+            let handler = handler.clone();
+            let reply_tx = req.reply_tx.clone();
+            let request_id = req.request_id;
+            
+            // Try to convert the request
+            let data = match H::Request::try_from(req.clone()) {
+                Ok(v) => v,
+                Err(err) => {
+                    let _ = reply_tx.send(HandlerResponse {
+                        status: 400,
+                        headers: HashMap::new(),
+                        body: serde_json::json!({
+                            "error": "Invalid request data",
+                            "message": err.to_string(),
+                            "request_id": request_id.to_string(),
+                        }),
+                    });
+                    return;
+                }
+            };
+            
+            // Build typed request
+            let typed_req = TypedHandlerRequest {
+                method: req.method.clone(),
+                path: req.path.clone(),
+                handler_name: req.handler_name.clone(),
+                path_params: req.path_params.clone(),
+                query_params: req.query_params.clone(),
+                data,
+            };
+            
+            // Call the handler
+            let result = handler.handle(typed_req);
+            
+            // Send response
+            let _ = reply_tx.send(HandlerResponse {
+                status: 200,
+                headers: HashMap::new(),
+                body: serde_json::to_value(result).unwrap_or_else(|e| {
+                    serde_json::json!({
+                        "error": "Failed to serialize response",
+                        "details": e.to_string(),
+                        "request_id": request_id.to_string(),
+                    })
+                }),
+            });
+        };
+        
+        self.register_handler_with_pool_config(name, handler_fn, config);
+    }
 }
