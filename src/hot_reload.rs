@@ -44,8 +44,17 @@
 //! 1. **Detection** - Filesystem watcher detects modification
 //! 2. **Parse** - New spec is loaded and validated
 //! 3. **Router Update** - New routing table is built and swapped in
-//! 4. **Dispatcher Update** - Handler registry is updated via callback
-//! 5. **Hooks** - Custom reload logic executes (e.g., metrics, logging)
+//! 4. **Cache Clear** - Validator cache is cleared to force recompilation
+//! 5. **Dispatcher Update** - Handler registry is updated via callback
+//! 6. **Hooks** - Custom reload logic executes (e.g., metrics, logging)
+//!
+//! ## Schema Cache Integration
+//!
+//! The hot reload system integrates with the validator cache to ensure schemas
+//! are recompiled when the spec changes:
+//! - Old cached validators are cleared before router/dispatcher updates
+//! - New schemas are lazily compiled on first request after reload
+//! - Ensures validators always match the current spec version
 //!
 //! ## Debouncing
 //!
@@ -74,6 +83,7 @@ use crate::{
     dispatcher::Dispatcher,
     router::Router,
     spec::{self, RouteMeta},
+    validator_cache::ValidatorCache,
 };
 use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::{Path, PathBuf};
@@ -85,10 +95,19 @@ use tracing::{debug, error, info, warn};
 ///
 /// The provided callback will receive the reloaded routes so the caller can
 /// rebuild dispatcher mappings or perform additional work.
+///
+/// # Arguments
+///
+/// * `spec_path` - Path to the OpenAPI specification file
+/// * `router` - Shared router instance
+/// * `dispatcher` - Shared dispatcher instance
+/// * `validator_cache` - Optional validator cache to clear on reload
+/// * `on_reload` - Callback invoked after successful reload
 pub fn watch_spec<P, F>(
     spec_path: P,
     router: Arc<RwLock<Router>>,
     dispatcher: Arc<RwLock<Dispatcher>>,
+    validator_cache: Option<ValidatorCache>,
     mut on_reload: F,
 ) -> notify::Result<RecommendedWatcher>
 where
@@ -143,6 +162,18 @@ where
                                 );
                                 println!("⚠️  Hot reload: Failed to acquire router write lock");
                                 return;
+                            }
+
+                            // Clear validator cache to force recompilation with new schemas
+                            if let Some(ref cache) = validator_cache {
+                                let cache_size_before = cache.size();
+                                cache.clear();
+                                info!(
+                                    spec_path = %spec_path_str,
+                                    cache_entries_cleared = cache_size_before,
+                                    "Validator cache cleared for hot reload"
+                                );
+                                println!("🗑️  Hot reload: Cleared {cache_size_before} cached schema validators");
                             }
 
                             // Update dispatcher

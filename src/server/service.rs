@@ -206,6 +206,31 @@ impl AppService {
         }
     }
 
+    /// Pre-compile and cache all JSON schemas from routes at startup
+    ///
+    /// This method should be called immediately after creating the service to compile
+    /// all request and response schemas and cache them. This eliminates the compilation
+    /// overhead on the first requests and ensures all schemas are valid at startup.
+    ///
+    /// # Arguments
+    ///
+    /// * `routes` - List of route metadata from the OpenAPI spec
+    ///
+    /// # Returns
+    ///
+    /// Number of schemas successfully compiled and cached
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let mut service = AppService::new(router, dispatcher, schemes, spec_path, None, None);
+    /// let compiled = service.precompile_schemas(&routes);
+    /// println!("Pre-compiled {} schemas", compiled);
+    /// ```
+    pub fn precompile_schemas(&self, routes: &[crate::spec::RouteMeta]) -> usize {
+        self.validator_cache.precompile_schemas(routes)
+    }
+
     /// Register default security providers based on loaded OpenAPI security schemes.
     ///
     /// This wires ApiKey, Bearer, and OAuth2 providers using environment variables or a

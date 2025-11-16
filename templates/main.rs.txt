@@ -175,6 +175,11 @@ fn main() -> io::Result<()> {
         args.static_dir.clone(),
         Some(args.doc_dir.clone()),
     );
+    
+    // Pre-compile all JSON schemas at startup for optimal performance
+    let compiled_count = service.precompile_schemas(&routes);
+    println!("[startup] precompiled {} JSON schema validators", compiled_count);
+    
     service.set_metrics_middleware(metrics);
     service.set_memory_middleware(memory);
 
