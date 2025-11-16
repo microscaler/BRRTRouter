@@ -119,7 +119,7 @@ impl RadixNode {
         // Check if this is a parameter segment (starts with {)
         if segment.starts_with('{') && segment.ends_with('}') {
             let param_name = segment.trim_start_matches('{').trim_end_matches('}');
-            
+
             // Look for an existing param_child with the same parameter name
             for param_child in &mut self.param_children {
                 if let Some(ref existing_param_name) = param_child.param_name {
@@ -130,7 +130,7 @@ impl RadixNode {
                     }
                 }
             }
-            
+
             // No matching param_child found, create a new one
             let mut new_param_child = RadixNode::new_param(Cow::Owned(param_name.to_string()));
             new_param_child.insert(remaining, method, route);
@@ -284,7 +284,11 @@ impl RadixRouter {
     ///
     /// * `Some((route, params))` - If a matching route is found with extracted parameters
     /// * `None` - If no route matches
-    pub fn route(&self, method: Method, path: &str) -> Option<(Arc<RouteMeta>, HashMap<String, String>)> {
+    pub fn route(
+        &self,
+        method: Method,
+        path: &str,
+    ) -> Option<(Arc<RouteMeta>, HashMap<String, String>)> {
         let segments: Vec<&str> = path
             .trim_start_matches('/')
             .split('/')
@@ -450,7 +454,11 @@ mod tests {
         let routes = vec![
             create_route_meta(Method::GET, "/api/{version}/users/{user_id}", "get_user_v1"),
             create_route_meta(Method::GET, "/api/{v}/products/{product_id}", "get_product"),
-            create_route_meta(Method::GET, "/api/{api_version}/orders/{order_id}", "get_order"),
+            create_route_meta(
+                Method::GET,
+                "/api/{api_version}/orders/{order_id}",
+                "get_order",
+            ),
         ];
         let router = RadixRouter::new(routes);
 
