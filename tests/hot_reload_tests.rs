@@ -333,3 +333,183 @@ paths:
 
     // Fixture automatically cleaned up when it drops (RAII)!
 }
+
+#[test]
+fn test_watch_spec_schema_changes_enforced() {
+    // Test that validates actual schema validation behavior changes after hot reload
+    const SPEC_V1: &str = r#"openapi: 3.1.0
+info:
+  title: Schema Change Test
+  version: '1.0'
+paths:
+  /user:
+    post:
+      operationId: create_user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+              required: [name]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  name:
+                    type: string
+"#;
+    const SPEC_V2: &str = r#"openapi: 3.1.0
+info:
+  title: Schema Change Test
+  version: '1.0'
+paths:
+  /user:
+    post:
+      operationId: create_user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                age:
+                  type: integer
+              required: [name, age]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  name:
+                    type: string
+                  age:
+                    type: integer
+"#;
+
+    use brrtrouter::validator_cache::ValidatorCache;
+    use serde_json::json;
+    
+    // Use RAII fixture for automatic cleanup
+    let fixture = HotReloadTestFixture::new(SPEC_V1);
+    let path = fixture.path();
+    let (routes, _slug) = load_spec(path.to_str().unwrap()).unwrap();
+    let router = Arc::new(RwLock::new(Router::new(routes.clone())));
+    let dispatcher = Arc::new(RwLock::new(Dispatcher::new()));
+    
+    // Create validator cache and precompile initial schemas
+    let cache = ValidatorCache::new(true);
+    let initial_compiled = cache.precompile_schemas(&routes);
+    assert!(initial_compiled > 0, "Should precompile initial schemas");
+    
+    // Test validation with V1 schema (requires only 'name')
+    let v1_valid_request = json!({"name": "Alice"});
+    let v1_route = routes.iter().find(|r| r.handler_name == "create_user").unwrap();
+    
+    if let Some(ref schema) = v1_route.request_schema {
+        let validator = cache.get_or_compile("create_user", "request", None, schema).unwrap();
+        assert!(validator.validate(&v1_valid_request).is_ok(), 
+                "V1: Request with only 'name' should be valid");
+        
+        // This should be invalid in V2 but valid in V1 (missing 'age')
+        let v1_missing_age = json!({"name": "Bob"});
+        assert!(validator.validate(&v1_missing_age).is_ok(),
+                "V1: Request without 'age' should be valid");
+    }
+
+    let cache_clone = cache.clone();
+    let router_clone = router.clone();
+    let updates: Arc<Mutex<Vec<Vec<String>>>> = Arc::new(Mutex::new(Vec::new()));
+    let updates_clone = updates.clone();
+
+    {
+        // Scope the watcher to ensure it drops before file cleanup
+        let watcher = watch_spec(
+            &path,
+            router_clone,
+            dispatcher.clone(),
+            Some(cache_clone),
+            move |disp, new_routes| {
+                for r in &new_routes {
+                    let (tx, _rx) = mpsc::channel();
+                    disp.add_route(r.clone(), tx);
+                }
+                let names = new_routes.iter().map(|r| r.handler_name.clone()).collect();
+                updates_clone.lock().unwrap().push(names);
+            },
+        )
+        .expect("watch_spec");
+
+        // allow watcher thread to start
+        std::thread::sleep(Duration::from_millis(100));
+
+        // Modify the spec to V2 (now requires 'age' field)
+        fixture.update_content(SPEC_V2);
+
+        // Wait for hot reload to complete
+        let start = std::time::Instant::now();
+        let timeout = Duration::from_secs(5);
+
+        loop {
+            {
+                let ups = updates.lock().unwrap();
+                if !ups.is_empty() {
+                    break;
+                }
+            }
+
+            if start.elapsed() > timeout {
+                panic!("Timeout waiting for hot reload");
+            }
+
+            std::thread::sleep(Duration::from_millis(50));
+        }
+
+        // Explicitly drop watcher before assertions
+        drop(watcher);
+
+        // Give filesystem watcher time to fully stop
+        std::thread::sleep(Duration::from_millis(100));
+    }
+
+    // Verify cache was cleared
+    assert_eq!(cache.size(), 0, "Cache should be empty after hot reload");
+
+    // Load the new routes to get updated schemas
+    let (new_routes, _slug) = load_spec(path.to_str().unwrap()).unwrap();
+    let v2_route = new_routes.iter().find(|r| r.handler_name == "create_user").unwrap();
+    
+    // Test validation with V2 schema (requires both 'name' and 'age')
+    if let Some(ref schema) = v2_route.request_schema {
+        let validator = cache.get_or_compile("create_user", "request", None, schema).unwrap();
+        
+        // Request with both fields should be valid
+        let v2_valid_request = json!({"name": "Charlie", "age": 30});
+        assert!(validator.validate(&v2_valid_request).is_ok(),
+                "V2: Request with 'name' and 'age' should be valid");
+        
+        // Request missing 'age' should now be INVALID
+        let v2_missing_age = json!({"name": "David"});
+        assert!(validator.validate(&v2_missing_age).is_err(),
+                "V2: Request without 'age' should be INVALID after hot reload");
+    }
+
+    // Fixture automatically cleaned up when it drops (RAII)!
+}

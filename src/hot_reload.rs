@@ -44,7 +44,7 @@
 //! 1. **Detection** - Filesystem watcher detects modification
 //! 2. **Parse** - New spec is loaded and validated
 //! 3. **Router Update** - New routing table is built and swapped in
-//! 4. **Cache Clear** - Validator cache is cleared to force recompilation
+//! 4. **Cache Clear** - Validator cache is cleared and spec version incremented
 //! 5. **Dispatcher Update** - Handler registry is updated via callback
 //! 6. **Hooks** - Custom reload logic executes (e.g., metrics, logging)
 //!
@@ -53,8 +53,10 @@
 //! The hot reload system integrates with the validator cache to ensure schemas
 //! are recompiled when the spec changes:
 //! - Old cached validators are cleared before router/dispatcher updates
+//! - Spec version counter is incremented to prevent stale cache reuse
 //! - New schemas are lazily compiled on first request after reload
-//! - Ensures validators always match the current spec version
+//! - Cache keys include spec version, ensuring validators always match the current spec
+//! - Even if old entries remain, version mismatch prevents their use (defense in depth)
 //!
 //! ## Debouncing
 //!
@@ -141,6 +143,13 @@ where
 
                     let reload_start = Instant::now();
 
+                    // Read spec content for hash computation (if cache is present)
+                    let spec_content = if validator_cache.is_some() {
+                        std::fs::read(spec_path_str).ok()
+                    } else {
+                        None
+                    };
+
                     match spec::load_spec(spec_path_str) {
                         Ok((routes, _spec)) => {
                             let routes_count = routes.len();
@@ -164,16 +173,31 @@ where
                                 return;
                             }
 
-                            // Clear validator cache to force recompilation with new schemas
+                            // Update validator cache with new spec version and hash
                             if let Some(ref cache) = validator_cache {
                                 let cache_size_before = cache.size();
-                                cache.clear();
+                                let old_version = cache.spec_version();
+                                
+                                // Clear cache and update version with content hash
+                                if let Some(content) = spec_content {
+                                    cache.update_spec_version(&content);
+                                } else {
+                                    // Fallback to simple clear if content read failed
+                                    cache.clear();
+                                }
+                                
+                                let new_version = cache.spec_version();
                                 info!(
                                     spec_path = %spec_path_str,
                                     cache_entries_cleared = cache_size_before,
-                                    "Validator cache cleared for hot reload"
+                                    old_version = old_version.version,
+                                    old_hash = %old_version.hash,
+                                    new_version = new_version.version,
+                                    new_hash = %new_version.hash,
+                                    "Validator cache updated with new spec version"
                                 );
-                                println!("🗑️  Hot reload: Cleared {cache_size_before} cached schema validators");
+                                println!("🗑️  Hot reload: Updated cache to version {} (hash: {}) - cleared {} entries", 
+                                         new_version.version, new_version.hash, cache_size_before);
                             }
 
                             // Update dispatcher
