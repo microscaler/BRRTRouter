@@ -44,8 +44,17 @@
 //! 1. **Detection** - Filesystem watcher detects modification
 //! 2. **Parse** - New spec is loaded and validated
 //! 3. **Router Update** - New routing table is built and swapped in
-//! 4. **Dispatcher Update** - Handler registry is updated via callback
-//! 5. **Hooks** - Custom reload logic executes (e.g., metrics, logging)
+//! 4. **Cache Clear** - Validator cache is cleared to force recompilation
+//! 5. **Dispatcher Update** - Handler registry is updated via callback
+//! 6. **Hooks** - Custom reload logic executes (e.g., metrics, logging)
+//!
+//! ## Schema Cache Integration
+//!
+//! The hot reload system integrates with the validator cache to ensure schemas
+//! are recompiled when the spec changes:
+//! - Old cached validators are cleared before router/dispatcher updates
+//! - New schemas are lazily compiled on first request after reload
+//! - Ensures validators always match the current spec version
 //!
 //! ## Debouncing
 //!

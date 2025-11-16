@@ -10,6 +10,14 @@
 //! This cache stores precompiled validators and shares them across requests using
 //! Arc for efficient cloning.
 //!
+//! ## Features
+//!
+//! - **Startup Precompilation**: Compile all schemas once during service initialization
+//! - **Hot-Reload Integration**: Clear cache when OpenAPI spec changes
+//! - **Thread-Safe Access**: Multiple coroutines can access cached validators concurrently
+//! - **Lazy Compilation**: On-demand compilation for schemas not precompiled
+//! - **Zero-Copy Sharing**: Arc-wrapped validators enable cheap cloning
+//!
 //! ## Cache Key Structure
 //!
 //! Cache keys are formatted as: `{handler_name}:{kind}:{status}`
@@ -19,20 +27,38 @@
 //!
 //! ## Thread Safety
 //!
-//! The cache uses `RwLock<HashMap>` for thread-safe concurrent access:
+//! The cache uses `Arc<RwLock<HashMap>>` for thread-safe concurrent access:
 //! - Multiple readers can access the cache simultaneously
 //! - Writers acquire exclusive access for insertions
-//! - Arc wrapping enables cheap cloning of validators
+//! - Arc wrapping of the cache itself enables cloning for hot-reload
+//! - Arc wrapping of validators enables cheap cloning across requests
 //!
 //! ## Performance Impact
 //!
 //! - **Eliminates**: Per-request JSONSchema::compile() calls
 //! - **Reduces**: CPU usage by 20-40% under high load (measured in benchmarks)
 //! - **Minimizes**: Memory allocations for schema validation
+//! - **Startup Cost**: One-time compilation of all schemas (~1-10ms depending on spec size)
 //!
 //! ## Configuration
 //!
 //! The cache can be disabled via `BRRTR_SCHEMA_CACHE=off` environment variable.
+//!
+//! ## Usage Example
+//!
+//! ```rust,ignore
+//! // At service startup
+//! let service = AppService::new(router, dispatcher, schemes, spec_path, None, None);
+//! let compiled_count = service.precompile_schemas(&routes);
+//! println!("Pre-compiled {} schemas", compiled_count);
+//!
+//! // During hot-reload
+//! let cache = service.validator_cache.clone();
+//! hot_reload::watch_spec(spec_path, router, dispatcher, Some(cache), |disp, routes| {
+//!     // Cache is automatically cleared before this callback
+//!     // Register new routes...
+//! });
+//! ```
 
 use jsonschema::JSONSchema;
 use serde_json::Value;
