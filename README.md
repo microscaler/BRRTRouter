@@ -28,7 +28,7 @@ Inspired by the *GAU-8/A Avenger* on the A-10 Warthog, this router delivers prec
 | Build admin/testing UI | Included (Sample SolidJS dashboard) |
 | Setup local infrastructure | One command: `just dev-up` (Tilt + kind) |
 | Test with curl scripts | Interactive dashboard with API testing |
-| Memory leak hunting | Goose load tests (2+ minute sustained tests) |
+| Memory leak hunting | Goose load tests with detailed performance metrics |
 
 ✅ **Design Once, Deploy Everywhere**  
 OpenAPI spec generates server, client SDKs, and docs
