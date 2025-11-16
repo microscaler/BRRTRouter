@@ -513,3 +513,121 @@ paths:
 
     // Fixture automatically cleaned up when it drops (RAII)!
 }
+
+#[test]
+fn test_spec_version_hash_changes_on_reload() {
+    // Test that validates the spec version and hash are properly updated during hot reload
+    const SPEC_V1: &str = r#"openapi: 3.1.0
+info:
+  title: Version Test
+  version: '1.0'
+paths:
+  /data:
+    post:
+      operationId: store_data
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                value:
+                  type: string
+      responses:
+        '200':
+          description: OK
+"#;
+    const SPEC_V2: &str = r#"openapi: 3.1.0
+info:
+  title: Version Test Updated
+  version: '2.0'
+paths:
+  /data:
+    post:
+      operationId: store_data
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                value:
+                  type: string
+                metadata:
+                  type: object
+      responses:
+        '200':
+          description: OK
+"#;
+
+    use brrtrouter::validator_cache::ValidatorCache;
+    
+    let fixture = HotReloadTestFixture::new(SPEC_V1);
+    let path = fixture.path();
+    let (routes, _slug) = load_spec(path.to_str().unwrap()).unwrap();
+    let router = Arc::new(RwLock::new(Router::new(routes.clone())));
+    let dispatcher = Arc::new(RwLock::new(Dispatcher::new()));
+    
+    let cache = ValidatorCache::new(true);
+    let initial_version = cache.spec_version();
+    assert_eq!(initial_version.version, 1);
+    assert_eq!(initial_version.hash, "initial");
+    
+    let cache_clone = cache.clone();
+    let updates: Arc<Mutex<Vec<Vec<String>>>> = Arc::new(Mutex::new(Vec::new()));
+    let updates_clone = updates.clone();
+
+    {
+        let watcher = watch_spec(
+            &path,
+            router,
+            dispatcher.clone(),
+            Some(cache_clone),
+            move |disp, new_routes| {
+                for r in &new_routes {
+                    let (tx, _rx) = mpsc::channel();
+                    disp.add_route(r.clone(), tx);
+                }
+                let names = new_routes.iter().map(|r| r.handler_name.clone()).collect();
+                updates_clone.lock().unwrap().push(names);
+            },
+        )
+        .expect("watch_spec");
+
+        std::thread::sleep(Duration::from_millis(100));
+
+        // Modify the spec to V2
+        fixture.update_content(SPEC_V2);
+
+        // Wait for hot reload
+        let start = std::time::Instant::now();
+        let timeout = Duration::from_secs(5);
+
+        loop {
+            {
+                let ups = updates.lock().unwrap();
+                if !ups.is_empty() {
+                    break;
+                }
+            }
+
+            if start.elapsed() > timeout {
+                panic!("Timeout waiting for hot reload");
+            }
+
+            std::thread::sleep(Duration::from_millis(50));
+        }
+
+        drop(watcher);
+        std::thread::sleep(Duration::from_millis(100));
+    }
+
+    // Verify spec version was updated
+    let final_version = cache.spec_version();
+    assert_eq!(final_version.version, 2, "Version should increment to 2");
+    assert_ne!(final_version.hash, "initial", "Hash should be computed from content");
+    assert_ne!(final_version.hash, initial_version.hash, "Hash should be different from initial");
+    assert_eq!(final_version.hash.len(), 16, "Hash should be 16 characters (truncated SHA-256)");
+}

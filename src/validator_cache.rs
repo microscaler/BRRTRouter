@@ -47,6 +47,20 @@
 //!
 //! The cache can be disabled via `BRRTR_SCHEMA_CACHE=off` environment variable.
 //!
+//! ## Hot Reload Behavior
+//!
+//! When the OpenAPI spec is reloaded via `serve --watch`:
+//!
+//! 1. **Version Increment**: The spec version counter is incremented
+//! 2. **Content Hash**: A SHA-256 hash of the new spec content is computed
+//! 3. **Cache Clear**: All cached validators are removed
+//! 4. **New Keys**: Subsequent validations use new cache keys with updated version/hash
+//!
+//! This ensures that:
+//! - Modified schemas are immediately enforced without process restart
+//! - Old validators cannot be accidentally reused
+//! - Cache keys are unique to specific spec content (defense in depth)
+//!
 //! ## Usage Example
 //!
 //! ```rust,ignore
@@ -58,7 +72,8 @@
 //! // During hot-reload
 //! let cache = service.validator_cache.clone();
 //! hot_reload::watch_spec(spec_path, router, dispatcher, Some(cache), |disp, routes| {
-//!     // Cache is automatically cleared before this callback
+//!     // Cache is automatically cleared and version updated before this callback
+//!     // New schemas will be compiled on first use with updated version
 //!     // Register new routes...
 //! });
 //! ```
