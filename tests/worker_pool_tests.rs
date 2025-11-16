@@ -13,6 +13,12 @@ use std::time::{Duration, Instant};
 /// Test that worker pools are created with the correct configuration
 #[test]
 fn test_worker_pool_creation() {
+    // Clean up any environment variables from other tests
+    std::env::remove_var("BRRTR_HANDLER_WORKERS");
+    std::env::remove_var("BRRTR_HANDLER_QUEUE_BOUND");
+    std::env::remove_var("BRRTR_BACKPRESSURE_MODE");
+    std::env::remove_var("BRRTR_BACKPRESSURE_TIMEOUT_MS");
+    
     // Initialize may runtime
     unsafe {
         may::config().set_io_workers(2);
