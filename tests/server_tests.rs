@@ -206,6 +206,7 @@ impl CustomServerTestFixture {
             base_path: String::new(),
             sse: false,
             estimated_request_body_bytes: None,
+            x_brrtrouter_stack_size: None,
         };
 
         let router = Arc::new(RwLock::new(Router::new(vec![route])));
