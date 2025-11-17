@@ -508,4 +508,27 @@ mod tests {
         // 16 KiB base + 8 KiB params + 4 KiB depth + 8 KiB SSE = 36 KiB
         assert_eq!(stack_size, BASE_STACK_SIZE + 2 * STACK_PER_5_PARAMS + STACK_MODERATE_DEPTH + STACK_SSE_BONUS);
     }
+
+    #[test]
+    fn test_environment_variable_clamping() {
+        // Test that env vars work for clamping
+        std::env::set_var("BRRTR_STACK_MIN_BYTES", "32768"); // 32 KiB
+        std::env::set_var("BRRTR_STACK_MAX_BYTES", "65536"); // 64 KiB
+        
+        // Test clamping to min
+        let size_below_min = 16 * 1024;
+        assert_eq!(clamp_stack_size(size_below_min), 32 * 1024);
+        
+        // Test clamping to max
+        let size_above_max = 128 * 1024;
+        assert_eq!(clamp_stack_size(size_above_max), 64 * 1024);
+        
+        // Test within range
+        let size_in_range = 48 * 1024;
+        assert_eq!(clamp_stack_size(size_in_range), 48 * 1024);
+        
+        // Clean up
+        std::env::remove_var("BRRTR_STACK_MIN_BYTES");
+        std::env::remove_var("BRRTR_STACK_MAX_BYTES");
+    }
 }
