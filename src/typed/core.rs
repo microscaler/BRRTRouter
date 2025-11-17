@@ -9,6 +9,65 @@ use serde_json;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 
+/// Get the stack size for a handler with environment variable overrides applied
+///
+/// Checks for environment variables in this order:
+/// 1. `BRRTR_STACK_SIZE__<HANDLER_NAME>` (per-handler override, uppercased)
+/// 2. `BRRTR_STACK_SIZE` (global override)
+/// 3. `stack_size_bytes` (computed default)
+///
+/// The final value is clamped to the range defined by:
+/// - `BRRTR_STACK_MIN_BYTES` (default 16 KiB)
+/// - `BRRTR_STACK_MAX_BYTES` (default 256 KiB)
+///
+/// # Arguments
+///
+/// * `handler_name` - Name of the handler (e.g., "list_pets")
+/// * `stack_size_bytes` - Computed default stack size
+///
+/// # Returns
+///
+/// Final stack size in bytes with all overrides and clamping applied
+fn get_stack_size_with_overrides(handler_name: &str, stack_size_bytes: usize) -> usize {
+    // Try per-handler override first
+    let env_var_name = format!("BRRTR_STACK_SIZE__{}", handler_name.to_uppercase());
+    let stack_size = std::env::var(&env_var_name)
+        .ok()
+        .and_then(|s| {
+            if let Some(hex) = s.strip_prefix("0x") {
+                usize::from_str_radix(hex, 16).ok()
+            } else {
+                s.parse().ok()
+            }
+        })
+        .or_else(|| {
+            // Try global override
+            std::env::var("BRRTR_STACK_SIZE")
+                .ok()
+                .and_then(|s| {
+                    if let Some(hex) = s.strip_prefix("0x") {
+                        usize::from_str_radix(hex, 16).ok()
+                    } else {
+                        s.parse().ok()
+                    }
+                })
+        })
+        .unwrap_or(stack_size_bytes);
+
+    // Apply clamping
+    let min = std::env::var("BRRTR_STACK_MIN_BYTES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(16 * 1024); // 16 KiB default
+
+    let max = std::env::var("BRRTR_STACK_MAX_BYTES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(256 * 1024); // 256 KiB default
+
+    stack_size.clamp(min, max)
+}
+
 /// Trait implemented by typed coroutine handlers.
 ///
 /// A handler receives a [`TypedHandlerRequest`] and returns a typed response.
@@ -234,22 +293,43 @@ pub unsafe fn spawn_typed_with_stack_size<H>(
 where
     H: Handler + Send + 'static,
 {
+    spawn_typed_with_stack_size_and_name(handler, stack_size_bytes, None)
+}
+
+/// Spawn a typed handler coroutine with a specific stack size and handler name.
+///
+/// This is an internal function that supports per-handler environment variable overrides.
+/// Use `spawn_typed_with_stack_size` for the public API.
+///
+/// # Safety
+///
+/// Same safety requirements as `spawn_typed_with_stack_size`.
+unsafe fn spawn_typed_with_stack_size_and_name<H>(
+    handler: H,
+    stack_size_bytes: usize,
+    handler_name: Option<&str>,
+) -> mpsc::Sender<HandlerRequest>
+where
+    H: Handler + Send + 'static,
+{
     let (tx, rx) = mpsc::channel::<HandlerRequest>();
 
-    // Allow per-handler environment variable override
-    // BRRTR_STACK_SIZE__<HANDLER_NAME> takes precedence over computed size
-    // Note: We don't have access to handler_name here, but it can be set in the dispatcher
-    // For now, we'll use the global override if present
-    let stack_size = std::env::var("BRRTR_STACK_SIZE")
-        .ok()
-        .and_then(|s| {
-            if let Some(hex) = s.strip_prefix("0x") {
-                usize::from_str_radix(hex, 16).ok()
-            } else {
-                s.parse().ok()
-            }
-        })
-        .unwrap_or(stack_size_bytes);
+    // Apply environment variable overrides
+    let stack_size = if let Some(name) = handler_name {
+        get_stack_size_with_overrides(name, stack_size_bytes)
+    } else {
+        // No handler name, just apply global override
+        std::env::var("BRRTR_STACK_SIZE")
+            .ok()
+            .and_then(|s| {
+                if let Some(hex) = s.strip_prefix("0x") {
+                    usize::from_str_radix(hex, 16).ok()
+                } else {
+                    s.parse().ok()
+                }
+            })
+            .unwrap_or(stack_size_bytes)
+    };
 
     let spawn_result = may::coroutine::Builder::new()
         .stack_size(stack_size)
@@ -481,7 +561,8 @@ impl Dispatcher {
             eprintln!("Warning: Replacing existing typed handler '{}' - old coroutine will exit", name);
         }
         
-        let tx = spawn_typed_with_stack_size(handler, stack_size_bytes);
+        // Use the internal function with handler name for per-handler env var support
+        let tx = spawn_typed_with_stack_size_and_name(handler, stack_size_bytes, Some(&name));
         self.handlers.insert(name, tx);
     }
 
@@ -562,5 +643,90 @@ impl Dispatcher {
         };
         
         self.register_handler_with_pool_config(name, handler_fn, config);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_stack_size_with_per_handler_override() {
+        // Set per-handler override
+        std::env::set_var("BRRTR_STACK_SIZE__TEST_HANDLER", "32768");
+        
+        let stack_size = get_stack_size_with_overrides("test_handler", 16384);
+        assert_eq!(stack_size, 32768);
+        
+        // Clean up
+        std::env::remove_var("BRRTR_STACK_SIZE__TEST_HANDLER");
+    }
+
+    #[test]
+    fn test_get_stack_size_with_global_override() {
+        // Set global override
+        std::env::set_var("BRRTR_STACK_SIZE", "49152");
+        
+        let stack_size = get_stack_size_with_overrides("test_handler", 16384);
+        assert_eq!(stack_size, 49152);
+        
+        // Clean up
+        std::env::remove_var("BRRTR_STACK_SIZE");
+    }
+
+    #[test]
+    fn test_get_stack_size_per_handler_takes_precedence() {
+        // Set both overrides
+        std::env::set_var("BRRTR_STACK_SIZE__TEST_HANDLER", "32768");
+        std::env::set_var("BRRTR_STACK_SIZE", "49152");
+        
+        let stack_size = get_stack_size_with_overrides("test_handler", 16384);
+        // Per-handler should take precedence
+        assert_eq!(stack_size, 32768);
+        
+        // Clean up
+        std::env::remove_var("BRRTR_STACK_SIZE__TEST_HANDLER");
+        std::env::remove_var("BRRTR_STACK_SIZE");
+    }
+
+    #[test]
+    fn test_get_stack_size_with_hex_format() {
+        // Test hex format
+        std::env::set_var("BRRTR_STACK_SIZE__TEST_HANDLER", "0x10000");
+        
+        let stack_size = get_stack_size_with_overrides("test_handler", 16384);
+        assert_eq!(stack_size, 65536);
+        
+        // Clean up
+        std::env::remove_var("BRRTR_STACK_SIZE__TEST_HANDLER");
+    }
+
+    #[test]
+    fn test_get_stack_size_clamping() {
+        // Set custom min/max
+        std::env::set_var("BRRTR_STACK_MIN_BYTES", "32768");
+        std::env::set_var("BRRTR_STACK_MAX_BYTES", "65536");
+        
+        // Test clamping to min
+        std::env::set_var("BRRTR_STACK_SIZE__TEST_HANDLER", "16384");
+        let stack_size = get_stack_size_with_overrides("test_handler", 16384);
+        assert_eq!(stack_size, 32768);
+        
+        // Test clamping to max
+        std::env::set_var("BRRTR_STACK_SIZE__TEST_HANDLER", "131072");
+        let stack_size = get_stack_size_with_overrides("test_handler", 131072);
+        assert_eq!(stack_size, 65536);
+        
+        // Clean up
+        std::env::remove_var("BRRTR_STACK_SIZE__TEST_HANDLER");
+        std::env::remove_var("BRRTR_STACK_MIN_BYTES");
+        std::env::remove_var("BRRTR_STACK_MAX_BYTES");
+    }
+
+    #[test]
+    fn test_get_stack_size_no_override() {
+        // No overrides set, should return default
+        let stack_size = get_stack_size_with_overrides("test_handler", 16384);
+        assert_eq!(stack_size, 16384);
     }
 }
