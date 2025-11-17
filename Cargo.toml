@@ -97,10 +97,6 @@ path = "src/bin/brrtrouter_gen.rs"
 name = "throughput"
 harness = false
 
-[[bench]]
-name = "metrics_contention"
-harness = false
-
 [features]
 default = []
 jemalloc = ["tikv-jemallocator", "tikv-jemalloc-ctl"]  # Enable jemalloc for accurate heap tracking
