@@ -470,6 +470,7 @@ dependencies = [
  "bollard",
  "clap",
  "criterion",
+ "dashmap",
  "flamegraph",
  "futures",
  "futures-util",

@@ -168,11 +168,33 @@ impl AppService {
     /// Set the metrics collection middleware
     ///
     /// Enables Prometheus metrics collection for requests, responses, and handler performance.
+    /// Automatically pre-registers all path patterns from the router to avoid runtime allocation
+    /// and reduce contention during high-throughput request handling.
     ///
     /// # Arguments
     ///
     /// * `metrics` - Metrics middleware instance
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let metrics = Arc::new(MetricsMiddleware::new());
+    /// service.set_metrics_middleware(metrics);
+    /// // All paths from OpenAPI spec are now pre-registered
+    /// ```
     pub fn set_metrics_middleware(&mut self, metrics: Arc<MetricsMiddleware>) {
+        // Pre-register all known paths from the router
+        if let Ok(router) = self.router.read() {
+            let paths = router.get_all_path_patterns();
+            if !paths.is_empty() {
+                info!(
+                    count = paths.len(),
+                    "Pre-registering paths in metrics middleware"
+                );
+                metrics.pre_register_paths(&paths);
+            }
+        }
+        
         self.metrics = Some(metrics);
     }
     

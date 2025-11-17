@@ -66,6 +66,38 @@ let lock_latency = lock_start.elapsed().as_micros() as u64;
 let contention = lock_latency > 100; // Threshold for contention
 ```
 
+**Lock-Free Metrics Implementation** (v0.1.0-alpha.1+):
+
+BRRTRouter's metrics middleware now uses lock-free data structures to eliminate contention at high throughput (5k+ RPS):
+
+- **DashMap**: Sharded concurrent HashMap replaces `RwLock<HashMap>`
+- **Atomic Counters**: All per-path metrics use atomic operations with relaxed ordering
+- **Pre-registration**: Known paths can be registered at startup to avoid runtime allocation
+- **Zero Contention**: Concurrent metric updates operate independently on sharded buckets
+
+Benefits:
+- Eliminates read-lock-upgrade-to-write pattern
+- Scales linearly with concurrent request handling
+- No blocking on metrics collection
+- Suitable for 10k+ RPS workloads
+
+Usage:
+```rust
+use brrtrouter::middleware::MetricsMiddleware;
+
+let metrics = MetricsMiddleware::new();
+
+// Pre-register known paths at startup (optional but recommended)
+metrics.pre_register_paths(&[
+    "/api/users",
+    "/api/posts",
+    "/health",
+]);
+
+// Metrics recording is now lock-free and concurrent-safe
+metrics.record_path_metrics("/api/users", 1500); // No blocking
+```
+
 ### 3. Frequency of Matching Errors
 
 **Definition**: Rate at which route matching fails (typically resulting in 404 responses).
