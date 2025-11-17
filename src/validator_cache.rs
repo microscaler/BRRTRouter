@@ -666,6 +666,7 @@ mod tests {
             base_path: "".to_string(),
             sse: false,
             estimated_request_body_bytes: None,
+            x_brrtrouter_stack_size: None,
         };
 
         let routes = vec![route];
@@ -726,6 +727,7 @@ mod tests {
             base_path: "".to_string(),
             sse: false,
             estimated_request_body_bytes: None,
+            x_brrtrouter_stack_size: None,
         };
 
         let routes = vec![route];
@@ -795,6 +797,7 @@ mod tests {
             base_path: "".to_string(),
             sse: false,
             estimated_request_body_bytes: None,
+            x_brrtrouter_stack_size: None,
         };
 
         let routes = vec![route];

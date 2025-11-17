@@ -237,6 +237,8 @@ pub struct RouteMeta {
     /// Estimated request body size in bytes (derived from OpenAPI schema)
     /// Used as fallback when Content-Length header is not available
     pub estimated_request_body_bytes: Option<usize>,
+    /// Vendor extension override for stack size (x-brrtrouter-stack-size)
+    pub x_brrtrouter_stack_size: Option<usize>,
 }
 
 impl RouteMeta {

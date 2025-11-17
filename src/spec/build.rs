@@ -497,6 +497,28 @@ pub fn extract_sse_flag(operation: &oas3::spec::Operation) -> bool {
         .unwrap_or(false)
 }
 
+/// Extract the stack size vendor extension from an OpenAPI operation
+///
+/// Checks for `x-brrtrouter-stack-size` extension field to get an explicit
+/// stack size override for the handler coroutine.
+///
+/// # Arguments
+///
+/// * `operation` - The OpenAPI operation definition
+///
+/// # Returns
+///
+/// The stack size in bytes if specified, otherwise `None`
+pub fn extract_stack_size_override(operation: &oas3::spec::Operation) -> Option<usize> {
+    operation
+        .extensions
+        .get("x-brrtrouter-stack-size")
+        .and_then(|v| {
+            v.as_u64().map(|n| n as usize)
+                .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+        })
+}
+
 /// Build route metadata for all operations in an OpenAPI specification
 ///
 /// This is the main function that processes an OpenAPI spec and extracts all the
@@ -565,6 +587,9 @@ pub fn build_routes(spec: &OpenApiV3Spec, slug: &str) -> anyhow::Result<Vec<Rout
 
                 // Estimate request body size from schema
                 let estimated_request_body_bytes = estimate_body_size(request_schema.as_ref());
+                
+                // Extract vendor extension for stack size override
+                let x_brrtrouter_stack_size = extract_stack_size_override(operation);
 
                 routes.push(RouteMeta {
                     method,
@@ -583,6 +608,7 @@ pub fn build_routes(spec: &OpenApiV3Spec, slug: &str) -> anyhow::Result<Vec<Rout
                     base_path: base_path.clone(),
                     sse: extract_sse_flag(operation),
                     estimated_request_body_bytes,
+                    x_brrtrouter_stack_size,
                 });
             }
         }

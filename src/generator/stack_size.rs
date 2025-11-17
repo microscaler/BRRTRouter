@@ -46,15 +46,12 @@ const STACK_VERY_DEEP: usize = 16 * 1024;
 ///
 /// Computed stack size in bytes, clamped to the allowed range
 pub fn compute_stack_size(route: &RouteMeta) -> usize {
-    let mut stack_size = BASE_STACK_SIZE;
+    // Check for vendor extension override first
+    if let Some(vendor_stack_size) = route.x_brrtrouter_stack_size {
+        return clamp_stack_size(vendor_stack_size);
+    }
 
-    // Check for vendor extension override
-    // Note: We would need access to the raw OpenAPI operation to read this,
-    // which is not currently available in RouteMeta. This is a placeholder
-    // for future enhancement.
-    // if let Some(vendor_stack_size) = route.x_brrtrouter_stack_size {
-    //     return clamp_stack_size(vendor_stack_size);
-    // }
+    let mut stack_size = BASE_STACK_SIZE;
 
     // Count path/query/header parameters
     let relevant_param_count = route
@@ -260,6 +257,7 @@ mod tests {
             base_path: "/".to_string(),
             sse: false,
             estimated_request_body_bytes: None,
+            x_brrtrouter_stack_size: None,
         }
     }
 
@@ -530,5 +528,40 @@ mod tests {
         // Clean up
         std::env::remove_var("BRRTR_STACK_MIN_BYTES");
         std::env::remove_var("BRRTR_STACK_MAX_BYTES");
+    }
+
+    #[test]
+    fn test_vendor_extension_override() {
+        let mut route = create_test_route();
+        // Set vendor extension to 32 KiB
+        route.x_brrtrouter_stack_size = Some(32 * 1024);
+        
+        // Add parameters and SSE (which would normally add to stack size)
+        for i in 0..10 {
+            route.parameters.push(ParameterMeta {
+                name: format!("param{}", i),
+                location: ParameterLocation::Path,
+                required: true,
+                schema: None,
+                style: None,
+                explode: None,
+            });
+        }
+        route.sse = true;
+        
+        // Vendor extension should take precedence
+        let stack_size = compute_stack_size(&route);
+        assert_eq!(stack_size, 32 * 1024);
+    }
+
+    #[test]
+    fn test_vendor_extension_clamped() {
+        let mut route = create_test_route();
+        // Set vendor extension to 512 KiB (above max)
+        route.x_brrtrouter_stack_size = Some(512 * 1024);
+        
+        // Should be clamped to MAX_STACK_SIZE (256 KiB)
+        let stack_size = compute_stack_size(&route);
+        assert_eq!(stack_size, MAX_STACK_SIZE);
     }
 }
