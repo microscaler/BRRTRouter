@@ -23,6 +23,8 @@ pub struct RegistryEntry {
     pub controller_struct: String,
     /// Route parameters
     pub parameters: Vec<ParameterMeta>,
+    /// Computed stack size for the coroutine in bytes
+    pub stack_size_bytes: usize,
 }
 
 /// Parameters for writing implementation controller stub files

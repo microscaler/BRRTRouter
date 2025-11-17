@@ -111,12 +111,14 @@
 
 mod project;
 mod schema;
+mod stack_size;
 mod templates;
 #[cfg(test)]
 mod tests;
 
 pub use project::*;
 pub use schema::*;
+pub use stack_size::*;
 pub use templates::*;
 
 pub use project::GenerationScope;

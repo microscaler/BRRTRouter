@@ -10,6 +10,7 @@ use crate::generator::schema::{
     collect_component_schemas, extract_fields, is_named_type, parameter_to_field,
     process_schema_type_with_spec, to_camel_case, unique_handler_name,
 };
+use crate::generator::stack_size::compute_stack_size;
 use crate::generator::templates::{
     write_cargo_toml, write_controller, write_handler, write_main_rs_with_options, write_mod_rs,
     write_openapi_index, write_registry_rs, write_static_index, write_types_rs, RegistryEntry,
@@ -321,11 +322,16 @@ pub fn generate_project_with_options(
 
         modules_handlers.push(handler.clone());
         modules_controllers.push(handler.clone());
+        
+        // Compute stack size for this handler
+        let stack_size_bytes = compute_stack_size(&route);
+        
         registry_entries.push(RegistryEntry {
             name: handler.clone(),
             request_type: format!("{handler}::Request"),
             controller_struct: controller_struct.clone(),
             parameters: route.parameters.clone(),
+            stack_size_bytes,
         });
     }
 
