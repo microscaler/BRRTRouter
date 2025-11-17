@@ -75,6 +75,7 @@ fn test_template_writers() {
         request_type: "test::Request".into(),
         controller_struct: "TestController".into(),
         parameters: vec![],
+        stack_size_bytes: 16384,
     }];
     write_registry_rs(&src_dir, &entries).unwrap();
 
@@ -95,6 +96,7 @@ fn test_template_writers() {
         base_path: String::new(),
         sse: false,
         estimated_request_body_bytes: None,
+        x_brrtrouter_stack_size: None,
     };
     write_main_rs(&src_dir, "tester", vec![route]).unwrap();
 
