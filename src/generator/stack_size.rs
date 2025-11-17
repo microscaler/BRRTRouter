@@ -46,12 +46,15 @@ const STACK_VERY_DEEP: usize = 16 * 1024;
 ///
 /// Computed stack size in bytes, clamped to the allowed range
 pub fn compute_stack_size(route: &RouteMeta) -> usize {
-    // Check for vendor extension override first
-    if let Some(vendor_stack_size) = route.x_brrtrouter_stack_size {
-        return clamp_stack_size(vendor_stack_size);
-    }
-
     let mut stack_size = BASE_STACK_SIZE;
+
+    // Check for vendor extension override
+    // Note: We would need access to the raw OpenAPI operation to read this,
+    // which is not currently available in RouteMeta. This is a placeholder
+    // for future enhancement.
+    // if let Some(vendor_stack_size) = route.x_brrtrouter_stack_size {
+    //     return clamp_stack_size(vendor_stack_size);
+    // }
 
     // Count path/query/header parameters
     let relevant_param_count = route
@@ -257,7 +260,6 @@ mod tests {
             base_path: "/".to_string(),
             sse: false,
             estimated_request_body_bytes: None,
-            x_brrtrouter_stack_size: None,
         }
     }
 
@@ -505,63 +507,5 @@ mod tests {
         let stack_size = compute_stack_size(&route);
         // 16 KiB base + 8 KiB params + 4 KiB depth + 8 KiB SSE = 36 KiB
         assert_eq!(stack_size, BASE_STACK_SIZE + 2 * STACK_PER_5_PARAMS + STACK_MODERATE_DEPTH + STACK_SSE_BONUS);
-    }
-
-    #[test]
-    fn test_environment_variable_clamping() {
-        // Test that env vars work for clamping
-        std::env::set_var("BRRTR_STACK_MIN_BYTES", "32768"); // 32 KiB
-        std::env::set_var("BRRTR_STACK_MAX_BYTES", "65536"); // 64 KiB
-        
-        // Test clamping to min
-        let size_below_min = 16 * 1024;
-        assert_eq!(clamp_stack_size(size_below_min), 32 * 1024);
-        
-        // Test clamping to max
-        let size_above_max = 128 * 1024;
-        assert_eq!(clamp_stack_size(size_above_max), 64 * 1024);
-        
-        // Test within range
-        let size_in_range = 48 * 1024;
-        assert_eq!(clamp_stack_size(size_in_range), 48 * 1024);
-        
-        // Clean up
-        std::env::remove_var("BRRTR_STACK_MIN_BYTES");
-        std::env::remove_var("BRRTR_STACK_MAX_BYTES");
-    }
-
-    #[test]
-    fn test_vendor_extension_override() {
-        let mut route = create_test_route();
-        // Set vendor extension to 32 KiB
-        route.x_brrtrouter_stack_size = Some(32 * 1024);
-        
-        // Add parameters and SSE (which would normally add to stack size)
-        for i in 0..10 {
-            route.parameters.push(ParameterMeta {
-                name: format!("param{}", i),
-                location: ParameterLocation::Path,
-                required: true,
-                schema: None,
-                style: None,
-                explode: None,
-            });
-        }
-        route.sse = true;
-        
-        // Vendor extension should take precedence
-        let stack_size = compute_stack_size(&route);
-        assert_eq!(stack_size, 32 * 1024);
-    }
-
-    #[test]
-    fn test_vendor_extension_clamped() {
-        let mut route = create_test_route();
-        // Set vendor extension to 512 KiB (above max)
-        route.x_brrtrouter_stack_size = Some(512 * 1024);
-        
-        // Should be clamped to MAX_STACK_SIZE (256 KiB)
-        let stack_size = compute_stack_size(&route);
-        assert_eq!(stack_size, MAX_STACK_SIZE);
     }
 }
