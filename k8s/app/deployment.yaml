@@ -141,6 +141,9 @@ spec:
             # Increase stack size for serving large static assets (64KB instead of 16KB default)
             - name: BRRTR_STACK_SIZE
               value: "0x10000"
+            # Set worker pool size to 1 for performance testing (isolate worker pool overhead)
+            - name: BRRTR_HANDLER_WORKERS
+              value: "1"
           # Liveness probe - is the service alive?
           livenessProbe:
             httpGet:
