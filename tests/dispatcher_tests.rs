@@ -95,6 +95,7 @@ struct TypedRes {
     ok: bool,
 }
 
+#[derive(Clone)]
 struct AssertController;
 
 impl Handler for AssertController {
