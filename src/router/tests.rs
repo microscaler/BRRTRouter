@@ -24,6 +24,7 @@ fn create_route_meta(method: Method, path: &str, handler: &str) -> RouteMeta {
         output_dir: PathBuf::from("test_output"),
         sse: false,
         estimated_request_body_bytes: None,
+        x_brrtrouter_stack_size: None,
     }
 }
 

@@ -9,6 +9,65 @@ use serde_json;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 
+/// Get the stack size for a handler with environment variable overrides applied
+///
+/// Checks for environment variables in this order:
+/// 1. `BRRTR_STACK_SIZE__<HANDLER_NAME>` (per-handler override, uppercased)
+/// 2. `BRRTR_STACK_SIZE` (global override)
+/// 3. `stack_size_bytes` (computed default)
+///
+/// The final value is clamped to the range defined by:
+/// - `BRRTR_STACK_MIN_BYTES` (default 16 KiB)
+/// - `BRRTR_STACK_MAX_BYTES` (default 256 KiB)
+///
+/// # Arguments
+///
+/// * `handler_name` - Name of the handler (e.g., "list_pets")
+/// * `stack_size_bytes` - Computed default stack size
+///
+/// # Returns
+///
+/// Final stack size in bytes with all overrides and clamping applied
+fn get_stack_size_with_overrides(handler_name: &str, stack_size_bytes: usize) -> usize {
+    // Try per-handler override first
+    let env_var_name = format!("BRRTR_STACK_SIZE__{}", handler_name.to_uppercase());
+    let stack_size = std::env::var(&env_var_name)
+        .ok()
+        .and_then(|s| {
+            if let Some(hex) = s.strip_prefix("0x") {
+                usize::from_str_radix(hex, 16).ok()
+            } else {
+                s.parse().ok()
+            }
+        })
+        .or_else(|| {
+            // Try global override
+            std::env::var("BRRTR_STACK_SIZE")
+                .ok()
+                .and_then(|s| {
+                    if let Some(hex) = s.strip_prefix("0x") {
+                        usize::from_str_radix(hex, 16).ok()
+                    } else {
+                        s.parse().ok()
+                    }
+                })
+        })
+        .unwrap_or(stack_size_bytes);
+
+    // Apply clamping
+    let min = std::env::var("BRRTR_STACK_MIN_BYTES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(16 * 1024); // 16 KiB default
+
+    let max = std::env::var("BRRTR_STACK_MAX_BYTES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(256 * 1024); // 256 KiB default
+
+    stack_size.clamp(min, max)
+}
+
 /// Trait implemented by typed coroutine handlers.
 ///
 /// A handler receives a [`TypedHandlerRequest`] and returns a typed response.
@@ -194,6 +253,192 @@ where
     }
 }
 
+/// Spawn a typed handler coroutine with a specific stack size and return a sender to communicate with it.
+///
+/// This function is similar to `spawn_typed`, but allows specifying a custom stack size
+/// per handler. The stack size can be further overridden at runtime using the
+/// `BRRTR_STACK_SIZE__<HANDLER_NAME>` environment variable.
+///
+/// Creates a coroutine that processes incoming requests with automatic type conversion
+/// and validation. Panics in handlers are caught and converted to 500 error responses.
+///
+/// # Safety
+///
+/// This function is marked unsafe because it calls `may::coroutine::Builder::spawn()`,
+/// which is unsafe in the `may` runtime. The unsafety comes from the coroutine runtime's
+/// requirements, not from this function's logic.
+///
+/// The caller must ensure the May coroutine runtime is properly initialized.
+///
+/// # Arguments
+///
+/// * `handler` - The handler to spawn
+/// * `stack_size_bytes` - Recommended stack size in bytes (can be overridden by environment)
+///
+/// # Handler Requirements
+///
+/// The handler must:
+/// - Implement the `Handler` trait with typed request/response types
+/// - Be safe to execute in a concurrent context
+/// - Avoid long-running synchronous operations that could block the coroutine
+///
+/// # Panics
+///
+/// Handler panics are automatically caught and converted to 500 error responses.
+/// The coroutine will continue processing subsequent requests.
+pub unsafe fn spawn_typed_with_stack_size<H>(
+    handler: H,
+    stack_size_bytes: usize,
+) -> mpsc::Sender<HandlerRequest>
+where
+    H: Handler + Send + 'static,
+{
+    spawn_typed_with_stack_size_and_name(handler, stack_size_bytes, None)
+}
+
+/// Spawn a typed handler coroutine with a specific stack size and handler name.
+///
+/// This is an internal function that supports per-handler environment variable overrides.
+/// Use `spawn_typed_with_stack_size` for the public API.
+///
+/// # Safety
+///
+/// Same safety requirements as `spawn_typed_with_stack_size`.
+unsafe fn spawn_typed_with_stack_size_and_name<H>(
+    handler: H,
+    stack_size_bytes: usize,
+    handler_name: Option<&str>,
+) -> mpsc::Sender<HandlerRequest>
+where
+    H: Handler + Send + 'static,
+{
+    let (tx, rx) = mpsc::channel::<HandlerRequest>();
+
+    // Apply environment variable overrides
+    let stack_size = if let Some(name) = handler_name {
+        get_stack_size_with_overrides(name, stack_size_bytes)
+    } else {
+        // No handler name, just apply global override
+        std::env::var("BRRTR_STACK_SIZE")
+            .ok()
+            .and_then(|s| {
+                if let Some(hex) = s.strip_prefix("0x") {
+                    usize::from_str_radix(hex, 16).ok()
+                } else {
+                    s.parse().ok()
+                }
+            })
+            .unwrap_or(stack_size_bytes)
+    };
+
+    let spawn_result = may::coroutine::Builder::new()
+        .stack_size(stack_size)
+        .spawn(move || {
+            let handler = handler;
+            // Main event loop: process requests until channel closes
+            for req in rx.iter() {
+                // Extract lightweight fields we need outside the panic-catching closure.
+                // These are cheap clones (sender clones or small strings) and are ok to clone.
+                let reply_tx_outer = req.reply_tx.clone();
+                let handler_name_outer = req.handler_name.clone();
+                let request_id = req.request_id;
+
+                // COMPLEX PANIC HANDLING: Wrap entire request processing in catch_unwind
+                // This prevents a panicking handler from killing the entire coroutine
+                // and allows us to send a 500 error response instead
+                //
+                // KEY OPTIMIZATION: Move the owned `req` into the closure to avoid cloning it.
+                // Using a move closure ensures `req` is consumed instead of cloned for each request.
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe({
+                    // Capture the outer clones into the closure scope so the closure can be moved
+                    // without pulling `req` by reference.
+                    let reply_tx_outer = reply_tx_outer.clone();
+                    let handler = &handler; // Borrow handler so it can be reused across iterations
+                    move || {
+                        // Clone reply sender for inner scope use (cheap)
+                        let reply_tx_inner = reply_tx_outer.clone();
+
+                        // Extract metadata fields before consuming req in try_from
+                        let method = req.method.clone();
+                        let path = req.path.clone();
+                        let handler_name = req.handler_name.clone();
+                        let path_params = req.path_params.clone();
+                        let query_params = req.query_params.clone();
+
+                        // STEP 1: Type conversion - consume the HandlerRequest to produce handler data
+                        // This intentionally consumes `req` (no req.clone()) to avoid heavy copies.
+                        let data = match H::Request::try_from(req) {
+                            Ok(v) => v,
+                            Err(err) => {
+                                // Validation failed - send 400 Bad Request
+                                let _ = reply_tx_inner.send(HandlerResponse {
+                                    status: 400,
+                                    headers: HashMap::new(),
+                                    body: serde_json::json!({
+                                        "error": "Invalid request data",
+                                        "message": err.to_string(),
+                                        "request_id": request_id.to_string(),
+                                    }),
+                                });
+                                return; // Early return from closure
+                            }
+                        };
+
+                        // STEP 2: Build typed request with validated data
+                        let typed_req = TypedHandlerRequest {
+                            method,
+                            path,
+                            handler_name,
+                            path_params,
+                            query_params,
+                            data, // Strongly-typed request data
+                        };
+
+                        // STEP 3: Call the actual handler
+                        let result = handler.handle(typed_req);
+
+                        // STEP 4: Serialize and send response
+                        let _ = reply_tx_inner.send(HandlerResponse {
+                            status: 200,
+                            headers: HashMap::new(),
+                            body: serde_json::to_value(result).unwrap_or_else(
+                                |e| serde_json::json!({
+                                    "error": "Failed to serialize response",
+                                    "details": e.to_string(),
+                                    "request_id": request_id.to_string(),
+                                }),
+                            ),
+                        });
+                    }
+                }));
+
+                // PANIC RECOVERY: If handler panicked, send 500 error
+                if let Err(panic) = result {
+                    let _ = reply_tx_outer.send(HandlerResponse {
+                        status: 500,
+                        headers: HashMap::new(),
+                        body: serde_json::json!({
+                            "error": "Handler panicked",
+                            "details": format!("{:?}", panic),
+                            "request_id": request_id.to_string(),
+                        }),
+                    });
+                    eprintln!("Handler '{handler_name_outer}' panicked: {panic:?}");
+                }
+            }
+        });
+
+    // Handle coroutine spawn failures gracefully
+    match spawn_result {
+        Ok(_) => tx,
+        Err(e) => {
+            // Log the error and panic since we can't return an error from this function
+            // In production, you might want to handle this differently
+            panic!("Failed to spawn typed handler coroutine: {e}. Stack size: {stack_size} bytes. Consider increasing stack size or BRRTR_STACK_SIZE environment variable.");
+        }
+    }
+}
+
 /// Typed request data passed to a Handler
 ///
 /// Contains the HTTP metadata (method, path, params) along with the typed
@@ -268,6 +513,56 @@ impl Dispatcher {
         }
         
         let tx = spawn_typed(handler);
+        self.handlers.insert(name, tx);
+    }
+
+    /// Register a typed handler with a custom stack size that converts [`HandlerRequest`] into
+    /// the handler's associated request type using `TryFrom`.
+    ///
+    /// This spawns a coroutine with the specified stack size that automatically validates
+    /// incoming requests against the handler's expected type and converts them. Invalid
+    /// requests receive a 400 Bad Request response automatically.
+    ///
+    /// # Safety
+    ///
+    /// This function is marked unsafe because it internally calls `spawn_typed_with_stack_size()`
+    /// which uses `may::coroutine::Builder::spawn()`. The unsafety comes from the coroutine
+    /// runtime's requirements.
+    ///
+    /// The caller must ensure the May coroutine runtime is properly initialized.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Handler name for registration
+    /// * `handler` - The handler implementation
+    /// * `stack_size_bytes` - Recommended stack size in bytes
+    ///
+    /// # Handler Requirements
+    ///
+    /// The handler must:
+    /// - Implement the `Handler` trait with typed request/response types
+    /// - Be safe to execute in a concurrent context
+    /// - Avoid long-running synchronous operations
+    pub unsafe fn register_typed_with_stack_size<H>(
+        &mut self,
+        name: &str,
+        handler: H,
+        stack_size_bytes: usize,
+    )
+    where
+        H: Handler + Send + 'static,
+    {
+        let name = name.to_string();
+        
+        // Check if we're replacing an existing handler
+        if let Some(old_sender) = self.handlers.remove(&name) {
+            // Drop the old sender to close its channel and stop the old coroutine
+            drop(old_sender);
+            eprintln!("Warning: Replacing existing typed handler '{}' - old coroutine will exit", name);
+        }
+        
+        // Use the internal function with handler name for per-handler env var support
+        let tx = spawn_typed_with_stack_size_and_name(handler, stack_size_bytes, Some(&name));
         self.handlers.insert(name, tx);
     }
 
@@ -348,5 +643,90 @@ impl Dispatcher {
         };
         
         self.register_handler_with_pool_config(name, handler_fn, config);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_stack_size_with_per_handler_override() {
+        // Set per-handler override
+        std::env::set_var("BRRTR_STACK_SIZE__TEST_HANDLER", "32768");
+        
+        let stack_size = get_stack_size_with_overrides("test_handler", 16384);
+        assert_eq!(stack_size, 32768);
+        
+        // Clean up
+        std::env::remove_var("BRRTR_STACK_SIZE__TEST_HANDLER");
+    }
+
+    #[test]
+    fn test_get_stack_size_with_global_override() {
+        // Set global override
+        std::env::set_var("BRRTR_STACK_SIZE", "49152");
+        
+        let stack_size = get_stack_size_with_overrides("test_handler", 16384);
+        assert_eq!(stack_size, 49152);
+        
+        // Clean up
+        std::env::remove_var("BRRTR_STACK_SIZE");
+    }
+
+    #[test]
+    fn test_get_stack_size_per_handler_takes_precedence() {
+        // Set both overrides
+        std::env::set_var("BRRTR_STACK_SIZE__TEST_HANDLER", "32768");
+        std::env::set_var("BRRTR_STACK_SIZE", "49152");
+        
+        let stack_size = get_stack_size_with_overrides("test_handler", 16384);
+        // Per-handler should take precedence
+        assert_eq!(stack_size, 32768);
+        
+        // Clean up
+        std::env::remove_var("BRRTR_STACK_SIZE__TEST_HANDLER");
+        std::env::remove_var("BRRTR_STACK_SIZE");
+    }
+
+    #[test]
+    fn test_get_stack_size_with_hex_format() {
+        // Test hex format
+        std::env::set_var("BRRTR_STACK_SIZE__TEST_HANDLER", "0x10000");
+        
+        let stack_size = get_stack_size_with_overrides("test_handler", 16384);
+        assert_eq!(stack_size, 65536);
+        
+        // Clean up
+        std::env::remove_var("BRRTR_STACK_SIZE__TEST_HANDLER");
+    }
+
+    #[test]
+    fn test_get_stack_size_clamping() {
+        // Set custom min/max
+        std::env::set_var("BRRTR_STACK_MIN_BYTES", "32768");
+        std::env::set_var("BRRTR_STACK_MAX_BYTES", "65536");
+        
+        // Test clamping to min
+        std::env::set_var("BRRTR_STACK_SIZE__TEST_HANDLER", "16384");
+        let stack_size = get_stack_size_with_overrides("test_handler", 16384);
+        assert_eq!(stack_size, 32768);
+        
+        // Test clamping to max
+        std::env::set_var("BRRTR_STACK_SIZE__TEST_HANDLER", "131072");
+        let stack_size = get_stack_size_with_overrides("test_handler", 131072);
+        assert_eq!(stack_size, 65536);
+        
+        // Clean up
+        std::env::remove_var("BRRTR_STACK_SIZE__TEST_HANDLER");
+        std::env::remove_var("BRRTR_STACK_MIN_BYTES");
+        std::env::remove_var("BRRTR_STACK_MAX_BYTES");
+    }
+
+    #[test]
+    fn test_get_stack_size_no_override() {
+        // No overrides set, should return default
+        let stack_size = get_stack_size_with_overrides("test_handler", 16384);
+        assert_eq!(stack_size, 16384);
     }
 }

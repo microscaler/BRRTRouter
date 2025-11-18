@@ -334,6 +334,7 @@ mod tests {
             output_dir: PathBuf::from("test_output"),
             sse: false,
             estimated_request_body_bytes: None,
+            x_brrtrouter_stack_size: None,
         }
     }
 

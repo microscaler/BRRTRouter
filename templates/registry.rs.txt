@@ -5,16 +5,17 @@
 // ⚠️ To implement business logic, edit the corresponding controller file
 use brrtrouter::dispatcher::Dispatcher;
 use brrtrouter::spec::RouteMeta;
-use brrtrouter::typed::spawn_typed;
+use brrtrouter::typed::spawn_typed_with_stack_size;
 // Note: avoid wildcard imports to reduce warnings
 
 /// # Safety
 /// This function spawns handler coroutines. Callers must ensure coroutine runtime is set up.
 pub unsafe fn register_all(dispatcher: &mut Dispatcher) {
     {% for entry in entries -%}
-    dispatcher.register_typed(
+    dispatcher.register_typed_with_stack_size(
         "{{ entry.name }}",
         crate::controllers::{{ entry.name }}::{{ entry.controller_struct }},
+        {{ entry.stack_size_bytes }},
     );
     {% endfor %}
 }
@@ -34,7 +35,10 @@ pub unsafe fn register_from_spec(dispatcher: &mut Dispatcher, routes: &[RouteMet
         match route.handler_name.as_str() {
             {% for entry in entries -%}
             "{{ entry.name }}" => {
-                let tx = spawn_typed(crate::controllers::{{ entry.name }}::{{ entry.controller_struct }});
+                let tx = spawn_typed_with_stack_size(
+                    crate::controllers::{{ entry.name }}::{{ entry.controller_struct }},
+                    {{ entry.stack_size_bytes }},
+                );
                 dispatcher.add_route(route.clone(), tx);
             }
             {% endfor %}
