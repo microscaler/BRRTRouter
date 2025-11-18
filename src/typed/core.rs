@@ -298,13 +298,21 @@ where
 
 /// Spawn a typed handler coroutine with a specific stack size and handler name.
 ///
-/// This is an internal function that supports per-handler environment variable overrides.
-/// Use `spawn_typed_with_stack_size` for the public API.
+/// This function allows specifying a handler name to enable per-handler stack size
+/// overrides via the `BRRTR_STACK_SIZE__<HANDLER_NAME>` environment variable.
+/// The stack size is also subject to min/max clamping via `BRRTR_STACK_MIN_BYTES`
+/// and `BRRTR_STACK_MAX_BYTES` environment variables.
 ///
 /// # Safety
 ///
 /// Same safety requirements as `spawn_typed_with_stack_size`.
-unsafe fn spawn_typed_with_stack_size_and_name<H>(
+///
+/// # Arguments
+///
+/// * `handler` - The handler to spawn
+/// * `stack_size_bytes` - Recommended stack size in bytes (can be overridden by environment)
+/// * `handler_name` - Optional handler name for per-handler overrides
+pub unsafe fn spawn_typed_with_stack_size_and_name<H>(
     handler: H,
     stack_size_bytes: usize,
     handler_name: Option<&str>,
