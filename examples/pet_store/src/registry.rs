@@ -4,81 +4,121 @@
 // ⚠️ To implement business logic, edit the corresponding controller file
 use brrtrouter::dispatcher::Dispatcher;
 use brrtrouter::spec::RouteMeta;
-use brrtrouter::typed::spawn_typed;
+use brrtrouter::typed::spawn_typed_with_stack_size_and_name;
 // Note: avoid wildcard imports to reduce warnings
 
 /// # Safety
 /// This function spawns handler coroutines. Callers must ensure coroutine runtime is set up.
 pub unsafe fn register_all(dispatcher: &mut Dispatcher) {
-    dispatcher.register_typed(
+    dispatcher.register_typed_with_stack_size(
         "admin_settings",
         crate::controllers::admin_settings::AdminSettingsController,
+        16384,
     );
-    dispatcher.register_typed(
+    dispatcher.register_typed_with_stack_size(
         "download_file",
         crate::controllers::download_file::DownloadFileController,
+        20480,
     );
-    dispatcher.register_typed(
+    dispatcher.register_typed_with_stack_size(
         "stream_events",
         crate::controllers::stream_events::StreamEventsController,
+        24576,
     );
-    dispatcher.register_typed(
+    dispatcher.register_typed_with_stack_size(
         "submit_form",
         crate::controllers::submit_form::SubmitFormController,
+        16384,
     );
-    dispatcher.register_typed("get_item", crate::controllers::get_item::GetItemController);
-    dispatcher.register_typed(
+    dispatcher.register_typed_with_stack_size(
+        "get_item",
+        crate::controllers::get_item::GetItemController,
+        20480,
+    );
+    dispatcher.register_typed_with_stack_size(
         "post_item",
         crate::controllers::post_item::PostItemController,
+        20480,
     );
-    dispatcher.register_typed(
+    dispatcher.register_typed_with_stack_size(
         "get_label",
         crate::controllers::get_label::GetLabelController,
+        20480,
     );
-    dispatcher.register_typed(
+    dispatcher.register_typed_with_stack_size(
         "get_matrix",
         crate::controllers::get_matrix::GetMatrixController,
+        20480,
     );
-    dispatcher.register_typed(
+    dispatcher.register_typed_with_stack_size(
         "list_pets",
         crate::controllers::list_pets::ListPetsController,
+        20480,
     );
-    dispatcher.register_typed("add_pet", crate::controllers::add_pet::AddPetController);
-    dispatcher.register_typed("get_pet", crate::controllers::get_pet::GetPetController);
-    dispatcher.register_typed("search", crate::controllers::search::SearchController);
-    dispatcher.register_typed(
+    dispatcher.register_typed_with_stack_size(
+        "add_pet",
+        crate::controllers::add_pet::AddPetController,
+        16384,
+    );
+    dispatcher.register_typed_with_stack_size(
+        "get_pet",
+        crate::controllers::get_pet::GetPetController,
+        20480,
+    );
+    dispatcher.register_typed_with_stack_size(
+        "search",
+        crate::controllers::search::SearchController,
+        20480,
+    );
+    dispatcher.register_typed_with_stack_size(
         "secure_endpoint",
         crate::controllers::secure_endpoint::SecureEndpointController,
+        16384,
     );
-    dispatcher.register_typed(
+    dispatcher.register_typed_with_stack_size(
         "upload_file",
         crate::controllers::upload_file::UploadFileController,
+        16384,
     );
-    dispatcher.register_typed(
+    dispatcher.register_typed_with_stack_size(
         "list_users",
         crate::controllers::list_users::ListUsersController,
+        20480,
     );
-    dispatcher.register_typed("get_user", crate::controllers::get_user::GetUserController);
-    dispatcher.register_typed(
+    dispatcher.register_typed_with_stack_size(
+        "get_user",
+        crate::controllers::get_user::GetUserController,
+        20480,
+    );
+    dispatcher.register_typed_with_stack_size(
         "delete_user",
         crate::controllers::delete_user::DeleteUserController,
+        20480,
     );
-    dispatcher.register_typed(
+    dispatcher.register_typed_with_stack_size(
         "options_user",
         crate::controllers::options_user::OptionsUserController,
+        20480,
     );
-    dispatcher.register_typed(
+    dispatcher.register_typed_with_stack_size(
         "head_user",
         crate::controllers::head_user::HeadUserController,
+        20480,
     );
-    dispatcher.register_typed(
+    dispatcher.register_typed_with_stack_size(
         "list_user_posts",
         crate::controllers::list_user_posts::ListUserPostsController,
+        20480,
     );
-    dispatcher.register_typed("get_post", crate::controllers::get_post::GetPostController);
-    dispatcher.register_typed(
+    dispatcher.register_typed_with_stack_size(
+        "get_post",
+        crate::controllers::get_post::GetPostController,
+        20480,
+    );
+    dispatcher.register_typed_with_stack_size(
         "register_webhook",
         crate::controllers::register_webhook::RegisterWebhookController,
+        16384,
     );
 }
 
@@ -96,92 +136,179 @@ pub unsafe fn register_from_spec(dispatcher: &mut Dispatcher, routes: &[RouteMet
     for route in routes {
         match route.handler_name.as_str() {
             "admin_settings" => {
-                let tx = spawn_typed(crate::controllers::admin_settings::AdminSettingsController);
+                let tx = spawn_typed_with_stack_size_and_name(
+                    crate::controllers::admin_settings::AdminSettingsController,
+                    16384,
+                    Some("admin_settings"),
+                );
                 dispatcher.add_route(route.clone(), tx);
             }
             "download_file" => {
-                let tx = spawn_typed(crate::controllers::download_file::DownloadFileController);
+                let tx = spawn_typed_with_stack_size_and_name(
+                    crate::controllers::download_file::DownloadFileController,
+                    20480,
+                    Some("download_file"),
+                );
                 dispatcher.add_route(route.clone(), tx);
             }
             "stream_events" => {
-                let tx = spawn_typed(crate::controllers::stream_events::StreamEventsController);
+                let tx = spawn_typed_with_stack_size_and_name(
+                    crate::controllers::stream_events::StreamEventsController,
+                    24576,
+                    Some("stream_events"),
+                );
                 dispatcher.add_route(route.clone(), tx);
             }
             "submit_form" => {
-                let tx = spawn_typed(crate::controllers::submit_form::SubmitFormController);
+                let tx = spawn_typed_with_stack_size_and_name(
+                    crate::controllers::submit_form::SubmitFormController,
+                    16384,
+                    Some("submit_form"),
+                );
                 dispatcher.add_route(route.clone(), tx);
             }
             "get_item" => {
-                let tx = spawn_typed(crate::controllers::get_item::GetItemController);
+                let tx = spawn_typed_with_stack_size_and_name(
+                    crate::controllers::get_item::GetItemController,
+                    20480,
+                    Some("get_item"),
+                );
                 dispatcher.add_route(route.clone(), tx);
             }
             "post_item" => {
-                let tx = spawn_typed(crate::controllers::post_item::PostItemController);
+                let tx = spawn_typed_with_stack_size_and_name(
+                    crate::controllers::post_item::PostItemController,
+                    20480,
+                    Some("post_item"),
+                );
                 dispatcher.add_route(route.clone(), tx);
             }
             "get_label" => {
-                let tx = spawn_typed(crate::controllers::get_label::GetLabelController);
+                let tx = spawn_typed_with_stack_size_and_name(
+                    crate::controllers::get_label::GetLabelController,
+                    20480,
+                    Some("get_label"),
+                );
                 dispatcher.add_route(route.clone(), tx);
             }
             "get_matrix" => {
-                let tx = spawn_typed(crate::controllers::get_matrix::GetMatrixController);
+                let tx = spawn_typed_with_stack_size_and_name(
+                    crate::controllers::get_matrix::GetMatrixController,
+                    20480,
+                    Some("get_matrix"),
+                );
                 dispatcher.add_route(route.clone(), tx);
             }
             "list_pets" => {
-                let tx = spawn_typed(crate::controllers::list_pets::ListPetsController);
+                let tx = spawn_typed_with_stack_size_and_name(
+                    crate::controllers::list_pets::ListPetsController,
+                    20480,
+                    Some("list_pets"),
+                );
                 dispatcher.add_route(route.clone(), tx);
             }
             "add_pet" => {
-                let tx = spawn_typed(crate::controllers::add_pet::AddPetController);
+                let tx = spawn_typed_with_stack_size_and_name(
+                    crate::controllers::add_pet::AddPetController,
+                    16384,
+                    Some("add_pet"),
+                );
                 dispatcher.add_route(route.clone(), tx);
             }
             "get_pet" => {
-                let tx = spawn_typed(crate::controllers::get_pet::GetPetController);
+                let tx = spawn_typed_with_stack_size_and_name(
+                    crate::controllers::get_pet::GetPetController,
+                    20480,
+                    Some("get_pet"),
+                );
                 dispatcher.add_route(route.clone(), tx);
             }
             "search" => {
-                let tx = spawn_typed(crate::controllers::search::SearchController);
+                let tx = spawn_typed_with_stack_size_and_name(
+                    crate::controllers::search::SearchController,
+                    20480,
+                    Some("search"),
+                );
                 dispatcher.add_route(route.clone(), tx);
             }
             "secure_endpoint" => {
-                let tx = spawn_typed(crate::controllers::secure_endpoint::SecureEndpointController);
+                let tx = spawn_typed_with_stack_size_and_name(
+                    crate::controllers::secure_endpoint::SecureEndpointController,
+                    16384,
+                    Some("secure_endpoint"),
+                );
                 dispatcher.add_route(route.clone(), tx);
             }
             "upload_file" => {
-                let tx = spawn_typed(crate::controllers::upload_file::UploadFileController);
+                let tx = spawn_typed_with_stack_size_and_name(
+                    crate::controllers::upload_file::UploadFileController,
+                    16384,
+                    Some("upload_file"),
+                );
                 dispatcher.add_route(route.clone(), tx);
             }
             "list_users" => {
-                let tx = spawn_typed(crate::controllers::list_users::ListUsersController);
+                let tx = spawn_typed_with_stack_size_and_name(
+                    crate::controllers::list_users::ListUsersController,
+                    20480,
+                    Some("list_users"),
+                );
                 dispatcher.add_route(route.clone(), tx);
             }
             "get_user" => {
-                let tx = spawn_typed(crate::controllers::get_user::GetUserController);
+                let tx = spawn_typed_with_stack_size_and_name(
+                    crate::controllers::get_user::GetUserController,
+                    20480,
+                    Some("get_user"),
+                );
                 dispatcher.add_route(route.clone(), tx);
             }
             "delete_user" => {
-                let tx = spawn_typed(crate::controllers::delete_user::DeleteUserController);
+                let tx = spawn_typed_with_stack_size_and_name(
+                    crate::controllers::delete_user::DeleteUserController,
+                    20480,
+                    Some("delete_user"),
+                );
                 dispatcher.add_route(route.clone(), tx);
             }
             "options_user" => {
-                let tx = spawn_typed(crate::controllers::options_user::OptionsUserController);
+                let tx = spawn_typed_with_stack_size_and_name(
+                    crate::controllers::options_user::OptionsUserController,
+                    20480,
+                    Some("options_user"),
+                );
                 dispatcher.add_route(route.clone(), tx);
             }
             "head_user" => {
-                let tx = spawn_typed(crate::controllers::head_user::HeadUserController);
+                let tx = spawn_typed_with_stack_size_and_name(
+                    crate::controllers::head_user::HeadUserController,
+                    20480,
+                    Some("head_user"),
+                );
                 dispatcher.add_route(route.clone(), tx);
             }
             "list_user_posts" => {
-                let tx = spawn_typed(crate::controllers::list_user_posts::ListUserPostsController);
+                let tx = spawn_typed_with_stack_size_and_name(
+                    crate::controllers::list_user_posts::ListUserPostsController,
+                    20480,
+                    Some("list_user_posts"),
+                );
                 dispatcher.add_route(route.clone(), tx);
             }
             "get_post" => {
-                let tx = spawn_typed(crate::controllers::get_post::GetPostController);
+                let tx = spawn_typed_with_stack_size_and_name(
+                    crate::controllers::get_post::GetPostController,
+                    20480,
+                    Some("get_post"),
+                );
                 dispatcher.add_route(route.clone(), tx);
             }
             "register_webhook" => {
-                let tx =
-                    spawn_typed(crate::controllers::register_webhook::RegisterWebhookController);
+                let tx = spawn_typed_with_stack_size_and_name(
+                    crate::controllers::register_webhook::RegisterWebhookController,
+                    16384,
+                    Some("register_webhook"),
+                );
                 dispatcher.add_route(route.clone(), tx);
             }
 
