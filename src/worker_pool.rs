@@ -1,24 +1,21 @@
 //! # Worker Pool Module
 //!
-//! Provides bounded worker pools with backpressure handling for handler coroutines.
-//! Each handler can have multiple worker coroutines processing requests in parallel,
-//! with a bounded queue to prevent unbounded memory growth under load.
+//! Provides worker pools for handler coroutines to enable parallel request processing.
+//! Each handler can have multiple worker coroutines processing requests concurrently.
 //!
 //! ## Features
 //!
 //! - **Worker Pools**: Spawn N worker coroutines per handler for parallel request processing
-//! - **Bounded Queues**: Configurable queue depth to prevent memory growth
-//! - **Backpressure**: Two modes for handling queue overflow:
-//!   - **Block**: Wait with timeout before retrying (default)
-//!   - **Shed**: Return 429 (Too Many Requests) immediately
-//! - **Metrics**: Track queue depth and shed count for monitoring
+//! - **Unbounded Queues**: Uses may's unbounded MPSC channels for maximum throughput
+//! - **Load Balancing**: Workers automatically share the request queue
+//! - **Metrics**: Track queue depth, dispatch count, and completion count for monitoring
 //!
 //! ## Configuration
 //!
 //! - `BRRTR_HANDLER_WORKERS`: Number of worker coroutines per handler (default: 4)
-//! - `BRRTR_HANDLER_QUEUE_BOUND`: Maximum queue depth (default: 1024)
-//! - `BRRTR_BACKPRESSURE_MODE`: Backpressure strategy - "block" or "shed" (default: "block")
-//! - `BRRTR_BACKPRESSURE_TIMEOUT_MS`: Timeout for block mode in milliseconds (default: 50)
+//! - `BRRTR_HANDLER_QUEUE_BOUND`: Queue depth limit for metrics (not enforced, default: 1024)
+//! - `BRRTR_BACKPRESSURE_MODE`: Backpressure mode setting (not used, kept for compatibility)
+//! - `BRRTR_BACKPRESSURE_TIMEOUT_MS`: Timeout setting (not used, kept for compatibility)
 
 use crate::dispatcher::{HandlerRequest, HandlerResponse};
 use may::sync::mpsc;
@@ -323,10 +320,10 @@ impl WorkerPool {
         }
     }
 
-    /// Dispatch a request to the worker pool with backpressure handling
+    /// Dispatch a request to the worker pool
     ///
-    /// Returns `Ok(())` if the request was dispatched successfully, or `Err(response)` if
-    /// the request was shed due to backpressure.
+    /// Sends the request to the unbounded channel where worker coroutines will pick it up.
+    /// Returns an error only if the channel is disconnected (workers have exited).
     ///
     /// # Arguments
     ///
@@ -335,138 +332,78 @@ impl WorkerPool {
     /// # Returns
     ///
     /// * `Ok(())` - Request dispatched successfully
-    /// * `Err(HandlerResponse)` - Request shed, response should be sent immediately
+    /// * `Err(HandlerResponse)` - Channel disconnected (503 error response)
     pub fn dispatch(&self, req: HandlerRequest) -> Result<(), HandlerResponse> {
+        // Both modes now behave the same - just send to the unbounded channel
+        // We keep the mode check for future bounded channel implementation
         match self.config.backpressure_mode {
             BackpressureMode::Block => self.dispatch_with_blocking(req),
             BackpressureMode::Shed => self.dispatch_with_shedding(req),
         }
     }
 
-    /// Dispatch with blocking backpressure (retry with timeout)
+    /// Dispatch to the unbounded channel (block mode - no actual blocking)
     fn dispatch_with_blocking(&self, req: HandlerRequest) -> Result<(), HandlerResponse> {
-        let timeout = Duration::from_millis(self.config.backpressure_timeout_ms);
-        let start = Instant::now();
         let request_id = req.request_id;
-
-        loop {
-            // Check if queue is over bound
-            let current_depth = self.metrics.get_queue_depth();
-            
-            if current_depth < self.config.queue_bound {
-                // Queue has space - send the request
-                self.metrics.record_dispatch();
-                
-                if let Err(e) = self.sender.send(req) {
-                    // Channel disconnected - workers are gone
-                    error!(
-                        request_id = %request_id,
-                        handler_name = %self.handler_name,
-                        error = %e,
-                        "Worker pool channel disconnected"
-                    );
-                    
-                    return Err(HandlerResponse {
-                        status: 503,
-                        headers: std::collections::HashMap::new(),
-                        body: serde_json::json!({
-                            "error": "Service Unavailable",
-                            "details": "Handler workers are not responding",
-                            "request_id": request_id.to_string(),
-                            "handler_name": self.handler_name,
-                        }),
-                    });
-                }
-                
-                return Ok(());
-            }
-            
-            // Queue is full - check if we should retry or shed
-            if start.elapsed() >= timeout {
-                // Timeout exceeded - shed the request
-                warn!(
-                    request_id = %request_id,
-                    handler_name = %self.handler_name,
-                    elapsed_ms = start.elapsed().as_millis(),
-                    timeout_ms = self.config.backpressure_timeout_ms,
-                    queue_depth = current_depth,
-                    "Request shed after timeout in block mode"
-                );
-                
-                self.metrics.record_shed();
-                
-                return Err(HandlerResponse {
-                    status: 429,
-                    headers: std::collections::HashMap::new(),
-                    body: serde_json::json!({
-                        "error": "Too Many Requests",
-                        "details": "Handler queue is full, request timed out waiting",
-                        "request_id": request_id.to_string(),
-                        "handler_name": self.handler_name,
-                        "queue_depth": current_depth,
-                    }),
-                });
-            }
-            
-            // Wait a bit before retrying
-            may::coroutine::sleep(Duration::from_millis(1));
-        }
-    }
-
-    /// Dispatch with shedding backpressure (immediate 429)
-    fn dispatch_with_shedding(&self, req: HandlerRequest) -> Result<(), HandlerResponse> {
-        let request_id = req.request_id;
-        let current_depth = self.metrics.get_queue_depth();
-
-        if current_depth < self.config.queue_bound {
-            // Queue has space - send the request
-            self.metrics.record_dispatch();
-            
-            if let Err(e) = self.sender.send(req) {
-                // Channel disconnected - workers are gone
-                error!(
-                    request_id = %request_id,
-                    handler_name = %self.handler_name,
-                    error = %e,
-                    "Worker pool channel disconnected"
-                );
-                
-                return Err(HandlerResponse {
-                    status: 503,
-                    headers: std::collections::HashMap::new(),
-                    body: serde_json::json!({
-                        "error": "Service Unavailable",
-                        "details": "Handler workers are not responding",
-                        "request_id": request_id.to_string(),
-                        "handler_name": self.handler_name,
-                    }),
-                });
-            }
-            
-            Ok(())
-        } else {
-            // Queue is full - shed immediately
-            warn!(
+        
+        // Simply send to the unbounded channel
+        // Note: The channel is unbounded, so this will always succeed unless disconnected
+        self.metrics.record_dispatch();
+        
+        if let Err(e) = self.sender.send(req) {
+            // Channel disconnected - workers are gone
+            error!(
                 request_id = %request_id,
                 handler_name = %self.handler_name,
-                queue_depth = current_depth,
-                "Request shed immediately in shed mode"
+                error = %e,
+                "Worker pool channel disconnected"
             );
             
-            self.metrics.record_shed();
-            
-            Err(HandlerResponse {
-                status: 429,
+            return Err(HandlerResponse {
+                status: 503,
                 headers: std::collections::HashMap::new(),
                 body: serde_json::json!({
-                    "error": "Too Many Requests",
-                    "details": "Handler queue is full",
+                    "error": "Service Unavailable",
+                    "details": "Handler workers are not responding",
                     "request_id": request_id.to_string(),
                     "handler_name": self.handler_name,
-                    "queue_depth": current_depth,
                 }),
-            })
+            });
         }
+        
+        Ok(())
+    }
+
+    /// Dispatch to the unbounded channel (shed mode - no actual shedding)
+    fn dispatch_with_shedding(&self, req: HandlerRequest) -> Result<(), HandlerResponse> {
+        let request_id = req.request_id;
+        
+        // Simply send to the unbounded channel
+        // Note: The channel is unbounded, so this will always succeed unless disconnected
+        self.metrics.record_dispatch();
+        
+        if let Err(e) = self.sender.send(req) {
+            // Channel disconnected - workers are gone
+            error!(
+                request_id = %request_id,
+                handler_name = %self.handler_name,
+                error = %e,
+                "Worker pool channel disconnected"
+            );
+            
+            return Err(HandlerResponse {
+                status: 503,
+                headers: std::collections::HashMap::new(),
+                body: serde_json::json!({
+                    "error": "Service Unavailable",
+                    "details": "Handler workers are not responding",
+                    "request_id": request_id.to_string(),
+                    "handler_name": self.handler_name,
+                }),
+            });
+        }
+        
+        Ok(())
     }
 
     /// Get the sender for this worker pool
