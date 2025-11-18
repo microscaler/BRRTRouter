@@ -10,7 +10,7 @@ use brrtrouter::typed::spawn_typed_with_pool_and_stack_size;
 /// Register all handlers using worker pools by default.
 ///
 /// **NEW DEFAULT BEHAVIOR**: All handlers are registered with worker pools for parallel
-/// request processing with bounded queues and backpressure handling.
+/// request processing using unbounded queues for maximum throughput.
 ///
 /// # Safety
 /// This function spawns handler coroutines. Callers must ensure coroutine runtime is set up.
@@ -19,9 +19,9 @@ use brrtrouter::typed::spawn_typed_with_pool_and_stack_size;
 ///
 /// The worker pool behavior is configured via environment variables:
 /// - `BRRTR_HANDLER_WORKERS`: Number of worker coroutines (default: 4)
-/// - `BRRTR_HANDLER_QUEUE_BOUND`: Maximum queue depth (default: 1024)
-/// - `BRRTR_BACKPRESSURE_MODE`: "block" or "shed" (default: "block")
-/// - `BRRTR_BACKPRESSURE_TIMEOUT_MS`: Timeout for block mode (default: 50ms)
+/// - `BRRTR_HANDLER_QUEUE_BOUND`: Queue depth limit for metrics (not enforced, default: 1024)
+/// - `BRRTR_BACKPRESSURE_MODE`: Backpressure mode (not used, kept for compatibility)
+/// - `BRRTR_BACKPRESSURE_TIMEOUT_MS`: Timeout setting (not used, kept for compatibility)
 pub unsafe fn register_all(dispatcher: &mut Dispatcher) {
     dispatcher.register_typed_with_stack_size(
         "admin_settings",
@@ -138,7 +138,7 @@ pub unsafe fn register_all(dispatcher: &mut Dispatcher) {
 /// Dynamically register handlers for the provided routes using their handler names.
 ///
 /// **NEW DEFAULT BEHAVIOR**: All handlers are registered with worker pools for parallel
-/// request processing with bounded queues and backpressure handling.
+/// request processing using unbounded queues for maximum throughput.
 ///
 /// # Safety
 /// This function spawns handler coroutines. Callers must ensure coroutine runtime is set up.
@@ -150,9 +150,9 @@ pub unsafe fn register_all(dispatcher: &mut Dispatcher) {
 ///
 /// The worker pool behavior is configured via environment variables:
 /// - `BRRTR_HANDLER_WORKERS`: Number of worker coroutines (default: 4)
-/// - `BRRTR_HANDLER_QUEUE_BOUND`: Maximum queue depth (default: 1024)
-/// - `BRRTR_BACKPRESSURE_MODE`: "block" or "shed" (default: "block")
-/// - `BRRTR_BACKPRESSURE_TIMEOUT_MS`: Timeout for block mode (default: 50ms)
+/// - `BRRTR_HANDLER_QUEUE_BOUND`: Queue depth limit for metrics (not enforced, default: 1024)
+/// - `BRRTR_BACKPRESSURE_MODE`: Backpressure mode (not used, kept for compatibility)
+/// - `BRRTR_BACKPRESSURE_TIMEOUT_MS`: Timeout setting (not used, kept for compatibility)
 pub unsafe fn register_from_spec(dispatcher: &mut Dispatcher, routes: &[RouteMeta]) {
     // Clear all existing handlers to prevent memory leaks
     // The old senders will be dropped, causing their coroutines to exit
