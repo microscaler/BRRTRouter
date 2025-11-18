@@ -355,15 +355,15 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed development guide.
 |----------|--------|---------|-------------|
 | `BRRTR_STACK_SIZE` | Decimal or hex (e.g., `65536` or `0x10000`) | `0x10000` (64 KB) | Stack size for coroutine handlers |
 | `BRRTR_SCHEMA_CACHE` | `on`, `off`, `true`, `false`, `1`, `0` | `on` | Enable/disable JSON Schema validator caching |
-| `BRRTR_HANDLER_WORKERS` | Integer (e.g., `4`, `8`) | `4` | Number of worker coroutines per handler (when using worker pools) |
-| `BRRTR_HANDLER_QUEUE_BOUND` | Integer (e.g., `1024`, `2048`) | `1024` | Maximum queue depth for worker pool handlers |
-| `BRRTR_BACKPRESSURE_MODE` | `block`, `shed` | `block` | Backpressure strategy when queue is full |
-| `BRRTR_BACKPRESSURE_TIMEOUT_MS` | Integer milliseconds (e.g., `50`, `100`) | `50` | Timeout for block mode before shedding request |
+| `BRRTR_HANDLER_WORKERS` | Integer (e.g., `4`, `8`) | `4` | **NEW**: Number of worker coroutines per handler (worker pools enabled by default) |
+| `BRRTR_HANDLER_QUEUE_BOUND` | Integer (e.g., `1024`, `2048`) | `1024` | **NEW**: Maximum queue depth for worker pool handlers |
+| `BRRTR_BACKPRESSURE_MODE` | `block`, `shed` | `block` | **NEW**: Backpressure strategy when queue is full |
+| `BRRTR_BACKPRESSURE_TIMEOUT_MS` | Integer milliseconds (e.g., `50`, `100`) | `50` | **NEW**: Timeout for block mode before shedding request |
 
 **Performance Tips:**
 - **Schema Caching** (default: enabled): Eliminates per-request schema compilation, reducing CPU usage by 20-40% under high load
 - **Stack Size**: Tune based on handler complexity - simple handlers: 16KB, complex logic: 32KB, deep recursion: 64KB
-- **Worker Pools**: Use `register_handler_with_pool()` for parallel request processing with bounded queues
+- **Worker Pools** (default: enabled): **NEW DEFAULT BEHAVIOR** - All handlers now use worker pools for parallel request processing with bounded queues and backpressure handling. This provides better concurrency and prevents unbounded memory growth under load.
 - **Backpressure**: Block mode (default) waits and retries; shed mode returns 429 immediately when overloaded
 
 ---
