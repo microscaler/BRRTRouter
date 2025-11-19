@@ -361,3 +361,8 @@ pub unsafe fn register_from_spec(dispatcher: &mut Dispatcher, routes: &[RouteMet
                 dispatcher.add_route(route.clone(), tx);
                 dispatcher.worker_pools.insert("register_webhook".to_string(), pool);
             }
+
+            _ => {}
+        }
+    }
+}

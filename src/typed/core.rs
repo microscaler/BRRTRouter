@@ -859,6 +859,12 @@ mod tests {
 
     #[test]
     fn test_get_stack_size_with_per_handler_override() {
+        // Clean up any environment variables from other tests
+        std::env::remove_var("BRRTR_STACK_SIZE__TEST_HANDLER");
+        std::env::remove_var("BRRTR_STACK_SIZE");
+        std::env::remove_var("BRRTR_STACK_MIN_BYTES");
+        std::env::remove_var("BRRTR_STACK_MAX_BYTES");
+        
         // Set per-handler override
         std::env::set_var("BRRTR_STACK_SIZE__TEST_HANDLER", "32768");
         
@@ -871,6 +877,12 @@ mod tests {
 
     #[test]
     fn test_get_stack_size_with_global_override() {
+        // Clean up any environment variables from other tests
+        std::env::remove_var("BRRTR_STACK_SIZE__TEST_HANDLER");
+        std::env::remove_var("BRRTR_STACK_SIZE");
+        std::env::remove_var("BRRTR_STACK_MIN_BYTES");
+        std::env::remove_var("BRRTR_STACK_MAX_BYTES");
+        
         // Set global override
         std::env::set_var("BRRTR_STACK_SIZE", "49152");
         
@@ -883,6 +895,12 @@ mod tests {
 
     #[test]
     fn test_get_stack_size_per_handler_takes_precedence() {
+        // Clean up any environment variables from other tests
+        std::env::remove_var("BRRTR_STACK_SIZE__TEST_HANDLER");
+        std::env::remove_var("BRRTR_STACK_SIZE");
+        std::env::remove_var("BRRTR_STACK_MIN_BYTES");
+        std::env::remove_var("BRRTR_STACK_MAX_BYTES");
+        
         // Set both overrides
         std::env::set_var("BRRTR_STACK_SIZE__TEST_HANDLER", "32768");
         std::env::set_var("BRRTR_STACK_SIZE", "49152");
@@ -898,6 +916,12 @@ mod tests {
 
     #[test]
     fn test_get_stack_size_with_hex_format() {
+        // Clean up any environment variables from other tests
+        std::env::remove_var("BRRTR_STACK_SIZE__TEST_HANDLER");
+        std::env::remove_var("BRRTR_STACK_SIZE");
+        std::env::remove_var("BRRTR_STACK_MIN_BYTES");
+        std::env::remove_var("BRRTR_STACK_MAX_BYTES");
+        
         // Test hex format
         std::env::set_var("BRRTR_STACK_SIZE__TEST_HANDLER", "0x10000");
         
@@ -910,6 +934,12 @@ mod tests {
 
     #[test]
     fn test_get_stack_size_clamping() {
+        // Clean up any environment variables from other tests
+        std::env::remove_var("BRRTR_STACK_SIZE__TEST_HANDLER");
+        std::env::remove_var("BRRTR_STACK_SIZE");
+        std::env::remove_var("BRRTR_STACK_MIN_BYTES");
+        std::env::remove_var("BRRTR_STACK_MAX_BYTES");
+        
         // Set custom min/max
         std::env::set_var("BRRTR_STACK_MIN_BYTES", "32768");
         std::env::set_var("BRRTR_STACK_MAX_BYTES", "65536");
@@ -932,6 +962,12 @@ mod tests {
 
     #[test]
     fn test_get_stack_size_no_override() {
+        // Clean up any environment variables from other tests
+        std::env::remove_var("BRRTR_STACK_SIZE__TEST_HANDLER");
+        std::env::remove_var("BRRTR_STACK_SIZE");
+        std::env::remove_var("BRRTR_STACK_MIN_BYTES");
+        std::env::remove_var("BRRTR_STACK_MAX_BYTES");
+        
         // No overrides set, should return default
         let stack_size = get_stack_size_with_overrides("test_handler", 16384);
         assert_eq!(stack_size, 16384);
