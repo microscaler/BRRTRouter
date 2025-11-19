@@ -63,12 +63,13 @@ pub unsafe fn register_from_spec(dispatcher: &mut Dispatcher, routes: &[RouteMet
         match route.handler_name.as_str() {
             {% for entry in entries -%}
             "{{ entry.name }}" => {
-                let tx = spawn_typed_with_pool_and_stack_size(
+                let (tx, pool) = spawn_typed_with_pool_and_stack_size(
                     crate::controllers::{{ entry.name }}::{{ entry.controller_struct }},
                     {{ entry.stack_size_bytes }},
                     Some("{{ entry.name }}"),
                 );
                 dispatcher.add_route(route.clone(), tx);
+                dispatcher.worker_pools.insert("{{ entry.name }}".to_string(), pool);
             }
             {% endfor %}
             _ => {}

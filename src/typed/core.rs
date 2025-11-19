@@ -1,6 +1,7 @@
 // typed.rs
 #[allow(unused_imports)]
 use crate::dispatcher::{Dispatcher, HandlerRequest, HandlerResponse};
+use crate::worker_pool::WorkerPool;
 use anyhow::Result;
 use http::Method;
 use may::sync::mpsc;
@@ -8,6 +9,7 @@ use serde::Serialize;
 use serde_json;
 use std::collections::HashMap;
 use std::convert::TryFrom;
+use std::sync::Arc;
 
 /// Get the stack size for a handler with environment variable overrides applied
 ///
@@ -590,16 +592,23 @@ impl Dispatcher {
         
         // Create config from environment with custom stack size
         let mut config = WorkerPoolConfig::from_env();
-        config.stack_size = stack_size_bytes;
+        // Apply per-handler stack size overrides and min/max clamping
+        config.stack_size = get_stack_size_with_overrides(&name, stack_size_bytes);
         
         // Create a closure that wraps the typed handler
         let handler_fn = move |req: HandlerRequest| {
-            let handler = handler.clone();
             let reply_tx = req.reply_tx.clone();
             let request_id = req.request_id;
             
-            // Try to convert the request
-            let data = match H::Request::try_from(req.clone()) {
+            // Extract metadata fields before consuming req in try_from
+            let method = req.method.clone();
+            let path = req.path.clone();
+            let handler_name = req.handler_name.clone();
+            let path_params = req.path_params.clone();
+            let query_params = req.query_params.clone();
+            
+            // Try to convert the request - consume req without cloning to avoid heavy copies
+            let data = match H::Request::try_from(req) {
                 Ok(v) => v,
                 Err(err) => {
                     let _ = reply_tx.send(HandlerResponse {
@@ -617,15 +626,15 @@ impl Dispatcher {
             
             // Build typed request
             let typed_req = TypedHandlerRequest {
-                method: req.method.clone(),
-                path: req.path.clone(),
-                handler_name: req.handler_name.clone(),
-                path_params: req.path_params.clone(),
-                query_params: req.query_params.clone(),
+                method,
+                path,
+                handler_name,
+                path_params,
+                query_params,
                 data,
             };
             
-            // Call the handler
+            // Call the handler (borrow from outer closure scope)
             let result = handler.handle(typed_req);
             
             // Send response
@@ -673,12 +682,18 @@ impl Dispatcher {
         
         // Create a closure that wraps the typed handler
         let handler_fn = move |req: HandlerRequest| {
-            let handler = handler.clone();
             let reply_tx = req.reply_tx.clone();
             let request_id = req.request_id;
             
-            // Try to convert the request
-            let data = match H::Request::try_from(req.clone()) {
+            // Extract metadata fields before consuming req in try_from
+            let method = req.method.clone();
+            let path = req.path.clone();
+            let handler_name = req.handler_name.clone();
+            let path_params = req.path_params.clone();
+            let query_params = req.query_params.clone();
+            
+            // Try to convert the request - consume req without cloning to avoid heavy copies
+            let data = match H::Request::try_from(req) {
                 Ok(v) => v,
                 Err(err) => {
                     let _ = reply_tx.send(HandlerResponse {
@@ -696,15 +711,15 @@ impl Dispatcher {
             
             // Build typed request
             let typed_req = TypedHandlerRequest {
-                method: req.method.clone(),
-                path: req.path.clone(),
-                handler_name: req.handler_name.clone(),
-                path_params: req.path_params.clone(),
-                query_params: req.query_params.clone(),
+                method,
+                path,
+                handler_name,
+                path_params,
+                query_params,
                 data,
             };
             
-            // Call the handler
+            // Call the handler (borrow from outer closure scope)
             let result = handler.handle(typed_req);
             
             // Send response
@@ -725,11 +740,14 @@ impl Dispatcher {
     }
 }
 
-/// Spawn a typed handler with worker pool and return the sender.
+/// Spawn a typed handler with worker pool and return both the sender and the pool.
 ///
 /// This is a convenience function for use in dynamically generated code
 /// (e.g., in `register_from_spec`). It creates a worker pool with the
 /// specified stack size and default configuration from environment variables.
+///
+/// Returns both the sender (for adding to dispatcher.handlers) and the worker pool
+/// (for adding to dispatcher.worker_pools) to ensure metrics tracking works correctly.
 ///
 /// # Safety
 ///
@@ -742,6 +760,12 @@ impl Dispatcher {
 /// * `stack_size_bytes` - Stack size for worker coroutines
 /// * `handler_name` - Optional handler name for logging and metrics
 ///
+/// # Returns
+///
+/// A tuple of (sender, worker_pool) where:
+/// - `sender` should be stored in `dispatcher.handlers`
+/// - `worker_pool` should be stored in `dispatcher.worker_pools`
+///
 /// # Configuration
 ///
 /// The worker pool behavior is configured via environment variables:
@@ -753,7 +777,7 @@ pub unsafe fn spawn_typed_with_pool_and_stack_size<H>(
     handler: H,
     stack_size_bytes: usize,
     handler_name: Option<&str>,
-) -> mpsc::Sender<HandlerRequest>
+) -> (mpsc::Sender<HandlerRequest>, Arc<WorkerPool>)
 where
     H: Handler + Send + 'static + Clone,
 {
@@ -761,18 +785,26 @@ where
     
     // Create config from environment with custom stack size
     let mut config = WorkerPoolConfig::from_env();
-    config.stack_size = stack_size_bytes;
     
     let handler_name_str = handler_name.unwrap_or("unknown").to_string();
     
+    // Apply per-handler stack size overrides and min/max clamping
+    config.stack_size = get_stack_size_with_overrides(&handler_name_str, stack_size_bytes);
+    
     // Create a closure that wraps the typed handler
     let handler_fn = move |req: HandlerRequest| {
-        let handler = handler.clone();
         let reply_tx = req.reply_tx.clone();
         let request_id = req.request_id;
         
-        // Try to convert the request
-        let data = match H::Request::try_from(req.clone()) {
+        // Extract metadata fields before consuming req in try_from
+        let method = req.method.clone();
+        let path = req.path.clone();
+        let handler_name = req.handler_name.clone();
+        let path_params = req.path_params.clone();
+        let query_params = req.query_params.clone();
+        
+        // Try to convert the request - consume req without cloning to avoid heavy copies
+        let data = match H::Request::try_from(req) {
             Ok(v) => v,
             Err(err) => {
                 let _ = reply_tx.send(HandlerResponse {
@@ -790,15 +822,15 @@ where
         
         // Build typed request
         let typed_req = TypedHandlerRequest {
-            method: req.method.clone(),
-            path: req.path.clone(),
-            handler_name: req.handler_name.clone(),
-            path_params: req.path_params.clone(),
-            query_params: req.query_params.clone(),
+            method,
+            path,
+            handler_name,
+            path_params,
+            query_params,
             data,
         };
         
-        // Call the handler
+        // Call the handler (borrow from outer closure scope)
         let result = handler.handle(typed_req);
         
         // Send response
@@ -816,8 +848,9 @@ where
     };
     
     // Create worker pool
-    let pool = WorkerPool::new(handler_name_str, config, handler_fn);
-    pool.sender()
+    let pool = Arc::new(WorkerPool::new(handler_name_str, config, handler_fn));
+    let sender = pool.sender();
+    (sender, pool)
 }
 
 #[cfg(test)]
