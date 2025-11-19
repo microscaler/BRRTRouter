@@ -164,180 +164,202 @@ pub unsafe fn register_from_spec(dispatcher: &mut Dispatcher, routes: &[RouteMet
     for route in routes {
         match route.handler_name.as_str() {
             "admin_settings" => {
-                let tx = spawn_typed_with_pool_and_stack_size(
+                let (tx, pool) = spawn_typed_with_pool_and_stack_size(
                     crate::controllers::admin_settings::AdminSettingsController,
                     16384,
                     Some("admin_settings"),
                 );
                 dispatcher.add_route(route.clone(), tx);
+                dispatcher.worker_pools.insert("admin_settings".to_string(), pool);
             }
             "download_file" => {
-                let tx = spawn_typed_with_pool_and_stack_size(
+                let (tx, pool) = spawn_typed_with_pool_and_stack_size(
                     crate::controllers::download_file::DownloadFileController,
                     20480,
                     Some("download_file"),
                 );
                 dispatcher.add_route(route.clone(), tx);
+                dispatcher.worker_pools.insert("download_file".to_string(), pool);
             }
             "stream_events" => {
-                let tx = spawn_typed_with_pool_and_stack_size(
+                let (tx, pool) = spawn_typed_with_pool_and_stack_size(
                     crate::controllers::stream_events::StreamEventsController,
                     24576,
                     Some("stream_events"),
                 );
                 dispatcher.add_route(route.clone(), tx);
+                dispatcher.worker_pools.insert("stream_events".to_string(), pool);
             }
             "submit_form" => {
-                let tx = spawn_typed_with_pool_and_stack_size(
+                let (tx, pool) = spawn_typed_with_pool_and_stack_size(
                     crate::controllers::submit_form::SubmitFormController,
                     16384,
                     Some("submit_form"),
                 );
                 dispatcher.add_route(route.clone(), tx);
+                dispatcher.worker_pools.insert("submit_form".to_string(), pool);
             }
             "get_item" => {
-                let tx = spawn_typed_with_pool_and_stack_size(
+                let (tx, pool) = spawn_typed_with_pool_and_stack_size(
                     crate::controllers::get_item::GetItemController,
                     20480,
                     Some("get_item"),
                 );
                 dispatcher.add_route(route.clone(), tx);
+                dispatcher.worker_pools.insert("get_item".to_string(), pool);
             }
             "post_item" => {
-                let tx = spawn_typed_with_pool_and_stack_size(
+                let (tx, pool) = spawn_typed_with_pool_and_stack_size(
                     crate::controllers::post_item::PostItemController,
                     20480,
                     Some("post_item"),
                 );
                 dispatcher.add_route(route.clone(), tx);
+                dispatcher.worker_pools.insert("post_item".to_string(), pool);
             }
             "get_label" => {
-                let tx = spawn_typed_with_pool_and_stack_size(
+                let (tx, pool) = spawn_typed_with_pool_and_stack_size(
                     crate::controllers::get_label::GetLabelController,
                     20480,
                     Some("get_label"),
                 );
                 dispatcher.add_route(route.clone(), tx);
+                dispatcher.worker_pools.insert("get_label".to_string(), pool);
             }
             "get_matrix" => {
-                let tx = spawn_typed_with_pool_and_stack_size(
+                let (tx, pool) = spawn_typed_with_pool_and_stack_size(
                     crate::controllers::get_matrix::GetMatrixController,
                     20480,
                     Some("get_matrix"),
                 );
                 dispatcher.add_route(route.clone(), tx);
+                dispatcher.worker_pools.insert("get_matrix".to_string(), pool);
             }
             "list_pets" => {
-                let tx = spawn_typed_with_pool_and_stack_size(
+                let (tx, pool) = spawn_typed_with_pool_and_stack_size(
                     crate::controllers::list_pets::ListPetsController,
                     20480,
                     Some("list_pets"),
                 );
                 dispatcher.add_route(route.clone(), tx);
+                dispatcher.worker_pools.insert("list_pets".to_string(), pool);
             }
             "add_pet" => {
-                let tx = spawn_typed_with_pool_and_stack_size(
+                let (tx, pool) = spawn_typed_with_pool_and_stack_size(
                     crate::controllers::add_pet::AddPetController,
                     16384,
                     Some("add_pet"),
                 );
                 dispatcher.add_route(route.clone(), tx);
+                dispatcher.worker_pools.insert("add_pet".to_string(), pool);
             }
             "get_pet" => {
-                let tx = spawn_typed_with_pool_and_stack_size(
+                let (tx, pool) = spawn_typed_with_pool_and_stack_size(
                     crate::controllers::get_pet::GetPetController,
                     20480,
                     Some("get_pet"),
                 );
                 dispatcher.add_route(route.clone(), tx);
+                dispatcher.worker_pools.insert("get_pet".to_string(), pool);
             }
             "search" => {
-                let tx = spawn_typed_with_pool_and_stack_size(
+                let (tx, pool) = spawn_typed_with_pool_and_stack_size(
                     crate::controllers::search::SearchController,
                     20480,
                     Some("search"),
                 );
                 dispatcher.add_route(route.clone(), tx);
+                dispatcher.worker_pools.insert("search".to_string(), pool);
             }
             "secure_endpoint" => {
-                let tx = spawn_typed_with_pool_and_stack_size(
+                let (tx, pool) = spawn_typed_with_pool_and_stack_size(
                     crate::controllers::secure_endpoint::SecureEndpointController,
                     16384,
                     Some("secure_endpoint"),
                 );
                 dispatcher.add_route(route.clone(), tx);
+                dispatcher.worker_pools.insert("secure_endpoint".to_string(), pool);
             }
             "upload_file" => {
-                let tx = spawn_typed_with_pool_and_stack_size(
+                let (tx, pool) = spawn_typed_with_pool_and_stack_size(
                     crate::controllers::upload_file::UploadFileController,
                     16384,
                     Some("upload_file"),
                 );
                 dispatcher.add_route(route.clone(), tx);
+                dispatcher.worker_pools.insert("upload_file".to_string(), pool);
             }
             "list_users" => {
-                let tx = spawn_typed_with_pool_and_stack_size(
+                let (tx, pool) = spawn_typed_with_pool_and_stack_size(
                     crate::controllers::list_users::ListUsersController,
                     20480,
                     Some("list_users"),
                 );
                 dispatcher.add_route(route.clone(), tx);
+                dispatcher.worker_pools.insert("list_users".to_string(), pool);
             }
             "get_user" => {
-                let tx = spawn_typed_with_pool_and_stack_size(
+                let (tx, pool) = spawn_typed_with_pool_and_stack_size(
                     crate::controllers::get_user::GetUserController,
                     20480,
                     Some("get_user"),
                 );
                 dispatcher.add_route(route.clone(), tx);
+                dispatcher.worker_pools.insert("get_user".to_string(), pool);
             }
             "delete_user" => {
-                let tx = spawn_typed_with_pool_and_stack_size(
+                let (tx, pool) = spawn_typed_with_pool_and_stack_size(
                     crate::controllers::delete_user::DeleteUserController,
                     20480,
                     Some("delete_user"),
                 );
                 dispatcher.add_route(route.clone(), tx);
+                dispatcher.worker_pools.insert("delete_user".to_string(), pool);
             }
             "options_user" => {
-                let tx = spawn_typed_with_pool_and_stack_size(
+                let (tx, pool) = spawn_typed_with_pool_and_stack_size(
                     crate::controllers::options_user::OptionsUserController,
                     20480,
                     Some("options_user"),
                 );
                 dispatcher.add_route(route.clone(), tx);
+                dispatcher.worker_pools.insert("options_user".to_string(), pool);
             }
             "head_user" => {
-                let tx = spawn_typed_with_pool_and_stack_size(
+                let (tx, pool) = spawn_typed_with_pool_and_stack_size(
                     crate::controllers::head_user::HeadUserController,
                     20480,
                     Some("head_user"),
                 );
                 dispatcher.add_route(route.clone(), tx);
+                dispatcher.worker_pools.insert("head_user".to_string(), pool);
             }
             "list_user_posts" => {
-                let tx = spawn_typed_with_pool_and_stack_size(
+                let (tx, pool) = spawn_typed_with_pool_and_stack_size(
                     crate::controllers::list_user_posts::ListUserPostsController,
                     20480,
                     Some("list_user_posts"),
                 );
                 dispatcher.add_route(route.clone(), tx);
+                dispatcher.worker_pools.insert("list_user_posts".to_string(), pool);
             }
             "get_post" => {
-                let tx = spawn_typed_with_pool_and_stack_size(
+                let (tx, pool) = spawn_typed_with_pool_and_stack_size(
                     crate::controllers::get_post::GetPostController,
                     20480,
                     Some("get_post"),
                 );
                 dispatcher.add_route(route.clone(), tx);
+                dispatcher.worker_pools.insert("get_post".to_string(), pool);
             }
             "register_webhook" => {
-                let tx = spawn_typed_with_pool_and_stack_size(
+                let (tx, pool) = spawn_typed_with_pool_and_stack_size(
                     crate::controllers::register_webhook::RegisterWebhookController,
                     16384,
                     Some("register_webhook"),
                 );
                 dispatcher.add_route(route.clone(), tx);
+                dispatcher.worker_pools.insert("register_webhook".to_string(), pool);
             }
 
             _ => {}

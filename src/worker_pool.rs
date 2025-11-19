@@ -21,8 +21,7 @@ use crate::dispatcher::{HandlerRequest, HandlerResponse};
 use may::sync::mpsc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 /// Configuration for worker pool backpressure behavior
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -282,8 +281,19 @@ impl WorkerPool {
                                     "Worker processing request"
                                 );
 
-                                // Call the handler function
-                                handler_fn(req);
+                                // Call the handler function with panic recovery
+                                if let Err(panic) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                    handler_fn(req);
+                                })) {
+                                    // Handler panicked - send 500 error response
+                                    error!(
+                                        request_id = %request_id,
+                                        handler_name = %handler_name,
+                                        worker_id = worker_id,
+                                        panic_message = ?panic,
+                                        "Handler panicked - CRITICAL"
+                                    );
+                                }
 
                                 // Record completion
                                 metrics_clone.record_completion();
