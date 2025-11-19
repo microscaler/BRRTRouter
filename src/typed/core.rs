@@ -489,17 +489,28 @@ impl Dispatcher {
     /// Register a typed handler that converts [`HandlerRequest`] into the handler's
     /// associated request type using `TryFrom`.
     ///
-    /// This spawns a coroutine that automatically validates incoming requests against
-    /// the handler's expected type and converts them. Invalid requests receive a 400
-    /// Bad Request response automatically.
+    /// **NEW DEFAULT BEHAVIOR**: This now uses worker pools by default for parallel
+    /// request processing with bounded queues and backpressure handling.
+    ///
+    /// This spawns multiple worker coroutines (default: 4) that automatically validate
+    /// incoming requests against the handler's expected type and convert them. Invalid
+    /// requests receive a 400 Bad Request response automatically.
     ///
     /// # Safety
     ///
-    /// This function is marked unsafe because it internally calls `spawn_typed()` which
-    /// uses `may::coroutine::Builder::spawn()`. The unsafety comes from the coroutine
-    /// runtime's requirements.
+    /// This function is marked unsafe because it internally calls worker pool spawning
+    /// functions which use `may::coroutine::Builder::spawn()`. The unsafety comes from
+    /// the coroutine runtime's requirements.
     ///
     /// The caller must ensure the May coroutine runtime is properly initialized.
+    ///
+    /// # Configuration
+    ///
+    /// The worker pool behavior is configured via environment variables:
+    /// - `BRRTR_HANDLER_WORKERS`: Number of worker coroutines (default: 4)
+    /// - `BRRTR_HANDLER_QUEUE_BOUND`: Maximum queue depth (default: 1024)
+    /// - `BRRTR_BACKPRESSURE_MODE`: "block" or "shed" (default: "block")
+    /// - `BRRTR_BACKPRESSURE_TIMEOUT_MS`: Timeout for block mode (default: 50ms)
     ///
     /// # Handler Requirements
     ///
@@ -509,33 +520,27 @@ impl Dispatcher {
     /// - Avoid long-running synchronous operations
     pub unsafe fn register_typed<H>(&mut self, name: &str, handler: H)
     where
-        H: Handler + Send + 'static,
+        H: Handler + Send + 'static + Clone,
     {
-        let name = name.to_string();
-        
-        // Check if we're replacing an existing handler
-        if let Some(old_sender) = self.handlers.remove(&name) {
-            // Drop the old sender to close its channel and stop the old coroutine
-            drop(old_sender);
-            eprintln!("Warning: Replacing existing typed handler '{}' - old coroutine will exit", name);
-        }
-        
-        let tx = spawn_typed(handler);
-        self.handlers.insert(name, tx);
+        // Use worker pools by default
+        self.register_typed_with_pool(name, handler);
     }
 
     /// Register a typed handler with a custom stack size that converts [`HandlerRequest`] into
     /// the handler's associated request type using `TryFrom`.
     ///
-    /// This spawns a coroutine with the specified stack size that automatically validates
-    /// incoming requests against the handler's expected type and converts them. Invalid
+    /// **NEW DEFAULT BEHAVIOR**: This now uses worker pools by default for parallel
+    /// request processing with bounded queues and backpressure handling.
+    ///
+    /// This spawns multiple worker coroutines with the specified stack size that automatically
+    /// validate incoming requests against the handler's expected type and convert them. Invalid
     /// requests receive a 400 Bad Request response automatically.
     ///
     /// # Safety
     ///
-    /// This function is marked unsafe because it internally calls `spawn_typed_with_stack_size()`
-    /// which uses `may::coroutine::Builder::spawn()`. The unsafety comes from the coroutine
-    /// runtime's requirements.
+    /// This function is marked unsafe because it internally calls worker pool spawning
+    /// functions which use `may::coroutine::Builder::spawn()`. The unsafety comes from
+    /// the coroutine runtime's requirements.
     ///
     /// The caller must ensure the May coroutine runtime is properly initialized.
     ///
@@ -544,6 +549,14 @@ impl Dispatcher {
     /// * `name` - Handler name for registration
     /// * `handler` - The handler implementation
     /// * `stack_size_bytes` - Recommended stack size in bytes
+    ///
+    /// # Configuration
+    ///
+    /// The worker pool behavior is configured via environment variables:
+    /// - `BRRTR_HANDLER_WORKERS`: Number of worker coroutines (default: 4)
+    /// - `BRRTR_HANDLER_QUEUE_BOUND`: Maximum queue depth (default: 1024)
+    /// - `BRRTR_BACKPRESSURE_MODE`: "block" or "shed" (default: "block")
+    /// - `BRRTR_BACKPRESSURE_TIMEOUT_MS`: Timeout for block mode (default: 50ms)
     ///
     /// # Handler Requirements
     ///
@@ -558,20 +571,78 @@ impl Dispatcher {
         stack_size_bytes: usize,
     )
     where
-        H: Handler + Send + 'static,
+        H: Handler + Send + 'static + Clone,
     {
+        use crate::worker_pool::WorkerPoolConfig;
+        
         let name = name.to_string();
         
         // Check if we're replacing an existing handler
         if let Some(old_sender) = self.handlers.remove(&name) {
-            // Drop the old sender to close its channel and stop the old coroutine
             drop(old_sender);
             eprintln!("Warning: Replacing existing typed handler '{}' - old coroutine will exit", name);
         }
         
-        // Use the internal function with handler name for per-handler env var support
-        let tx = spawn_typed_with_stack_size_and_name(handler, stack_size_bytes, Some(&name));
-        self.handlers.insert(name, tx);
+        // Remove any existing worker pool
+        if let Some(old_pool) = self.worker_pools.remove(&name) {
+            drop(old_pool);
+        }
+        
+        // Create config from environment with custom stack size
+        let mut config = WorkerPoolConfig::from_env();
+        config.stack_size = stack_size_bytes;
+        
+        // Create a closure that wraps the typed handler
+        let handler_fn = move |req: HandlerRequest| {
+            let handler = handler.clone();
+            let reply_tx = req.reply_tx.clone();
+            let request_id = req.request_id;
+            
+            // Try to convert the request
+            let data = match H::Request::try_from(req.clone()) {
+                Ok(v) => v,
+                Err(err) => {
+                    let _ = reply_tx.send(HandlerResponse {
+                        status: 400,
+                        headers: HashMap::new(),
+                        body: serde_json::json!({
+                            "error": "Invalid request data",
+                            "message": err.to_string(),
+                            "request_id": request_id.to_string(),
+                        }),
+                    });
+                    return;
+                }
+            };
+            
+            // Build typed request
+            let typed_req = TypedHandlerRequest {
+                method: req.method.clone(),
+                path: req.path.clone(),
+                handler_name: req.handler_name.clone(),
+                path_params: req.path_params.clone(),
+                query_params: req.query_params.clone(),
+                data,
+            };
+            
+            // Call the handler
+            let result = handler.handle(typed_req);
+            
+            // Send response
+            let _ = reply_tx.send(HandlerResponse {
+                status: 200,
+                headers: HashMap::new(),
+                body: serde_json::to_value(result).unwrap_or_else(|e| {
+                    serde_json::json!({
+                        "error": "Failed to serialize response",
+                        "details": e.to_string(),
+                        "request_id": request_id.to_string(),
+                    })
+                }),
+            });
+        };
+        
+        self.register_handler_with_pool_config(&name, handler_fn, config);
     }
 
     /// Register a typed handler with a worker pool for parallel request processing
@@ -652,6 +723,101 @@ impl Dispatcher {
         
         self.register_handler_with_pool_config(name, handler_fn, config);
     }
+}
+
+/// Spawn a typed handler with worker pool and return the sender.
+///
+/// This is a convenience function for use in dynamically generated code
+/// (e.g., in `register_from_spec`). It creates a worker pool with the
+/// specified stack size and default configuration from environment variables.
+///
+/// # Safety
+///
+/// This function is marked unsafe because it spawns coroutines. The caller must ensure
+/// the May coroutine runtime is properly initialized.
+///
+/// # Arguments
+///
+/// * `handler` - The handler to spawn
+/// * `stack_size_bytes` - Stack size for worker coroutines
+/// * `handler_name` - Optional handler name for logging and metrics
+///
+/// # Configuration
+///
+/// The worker pool behavior is configured via environment variables:
+/// - `BRRTR_HANDLER_WORKERS`: Number of worker coroutines (default: 4)
+/// - `BRRTR_HANDLER_QUEUE_BOUND`: Maximum queue depth (default: 1024)
+/// - `BRRTR_BACKPRESSURE_MODE`: "block" or "shed" (default: "block")
+/// - `BRRTR_BACKPRESSURE_TIMEOUT_MS`: Timeout for block mode (default: 50ms)
+pub unsafe fn spawn_typed_with_pool_and_stack_size<H>(
+    handler: H,
+    stack_size_bytes: usize,
+    handler_name: Option<&str>,
+) -> mpsc::Sender<HandlerRequest>
+where
+    H: Handler + Send + 'static + Clone,
+{
+    use crate::worker_pool::{WorkerPool, WorkerPoolConfig};
+    
+    // Create config from environment with custom stack size
+    let mut config = WorkerPoolConfig::from_env();
+    config.stack_size = stack_size_bytes;
+    
+    let handler_name_str = handler_name.unwrap_or("unknown").to_string();
+    
+    // Create a closure that wraps the typed handler
+    let handler_fn = move |req: HandlerRequest| {
+        let handler = handler.clone();
+        let reply_tx = req.reply_tx.clone();
+        let request_id = req.request_id;
+        
+        // Try to convert the request
+        let data = match H::Request::try_from(req.clone()) {
+            Ok(v) => v,
+            Err(err) => {
+                let _ = reply_tx.send(HandlerResponse {
+                    status: 400,
+                    headers: HashMap::new(),
+                    body: serde_json::json!({
+                        "error": "Invalid request data",
+                        "message": err.to_string(),
+                        "request_id": request_id.to_string(),
+                    }),
+                });
+                return;
+            }
+        };
+        
+        // Build typed request
+        let typed_req = TypedHandlerRequest {
+            method: req.method.clone(),
+            path: req.path.clone(),
+            handler_name: req.handler_name.clone(),
+            path_params: req.path_params.clone(),
+            query_params: req.query_params.clone(),
+            data,
+        };
+        
+        // Call the handler
+        let result = handler.handle(typed_req);
+        
+        // Send response
+        let _ = reply_tx.send(HandlerResponse {
+            status: 200,
+            headers: HashMap::new(),
+            body: serde_json::to_value(result).unwrap_or_else(|e| {
+                serde_json::json!({
+                    "error": "Failed to serialize response",
+                    "details": e.to_string(),
+                    "request_id": request_id.to_string(),
+                })
+            }),
+        });
+    };
+    
+    // Create worker pool
+    let pool = WorkerPool::new(handler_name_str, config, handler_fn);
+    pool.sender()
 }
 
 #[cfg(test)]

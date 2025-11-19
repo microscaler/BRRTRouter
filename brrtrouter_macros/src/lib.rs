@@ -73,6 +73,7 @@ pub fn handler(attr: TokenStream, item: TokenStream) -> TokenStream {
     let output = quote! {
         #input_fn
 
+        #[derive(Clone, Copy)]
         #vis struct #struct_ident;
 
         impl brrtrouter::typed::Handler for #struct_ident {

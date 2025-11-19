@@ -1,0 +1,44 @@
+# Minimal runtime-only Dockerfile for Tilt development with glibc
+# Binary is built on host with x86_64-unknown-linux-gnu target and copied in
+# This version uses Ubuntu for glibc support (2-3x performance improvement over musl)
+
+FROM --platform=linux/amd64 ubuntu:22.04
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    libssl3 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create app directory with proper permissions for live updates
+WORKDIR /app
+
+# Copy pre-built binary from staging directory (x86_64 Linux gnu target)
+COPY ./build_artifacts/pet_store /app/pet_store
+RUN chmod +x /app/pet_store
+
+# Create directories for configuration and assets with write permissions
+RUN mkdir -p /app/config /app/doc /app/static_site && \
+    chmod -R 777 /app
+
+# Copy configuration and assets to writable locations
+COPY ./examples/pet_store/config /app/config
+COPY ./examples/pet_store/doc /app/doc
+
+# Copy static site from sample-ui build output (Tailwind CSS + SolidJS)
+# Note: sample-ui/scripts/copy-to-petstore.js copies dist/* to examples/pet_store/static_site/
+COPY ./examples/pet_store/static_site /app/static_site
+
+# Expose HTTP port
+EXPOSE 8080
+
+# Set runtime environment
+ENV RUST_BACKTRACE=1
+ENV RUST_LOG=debug
+
+# Run the service
+ENTRYPOINT ["/app/pet_store", \
+    "--spec", "/app/doc/openapi.yaml", \
+    "--doc-dir", "/app/doc", \
+    "--static-dir", "/app/static_site", \
+    "--config", "/app/config/config.yaml"]

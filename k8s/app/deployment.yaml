@@ -121,19 +121,24 @@ spec:
             # Priority: config.yaml port > PORT env var > default 8080
             - name: PORT
               value: "8080"
+            # Reduce RUST_LOG to error level for performance testing
             - name: RUST_LOG
-              value: "debug"
+              value: "error"
             - name: RUST_BACKTRACE
               value: "1"
-            # Structured logging configuration for Loki/Promtail ingestion
+            # Structured logging configuration - optimized for performance testing
+            # Minimize logging overhead by only logging errors
             - name: BRRTR_LOG_FORMAT
               value: "json"
             - name: BRRTR_LOG_SAMPLING_MODE
-              value: "all"
+              value: "error-only"  # Changed from "all" to "error-only" for performance
             - name: BRRTR_LOG_ASYNC
               value: "true"
             - name: BRRTR_LOG_INCLUDE_LOCATION
               value: "false"
+            # Reduce log verbosity to error level only for performance testing
+            - name: BRRTR_LOG_LEVEL
+              value: "error"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector:4317"
             - name: OTEL_SERVICE_NAME
@@ -141,6 +146,9 @@ spec:
             # Increase stack size for serving large static assets (64KB instead of 16KB default)
             - name: BRRTR_STACK_SIZE
               value: "0x10000"
+            # Set worker pool size to 1 for performance testing (isolate worker pool overhead)
+            - name: BRRTR_HANDLER_WORKERS
+              value: "1"
           # Liveness probe - is the service alive?
           livenessProbe:
             httpGet:
