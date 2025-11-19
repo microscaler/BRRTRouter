@@ -97,12 +97,21 @@ local_resource(
 # - Do NOT try to COPY directly from target/ in Dockerfile
 # - Do NOT modify .dockerignore to allow target/*
 # =============================================================================
-# Build petstore: cross-compiled for Docker (Linux x86_64 musl)
+# Detect GitHub CI environment for glibc vs musl builds
+is_github_ci = os.getenv('GITHUB_ACTIONS', '') != ''
+target_triple = 'x86_64-unknown-linux-gnu' if is_github_ci else 'x86_64-unknown-linux-musl'
+build_type = 'glibc (GitHub CI)' if is_github_ci else 'musl (local)'
+
+print('🔨 Build target: {} ({})'.format(target_triple, build_type))
+
+# Build petstore: cross-compiled for Docker (Linux x86_64)
 # Docker containers need Linux binaries, so we always cross-compile for containerized deployment.
 # For local native testing, use: SKIP_CROSS_COMPILE=1 scripts/host-aware-build.sh pet
+# GitHub CI: Uses glibc (x86_64-unknown-linux-gnu) for 2-3x performance improvement
+# Local dev: Uses musl (x86_64-unknown-linux-musl) for portability
 local_resource(
     'build-petstore',
-    pet_build_cmd + ' && mkdir -p build_artifacts && cp target/x86_64-unknown-linux-musl/debug/pet_store build_artifacts/',
+    pet_build_cmd + ' && mkdir -p build_artifacts && cp target/{}/debug/pet_store build_artifacts/'.format(target_triple),
     deps=['examples/pet_store/src/', 'examples/pet_store/Cargo.toml'],
     resource_deps=['gen-petstore'],
     labels=['build'],
@@ -113,20 +122,25 @@ local_resource(
 # DOCKER IMAGE (Minimal runtime-only image with pre-built binary)
 # ============================================================================
 
+# Select Dockerfile based on environment
+dockerfile_path = 'dockerfiles/Dockerfile.dev-glibc' if is_github_ci else 'dockerfiles/Dockerfile.dev'
+
 # Build Docker image with proper dependencies
 # Split into separate stages to ensure correct ordering
+# GitHub CI: Uses glibc-based Ubuntu image for performance testing
+# Local dev: Uses musl-based Alpine image for portability
 local_resource(
     'docker-build-and-push',
     # Build and push to local registry (much faster than 'kind load')
     # https://kind.sigs.k8s.io/docs/user/local-registry/
     # --rm and --force-rm prevent <none>:<none> intermediate container accumulation
-    'docker build -t localhost:5001/brrtrouter-petstore:tilt --rm --force-rm -f dockerfiles/Dockerfile.dev . && docker push localhost:5001/brrtrouter-petstore:tilt',
+    'docker build -t localhost:5001/brrtrouter-petstore:tilt --rm --force-rm -f {} . && docker push localhost:5001/brrtrouter-petstore:tilt'.format(dockerfile_path),
     deps=[
         './build_artifacts/pet_store',
         './examples/pet_store/config',
         './examples/pet_store/doc',
         './examples/pet_store/static_site',
-        './dockerfiles/Dockerfile.dev',
+        dockerfile_path,
     ],
     resource_deps=[
         'build-sample-ui',  # ← UI must be built before Docker image
