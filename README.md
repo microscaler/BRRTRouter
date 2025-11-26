@@ -248,9 +248,9 @@ open http://localhost:8080/
 
 ### 🔭 Performance Vision
 
-Build the fastest, most predictable OpenAPI-native router in Rust — capable of **millions of requests per second**, entirely spec-driven, and friendly to coroutine runtimes.
+Build the fastest, most predictable OpenAPI-native router in Rust — capable of **thousands of requests per second**, entirely spec-driven, and friendly to coroutine runtimes.
 
-> **Goal: 100K route matches/sec on a single-core**, with sub-millisecond latency (excluding handler execution cost).
+> **Goal: 10K route matches/sec on a four-core host**, with sub-millisecond latency (excluding handler execution cost).
 
 
 ---
