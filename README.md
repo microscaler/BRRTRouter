@@ -78,7 +78,7 @@ This marks a **monumental milestone** - BRRTRouter has successfully transitioned
 - **🔐 Security Built-In**: JWT/JWKS, OAuth2, API Keys with auto-registration from OpenAPI `securitySchemes`
 - **📊 Zero-Config Observability**: Prometheus metrics, OpenTelemetry tracing, health checks out of the box
 - **🔥 Hot Reload**: Live spec reloading without server restart
-- **🧪 Well-Tested**: 219 tests, 80%+ coverage, parallel execution support
+- **🧪 Well-Tested**: 425 tests, 80%+ coverage, parallel execution support
 
 ---
 
