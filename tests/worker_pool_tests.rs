@@ -7,17 +7,25 @@ use http::Method;
 use may::sync::mpsc;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-/// Test that worker pools are created with the correct configuration
-#[test]
-fn test_worker_pool_creation() {
-    // Clean up any environment variables from other tests
+// These tests are affected by global env vars. Use a mutex to serialize access.
+static ENV_MUTEX: Mutex<()> = Mutex::new(());
+
+/// Helper to clean worker pool env vars to ensure test isolation
+fn clean_worker_pool_env_vars() {
     std::env::remove_var("BRRTR_HANDLER_WORKERS");
     std::env::remove_var("BRRTR_HANDLER_QUEUE_BOUND");
     std::env::remove_var("BRRTR_BACKPRESSURE_MODE");
     std::env::remove_var("BRRTR_BACKPRESSURE_TIMEOUT_MS");
+}
+
+/// Test that worker pools are created with the correct configuration
+#[test]
+fn test_worker_pool_creation() {
+    let _guard = ENV_MUTEX.lock().unwrap();
+    clean_worker_pool_env_vars();
     
     // Initialize may runtime
     unsafe {
@@ -261,6 +269,9 @@ fn test_worker_pool_metrics() {
 /// Test that configuration from environment variables works
 #[test]
 fn test_worker_pool_config_from_env() {
+    let _guard = ENV_MUTEX.lock().unwrap();
+    clean_worker_pool_env_vars();
+    
     // Set environment variables
     std::env::set_var("BRRTR_HANDLER_WORKERS", "8");
     std::env::set_var("BRRTR_HANDLER_QUEUE_BOUND", "2048");
@@ -274,9 +285,5 @@ fn test_worker_pool_config_from_env() {
     assert_eq!(config.backpressure_mode, BackpressureMode::Shed);
     assert_eq!(config.backpressure_timeout_ms, 100);
     
-    // Clean up
-    std::env::remove_var("BRRTR_HANDLER_WORKERS");
-    std::env::remove_var("BRRTR_HANDLER_QUEUE_BOUND");
-    std::env::remove_var("BRRTR_BACKPRESSURE_MODE");
-    std::env::remove_var("BRRTR_BACKPRESSURE_TIMEOUT_MS");
+    clean_worker_pool_env_vars();
 }

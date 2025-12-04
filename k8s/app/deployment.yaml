@@ -131,7 +131,7 @@ spec:
             - name: BRRTR_LOG_FORMAT
               value: "json"
             - name: BRRTR_LOG_SAMPLING_MODE
-              value: "error-only"  # Changed from "all" to "error-only" for performance
+              value: "error-only"
             - name: BRRTR_LOG_ASYNC
               value: "true"
             - name: BRRTR_LOG_INCLUDE_LOCATION

@@ -114,3 +114,52 @@ lto = true
 codegen-units = 1
 panic = "abort"
 strip = true
+
+# =============================================================================
+# LINT CONFIGURATION - JSF AV Safety Compliance
+# =============================================================================
+# Aligned with JSF AV C++ coding rules adapted for Rust
+# See: docs/JSF/JSF_AUDIT_OPINION.md
+#
+# Phase 1 (current): warn on unsafe patterns to identify scope
+# Phase 2 (future):  deny to enforce strict safety
+# =============================================================================
+
+[lints.rust]
+# Prevent unsafe blocks in safe functions (require explicit unsafe fn)
+unsafe_code = "warn"
+
+[lints.clippy]
+# =============================================================================
+# PANIC PREVENTION - JSF AV Rule 208 adaptation
+# =============================================================================
+# Panics terminate threads unpredictably. In production hot paths,
+# prefer Result<T, E> returns over panicking.
+unwrap_used = "warn"          # TODO: Change to "deny" after fixing 172 instances
+expect_used = "warn"          # expect() is just unwrap() with a message
+panic = "warn"                # Explicit panic!() calls
+unreachable = "warn"          # unreachable!() panics at runtime
+
+# =============================================================================
+# ALLOCATION DISCIPLINE - JSF AV Rule 206 adaptation
+# =============================================================================
+# Hot paths should minimize allocations for predictable latency
+# These are informational for now - not enforced
+# vec_init_then_push = "warn"   # Prefer vec![...] or with_capacity
+# unnecessary_box_returns = "warn"
+
+# =============================================================================
+# ERROR HANDLING HYGIENE
+# =============================================================================
+# Ignoring errors can hide failures silently
+let_underscore_must_use = "warn"
+must_use_candidate = "warn"
+
+# =============================================================================
+# CODE QUALITY
+# =============================================================================
+# General code quality lints
+clone_on_ref_ptr = "warn"     # Clone on &Arc/&Rc - usually a mistake
+redundant_clone = "warn"      # Unnecessary clones
+large_futures = "warn"        # Futures that are too large for the stack
+large_stack_arrays = "warn"   # Stack arrays that may overflow

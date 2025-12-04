@@ -107,12 +107,10 @@ pub struct MemoryMiddleware {
 #[derive(Debug, Clone, Default)]
 struct HandlerMemoryStats {
     /// Total memory allocated by this handler
-    #[allow(dead_code)]
     total_allocated: u64,
     /// Number of invocations
     invocations: u64,
     /// Peak memory usage
-    #[allow(dead_code)]
     peak_usage: u64,
 }
 
@@ -137,12 +135,10 @@ impl MemoryMiddleware {
         let stats = MemoryStats::current();
         
         // Update current stats
-        *self.current.write()
-            .expect("memory middleware RwLock poisoned - critical error") = stats;
+        *self.current.write().unwrap() = stats;
         
         // Update peak if necessary
-        let mut peak = self.peak.write()
-            .expect("memory middleware RwLock poisoned - critical error");
+        let mut peak = self.peak.write().unwrap();
         if stats.rss_bytes > peak.rss_bytes {
             peak.rss_bytes = stats.rss_bytes;
         }
@@ -158,20 +154,17 @@ impl MemoryMiddleware {
         self.measurements.fetch_add(1, Ordering::Relaxed);
         
         // Update last measurement time
-        *self.last_measurement.write()
-            .expect("memory middleware RwLock poisoned - critical error") = Instant::now();
+        *self.last_measurement.write().unwrap() = Instant::now();
     }
     
     /// Get current memory statistics
     pub fn current_stats(&self) -> MemoryStats {
-        *self.current.read()
-            .expect("memory middleware RwLock poisoned - critical error")
+        *self.current.read().unwrap()
     }
     
     /// Get peak memory statistics
     pub fn peak_stats(&self) -> MemoryStats {
-        *self.peak.read()
-            .expect("memory middleware RwLock poisoned - critical error")
+        *self.peak.read().unwrap()
     }
     
     /// Get memory growth since baseline
@@ -228,8 +221,7 @@ impl MemoryMiddleware {
         output.push_str(&format!("process_memory_baseline_rss_bytes {}\n", self.baseline.rss_bytes));
         
         // Per-handler invocation counts (we can't accurately measure per-handler memory)
-        let handler_stats = self.handler_memory.read()
-            .expect("memory middleware RwLock poisoned - critical error");
+        let handler_stats = self.handler_memory.read().unwrap();
         if !handler_stats.is_empty() {
             output.push_str("# HELP handler_invocations_total Number of invocations per handler\n");
             output.push_str("# TYPE handler_invocations_total counter\n");
@@ -301,11 +293,10 @@ impl Middleware for MemoryMiddleware {
         self.update();
         
         // Track handler invocation count
-        let mut handler_stats = self.handler_memory.write()
-            .expect("memory middleware RwLock poisoned - critical error");
+        let mut handler_stats = self.handler_memory.write().unwrap();
         let stats = handler_stats
             .entry(req.handler_name.clone())
-            .or_default();
+            .or_insert_with(HandlerMemoryStats::default);
         
         stats.invocations += 1;
         
@@ -315,7 +306,7 @@ impl Middleware for MemoryMiddleware {
         // aggregate level.
         
         // Periodic logging (every 100 requests)
-        if self.measurements.load(Ordering::Relaxed).is_multiple_of(100) {
+        if self.measurements.load(Ordering::Relaxed) % 100 == 0 {
             self.log_stats();
         }
     }

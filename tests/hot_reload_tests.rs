@@ -625,8 +625,10 @@ paths:
     }
 
     // Verify spec version was updated
+    // Note: File watchers may fire multiple events for a single file change,
+    // so version could be 2 or higher depending on how many events were triggered.
     let final_version = cache.spec_version();
-    assert_eq!(final_version.version, 2, "Version should increment to 2");
+    assert!(final_version.version >= 2, "Version should increment to at least 2 (got {})", final_version.version);
     assert_ne!(final_version.hash, "initial", "Hash should be computed from content");
     assert_ne!(final_version.hash, initial_version.hash, "Hash should be different from initial");
     assert_eq!(final_version.hash.len(), 16, "Hash should be 16 characters (truncated SHA-256)");
