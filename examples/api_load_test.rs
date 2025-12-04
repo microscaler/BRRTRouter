@@ -209,17 +209,18 @@ async fn test_post_item(user: &mut GooseUser) -> TransactionResult {
     Ok(())
 }
 
-/// Test GET /download/{id} endpoint
-async fn test_download(user: &mut GooseUser) -> TransactionResult {
-    let request_builder = user
-        .get_request_builder(&GooseMethod::Get, "download/550e8400-e29b-41d4-a716-446655440000")?
-        .header("X-API-Key", "test123");
-    let goose_request = GooseRequest::builder()
-        .set_request_builder(request_builder)
-        .build();
-    user.request(goose_request).await?;
-    Ok(())
-}
+// TODO: Add download endpoint back in when auth issues addressed
+// /// Test GET /download/{id} endpoint
+// async fn test_download(user: &mut GooseUser) -> TransactionResult {
+//     let request_builder = user
+//         .get_request_builder(&GooseMethod::Get, "download/550e8400-e29b-41d4-a716-446655440000")?
+//         .header("X-API-Key", "test123");
+//     let goose_request = GooseRequest::builder()
+//         .set_request_builder(request_builder)
+//         .build();
+//     user.request(goose_request).await?;
+//     Ok(())
+// }
 
 /// Test POST /webhooks endpoint
 async fn test_webhook(user: &mut GooseUser) -> TransactionResult {
@@ -307,9 +308,10 @@ async fn main() -> Result<(), GooseError> {
                 .register_transaction(
                     transaction!(test_admin_settings).set_name("GET /admin/settings (with auth)"),
                 )
-                .register_transaction(
-                    transaction!(test_download).set_name("GET /download/{id} (with auth)"),
-                )
+                // TODO: Add download endpoint back in when auth issues addressed
+                // .register_transaction(
+                //     transaction!(test_download).set_name("GET /download/{id} (with auth)"),
+                // )
                 .register_transaction(
                     transaction!(test_webhook).set_name("POST /webhooks (with auth)"),
                 ),

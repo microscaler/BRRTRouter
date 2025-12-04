@@ -238,6 +238,16 @@ mod tests {
     use serde_json::json;
     use std::collections::HashMap;
     use std::path::PathBuf;
+    use std::sync::Mutex;
+
+    // These tests are affected by global env vars. Use a mutex to serialize access.
+    static ENV_MUTEX: Mutex<()> = Mutex::new(());
+
+    /// Helper to clean stack size env vars to ensure test isolation
+    fn clean_stack_env_vars() {
+        std::env::remove_var("BRRTR_STACK_MIN_BYTES");
+        std::env::remove_var("BRRTR_STACK_MAX_BYTES");
+    }
 
     fn create_test_route() -> RouteMeta {
         RouteMeta {
@@ -263,6 +273,8 @@ mod tests {
 
     #[test]
     fn test_base_stack_size() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        clean_stack_env_vars();
         let route = create_test_route();
         let stack_size = compute_stack_size(&route);
         assert_eq!(stack_size, BASE_STACK_SIZE);
@@ -270,6 +282,8 @@ mod tests {
 
     #[test]
     fn test_stack_size_with_parameters() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        clean_stack_env_vars();
         let mut route = create_test_route();
         // Add 5 path parameters (should add 4 KiB)
         for i in 0..5 {
@@ -288,6 +302,8 @@ mod tests {
 
     #[test]
     fn test_stack_size_with_10_parameters() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        clean_stack_env_vars();
         let mut route = create_test_route();
         // Add 10 parameters (should add 8 KiB)
         for i in 0..10 {
@@ -306,6 +322,8 @@ mod tests {
 
     #[test]
     fn test_stack_size_ignores_cookie_parameters() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        clean_stack_env_vars();
         let mut route = create_test_route();
         // Add 5 cookie parameters (should not affect stack size)
         for i in 0..5 {
@@ -324,6 +342,8 @@ mod tests {
 
     #[test]
     fn test_stack_size_with_sse() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        clean_stack_env_vars();
         let mut route = create_test_route();
         route.sse = true;
         let stack_size = compute_stack_size(&route);
@@ -332,6 +352,8 @@ mod tests {
 
     #[test]
     fn test_stack_size_with_deep_schema() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        clean_stack_env_vars();
         let mut route = create_test_route();
         // Create a deeply nested schema (depth > 6)
         route.request_schema = Some(json!({
@@ -378,6 +400,8 @@ mod tests {
 
     #[test]
     fn test_stack_size_with_very_deep_schema() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        clean_stack_env_vars();
         let mut route = create_test_route();
         // Create a very deeply nested schema (depth > 12)
         let mut schema = json!({ "type": "string" });
@@ -447,24 +471,32 @@ mod tests {
 
     #[test]
     fn test_clamp_stack_size_within_range() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        clean_stack_env_vars();
         let size = 32 * 1024;
         assert_eq!(clamp_stack_size(size), size);
     }
 
     #[test]
     fn test_clamp_stack_size_below_min() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        clean_stack_env_vars();
         let size = 8 * 1024;
         assert_eq!(clamp_stack_size(size), MIN_STACK_SIZE);
     }
 
     #[test]
     fn test_clamp_stack_size_above_max() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        clean_stack_env_vars();
         let size = 512 * 1024;
         assert_eq!(clamp_stack_size(size), MAX_STACK_SIZE);
     }
 
     #[test]
     fn test_combined_heuristics() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        clean_stack_env_vars();
         let mut route = create_test_route();
         
         // Add 7 parameters (ceiling(7/5) = 2 chunks = 8 KiB)
@@ -509,6 +541,9 @@ mod tests {
 
     #[test]
     fn test_environment_variable_clamping() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        clean_stack_env_vars();
+        
         // Test that env vars work for clamping
         std::env::set_var("BRRTR_STACK_MIN_BYTES", "32768"); // 32 KiB
         std::env::set_var("BRRTR_STACK_MAX_BYTES", "65536"); // 64 KiB
@@ -525,13 +560,13 @@ mod tests {
         let size_in_range = 48 * 1024;
         assert_eq!(clamp_stack_size(size_in_range), 48 * 1024);
         
-        // Clean up
-        std::env::remove_var("BRRTR_STACK_MIN_BYTES");
-        std::env::remove_var("BRRTR_STACK_MAX_BYTES");
+        clean_stack_env_vars();
     }
 
     #[test]
     fn test_vendor_extension_override() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        clean_stack_env_vars();
         let mut route = create_test_route();
         // Set vendor extension to 32 KiB
         route.x_brrtrouter_stack_size = Some(32 * 1024);
@@ -556,6 +591,8 @@ mod tests {
 
     #[test]
     fn test_vendor_extension_clamped() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        clean_stack_env_vars();
         let mut route = create_test_route();
         // Set vendor extension to 512 KiB (above max)
         route.x_brrtrouter_stack_size = Some(512 * 1024);
