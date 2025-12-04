@@ -502,6 +502,11 @@ impl Dispatcher {
             eprintln!("Warning: Replacing existing typed handler '{}' - old coroutine will exit", name);
         }
         
+        // Also clean up any existing worker pool for this handler to prevent resource leaks
+        if let Some(old_pool) = self.worker_pools.remove(&name) {
+            drop(old_pool);
+        }
+        
         let tx = spawn_typed(handler);
         self.handlers.insert(name, tx);
     }
@@ -549,6 +554,11 @@ impl Dispatcher {
             // Drop the old sender to close its channel and stop the old coroutine
             drop(old_sender);
             eprintln!("Warning: Replacing existing typed handler '{}' - old coroutine will exit", name);
+        }
+        
+        // Also clean up any existing worker pool for this handler to prevent resource leaks
+        if let Some(old_pool) = self.worker_pools.remove(&name) {
+            drop(old_pool);
         }
         
         // Use the internal function with handler name for per-handler env var support

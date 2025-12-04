@@ -31,6 +31,9 @@ pub unsafe fn register_from_spec(dispatcher: &mut Dispatcher, routes: &[RouteMet
     // The old senders will be dropped, causing their coroutines to exit
     dispatcher.handlers.clear();
     
+    // Also clear worker pools to prevent resource leaks from previous pool-based registrations
+    dispatcher.worker_pools.clear();
+    
     for route in routes {
         match route.handler_name.as_str() {
             {% for entry in entries -%}
