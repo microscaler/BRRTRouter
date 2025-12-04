@@ -315,22 +315,11 @@ where
 {
     let (tx, rx) = mpsc::channel::<HandlerRequest>();
 
-    // Apply environment variable overrides
-    let stack_size = if let Some(name) = handler_name {
-        get_stack_size_with_overrides(name, stack_size_bytes)
-    } else {
-        // No handler name, just apply global override
-        std::env::var("BRRTR_STACK_SIZE")
-            .ok()
-            .and_then(|s| {
-                if let Some(hex) = s.strip_prefix("0x") {
-                    usize::from_str_radix(hex, 16).ok()
-                } else {
-                    s.parse().ok()
-                }
-            })
-            .unwrap_or(stack_size_bytes)
-    };
+    // Apply environment variable overrides and clamping
+    // Always use get_stack_size_with_overrides to ensure consistent clamping behavior
+    // When no handler name is provided, use "unknown" as a placeholder (per-handler override won't match)
+    let effective_name = handler_name.unwrap_or("unknown");
+    let stack_size = get_stack_size_with_overrides(effective_name, stack_size_bytes);
 
     let spawn_result = may::coroutine::Builder::new()
         .stack_size(stack_size)
@@ -650,84 +639,116 @@ impl Dispatcher {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
 
-    #[test]
-    fn test_get_stack_size_with_per_handler_override() {
-        // Set per-handler override
-        std::env::set_var("BRRTR_STACK_SIZE__TEST_HANDLER", "32768");
-        
-        let stack_size = get_stack_size_with_overrides("test_handler", 16384);
-        assert_eq!(stack_size, 32768);
-        
-        // Clean up
-        std::env::remove_var("BRRTR_STACK_SIZE__TEST_HANDLER");
-    }
+    // These tests manipulate process-global environment variables, so they must be serialized.
+    // Use a mutex to ensure only one env-var-manipulating test runs at a time.
+    static ENV_MUTEX: Mutex<()> = Mutex::new(());
 
-    #[test]
-    fn test_get_stack_size_with_global_override() {
-        // Set global override
-        std::env::set_var("BRRTR_STACK_SIZE", "49152");
-        
-        let stack_size = get_stack_size_with_overrides("test_handler", 16384);
-        assert_eq!(stack_size, 49152);
-        
-        // Clean up
+    /// Helper to clean all stack size env vars
+    fn clean_stack_env_vars(handler_name: &str) {
+        let env_var_name = format!("BRRTR_STACK_SIZE__{}", handler_name.to_uppercase());
+        std::env::remove_var(&env_var_name);
         std::env::remove_var("BRRTR_STACK_SIZE");
-    }
-
-    #[test]
-    fn test_get_stack_size_per_handler_takes_precedence() {
-        // Set both overrides
-        std::env::set_var("BRRTR_STACK_SIZE__TEST_HANDLER", "32768");
-        std::env::set_var("BRRTR_STACK_SIZE", "49152");
-        
-        let stack_size = get_stack_size_with_overrides("test_handler", 16384);
-        // Per-handler should take precedence
-        assert_eq!(stack_size, 32768);
-        
-        // Clean up
-        std::env::remove_var("BRRTR_STACK_SIZE__TEST_HANDLER");
-        std::env::remove_var("BRRTR_STACK_SIZE");
-    }
-
-    #[test]
-    fn test_get_stack_size_with_hex_format() {
-        // Test hex format
-        std::env::set_var("BRRTR_STACK_SIZE__TEST_HANDLER", "0x10000");
-        
-        let stack_size = get_stack_size_with_overrides("test_handler", 16384);
-        assert_eq!(stack_size, 65536);
-        
-        // Clean up
-        std::env::remove_var("BRRTR_STACK_SIZE__TEST_HANDLER");
-    }
-
-    #[test]
-    fn test_get_stack_size_clamping() {
-        // Set custom min/max
-        std::env::set_var("BRRTR_STACK_MIN_BYTES", "32768");
-        std::env::set_var("BRRTR_STACK_MAX_BYTES", "65536");
-        
-        // Test clamping to min
-        std::env::set_var("BRRTR_STACK_SIZE__TEST_HANDLER", "16384");
-        let stack_size = get_stack_size_with_overrides("test_handler", 16384);
-        assert_eq!(stack_size, 32768);
-        
-        // Test clamping to max
-        std::env::set_var("BRRTR_STACK_SIZE__TEST_HANDLER", "131072");
-        let stack_size = get_stack_size_with_overrides("test_handler", 131072);
-        assert_eq!(stack_size, 65536);
-        
-        // Clean up
-        std::env::remove_var("BRRTR_STACK_SIZE__TEST_HANDLER");
         std::env::remove_var("BRRTR_STACK_MIN_BYTES");
         std::env::remove_var("BRRTR_STACK_MAX_BYTES");
     }
 
     #[test]
+    fn test_get_stack_size_with_per_handler_override() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        let handler = "per_handler_test";
+        clean_stack_env_vars(handler);
+        
+        // Set per-handler override
+        std::env::set_var("BRRTR_STACK_SIZE__PER_HANDLER_TEST", "32768");
+        
+        let stack_size = get_stack_size_with_overrides(handler, 16384);
+        assert_eq!(stack_size, 32768);
+        
+        clean_stack_env_vars(handler);
+    }
+
+    #[test]
+    fn test_get_stack_size_with_global_override() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        let handler = "global_override_test";
+        clean_stack_env_vars(handler);
+        
+        // Set global override
+        std::env::set_var("BRRTR_STACK_SIZE", "49152");
+        
+        let stack_size = get_stack_size_with_overrides(handler, 16384);
+        assert_eq!(stack_size, 49152);
+        
+        clean_stack_env_vars(handler);
+    }
+
+    #[test]
+    fn test_get_stack_size_per_handler_takes_precedence() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        let handler = "precedence_test";
+        clean_stack_env_vars(handler);
+        
+        // Set both overrides
+        std::env::set_var("BRRTR_STACK_SIZE__PRECEDENCE_TEST", "32768");
+        std::env::set_var("BRRTR_STACK_SIZE", "49152");
+        
+        let stack_size = get_stack_size_with_overrides(handler, 16384);
+        // Per-handler should take precedence
+        assert_eq!(stack_size, 32768);
+        
+        clean_stack_env_vars(handler);
+    }
+
+    #[test]
+    fn test_get_stack_size_with_hex_format() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        let handler = "hex_format_test";
+        clean_stack_env_vars(handler);
+        
+        // Test hex format
+        std::env::set_var("BRRTR_STACK_SIZE__HEX_FORMAT_TEST", "0x10000");
+        
+        let stack_size = get_stack_size_with_overrides(handler, 16384);
+        assert_eq!(stack_size, 65536);
+        
+        clean_stack_env_vars(handler);
+    }
+
+    #[test]
+    fn test_get_stack_size_clamping() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        let handler = "clamping_test";
+        clean_stack_env_vars(handler);
+        
+        // Set custom min/max
+        std::env::set_var("BRRTR_STACK_MIN_BYTES", "32768");
+        std::env::set_var("BRRTR_STACK_MAX_BYTES", "65536");
+        
+        // Test clamping to min
+        std::env::set_var("BRRTR_STACK_SIZE__CLAMPING_TEST", "16384");
+        let stack_size = get_stack_size_with_overrides(handler, 16384);
+        assert_eq!(stack_size, 32768);
+        
+        // Test clamping to max
+        std::env::set_var("BRRTR_STACK_SIZE__CLAMPING_TEST", "131072");
+        let stack_size = get_stack_size_with_overrides(handler, 131072);
+        assert_eq!(stack_size, 65536);
+        
+        clean_stack_env_vars(handler);
+    }
+
+    #[test]
     fn test_get_stack_size_no_override() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        let handler = "no_override_test";
+        clean_stack_env_vars(handler);
+        
         // No overrides set, should return default
-        let stack_size = get_stack_size_with_overrides("test_handler", 16384);
+        let stack_size = get_stack_size_with_overrides(handler, 16384);
         assert_eq!(stack_size, 16384);
+        
+        clean_stack_env_vars(handler);
     }
 }
