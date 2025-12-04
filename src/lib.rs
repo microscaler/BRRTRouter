@@ -844,12 +844,14 @@ pub mod otel;
 pub mod router;
 pub mod runtime_config;
 pub mod security;
+pub mod validator_cache;
 pub mod server;
 pub mod spec;
 pub mod sse;
 pub mod static_files;
 pub mod typed;
 pub mod validator;
+pub mod worker_pool;
 #[cfg(test)]
 #[path = "linter/tests.rs"]
 mod linter_tests;

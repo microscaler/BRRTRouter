@@ -10,6 +10,7 @@ use crate::generator::schema::{
     collect_component_schemas, extract_fields, is_named_type, parameter_to_field,
     process_schema_type_with_spec, to_camel_case, unique_handler_name,
 };
+use crate::generator::stack_size::compute_stack_size;
 use crate::generator::templates::{
     write_cargo_toml, write_controller, write_handler, write_main_rs_with_options, write_mod_rs,
     write_openapi_index, write_registry_rs, write_static_index, write_types_rs, RegistryEntry,
@@ -130,7 +131,9 @@ pub fn generate_project_with_options(
     let mut created: Vec<String> = Vec::new();
     let mut updated: Vec<String> = Vec::new();
     let mut skipped: Vec<String> = Vec::new();
-    let (mut routes, slug) = load_spec(spec_path.to_str().unwrap())?;
+    let spec_str = spec_path.to_str()
+        .ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 in spec path"))?;
+    let (mut routes, slug) = load_spec(spec_str)?;
     let base_dir = output_dir
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| Path::new("examples").join(&slug));
@@ -319,11 +322,16 @@ pub fn generate_project_with_options(
 
         modules_handlers.push(handler.clone());
         modules_controllers.push(handler.clone());
+        
+        // Compute stack size for this handler
+        let stack_size_bytes = compute_stack_size(&route);
+        
         registry_entries.push(RegistryEntry {
             name: handler.clone(),
             request_type: format!("{handler}::Request"),
             controller_struct: controller_struct.clone(),
             parameters: route.parameters.clone(),
+            stack_size_bytes,
         });
     }
 
@@ -527,7 +535,9 @@ pub fn generate_impl_stubs(
     };
 
     // Load spec
-    let (routes, _slug) = load_spec(spec_path.to_str().unwrap())?;
+    let spec_str = spec_path.to_str()
+        .ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 in spec path"))?;
+    let (routes, _slug) = load_spec(spec_str)?;
 
     // Derive component name from output directory
     let component_name = impl_output_dir
@@ -621,18 +631,18 @@ pub fn generate_impl_stubs(
             );
         }
 
-        write_impl_controller_stub(
-            &stub_path,
-            &handler,
-            &format!("{}Controller", to_camel_case(&handler)),
-            component_name,
-            &request_fields,
-            &response_fields,
-            &imports,
-            route.sse,
-            route.example.clone(),
+        write_impl_controller_stub(crate::generator::templates::ImplControllerStubParams {
+            path: &stub_path,
+            handler: &handler,
+            struct_name: &format!("{}Controller", to_camel_case(&handler)),
+            crate_name: component_name,
+            req_fields: &request_fields,
+            res_fields: &response_fields,
+            imports: &imports,
+            sse: route.sse,
+            example: route.example.clone(),
             force,
-        )?;
+        })?;
 
         if existed && force {
             overwritten.push(handler.clone());

@@ -2,6 +2,7 @@
 use crate::echo::echo_handler;
 use crate::router::RouteMatch;
 use crate::spec::RouteMeta;
+use crate::worker_pool::{WorkerPool, WorkerPoolConfig};
 use http::Method;
 use crate::ids::RequestId;
 use may::coroutine;
@@ -70,12 +71,23 @@ pub type HandlerSender = mpsc::Sender<HandlerRequest>;
 ///
 /// Maintains a registry of handler names to their corresponding channel senders,
 /// and manages middleware that processes requests/responses.
-#[derive(Clone, Default)]
+///
+/// Supports both single-coroutine handlers and worker pool handlers with bounded queues
+/// and backpressure handling.
+#[derive(Clone)]
 pub struct Dispatcher {
     /// Map of handler names to their channel senders
     pub handlers: HashMap<String, HandlerSender>,
+    /// Map of handler names to their worker pools (for handlers using worker pools)
+    pub worker_pools: HashMap<String, Arc<WorkerPool>>,
     /// Ordered list of middleware to apply to requests/responses
     pub middlewares: Vec<Arc<dyn Middleware>>,
+}
+
+impl Default for Dispatcher {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Dispatcher {
@@ -85,13 +97,9 @@ impl Dispatcher {
     pub fn new() -> Self {
         Dispatcher {
             handlers: HashMap::new(),
+            worker_pools: HashMap::new(),
             middlewares: Vec::new(),
         }
-    }
-
-    #[allow(dead_code)]
-    fn default() -> Self {
-        Self::new()
     }
 
     /// Add a handler sender for the given route metadata. This allows handlers
@@ -101,24 +109,26 @@ impl Dispatcher {
     /// replaced. The old sender will be dropped, which closes its channel and
     /// causes the old handler coroutine to exit when it tries to receive.
     pub fn add_route(&mut self, route: RouteMeta, sender: HandlerSender) {
+        let handler_name = route.handler_name;
+        
         // Check if we're replacing an existing handler
-        if let Some(old_sender) = self.handlers.remove(&route.handler_name) {
+        if let Some(old_sender) = self.handlers.remove(&handler_name) {
             // Drop the old sender explicitly to ensure the channel closes
             drop(old_sender);
             warn!(
-                handler_name = %route.handler_name,
+                handler_name = %handler_name,
                 total_handlers = self.handlers.len(),
                 "Replaced existing handler - old coroutine will exit"
             );
         }
         
-        self.handlers.insert(route.handler_name.clone(), sender);
-        
         info!(
-            handler_name = %route.handler_name,
+            handler_name = %handler_name,
             total_handlers = self.handlers.len() + 1,
             "Handler registered successfully"
         );
+        
+        self.handlers.insert(handler_name, sender);
     }
 
     /// Add middleware to the processing pipeline
@@ -135,13 +145,29 @@ impl Dispatcher {
 
     /// Registers a handler function that will process incoming requests with the given name.
     ///
+    /// Spawns a coroutine that processes requests from a channel. The handler is automatically
+    /// wrapped with panic recovery to prevent one failing handler from crashing the server.
+    ///
     /// # Safety
     ///
-    /// The caller must ensure that the provided handler function is safe to execute in a
-    /// concurrent context and properly handles all requests without panicking. The handler
-    /// will run in a separate coroutine and must properly manage its own resources.
-    /// Additionally, the handler must send a response through the reply channel for every
-    /// request it receives to avoid resource leaks.
+    /// This function is marked unsafe because it calls `may::coroutine::Builder::spawn()`,
+    /// which is unsafe in the `may` runtime. The unsafety comes from the coroutine runtime's
+    /// requirements, not from this function's logic.
+    ///
+    /// The caller must ensure:
+    /// - The May coroutine runtime is properly initialized before calling this
+    /// - The handler sends a response through the reply channel for every request (to avoid resource leaks)
+    ///
+    /// # Handler Requirements
+    ///
+    /// The handler function should:
+    /// - Be safe to execute in a concurrent context
+    /// - Avoid long-running synchronous operations that could block the coroutine
+    /// - Send exactly one response per request
+    ///
+    /// # Panics
+    ///
+    /// Handler panics are caught and converted to 500 error responses automatically.
     ///
     pub unsafe fn register_handler<F>(&mut self, name: &str, handler_fn: F)
     where
@@ -248,6 +274,77 @@ impl Dispatcher {
         self.handlers.insert(name, tx);
     }
 
+    /// Register a handler with a worker pool for parallel request processing
+    ///
+    /// This creates a pool of N worker coroutines (configured via environment variables)
+    /// with a bounded queue. When the queue is full, backpressure is applied according
+    /// to the configured mode (block or shed).
+    ///
+    /// # Safety
+    ///
+    /// This function is marked unsafe because it spawns coroutines using `may::coroutine::Builder::spawn()`,
+    /// which is unsafe in the `may` runtime. The caller must ensure the May coroutine runtime is properly initialized.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Handler name
+    /// * `handler_fn` - Function to handle requests
+    ///
+    /// # Configuration
+    ///
+    /// The worker pool behavior is configured via environment variables:
+    /// - `BRRTR_HANDLER_WORKERS`: Number of worker coroutines (default: 4)
+    /// - `BRRTR_HANDLER_QUEUE_BOUND`: Maximum queue depth (default: 1024)
+    /// - `BRRTR_BACKPRESSURE_MODE`: "block" or "shed" (default: "block")
+    /// - `BRRTR_BACKPRESSURE_TIMEOUT_MS`: Timeout for block mode (default: 50ms)
+    pub unsafe fn register_handler_with_pool<F>(&mut self, name: &str, handler_fn: F)
+    where
+        F: Fn(HandlerRequest) + Send + 'static + Clone,
+    {
+        let config = WorkerPoolConfig::from_env();
+        self.register_handler_with_pool_config(name, handler_fn, config);
+    }
+
+    /// Register a handler with a worker pool using custom configuration
+    ///
+    /// # Safety
+    ///
+    /// This function is marked unsafe because it spawns coroutines using `may::coroutine::Builder::spawn()`,
+    /// which is unsafe in the `may` runtime. The caller must ensure the May coroutine runtime is properly initialized.
+    pub unsafe fn register_handler_with_pool_config<F>(
+        &mut self,
+        name: &str,
+        handler_fn: F,
+        config: WorkerPoolConfig,
+    )
+    where
+        F: Fn(HandlerRequest) + Send + 'static + Clone,
+    {
+        let name = name.to_string();
+        
+        // Check if we're replacing an existing handler
+        if let Some(old_sender) = self.handlers.remove(&name) {
+            drop(old_sender);
+            warn!(
+                handler_name = %name,
+                "Replaced existing handler with worker pool - old coroutine will exit"
+            );
+        }
+        
+        // Remove any existing worker pool
+        if let Some(old_pool) = self.worker_pools.remove(&name) {
+            drop(old_pool);
+        }
+        
+        // Create worker pool
+        let pool = WorkerPool::new(name.clone(), config, handler_fn);
+        let sender = pool.sender();
+        
+        // Store both the sender and the pool
+        self.handlers.insert(name.clone(), sender);
+        self.worker_pools.insert(name, Arc::new(pool));
+    }
+
     /// Dispatch a request to the appropriate handler
     ///
     /// Sends the request to the handler's coroutine via channel and waits for the response.
@@ -291,22 +388,20 @@ impl Dispatcher {
     ) -> Option<HandlerResponse> {
         let (reply_tx, reply_rx) = mpsc::channel();
 
-        let handler_name = &route_match.handler_name;
-
         // D1: Handler lookup
         debug!(
-            handler_name = %handler_name,
+            handler_name = %route_match.handler_name,
             available_handlers = self.handlers.len(),
             "Handler lookup"
         );
 
-        let tx = match self.handlers.get(handler_name) {
+        let tx = match self.handlers.get(&route_match.handler_name) {
             Some(tx) => tx,
             None => {
                 // D2: Handler not found - CRITICAL ERROR
                 let available_handlers: Vec<&String> = self.handlers.keys().collect();
                 error!(
-                    handler_name = %handler_name,
+                    handler_name = %route_match.handler_name,
                     available_handlers = ?available_handlers,
                     "Handler not found - CRITICAL"
                 );
@@ -318,9 +413,9 @@ impl Dispatcher {
             request_id: request_id.parse().unwrap_or_else(|_| RequestId::new()),
             method: route_match.route.method.clone(),
             path: route_match.route.path_pattern.clone(),
-            handler_name: handler_name.clone(),
-            path_params: route_match.path_params.clone(),
-            query_params: route_match.query_params.clone(),
+            handler_name: route_match.handler_name,
+            path_params: route_match.path_params,
+            query_params: route_match.query_params,
             headers,
             cookies,
             body,
@@ -358,7 +453,7 @@ impl Dispatcher {
             // D3: Request dispatched to handler
             info!(
                 request_id = %request_id,
-                handler_name = %handler_name,
+                handler_name = %request.handler_name,
                 method = %request.method,
                 path = %request.path,
                 "Request dispatched to handler"
@@ -366,21 +461,41 @@ impl Dispatcher {
 
             let start = Instant::now();
 
-            // Send request to handler coroutine
-            if let Err(e) = tx.send(request.clone()) {
-                error!(
-                    request_id = %request_id,
-                    handler_name = %handler_name,
-                    error = %e,
-                    "Failed to send request to handler"
-                );
-                return None;
+            // Check if this handler has a worker pool with backpressure
+            if let Some(pool) = self.worker_pools.get(&request.handler_name) {
+                // Use worker pool dispatch with backpressure handling
+                match pool.dispatch(request.clone()) {
+                    Ok(()) => {
+                        // Request dispatched successfully, wait for response
+                    }
+                    Err(backpressure_response) => {
+                        // Backpressure applied - return immediate response (429 or 503)
+                        info!(
+                            request_id = %request_id,
+                            handler_name = %request.handler_name,
+                            status = backpressure_response.status,
+                            "Backpressure applied - returning early response"
+                        );
+                        return Some(backpressure_response);
+                    }
+                }
+            } else {
+                // No worker pool - send directly to handler coroutine
+                if let Err(e) = tx.send(request.clone()) {
+                    error!(
+                        request_id = %request_id,
+                        handler_name = %request.handler_name,
+                        error = %e,
+                        "Failed to send request to handler"
+                    );
+                    return None;
+                }
             }
 
             // D6: Waiting for handler response
             debug!(
                 request_id = %request_id,
-                handler_name = %handler_name,
+                handler_name = %request.handler_name,
                 "Waiting for handler response"
             );
 
@@ -392,7 +507,7 @@ impl Dispatcher {
                     let elapsed = start.elapsed();
                     info!(
                         request_id = %request_id,
-                        handler_name = %handler_name,
+                        handler_name = %request.handler_name,
                         latency_ms = elapsed.as_millis() as u64,
                         status = response.status,
                         "Handler response received"
@@ -404,7 +519,7 @@ impl Dispatcher {
                     let elapsed = start.elapsed();
                     error!(
                         request_id = %request_id,
-                        handler_name = %handler_name,
+                        handler_name = %request.handler_name,
                         elapsed_ms = elapsed.as_millis() as u64,
                         error = %e,
                         "Handler channel closed - handler may have crashed"
@@ -417,7 +532,7 @@ impl Dispatcher {
                         headers: HashMap::new(),
                         body: serde_json::json!({
                             "error": "Service unavailable",
-                            "details": format!("Handler '{}' is not responding - possible crash or resource exhaustion", handler_name),
+                            "details": format!("Handler '{}' is not responding - possible crash or resource exhaustion", request.handler_name),
                             "request_id": request_id,
                         }),
                     });
@@ -440,5 +555,26 @@ impl Dispatcher {
         }
 
         Some(resp)
+    }
+
+    /// Get metrics for all worker pools
+    ///
+    /// Returns a map of handler names to their worker pool metrics.
+    /// This is useful for monitoring queue depth and shed count.
+    pub fn worker_pool_metrics(&self) -> HashMap<String, (usize, u64, u64, u64)> {
+        let mut metrics = HashMap::new();
+        for (name, pool) in &self.worker_pools {
+            let pool_metrics = pool.metrics();
+            metrics.insert(
+                name.clone(),
+                (
+                    pool_metrics.get_queue_depth(),
+                    pool_metrics.get_shed_count(),
+                    pool_metrics.get_dispatched_count(),
+                    pool_metrics.get_completed_count(),
+                ),
+            );
+        }
+        metrics
     }
 }

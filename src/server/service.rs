@@ -6,7 +6,7 @@ use crate::router::Router;
 use crate::security::{SecurityProvider, SecurityRequest};
 use crate::spec::SecurityScheme;
 use crate::static_files::StaticFiles;
-use jsonschema::JSONSchema;
+use crate::validator_cache::ValidatorCache;
 use may_minihttp::{HttpService, Request, Response};
 use serde_json::json;
 use std::collections::HashMap;
@@ -46,6 +46,8 @@ pub struct AppService {
     pub watcher: Option<notify::RecommendedWatcher>,
     /// Precomputed Keep-Alive header (to avoid per-request allocations/leaks)
     pub keep_alive_header: Option<&'static str>,
+    /// JSON Schema validator cache for eliminating per-request compilation
+    pub validator_cache: ValidatorCache,
 }
 
 /// Clone implementation for `AppService`
@@ -88,6 +90,7 @@ impl Clone for AppService {
             doc_files: self.doc_files.clone(),
             watcher: None,
             keep_alive_header: self.keep_alive_header,
+            validator_cache: self.validator_cache.clone(),
         }
     }
 }
@@ -129,6 +132,10 @@ impl AppService {
         static_dir: Option<PathBuf>,
         doc_dir: Option<PathBuf>,
     ) -> Self {
+        // Load runtime config to determine if caching is enabled
+        let runtime_config = crate::runtime_config::RuntimeConfig::from_env();
+        let validator_cache = ValidatorCache::new(runtime_config.schema_cache_enabled);
+        
         Self {
             router,
             dispatcher,
@@ -141,6 +148,7 @@ impl AppService {
             doc_files: doc_dir.map(StaticFiles::new),
             watcher: None,
             keep_alive_header: None,
+            validator_cache,
         }
     }
 
@@ -160,11 +168,33 @@ impl AppService {
     /// Set the metrics collection middleware
     ///
     /// Enables Prometheus metrics collection for requests, responses, and handler performance.
+    /// Automatically pre-registers all path patterns from the router to avoid runtime allocation
+    /// and reduce contention during high-throughput request handling.
     ///
     /// # Arguments
     ///
     /// * `metrics` - Metrics middleware instance
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let metrics = Arc::new(MetricsMiddleware::new());
+    /// service.set_metrics_middleware(metrics);
+    /// // All paths from OpenAPI spec are now pre-registered
+    /// ```
     pub fn set_metrics_middleware(&mut self, metrics: Arc<MetricsMiddleware>) {
+        // Pre-register all known paths from the router
+        if let Ok(router) = self.router.read() {
+            let paths = router.get_all_path_patterns();
+            if !paths.is_empty() {
+                info!(
+                    count = paths.len(),
+                    "Pre-registering paths in metrics middleware"
+                );
+                metrics.pre_register_paths(&paths);
+            }
+        }
+        
         self.metrics = Some(metrics);
     }
     
@@ -196,6 +226,31 @@ impl AppService {
         } else {
             self.keep_alive_header = None;
         }
+    }
+
+    /// Pre-compile and cache all JSON schemas from routes at startup
+    ///
+    /// This method should be called immediately after creating the service to compile
+    /// all request and response schemas and cache them. This eliminates the compilation
+    /// overhead on the first requests and ensures all schemas are valid at startup.
+    ///
+    /// # Arguments
+    ///
+    /// * `routes` - List of route metadata from the OpenAPI spec
+    ///
+    /// # Returns
+    ///
+    /// Number of schemas successfully compiled and cached
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let mut service = AppService::new(router, dispatcher, schemes, spec_path, None, None);
+    /// let compiled = service.precompile_schemas(&routes);
+    /// println!("Pre-compiled {} schemas", compiled);
+    /// ```
+    pub fn precompile_schemas(&self, routes: &[crate::spec::RouteMeta]) -> usize {
+        self.validator_cache.precompile_schemas(routes)
     }
 
     /// Register default security providers based on loaded OpenAPI security schemes.
@@ -304,9 +359,10 @@ pub fn health_endpoint(res: &mut Response) -> io::Result<()> {
 /// - Active requests gauge
 /// - Request counts with status code labels (for error rate)
 /// - Request duration histogram (for p50/p95/p99 percentiles)
+/// - Worker pool metrics (queue depth, shed count)
 /// - Memory usage metrics (RSS, heap, growth)
 /// - Legacy per-path metrics (backward compatible)
-pub fn metrics_endpoint(res: &mut Response, metrics: &MetricsMiddleware, memory: Option<&crate::middleware::MemoryMiddleware>) -> io::Result<()> {
+pub fn metrics_endpoint(res: &mut Response, metrics: &MetricsMiddleware, memory: Option<&crate::middleware::MemoryMiddleware>, dispatcher: Option<&Dispatcher>) -> io::Result<()> {
     let (stack_size, used_stack) = metrics.stack_usage();
     let mut body = String::with_capacity(8192); // Pre-allocate for performance
 
@@ -406,6 +462,50 @@ pub fn metrics_endpoint(res: &mut Response, metrics: &MetricsMiddleware, memory:
     body.push_str(&format!(
         "brrtrouter_coroutine_stack_used_bytes {used_stack}\n",
     ));
+
+    // Worker pool metrics (NEW - for backpressure monitoring)
+    if let Some(disp) = dispatcher {
+        let worker_metrics = disp.worker_pool_metrics();
+        if !worker_metrics.is_empty() {
+            body.push_str("\n# Worker Pool Metrics\n");
+            
+            body.push_str("# HELP brrtrouter_worker_pool_queue_depth Current queue depth for worker pool handlers\n");
+            body.push_str("# TYPE brrtrouter_worker_pool_queue_depth gauge\n");
+            for (handler, (queue_depth, _, _, _)) in &worker_metrics {
+                let escaped_handler = handler.replace('\\', "\\\\").replace('"', "\\\"");
+                body.push_str(&format!(
+                    "brrtrouter_worker_pool_queue_depth{{handler=\"{escaped_handler}\"}} {queue_depth}\n",
+                ));
+            }
+            
+            body.push_str("# HELP brrtrouter_worker_pool_shed_total Total requests shed due to backpressure\n");
+            body.push_str("# TYPE brrtrouter_worker_pool_shed_total counter\n");
+            for (handler, (_, shed_count, _, _)) in &worker_metrics {
+                let escaped_handler = handler.replace('\\', "\\\\").replace('"', "\\\"");
+                body.push_str(&format!(
+                    "brrtrouter_worker_pool_shed_total{{handler=\"{escaped_handler}\"}} {shed_count}\n",
+                ));
+            }
+            
+            body.push_str("# HELP brrtrouter_worker_pool_dispatched_total Total requests dispatched to worker pool\n");
+            body.push_str("# TYPE brrtrouter_worker_pool_dispatched_total counter\n");
+            for (handler, (_, _, dispatched, _)) in &worker_metrics {
+                let escaped_handler = handler.replace('\\', "\\\\").replace('"', "\\\"");
+                body.push_str(&format!(
+                    "brrtrouter_worker_pool_dispatched_total{{handler=\"{escaped_handler}\"}} {dispatched}\n",
+                ));
+            }
+            
+            body.push_str("# HELP brrtrouter_worker_pool_completed_total Total requests completed by worker pool\n");
+            body.push_str("# TYPE brrtrouter_worker_pool_completed_total counter\n");
+            for (handler, (_, _, _, completed)) in &worker_metrics {
+                let escaped_handler = handler.replace('\\', "\\\\").replace('"', "\\\"");
+                body.push_str(&format!(
+                    "brrtrouter_worker_pool_completed_total{{handler=\"{escaped_handler}\"}} {completed}\n",
+                ));
+            }
+        }
+    }
 
     // Legacy per-path metrics (backward compatible)
     let path_stats = metrics.path_stats();
@@ -646,15 +746,28 @@ impl HttpService for AppService {
         );
         let _enter = span.enter();
 
-        // Calculate total request size (approximate)
-        let total_size_bytes = headers
+        // Calculate header size (always accurate)
+        let header_size_bytes: usize = headers
             .iter()
             .map(|(k, v)| k.len() + v.len())
-            .sum::<usize>()
-            + body.as_ref().map(|v| v.to_string().len()).unwrap_or(0);
+            .sum();
+
+        // Calculate body size using Content-Length header if available
+        // This avoids expensive JSON serialization in the hot path
+        let body_size_bytes = if let Some(content_length_str) = headers.get("content-length") {
+            // Prefer Content-Length header when available (most accurate and cheap)
+            content_length_str.parse::<usize>().unwrap_or(0)
+        } else {
+            // Fallback: will use estimated size from route or 0 if not available
+            // This will be updated after routing if an estimate is available
+            0
+        };
+
+        let total_size_bytes = header_size_bytes + body_size_bytes;
 
         // Create request logger that will log completion on drop (RAII pattern)
         // Note: request_id will be set to None initially, updated when dispatch occurs
+        // Note: total_size_bytes will be updated after routing if estimate is available
         let mut _request_logger = RequestLogger {
             request_id: None,
             method: method.clone(),
@@ -692,7 +805,9 @@ impl HttpService for AppService {
         }
         if method == "GET" && path == "/metrics" {
             if let Some(metrics) = &self.metrics {
-                return metrics_endpoint(res, metrics, self.memory.as_deref());
+                // Get dispatcher for worker pool metrics
+                let dispatcher = self.dispatcher.read().unwrap();
+                return metrics_endpoint(res, metrics, self.memory.as_deref(), Some(&*dispatcher));
             } else {
                 write_json_error(
                     res,
@@ -739,11 +854,22 @@ impl HttpService for AppService {
         let canonical_req_id = RequestId::from_header_or_new(inbound_req_id);
 
         let route_opt = {
-            let router = self.router.read().unwrap();
-            router.route(method.parse().unwrap(), &path)
+            let router = self.router.read()
+                .expect("router RwLock poisoned - critical error");
+            let http_method = method.parse()
+                .expect("invalid HTTP method - should be validated earlier");
+            router.route(http_method, &path)
         };
         if let Some(mut route_match) = route_opt {
             route_match.query_params = query_params.clone();
+            
+            // Update total_size_bytes with estimated body size if Content-Length was not available
+            if body_size_bytes == 0 && body.is_some() {
+                if let Some(estimated) = route_match.route.estimated_request_body_bytes {
+                    _request_logger.total_size_bytes = header_size_bytes + estimated;
+                }
+            }
+            
             // Perform security validation first
             if !route_match.route.security.is_empty() {
                 // S1: Security check start
@@ -996,7 +1122,10 @@ impl HttpService for AppService {
                     "Request validation start"
                 );
 
-                let compiled = JSONSchema::compile(schema).expect("invalid request schema");
+                // Use cached validator instead of compiling on every request
+                let compiled = self.validator_cache
+                    .get_or_compile(&route_match.handler_name, "request", None, schema)
+                    .expect("invalid request schema");
                 let validation = compiled.validate(body_val);
                 if let Err(errors) = validation {
                     // V3: Schema validation failed
@@ -1034,7 +1163,8 @@ impl HttpService for AppService {
             }
 
             let handler_response = {
-                let dispatcher = self.dispatcher.read().unwrap();
+                let dispatcher = self.dispatcher.read()
+                    .expect("dispatcher RwLock poisoned - critical error");
                 // Determine or generate request id to pass into dispatcher
                 let req_id = _request_logger
                     .request_id
@@ -1063,8 +1193,10 @@ impl HttpService for AppService {
                             "Response validation start"
                         );
 
-                        let compiled =
-                            JSONSchema::compile(schema).expect("invalid response schema");
+                        // Use cached validator instead of compiling on every response
+                        let compiled = self.validator_cache
+                            .get_or_compile(&route_match.handler_name, "response", Some(hr.status), schema)
+                            .expect("invalid response schema");
                         let validation = compiled.validate(&hr.body);
                         if let Err(errors) = validation {
                             // V7: Response validation failed
