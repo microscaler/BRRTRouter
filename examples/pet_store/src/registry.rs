@@ -7,9 +7,10 @@ use brrtrouter::spec::RouteMeta;
 use brrtrouter::typed::spawn_typed_with_stack_size_and_name;
 // Note: avoid wildcard imports to reduce warnings
 
-/// # Safety
-/// This function spawns handler coroutines. Callers must ensure coroutine runtime is set up.
-pub unsafe fn register_all(dispatcher: &mut Dispatcher) {
+/// Register all handlers with their computed stack sizes.
+///
+/// Uses safe coroutine spawning via `may::safety::SafeBuilder`.
+pub fn register_all(dispatcher: &mut Dispatcher) {
     dispatcher.register_typed_with_stack_size(
         "admin_settings",
         crate::controllers::admin_settings::AdminSettingsController,
@@ -123,12 +124,12 @@ pub unsafe fn register_all(dispatcher: &mut Dispatcher) {
 }
 
 /// Dynamically register handlers for the provided routes using their handler names.
-/// # Safety
-/// This function spawns handler coroutines. Callers must ensure coroutine runtime is set up.
+///
+/// Uses safe coroutine spawning via `may::safety::SafeBuilder`.
 ///
 /// **IMPORTANT**: This function will clear ALL existing handlers before registering new ones
 /// to prevent memory leaks from accumulating coroutines.
-pub unsafe fn register_from_spec(dispatcher: &mut Dispatcher, routes: &[RouteMeta]) {
+pub fn register_from_spec(dispatcher: &mut Dispatcher, routes: &[RouteMeta]) {
     // Clear all existing handlers to prevent memory leaks
     // The old senders will be dropped, causing their coroutines to exit
     dispatcher.handlers.clear();

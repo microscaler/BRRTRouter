@@ -157,9 +157,9 @@ fn main() -> io::Result<()> {
 
     // Start background memory monitoring thread
     brrtrouter::middleware::memory::start_memory_monitor(memory.clone());
-    unsafe {
-        registry::register_from_spec(&mut dispatcher, &routes);
-    }
+
+    // Register handlers from spec (safe coroutine spawning via may::safety::SafeBuilder)
+    registry::register_from_spec(&mut dispatcher, &routes);
 
     // Start the HTTP server on port 8080, binding to 127.0.0.1 if BRRTR_LOCAL is
     // set for local testing.
