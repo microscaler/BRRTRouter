@@ -360,8 +360,8 @@ data:
             "datasource": "Prometheus",
             "targets": [
               {
-                "expr": "brrtrouter_coroutine_stack_bytes{},
-                "legendFormat": "RSS Memory",
+                "expr": "brrtrouter_coroutine_stack_bytes{}",
+                "legendFormat": "Stack Memory",
                 "refId": "A"
               }
             ],
