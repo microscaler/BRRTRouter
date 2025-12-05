@@ -5,7 +5,8 @@ use crate::router::RouteMatch;
 use crate::spec::RouteMeta;
 use crate::worker_pool::{WorkerPool, WorkerPoolConfig};
 use http::Method;
-use may::coroutine;
+// Use safe coroutine spawning from may::safety
+use may::safety::SafeBuilder;
 // CRITICAL: Use MPMC for all handler channels to support multi-worker scenarios
 // MPMC works with single consumers too, so this is a compatible superset of MPSC
 use may::sync::mpmc;
@@ -173,7 +174,8 @@ impl Dispatcher {
     ///
     /// Handler panics are caught and converted to 500 error responses automatically.
     ///
-    pub unsafe fn register_handler<F>(&mut self, name: &str, handler_fn: F)
+    /// Uses safe coroutine spawning via `may::safety::SafeBuilder`.
+    pub fn register_handler<F>(&mut self, name: &str, handler_fn: F)
     where
         F: Fn(HandlerRequest) + Send + 'static + Clone,
     {
@@ -195,7 +197,9 @@ impl Dispatcher {
             })
             .unwrap_or(0x10000); // 64KB default instead of 16KB
 
-        let spawn_result = coroutine::Builder::new()
+        // Use safe coroutine spawning with validation
+        let spawn_result = SafeBuilder::new()
+            .name(&name)
             .stack_size(stack_size)
             .spawn(move || {
                 // H1: Handler coroutine start
@@ -302,7 +306,9 @@ impl Dispatcher {
     /// - `BRRTR_HANDLER_QUEUE_BOUND`: Maximum queue depth (default: 1024)
     /// - `BRRTR_BACKPRESSURE_MODE`: "block" or "shed" (default: "block")
     /// - `BRRTR_BACKPRESSURE_TIMEOUT_MS`: Timeout for block mode (default: 50ms)
-    pub unsafe fn register_handler_with_pool<F>(&mut self, name: &str, handler_fn: F)
+    ///
+    /// Uses safe coroutine spawning via `may::safety::SafeBuilder`.
+    pub fn register_handler_with_pool<F>(&mut self, name: &str, handler_fn: F)
     where
         F: Fn(HandlerRequest) + Send + 'static + Clone,
     {
@@ -312,11 +318,8 @@ impl Dispatcher {
 
     /// Register a handler with a worker pool using custom configuration
     ///
-    /// # Safety
-    ///
-    /// This function is marked unsafe because it spawns coroutines using `may::coroutine::Builder::spawn()`,
-    /// which is unsafe in the `may` runtime. The caller must ensure the May coroutine runtime is properly initialized.
-    pub unsafe fn register_handler_with_pool_config<F>(
+    /// Uses safe coroutine spawning via `may::safety::SafeBuilder`.
+    pub fn register_handler_with_pool_config<F>(
         &mut self,
         name: &str,
         handler_fn: F,

@@ -3,6 +3,8 @@
 use crate::dispatcher::{Dispatcher, HandlerRequest, HandlerResponse, HandlerSender};
 use anyhow::Result;
 use http::Method;
+// Use safe coroutine spawning from may::safety
+use may::safety::SafeBuilder;
 // Use MPMC for handler channels to support multi-worker pools
 use may::sync::mpmc;
 use serde::Serialize;
@@ -103,15 +105,17 @@ pub trait TypedHandlerFor<T>: Sized {
 
 /// Spawn a typed handler coroutine and return a sender to communicate with it.
 ///
-/// # Safety
+/// This function uses safe coroutine spawning via `may::safety::SafeBuilder`,
+/// providing compile-time and runtime safety checks for coroutine execution.
 ///
-/// This function is unsafe because it spawns a coroutine that will run indefinitely
-/// and handle requests. The caller must ensure that:
-/// - The handler is safe to execute in a concurrent context
-/// - The handler properly handles all requests without panicking
-/// - The handler sends a response for every request to avoid resource leaks
-/// - The May coroutine runtime is properly initialized
-pub unsafe fn spawn_typed<H>(handler: H) -> HandlerSender
+/// # Handler Requirements
+///
+/// The handler must:
+/// - Implement the `Handler` trait with typed request/response types
+/// - Be safe to execute in a concurrent context
+/// - Properly handle all requests without panicking
+/// - Send a response for every request to avoid resource leaks
+pub fn spawn_typed<H>(handler: H) -> HandlerSender
 where
     H: Handler + Send + 'static,
 {
@@ -131,7 +135,8 @@ where
         })
         .unwrap_or(0x10000); // 64KB default instead of 16KB
 
-    let spawn_result = may::coroutine::Builder::new()
+    // Use safe coroutine spawning with validation
+    let spawn_result = SafeBuilder::new()
         .stack_size(stack_size)
         .spawn(move || {
             let handler = handler;
@@ -248,13 +253,7 @@ where
 /// Creates a coroutine that processes incoming requests with automatic type conversion
 /// and validation. Panics in handlers are caught and converted to 500 error responses.
 ///
-/// # Safety
-///
-/// This function is marked unsafe because it calls `may::coroutine::Builder::spawn()`,
-/// which is unsafe in the `may` runtime. The unsafety comes from the coroutine runtime's
-/// requirements, not from this function's logic.
-///
-/// The caller must ensure the May coroutine runtime is properly initialized.
+/// Uses safe coroutine spawning via `may::safety::SafeBuilder`.
 ///
 /// # Arguments
 ///
@@ -272,7 +271,7 @@ where
 ///
 /// Handler panics are automatically caught and converted to 500 error responses.
 /// The coroutine will continue processing subsequent requests.
-pub unsafe fn spawn_typed_with_stack_size<H>(
+pub fn spawn_typed_with_stack_size<H>(
     handler: H,
     stack_size_bytes: usize,
 ) -> HandlerSender
@@ -288,10 +287,8 @@ where
 /// `BRRTR_STACK_SIZE__<HANDLER_NAME>` when a handler name is provided.
 /// The stack size can be further overridden at runtime using environment variables.
 ///
-/// # Safety
-///
-/// Same safety requirements as `spawn_typed_with_stack_size`.
-pub unsafe fn spawn_typed_with_stack_size_and_name<H>(
+/// Uses safe coroutine spawning via `may::safety::SafeBuilder`.
+pub fn spawn_typed_with_stack_size_and_name<H>(
     handler: H,
     stack_size_bytes: usize,
     handler_name: Option<&str>,
@@ -308,9 +305,13 @@ where
     let effective_name = handler_name.unwrap_or("unknown");
     let stack_size = get_stack_size_with_overrides(effective_name, stack_size_bytes);
 
-    let spawn_result = may::coroutine::Builder::new()
-        .stack_size(stack_size)
-        .spawn(move || {
+    // Use safe coroutine spawning with validation
+    let mut builder = SafeBuilder::new().stack_size(stack_size);
+    if let Some(name) = handler_name {
+        builder = builder.name(name);
+    }
+    
+    let spawn_result = builder.spawn(move || {
             let handler = handler;
             // Main event loop: process requests until channel closes
             for req in rx.iter() {
@@ -476,7 +477,9 @@ impl Dispatcher {
     /// - Implement the `Handler` trait with typed request/response types
     /// - Be safe to execute in a concurrent context
     /// - Avoid long-running synchronous operations
-    pub unsafe fn register_typed<H>(&mut self, name: &str, handler: H)
+    ///
+    /// Uses safe coroutine spawning via `may::safety::SafeBuilder`.
+    pub fn register_typed<H>(&mut self, name: &str, handler: H)
     where
         H: Handler + Send + 'static,
     {
@@ -508,13 +511,7 @@ impl Dispatcher {
     /// incoming requests against the handler's expected type and converts them. Invalid
     /// requests receive a 400 Bad Request response automatically.
     ///
-    /// # Safety
-    ///
-    /// This function is marked unsafe because it internally calls `spawn_typed_with_stack_size()`
-    /// which uses `may::coroutine::Builder::spawn()`. The unsafety comes from the coroutine
-    /// runtime's requirements.
-    ///
-    /// The caller must ensure the May coroutine runtime is properly initialized.
+    /// Uses safe coroutine spawning via `may::safety::SafeBuilder`.
     ///
     /// # Arguments
     ///
@@ -528,7 +525,7 @@ impl Dispatcher {
     /// - Implement the `Handler` trait with typed request/response types
     /// - Be safe to execute in a concurrent context
     /// - Avoid long-running synchronous operations
-    pub unsafe fn register_typed_with_stack_size<H>(
+    pub fn register_typed_with_stack_size<H>(
         &mut self,
         name: &str,
         handler: H,
@@ -566,8 +563,7 @@ impl Dispatcher {
     ///
     /// # Safety
     ///
-    /// This function is marked unsafe because it spawns coroutines. The caller must ensure
-    /// the May coroutine runtime is properly initialized.
+    /// Uses safe coroutine spawning via `may::safety::SafeBuilder`.
     ///
     /// # Configuration
     ///
@@ -576,7 +572,7 @@ impl Dispatcher {
     /// - `BRRTR_HANDLER_QUEUE_BOUND`: Maximum queue depth (default: 1024)
     /// - `BRRTR_BACKPRESSURE_MODE`: "block" or "shed" (default: "block")
     /// - `BRRTR_BACKPRESSURE_TIMEOUT_MS`: Timeout for block mode (default: 50ms)
-    pub unsafe fn register_typed_with_pool<H>(&mut self, name: &str, handler: H)
+    pub fn register_typed_with_pool<H>(&mut self, name: &str, handler: H)
     where
         H: Handler + Send + 'static + Clone,
     {

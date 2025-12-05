@@ -26,6 +26,8 @@
 //! (multi-consumer) which properly supports concurrent receivers via a lock-free queue.
 
 use crate::dispatcher::{HandlerRequest, HandlerResponse};
+// Use safe coroutine spawning from may::safety
+use may::safety::SafeBuilder;
 use may::sync::mpmc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -232,17 +234,14 @@ pub struct WorkerPool {
 impl WorkerPool {
     /// Create a new worker pool with the given configuration and handler function
     ///
-    /// # Safety
-    ///
-    /// This function is marked unsafe because it spawns coroutines using `may::coroutine::Builder::spawn()`,
-    /// which is unsafe in the `may` runtime. The caller must ensure the May coroutine runtime is properly initialized.
+    /// Uses safe coroutine spawning via `may::safety::SafeBuilder`.
     ///
     /// # Arguments
     ///
     /// * `handler_name` - Name of the handler for logging and metrics
     /// * `config` - Configuration for the worker pool
     /// * `handler_fn` - Function to handle requests (must be Send + 'static)
-    pub unsafe fn new<F>(handler_name: String, config: WorkerPoolConfig, handler_fn: F) -> Self
+    pub fn new<F>(handler_name: String, config: WorkerPoolConfig, handler_fn: F) -> Self
     where
         F: Fn(HandlerRequest) + Send + 'static + Clone,
     {
@@ -271,7 +270,9 @@ impl WorkerPool {
             let handler_name_clone = handler_name.clone();
             let metrics_clone = metrics.clone();
 
-            let spawn_result = may::coroutine::Builder::new()
+            // Use safe coroutine spawning with validation
+            let spawn_result = SafeBuilder::new()
+                .name(format!("{}-worker-{}", handler_name, worker_id))
                 .stack_size(config.stack_size)
                 .spawn(move || {
                     debug!(

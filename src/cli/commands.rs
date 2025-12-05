@@ -6,7 +6,8 @@ use crate::{
     server::{AppService, HttpServer},
 };
 use clap::{Parser, Subcommand, ValueEnum};
-use may::coroutine;
+// Use safe coroutine spawning from may::safety
+use may::safety::SafeBuilder;
 // Use MPMC for handler channels to support multi-worker pools
 use may::sync::mpmc;
 use std::io;
@@ -219,12 +220,16 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
             let mut dispatcher = Dispatcher::new();
             for r in &routes {
                 let (tx, rx) = mpmc::channel();
-                unsafe {
-                    coroutine::spawn(move || {
+                // Use safe coroutine spawning with stack size validation
+                if let Err(e) = SafeBuilder::new()
+                    .stack_size(0x10000) // 64KB default
+                    .spawn(move || {
                         for req in rx.iter() {
                             crate::echo::echo_handler(req);
                         }
-                    });
+                    })
+                {
+                    tracing::error!("Failed to spawn echo handler: {}", e);
                 }
                 dispatcher.add_route(r.clone(), tx);
             }
@@ -246,12 +251,16 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
                     |disp, new_routes| {
                         for r in &new_routes {
                             let (tx, rx) = mpmc::channel();
-                            unsafe {
-                                coroutine::spawn(move || {
+                            // Use safe coroutine spawning with stack size validation
+                            if let Err(e) = SafeBuilder::new()
+                                .stack_size(0x10000) // 64KB default
+                                .spawn(move || {
                                     for req in rx.iter() {
                                         crate::echo::echo_handler(req);
                                     }
-                                });
+                                })
+                            {
+                                tracing::error!("Failed to spawn echo handler: {}", e);
                             }
                             disp.add_route(r.clone(), tx);
                         }
