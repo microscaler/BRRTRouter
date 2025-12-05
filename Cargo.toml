@@ -79,7 +79,7 @@ criterion = "0.8"
 # (fake-opentelemetry-collector 0.28 is incompatible - uses 0.29)
 flamegraph = "0.6"
 tempfile = "3.8"
-bollard = { version = "0.19", default-features = false, features = ["ssl", "chrono"] }
+bollard = { version = "0.16", default-features = false, features = ["ssl", "chrono"] }  # v0.19 has major API changes - needs dedicated migration
 tar = "0.4"
 walkdir = "2"
 futures-util = "0.3"

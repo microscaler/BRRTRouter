@@ -199,13 +199,16 @@ paths:
     };
     let router = Arc::new(RwLock::new(Router::new(routes.clone())));
     let mut dispatcher = Dispatcher::new();
-    dispatcher.register_handler("secret", |req: HandlerRequest| {
-        let _ = req.reply_tx.send(HandlerResponse {
-            status: 200,
-            headers: HashMap::new(),
-            body: json!({"ok": true}),
+    // SAFETY: Test context - handlers are simple closures for testing
+    unsafe {
+        dispatcher.register_handler("secret", |req: HandlerRequest| {
+            let _ = req.reply_tx.send(HandlerResponse {
+                status: 200,
+                headers: HashMap::new(),
+                body: json!({"ok": true}),
+            });
         });
-    });
+    }
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
     let mut service = AppService::new(
         router,
@@ -267,20 +270,23 @@ paths:
     let (routes, schemes, _slug) = load_spec_full(path.to_str().unwrap()).unwrap();
     let router = Arc::new(RwLock::new(Router::new(routes.clone())));
     let mut dispatcher = Dispatcher::new();
-    dispatcher.register_handler("one", |req: HandlerRequest| {
-        let _ = req.reply_tx.send(HandlerResponse {
-            status: 200,
-            headers: HashMap::new(),
-            body: json!({"one": true}),
+    // SAFETY: Test context - handlers are simple closures for testing
+    unsafe {
+        dispatcher.register_handler("one", |req: HandlerRequest| {
+            let _ = req.reply_tx.send(HandlerResponse {
+                status: 200,
+                headers: HashMap::new(),
+                body: json!({"one": true}),
+            });
         });
-    });
-    dispatcher.register_handler("two", |req: HandlerRequest| {
-        let _ = req.reply_tx.send(HandlerResponse {
-            status: 200,
-            headers: HashMap::new(),
-            body: json!({"two": true}),
+        dispatcher.register_handler("two", |req: HandlerRequest| {
+            let _ = req.reply_tx.send(HandlerResponse {
+                status: 200,
+                headers: HashMap::new(),
+                body: json!({"two": true}),
+            });
         });
-    });
+    }
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
     let mut service = AppService::new(
         router,
@@ -339,20 +345,23 @@ paths:
     let (routes, schemes, _slug) = load_spec_full(path.to_str().unwrap()).unwrap();
     let router = Arc::new(RwLock::new(Router::new(routes.clone())));
     let mut dispatcher = Dispatcher::new();
-    dispatcher.register_handler("header", |req: HandlerRequest| {
-        let _ = req.reply_tx.send(HandlerResponse {
-            status: 200,
-            headers: HashMap::new(),
-            body: json!({"header": true}),
+    // SAFETY: Test context - handlers are simple closures for testing
+    unsafe {
+        dispatcher.register_handler("header", |req: HandlerRequest| {
+            let _ = req.reply_tx.send(HandlerResponse {
+                status: 200,
+                headers: HashMap::new(),
+                body: json!({"header": true}),
+            });
         });
-    });
-    dispatcher.register_handler("cookie", |req: HandlerRequest| {
-        let _ = req.reply_tx.send(HandlerResponse {
-            status: 200,
-            headers: HashMap::new(),
-            body: json!({"cookie": true}),
+        dispatcher.register_handler("cookie", |req: HandlerRequest| {
+            let _ = req.reply_tx.send(HandlerResponse {
+                status: 200,
+                headers: HashMap::new(),
+                body: json!({"cookie": true}),
+            });
         });
-    });
+    }
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
     let mut service = AppService::new(
         router,
@@ -529,13 +538,16 @@ paths:
     let (routes, schemes, _slug) = load_spec_full(path.to_str().unwrap()).unwrap();
     let router = Arc::new(RwLock::new(Router::new(routes.clone())));
     let mut dispatcher = Dispatcher::new();
-    dispatcher.register_handler("secret", |req: HandlerRequest| {
-        let _ = req.reply_tx.send(HandlerResponse {
-            status: 200,
-            headers: HashMap::new(),
-            body: json!({"ok": true}),
+    // SAFETY: Test context - handlers are simple closures for testing
+    unsafe {
+        dispatcher.register_handler("secret", |req: HandlerRequest| {
+            let _ = req.reply_tx.send(HandlerResponse {
+                status: 200,
+                headers: HashMap::new(),
+                body: json!({"ok": true}),
+            });
         });
-    });
+    }
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
     let mut service = AppService::new(
         router,
@@ -642,13 +654,16 @@ paths:
     let (routes, schemes, _slug) = load_spec_full(path.to_str().unwrap()).unwrap();
     let router = Arc::new(RwLock::new(Router::new(routes.clone())));
     let mut dispatcher = Dispatcher::new();
-    dispatcher.register_handler("header", |req: HandlerRequest| {
-        let _ = req.reply_tx.send(HandlerResponse {
-            status: 200,
-            headers: HashMap::new(),
-            body: json!({"header": true}),
+    // SAFETY: Test context - handlers are simple closures for testing
+    unsafe {
+        dispatcher.register_handler("header", |req: HandlerRequest| {
+            let _ = req.reply_tx.send(HandlerResponse {
+                status: 200,
+                headers: HashMap::new(),
+                body: json!({"header": true}),
+            });
         });
-    });
+    }
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
     let mut service = AppService::new(
         router,
@@ -778,13 +793,16 @@ paths:
     let (routes, schemes, _slug) = load_spec_full(path.to_str().unwrap()).unwrap();
     let router = Arc::new(RwLock::new(Router::new(routes.clone())));
     let mut dispatcher = Dispatcher::new();
-    dispatcher.register_handler("secret", |req: HandlerRequest| {
-        let _ = req.reply_tx.send(HandlerResponse {
-            status: 200,
-            headers: HashMap::new(),
-            body: json!({"ok": true}),
+    // SAFETY: Test context - handlers are simple closures for testing
+    unsafe {
+        dispatcher.register_handler("secret", |req: HandlerRequest| {
+            let _ = req.reply_tx.send(HandlerResponse {
+                status: 200,
+                headers: HashMap::new(),
+                body: json!({"ok": true}),
+            });
         });
-    });
+    }
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
     let mut service = AppService::new(
         router,
