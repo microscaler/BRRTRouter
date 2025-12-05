@@ -1,0 +1,52 @@
+# Automatically merge Dependabot PRs for minor/patch updates
+# Only merges after CI passes
+
+name: Dependabot Auto-Merge
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  dependabot-automerge:
+    runs-on: ubuntu-latest
+    if: github.actor == 'dependabot[bot]'
+    steps:
+      - name: Fetch Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Auto-merge minor and patch updates
+        if: |
+          steps.metadata.outputs.update-type == 'version-update:semver-minor' ||
+          steps.metadata.outputs.update-type == 'version-update:semver-patch'
+        run: |
+          echo "Auto-merging ${{ steps.metadata.outputs.dependency-names }} (${{ steps.metadata.outputs.update-type }})"
+          gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Comment on major updates
+        if: steps.metadata.outputs.update-type == 'version-update:semver-major'
+        run: |
+          echo "Major update detected for ${{ steps.metadata.outputs.dependency-names }} - requires manual review"
+          gh pr comment "$PR_URL" --body "⚠️ **Major version update** - requires manual review before merging.
+
+          This PR updates **${{ steps.metadata.outputs.dependency-names }}** to a new major version.
+          
+          Please:
+          1. Review the changelog for breaking changes
+          2. Run tests locally: \`cargo test\`
+          3. Run performance tests: \`hey -n 10000 -c 50 http://127.0.0.1:9999/health\`
+          4. Merge manually if all looks good"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
