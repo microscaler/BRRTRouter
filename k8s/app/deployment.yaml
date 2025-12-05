@@ -143,9 +143,10 @@ spec:
               value: "http://otel-collector:4317"
             - name: OTEL_SERVICE_NAME
               value: "petstore"
-            # Increase stack size for serving large static assets (64KB instead of 16KB default)
+            # Increase stack size for safe coroutine spawning (128KB)
+            # The SafeBuilder wrapper adds some overhead, so we need more than 64KB
             - name: BRRTR_STACK_SIZE
-              value: "0x10000"
+              value: "0x20000"
             # Set worker pool size to 1 for performance testing (isolate worker pool overhead)
             - name: BRRTR_HANDLER_WORKERS
               value: "1"
