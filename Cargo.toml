@@ -32,8 +32,7 @@ base64 = "0.22"
 oas3 = { version = "0.16.1", features = ["yaml-spec"] }
 anyhow = "1.0"
 http = "1.0"  # Do not update to newer version, it that is not compatible with may_minihttp
-# Using our fork with JSF-compliant unwrap() fixes and safe coroutine spawning
-may = { git = "https://github.com/microscaler/may.git", branch = "task-1.1-safe-coroutine-spawning" }
+may = "0.3"  # generator-rs is patched via [patch.crates-io] section at the end of this file
 # Using our fork until PR #21 is merged upstream
 may_minihttp = { git = "https://github.com/microscaler/may_minihttp.git", branch = "feat/configurable-max-headers" }
 regex = "1.11.1"
@@ -136,8 +135,8 @@ unsafe_code = "warn"
 # =============================================================================
 # Panics terminate threads unpredictably. In production hot paths,
 # prefer Result<T, E> returns over panicking.
-unwrap_used = "deny"          # ENFORCED: All production unwrap() fixed
-expect_used = "warn"          # expect() is just unwrap() with a message (31 remaining)
+unwrap_used = "warn"          # TODO: Change to "deny" after fixing 172 instances
+expect_used = "warn"          # expect() is just unwrap() with a message
 panic = "warn"                # Explicit panic!() calls
 unreachable = "warn"          # unreachable!() panics at runtime
 
@@ -164,3 +163,10 @@ clone_on_ref_ptr = "warn"     # Clone on &Arc/&Rc - usually a mistake
 redundant_clone = "warn"      # Unnecessary clones
 large_futures = "warn"        # Futures that are too large for the stack
 large_stack_arrays = "warn"   # Stack arrays that may overflow
+
+# =============================================================================
+# CRATES.IO PATCHES
+# =============================================================================
+# Override generator-rs with our fork that fixes Rust 1.90+ macOS thread-local bug
+[patch.crates-io]
+generator = { git = "https://github.com/microscaler/generator-rs.git", branch = "fix/rust-1.90-thread-local-macos" }

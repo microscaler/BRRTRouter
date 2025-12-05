@@ -6,29 +6,19 @@
 //! ## Features
 //!
 //! - **Worker Pools**: Spawn N worker coroutines per handler for parallel request processing
-//! - **Unbounded Queues**: Uses may's unbounded MPMC channels for true multi-consumer support
-//! - **Load Balancing**: Workers automatically share the request queue via lock-free queue
+//! - **Unbounded Queues**: Uses may's unbounded MPSC channels for maximum throughput
+//! - **Load Balancing**: Workers automatically share the request queue
 //! - **Metrics**: Track queue depth, dispatch count, and completion count for monitoring
 //!
 //! ## Configuration
 //!
-//! - `BRRTR_HANDLER_WORKERS`: Number of worker coroutines per handler (default: 1)
-//!   NOTE: Currently defaults to 1 due to historical MPSC misuse. With MPMC fix,
-//!   higher values (4-8) should work correctly.
+//! - `BRRTR_HANDLER_WORKERS`: Number of worker coroutines per handler (default: 4)
 //! - `BRRTR_HANDLER_QUEUE_BOUND`: Queue depth limit for metrics (not enforced, default: 1024)
 //! - `BRRTR_BACKPRESSURE_MODE`: Backpressure mode setting (not used, kept for compatibility)
 //! - `BRRTR_BACKPRESSURE_TIMEOUT_MS`: Timeout setting (not used, kept for compatibility)
-//!
-//! ## IMPORTANT: MPMC vs MPSC
-//!
-//! This module previously used `may::sync::mpsc` (single consumer) with `Arc<Receiver>`,
-//! which caused severe contention when num_workers > 1. It now uses `may::sync::mpmc`
-//! (multi-consumer) which properly supports concurrent receivers via a lock-free queue.
 
 use crate::dispatcher::{HandlerRequest, HandlerResponse};
-// Use safe coroutine spawning from may::safety
-use may::safety::SafeBuilder;
-use may::sync::mpmc;
+use may::sync::mpsc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use tracing::{debug, error, info};
@@ -77,12 +67,10 @@ pub struct WorkerPoolConfig {
 impl WorkerPoolConfig {
     /// Load configuration from environment variables
     pub fn from_env() -> Self {
-        // Default to 1 for backwards compatibility; with MPMC fix,
-        // values of 4-8 should now work correctly
         let num_workers = std::env::var("BRRTR_HANDLER_WORKERS")
             .ok()
             .and_then(|s| s.parse().ok())
-            .unwrap_or(1);
+            .unwrap_or(4);
 
         let queue_bound = std::env::var("BRRTR_HANDLER_QUEUE_BOUND")
             .ok()
@@ -140,9 +128,7 @@ impl WorkerPoolConfig {
 impl Default for WorkerPoolConfig {
     fn default() -> Self {
         Self {
-            // Default to 1 for backwards compatibility; with MPMC fix,
-            // values of 4-8 should now work correctly
-            num_workers: 1,
+            num_workers: 4,
             queue_bound: 1024,
             backpressure_mode: BackpressureMode::Block,
             backpressure_timeout_ms: 50,
@@ -223,8 +209,8 @@ impl Default for WorkerPoolMetrics {
 pub struct WorkerPool {
     /// Configuration for the pool
     config: WorkerPoolConfig,
-    /// Sender for dispatching requests to workers (MPMC for multi-consumer support)
-    sender: mpmc::Sender<HandlerRequest>,
+    /// Sender for dispatching requests to workers
+    sender: mpsc::Sender<HandlerRequest>,
     /// Metrics for monitoring
     metrics: Arc<WorkerPoolMetrics>,
     /// Handler name for logging
@@ -234,23 +220,25 @@ pub struct WorkerPool {
 impl WorkerPool {
     /// Create a new worker pool with the given configuration and handler function
     ///
-    /// Uses safe coroutine spawning via `may::safety::SafeBuilder`.
+    /// # Safety
+    ///
+    /// This function is marked unsafe because it spawns coroutines using `may::coroutine::Builder::spawn()`,
+    /// which is unsafe in the `may` runtime. The caller must ensure the May coroutine runtime is properly initialized.
     ///
     /// # Arguments
     ///
     /// * `handler_name` - Name of the handler for logging and metrics
     /// * `config` - Configuration for the worker pool
     /// * `handler_fn` - Function to handle requests (must be Send + 'static)
-    pub fn new<F>(handler_name: String, config: WorkerPoolConfig, handler_fn: F) -> Self
+    pub unsafe fn new<F>(handler_name: String, config: WorkerPoolConfig, handler_fn: F) -> Self
     where
         F: Fn(HandlerRequest) + Send + 'static + Clone,
     {
-        // CRITICAL: Use MPMC (Multi-Producer Multi-Consumer) channel!
-        // The previous MPSC implementation with Arc<Receiver> caused severe contention
-        // because MPSC receivers are NOT designed to be shared. MPMC uses a lock-free
-        // crossbeam::SegQueue internally and properly supports concurrent receivers.
-        let (tx, rx) = mpmc::channel::<HandlerRequest>();
+        let (tx, rx) = mpsc::channel::<HandlerRequest>();
         let metrics = Arc::new(WorkerPoolMetrics::new());
+        
+        // Create a shared receiver wrapped in Arc for all workers to share
+        let rx = Arc::new(rx);
 
         info!(
             handler_name = %handler_name,
@@ -258,21 +246,17 @@ impl WorkerPool {
             queue_bound = config.queue_bound,
             backpressure_mode = ?config.backpressure_mode,
             stack_size = config.stack_size,
-            "Creating worker pool with MPMC channel"
+            "Creating worker pool"
         );
 
-        // Spawn worker coroutines - each gets its own clone of the MPMC receiver
+        // Spawn worker coroutines
         for worker_id in 0..config.num_workers {
-            // MPMC Receiver implements Clone properly - each worker gets its own receiver
-            // that shares the underlying lock-free queue
             let rx_clone = rx.clone();
             let handler_fn = handler_fn.clone();
             let handler_name_clone = handler_name.clone();
             let metrics_clone = metrics.clone();
 
-            // Use safe coroutine spawning with validation
-            let spawn_result = SafeBuilder::new()
-                .name(format!("{}-worker-{}", handler_name, worker_id))
+            let spawn_result = may::coroutine::Builder::new()
                 .stack_size(config.stack_size)
                 .spawn(move || {
                     debug!(
@@ -298,11 +282,9 @@ impl WorkerPool {
                                 );
 
                                 // Call the handler function with panic recovery
-                                if let Err(panic) =
-                                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                                        handler_fn(req);
-                                    }))
-                                {
+                                if let Err(panic) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                    handler_fn(req);
+                                })) {
                                     // Handler panicked - send 500 error response
                                     error!(
                                         request_id = %request_id,
@@ -373,11 +355,11 @@ impl WorkerPool {
     /// Dispatch to the unbounded channel (block mode - no actual blocking)
     fn dispatch_with_blocking(&self, req: HandlerRequest) -> Result<(), HandlerResponse> {
         let request_id = req.request_id;
-
+        
         // Simply send to the unbounded channel
         // Note: The channel is unbounded, so this will always succeed unless disconnected
         self.metrics.record_dispatch();
-
+        
         if let Err(e) = self.sender.send(req) {
             // Channel disconnected - workers are gone
             error!(
@@ -386,7 +368,7 @@ impl WorkerPool {
                 error = %e,
                 "Worker pool channel disconnected"
             );
-
+            
             return Err(HandlerResponse {
                 status: 503,
                 headers: std::collections::HashMap::new(),
@@ -398,18 +380,18 @@ impl WorkerPool {
                 }),
             });
         }
-
+        
         Ok(())
     }
 
     /// Dispatch to the unbounded channel (shed mode - no actual shedding)
     fn dispatch_with_shedding(&self, req: HandlerRequest) -> Result<(), HandlerResponse> {
         let request_id = req.request_id;
-
+        
         // Simply send to the unbounded channel
         // Note: The channel is unbounded, so this will always succeed unless disconnected
         self.metrics.record_dispatch();
-
+        
         if let Err(e) = self.sender.send(req) {
             // Channel disconnected - workers are gone
             error!(
@@ -418,7 +400,7 @@ impl WorkerPool {
                 error = %e,
                 "Worker pool channel disconnected"
             );
-
+            
             return Err(HandlerResponse {
                 status: 503,
                 headers: std::collections::HashMap::new(),
@@ -430,12 +412,12 @@ impl WorkerPool {
                 }),
             });
         }
-
+        
         Ok(())
     }
 
-    /// Get the sender for this worker pool (MPMC sender for multi-consumer support)
-    pub fn sender(&self) -> mpmc::Sender<HandlerRequest> {
+    /// Get the sender for this worker pool
+    pub fn sender(&self) -> mpsc::Sender<HandlerRequest> {
         self.sender.clone()
     }
 
@@ -456,38 +438,19 @@ mod tests {
 
     #[test]
     fn test_backpressure_mode_from_str() {
-        assert_eq!(
-            BackpressureMode::from_str("block"),
-            Some(BackpressureMode::Block)
-        );
-        assert_eq!(
-            BackpressureMode::from_str("Block"),
-            Some(BackpressureMode::Block)
-        );
-        assert_eq!(
-            BackpressureMode::from_str("BLOCK"),
-            Some(BackpressureMode::Block)
-        );
-        assert_eq!(
-            BackpressureMode::from_str("shed"),
-            Some(BackpressureMode::Shed)
-        );
-        assert_eq!(
-            BackpressureMode::from_str("Shed"),
-            Some(BackpressureMode::Shed)
-        );
-        assert_eq!(
-            BackpressureMode::from_str("SHED"),
-            Some(BackpressureMode::Shed)
-        );
+        assert_eq!(BackpressureMode::from_str("block"), Some(BackpressureMode::Block));
+        assert_eq!(BackpressureMode::from_str("Block"), Some(BackpressureMode::Block));
+        assert_eq!(BackpressureMode::from_str("BLOCK"), Some(BackpressureMode::Block));
+        assert_eq!(BackpressureMode::from_str("shed"), Some(BackpressureMode::Shed));
+        assert_eq!(BackpressureMode::from_str("Shed"), Some(BackpressureMode::Shed));
+        assert_eq!(BackpressureMode::from_str("SHED"), Some(BackpressureMode::Shed));
         assert_eq!(BackpressureMode::from_str("invalid"), None);
     }
 
     #[test]
     fn test_worker_pool_config_default() {
         let config = WorkerPoolConfig::default();
-        // Default is 1 for backwards compatibility; with MPMC fix, higher values work
-        assert_eq!(config.num_workers, 1);
+        assert_eq!(config.num_workers, 4);
         assert_eq!(config.queue_bound, 1024);
         assert_eq!(config.backpressure_mode, BackpressureMode::Block);
         assert_eq!(config.backpressure_timeout_ms, 50);
@@ -497,20 +460,20 @@ mod tests {
     #[test]
     fn test_worker_pool_metrics() {
         let metrics = WorkerPoolMetrics::new();
-
+        
         assert_eq!(metrics.get_shed_count(), 0);
         assert_eq!(metrics.get_queue_depth(), 0);
         assert_eq!(metrics.get_dispatched_count(), 0);
         assert_eq!(metrics.get_completed_count(), 0);
-
+        
         metrics.record_dispatch();
         assert_eq!(metrics.get_dispatched_count(), 1);
         assert_eq!(metrics.get_queue_depth(), 1);
-
+        
         metrics.record_completion();
         assert_eq!(metrics.get_completed_count(), 1);
         assert_eq!(metrics.get_queue_depth(), 0);
-
+        
         metrics.record_shed();
         assert_eq!(metrics.get_shed_count(), 1);
     }

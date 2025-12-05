@@ -1,16 +1,12 @@
 #[allow(unused_imports)]
 use crate::echo::echo_handler;
-use crate::ids::RequestId;
 use crate::router::RouteMatch;
 use crate::spec::RouteMeta;
 use crate::worker_pool::{WorkerPool, WorkerPoolConfig};
 use http::Method;
-// Use safe coroutine spawning from may::safety
-use may::safety::SafeBuilder;
-// CRITICAL: Use MPMC for all handler channels to support multi-worker scenarios
-// MPMC works with single consumers too, so this is a compatible superset of MPSC
-use may::sync::mpmc;
-use may::sync::mpsc; // Keep for reply channels (single consumer)
+use crate::ids::RequestId;
+use may::coroutine;
+use may::sync::mpsc;
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -69,8 +65,7 @@ pub struct HandlerResponse {
 }
 
 /// Type alias for a channel sender that dispatches requests to a handler
-/// Uses MPMC to support multi-worker handler pools (MPMC works with single consumers too)
-pub type HandlerSender = mpmc::Sender<HandlerRequest>;
+pub type HandlerSender = mpsc::Sender<HandlerRequest>;
 
 /// Dispatcher that routes requests to registered handler coroutines
 ///
@@ -109,13 +104,13 @@ impl Dispatcher {
 
     /// Add a handler sender for the given route metadata. This allows handlers
     /// to be registered after the dispatcher has been created.
-    ///
+    /// 
     /// **IMPORTANT**: If a handler with the same name already exists, it will be
     /// replaced. The old sender will be dropped, which closes its channel and
     /// causes the old handler coroutine to exit when it tries to receive.
     pub fn add_route(&mut self, route: RouteMeta, sender: HandlerSender) {
         let handler_name = route.handler_name;
-
+        
         // Check if we're replacing an existing handler
         if let Some(old_sender) = self.handlers.remove(&handler_name) {
             // Drop the old sender explicitly to ensure the channel closes
@@ -126,13 +121,13 @@ impl Dispatcher {
                 "Replaced existing handler - old coroutine will exit"
             );
         }
-
+        
         info!(
             handler_name = %handler_name,
             total_handlers = self.handlers.len() + 1,
             "Handler registered successfully"
         );
-
+        
         self.handlers.insert(handler_name, sender);
     }
 
@@ -174,13 +169,11 @@ impl Dispatcher {
     ///
     /// Handler panics are caught and converted to 500 error responses automatically.
     ///
-    /// Uses safe coroutine spawning via `may::safety::SafeBuilder`.
-    pub fn register_handler<F>(&mut self, name: &str, handler_fn: F)
+    pub unsafe fn register_handler<F>(&mut self, name: &str, handler_fn: F)
     where
         F: Fn(HandlerRequest) + Send + 'static + Clone,
     {
-        // Use MPMC channel to support potential multi-worker scaling
-        let (tx, rx) = mpmc::channel::<HandlerRequest>();
+        let (tx, rx) = mpsc::channel::<HandlerRequest>();
         let name = name.to_string();
         let handler_name_for_logging = name.clone();
 
@@ -197,9 +190,7 @@ impl Dispatcher {
             })
             .unwrap_or(0x10000); // 64KB default instead of 16KB
 
-        // Use safe coroutine spawning with validation
-        let spawn_result = SafeBuilder::new()
-            .name(&name)
+        let spawn_result = coroutine::Builder::new()
             .stack_size(stack_size)
             .spawn(move || {
                 // H1: Handler coroutine start
@@ -306,9 +297,7 @@ impl Dispatcher {
     /// - `BRRTR_HANDLER_QUEUE_BOUND`: Maximum queue depth (default: 1024)
     /// - `BRRTR_BACKPRESSURE_MODE`: "block" or "shed" (default: "block")
     /// - `BRRTR_BACKPRESSURE_TIMEOUT_MS`: Timeout for block mode (default: 50ms)
-    ///
-    /// Uses safe coroutine spawning via `may::safety::SafeBuilder`.
-    pub fn register_handler_with_pool<F>(&mut self, name: &str, handler_fn: F)
+    pub unsafe fn register_handler_with_pool<F>(&mut self, name: &str, handler_fn: F)
     where
         F: Fn(HandlerRequest) + Send + 'static + Clone,
     {
@@ -318,17 +307,21 @@ impl Dispatcher {
 
     /// Register a handler with a worker pool using custom configuration
     ///
-    /// Uses safe coroutine spawning via `may::safety::SafeBuilder`.
-    pub fn register_handler_with_pool_config<F>(
+    /// # Safety
+    ///
+    /// This function is marked unsafe because it spawns coroutines using `may::coroutine::Builder::spawn()`,
+    /// which is unsafe in the `may` runtime. The caller must ensure the May coroutine runtime is properly initialized.
+    pub unsafe fn register_handler_with_pool_config<F>(
         &mut self,
         name: &str,
         handler_fn: F,
         config: WorkerPoolConfig,
-    ) where
+    )
+    where
         F: Fn(HandlerRequest) + Send + 'static + Clone,
     {
         let name = name.to_string();
-
+        
         // Check if we're replacing an existing handler
         if let Some(old_sender) = self.handlers.remove(&name) {
             drop(old_sender);
@@ -337,16 +330,16 @@ impl Dispatcher {
                 "Replaced existing handler with worker pool - old coroutine will exit"
             );
         }
-
+        
         // Remove any existing worker pool
         if let Some(old_pool) = self.worker_pools.remove(&name) {
             drop(old_pool);
         }
-
+        
         // Create worker pool
         let pool = WorkerPool::new(name.clone(), config, handler_fn);
         let sender = pool.sender();
-
+        
         // Store both the sender and the pool
         self.handlers.insert(name.clone(), sender);
         self.worker_pools.insert(name, Arc::new(pool));
@@ -531,7 +524,7 @@ impl Dispatcher {
                         error = %e,
                         "Handler channel closed - handler may have crashed"
                     );
-
+                    
                     // Return a 503 Service Unavailable response instead of None
                     // This prevents connection drops and indicates server issue
                     return Some(HandlerResponse {

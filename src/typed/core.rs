@@ -1,12 +1,9 @@
 // typed.rs
 #[allow(unused_imports)]
-use crate::dispatcher::{Dispatcher, HandlerRequest, HandlerResponse, HandlerSender};
+use crate::dispatcher::{Dispatcher, HandlerRequest, HandlerResponse};
 use anyhow::Result;
 use http::Method;
-// Use safe coroutine spawning from may::safety
-use may::safety::SafeBuilder;
-// Use MPMC for handler channels to support multi-worker pools
-use may::sync::mpmc;
+use may::sync::mpsc;
 use serde::Serialize;
 use serde_json;
 use std::collections::HashMap;
@@ -45,13 +42,15 @@ fn get_stack_size_with_overrides(handler_name: &str, stack_size_bytes: usize) ->
         })
         .or_else(|| {
             // Try global override
-            std::env::var("BRRTR_STACK_SIZE").ok().and_then(|s| {
-                if let Some(hex) = s.strip_prefix("0x") {
-                    usize::from_str_radix(hex, 16).ok()
-                } else {
-                    s.parse().ok()
-                }
-            })
+            std::env::var("BRRTR_STACK_SIZE")
+                .ok()
+                .and_then(|s| {
+                    if let Some(hex) = s.strip_prefix("0x") {
+                        usize::from_str_radix(hex, 16).ok()
+                    } else {
+                        s.parse().ok()
+                    }
+                })
         })
         .unwrap_or(stack_size_bytes);
 
@@ -105,22 +104,19 @@ pub trait TypedHandlerFor<T>: Sized {
 
 /// Spawn a typed handler coroutine and return a sender to communicate with it.
 ///
-/// This function uses safe coroutine spawning via `may::safety::SafeBuilder`,
-/// providing compile-time and runtime safety checks for coroutine execution.
+/// # Safety
 ///
-/// # Handler Requirements
-///
-/// The handler must:
-/// - Implement the `Handler` trait with typed request/response types
-/// - Be safe to execute in a concurrent context
-/// - Properly handle all requests without panicking
-/// - Send a response for every request to avoid resource leaks
-pub fn spawn_typed<H>(handler: H) -> HandlerSender
+/// This function is unsafe because it spawns a coroutine that will run indefinitely
+/// and handle requests. The caller must ensure that:
+/// - The handler is safe to execute in a concurrent context
+/// - The handler properly handles all requests without panicking
+/// - The handler sends a response for every request to avoid resource leaks
+/// - The May coroutine runtime is properly initialized
+pub unsafe fn spawn_typed<H>(handler: H) -> mpsc::Sender<HandlerRequest>
 where
     H: Handler + Send + 'static,
 {
-    // Use MPMC channel to support potential multi-worker scaling
-    let (tx, rx) = mpmc::channel::<HandlerRequest>();
+    let (tx, rx) = mpsc::channel::<HandlerRequest>();
 
     // Use a larger default stack size to prevent stack overflows
     // 64KB is more reasonable for complex handlers
@@ -135,101 +131,102 @@ where
         })
         .unwrap_or(0x10000); // 64KB default instead of 16KB
 
-    // Use safe coroutine spawning with validation
-    let spawn_result = SafeBuilder::new().stack_size(stack_size).spawn(move || {
-        let handler = handler;
-        // Main event loop: process requests until channel closes
-        for req in rx.iter() {
-            // Extract lightweight fields we need outside the panic-catching closure.
-            // These are cheap clones (sender clones or small strings) and are ok to clone.
-            let reply_tx_outer = req.reply_tx.clone();
-            let handler_name_outer = req.handler_name.clone();
-            let request_id = req.request_id;
+    let spawn_result = may::coroutine::Builder::new()
+        .stack_size(stack_size)
+        .spawn(move || {
+            let handler = handler;
+            // Main event loop: process requests until channel closes
+            for req in rx.iter() {
+                // Extract lightweight fields we need outside the panic-catching closure.
+                // These are cheap clones (sender clones or small strings) and are ok to clone.
+                let reply_tx_outer = req.reply_tx.clone();
+                let handler_name_outer = req.handler_name.clone();
+                let request_id = req.request_id;
 
-            // COMPLEX PANIC HANDLING: Wrap entire request processing in catch_unwind
-            // This prevents a panicking handler from killing the entire coroutine
-            // and allows us to send a 500 error response instead
-            //
-            // KEY OPTIMIZATION: Move the owned `req` into the closure to avoid cloning it.
-            // Using a move closure ensures `req` is consumed instead of cloned for each request.
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe({
-                // Capture the outer clones into the closure scope so the closure can be moved
-                // without pulling `req` by reference.
-                let reply_tx_outer = reply_tx_outer.clone();
-                let handler = &handler; // Borrow handler so it can be reused across iterations
-                move || {
-                    // Clone reply sender for inner scope use (cheap)
-                    let reply_tx_inner = reply_tx_outer.clone();
+                // COMPLEX PANIC HANDLING: Wrap entire request processing in catch_unwind
+                // This prevents a panicking handler from killing the entire coroutine
+                // and allows us to send a 500 error response instead
+                //
+                // KEY OPTIMIZATION: Move the owned `req` into the closure to avoid cloning it.
+                // Using a move closure ensures `req` is consumed instead of cloned for each request.
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe({
+                    // Capture the outer clones into the closure scope so the closure can be moved
+                    // without pulling `req` by reference.
+                    let reply_tx_outer = reply_tx_outer.clone();
+                    let handler = &handler; // Borrow handler so it can be reused across iterations
+                    move || {
+                        // Clone reply sender for inner scope use (cheap)
+                        let reply_tx_inner = reply_tx_outer.clone();
 
-                    // Extract metadata fields before consuming req in try_from
-                    let method = req.method.clone();
-                    let path = req.path.clone();
-                    let handler_name = req.handler_name.clone();
-                    let path_params = req.path_params.clone();
-                    let query_params = req.query_params.clone();
+                        // Extract metadata fields before consuming req in try_from
+                        let method = req.method.clone();
+                        let path = req.path.clone();
+                        let handler_name = req.handler_name.clone();
+                        let path_params = req.path_params.clone();
+                        let query_params = req.query_params.clone();
 
-                    // STEP 1: Type conversion - consume the HandlerRequest to produce handler data
-                    // This intentionally consumes `req` (no req.clone()) to avoid heavy copies.
-                    let data = match H::Request::try_from(req) {
-                        Ok(v) => v,
-                        Err(err) => {
-                            // Validation failed - send 400 Bad Request
-                            let _ = reply_tx_inner.send(HandlerResponse {
-                                status: 400,
-                                headers: HashMap::new(),
-                                body: serde_json::json!({
-                                    "error": "Invalid request data",
-                                    "message": err.to_string(),
+                        // STEP 1: Type conversion - consume the HandlerRequest to produce handler data
+                        // This intentionally consumes `req` (no req.clone()) to avoid heavy copies.
+                        let data = match H::Request::try_from(req) {
+                            Ok(v) => v,
+                            Err(err) => {
+                                // Validation failed - send 400 Bad Request
+                                let _ = reply_tx_inner.send(HandlerResponse {
+                                    status: 400,
+                                    headers: HashMap::new(),
+                                    body: serde_json::json!({
+                                        "error": "Invalid request data",
+                                        "message": err.to_string(),
+                                        "request_id": request_id.to_string(),
+                                    }),
+                                });
+                                return; // Early return from closure
+                            }
+                        };
+
+                        // STEP 2: Build typed request with validated data
+                        let typed_req = TypedHandlerRequest {
+                            method,
+                            path,
+                            handler_name,
+                            path_params,
+                            query_params,
+                            data, // Strongly-typed request data
+                        };
+
+                        // STEP 3: Call the actual handler
+                        let result = handler.handle(typed_req);
+
+                        // STEP 4: Serialize and send response
+                        let _ = reply_tx_inner.send(HandlerResponse {
+                            status: 200,
+                            headers: HashMap::new(),
+                            body: serde_json::to_value(result).unwrap_or_else(
+                                |e| serde_json::json!({
+                                    "error": "Failed to serialize response",
+                                    "details": e.to_string(),
                                     "request_id": request_id.to_string(),
                                 }),
-                            });
-                            return; // Early return from closure
-                        }
-                    };
+                            ),
+                        });
+                    }
+                }));
 
-                    // STEP 2: Build typed request with validated data
-                    let typed_req = TypedHandlerRequest {
-                        method,
-                        path,
-                        handler_name,
-                        path_params,
-                        query_params,
-                        data, // Strongly-typed request data
-                    };
-
-                    // STEP 3: Call the actual handler
-                    let result = handler.handle(typed_req);
-
-                    // STEP 4: Serialize and send response
-                    let _ = reply_tx_inner.send(HandlerResponse {
-                        status: 200,
+                // PANIC RECOVERY: If handler panicked, send 500 error
+                if let Err(panic) = result {
+                    let _ = reply_tx_outer.send(HandlerResponse {
+                        status: 500,
                         headers: HashMap::new(),
-                        body: serde_json::to_value(result).unwrap_or_else(|e| {
-                            serde_json::json!({
-                                "error": "Failed to serialize response",
-                                "details": e.to_string(),
-                                "request_id": request_id.to_string(),
-                            })
+                        body: serde_json::json!({
+                            "error": "Handler panicked",
+                            "details": format!("{:?}", panic),
+                            "request_id": request_id.to_string(),
                         }),
                     });
+                    eprintln!("Handler '{handler_name_outer}' panicked: {panic:?}");
                 }
-            }));
-
-            // PANIC RECOVERY: If handler panicked, send 500 error
-            if let Err(panic) = result {
-                let _ = reply_tx_outer.send(HandlerResponse {
-                    status: 500,
-                    headers: HashMap::new(),
-                    body: serde_json::json!({
-                        "error": "Handler panicked",
-                        "details": format!("{:?}", panic),
-                        "request_id": request_id.to_string(),
-                    }),
-                });
-                eprintln!("Handler '{handler_name_outer}' panicked: {panic:?}");
             }
-        }
-    });
+        });
 
     // Handle coroutine spawn failures gracefully
     match spawn_result {
@@ -251,7 +248,13 @@ where
 /// Creates a coroutine that processes incoming requests with automatic type conversion
 /// and validation. Panics in handlers are caught and converted to 500 error responses.
 ///
-/// Uses safe coroutine spawning via `may::safety::SafeBuilder`.
+/// # Safety
+///
+/// This function is marked unsafe because it calls `may::coroutine::Builder::spawn()`,
+/// which is unsafe in the `may` runtime. The unsafety comes from the coroutine runtime's
+/// requirements, not from this function's logic.
+///
+/// The caller must ensure the May coroutine runtime is properly initialized.
 ///
 /// # Arguments
 ///
@@ -269,7 +272,10 @@ where
 ///
 /// Handler panics are automatically caught and converted to 500 error responses.
 /// The coroutine will continue processing subsequent requests.
-pub fn spawn_typed_with_stack_size<H>(handler: H, stack_size_bytes: usize) -> HandlerSender
+pub unsafe fn spawn_typed_with_stack_size<H>(
+    handler: H,
+    stack_size_bytes: usize,
+) -> mpsc::Sender<HandlerRequest>
 where
     H: Handler + Send + 'static,
 {
@@ -282,17 +288,18 @@ where
 /// `BRRTR_STACK_SIZE__<HANDLER_NAME>` when a handler name is provided.
 /// The stack size can be further overridden at runtime using environment variables.
 ///
-/// Uses safe coroutine spawning via `may::safety::SafeBuilder`.
-pub fn spawn_typed_with_stack_size_and_name<H>(
+/// # Safety
+///
+/// Same safety requirements as `spawn_typed_with_stack_size`.
+pub unsafe fn spawn_typed_with_stack_size_and_name<H>(
     handler: H,
     stack_size_bytes: usize,
     handler_name: Option<&str>,
-) -> HandlerSender
+) -> mpsc::Sender<HandlerRequest>
 where
     H: Handler + Send + 'static,
 {
-    // Use MPMC channel to support potential multi-worker scaling
-    let (tx, rx) = mpmc::channel::<HandlerRequest>();
+    let (tx, rx) = mpsc::channel::<HandlerRequest>();
 
     // Apply environment variable overrides and clamping
     // Always use get_stack_size_with_overrides to ensure consistent clamping behavior
@@ -300,106 +307,102 @@ where
     let effective_name = handler_name.unwrap_or("unknown");
     let stack_size = get_stack_size_with_overrides(effective_name, stack_size_bytes);
 
-    // Use safe coroutine spawning with validation
-    let mut builder = SafeBuilder::new().stack_size(stack_size);
-    if let Some(name) = handler_name {
-        builder = builder.name(name);
-    }
+    let spawn_result = may::coroutine::Builder::new()
+        .stack_size(stack_size)
+        .spawn(move || {
+            let handler = handler;
+            // Main event loop: process requests until channel closes
+            for req in rx.iter() {
+                // Extract lightweight fields we need outside the panic-catching closure.
+                // These are cheap clones (sender clones or small strings) and are ok to clone.
+                let reply_tx_outer = req.reply_tx.clone();
+                let handler_name_outer = req.handler_name.clone();
+                let request_id = req.request_id;
 
-    let spawn_result = builder.spawn(move || {
-        let handler = handler;
-        // Main event loop: process requests until channel closes
-        for req in rx.iter() {
-            // Extract lightweight fields we need outside the panic-catching closure.
-            // These are cheap clones (sender clones or small strings) and are ok to clone.
-            let reply_tx_outer = req.reply_tx.clone();
-            let handler_name_outer = req.handler_name.clone();
-            let request_id = req.request_id;
+                // COMPLEX PANIC HANDLING: Wrap entire request processing in catch_unwind
+                // This prevents a panicking handler from killing the entire coroutine
+                // and allows us to send a 500 error response instead
+                //
+                // KEY OPTIMIZATION: Move the owned `req` into the closure to avoid cloning it.
+                // Using a move closure ensures `req` is consumed instead of cloned for each request.
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe({
+                    // Capture the outer clones into the closure scope so the closure can be moved
+                    // without pulling `req` by reference.
+                    let reply_tx_outer = reply_tx_outer.clone();
+                    let handler = &handler; // Borrow handler so it can be reused across iterations
+                    move || {
+                        // Clone reply sender for inner scope use (cheap)
+                        let reply_tx_inner = reply_tx_outer.clone();
 
-            // COMPLEX PANIC HANDLING: Wrap entire request processing in catch_unwind
-            // This prevents a panicking handler from killing the entire coroutine
-            // and allows us to send a 500 error response instead
-            //
-            // KEY OPTIMIZATION: Move the owned `req` into the closure to avoid cloning it.
-            // Using a move closure ensures `req` is consumed instead of cloned for each request.
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe({
-                // Capture the outer clones into the closure scope so the closure can be moved
-                // without pulling `req` by reference.
-                let reply_tx_outer = reply_tx_outer.clone();
-                let handler = &handler; // Borrow handler so it can be reused across iterations
-                move || {
-                    // Clone reply sender for inner scope use (cheap)
-                    let reply_tx_inner = reply_tx_outer.clone();
+                        // Extract metadata fields before consuming req in try_from
+                        let method = req.method.clone();
+                        let path = req.path.clone();
+                        let handler_name = req.handler_name.clone();
+                        let path_params = req.path_params.clone();
+                        let query_params = req.query_params.clone();
 
-                    // Extract metadata fields before consuming req in try_from
-                    let method = req.method.clone();
-                    let path = req.path.clone();
-                    let handler_name = req.handler_name.clone();
-                    let path_params = req.path_params.clone();
-                    let query_params = req.query_params.clone();
+                        // STEP 1: Type conversion - consume the HandlerRequest to produce handler data
+                        // This intentionally consumes `req` (no req.clone()) to avoid heavy copies.
+                        let data = match H::Request::try_from(req) {
+                            Ok(v) => v,
+                            Err(err) => {
+                                // Validation failed - send 400 Bad Request
+                                let _ = reply_tx_inner.send(HandlerResponse {
+                                    status: 400,
+                                    headers: HashMap::new(),
+                                    body: serde_json::json!({
+                                        "error": "Invalid request data",
+                                        "message": err.to_string(),
+                                        "request_id": request_id.to_string(),
+                                    }),
+                                });
+                                return; // Early return from closure
+                            }
+                        };
 
-                    // STEP 1: Type conversion - consume the HandlerRequest to produce handler data
-                    // This intentionally consumes `req` (no req.clone()) to avoid heavy copies.
-                    let data = match H::Request::try_from(req) {
-                        Ok(v) => v,
-                        Err(err) => {
-                            // Validation failed - send 400 Bad Request
-                            let _ = reply_tx_inner.send(HandlerResponse {
-                                status: 400,
-                                headers: HashMap::new(),
-                                body: serde_json::json!({
-                                    "error": "Invalid request data",
-                                    "message": err.to_string(),
+                        // STEP 2: Build typed request with validated data
+                        let typed_req = TypedHandlerRequest {
+                            method,
+                            path,
+                            handler_name,
+                            path_params,
+                            query_params,
+                            data, // Strongly-typed request data
+                        };
+
+                        // STEP 3: Call the actual handler
+                        let result = handler.handle(typed_req);
+
+                        // STEP 4: Serialize and send response
+                        let _ = reply_tx_inner.send(HandlerResponse {
+                            status: 200,
+                            headers: HashMap::new(),
+                            body: serde_json::to_value(result).unwrap_or_else(
+                                |e| serde_json::json!({
+                                    "error": "Failed to serialize response",
+                                    "details": e.to_string(),
                                     "request_id": request_id.to_string(),
                                 }),
-                            });
-                            return; // Early return from closure
-                        }
-                    };
+                            ),
+                        });
+                    }
+                }));
 
-                    // STEP 2: Build typed request with validated data
-                    let typed_req = TypedHandlerRequest {
-                        method,
-                        path,
-                        handler_name,
-                        path_params,
-                        query_params,
-                        data, // Strongly-typed request data
-                    };
-
-                    // STEP 3: Call the actual handler
-                    let result = handler.handle(typed_req);
-
-                    // STEP 4: Serialize and send response
-                    let _ = reply_tx_inner.send(HandlerResponse {
-                        status: 200,
+                // PANIC RECOVERY: If handler panicked, send 500 error
+                if let Err(panic) = result {
+                    let _ = reply_tx_outer.send(HandlerResponse {
+                        status: 500,
                         headers: HashMap::new(),
-                        body: serde_json::to_value(result).unwrap_or_else(|e| {
-                            serde_json::json!({
-                                "error": "Failed to serialize response",
-                                "details": e.to_string(),
-                                "request_id": request_id.to_string(),
-                            })
+                        body: serde_json::json!({
+                            "error": "Handler panicked",
+                            "details": format!("{:?}", panic),
+                            "request_id": request_id.to_string(),
                         }),
                     });
+                    eprintln!("Handler '{handler_name_outer}' panicked: {panic:?}");
                 }
-            }));
-
-            // PANIC RECOVERY: If handler panicked, send 500 error
-            if let Err(panic) = result {
-                let _ = reply_tx_outer.send(HandlerResponse {
-                    status: 500,
-                    headers: HashMap::new(),
-                    body: serde_json::json!({
-                        "error": "Handler panicked",
-                        "details": format!("{:?}", panic),
-                        "request_id": request_id.to_string(),
-                    }),
-                });
-                eprintln!("Handler '{handler_name_outer}' panicked: {panic:?}");
             }
-        }
-    });
+        });
 
     // Handle coroutine spawn failures gracefully
     match spawn_result {
@@ -472,29 +475,24 @@ impl Dispatcher {
     /// - Implement the `Handler` trait with typed request/response types
     /// - Be safe to execute in a concurrent context
     /// - Avoid long-running synchronous operations
-    ///
-    /// Uses safe coroutine spawning via `may::safety::SafeBuilder`.
-    pub fn register_typed<H>(&mut self, name: &str, handler: H)
+    pub unsafe fn register_typed<H>(&mut self, name: &str, handler: H)
     where
         H: Handler + Send + 'static,
     {
         let name = name.to_string();
-
+        
         // Check if we're replacing an existing handler
         if let Some(old_sender) = self.handlers.remove(&name) {
             // Drop the old sender to close its channel and stop the old coroutine
             drop(old_sender);
-            eprintln!(
-                "Warning: Replacing existing typed handler '{}' - old coroutine will exit",
-                name
-            );
+            eprintln!("Warning: Replacing existing typed handler '{}' - old coroutine will exit", name);
         }
-
+        
         // Also clean up any existing worker pool for this handler to prevent resource leaks
         if let Some(old_pool) = self.worker_pools.remove(&name) {
             drop(old_pool);
         }
-
+        
         let tx = spawn_typed(handler);
         self.handlers.insert(name, tx);
     }
@@ -506,7 +504,13 @@ impl Dispatcher {
     /// incoming requests against the handler's expected type and converts them. Invalid
     /// requests receive a 400 Bad Request response automatically.
     ///
-    /// Uses safe coroutine spawning via `may::safety::SafeBuilder`.
+    /// # Safety
+    ///
+    /// This function is marked unsafe because it internally calls `spawn_typed_with_stack_size()`
+    /// which uses `may::coroutine::Builder::spawn()`. The unsafety comes from the coroutine
+    /// runtime's requirements.
+    ///
+    /// The caller must ensure the May coroutine runtime is properly initialized.
     ///
     /// # Arguments
     ///
@@ -520,31 +524,29 @@ impl Dispatcher {
     /// - Implement the `Handler` trait with typed request/response types
     /// - Be safe to execute in a concurrent context
     /// - Avoid long-running synchronous operations
-    pub fn register_typed_with_stack_size<H>(
+    pub unsafe fn register_typed_with_stack_size<H>(
         &mut self,
         name: &str,
         handler: H,
         stack_size_bytes: usize,
-    ) where
+    )
+    where
         H: Handler + Send + 'static,
     {
         let name = name.to_string();
-
+        
         // Check if we're replacing an existing handler
         if let Some(old_sender) = self.handlers.remove(&name) {
             // Drop the old sender to close its channel and stop the old coroutine
             drop(old_sender);
-            eprintln!(
-                "Warning: Replacing existing typed handler '{}' - old coroutine will exit",
-                name
-            );
+            eprintln!("Warning: Replacing existing typed handler '{}' - old coroutine will exit", name);
         }
-
+        
         // Also clean up any existing worker pool for this handler to prevent resource leaks
         if let Some(old_pool) = self.worker_pools.remove(&name) {
             drop(old_pool);
         }
-
+        
         // Use the internal function with handler name for per-handler env var support
         let tx = spawn_typed_with_stack_size_and_name(handler, stack_size_bytes, Some(&name));
         self.handlers.insert(name, tx);
@@ -558,7 +560,8 @@ impl Dispatcher {
     ///
     /// # Safety
     ///
-    /// Uses safe coroutine spawning via `may::safety::SafeBuilder`.
+    /// This function is marked unsafe because it spawns coroutines. The caller must ensure
+    /// the May coroutine runtime is properly initialized.
     ///
     /// # Configuration
     ///
@@ -567,20 +570,20 @@ impl Dispatcher {
     /// - `BRRTR_HANDLER_QUEUE_BOUND`: Maximum queue depth (default: 1024)
     /// - `BRRTR_BACKPRESSURE_MODE`: "block" or "shed" (default: "block")
     /// - `BRRTR_BACKPRESSURE_TIMEOUT_MS`: Timeout for block mode (default: 50ms)
-    pub fn register_typed_with_pool<H>(&mut self, name: &str, handler: H)
+    pub unsafe fn register_typed_with_pool<H>(&mut self, name: &str, handler: H)
     where
         H: Handler + Send + 'static + Clone,
     {
         use crate::worker_pool::WorkerPoolConfig;
-
+        
         let config = WorkerPoolConfig::from_env();
-
+        
         // Create a closure that wraps the typed handler
         let handler_fn = move |req: HandlerRequest| {
             let handler = handler.clone();
             let reply_tx = req.reply_tx.clone();
             let request_id = req.request_id;
-
+            
             // Try to convert the request
             let data = match H::Request::try_from(req.clone()) {
                 Ok(v) => v,
@@ -597,20 +600,20 @@ impl Dispatcher {
                     return;
                 }
             };
-
-            // Build typed request - extract from req (which is no longer needed after this)
+            
+            // Build typed request
             let typed_req = TypedHandlerRequest {
-                method: req.method,
-                path: req.path,
-                handler_name: req.handler_name,
-                path_params: req.path_params,
-                query_params: req.query_params,
+                method: req.method.clone(),
+                path: req.path.clone(),
+                handler_name: req.handler_name.clone(),
+                path_params: req.path_params.clone(),
+                query_params: req.query_params.clone(),
                 data,
             };
-
+            
             // Call the handler
             let result = handler.handle(typed_req);
-
+            
             // Send response
             let _ = reply_tx.send(HandlerResponse {
                 status: 200,
@@ -624,7 +627,7 @@ impl Dispatcher {
                 }),
             });
         };
-
+        
         self.register_handler_with_pool_config(name, handler_fn, config);
     }
 }
@@ -652,13 +655,13 @@ mod tests {
         let _guard = ENV_MUTEX.lock().unwrap();
         let handler = "per_handler_test";
         clean_stack_env_vars(handler);
-
+        
         // Set per-handler override
         std::env::set_var("BRRTR_STACK_SIZE__PER_HANDLER_TEST", "32768");
-
+        
         let stack_size = get_stack_size_with_overrides(handler, 16384);
         assert_eq!(stack_size, 32768);
-
+        
         clean_stack_env_vars(handler);
     }
 
@@ -667,13 +670,13 @@ mod tests {
         let _guard = ENV_MUTEX.lock().unwrap();
         let handler = "global_override_test";
         clean_stack_env_vars(handler);
-
+        
         // Set global override
         std::env::set_var("BRRTR_STACK_SIZE", "49152");
-
+        
         let stack_size = get_stack_size_with_overrides(handler, 16384);
         assert_eq!(stack_size, 49152);
-
+        
         clean_stack_env_vars(handler);
     }
 
@@ -682,15 +685,15 @@ mod tests {
         let _guard = ENV_MUTEX.lock().unwrap();
         let handler = "precedence_test";
         clean_stack_env_vars(handler);
-
+        
         // Set both overrides
         std::env::set_var("BRRTR_STACK_SIZE__PRECEDENCE_TEST", "32768");
         std::env::set_var("BRRTR_STACK_SIZE", "49152");
-
+        
         let stack_size = get_stack_size_with_overrides(handler, 16384);
         // Per-handler should take precedence
         assert_eq!(stack_size, 32768);
-
+        
         clean_stack_env_vars(handler);
     }
 
@@ -699,13 +702,13 @@ mod tests {
         let _guard = ENV_MUTEX.lock().unwrap();
         let handler = "hex_format_test";
         clean_stack_env_vars(handler);
-
+        
         // Test hex format
         std::env::set_var("BRRTR_STACK_SIZE__HEX_FORMAT_TEST", "0x10000");
-
+        
         let stack_size = get_stack_size_with_overrides(handler, 16384);
         assert_eq!(stack_size, 65536);
-
+        
         clean_stack_env_vars(handler);
     }
 
@@ -714,21 +717,21 @@ mod tests {
         let _guard = ENV_MUTEX.lock().unwrap();
         let handler = "clamping_test";
         clean_stack_env_vars(handler);
-
+        
         // Set custom min/max
         std::env::set_var("BRRTR_STACK_MIN_BYTES", "32768");
         std::env::set_var("BRRTR_STACK_MAX_BYTES", "65536");
-
+        
         // Test clamping to min
         std::env::set_var("BRRTR_STACK_SIZE__CLAMPING_TEST", "16384");
         let stack_size = get_stack_size_with_overrides(handler, 16384);
         assert_eq!(stack_size, 32768);
-
+        
         // Test clamping to max
         std::env::set_var("BRRTR_STACK_SIZE__CLAMPING_TEST", "131072");
         let stack_size = get_stack_size_with_overrides(handler, 131072);
         assert_eq!(stack_size, 65536);
-
+        
         clean_stack_env_vars(handler);
     }
 
@@ -737,11 +740,11 @@ mod tests {
         let _guard = ENV_MUTEX.lock().unwrap();
         let handler = "no_override_test";
         clean_stack_env_vars(handler);
-
+        
         // No overrides set, should return default
         let stack_size = get_stack_size_with_overrides(handler, 16384);
         assert_eq!(stack_size, 16384);
-
+        
         clean_stack_env_vars(handler);
     }
 }

@@ -6,10 +6,8 @@ use crate::{
     server::{AppService, HttpServer},
 };
 use clap::{Parser, Subcommand, ValueEnum};
-// Use safe coroutine spawning from may::safety
-use may::safety::SafeBuilder;
-// Use MPMC for handler channels to support multi-worker pools
-use may::sync::mpmc;
+use may::coroutine;
+use may::sync::mpsc;
 use std::io;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
@@ -53,7 +51,7 @@ pub enum Commands {
         only: Option<Vec<OnlyPart>>,
     },
     /// Generate implementation stubs in impl crate
-    ///
+    /// 
     /// Creates stub files for controllers in the {component}_impl crate.
     /// Stubs are NOT auto-regenerated - they are user-owned once created.
     /// Use --force to overwrite existing stubs (per-path basis).
@@ -61,15 +59,15 @@ pub enum Commands {
         /// Path to the OpenAPI specification file (YAML or JSON)
         #[arg(short, long)]
         spec: PathBuf,
-
+        
         /// Output directory for impl crate (e.g., crates/bff_impl)
         #[arg(short, long)]
         output: PathBuf,
-
+        
         /// Generate stub for specific handler only (per-path basis)
         #[arg(short, long)]
         path: Option<String>,
-
+        
         /// Overwrite existing stub files (required to regenerate)
         #[arg(short, long, default_value_t = false)]
         force: bool,
@@ -150,8 +148,7 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
             dry_run,
             only,
         } => {
-            let spec_path = spec
-                .to_str()
+            let spec_path = spec.to_str()
                 .ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 in spec path"))?;
             let (_routes, _slug) = load_spec(spec_path)?;
             let scope = map_only_to_scope(only.as_deref());
@@ -191,10 +188,9 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
             errors_only,
         } => {
             let issues = crate::linter::lint_spec(spec.as_path())?;
-
+            
             if *errors_only {
-                let errors: Vec<_> = issues
-                    .iter()
+                let errors: Vec<_> = issues.iter()
                     .filter(|i| i.severity == crate::linter::LintSeverity::Error)
                     .cloned()
                     .collect();
@@ -208,35 +204,30 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
                     crate::linter::fail_if_errors(&issues);
                 }
             }
-
+            
             Ok(())
         }
         Commands::Serve { spec, watch, addr } => {
-            let spec_path = spec
-                .to_str()
+            let spec_path = spec.to_str()
                 .ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 in spec path"))?;
             let (routes, schemes, _slug) = crate::spec::load_spec_full(spec_path)?;
             let router = Arc::new(RwLock::new(Router::new(routes.clone())));
             let mut dispatcher = Dispatcher::new();
             for r in &routes {
-                let (tx, rx) = mpmc::channel();
-                // Use safe coroutine spawning with stack size validation
-                if let Err(e) = SafeBuilder::new()
-                    .stack_size(0x10000) // 64KB default
-                    .spawn(move || {
+                let (tx, rx) = mpsc::channel();
+                unsafe {
+                    coroutine::spawn(move || {
                         for req in rx.iter() {
                             crate::echo::echo_handler(req);
                         }
-                    })
-                {
-                    tracing::error!("Failed to spawn echo handler: {}", e);
+                    });
                 }
                 dispatcher.add_route(r.clone(), tx);
             }
             let dispatcher = Arc::new(RwLock::new(dispatcher));
             let mut service = AppService::new(
-                Arc::clone(&router),
-                Arc::clone(&dispatcher),
+                router.clone(),
+                dispatcher.clone(),
                 schemes,
                 spec.clone(),
                 None,
@@ -245,22 +236,18 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
             if *watch {
                 let watcher = watch_spec(
                     spec.clone(),
-                    router,     // Last usage - move instead of clone
-                    dispatcher, // Last usage - move instead of clone
+                    router.clone(),
+                    dispatcher.clone(),
                     Some(service.validator_cache.clone()),
                     |disp, new_routes| {
                         for r in &new_routes {
-                            let (tx, rx) = mpmc::channel();
-                            // Use safe coroutine spawning with stack size validation
-                            if let Err(e) = SafeBuilder::new()
-                                .stack_size(0x10000) // 64KB default
-                                .spawn(move || {
+                            let (tx, rx) = mpsc::channel();
+                            unsafe {
+                                coroutine::spawn(move || {
                                     for req in rx.iter() {
                                         crate::echo::echo_handler(req);
                                     }
-                                })
-                            {
-                                tracing::error!("Failed to spawn echo handler: {}", e);
+                                });
                             }
                             disp.add_route(r.clone(), tx);
                         }

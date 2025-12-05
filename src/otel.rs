@@ -289,7 +289,7 @@ impl SamplingLayer {
                 // Sample other events based on rate
                 let count = self.counter.fetch_add(1, Ordering::Relaxed);
                 let sample_interval = (1.0 / self.sampling_rate) as u64;
-                count.is_multiple_of(sample_interval)
+                sample_interval > 0 && count % sample_interval == 0
             }
         }
     }
