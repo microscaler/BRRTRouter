@@ -32,7 +32,8 @@ base64 = "0.22"
 oas3 = { version = "0.16.1", features = ["yaml-spec"] }
 anyhow = "1.0"
 http = "1.0"  # Do not update to newer version, it that is not compatible with may_minihttp
-may = "0.3"
+# Using our fork with JSF-compliant unwrap() fixes and safe coroutine spawning
+may = { git = "https://github.com/microscaler/may.git", branch = "task-1.1-safe-coroutine-spawning" }
 # Using our fork until PR #21 is merged upstream
 may_minihttp = { git = "https://github.com/microscaler/may_minihttp.git", branch = "feat/configurable-max-headers" }
 regex = "1.11.1"
