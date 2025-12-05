@@ -2366,7 +2366,7 @@ dependencies = [
 [[package]]
 name = "may_minihttp"
 version = "0.1.11"
-source = "git+https://github.com/microscaler/may_minihttp.git?branch=feat%2Fconfigurable-max-headers#7140a4a95b52d565a077e74369dbc648da6c34f1"
+source = "git+https://github.com/microscaler/may_minihttp.git?branch=feat%2Fconfigurable-max-headers#e08fe1cab56221317c3983647dce04b1f360bfd5"
 dependencies = [
  "bytes",
  "httparse",

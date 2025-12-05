@@ -371,8 +371,9 @@ pub fn init_logging_with_config(config: &LogConfig) -> Result<()> {
     let mut env_filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(level.as_str()));
 
-    // Suppress noisy connection close errors from may_minihttp
-    // These are normal client disconnections, not real errors
+    // may_minihttp logging: the fork at microscaler/may_minihttp now properly
+    // filters client disconnects (BrokenPipe, etc.) to not log as ERROR.
+    // Allow warn+ for actual issues, suppress debug/info noise.
     env_filter = env_filter.add_directive(
         "may_minihttp::http_server=warn"
             .parse()
