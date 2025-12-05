@@ -43,7 +43,7 @@ notify = "8"
 memory-stats = "1.1"  # For cross-platform memory monitoring
 tikv-jemallocator = { version = "0.6", optional = true }
 tikv-jemalloc-ctl = { version = "0.6", optional = true }
-minijinja = "1"  # v2 has breaking changes - needs migration
+minijinja = "2"
 
 # OpenTelemetry observability (PROVEN VERSIONS from obsctl)
 # CRITICAL: These versions work with otel-collector-contrib:0.93.0
