@@ -278,7 +278,7 @@ fn lint_request_body(
 ) {
     let body = match request_body {
         oas3::spec::ObjectOrReference::Object(b) => b,
-        oas3::spec::ObjectOrReference::Ref { ref_path } => {
+        oas3::spec::ObjectOrReference::Ref { ref_path, .. } => {
             if !ref_path.starts_with("#/components/requestBodies/") {
                 issues.push(LintIssue::new(
                     format!("{} (requestBody)", path_context),
@@ -316,7 +316,7 @@ fn lint_response(
 ) {
     let resp = match response {
         oas3::spec::ObjectOrReference::Object(r) => r,
-        oas3::spec::ObjectOrReference::Ref { ref_path } => {
+        oas3::spec::ObjectOrReference::Ref { ref_path, .. } => {
             if !ref_path.starts_with("#/components/responses/") {
                 issues.push(LintIssue::new(
                     format!("{} (response {})", path_context, status_code),
@@ -354,7 +354,7 @@ fn lint_schema_ref(
         oas3::spec::ObjectOrReference::Object(schema) => {
             lint_schema_object(spec, issues, location, schema, defined_schemas);
         }
-        oas3::spec::ObjectOrReference::Ref { ref_path } => {
+        oas3::spec::ObjectOrReference::Ref { ref_path, .. } => {
             // Check if $ref resolves
             if let Some(name) = ref_path.strip_prefix("#/components/schemas/") {
                 if !defined_schemas.contains(name) {
@@ -398,7 +398,7 @@ fn lint_schema(
         oas3::spec::ObjectOrReference::Object(schema) => {
             lint_schema_object(spec, issues, &location, schema, defined_schemas);
         }
-        oas3::spec::ObjectOrReference::Ref { ref_path: _ } => {
+        oas3::spec::ObjectOrReference::Ref { ref_path: _, .. } => {
             lint_schema_ref(spec, issues, &location, schema_ref, defined_schemas);
         }
     }

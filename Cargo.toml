@@ -29,7 +29,7 @@ serde_yaml = "0.9"
 # Needed for simple JWT parsing in security providers
 base64 = "0.22"
 # Do not update to newer version
-oas3 = { version = "0.16.1", features = ["yaml-spec"] }
+oas3 = { version = "0.20", features = ["yaml-spec"] }
 anyhow = "1.0"
 http = "1.0"  # Do not update to newer version, it that is not compatible with may_minihttp
 may = "0.3"  # generator-rs is patched via [patch.crates-io] section at the end of this file

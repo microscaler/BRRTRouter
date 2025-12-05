@@ -246,7 +246,7 @@ pub fn extract_request_schema(
             req_body.content.get("application/json").and_then(|media| {
                 match media.schema.as_ref()? {
                     ObjectOrReference::Object(schema_obj) => serde_json::to_value(schema_obj).ok(),
-                    ObjectOrReference::Ref { ref_path } => resolve_schema_ref(spec, ref_path)
+                    ObjectOrReference::Ref { ref_path, .. } => resolve_schema_ref(spec, ref_path)
                         .and_then(|s| serde_json::to_value(s).ok()),
                 }
             })
@@ -307,7 +307,7 @@ pub fn extract_response_schema_and_example(
                         Some(ObjectOrReference::Object(schema_obj)) => {
                             serde_json::to_value(schema_obj).ok()
                         }
-                        Some(ObjectOrReference::Ref { ref_path }) => {
+                        Some(ObjectOrReference::Ref { ref_path, .. }) => {
                             resolve_schema_ref(spec, ref_path)
                                 .and_then(|s| serde_json::to_value(s).ok())
                         }
@@ -453,13 +453,13 @@ pub fn extract_parameters(
     for p in params {
         let param = match p {
             ObjectOrReference::Object(obj) => Some(obj),
-            ObjectOrReference::Ref { ref_path } => resolve_parameter_ref(spec, ref_path),
+            ObjectOrReference::Ref { ref_path, .. } => resolve_parameter_ref(spec, ref_path),
         };
 
         if let Some(param) = param {
             let schema = param.schema.as_ref().and_then(|s| match s {
                 ObjectOrReference::Object(obj) => serde_json::to_value(obj).ok(),
-                ObjectOrReference::Ref { ref_path } => resolve_schema_ref(spec, ref_path)
+                ObjectOrReference::Ref { ref_path, .. } => resolve_schema_ref(spec, ref_path)
                     .and_then(|sch| serde_json::to_value(sch).ok()),
             });
 

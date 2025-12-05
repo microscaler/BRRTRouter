@@ -474,6 +474,7 @@ fn collect_referenced_types(
                             }
                             oas3::spec::ObjectOrReference::Ref {
                                 ref_path: nested_ref,
+                                ..
                             } => {
                                 if let Some(resolved) = resolve_schema_ref(spec, nested_ref) {
                                     let json = serde_json::to_value(resolved).unwrap_or_default();
@@ -804,7 +805,7 @@ pub fn collect_component_schemas(
                     // Pass spec context to recursively collect referenced types
                     process_schema_type_with_spec(name, &json, &mut types, Some(&spec));
                 }
-                oas3::spec::ObjectOrReference::Ref { ref_path } => {
+                oas3::spec::ObjectOrReference::Ref { ref_path, .. } => {
                     if let Some(resolved) = resolve_schema_ref(&spec, ref_path) {
                         let json = serde_json::to_value(resolved).unwrap_or_default();
                         // Pass spec context to recursively collect referenced types
