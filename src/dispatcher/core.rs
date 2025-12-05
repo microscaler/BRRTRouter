@@ -10,7 +10,7 @@ use may::safety::SafeBuilder;
 // CRITICAL: Use MPMC for all handler channels to support multi-worker scenarios
 // MPMC works with single consumers too, so this is a compatible superset of MPSC
 use may::sync::mpmc;
-use may::sync::mpsc;  // Keep for reply channels (single consumer)
+use may::sync::mpsc; // Keep for reply channels (single consumer)
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::HashMap;

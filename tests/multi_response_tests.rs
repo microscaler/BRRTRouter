@@ -64,16 +64,14 @@ impl MultiResponseTestServer {
 
         let router = Arc::new(RwLock::new(Router::new(vec![route.clone()])));
         let mut dispatcher = Dispatcher::new();
-        unsafe {
-            dispatcher.register_handler("h", |_req: HandlerRequest| {
-                let resp = HandlerResponse {
-                    status: 201,
-                    headers: HashMap::new(),
-                    body: json!("ok"),
-                };
-                let _ = _req.reply_tx.send(resp);
-            });
-        }
+        dispatcher.register_handler("h", |_req: HandlerRequest| {
+            let resp = HandlerResponse {
+                status: 201,
+                headers: HashMap::new(),
+                body: json!("ok"),
+            };
+            let _ = _req.reply_tx.send(resp);
+        });
 
         // Include static and doc directories for comprehensive integration testing
         let service = AppService::new(

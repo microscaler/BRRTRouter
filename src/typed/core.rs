@@ -136,102 +136,100 @@ where
         .unwrap_or(0x10000); // 64KB default instead of 16KB
 
     // Use safe coroutine spawning with validation
-    let spawn_result = SafeBuilder::new()
-        .stack_size(stack_size)
-        .spawn(move || {
-            let handler = handler;
-            // Main event loop: process requests until channel closes
-            for req in rx.iter() {
-                // Extract lightweight fields we need outside the panic-catching closure.
-                // These are cheap clones (sender clones or small strings) and are ok to clone.
-                let reply_tx_outer = req.reply_tx.clone();
-                let handler_name_outer = req.handler_name.clone();
-                let request_id = req.request_id;
+    let spawn_result = SafeBuilder::new().stack_size(stack_size).spawn(move || {
+        let handler = handler;
+        // Main event loop: process requests until channel closes
+        for req in rx.iter() {
+            // Extract lightweight fields we need outside the panic-catching closure.
+            // These are cheap clones (sender clones or small strings) and are ok to clone.
+            let reply_tx_outer = req.reply_tx.clone();
+            let handler_name_outer = req.handler_name.clone();
+            let request_id = req.request_id;
 
-                // COMPLEX PANIC HANDLING: Wrap entire request processing in catch_unwind
-                // This prevents a panicking handler from killing the entire coroutine
-                // and allows us to send a 500 error response instead
-                //
-                // KEY OPTIMIZATION: Move the owned `req` into the closure to avoid cloning it.
-                // Using a move closure ensures `req` is consumed instead of cloned for each request.
-                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe({
-                    // Capture the outer clones into the closure scope so the closure can be moved
-                    // without pulling `req` by reference.
-                    let reply_tx_outer = reply_tx_outer.clone();
-                    let handler = &handler; // Borrow handler so it can be reused across iterations
-                    move || {
-                        // Clone reply sender for inner scope use (cheap)
-                        let reply_tx_inner = reply_tx_outer.clone();
+            // COMPLEX PANIC HANDLING: Wrap entire request processing in catch_unwind
+            // This prevents a panicking handler from killing the entire coroutine
+            // and allows us to send a 500 error response instead
+            //
+            // KEY OPTIMIZATION: Move the owned `req` into the closure to avoid cloning it.
+            // Using a move closure ensures `req` is consumed instead of cloned for each request.
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe({
+                // Capture the outer clones into the closure scope so the closure can be moved
+                // without pulling `req` by reference.
+                let reply_tx_outer = reply_tx_outer.clone();
+                let handler = &handler; // Borrow handler so it can be reused across iterations
+                move || {
+                    // Clone reply sender for inner scope use (cheap)
+                    let reply_tx_inner = reply_tx_outer.clone();
 
-                        // Extract metadata fields before consuming req in try_from
-                        let method = req.method.clone();
-                        let path = req.path.clone();
-                        let handler_name = req.handler_name.clone();
-                        let path_params = req.path_params.clone();
-                        let query_params = req.query_params.clone();
+                    // Extract metadata fields before consuming req in try_from
+                    let method = req.method.clone();
+                    let path = req.path.clone();
+                    let handler_name = req.handler_name.clone();
+                    let path_params = req.path_params.clone();
+                    let query_params = req.query_params.clone();
 
-                        // STEP 1: Type conversion - consume the HandlerRequest to produce handler data
-                        // This intentionally consumes `req` (no req.clone()) to avoid heavy copies.
-                        let data = match H::Request::try_from(req) {
-                            Ok(v) => v,
-                            Err(err) => {
-                                // Validation failed - send 400 Bad Request
-                                let _ = reply_tx_inner.send(HandlerResponse {
-                                    status: 400,
-                                    headers: HashMap::new(),
-                                    body: serde_json::json!({
-                                        "error": "Invalid request data",
-                                        "message": err.to_string(),
-                                        "request_id": request_id.to_string(),
-                                    }),
-                                });
-                                return; // Early return from closure
-                            }
-                        };
-
-                        // STEP 2: Build typed request with validated data
-                        let typed_req = TypedHandlerRequest {
-                            method,
-                            path,
-                            handler_name,
-                            path_params,
-                            query_params,
-                            data, // Strongly-typed request data
-                        };
-
-                        // STEP 3: Call the actual handler
-                        let result = handler.handle(typed_req);
-
-                        // STEP 4: Serialize and send response
-                        let _ = reply_tx_inner.send(HandlerResponse {
-                            status: 200,
-                            headers: HashMap::new(),
-                            body: serde_json::to_value(result).unwrap_or_else(|e| {
-                                serde_json::json!({
-                                    "error": "Failed to serialize response",
-                                    "details": e.to_string(),
+                    // STEP 1: Type conversion - consume the HandlerRequest to produce handler data
+                    // This intentionally consumes `req` (no req.clone()) to avoid heavy copies.
+                    let data = match H::Request::try_from(req) {
+                        Ok(v) => v,
+                        Err(err) => {
+                            // Validation failed - send 400 Bad Request
+                            let _ = reply_tx_inner.send(HandlerResponse {
+                                status: 400,
+                                headers: HashMap::new(),
+                                body: serde_json::json!({
+                                    "error": "Invalid request data",
+                                    "message": err.to_string(),
                                     "request_id": request_id.to_string(),
-                                })
-                            }),
-                        });
-                    }
-                }));
+                                }),
+                            });
+                            return; // Early return from closure
+                        }
+                    };
 
-                // PANIC RECOVERY: If handler panicked, send 500 error
-                if let Err(panic) = result {
-                    let _ = reply_tx_outer.send(HandlerResponse {
-                        status: 500,
+                    // STEP 2: Build typed request with validated data
+                    let typed_req = TypedHandlerRequest {
+                        method,
+                        path,
+                        handler_name,
+                        path_params,
+                        query_params,
+                        data, // Strongly-typed request data
+                    };
+
+                    // STEP 3: Call the actual handler
+                    let result = handler.handle(typed_req);
+
+                    // STEP 4: Serialize and send response
+                    let _ = reply_tx_inner.send(HandlerResponse {
+                        status: 200,
                         headers: HashMap::new(),
-                        body: serde_json::json!({
-                            "error": "Handler panicked",
-                            "details": format!("{:?}", panic),
-                            "request_id": request_id.to_string(),
+                        body: serde_json::to_value(result).unwrap_or_else(|e| {
+                            serde_json::json!({
+                                "error": "Failed to serialize response",
+                                "details": e.to_string(),
+                                "request_id": request_id.to_string(),
+                            })
                         }),
                     });
-                    eprintln!("Handler '{handler_name_outer}' panicked: {panic:?}");
                 }
+            }));
+
+            // PANIC RECOVERY: If handler panicked, send 500 error
+            if let Err(panic) = result {
+                let _ = reply_tx_outer.send(HandlerResponse {
+                    status: 500,
+                    headers: HashMap::new(),
+                    body: serde_json::json!({
+                        "error": "Handler panicked",
+                        "details": format!("{:?}", panic),
+                        "request_id": request_id.to_string(),
+                    }),
+                });
+                eprintln!("Handler '{handler_name_outer}' panicked: {panic:?}");
             }
-        });
+        }
+    });
 
     // Handle coroutine spawn failures gracefully
     match spawn_result {
@@ -271,10 +269,7 @@ where
 ///
 /// Handler panics are automatically caught and converted to 500 error responses.
 /// The coroutine will continue processing subsequent requests.
-pub fn spawn_typed_with_stack_size<H>(
-    handler: H,
-    stack_size_bytes: usize,
-) -> HandlerSender
+pub fn spawn_typed_with_stack_size<H>(handler: H, stack_size_bytes: usize) -> HandlerSender
 where
     H: Handler + Send + 'static,
 {
@@ -310,101 +305,101 @@ where
     if let Some(name) = handler_name {
         builder = builder.name(name);
     }
-    
+
     let spawn_result = builder.spawn(move || {
-            let handler = handler;
-            // Main event loop: process requests until channel closes
-            for req in rx.iter() {
-                // Extract lightweight fields we need outside the panic-catching closure.
-                // These are cheap clones (sender clones or small strings) and are ok to clone.
-                let reply_tx_outer = req.reply_tx.clone();
-                let handler_name_outer = req.handler_name.clone();
-                let request_id = req.request_id;
+        let handler = handler;
+        // Main event loop: process requests until channel closes
+        for req in rx.iter() {
+            // Extract lightweight fields we need outside the panic-catching closure.
+            // These are cheap clones (sender clones or small strings) and are ok to clone.
+            let reply_tx_outer = req.reply_tx.clone();
+            let handler_name_outer = req.handler_name.clone();
+            let request_id = req.request_id;
 
-                // COMPLEX PANIC HANDLING: Wrap entire request processing in catch_unwind
-                // This prevents a panicking handler from killing the entire coroutine
-                // and allows us to send a 500 error response instead
-                //
-                // KEY OPTIMIZATION: Move the owned `req` into the closure to avoid cloning it.
-                // Using a move closure ensures `req` is consumed instead of cloned for each request.
-                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe({
-                    // Capture the outer clones into the closure scope so the closure can be moved
-                    // without pulling `req` by reference.
-                    let reply_tx_outer = reply_tx_outer.clone();
-                    let handler = &handler; // Borrow handler so it can be reused across iterations
-                    move || {
-                        // Clone reply sender for inner scope use (cheap)
-                        let reply_tx_inner = reply_tx_outer.clone();
+            // COMPLEX PANIC HANDLING: Wrap entire request processing in catch_unwind
+            // This prevents a panicking handler from killing the entire coroutine
+            // and allows us to send a 500 error response instead
+            //
+            // KEY OPTIMIZATION: Move the owned `req` into the closure to avoid cloning it.
+            // Using a move closure ensures `req` is consumed instead of cloned for each request.
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe({
+                // Capture the outer clones into the closure scope so the closure can be moved
+                // without pulling `req` by reference.
+                let reply_tx_outer = reply_tx_outer.clone();
+                let handler = &handler; // Borrow handler so it can be reused across iterations
+                move || {
+                    // Clone reply sender for inner scope use (cheap)
+                    let reply_tx_inner = reply_tx_outer.clone();
 
-                        // Extract metadata fields before consuming req in try_from
-                        let method = req.method.clone();
-                        let path = req.path.clone();
-                        let handler_name = req.handler_name.clone();
-                        let path_params = req.path_params.clone();
-                        let query_params = req.query_params.clone();
+                    // Extract metadata fields before consuming req in try_from
+                    let method = req.method.clone();
+                    let path = req.path.clone();
+                    let handler_name = req.handler_name.clone();
+                    let path_params = req.path_params.clone();
+                    let query_params = req.query_params.clone();
 
-                        // STEP 1: Type conversion - consume the HandlerRequest to produce handler data
-                        // This intentionally consumes `req` (no req.clone()) to avoid heavy copies.
-                        let data = match H::Request::try_from(req) {
-                            Ok(v) => v,
-                            Err(err) => {
-                                // Validation failed - send 400 Bad Request
-                                let _ = reply_tx_inner.send(HandlerResponse {
-                                    status: 400,
-                                    headers: HashMap::new(),
-                                    body: serde_json::json!({
-                                        "error": "Invalid request data",
-                                        "message": err.to_string(),
-                                        "request_id": request_id.to_string(),
-                                    }),
-                                });
-                                return; // Early return from closure
-                            }
-                        };
-
-                        // STEP 2: Build typed request with validated data
-                        let typed_req = TypedHandlerRequest {
-                            method,
-                            path,
-                            handler_name,
-                            path_params,
-                            query_params,
-                            data, // Strongly-typed request data
-                        };
-
-                        // STEP 3: Call the actual handler
-                        let result = handler.handle(typed_req);
-
-                        // STEP 4: Serialize and send response
-                        let _ = reply_tx_inner.send(HandlerResponse {
-                            status: 200,
-                            headers: HashMap::new(),
-                            body: serde_json::to_value(result).unwrap_or_else(|e| {
-                                serde_json::json!({
-                                    "error": "Failed to serialize response",
-                                    "details": e.to_string(),
+                    // STEP 1: Type conversion - consume the HandlerRequest to produce handler data
+                    // This intentionally consumes `req` (no req.clone()) to avoid heavy copies.
+                    let data = match H::Request::try_from(req) {
+                        Ok(v) => v,
+                        Err(err) => {
+                            // Validation failed - send 400 Bad Request
+                            let _ = reply_tx_inner.send(HandlerResponse {
+                                status: 400,
+                                headers: HashMap::new(),
+                                body: serde_json::json!({
+                                    "error": "Invalid request data",
+                                    "message": err.to_string(),
                                     "request_id": request_id.to_string(),
-                                })
-                            }),
-                        });
-                    }
-                }));
+                                }),
+                            });
+                            return; // Early return from closure
+                        }
+                    };
 
-                // PANIC RECOVERY: If handler panicked, send 500 error
-                if let Err(panic) = result {
-                    let _ = reply_tx_outer.send(HandlerResponse {
-                        status: 500,
+                    // STEP 2: Build typed request with validated data
+                    let typed_req = TypedHandlerRequest {
+                        method,
+                        path,
+                        handler_name,
+                        path_params,
+                        query_params,
+                        data, // Strongly-typed request data
+                    };
+
+                    // STEP 3: Call the actual handler
+                    let result = handler.handle(typed_req);
+
+                    // STEP 4: Serialize and send response
+                    let _ = reply_tx_inner.send(HandlerResponse {
+                        status: 200,
                         headers: HashMap::new(),
-                        body: serde_json::json!({
-                            "error": "Handler panicked",
-                            "details": format!("{:?}", panic),
-                            "request_id": request_id.to_string(),
+                        body: serde_json::to_value(result).unwrap_or_else(|e| {
+                            serde_json::json!({
+                                "error": "Failed to serialize response",
+                                "details": e.to_string(),
+                                "request_id": request_id.to_string(),
+                            })
                         }),
                     });
-                    eprintln!("Handler '{handler_name_outer}' panicked: {panic:?}");
                 }
+            }));
+
+            // PANIC RECOVERY: If handler panicked, send 500 error
+            if let Err(panic) = result {
+                let _ = reply_tx_outer.send(HandlerResponse {
+                    status: 500,
+                    headers: HashMap::new(),
+                    body: serde_json::json!({
+                        "error": "Handler panicked",
+                        "details": format!("{:?}", panic),
+                        "request_id": request_id.to_string(),
+                    }),
+                });
+                eprintln!("Handler '{handler_name_outer}' panicked: {panic:?}");
             }
-        });
+        }
+    });
 
     // Handle coroutine spawn failures gracefully
     match spawn_result {

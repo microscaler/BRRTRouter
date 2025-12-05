@@ -117,9 +117,10 @@ fn sanitize_rust_identifier(name: &str) -> String {
 ///
 /// Field names from OpenAPI specs may contain characters invalid in Rust (hyphens, dots, etc.).
 /// This function:
-/// 1. Replaces invalid characters with underscores
-/// 2. Ensures the name doesn't start with a digit
-/// 3. Handles empty strings
+/// 1. Converts CamelCase and kebab-case to snake_case
+/// 2. Replaces invalid characters with underscores
+/// 3. Ensures the name doesn't start with a digit
+/// 4. Handles empty strings
 ///
 /// # Arguments
 ///
@@ -127,38 +128,68 @@ fn sanitize_rust_identifier(name: &str) -> String {
 ///
 /// # Returns
 ///
-/// A valid Rust identifier
+/// A valid Rust identifier in snake_case
 ///
 /// # Example
 ///
 /// ```ignore
 /// assert_eq!(sanitize_field_name("user-id"), "user_id");
+/// assert_eq!(sanitize_field_name("X-Trace-Id"), "x_trace_id");
+/// assert_eq!(sanitize_field_name("UserId"), "user_id");
 /// assert_eq!(sanitize_field_name("123field"), "_123field");
 /// assert_eq!(sanitize_field_name(""), "_");
 /// ```
 fn sanitize_field_name(name: &str) -> String {
-    // Replace invalid identifier characters with underscores and ensure it doesn't start with a digit.
-    let mut s: String = name
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '_' {
-                c
-            } else {
-                '_'
+    // First, convert to snake_case by inserting underscores before uppercase letters
+    // and lowercasing everything
+    let mut result = String::with_capacity(name.len() + 4);
+    let mut prev_was_upper = false;
+    let mut prev_was_underscore = true; // Start as true to avoid leading underscore
+
+    for c in name.chars() {
+        if c.is_ascii_uppercase() {
+            // Insert underscore before uppercase if previous wasn't underscore/uppercase
+            if !prev_was_underscore && !prev_was_upper {
+                result.push('_');
             }
-        })
-        .collect();
-    if s.is_empty() {
-        s = "_".to_string();
+            result.push(c.to_ascii_lowercase());
+            prev_was_upper = true;
+            prev_was_underscore = false;
+        } else if c.is_ascii_alphanumeric() {
+            result.push(c);
+            prev_was_upper = false;
+            prev_was_underscore = false;
+        } else {
+            // Replace non-alphanumeric with underscore
+            if !prev_was_underscore {
+                result.push('_');
+            }
+            prev_was_upper = false;
+            prev_was_underscore = true;
+        }
     }
-    if s.chars()
+
+    // Handle edge cases
+    if result.is_empty() {
+        return "_".to_string();
+    }
+
+    // Remove trailing underscores
+    while result.ends_with('_') && result.len() > 1 {
+        result.pop();
+    }
+
+    // Ensure doesn't start with a digit
+    if result
+        .chars()
         .next()
         .map(|c| c.is_ascii_digit())
         .unwrap_or(false)
     {
-        s.insert(0, '_');
+        result.insert(0, '_');
     }
-    s
+
+    result
 }
 
 /// Generate a unique handler name to avoid duplicates (internal helper)

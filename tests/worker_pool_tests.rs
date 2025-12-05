@@ -28,23 +28,19 @@ fn test_worker_pool_creation() {
     clean_worker_pool_env_vars();
 
     // Initialize may runtime
-    unsafe {
-        may::config().set_io_workers(2);
-    }
+    may::config().set_io_workers(2);
 
     let mut dispatcher = Dispatcher::new();
 
     // Register handler with worker pool (default config: 4 workers)
-    unsafe {
-        dispatcher.register_handler_with_pool("test_handler", move |req: HandlerRequest| {
-            // Send response
-            let _ = req.reply_tx.send(HandlerResponse {
-                status: 200,
-                headers: HashMap::new(),
-                body: serde_json::json!({"status": "ok"}),
-            });
+    dispatcher.register_handler_with_pool("test_handler", move |req: HandlerRequest| {
+        // Send response
+        let _ = req.reply_tx.send(HandlerResponse {
+            status: 200,
+            headers: HashMap::new(),
+            body: serde_json::json!({"status": "ok"}),
         });
-    }
+    });
 
     // Verify the worker pool was created
     assert!(dispatcher.worker_pools.contains_key("test_handler"));
@@ -64,9 +60,7 @@ fn test_worker_pool_creation() {
 #[test]
 fn test_worker_pool_shed_mode() {
     // Initialize may runtime
-    unsafe {
-        may::config().set_io_workers(2);
-    }
+    may::config().set_io_workers(2);
 
     let mut dispatcher = Dispatcher::new();
 
@@ -80,22 +74,20 @@ fn test_worker_pool_shed_mode() {
     );
 
     // Register handler that takes some time to process
-    unsafe {
-        dispatcher.register_handler_with_pool_config(
-            "slow_handler",
-            move |req: HandlerRequest| {
-                // Simulate slow processing
-                may::coroutine::sleep(Duration::from_millis(100));
+    dispatcher.register_handler_with_pool_config(
+        "slow_handler",
+        move |req: HandlerRequest| {
+            // Simulate slow processing
+            may::coroutine::sleep(Duration::from_millis(100));
 
-                let _ = req.reply_tx.send(HandlerResponse {
-                    status: 200,
-                    headers: HashMap::new(),
-                    body: serde_json::json!({"status": "ok"}),
-                });
-            },
-            config,
-        );
-    }
+            let _ = req.reply_tx.send(HandlerResponse {
+                status: 200,
+                headers: HashMap::new(),
+                body: serde_json::json!({"status": "ok"}),
+            });
+        },
+        config,
+    );
 
     // Get the worker pool to test dispatch directly
     let pool = dispatcher
@@ -140,9 +132,7 @@ fn test_worker_pool_shed_mode() {
 #[test]
 fn test_worker_pool_block_mode() {
     // Initialize may runtime
-    unsafe {
-        may::config().set_io_workers(2);
-    }
+    may::config().set_io_workers(2);
 
     let mut dispatcher = Dispatcher::new();
 
@@ -156,22 +146,20 @@ fn test_worker_pool_block_mode() {
     );
 
     // Register handler that processes quickly
-    unsafe {
-        dispatcher.register_handler_with_pool_config(
-            "fast_handler",
-            move |req: HandlerRequest| {
-                // Simulate fast processing
-                may::coroutine::sleep(Duration::from_millis(5));
+    dispatcher.register_handler_with_pool_config(
+        "fast_handler",
+        move |req: HandlerRequest| {
+            // Simulate fast processing
+            may::coroutine::sleep(Duration::from_millis(5));
 
-                let _ = req.reply_tx.send(HandlerResponse {
-                    status: 200,
-                    headers: HashMap::new(),
-                    body: serde_json::json!({"status": "ok"}),
-                });
-            },
-            config,
-        );
-    }
+            let _ = req.reply_tx.send(HandlerResponse {
+                status: 200,
+                headers: HashMap::new(),
+                body: serde_json::json!({"status": "ok"}),
+            });
+        },
+        config,
+    );
 
     // Get the worker pool to test dispatch directly
     let pool = dispatcher
@@ -231,24 +219,20 @@ fn test_worker_pool_block_mode() {
 #[test]
 fn test_worker_pool_metrics() {
     // Initialize may runtime
-    unsafe {
-        may::config().set_io_workers(2);
-    }
+    may::config().set_io_workers(2);
 
     let mut dispatcher = Dispatcher::new();
 
     // Register handler
-    unsafe {
-        dispatcher.register_handler_with_pool("metrics_handler", move |req: HandlerRequest| {
-            may::coroutine::sleep(Duration::from_millis(10));
+    dispatcher.register_handler_with_pool("metrics_handler", move |req: HandlerRequest| {
+        may::coroutine::sleep(Duration::from_millis(10));
 
-            let _ = req.reply_tx.send(HandlerResponse {
-                status: 200,
-                headers: HashMap::new(),
-                body: serde_json::json!({"status": "ok"}),
-            });
+        let _ = req.reply_tx.send(HandlerResponse {
+            status: 200,
+            headers: HashMap::new(),
+            body: serde_json::json!({"status": "ok"}),
         });
-    }
+    });
 
     // Get initial metrics
     let metrics_before = dispatcher.worker_pool_metrics();

@@ -157,46 +157,44 @@ impl brrtrouter::typed::Handler for SumHandler {
 
 #[test]
 fn test_spawn_typed_success_and_error() {
-    unsafe {
-        let tx = brrtrouter::typed::spawn_typed(SumHandler);
-        let (reply_tx, reply_rx) = mpsc::channel();
-        let mut q = HashMap::new();
-        q.insert("a".to_string(), "2".to_string());
-        q.insert("b".to_string(), "3".to_string());
-        tx.send(HandlerRequest {
-            request_id: brrtrouter::ids::RequestId::new(),
-            method: Method::GET,
-            path: "/sum".into(),
-            handler_name: "sum".into(),
-            path_params: HashMap::new(),
-            query_params: q.clone(),
-            headers: HashMap::new(),
-            cookies: HashMap::new(),
-            body: None,
-            reply_tx,
-        })
-        .unwrap();
-        let resp = reply_rx.recv().unwrap();
-        assert_eq!(resp.status, 200);
-        assert_eq!(resp.body["total"], 5);
+    let tx = brrtrouter::typed::spawn_typed(SumHandler);
+    let (reply_tx, reply_rx) = mpsc::channel();
+    let mut q = HashMap::new();
+    q.insert("a".to_string(), "2".to_string());
+    q.insert("b".to_string(), "3".to_string());
+    tx.send(HandlerRequest {
+        request_id: brrtrouter::ids::RequestId::new(),
+        method: Method::GET,
+        path: "/sum".into(),
+        handler_name: "sum".into(),
+        path_params: HashMap::new(),
+        query_params: q.clone(),
+        headers: HashMap::new(),
+        cookies: HashMap::new(),
+        body: None,
+        reply_tx,
+    })
+    .unwrap();
+    let resp = reply_rx.recv().unwrap();
+    assert_eq!(resp.status, 200);
+    assert_eq!(resp.body["total"], 5);
 
-        let (reply_tx, reply_rx) = mpsc::channel();
-        let mut bad_q = HashMap::new();
-        bad_q.insert("a".to_string(), "2".to_string());
-        tx.send(HandlerRequest {
-            request_id: brrtrouter::ids::RequestId::new(),
-            method: Method::GET,
-            path: "/sum".into(),
-            handler_name: "sum".into(),
-            path_params: HashMap::new(),
-            query_params: bad_q,
-            headers: HashMap::new(),
-            cookies: HashMap::new(),
-            body: None,
-            reply_tx,
-        })
-        .unwrap();
-        let resp = reply_rx.recv().unwrap();
-        assert_eq!(resp.status, 400);
-    }
+    let (reply_tx, reply_rx) = mpsc::channel();
+    let mut bad_q = HashMap::new();
+    bad_q.insert("a".to_string(), "2".to_string());
+    tx.send(HandlerRequest {
+        request_id: brrtrouter::ids::RequestId::new(),
+        method: Method::GET,
+        path: "/sum".into(),
+        handler_name: "sum".into(),
+        path_params: HashMap::new(),
+        query_params: bad_q,
+        headers: HashMap::new(),
+        cookies: HashMap::new(),
+        body: None,
+        reply_tx,
+    })
+    .unwrap();
+    let resp = reply_rx.recv().unwrap();
+    assert_eq!(resp.status, 400);
 }

@@ -20,7 +20,7 @@ pub struct Request {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "X-Trace-Id")]
-    pub X_Trace_Id: Option<String>,
+    pub x_trace_id: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "session")]

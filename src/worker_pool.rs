@@ -140,7 +140,7 @@ impl WorkerPoolConfig {
 impl Default for WorkerPoolConfig {
     fn default() -> Self {
         Self {
-            // Default to 1 for backwards compatibility; with MPMC fix, 
+            // Default to 1 for backwards compatibility; with MPMC fix,
             // values of 4-8 should now work correctly
             num_workers: 1,
             queue_bound: 1024,
