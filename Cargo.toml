@@ -24,7 +24,7 @@ default-target = "x86_64-unknown-linux-gnu"
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-jsonschema = "0.17"
+jsonschema = "0.17"  # v0.37 has new API (validator_for vs JSONSchema::compile) - needs migration
 serde_yaml = "0.9"
 # Needed for simple JWT parsing in security providers
 base64 = "0.22"
@@ -39,11 +39,11 @@ regex = "1.11.1"
 url = "2.5.4"
 clap = { version = "4.5.38", features = ["cargo", "env", "derive"] }
 askama = { version = "0.14.0", features = ["full"] }
-notify = "6"
+notify = "6"  # v8 has breaking changes - needs migration
 memory-stats = "1.1"  # For cross-platform memory monitoring
-tikv-jemallocator = { version = "0.5", optional = true }
-tikv-jemalloc-ctl = { version = "0.5", optional = true }
-minijinja = "1"
+tikv-jemallocator = { version = "0.6", optional = true }
+tikv-jemalloc-ctl = { version = "0.6", optional = true }
+minijinja = "1"  # v2 has breaking changes - needs migration
 
 # OpenTelemetry observability (PROVEN VERSIONS from obsctl)
 # CRITICAL: These versions work with otel-collector-contrib:0.93.0
@@ -63,7 +63,7 @@ prost = "0.13"
 tokio = { version = "1.45.1", features = ["rt-multi-thread", "macros"] }
 
 # Production JWT/JWKS validation and HTTP fetch (for external providers like PropelAuth)
-jsonwebtoken = "9"
+jsonwebtoken = "9"  # v10 requires feature flags for RSA - keep at v9 for now
 reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls", "blocking"] }
 urlencoding = "2.1"
 ulid = "1.1"
@@ -74,12 +74,12 @@ dashmap = "6.1"  # Lock-free concurrent HashMap for metrics
 
 [dev-dependencies]
 pet_store = { path = "./examples/pet_store" }
-criterion = "0.5"
+criterion = "0.8"
 # Using our own OTLP test utilities compatible with opentelemetry 0.30
 # (fake-opentelemetry-collector 0.28 is incompatible - uses 0.29)
 flamegraph = "0.6"
 tempfile = "3.8"
-bollard = { version = "0.16", default-features = false, features = ["ssl", "chrono"] }
+bollard = { version = "0.19", default-features = false, features = ["ssl", "chrono"] }
 tar = "0.4"
 walkdir = "2"
 futures-util = "0.3"
