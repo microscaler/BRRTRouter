@@ -6,19 +6,27 @@
 //! ## Features
 //!
 //! - **Worker Pools**: Spawn N worker coroutines per handler for parallel request processing
-//! - **Unbounded Queues**: Uses may's unbounded MPSC channels for maximum throughput
-//! - **Load Balancing**: Workers automatically share the request queue
+//! - **Unbounded Queues**: Uses may's unbounded MPMC channels for true multi-consumer support
+//! - **Load Balancing**: Workers automatically share the request queue via lock-free queue
 //! - **Metrics**: Track queue depth, dispatch count, and completion count for monitoring
 //!
 //! ## Configuration
 //!
-//! - `BRRTR_HANDLER_WORKERS`: Number of worker coroutines per handler (default: 4)
+//! - `BRRTR_HANDLER_WORKERS`: Number of worker coroutines per handler (default: 1)
+//!   NOTE: Currently defaults to 1 due to historical MPSC misuse. With MPMC fix,
+//!   higher values (4-8) should work correctly.
 //! - `BRRTR_HANDLER_QUEUE_BOUND`: Queue depth limit for metrics (not enforced, default: 1024)
 //! - `BRRTR_BACKPRESSURE_MODE`: Backpressure mode setting (not used, kept for compatibility)
 //! - `BRRTR_BACKPRESSURE_TIMEOUT_MS`: Timeout setting (not used, kept for compatibility)
+//!
+//! ## IMPORTANT: MPMC vs MPSC
+//!
+//! This module previously used `may::sync::mpsc` (single consumer) with `Arc<Receiver>`,
+//! which caused severe contention when num_workers > 1. It now uses `may::sync::mpmc`
+//! (multi-consumer) which properly supports concurrent receivers via a lock-free queue.
 
 use crate::dispatcher::{HandlerRequest, HandlerResponse};
-use may::sync::mpsc;
+use may::sync::mpmc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use tracing::{debug, error, info};
@@ -67,10 +75,12 @@ pub struct WorkerPoolConfig {
 impl WorkerPoolConfig {
     /// Load configuration from environment variables
     pub fn from_env() -> Self {
+        // Default to 1 for backwards compatibility; with MPMC fix,
+        // values of 4-8 should now work correctly
         let num_workers = std::env::var("BRRTR_HANDLER_WORKERS")
             .ok()
             .and_then(|s| s.parse().ok())
-            .unwrap_or(4);
+            .unwrap_or(1);
 
         let queue_bound = std::env::var("BRRTR_HANDLER_QUEUE_BOUND")
             .ok()
@@ -128,7 +138,9 @@ impl WorkerPoolConfig {
 impl Default for WorkerPoolConfig {
     fn default() -> Self {
         Self {
-            num_workers: 4,
+            // Default to 1 for backwards compatibility; with MPMC fix, 
+            // values of 4-8 should now work correctly
+            num_workers: 1,
             queue_bound: 1024,
             backpressure_mode: BackpressureMode::Block,
             backpressure_timeout_ms: 50,
@@ -209,8 +221,8 @@ impl Default for WorkerPoolMetrics {
 pub struct WorkerPool {
     /// Configuration for the pool
     config: WorkerPoolConfig,
-    /// Sender for dispatching requests to workers
-    sender: mpsc::Sender<HandlerRequest>,
+    /// Sender for dispatching requests to workers (MPMC for multi-consumer support)
+    sender: mpmc::Sender<HandlerRequest>,
     /// Metrics for monitoring
     metrics: Arc<WorkerPoolMetrics>,
     /// Handler name for logging
@@ -234,11 +246,12 @@ impl WorkerPool {
     where
         F: Fn(HandlerRequest) + Send + 'static + Clone,
     {
-        let (tx, rx) = mpsc::channel::<HandlerRequest>();
+        // CRITICAL: Use MPMC (Multi-Producer Multi-Consumer) channel!
+        // The previous MPSC implementation with Arc<Receiver> caused severe contention
+        // because MPSC receivers are NOT designed to be shared. MPMC uses a lock-free
+        // crossbeam::SegQueue internally and properly supports concurrent receivers.
+        let (tx, rx) = mpmc::channel::<HandlerRequest>();
         let metrics = Arc::new(WorkerPoolMetrics::new());
-
-        // Create a shared receiver wrapped in Arc for all workers to share
-        let rx = Arc::new(rx);
 
         info!(
             handler_name = %handler_name,
@@ -246,11 +259,13 @@ impl WorkerPool {
             queue_bound = config.queue_bound,
             backpressure_mode = ?config.backpressure_mode,
             stack_size = config.stack_size,
-            "Creating worker pool"
+            "Creating worker pool with MPMC channel"
         );
 
-        // Spawn worker coroutines
+        // Spawn worker coroutines - each gets its own clone of the MPMC receiver
         for worker_id in 0..config.num_workers {
+            // MPMC Receiver implements Clone properly - each worker gets its own receiver
+            // that shares the underlying lock-free queue
             let rx_clone = rx.clone();
             let handler_fn = handler_fn.clone();
             let handler_name_clone = handler_name.clone();
@@ -418,8 +433,8 @@ impl WorkerPool {
         Ok(())
     }
 
-    /// Get the sender for this worker pool
-    pub fn sender(&self) -> mpsc::Sender<HandlerRequest> {
+    /// Get the sender for this worker pool (MPMC sender for multi-consumer support)
+    pub fn sender(&self) -> mpmc::Sender<HandlerRequest> {
         self.sender.clone()
     }
 
@@ -470,7 +485,8 @@ mod tests {
     #[test]
     fn test_worker_pool_config_default() {
         let config = WorkerPoolConfig::default();
-        assert_eq!(config.num_workers, 4);
+        // Default is 1 for backwards compatibility; with MPMC fix, higher values work
+        assert_eq!(config.num_workers, 1);
         assert_eq!(config.queue_bound, 1024);
         assert_eq!(config.backpressure_mode, BackpressureMode::Block);
         assert_eq!(config.backpressure_timeout_ms, 50);

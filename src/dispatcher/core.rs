@@ -6,7 +6,10 @@ use crate::spec::RouteMeta;
 use crate::worker_pool::{WorkerPool, WorkerPoolConfig};
 use http::Method;
 use may::coroutine;
-use may::sync::mpsc;
+// CRITICAL: Use MPMC for all handler channels to support multi-worker scenarios
+// MPMC works with single consumers too, so this is a compatible superset of MPSC
+use may::sync::mpmc;
+use may::sync::mpsc;  // Keep for reply channels (single consumer)
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -65,7 +68,8 @@ pub struct HandlerResponse {
 }
 
 /// Type alias for a channel sender that dispatches requests to a handler
-pub type HandlerSender = mpsc::Sender<HandlerRequest>;
+/// Uses MPMC to support multi-worker handler pools (MPMC works with single consumers too)
+pub type HandlerSender = mpmc::Sender<HandlerRequest>;
 
 /// Dispatcher that routes requests to registered handler coroutines
 ///
@@ -173,7 +177,8 @@ impl Dispatcher {
     where
         F: Fn(HandlerRequest) + Send + 'static + Clone,
     {
-        let (tx, rx) = mpsc::channel::<HandlerRequest>();
+        // Use MPMC channel to support potential multi-worker scaling
+        let (tx, rx) = mpmc::channel::<HandlerRequest>();
         let name = name.to_string();
         let handler_name_for_logging = name.clone();
 

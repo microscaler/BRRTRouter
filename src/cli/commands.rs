@@ -7,7 +7,8 @@ use crate::{
 };
 use clap::{Parser, Subcommand, ValueEnum};
 use may::coroutine;
-use may::sync::mpsc;
+// Use MPMC for handler channels to support multi-worker pools
+use may::sync::mpmc;
 use std::io;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
@@ -217,7 +218,7 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
             let router = Arc::new(RwLock::new(Router::new(routes.clone())));
             let mut dispatcher = Dispatcher::new();
             for r in &routes {
-                let (tx, rx) = mpsc::channel();
+                let (tx, rx) = mpmc::channel();
                 unsafe {
                     coroutine::spawn(move || {
                         for req in rx.iter() {
@@ -244,7 +245,7 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
                     Some(service.validator_cache.clone()),
                     |disp, new_routes| {
                         for r in &new_routes {
-                            let (tx, rx) = mpsc::channel();
+                            let (tx, rx) = mpmc::channel();
                             unsafe {
                                 coroutine::spawn(move || {
                                     for req in rx.iter() {

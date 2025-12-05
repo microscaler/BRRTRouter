@@ -1,9 +1,10 @@
 // typed.rs
 #[allow(unused_imports)]
-use crate::dispatcher::{Dispatcher, HandlerRequest, HandlerResponse};
+use crate::dispatcher::{Dispatcher, HandlerRequest, HandlerResponse, HandlerSender};
 use anyhow::Result;
 use http::Method;
-use may::sync::mpsc;
+// Use MPMC for handler channels to support multi-worker pools
+use may::sync::mpmc;
 use serde::Serialize;
 use serde_json;
 use std::collections::HashMap;
@@ -110,11 +111,12 @@ pub trait TypedHandlerFor<T>: Sized {
 /// - The handler properly handles all requests without panicking
 /// - The handler sends a response for every request to avoid resource leaks
 /// - The May coroutine runtime is properly initialized
-pub unsafe fn spawn_typed<H>(handler: H) -> mpsc::Sender<HandlerRequest>
+pub unsafe fn spawn_typed<H>(handler: H) -> HandlerSender
 where
     H: Handler + Send + 'static,
 {
-    let (tx, rx) = mpsc::channel::<HandlerRequest>();
+    // Use MPMC channel to support potential multi-worker scaling
+    let (tx, rx) = mpmc::channel::<HandlerRequest>();
 
     // Use a larger default stack size to prevent stack overflows
     // 64KB is more reasonable for complex handlers
@@ -273,7 +275,7 @@ where
 pub unsafe fn spawn_typed_with_stack_size<H>(
     handler: H,
     stack_size_bytes: usize,
-) -> mpsc::Sender<HandlerRequest>
+) -> HandlerSender
 where
     H: Handler + Send + 'static,
 {
@@ -293,11 +295,12 @@ pub unsafe fn spawn_typed_with_stack_size_and_name<H>(
     handler: H,
     stack_size_bytes: usize,
     handler_name: Option<&str>,
-) -> mpsc::Sender<HandlerRequest>
+) -> HandlerSender
 where
     H: Handler + Send + 'static,
 {
-    let (tx, rx) = mpsc::channel::<HandlerRequest>();
+    // Use MPMC channel to support potential multi-worker scaling
+    let (tx, rx) = mpmc::channel::<HandlerRequest>();
 
     // Apply environment variable overrides and clamping
     // Always use get_stack_size_with_overrides to ensure consistent clamping behavior
