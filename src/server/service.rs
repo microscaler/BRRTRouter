@@ -1174,10 +1174,11 @@ impl HttpService for AppService {
                         return Ok(());
                     }
                 };
-                let validation = compiled.validate(body_val);
-                if let Err(errors) = validation {
+                // Use iter_errors() to get all validation errors
+                let errors: Vec<_> = compiled.iter_errors(body_val).collect();
+                if !errors.is_empty() {
                     // V3: Schema validation failed
-                    let error_details: Vec<String> = errors.map(|e| e.to_string()).collect();
+                    let error_details: Vec<String> = errors.iter().map(|e| e.to_string()).collect();
                     let invalid_fields: Vec<String> = error_details
                         .iter()
                         .filter_map(|e| {
@@ -1257,11 +1258,12 @@ impl HttpService for AppService {
                             Some(hr.status),
                             schema,
                         ) {
-                            let validation = compiled.validate(&hr.body);
-                            if let Err(errors) = validation {
+                            // Use iter_errors() to get all validation errors
+                            let errors: Vec<_> = compiled.iter_errors(&hr.body).collect();
+                            if !errors.is_empty() {
                                 // V7: Response validation failed
                                 let error_details: Vec<String> =
-                                    errors.map(|e| e.to_string()).collect();
+                                    errors.iter().map(|e| e.to_string()).collect();
                                 let schema_path = "#/components/schemas/response";
 
                                 error!(

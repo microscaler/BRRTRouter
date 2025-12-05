@@ -78,7 +78,7 @@
 //! });
 //! ```
 
-use jsonschema::JSONSchema;
+use jsonschema::Validator;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -204,9 +204,9 @@ impl Default for SpecVersion {
 /// ```
 #[derive(Clone)]
 pub struct ValidatorCache {
-    /// Internal cache storage: key -> Arc<JSONSchema>
+    /// Internal cache storage: key -> Arc<Validator>
     /// Key format: "{spec_version}:{spec_hash}:{handler_name}:{kind}:{status}"
-    cache: Arc<RwLock<HashMap<String, Arc<JSONSchema>>>>,
+    cache: Arc<RwLock<HashMap<String, Arc<Validator>>>>,
     /// Whether the cache is enabled (from BRRTR_SCHEMA_CACHE env var)
     enabled: bool,
     /// Current spec version with hash (updated on each hot reload)
@@ -275,7 +275,7 @@ impl ValidatorCache {
     ///
     /// # Returns
     ///
-    /// * `Some(Arc<JSONSchema>)` - Cached or newly compiled validator
+    /// * `Some(Arc<Validator>)` - Cached or newly compiled validator
     /// * `None` - If caching is disabled or compilation fails
     ///
     /// # Performance
@@ -288,10 +288,10 @@ impl ValidatorCache {
         kind: &str,
         status: Option<u16>,
         schema: &Value,
-    ) -> Option<Arc<JSONSchema>> {
+    ) -> Option<Arc<Validator>> {
         // If cache is disabled, compile on-demand without caching
         if !self.enabled {
-            return JSONSchema::compile(schema).map(Arc::new).ok();
+            return jsonschema::validator_for(schema).map(Arc::new).ok();
         }
 
         let spec_version = self
@@ -319,7 +319,7 @@ impl ValidatorCache {
         }
 
         // Slow path: Compile and cache the validator (write lock required)
-        match JSONSchema::compile(schema) {
+        match jsonschema::validator_for(schema) {
             Ok(compiled) => {
                 let validator = Arc::new(compiled);
                 let mut cache = self.cache.write().expect("validator cache lock poisoned");
