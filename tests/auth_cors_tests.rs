@@ -1,10 +1,10 @@
 use brrtrouter::dispatcher::{HandlerRequest, HandlerResponse};
+use brrtrouter::ids::RequestId;
 use brrtrouter::middleware::{AuthMiddleware, CorsMiddleware, Middleware};
 use http::Method;
 use may::sync::mpsc;
 use std::collections::HashMap;
 use std::time::Duration;
-use brrtrouter::ids::RequestId;
 
 #[test]
 fn test_auth_middleware_allows_valid_token() {

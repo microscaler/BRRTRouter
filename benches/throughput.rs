@@ -109,7 +109,7 @@ fn bench_route_throughput(c: &mut Criterion) {
 fn bench_route_scalability(c: &mut Criterion) {
     // Test performance with increasing number of routes
     let mut group = c.benchmark_group("route_scalability");
-    
+
     for route_count in [10, 50, 100, 200, 500].iter() {
         let mut routes = Vec::new();
         // Create many routes to test scalability
@@ -134,9 +134,9 @@ fn bench_route_scalability(c: &mut Criterion) {
                 x_brrtrouter_stack_size: None,
             });
         }
-        
+
         let router = Router::new(routes);
-        
+
         group.bench_function(format!("{}_routes", route_count), |b| {
             // Test matching a route in the middle of the tree
             let test_path = format!("/api/v1/resource{}/123", route_count / 2);

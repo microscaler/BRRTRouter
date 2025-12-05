@@ -236,7 +236,7 @@ impl WorkerPool {
     {
         let (tx, rx) = mpsc::channel::<HandlerRequest>();
         let metrics = Arc::new(WorkerPoolMetrics::new());
-        
+
         // Create a shared receiver wrapped in Arc for all workers to share
         let rx = Arc::new(rx);
 
@@ -282,9 +282,11 @@ impl WorkerPool {
                                 );
 
                                 // Call the handler function with panic recovery
-                                if let Err(panic) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                                    handler_fn(req);
-                                })) {
+                                if let Err(panic) =
+                                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                        handler_fn(req);
+                                    }))
+                                {
                                     // Handler panicked - send 500 error response
                                     error!(
                                         request_id = %request_id,
@@ -355,11 +357,11 @@ impl WorkerPool {
     /// Dispatch to the unbounded channel (block mode - no actual blocking)
     fn dispatch_with_blocking(&self, req: HandlerRequest) -> Result<(), HandlerResponse> {
         let request_id = req.request_id;
-        
+
         // Simply send to the unbounded channel
         // Note: The channel is unbounded, so this will always succeed unless disconnected
         self.metrics.record_dispatch();
-        
+
         if let Err(e) = self.sender.send(req) {
             // Channel disconnected - workers are gone
             error!(
@@ -368,7 +370,7 @@ impl WorkerPool {
                 error = %e,
                 "Worker pool channel disconnected"
             );
-            
+
             return Err(HandlerResponse {
                 status: 503,
                 headers: std::collections::HashMap::new(),
@@ -380,18 +382,18 @@ impl WorkerPool {
                 }),
             });
         }
-        
+
         Ok(())
     }
 
     /// Dispatch to the unbounded channel (shed mode - no actual shedding)
     fn dispatch_with_shedding(&self, req: HandlerRequest) -> Result<(), HandlerResponse> {
         let request_id = req.request_id;
-        
+
         // Simply send to the unbounded channel
         // Note: The channel is unbounded, so this will always succeed unless disconnected
         self.metrics.record_dispatch();
-        
+
         if let Err(e) = self.sender.send(req) {
             // Channel disconnected - workers are gone
             error!(
@@ -400,7 +402,7 @@ impl WorkerPool {
                 error = %e,
                 "Worker pool channel disconnected"
             );
-            
+
             return Err(HandlerResponse {
                 status: 503,
                 headers: std::collections::HashMap::new(),
@@ -412,7 +414,7 @@ impl WorkerPool {
                 }),
             });
         }
-        
+
         Ok(())
     }
 
@@ -438,12 +440,30 @@ mod tests {
 
     #[test]
     fn test_backpressure_mode_from_str() {
-        assert_eq!(BackpressureMode::from_str("block"), Some(BackpressureMode::Block));
-        assert_eq!(BackpressureMode::from_str("Block"), Some(BackpressureMode::Block));
-        assert_eq!(BackpressureMode::from_str("BLOCK"), Some(BackpressureMode::Block));
-        assert_eq!(BackpressureMode::from_str("shed"), Some(BackpressureMode::Shed));
-        assert_eq!(BackpressureMode::from_str("Shed"), Some(BackpressureMode::Shed));
-        assert_eq!(BackpressureMode::from_str("SHED"), Some(BackpressureMode::Shed));
+        assert_eq!(
+            BackpressureMode::from_str("block"),
+            Some(BackpressureMode::Block)
+        );
+        assert_eq!(
+            BackpressureMode::from_str("Block"),
+            Some(BackpressureMode::Block)
+        );
+        assert_eq!(
+            BackpressureMode::from_str("BLOCK"),
+            Some(BackpressureMode::Block)
+        );
+        assert_eq!(
+            BackpressureMode::from_str("shed"),
+            Some(BackpressureMode::Shed)
+        );
+        assert_eq!(
+            BackpressureMode::from_str("Shed"),
+            Some(BackpressureMode::Shed)
+        );
+        assert_eq!(
+            BackpressureMode::from_str("SHED"),
+            Some(BackpressureMode::Shed)
+        );
         assert_eq!(BackpressureMode::from_str("invalid"), None);
     }
 
@@ -460,20 +480,20 @@ mod tests {
     #[test]
     fn test_worker_pool_metrics() {
         let metrics = WorkerPoolMetrics::new();
-        
+
         assert_eq!(metrics.get_shed_count(), 0);
         assert_eq!(metrics.get_queue_depth(), 0);
         assert_eq!(metrics.get_dispatched_count(), 0);
         assert_eq!(metrics.get_completed_count(), 0);
-        
+
         metrics.record_dispatch();
         assert_eq!(metrics.get_dispatched_count(), 1);
         assert_eq!(metrics.get_queue_depth(), 1);
-        
+
         metrics.record_completion();
         assert_eq!(metrics.get_completed_count(), 1);
         assert_eq!(metrics.get_queue_depth(), 0);
-        
+
         metrics.record_shed();
         assert_eq!(metrics.get_shed_count(), 1);
     }

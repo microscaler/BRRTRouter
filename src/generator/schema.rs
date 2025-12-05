@@ -251,7 +251,7 @@ pub fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
             } else {
                 n.to_string()
             }
-        },
+        }
         Value::Bool(b) => b.to_string(),
         // Arrays require complex processing based on element type
         Value::Array(items) => {
@@ -402,12 +402,12 @@ pub fn process_schema_type_with_spec(
     if types.contains_key(&name) {
         return;
     }
-    
+
     // First, recursively collect all referenced types from this schema
     if let Some(spec_ref) = spec {
         collect_referenced_types(schema, spec_ref, types);
     }
-    
+
     let fields = extract_fields(schema);
     if !fields.is_empty() {
         types.insert(name.clone(), TypeDefinition { name, fields });
@@ -434,12 +434,24 @@ fn collect_referenced_types(
                         match schema_obj {
                             oas3::spec::ObjectOrReference::Object(obj) => {
                                 let json = serde_json::to_value(obj).unwrap_or_default();
-                                process_schema_type_with_spec(schema_name, &json, types, Some(spec));
+                                process_schema_type_with_spec(
+                                    schema_name,
+                                    &json,
+                                    types,
+                                    Some(spec),
+                                );
                             }
-                            oas3::spec::ObjectOrReference::Ref { ref_path: nested_ref } => {
+                            oas3::spec::ObjectOrReference::Ref {
+                                ref_path: nested_ref,
+                            } => {
                                 if let Some(resolved) = resolve_schema_ref(spec, nested_ref) {
                                     let json = serde_json::to_value(resolved).unwrap_or_default();
-                                    process_schema_type_with_spec(schema_name, &json, types, Some(spec));
+                                    process_schema_type_with_spec(
+                                        schema_name,
+                                        &json,
+                                        types,
+                                        Some(spec),
+                                    );
                                 }
                             }
                         }
@@ -448,26 +460,26 @@ fn collect_referenced_types(
             }
         }
     }
-    
+
     // Recursively check properties for $ref
     if let Some(props) = schema.get("properties").and_then(|p| p.as_object()) {
         for (_prop_name, prop_schema) in props {
             collect_referenced_types(prop_schema, spec, types);
         }
     }
-    
+
     // Check items for arrays
     if let Some(items) = schema.get("items") {
         collect_referenced_types(items, spec, types);
     }
-    
+
     // Check oneOf variants
     if let Some(one_of) = schema.get("oneOf").and_then(|v| v.as_array()) {
         for variant in one_of {
             collect_referenced_types(variant, spec, types);
         }
     }
-    
+
     // Check allOf variants
     if let Some(all_of) = schema.get("allOf").and_then(|v| v.as_array()) {
         for variant in all_of {
@@ -627,8 +639,8 @@ pub fn extract_fields(schema: &Value) -> Vec<FieldDef> {
             let sanitized = sanitize_field_name(name);
             let rust_safe_name = sanitize_rust_identifier(&sanitized);
             fields.push(FieldDef {
-                name: rust_safe_name,            // Rust-safe identifier (escapes keywords)
-                original_name: name.clone(),     // Original JSON name for #[serde(rename)]
+                name: rust_safe_name,        // Rust-safe identifier (escapes keywords)
+                original_name: name.clone(), // Original JSON name for #[serde(rename)]
                 ty,
                 optional,
                 value,

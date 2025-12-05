@@ -57,5 +57,3 @@ impl<'de> Deserialize<'de> for RequestId {
             .map_err(|_| serde::de::Error::custom("invalid request id"))
     }
 }
-
-

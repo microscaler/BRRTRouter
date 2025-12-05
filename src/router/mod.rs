@@ -64,10 +64,10 @@
 //! with regex matching, particularly for applications with many routes.
 
 mod core;
+#[cfg(test)]
+mod performance_tests;
 mod radix;
 #[cfg(test)]
 mod tests;
-#[cfg(test)]
-mod performance_tests;
 
 pub use core::{RouteMatch, Router};

@@ -82,8 +82,6 @@ struct PathMetrics {
     min_latency_ns: AtomicU64,
 }
 
-
-
 impl PathMetrics {
     fn new() -> Self {
         Self {
@@ -296,7 +294,8 @@ impl MetricsMiddleware {
     /// Uses lock-free DashMap for concurrent access without contention.
     pub(crate) fn record_path_metrics(&self, path: &str, latency_ns: u64) {
         // Use DashMap's entry API for lock-free get-or-insert
-        let metrics = self.path_metrics
+        let metrics = self
+            .path_metrics
             .entry(path.to_string())
             .or_insert_with(|| Arc::new(PathMetrics::new()))
             .clone();
@@ -309,7 +308,8 @@ impl MetricsMiddleware {
     /// Returns a snapshot of metrics for all paths that have been accessed.
     /// The returned HashMap maps path -> (count, avg_latency_ns, min_ns, max_ns).
     pub fn path_stats(&self) -> HashMap<String, (usize, u64, u64, u64)> {
-        self.path_metrics.iter()
+        self.path_metrics
+            .iter()
             .map(|entry| {
                 let path = entry.key().clone();
                 let pm = entry.value();
@@ -332,7 +332,8 @@ impl MetricsMiddleware {
     ///
     /// Returns a HashMap mapping (path, status_code) -> count
     pub fn status_stats(&self) -> HashMap<(String, u16), usize> {
-        self.status_metrics.iter()
+        self.status_metrics
+            .iter()
             .map(|entry| {
                 let (path, status) = entry.key().clone();
                 let count = entry.value().load(Ordering::Relaxed);
@@ -388,7 +389,7 @@ impl MetricsMiddleware {
     /// Uses lock-free DashMap for concurrent access without contention.
     fn record_status(&self, path: &str, status: u16) {
         let key = (path.to_string(), status);
-        
+
         // Use DashMap's entry API for lock-free get-or-insert
         self.status_metrics
             .entry(key)
@@ -498,16 +499,16 @@ mod tests {
     fn test_record_path_metrics_same_path() {
         let metrics = MetricsMiddleware::new();
         let path = "/users/{id}";
-        
+
         // Record metrics for the same path multiple times
         metrics.record_path_metrics(path, 1000);
         metrics.record_path_metrics(path, 2000);
         metrics.record_path_metrics(path, 3000);
-        
+
         let stats = metrics.path_stats();
         assert_eq!(stats.len(), 1);
         assert!(stats.contains_key(path));
-        
+
         let (count, avg, min, max) = stats.get(path).unwrap();
         assert_eq!(*count, 3);
         assert_eq!(*avg, 2000); // (1000 + 2000 + 3000) / 3
@@ -518,23 +519,23 @@ mod tests {
     #[test]
     fn test_record_path_metrics_different_paths() {
         let metrics = MetricsMiddleware::new();
-        
+
         // Record metrics for different paths
         metrics.record_path_metrics("/users/{id}", 1000);
         metrics.record_path_metrics("/pets", 2000);
         metrics.record_path_metrics("/users/{id}", 1500);
-        
+
         let stats = metrics.path_stats();
         assert_eq!(stats.len(), 2);
         assert!(stats.contains_key("/users/{id}"));
         assert!(stats.contains_key("/pets"));
-        
+
         let (count, avg, min, max) = stats.get("/users/{id}").unwrap();
         assert_eq!(*count, 2);
         assert_eq!(*avg, 1250); // (1000 + 1500) / 2
         assert_eq!(*min, 1000);
         assert_eq!(*max, 1500);
-        
+
         let (count, avg, min, max) = stats.get("/pets").unwrap();
         assert_eq!(*count, 1);
         assert_eq!(*avg, 2000);
@@ -546,12 +547,12 @@ mod tests {
     fn test_record_status_same_path_status() {
         let metrics = MetricsMiddleware::new();
         let path = "/users/{id}";
-        
+
         // Record same status for same path multiple times
         metrics.record_status(path, 200);
         metrics.record_status(path, 200);
         metrics.record_status(path, 200);
-        
+
         let stats = metrics.status_stats();
         assert_eq!(stats.len(), 1);
         assert_eq!(*stats.get(&(path.to_string(), 200)).unwrap(), 3);
@@ -561,7 +562,7 @@ mod tests {
     fn test_record_status_different_statuses() {
         let metrics = MetricsMiddleware::new();
         let path = "/users/{id}";
-        
+
         // Record different statuses for same path
         metrics.record_status(path, 200);
         metrics.record_status(path, 200);
@@ -569,7 +570,7 @@ mod tests {
         metrics.record_status(path, 500);
         metrics.record_status(path, 500);
         metrics.record_status(path, 500);
-        
+
         let stats = metrics.status_stats();
         assert_eq!(stats.len(), 3);
         assert_eq!(*stats.get(&(path.to_string(), 200)).unwrap(), 2);
@@ -580,12 +581,12 @@ mod tests {
     #[test]
     fn test_record_status_different_paths() {
         let metrics = MetricsMiddleware::new();
-        
+
         // Record statuses for different paths
         metrics.record_status("/users/{id}", 200);
         metrics.record_status("/pets", 200);
         metrics.record_status("/users/{id}", 404);
-        
+
         let stats = metrics.status_stats();
         assert_eq!(stats.len(), 3);
         assert_eq!(*stats.get(&("/users/{id}".to_string(), 200)).unwrap(), 1);
@@ -596,21 +597,17 @@ mod tests {
     #[test]
     fn test_pre_register_paths() {
         let metrics = MetricsMiddleware::new();
-        
+
         // Pre-register paths
-        metrics.pre_register_paths(&[
-            "/users/{id}",
-            "/pets",
-            "/health",
-        ]);
-        
+        metrics.pre_register_paths(&["/users/{id}", "/pets", "/health"]);
+
         // Verify paths were registered (they exist in the map)
         let stats = metrics.path_stats();
         assert_eq!(stats.len(), 3);
         assert!(stats.contains_key("/users/{id}"));
         assert!(stats.contains_key("/pets"));
         assert!(stats.contains_key("/health"));
-        
+
         // All should have zero counts initially
         for (_, (count, _, _, _)) in stats.iter() {
             assert_eq!(*count, 0);
@@ -646,7 +643,7 @@ mod tests {
         // Verify the counts
         let stats = metrics.path_stats();
         assert_eq!(stats.len(), 3);
-        
+
         // Each path should have been hit by 10/3 = 3-4 threads, 1000 times each
         let total_count: usize = stats.values().map(|(count, _, _, _)| count).sum();
         assert_eq!(total_count, 10000); // 10 threads * 1000 iterations
@@ -666,7 +663,13 @@ mod tests {
             let handle = thread::spawn(move || {
                 for i in 0..1000 {
                     let path = format!("/path{}", thread_id % 2); // 2 different paths
-                    let status = if i % 3 == 0 { 200 } else if i % 3 == 1 { 404 } else { 500 };
+                    let status = if i % 3 == 0 {
+                        200
+                    } else if i % 3 == 1 {
+                        404
+                    } else {
+                        500
+                    };
                     metrics_clone.record_status(&path, status);
                 }
             });
@@ -680,10 +683,10 @@ mod tests {
 
         // Verify the counts
         let stats = metrics.status_stats();
-        
+
         // Should have 2 paths * 3 status codes = 6 entries
         assert_eq!(stats.len(), 6);
-        
+
         let total_count: usize = stats.values().sum();
         assert_eq!(total_count, 10000); // 10 threads * 1000 iterations
     }
@@ -732,10 +735,10 @@ mod tests {
         use std::thread;
 
         let metrics = Arc::new(MetricsMiddleware::new());
-        
+
         // Pre-register some paths
         metrics.pre_register_paths(&["/api/users", "/api/posts"]);
-        
+
         let mut handles = vec![];
 
         // Spawn threads that record to both pre-registered and new paths
@@ -751,7 +754,7 @@ mod tests {
                     } else {
                         "/api/comments" // Not pre-registered
                     };
-                    
+
                     let latency = 1000 + (i % 100) as u64;
                     metrics_clone.record_path_metrics(path, latency);
                     metrics_clone.record_status(path, 200);
@@ -768,7 +771,7 @@ mod tests {
         // Verify all paths were recorded correctly
         let stats = metrics.path_stats();
         assert_eq!(stats.len(), 3);
-        
+
         let total_count: usize = stats.values().map(|(count, _, _, _)| count).sum();
         assert_eq!(total_count, 5000); // 10 threads * 500 iterations
     }

@@ -23,7 +23,7 @@
 //! }
 //! ```
 
-use oas3::{OpenApiV3Spec, spec::PathItem};
+use oas3::{spec::PathItem, OpenApiV3Spec};
 use serde_json::Value;
 use std::collections::HashSet;
 use std::path::Path;
@@ -172,7 +172,10 @@ fn lint_path_item(
         path_item.delete.as_ref().map(|op| (HttpMethod::Delete, op)),
         path_item.patch.as_ref().map(|op| (HttpMethod::Patch, op)),
         path_item.head.as_ref().map(|op| (HttpMethod::Head, op)),
-        path_item.options.as_ref().map(|op| (HttpMethod::Options, op)),
+        path_item
+            .options
+            .as_ref()
+            .map(|op| (HttpMethod::Options, op)),
         path_item.trace.as_ref().map(|op| (HttpMethod::Trace, op)),
     ]
     .into_iter()
@@ -181,7 +184,14 @@ fn lint_path_item(
 
     // Lint each operation
     for (method, operation) in operations {
-        lint_operation(spec, issues, path, method.as_str(), operation, defined_schemas);
+        lint_operation(
+            spec,
+            issues,
+            path,
+            method.as_str(),
+            operation,
+            defined_schemas,
+        );
     }
 }
 
@@ -195,7 +205,10 @@ fn lint_operation(
     defined_schemas: &HashSet<String>,
 ) {
     let path_context = format!("{} {}", path, method);
-    let operation_id = operation.operation_id.as_deref().unwrap_or("<no-operationId>");
+    let operation_id = operation
+        .operation_id
+        .as_deref()
+        .unwrap_or("<no-operationId>");
     let location = format!("{} {}", path_context, operation_id);
 
     // Check for operationId - use let-else for safe unwrap
@@ -228,13 +241,28 @@ fn lint_operation(
 
     // Check request body schema
     if let Some(request_body) = &operation.request_body {
-        lint_request_body(spec, issues, &path_context, &location, request_body, defined_schemas);
+        lint_request_body(
+            spec,
+            issues,
+            &path_context,
+            &location,
+            request_body,
+            defined_schemas,
+        );
     }
 
     // Check response schemas
     if let Some(responses) = &operation.responses {
         for (status_code, response) in responses {
-            lint_response(spec, issues, &path_context, &location, status_code, response, defined_schemas);
+            lint_response(
+                spec,
+                issues,
+                &path_context,
+                &location,
+                status_code,
+                response,
+                defined_schemas,
+            );
         }
     }
 }
@@ -265,7 +293,13 @@ fn lint_request_body(
 
     for (_content_type, media_type) in &body.content {
         if let Some(schema_ref) = &media_type.schema {
-            lint_schema_ref(spec, issues, &format!("{} (requestBody)", path_context), schema_ref, defined_schemas);
+            lint_schema_ref(
+                spec,
+                issues,
+                &format!("{} (requestBody)", path_context),
+                schema_ref,
+                defined_schemas,
+            );
         }
     }
 }
@@ -297,7 +331,13 @@ fn lint_response(
 
     for (_content_type, media_type) in &resp.content {
         if let Some(schema_ref) = &media_type.schema {
-            lint_schema_ref(spec, issues, &format!("{} (response {})", path_context, status_code), schema_ref, defined_schemas);
+            lint_schema_ref(
+                spec,
+                issues,
+                &format!("{} (response {})", path_context, status_code),
+                schema_ref,
+                defined_schemas,
+            );
         }
     }
 }
@@ -323,7 +363,10 @@ fn lint_schema_ref(
                             location,
                             LintSeverity::Error,
                             "missing_schema_ref",
-                            format!("Schema reference '{}' not found in components.schemas", name),
+                            format!(
+                                "Schema reference '{}' not found in components.schemas",
+                                name
+                            ),
                         )
                         .with_suggestion(format!("Add '{}' to components.schemas", name)),
                     );
@@ -394,7 +437,13 @@ fn lint_schema_object(
     if let Some(properties) = schema_json.get("properties") {
         if let Some(props_obj) = properties.as_object() {
             for (prop_name, prop_value) in props_obj {
-                lint_property(spec, issues, &format!("{}.{}", location, prop_name), prop_value, defined_schemas);
+                lint_property(
+                    spec,
+                    issues,
+                    &format!("{}.{}", location, prop_name),
+                    prop_value,
+                    defined_schemas,
+                );
             }
         }
     }
@@ -453,9 +502,10 @@ fn lint_property(
     let has_one_of = property.get("oneOf").is_some();
     let has_any_of = property.get("anyOf").is_some();
     let has_all_of = property.get("allOf").is_some();
-    
+
     // Property is valid if it has at least one of these
-    if !has_type && !has_ref && !has_const && !has_enum && !has_one_of && !has_any_of && !has_all_of {
+    if !has_type && !has_ref && !has_const && !has_enum && !has_one_of && !has_any_of && !has_all_of
+    {
         issues.push(
             LintIssue::new(
                 location,
@@ -463,7 +513,9 @@ fn lint_property(
                 "missing_property_type",
                 "Property is missing 'type', '$ref', 'const', 'enum', 'oneOf', 'anyOf', or 'allOf'",
             )
-            .with_suggestion("Add type field (e.g., type: string, type: integer) or use const/enum/oneOf"),
+            .with_suggestion(
+                "Add type field (e.g., type: string, type: integer) or use const/enum/oneOf",
+            ),
         );
     }
 
@@ -488,18 +540,24 @@ pub(crate) fn is_snake_case(s: &str) -> bool {
         return false;
     }
     // Must start with lowercase letter or underscore
-    if !s.chars().next().map(|c| c.is_lowercase() || c == '_').unwrap_or(false) {
+    if !s
+        .chars()
+        .next()
+        .map(|c| c.is_lowercase() || c == '_')
+        .unwrap_or(false)
+    {
         return false;
     }
     // Can only contain lowercase letters, digits, and underscores
-    s.chars().all(|c| c.is_lowercase() || c.is_ascii_digit() || c == '_')
+    s.chars()
+        .all(|c| c.is_lowercase() || c.is_ascii_digit() || c == '_')
 }
 
 /// Convert a string to snake_case
 pub(crate) fn to_snake_case(s: &str) -> String {
     let mut result = String::new();
     let mut chars = s.chars().peekable();
-    
+
     while let Some(ch) = chars.next() {
         if ch.is_uppercase() {
             if !result.is_empty() && !result.ends_with('_') {
@@ -516,7 +574,7 @@ pub(crate) fn to_snake_case(s: &str) -> String {
             result.push(ch);
         }
     }
-    
+
     result
 }
 
@@ -528,12 +586,26 @@ pub fn print_lint_issues(issues: &[LintIssue]) {
     }
 
     // Group by severity
-    let errors: Vec<_> = issues.iter().filter(|i| i.severity == LintSeverity::Error).collect();
-    let warnings: Vec<_> = issues.iter().filter(|i| i.severity == LintSeverity::Warning).collect();
-    let infos: Vec<_> = issues.iter().filter(|i| i.severity == LintSeverity::Info).collect();
+    let errors: Vec<_> = issues
+        .iter()
+        .filter(|i| i.severity == LintSeverity::Error)
+        .collect();
+    let warnings: Vec<_> = issues
+        .iter()
+        .filter(|i| i.severity == LintSeverity::Warning)
+        .collect();
+    let infos: Vec<_> = issues
+        .iter()
+        .filter(|i| i.severity == LintSeverity::Info)
+        .collect();
 
     println!("\n📋 Lint Results:");
-    println!("   {} error(s), {} warning(s), {} info(s)\n", errors.len(), warnings.len(), infos.len());
+    println!(
+        "   {} error(s), {} warning(s), {} info(s)\n",
+        errors.len(),
+        warnings.len(),
+        infos.len()
+    );
 
     if !errors.is_empty() {
         println!("❌ Errors (must fix):");
@@ -574,10 +646,12 @@ pub fn print_lint_issues(issues: &[LintIssue]) {
 
 /// Exit with error code if there are any error-level lint issues
 pub fn fail_if_errors(issues: &[LintIssue]) {
-    let errors: Vec<_> = issues.iter().filter(|i| i.severity == LintSeverity::Error).collect();
+    let errors: Vec<_> = issues
+        .iter()
+        .filter(|i| i.severity == LintSeverity::Error)
+        .collect();
     if !errors.is_empty() {
         print_lint_issues(issues);
         std::process::exit(1);
     }
 }
-

@@ -318,19 +318,19 @@ fn test_get_all_path_patterns() {
     let router = Router::new(routes);
 
     let paths = router.get_all_path_patterns();
-    
+
     // Should have all 5 unique paths
     assert_eq!(paths.len(), 5);
-    
+
     // Verify all expected paths are present
     assert!(paths.contains(&"/users".to_string()));
     assert!(paths.contains(&"/users/{id}".to_string()));
     assert!(paths.contains(&"/posts/{id}".to_string()));
-    
+
     // The same path with different methods should appear multiple times
     let users_count = paths.iter().filter(|p| *p == "/users").count();
     assert_eq!(users_count, 2); // GET and POST
-    
+
     let posts_id_count = paths.iter().filter(|p| *p == "/posts/{id}").count();
     assert_eq!(posts_id_count, 2); // GET and DELETE
 }
@@ -340,12 +340,12 @@ fn test_get_all_path_patterns_with_base_path() {
     // Test that base paths are included in the returned path patterns
     let mut route = create_route_meta(Method::GET, "/users", "list_users");
     route.base_path = "/api/v1".to_string();
-    
+
     let routes = vec![route];
     let router = Router::new(routes);
 
     let paths = router.get_all_path_patterns();
-    
+
     // Should have the full path including base path
     assert_eq!(paths.len(), 1);
     assert_eq!(paths[0], "/api/v1/users");

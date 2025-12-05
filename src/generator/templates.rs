@@ -366,7 +366,7 @@ pub fn write_controller(
     let context = ControllerTemplateData {
         handler_name: handler.to_string(),
         struct_name: struct_name.to_string(),
-        response_fields: enriched_fields,  // Last usage - move instead of clone
+        response_fields: enriched_fields, // Last usage - move instead of clone
         example: example_pretty,
         has_example: example.is_some(),
         example_json,
@@ -482,7 +482,10 @@ fn detect_workspace_with_brrtrouter_deps(output_dir: &Path) -> bool {
         if cargo_toml.exists() {
             if let Ok(contents) = std::fs::read_to_string(&cargo_toml) {
                 // Check if it's a workspace AND has brrtrouter in workspace.dependencies
-                if contents.contains("[workspace]") && contents.contains("brrtrouter") && contents.contains("workspace.dependencies") {
+                if contents.contains("[workspace]")
+                    && contents.contains("brrtrouter")
+                    && contents.contains("workspace.dependencies")
+                {
                     return true;
                 }
             }
@@ -509,8 +512,10 @@ pub(crate) fn write_cargo_toml_with_options(
     use_workspace_deps: bool,
     brrtrouter_root: Option<&Path>,
 ) -> anyhow::Result<()> {
-    eprintln!("DEBUG: use_workspace_deps={}, base={:?}, brrtrouter_root={:?}", 
-               use_workspace_deps, base, brrtrouter_root);
+    eprintln!(
+        "DEBUG: use_workspace_deps={}, base={:?}, brrtrouter_root={:?}",
+        use_workspace_deps, base, brrtrouter_root
+    );
     let (brrtrouter_path, brrtrouter_macros_path) = if use_workspace_deps {
         (String::new(), String::new())
     } else {
@@ -539,9 +544,12 @@ pub(crate) fn write_cargo_toml_with_options(
             })
             .unwrap_or_else(|| {
                 // Default fallback: assume BRRTRouter is at ../.. (petstore case)
-                base.parent().and_then(|p| p.parent()).unwrap_or(base).to_path_buf()
+                base.parent()
+                    .and_then(|p| p.parent())
+                    .unwrap_or(base)
+                    .to_path_buf()
             });
-        
+
         // Calculate relative path from base to brrtrouter_base
         // Ensure both paths are absolute for reliable calculation
         let brrtrouter_base_clone = brrtrouter_base.clone(); // Clone for debug output
@@ -553,16 +561,16 @@ pub(crate) fn write_cargo_toml_with_options(
                 .join(base)
         };
         let brrtrouter_abs = if brrtrouter_base.is_absolute() {
-            brrtrouter_base  // Already a PathBuf, no need to clone
+            brrtrouter_base // Already a PathBuf, no need to clone
         } else {
             std::env::current_dir()
                 .unwrap_or_else(|_| PathBuf::from("."))
                 .join(brrtrouter_base)
         };
-        
+
         let base_canon = base_abs.canonicalize().unwrap_or(base_abs);
         let brrtrouter_canon = brrtrouter_abs.canonicalize().unwrap_or(brrtrouter_abs);
-        
+
         // Calculate relative path from base to brrtrouter_base
         // base is typically a subdirectory of brrtrouter_base (e.g., examples/pet_store is under BRRTRouter root)
         let rel_path = if let Ok(rel) = base_canon.strip_prefix(&brrtrouter_canon) {
@@ -602,18 +610,20 @@ pub(crate) fn write_cargo_toml_with_options(
             }
             rel_path
         };
-        
+
         let rel_path_str = rel_path.to_string_lossy().to_string();
         let macros_path = rel_path.join("brrtrouter_macros");
         let macros_path_str = macros_path.to_string_lossy().to_string();
-        
+
         // Debug: log the calculated paths
-        eprintln!("DEBUG: base={:?}, brrtrouter_base={:?}, rel_path={:?}, rel_path_str={:?}", 
-                 base, &brrtrouter_base_clone, rel_path, rel_path_str);
-        
+        eprintln!(
+            "DEBUG: base={:?}, brrtrouter_base={:?}, rel_path={:?}, rel_path_str={:?}",
+            base, &brrtrouter_base_clone, rel_path, rel_path_str
+        );
+
         (rel_path_str, macros_path_str)
     };
-    
+
     let rendered = CargoTomlTemplateData {
         name: slug.to_string(),
         use_workspace_deps,
@@ -795,7 +805,8 @@ pub fn write_impl_controller_stub(params: ImplControllerStubParams) -> anyhow::R
     }
 
     // Extract example data if available
-    let example_map = params.example
+    let example_map = params
+        .example
         .as_ref()
         .and_then(|v| match v {
             Value::Object(map) => Some(map.clone()),
@@ -804,7 +815,8 @@ pub fn write_impl_controller_stub(params: ImplControllerStubParams) -> anyhow::R
         .unwrap_or_default();
 
     // Enrich response fields with example data
-    let enriched_fields = params.res_fields
+    let enriched_fields = params
+        .res_fields
         .iter()
         .map(|field| {
             // Use original_name for lookup (JSON key) but name for code generation (Rust identifier)
@@ -848,7 +860,8 @@ pub fn write_impl_controller_stub(params: ImplControllerStubParams) -> anyhow::R
         String::new()
     };
 
-    let example_json = params.example
+    let example_json = params
+        .example
         .as_ref()
         .map(|v| serde_json::to_string_pretty(v).unwrap_or_default())
         .unwrap_or_default();
@@ -875,10 +888,7 @@ pub fn write_impl_controller_stub(params: ImplControllerStubParams) -> anyhow::R
 }
 
 /// Write implementation crate Cargo.toml
-pub fn write_impl_cargo_toml(
-    impl_output_dir: &Path,
-    component_name: &str,
-) -> anyhow::Result<()> {
+pub fn write_impl_cargo_toml(impl_output_dir: &Path, component_name: &str) -> anyhow::Result<()> {
     let cargo_toml_path = impl_output_dir.join("Cargo.toml");
 
     // Detect workspace context - check parent directories for workspace Cargo.toml
@@ -941,7 +951,10 @@ pub fn write_impl_cargo_toml(
             };
             (base_str.clone(), format!("{}/brrtrouter_macros", base_str))
         } else {
-            ("../BRRTRouter".to_string(), "../BRRTRouter/brrtrouter_macros".to_string())
+            (
+                "../BRRTRouter".to_string(),
+                "../BRRTRouter/brrtrouter_macros".to_string(),
+            )
         }
     };
 
@@ -1017,10 +1030,7 @@ pub fn update_impl_mod_rs(
     if content.contains(&module_decl) {
         if force {
             // Force mode: replace existing declaration (in case handler name changed)
-            let new_content = content.replace(
-                &format!("pub mod {};", handler),
-                &module_decl,
-            );
+            let new_content = content.replace(&format!("pub mod {};", handler), &module_decl);
             fs::write(&mod_rs_path, new_content)?;
         }
         // Already exists, no need to add

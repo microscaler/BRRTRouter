@@ -208,7 +208,7 @@ pub fn ensure_image_ready() {
         let start = Instant::now();
         let thread_id = thread::current().id();
         eprintln!("\n=== Docker Image Setup (Thread {:?}) ===", thread_id);
-        
+
         // Ensure Docker is available
         eprintln!("[1/2] Checking Docker availability...");
         let docker_ok = Command::new("docker")
@@ -216,7 +216,7 @@ pub fn ensure_image_ready() {
             .output()
             .map(|o| o.status.success())
             .unwrap_or(false);
-        
+
         if !docker_ok {
             return Err("Docker is required for curl e2e tests. Please install Docker and ensure it's running.".to_string());
         }
@@ -309,7 +309,7 @@ pub fn ensure_image_ready() {
             return Err("Failed to build pet_store binary for musl target".to_string());
         }
         eprintln!("      ✓ Binary built for Linux x86_64");
-        
+
         // STEP 3: Verify the cross-compiled binary exists
         // ================================================
         eprintln!("[3/5] Verifying binary...");
@@ -322,7 +322,7 @@ pub fn ensure_image_ready() {
         // STEP 4: Copy to staging area (CRITICAL - same as Tilt workflow!)
         // =================================================================
         // Why copy to build_artifacts/?
-        // 
+        //
         // Docker's build context has .dockerignore which blocks target/* for performance:
         //   target/*                    ← blocks ALL of target/
         //   !build_artifacts/pet_store  ← but allows this specific file

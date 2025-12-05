@@ -178,19 +178,19 @@ impl Router {
             algorithm = "radix_tree",
             "Route match attempt"
         );
-        
+
         // Track route matching performance
         let match_start = std::time::Instant::now();
 
         // Use radix tree for O(k) lookup
         let result = self.radix_router.route(method.clone(), path);
-        
+
         let match_duration = match_start.elapsed();
 
         if let Some((route, params)) = result {
             // RT3: Route matched
             let handler_name = route.handler_name.clone();
-            
+
             if match_duration > std::time::Duration::from_millis(1) {
                 warn!(
                     method = %method,

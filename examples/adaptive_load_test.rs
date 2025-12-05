@@ -166,7 +166,10 @@ async fn get_admin_settings(user: &mut GooseUser) -> TransactionResult {
 
 async fn get_item(user: &mut GooseUser) -> TransactionResult {
     let request_builder = user
-        .get_request_builder(&GooseMethod::Get, "/items/550e8400-e29b-41d4-a716-446655440000")?
+        .get_request_builder(
+            &GooseMethod::Get,
+            "/items/550e8400-e29b-41d4-a716-446655440000",
+        )?
         .header("X-API-Key", "test123");
     let goose_request = GooseRequest::builder()
         .set_request_builder(request_builder)
@@ -204,7 +207,10 @@ async fn test_swagger_ui(user: &mut GooseUser) -> TransactionResult {
 
 async fn post_item(user: &mut GooseUser) -> TransactionResult {
     let request_builder = user
-        .get_request_builder(&GooseMethod::Post, "/items/550e8400-e29b-41d4-a716-446655440000")?
+        .get_request_builder(
+            &GooseMethod::Post,
+            "/items/550e8400-e29b-41d4-a716-446655440000",
+        )?
         .header("X-API-Key", "test123")
         .header("Content-Type", "application/json")
         .body(r#"{"name":"New Item"}"#);
@@ -217,7 +223,10 @@ async fn post_item(user: &mut GooseUser) -> TransactionResult {
 
 async fn get_download(user: &mut GooseUser) -> TransactionResult {
     let request_builder = user
-        .get_request_builder(&GooseMethod::Get, "/download/550e8400-e29b-41d4-a716-446655440000")?
+        .get_request_builder(
+            &GooseMethod::Get,
+            "/download/550e8400-e29b-41d4-a716-446655440000",
+        )?
         .header("X-API-Key", "test123");
     let goose_request = GooseRequest::builder()
         .set_request_builder(request_builder)
@@ -323,9 +332,11 @@ struct SystemMetrics {
     requests_per_second: f64,
 }
 
-async fn get_system_metrics(prometheus_url: &str) -> Result<SystemMetrics, Box<dyn std::error::Error>> {
+async fn get_system_metrics(
+    prometheus_url: &str,
+) -> Result<SystemMetrics, Box<dyn std::error::Error>> {
     let client = reqwest::Client::new();
-    
+
     // Query 1: Error rate (non-2xx responses / total responses * 100)
     // Use 30s window to focus on most recent data from the just-completed test
     let error_rate_query = urlencoding::encode(
@@ -340,9 +351,11 @@ async fn get_system_metrics(prometheus_url: &str) -> Result<SystemMetrics, Box<d
         .and_then(|v| v["value"][1].as_str())
         .and_then(|s| s.parse::<f64>().ok())
         .unwrap_or(0.0);
-    
+
     // Query 2: P99 latency
-    let p99_query = urlencoding::encode("histogram_quantile(0.99, rate(brrtrouter_request_duration_seconds_bucket[1m]))");
+    let p99_query = urlencoding::encode(
+        "histogram_quantile(0.99, rate(brrtrouter_request_duration_seconds_bucket[1m]))",
+    );
     let p99_url = format!("{}/api/v1/query?query={}", prometheus_url, p99_query);
     let p99_resp = client.get(&p99_url).send().await?;
     let p99_json: serde_json::Value = p99_resp.json().await?;
@@ -352,7 +365,7 @@ async fn get_system_metrics(prometheus_url: &str) -> Result<SystemMetrics, Box<d
         .and_then(|v| v["value"][1].as_str())
         .and_then(|s| s.parse::<f64>().ok())
         .unwrap_or(0.0);
-    
+
     // Query 3: Active requests (peak over 1m window)
     let active_query = urlencoding::encode("max_over_time(brrtrouter_active_requests[1m])");
     let active_url = format!("{}/api/v1/query?query={}", prometheus_url, active_query);
@@ -364,7 +377,7 @@ async fn get_system_metrics(prometheus_url: &str) -> Result<SystemMetrics, Box<d
         .and_then(|v| v["value"][1].as_str())
         .and_then(|s| s.parse::<f64>().ok())
         .unwrap_or(0.0);
-    
+
     // Query 4: Throughput (requests per second)
     let rps_query = urlencoding::encode("sum(rate(brrtrouter_requests_total[1m]))");
     let rps_url = format!("{}/api/v1/query?query={}", prometheus_url, rps_query);
@@ -376,7 +389,7 @@ async fn get_system_metrics(prometheus_url: &str) -> Result<SystemMetrics, Box<d
         .and_then(|v| v["value"][1].as_str())
         .and_then(|s| s.parse::<f64>().ok())
         .unwrap_or(0.0);
-    
+
     Ok(SystemMetrics {
         error_rate_percent,
         p99_latency_seconds,
@@ -392,7 +405,7 @@ async fn get_system_metrics(prometheus_url: &str) -> Result<SystemMetrics, Box<d
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = AdaptiveConfig::default();
-    
+
     println!("╔══════════════════════════════════════════════════════════════════════════╗");
     println!("║  BRRTRouter Adaptive Load Test 🎯                                        ║");
     println!("║  Continuous loop: incrementally increases load until failure             ║");
@@ -401,41 +414,69 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Configuration:");
     println!("  Target: {}", config.host);
     println!("  Prometheus: {}", config.prometheus_url);
-    println!("  Start Users: {} (increment: {} per cycle)", config.start_users, config.ramp_step);
+    println!(
+        "  Start Users: {} (increment: {} per cycle)",
+        config.start_users, config.ramp_step
+    );
     println!("  Max Users: {} (safety limit)", config.max_users);
     println!("  Hatch Rate: {} users/second", config.hatch_rate);
-    println!("  Cycle Duration: {}s per load level", config.stage_duration_secs);
-    println!("  Ramp-up Time: ~{}s to reach {} users", config.start_users / config.hatch_rate, config.start_users);
+    println!(
+        "  Cycle Duration: {}s per load level",
+        config.stage_duration_secs
+    );
+    println!(
+        "  Ramp-up Time: ~{}s to reach {} users",
+        config.start_users / config.hatch_rate,
+        config.start_users
+    );
     println!();
     println!("Failure Threshold:");
-    println!("  🎯 Error Rate ≥ {:.1}% = LIMIT REACHED", config.error_rate_threshold);
-    println!("  ⚠️  P99 Latency > {:.2}s = WARNING", config.p99_latency_threshold);
-    println!("  ⚠️  Active Requests > {} = WARNING", config.active_requests_threshold);
+    println!(
+        "  🎯 Error Rate ≥ {:.1}% = LIMIT REACHED",
+        config.error_rate_threshold
+    );
+    println!(
+        "  ⚠️  P99 Latency > {:.2}s = WARNING",
+        config.p99_latency_threshold
+    );
+    println!(
+        "  ⚠️  Active Requests > {} = WARNING",
+        config.active_requests_threshold
+    );
     println!();
-    println!("Mode: CONTINUOUS - runs until error rate ≥ {:.1}% or max users reached", config.error_rate_threshold);
+    println!(
+        "Mode: CONTINUOUS - runs until error rate ≥ {:.1}% or max users reached",
+        config.error_rate_threshold
+    );
     println!("Press Ctrl+C to stop manually\n");
-    
+
     let mut current_users = config.start_users;
     let mut cycle = 1;
     let mut last_healthy_users = config.start_users;
     let mut last_healthy_throughput = 0.0;
-    
+
     loop {
         println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        println!("Cycle {} - Testing with {} concurrent users", cycle, current_users);
+        println!(
+            "Cycle {} - Testing with {} concurrent users",
+            cycle, current_users
+        );
         println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        
+
         // Run Goose attack for this cycle
         GooseAttack::initialize()?
             .set_default(GooseDefault::Host, config.host.as_str())?
             .set_default(GooseDefault::Users, current_users)?
             .set_default(GooseDefault::RunTime, config.stage_duration_secs as usize)?
-            .set_default(GooseDefault::HatchRate, config.hatch_rate.to_string().as_str())?
+            .set_default(
+                GooseDefault::HatchRate,
+                config.hatch_rate.to_string().as_str(),
+            )?
             .register_scenario(
                 scenario!("Infrastructure")
                     .set_weight(10)?
                     .register_transaction(transaction!(health_check))
-                    .register_transaction(transaction!(test_metrics))
+                    .register_transaction(transaction!(test_metrics)),
             )
             .register_scenario(
                 scenario!("Pet Store API")
@@ -443,7 +484,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .register_transaction(transaction!(list_pets).set_weight(4)?)
                     .register_transaction(transaction!(get_pet).set_weight(5)?)
                     .register_transaction(transaction!(search_pets).set_weight(3)?)
-                    .register_transaction(transaction!(add_pet).set_weight(2)?)
+                    .register_transaction(transaction!(add_pet).set_weight(2)?),
             )
             .register_scenario(
                 scenario!("User API")
@@ -452,7 +493,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .register_transaction(transaction!(get_user).set_weight(4)?)
                     .register_transaction(transaction!(list_user_posts).set_weight(2)?)
                     .register_transaction(transaction!(get_user_post).set_weight(2)?)
-                    .register_transaction(transaction!(delete_user).set_weight(1)?)
+                    .register_transaction(transaction!(delete_user).set_weight(1)?),
             )
             .register_scenario(
                 scenario!("Advanced API")
@@ -462,46 +503,60 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .register_transaction(transaction!(post_item).set_weight(1)?)
                     .register_transaction(transaction!(get_admin_settings).set_weight(1)?)
                     .register_transaction(transaction!(get_download).set_weight(1)?)
-                    .register_transaction(transaction!(post_webhook).set_weight(1)?)
+                    .register_transaction(transaction!(post_webhook).set_weight(1)?),
             )
             .register_scenario(
                 scenario!("Path Parameters")
                     .set_weight(10)?
-                    .register_transaction(transaction!(label_path))
+                    .register_transaction(transaction!(label_path)),
             )
             .register_scenario(
                 scenario!("Static Resources")
                     .set_weight(10)?
                     .register_transaction(transaction!(load_openapi))
                     .register_transaction(transaction!(load_index))
-                    .register_transaction(transaction!(test_swagger_ui))
+                    .register_transaction(transaction!(test_swagger_ui)),
             )
             .execute()
             .await?;
-        
+
         // Transition to Prometheus health check
         println!("\n╭─────────────────────────────────────────────────────────────────────╮");
-        println!("│ 🔍 Checking Prometheus Metrics - Cycle {}                           │", cycle);
+        println!(
+            "│ 🔍 Checking Prometheus Metrics - Cycle {}                           │",
+            cycle
+        );
         println!("╰─────────────────────────────────────────────────────────────────────╯");
         println!("⏳ Waiting 5 seconds for Prometheus to scrape metrics...\n");
         tokio::time::sleep(Duration::from_secs(5)).await;
-        
+
         // Query Prometheus for system health
         match get_system_metrics(&config.prometheus_url).await {
             Ok(system_metrics) => {
                 println!("📊 System Metrics:");
-                println!("  Error Rate: {:.2}% (threshold: {:.1}%)", 
-                    system_metrics.error_rate_percent, config.error_rate_threshold);
-                println!("  P99 Latency: {:.3}s (threshold: {:.2}s)", 
-                    system_metrics.p99_latency_seconds, config.p99_latency_threshold);
-                println!("  Active Requests: {} (threshold: {})", 
-                    system_metrics.active_requests, config.active_requests_threshold);
-                println!("  Throughput: {:.0} req/s", system_metrics.requests_per_second);
-                
+                println!(
+                    "  Error Rate: {:.2}% (threshold: {:.1}%)",
+                    system_metrics.error_rate_percent, config.error_rate_threshold
+                );
+                println!(
+                    "  P99 Latency: {:.3}s (threshold: {:.2}s)",
+                    system_metrics.p99_latency_seconds, config.p99_latency_threshold
+                );
+                println!(
+                    "  Active Requests: {} (threshold: {})",
+                    system_metrics.active_requests, config.active_requests_threshold
+                );
+                println!(
+                    "  Throughput: {:.0} req/s",
+                    system_metrics.requests_per_second
+                );
+
                 // Check primary failure condition: error rate
                 if system_metrics.error_rate_percent >= config.error_rate_threshold {
-                    println!("\n🔴 LIMIT REACHED - Error Rate: {:.2}% ≥ {:.1}%", 
-                        system_metrics.error_rate_percent, config.error_rate_threshold);
+                    println!(
+                        "\n🔴 LIMIT REACHED - Error Rate: {:.2}% ≥ {:.1}%",
+                        system_metrics.error_rate_percent, config.error_rate_threshold
+                    );
                     println!("\n╔══════════════════════════════════════════════════════════════════════════╗");
                     println!("║  Breaking Point Identified 🎯                                            ║");
                     println!("╚══════════════════════════════════════════════════════════════════════════╝");
@@ -509,31 +564,45 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     println!("Maximum Capacity Found:");
                     println!("  Breaking Point: {} concurrent users", current_users);
                     println!("  Last Healthy Load: {} users", last_healthy_users);
-                    println!("  Peak Throughput: {:.0} req/s (at {} users)", 
-                        last_healthy_throughput, last_healthy_users);
-                    println!("  Current Error Rate: {:.2}%", system_metrics.error_rate_percent);
+                    println!(
+                        "  Peak Throughput: {:.0} req/s (at {} users)",
+                        last_healthy_throughput, last_healthy_users
+                    );
+                    println!(
+                        "  Current Error Rate: {:.2}%",
+                        system_metrics.error_rate_percent
+                    );
                     println!();
                     println!("Recommendation:");
-                    println!("  Set production limit to ~{} users (80% of last healthy)", 
-                        (last_healthy_users as f64 * 0.8) as usize);
-                    println!("  Expected throughput: ~{:.0} req/s", last_healthy_throughput * 0.8);
+                    println!(
+                        "  Set production limit to ~{} users (80% of last healthy)",
+                        (last_healthy_users as f64 * 0.8) as usize
+                    );
+                    println!(
+                        "  Expected throughput: ~{:.0} req/s",
+                        last_healthy_throughput * 0.8
+                    );
                     println!();
-                    
+
                     break;
                 } else {
                     // System is healthy, record this state and continue
                     let mut warnings = Vec::new();
-                    
+
                     if system_metrics.p99_latency_seconds > config.p99_latency_threshold {
-                        warnings.push(format!("⚠️  P99 latency {:.3}s > {:.2}s", 
-                            system_metrics.p99_latency_seconds, config.p99_latency_threshold));
+                        warnings.push(format!(
+                            "⚠️  P99 latency {:.3}s > {:.2}s",
+                            system_metrics.p99_latency_seconds, config.p99_latency_threshold
+                        ));
                     }
-                    
+
                     if system_metrics.active_requests > config.active_requests_threshold {
-                        warnings.push(format!("⚠️  Active requests {} > {}", 
-                            system_metrics.active_requests, config.active_requests_threshold));
+                        warnings.push(format!(
+                            "⚠️  Active requests {} > {}",
+                            system_metrics.active_requests, config.active_requests_threshold
+                        ));
                     }
-                    
+
                     if warnings.is_empty() {
                         println!("\n✅ System healthy - increasing load");
                     } else {
@@ -541,10 +610,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         for warning in &warnings {
                             println!("   {}", warning);
                         }
-                        println!("   Error rate still acceptable ({:.2}%), continuing ramp-up", 
-                            system_metrics.error_rate_percent);
+                        println!(
+                            "   Error rate still acceptable ({:.2}%), continuing ramp-up",
+                            system_metrics.error_rate_percent
+                        );
                     }
-                    
+
                     // Update last known healthy state
                     last_healthy_users = current_users;
                     last_healthy_throughput = system_metrics.requests_per_second;
@@ -553,17 +624,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Err(e) => {
                 println!("\n⚠️  Warning: Could not query Prometheus: {}", e);
                 println!("   Continuing test (assuming healthy)...");
-                println!("   Tip: Ensure Prometheus is accessible at {}", config.prometheus_url);
-                
+                println!(
+                    "   Tip: Ensure Prometheus is accessible at {}",
+                    config.prometheus_url
+                );
+
                 last_healthy_users = current_users;
             }
         }
-        
+
         // Check if we've hit the max users safety limit
         if current_users >= config.max_users {
-            println!("\n╔══════════════════════════════════════════════════════════════════════════╗");
-            println!("║  Max Users Reached - No Failure Detected ✅                              ║");
-            println!("╚══════════════════════════════════════════════════════════════════════════╝");
+            println!(
+                "\n╔══════════════════════════════════════════════════════════════════════════╗"
+            );
+            println!(
+                "║  Max Users Reached - No Failure Detected ✅                              ║"
+            );
+            println!(
+                "╚══════════════════════════════════════════════════════════════════════════╝"
+            );
             println!();
             println!("Safety Limit Hit:");
             println!("  Maximum Tested: {} users", current_users);
@@ -571,18 +651,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("  Error Rate: Still below threshold");
             println!();
             println!("Recommendation:");
-            println!("  System can handle ≥ {} users without errors", current_users);
+            println!(
+                "  System can handle ≥ {} users without errors",
+                current_users
+            );
             println!("  Consider increasing MAX_USERS to find actual limit");
             println!("  Or tighten ERROR_RATE_THRESHOLD for stricter SLA");
             break;
         }
-        
+
         // Increment users for next cycle
         current_users += config.ramp_step;
         cycle += 1;
         println!();
     }
-    
+
     Ok(())
 }
-

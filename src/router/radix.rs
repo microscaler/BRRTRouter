@@ -538,7 +538,10 @@ mod tests {
         assert_eq!(params2.len(), 3);
 
         // Test third route - should extract org, team, member
-        let result3 = router.route(Method::GET, "/orgs/mycompany/teams/engineering/members/alice");
+        let result3 = router.route(
+            Method::GET,
+            "/orgs/mycompany/teams/engineering/members/alice",
+        );
         assert!(result3.is_some());
         let (route3, params3) = result3.unwrap();
         assert_eq!(route3.handler_name, "get_org_team_member");
@@ -593,7 +596,10 @@ mod tests {
         assert_eq!(params2.len(), 4);
 
         // Test third route - 4 levels with yet another set of parameter names
-        let result3 = router.route(Method::GET, "/api/v3/companies/acme/departments/engineering/employees/alice");
+        let result3 = router.route(
+            Method::GET,
+            "/api/v3/companies/acme/departments/engineering/employees/alice",
+        );
         assert!(result3.is_some());
         let (route3, params3) = result3.unwrap();
         assert_eq!(route3.handler_name, "get_company_dept_employee");
@@ -613,11 +619,7 @@ mod tests {
                 "/api/v1/users/{user_id}/profile",
                 "get_user_profile",
             ),
-            create_route_meta(
-                Method::GET,
-                "/api/v1/users/{id}/posts",
-                "get_user_posts",
-            ),
+            create_route_meta(Method::GET, "/api/v1/users/{id}/posts", "get_user_posts"),
             create_route_meta(
                 Method::GET,
                 "/api/v1/users/{user_id}/posts/{post_id}",
@@ -740,11 +742,7 @@ mod tests {
                 "/org/{id}/team/{team_id}/user/{id}",
                 "get_org_team_user",
             ),
-            create_route_meta(
-                Method::GET,
-                "/org/{id}/projects",
-                "get_org_projects",
-            ),
+            create_route_meta(Method::GET, "/org/{id}/projects", "get_org_projects"),
             create_route_meta(
                 Method::GET,
                 "/company/{id}/dept/{dept_id}/employee/{id}",
@@ -774,7 +772,10 @@ mod tests {
         assert_eq!(params2.len(), 1);
 
         // Test another route with duplicate {id} at different depths
-        let result3 = router.route(Method::GET, "/company/comp999/dept/engineering/employee/bob");
+        let result3 = router.route(
+            Method::GET,
+            "/company/comp999/dept/engineering/employee/bob",
+        );
         assert!(result3.is_some());
         let (route3, params3) = result3.unwrap();
         assert_eq!(route3.handler_name, "get_company_dept_employee");
@@ -829,11 +830,11 @@ mod tests {
     fn test_radix_router_backtracking_with_overlapping_param_names() {
         // This test demonstrates the bug where backtracking incorrectly removes
         // a parent parameter instead of restoring its previous value.
-        // 
+        //
         // Scenario:
         // - Route 1: /org/{id}/team/{id}/members (inserted first, will fail to match)
         // - Route 2: /org/{id}/team/{team_id}/stats (inserted second, should match)
-        // 
+        //
         // When matching /org/org123/team/team456/stats:
         // 1. First, {id} at /org level is set to "org123"
         // 2. Then we try the first param_child: {id} at /team level, overwriting to "team456"
@@ -862,11 +863,14 @@ mod tests {
         assert!(result.is_some());
         let (route, params) = result.unwrap();
         assert_eq!(route.handler_name, "get_team_stats");
-        
+
         // The bug manifests here: "id" parameter is missing because it was removed
         // during backtracking instead of being restored to "org123"
-        assert_eq!(params.get("id"), Some(&"org123".to_string()), 
-                   "org id should be preserved after backtracking from failed route");
+        assert_eq!(
+            params.get("id"),
+            Some(&"org123".to_string()),
+            "org id should be preserved after backtracking from failed route"
+        );
         assert_eq!(params.get("team_id"), Some(&"team456".to_string()));
         assert_eq!(params.len(), 2);
 
@@ -911,12 +915,18 @@ mod tests {
         assert!(result.is_some());
         let (route, params) = result.unwrap();
         assert_eq!(route.handler_name, "get_team_stats_v2");
-        
+
         // All three parameters should be present and correct
-        assert_eq!(params.get("version"), Some(&"v2".to_string()),
-                   "version parameter should be preserved after multiple backtracks");
-        assert_eq!(params.get("id"), Some(&"org456".to_string()),
-                   "org id should be preserved after multiple backtracks");
+        assert_eq!(
+            params.get("version"),
+            Some(&"v2".to_string()),
+            "version parameter should be preserved after multiple backtracks"
+        );
+        assert_eq!(
+            params.get("id"),
+            Some(&"org456".to_string()),
+            "org id should be preserved after multiple backtracks"
+        );
         assert_eq!(params.get("team_id"), Some(&"team789".to_string()));
         assert_eq!(params.len(), 3);
     }

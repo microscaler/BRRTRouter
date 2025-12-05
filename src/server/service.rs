@@ -1,6 +1,7 @@
 use super::request::{parse_request, ParsedRequest};
 use super::response::{write_handler_response, write_json_error};
 use crate::dispatcher::Dispatcher;
+use crate::ids::RequestId;
 use crate::middleware::MetricsMiddleware;
 use crate::router::Router;
 use crate::security::{SecurityProvider, SecurityRequest};
@@ -16,7 +17,6 @@ use std::sync::OnceLock;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use tracing::{info, warn};
-use crate::ids::RequestId;
 
 /// HTTP application service that handles all incoming requests
 ///
@@ -135,7 +135,7 @@ impl AppService {
         // Load runtime config to determine if caching is enabled
         let runtime_config = crate::runtime_config::RuntimeConfig::from_env();
         let validator_cache = ValidatorCache::new(runtime_config.schema_cache_enabled);
-        
+
         Self {
             router,
             dispatcher,
@@ -194,10 +194,10 @@ impl AppService {
                 metrics.pre_register_paths(&paths);
             }
         }
-        
+
         self.metrics = Some(metrics);
     }
-    
+
     /// Set the memory tracking middleware
     ///
     /// Enables memory usage tracking and export to OpenTelemetry/Prometheus.
@@ -362,17 +362,29 @@ pub fn health_endpoint(res: &mut Response) -> io::Result<()> {
 /// - Worker pool metrics (queue depth, shed count)
 /// - Memory usage metrics (RSS, heap, growth)
 /// - Legacy per-path metrics (backward compatible)
-pub fn metrics_endpoint(res: &mut Response, metrics: &MetricsMiddleware, memory: Option<&crate::middleware::MemoryMiddleware>, dispatcher: Option<&Dispatcher>) -> io::Result<()> {
+pub fn metrics_endpoint(
+    res: &mut Response,
+    metrics: &MetricsMiddleware,
+    memory: Option<&crate::middleware::MemoryMiddleware>,
+    dispatcher: Option<&Dispatcher>,
+) -> io::Result<()> {
     let (stack_size, used_stack) = metrics.stack_usage();
     let mut body = String::with_capacity(8192); // Pre-allocate for performance
 
     // Active requests (NEW - for Grafana "Active Requests" panel)
-    body.push_str("# HELP brrtrouter_active_requests Number of requests currently being processed\n");
+    body.push_str(
+        "# HELP brrtrouter_active_requests Number of requests currently being processed\n",
+    );
     body.push_str("# TYPE brrtrouter_active_requests gauge\n");
-    body.push_str(&format!("brrtrouter_active_requests {}\n", metrics.active_requests()));
+    body.push_str(&format!(
+        "brrtrouter_active_requests {}\n",
+        metrics.active_requests()
+    ));
 
     // Requests with status code labels (NEW - for Grafana "Error Rate" panel)
-    body.push_str("# HELP brrtrouter_requests_total Total number of HTTP requests by path and status\n");
+    body.push_str(
+        "# HELP brrtrouter_requests_total Total number of HTTP requests by path and status\n",
+    );
     body.push_str("# TYPE brrtrouter_requests_total counter\n");
     let status_stats = metrics.status_stats();
     for ((path, status), count) in &status_stats {
@@ -387,7 +399,7 @@ pub fn metrics_endpoint(res: &mut Response, metrics: &MetricsMiddleware, memory:
     body.push_str("# TYPE brrtrouter_request_duration_seconds histogram\n");
     let (buckets, sum_ns, count) = metrics.histogram_data();
     let bucket_boundaries = MetricsMiddleware::histogram_buckets();
-    
+
     // Emit histogram buckets
     for (i, &boundary) in bucket_boundaries.iter().enumerate() {
         body.push_str(&format!(
@@ -417,7 +429,9 @@ pub fn metrics_endpoint(res: &mut Response, metrics: &MetricsMiddleware, memory:
         metrics.top_level_request_count()
     ));
 
-    body.push_str("# HELP brrtrouter_auth_failures_total Total number of authentication failures\n");
+    body.push_str(
+        "# HELP brrtrouter_auth_failures_total Total number of authentication failures\n",
+    );
     body.push_str("# TYPE brrtrouter_auth_failures_total counter\n");
     body.push_str(&format!(
         "brrtrouter_auth_failures_total {}\n",
@@ -449,9 +463,7 @@ pub fn metrics_endpoint(res: &mut Response, metrics: &MetricsMiddleware, memory:
     body.push_str("# HELP brrtrouter_request_latency_seconds Average request latency in seconds\n");
     body.push_str("# TYPE brrtrouter_request_latency_seconds gauge\n");
     let avg = metrics.average_latency().as_secs_f64();
-    body.push_str(&format!(
-        "brrtrouter_request_latency_seconds {avg:.6}\n",
-    ));
+    body.push_str(&format!("brrtrouter_request_latency_seconds {avg:.6}\n",));
 
     body.push_str("# HELP brrtrouter_coroutine_stack_bytes Configured coroutine stack size\n");
     body.push_str("# TYPE brrtrouter_coroutine_stack_bytes gauge\n");
@@ -468,7 +480,7 @@ pub fn metrics_endpoint(res: &mut Response, metrics: &MetricsMiddleware, memory:
         let worker_metrics = disp.worker_pool_metrics();
         if !worker_metrics.is_empty() {
             body.push_str("\n# Worker Pool Metrics\n");
-            
+
             body.push_str("# HELP brrtrouter_worker_pool_queue_depth Current queue depth for worker pool handlers\n");
             body.push_str("# TYPE brrtrouter_worker_pool_queue_depth gauge\n");
             for (handler, (queue_depth, _, _, _)) in &worker_metrics {
@@ -477,7 +489,7 @@ pub fn metrics_endpoint(res: &mut Response, metrics: &MetricsMiddleware, memory:
                     "brrtrouter_worker_pool_queue_depth{{handler=\"{escaped_handler}\"}} {queue_depth}\n",
                 ));
             }
-            
+
             body.push_str("# HELP brrtrouter_worker_pool_shed_total Total requests shed due to backpressure\n");
             body.push_str("# TYPE brrtrouter_worker_pool_shed_total counter\n");
             for (handler, (_, shed_count, _, _)) in &worker_metrics {
@@ -486,7 +498,7 @@ pub fn metrics_endpoint(res: &mut Response, metrics: &MetricsMiddleware, memory:
                     "brrtrouter_worker_pool_shed_total{{handler=\"{escaped_handler}\"}} {shed_count}\n",
                 ));
             }
-            
+
             body.push_str("# HELP brrtrouter_worker_pool_dispatched_total Total requests dispatched to worker pool\n");
             body.push_str("# TYPE brrtrouter_worker_pool_dispatched_total counter\n");
             for (handler, (_, _, dispatched, _)) in &worker_metrics {
@@ -495,7 +507,7 @@ pub fn metrics_endpoint(res: &mut Response, metrics: &MetricsMiddleware, memory:
                     "brrtrouter_worker_pool_dispatched_total{{handler=\"{escaped_handler}\"}} {dispatched}\n",
                 ));
             }
-            
+
             body.push_str("# HELP brrtrouter_worker_pool_completed_total Total requests completed by worker pool\n");
             body.push_str("# TYPE brrtrouter_worker_pool_completed_total counter\n");
             for (handler, (_, _, _, completed)) in &worker_metrics {
@@ -509,7 +521,7 @@ pub fn metrics_endpoint(res: &mut Response, metrics: &MetricsMiddleware, memory:
 
     // Legacy per-path metrics (backward compatible)
     let path_stats = metrics.path_stats();
-    
+
     body.push_str("# HELP brrtrouter_path_requests_total Total requests per path (legacy)\n");
     body.push_str("# TYPE brrtrouter_path_requests_total counter\n");
     for (path, (count, _, _, _)) in &path_stats {
@@ -548,7 +560,7 @@ pub fn metrics_endpoint(res: &mut Response, metrics: &MetricsMiddleware, memory:
             "brrtrouter_path_latency_seconds_max{{path=\"{escaped_path}\"}} {max_secs:.6}\n",
         ));
     }
-    
+
     // Add memory metrics if middleware is available
     if let Some(memory_mw) = memory {
         body.push_str("\n# Memory Metrics\n");
@@ -747,10 +759,7 @@ impl HttpService for AppService {
         let _enter = span.enter();
 
         // Calculate header size (always accurate)
-        let header_size_bytes: usize = headers
-            .iter()
-            .map(|(k, v)| k.len() + v.len())
-            .sum();
+        let header_size_bytes: usize = headers.iter().map(|(k, v)| k.len() + v.len()).sum();
 
         // Calculate body size using Content-Length header if available
         // This avoids expensive JSON serialization in the hot path
@@ -849,23 +858,33 @@ impl HttpService for AppService {
         }
 
         // Determine/accept request id from headers; fallback to generated
-        let inbound_req_id = headers
-            .get("x-request-id")
-            .and_then(|s| if s.trim().is_empty() { None } else { Some(s.as_str()) });
+        let inbound_req_id = headers.get("x-request-id").and_then(|s| {
+            if s.trim().is_empty() {
+                None
+            } else {
+                Some(s.as_str())
+            }
+        });
         let canonical_req_id = RequestId::from_header_or_new(inbound_req_id);
 
         let route_opt = {
             // Router lock: panic on poison is appropriate - system is in undefined state
-            let router = self.router.read()
+            let router = self
+                .router
+                .read()
                 .expect("router RwLock poisoned - critical error");
             // Parse HTTP method - return 400 if somehow invalid
             let http_method = match method.parse() {
                 Ok(m) => m,
                 Err(_) => {
-                    write_json_error(res, 400, serde_json::json!({
-                        "error": "Bad Request",
-                        "message": format!("Invalid HTTP method: {}", method)
-                    }));
+                    write_json_error(
+                        res,
+                        400,
+                        serde_json::json!({
+                            "error": "Bad Request",
+                            "message": format!("Invalid HTTP method: {}", method)
+                        }),
+                    );
                     return Ok(());
                 }
             };
@@ -873,14 +892,14 @@ impl HttpService for AppService {
         };
         if let Some(mut route_match) = route_opt {
             route_match.query_params = query_params.clone();
-            
+
             // Update total_size_bytes with estimated body size if Content-Length was not available
             if body_size_bytes == 0 && body.is_some() {
                 if let Some(estimated) = route_match.route.estimated_request_body_bytes {
                     _request_logger.total_size_bytes = header_size_bytes + estimated;
                 }
             }
-            
+
             // Perform security validation first
             if !route_match.route.security.is_empty() {
                 // S1: Security check start
@@ -962,12 +981,12 @@ impl HttpService for AppService {
                             scopes = ?scopes,
                             "Provider validation start"
                         );
-                        
+
                         // Measure authentication/authorization performance
                         let auth_start = std::time::Instant::now();
                         let auth_result = provider.validate(scheme, scopes, &sec_req);
                         let auth_duration = auth_start.elapsed();
-                        
+
                         // Log slow authentication
                         if auth_duration > Duration::from_millis(100) {
                             warn!(
@@ -984,7 +1003,7 @@ impl HttpService for AppService {
                                 "Authentication completed"
                             );
                         }
-                        
+
                         if !auth_result {
                             // Detect insufficient scope for Bearer/OAuth2: token valid but scopes missing
                             match scheme {
@@ -1134,16 +1153,24 @@ impl HttpService for AppService {
                 );
 
                 // Use cached validator instead of compiling on every request
-                let compiled = match self.validator_cache
-                    .get_or_compile(&route_match.handler_name, "request", None, schema) {
+                let compiled = match self.validator_cache.get_or_compile(
+                    &route_match.handler_name,
+                    "request",
+                    None,
+                    schema,
+                ) {
                     Some(v) => v,
                     None => {
                         // Schema compilation failed - this is a server configuration error
                         tracing::error!(handler = %route_match.handler_name, "Failed to compile request schema");
-                        write_json_error(res, 500, serde_json::json!({
-                            "error": "Internal Server Error",
-                            "message": "Request schema configuration error"
-                        }));
+                        write_json_error(
+                            res,
+                            500,
+                            serde_json::json!({
+                                "error": "Internal Server Error",
+                                "message": "Request schema configuration error"
+                            }),
+                        );
                         return Ok(());
                     }
                 };
@@ -1184,14 +1211,22 @@ impl HttpService for AppService {
             }
 
             let handler_response = {
-                let dispatcher = self.dispatcher.read()
+                let dispatcher = self
+                    .dispatcher
+                    .read()
                     .expect("dispatcher RwLock poisoned - critical error");
                 // Determine or generate request id to pass into dispatcher
                 let req_id = _request_logger
                     .request_id
                     .unwrap_or(canonical_req_id)
                     .to_string();
-                dispatcher.dispatch_with_request_id(route_match.clone(), body, headers.clone(), cookies, req_id)
+                dispatcher.dispatch_with_request_id(
+                    route_match.clone(),
+                    body,
+                    headers.clone(),
+                    cookies,
+                    req_id,
+                )
             };
             match handler_response {
                 Some(hr) => {
@@ -1216,8 +1251,12 @@ impl HttpService for AppService {
 
                         // Use cached validator instead of compiling on every response
                         // If compilation fails, skip validation but still return response
-                        if let Some(compiled) = self.validator_cache
-                            .get_or_compile(&route_match.handler_name, "response", Some(hr.status), schema) {
+                        if let Some(compiled) = self.validator_cache.get_or_compile(
+                            &route_match.handler_name,
+                            "response",
+                            Some(hr.status),
+                            schema,
+                        ) {
                             let validation = compiled.validate(&hr.body);
                             if let Err(errors) = validation {
                                 // V7: Response validation failed

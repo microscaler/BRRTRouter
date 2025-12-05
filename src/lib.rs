@@ -834,28 +834,28 @@ static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 pub mod cli;
 
 pub mod dispatcher;
-pub mod ids;
 mod dummy_value;
 mod echo;
 pub mod generator;
 pub mod hot_reload;
+pub mod ids;
+pub mod linter;
+#[cfg(test)]
+#[path = "linter/tests.rs"]
+mod linter_tests;
 pub mod middleware;
 pub mod otel;
 pub mod router;
 pub mod runtime_config;
 pub mod security;
-pub mod validator_cache;
 pub mod server;
 pub mod spec;
 pub mod sse;
 pub mod static_files;
 pub mod typed;
 pub mod validator;
+pub mod validator_cache;
 pub mod worker_pool;
-#[cfg(test)]
-#[path = "linter/tests.rs"]
-mod linter_tests;
-pub mod linter;
 
 pub use security::{BearerJwtProvider, OAuth2Provider, SecurityProvider, SecurityRequest};
 pub use spec::{

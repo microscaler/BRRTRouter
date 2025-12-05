@@ -133,13 +133,12 @@ fn curl_static_index_html_served() {
     // 2. SolidJS Pet Store Dashboard (if sample-ui has been built)
     let (ok, body, headers) = run_http(&format!("{}/index.html", curl_harness::base_url()));
     assert!(ok, "GET /index.html failed: headers=\n{}", headers);
-    
+
     // Accept either the simple static HTML or the Pet Store Dashboard
     let is_simple_html = body.contains("It works!");
-    let is_pet_store_dashboard = body.contains("Pet Store") || 
-                                   body.contains("pet-store") || 
-                                   body.contains("BRRTRouter");
-    
+    let is_pet_store_dashboard =
+        body.contains("Pet Store") || body.contains("pet-store") || body.contains("BRRTRouter");
+
     assert!(
         is_simple_html || is_pet_store_dashboard,
         "Expected either simple 'It works!' HTML or Pet Store Dashboard, got body snippet: {}",

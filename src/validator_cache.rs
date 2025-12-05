@@ -80,7 +80,7 @@
 
 use jsonschema::JSONSchema;
 use serde_json::Value;
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use tracing::{debug, info};
@@ -140,7 +140,7 @@ impl SpecVersion {
             hash: hash.into(),
         }
     }
-    
+
     /// Create a spec version from raw spec content
     ///
     /// Computes the SHA-256 hash of the content and uses the first 16 characters.
@@ -163,7 +163,7 @@ impl SpecVersion {
             hash: hash.chars().take(16).collect(),
         }
     }
-    
+
     /// Format as a cache key component
     ///
     /// # Returns
@@ -248,7 +248,12 @@ impl ValidatorCache {
     /// # Returns
     ///
     /// Cache key string in format: "{version}:{hash}:{handler_name}:{kind}:{status}"
-    fn cache_key(spec_version: &SpecVersion, handler_name: &str, kind: &str, status: Option<u16>) -> String {
+    fn cache_key(
+        spec_version: &SpecVersion,
+        handler_name: &str,
+        kind: &str,
+        status: Option<u16>,
+    ) -> String {
         let version_key = spec_version.to_key();
         match status {
             Some(s) => format!("{}:{}:{}:{}", version_key, handler_name, kind, s),
@@ -286,12 +291,14 @@ impl ValidatorCache {
     ) -> Option<Arc<JSONSchema>> {
         // If cache is disabled, compile on-demand without caching
         if !self.enabled {
-            return JSONSchema::compile(schema)
-                .map(Arc::new)
-                .ok();
+            return JSONSchema::compile(schema).map(Arc::new).ok();
         }
 
-        let spec_version = self.spec_version.read().expect("spec version lock poisoned").clone();
+        let spec_version = self
+            .spec_version
+            .read()
+            .expect("spec version lock poisoned")
+            .clone();
         let key = Self::cache_key(&spec_version, handler_name, kind, status);
 
         // Fast path: Check if validator is already cached (read lock only)
@@ -316,7 +323,7 @@ impl ValidatorCache {
             Ok(compiled) => {
                 let validator = Arc::new(compiled);
                 let mut cache = self.cache.write().expect("validator cache lock poisoned");
-                
+
                 // Double-check pattern: Another thread might have compiled while we waited
                 if let Some(existing) = cache.get(&key) {
                     debug!(
@@ -330,7 +337,7 @@ impl ValidatorCache {
                     );
                     return Some(Arc::clone(existing));
                 }
-                
+
                 cache.insert(key.clone(), Arc::clone(&validator));
                 info!(
                     handler_name = handler_name,
@@ -367,7 +374,10 @@ impl ValidatorCache {
     ///
     /// Number of validators currently cached
     pub fn size(&self) -> usize {
-        self.cache.read().expect("validator cache lock poisoned").len()
+        self.cache
+            .read()
+            .expect("validator cache lock poisoned")
+            .len()
     }
 
     /// Clear all cached validators and increment spec version
@@ -378,14 +388,17 @@ impl ValidatorCache {
     /// they won't match new requests (defense in depth).
     pub fn clear(&self) {
         let mut cache = self.cache.write().expect("validator cache lock poisoned");
-        let mut version = self.spec_version.write().expect("spec version lock poisoned");
-        
+        let mut version = self
+            .spec_version
+            .write()
+            .expect("spec version lock poisoned");
+
         let old_version = version.clone();
         // Increment version and generate new placeholder hash
         version.version += 1;
         version.hash = format!("reload-{}", version.version);
         let new_version = version.clone();
-        
+
         cache.clear();
         info!(
             old_version = old_version.version,
@@ -395,7 +408,7 @@ impl ValidatorCache {
             "Schema validator cache cleared and spec version incremented"
         );
     }
-    
+
     /// Update the spec version with content from a new spec file and clear cache
     ///
     /// Computes a hash of the spec content, increments the version counter, and clears
@@ -406,9 +419,12 @@ impl ValidatorCache {
     /// * `spec_content` - Raw spec file content for hash computation
     pub fn update_spec_version(&self, spec_content: &[u8]) {
         let mut cache = self.cache.write().expect("validator cache lock poisoned");
-        let mut version = self.spec_version.write().expect("spec version lock poisoned");
+        let mut version = self
+            .spec_version
+            .write()
+            .expect("spec version lock poisoned");
         let old_version = version.clone();
-        
+
         // Increment version and compute content hash
         version.version += 1;
         let mut hasher = Sha256::new();
@@ -416,12 +432,12 @@ impl ValidatorCache {
         let result = hasher.finalize();
         let hash_full = format!("{:x}", result);
         version.hash = hash_full.chars().take(16).collect();
-        
+
         let new_version = version.clone();
-        
+
         // Clear the cache with both locks held to ensure atomicity
         cache.clear();
-        
+
         info!(
             old_version = old_version.version,
             old_hash = %old_version.hash,
@@ -430,7 +446,7 @@ impl ValidatorCache {
             "Spec version updated with content hash and cache cleared"
         );
     }
-    
+
     /// Get the current spec version
     ///
     /// Useful for debugging and monitoring cache behavior across hot reloads.
@@ -439,7 +455,10 @@ impl ValidatorCache {
     ///
     /// Current spec version
     pub fn spec_version(&self) -> SpecVersion {
-        self.spec_version.read().expect("spec version lock poisoned").clone()
+        self.spec_version
+            .read()
+            .expect("spec version lock poisoned")
+            .clone()
     }
 
     /// Pre-compile and cache all schemas from routes at startup
@@ -466,34 +485,45 @@ impl ValidatorCache {
         }
 
         let mut compiled_count = 0;
-        
+
         for route in routes {
             // Compile request schema if present
             if let Some(ref request_schema) = route.request_schema {
-                if self.get_or_compile(&route.handler_name, "request", None, request_schema).is_some() {
+                if self
+                    .get_or_compile(&route.handler_name, "request", None, request_schema)
+                    .is_some()
+                {
                     compiled_count += 1;
                 }
             }
-            
+
             // Compile response schemas for all status codes
             for (status_code, content_types) in &route.responses {
                 for response_spec in content_types.values() {
                     if let Some(ref response_schema) = response_spec.schema {
-                        if self.get_or_compile(&route.handler_name, "response", Some(*status_code), response_schema).is_some() {
+                        if self
+                            .get_or_compile(
+                                &route.handler_name,
+                                "response",
+                                Some(*status_code),
+                                response_schema,
+                            )
+                            .is_some()
+                        {
                             compiled_count += 1;
                         }
                     }
                 }
             }
         }
-        
+
         info!(
             compiled_count = compiled_count,
             cache_size = self.size(),
             routes_count = routes.len(),
             "Precompiled schemas at startup"
         );
-        
+
         compiled_count
     }
 }
@@ -567,7 +597,7 @@ mod tests {
     fn test_cache_key_format() {
         let v1 = SpecVersion::new(1, "abc123");
         let v2 = SpecVersion::new(2, "def456");
-        
+
         assert_eq!(
             ValidatorCache::cache_key(&v1, "list_pets", "request", None),
             "1:abc123:list_pets:request"
@@ -598,22 +628,35 @@ mod tests {
         let schema = json!({"type": "object"});
 
         let initial_version = cache.spec_version();
-        assert_eq!(initial_version.version, 1, "Initial spec version should be 1");
-        
+        assert_eq!(
+            initial_version.version, 1,
+            "Initial spec version should be 1"
+        );
+
         cache.get_or_compile("handler1", "request", None, &schema);
         cache.get_or_compile("handler2", "request", None, &schema);
         assert_eq!(cache.size(), 2);
 
         cache.clear();
         assert_eq!(cache.size(), 0);
-        
+
         let new_version = cache.spec_version();
-        assert_eq!(new_version.version, 2, "Spec version should increment after clear");
-        assert_ne!(new_version.hash, initial_version.hash, "Hash should change after clear");
-        
+        assert_eq!(
+            new_version.version, 2,
+            "Spec version should increment after clear"
+        );
+        assert_ne!(
+            new_version.hash, initial_version.hash,
+            "Hash should change after clear"
+        );
+
         // After clear with new version, old keys won't be found
         cache.get_or_compile("handler1", "request", None, &schema);
-        assert_eq!(cache.size(), 1, "Should create new entry with new spec version");
+        assert_eq!(
+            cache.size(),
+            1,
+            "Should create new entry with new spec version"
+        );
     }
 
     #[test]
@@ -624,7 +667,7 @@ mod tests {
         use std::path::PathBuf;
 
         let cache = ValidatorCache::new(true);
-        
+
         // Create a mock route with request and response schemas
         let mut responses = HashMap::new();
         let mut response_content = HashMap::new();
@@ -639,7 +682,7 @@ mod tests {
                     }
                 })),
                 example: None,
-            }
+            },
         );
         responses.insert(200, response_content);
 
@@ -670,23 +713,32 @@ mod tests {
         };
 
         let routes = vec![route];
-        
+
         // Precompile schemas
         let compiled = cache.precompile_schemas(&routes);
-        
+
         // Should compile request schema + response schema for 200 status
-        assert_eq!(compiled, 2, "Should compile 2 schemas (1 request + 1 response)");
+        assert_eq!(
+            compiled, 2,
+            "Should compile 2 schemas (1 request + 1 response)"
+        );
         assert_eq!(cache.size(), 2, "Cache should contain 2 entries");
-        
+
         // Verify schemas are cached by trying to retrieve them
         let spec_version = cache.spec_version();
         let request_key = format!("{}:test_handler:request", spec_version.to_key());
         let response_key = format!("{}:test_handler:response:200", spec_version.to_key());
-        
+
         {
             let cache_map = cache.cache.read().unwrap();
-            assert!(cache_map.contains_key(&request_key), "Request schema should be cached");
-            assert!(cache_map.contains_key(&response_key), "Response schema should be cached");
+            assert!(
+                cache_map.contains_key(&request_key),
+                "Request schema should be cached"
+            );
+            assert!(
+                cache_map.contains_key(&response_key),
+                "Response schema should be cached"
+            );
         }
     }
 
@@ -698,7 +750,7 @@ mod tests {
         use std::path::PathBuf;
 
         let cache = ValidatorCache::new(false); // Cache disabled
-        
+
         let mut responses = HashMap::new();
         let mut response_content = HashMap::new();
         response_content.insert(
@@ -706,7 +758,7 @@ mod tests {
             crate::spec::ResponseSpec {
                 schema: Some(json!({"type": "object"})),
                 example: None,
-            }
+            },
         );
         responses.insert(200, response_content);
 
@@ -731,10 +783,13 @@ mod tests {
         };
 
         let routes = vec![route];
-        
+
         // Precompile should return 0 when cache is disabled
         let compiled = cache.precompile_schemas(&routes);
-        assert_eq!(compiled, 0, "Should not compile any schemas when cache is disabled");
+        assert_eq!(
+            compiled, 0,
+            "Should not compile any schemas when cache is disabled"
+        );
         assert_eq!(cache.size(), 0, "Cache should remain empty");
     }
 
@@ -746,37 +801,43 @@ mod tests {
         use std::path::PathBuf;
 
         let cache = ValidatorCache::new(true);
-        
+
         // Create route with multiple response status codes
         let mut responses = HashMap::new();
-        
+
         let mut response_200 = HashMap::new();
         response_200.insert(
             "application/json".to_string(),
             crate::spec::ResponseSpec {
-                schema: Some(json!({"type": "object", "properties": {"success": {"type": "boolean"}}})),
+                schema: Some(
+                    json!({"type": "object", "properties": {"success": {"type": "boolean"}}}),
+                ),
                 example: None,
-            }
+            },
         );
         responses.insert(200, response_200);
-        
+
         let mut response_400 = HashMap::new();
         response_400.insert(
             "application/json".to_string(),
             crate::spec::ResponseSpec {
-                schema: Some(json!({"type": "object", "properties": {"error": {"type": "string"}}})),
+                schema: Some(
+                    json!({"type": "object", "properties": {"error": {"type": "string"}}}),
+                ),
                 example: None,
-            }
+            },
         );
         responses.insert(400, response_400);
-        
+
         let mut response_500 = HashMap::new();
         response_500.insert(
             "application/json".to_string(),
             crate::spec::ResponseSpec {
-                schema: Some(json!({"type": "object", "properties": {"message": {"type": "string"}}})),
+                schema: Some(
+                    json!({"type": "object", "properties": {"message": {"type": "string"}}}),
+                ),
                 example: None,
-            }
+            },
         );
         responses.insert(500, response_500);
 
@@ -801,12 +862,15 @@ mod tests {
         };
 
         let routes = vec![route];
-        
+
         // Precompile schemas
         let compiled = cache.precompile_schemas(&routes);
-        
+
         // Should compile 1 request + 3 response schemas (200, 400, 500)
-        assert_eq!(compiled, 4, "Should compile 4 schemas (1 request + 3 responses)");
+        assert_eq!(
+            compiled, 4,
+            "Should compile 4 schemas (1 request + 3 responses)"
+        );
         assert_eq!(cache.size(), 4, "Cache should contain 4 entries");
     }
 
@@ -824,7 +888,9 @@ mod tests {
         // Compile with version 1
         let initial_version = cache.spec_version();
         assert_eq!(initial_version.version, 1);
-        let validator_v1 = cache.get_or_compile("test_handler", "request", None, &schema_v1).unwrap();
+        let validator_v1 = cache
+            .get_or_compile("test_handler", "request", None, &schema_v1)
+            .unwrap();
         assert_eq!(cache.size(), 1);
 
         // Clear cache (simulating hot reload) - this increments version
@@ -844,17 +910,19 @@ mod tests {
             },
             "required": ["name", "age"]
         });
-        
-        let validator_v2 = cache.get_or_compile("test_handler", "request", None, &schema_v2).unwrap();
+
+        let validator_v2 = cache
+            .get_or_compile("test_handler", "request", None, &schema_v2)
+            .unwrap();
         assert_eq!(cache.size(), 1);
-        
+
         // Validators should be different instances (different schemas)
         assert!(!Arc::ptr_eq(&validator_v1, &validator_v2));
-        
+
         // Verify the new validator enforces the new schema
         let valid_v2 = json!({"name": "Alice", "age": 30});
         assert!(validator_v2.validate(&valid_v2).is_ok());
-        
+
         let invalid_v2 = json!({"name": "Bob"}); // Missing age
         assert!(validator_v2.validate(&invalid_v2).is_err());
     }
@@ -865,12 +933,12 @@ mod tests {
         assert_eq!(v1.version, 1);
         assert_eq!(v1.hash, "abc123");
         assert_eq!(v1.to_key(), "1:abc123");
-        
+
         let content = b"openapi: 3.1.0\ninfo:\n  title: Test\n";
         let v2 = SpecVersion::from_content(2, content);
         assert_eq!(v2.version, 2);
         assert_eq!(v2.hash.len(), 16); // First 16 chars of SHA-256
-        
+
         let default_v = SpecVersion::default();
         assert_eq!(default_v.version, 1);
         assert_eq!(default_v.hash, "initial");
@@ -879,24 +947,24 @@ mod tests {
     #[test]
     fn test_update_spec_version() {
         let cache = ValidatorCache::new(true);
-        
+
         let initial_version = cache.spec_version();
         assert_eq!(initial_version.version, 1);
         assert_eq!(initial_version.hash, "initial");
-        
+
         // Update with new spec content
         let spec_content = b"openapi: 3.1.0\ninfo:\n  title: Test API\n  version: '1.0'";
         cache.update_spec_version(spec_content);
-        
+
         let updated_version = cache.spec_version();
         assert_eq!(updated_version.version, 2);
         assert_ne!(updated_version.hash, "initial");
         assert_eq!(updated_version.hash.len(), 16);
-        
+
         // Update again with different content
         let spec_content_v2 = b"openapi: 3.1.0\ninfo:\n  title: Test API v2\n  version: '2.0'";
         cache.update_spec_version(spec_content_v2);
-        
+
         let final_version = cache.spec_version();
         assert_eq!(final_version.version, 3);
         assert_ne!(final_version.hash, updated_version.hash);
