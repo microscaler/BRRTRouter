@@ -855,10 +855,20 @@ impl HttpService for AppService {
         let canonical_req_id = RequestId::from_header_or_new(inbound_req_id);
 
         let route_opt = {
+            // Router lock: panic on poison is appropriate - system is in undefined state
             let router = self.router.read()
                 .expect("router RwLock poisoned - critical error");
-            let http_method = method.parse()
-                .expect("invalid HTTP method - should be validated earlier");
+            // Parse HTTP method - return 400 if somehow invalid
+            let http_method = match method.parse() {
+                Ok(m) => m,
+                Err(_) => {
+                    write_json_error(res, 400, serde_json::json!({
+                        "error": "Bad Request",
+                        "message": format!("Invalid HTTP method: {}", method)
+                    }));
+                    return Ok(());
+                }
+            };
             router.route(http_method, &path)
         };
         if let Some(mut route_match) = route_opt {
@@ -1124,9 +1134,19 @@ impl HttpService for AppService {
                 );
 
                 // Use cached validator instead of compiling on every request
-                let compiled = self.validator_cache
-                    .get_or_compile(&route_match.handler_name, "request", None, schema)
-                    .expect("invalid request schema");
+                let compiled = match self.validator_cache
+                    .get_or_compile(&route_match.handler_name, "request", None, schema) {
+                    Some(v) => v,
+                    None => {
+                        // Schema compilation failed - this is a server configuration error
+                        tracing::error!(handler = %route_match.handler_name, "Failed to compile request schema");
+                        write_json_error(res, 500, serde_json::json!({
+                            "error": "Internal Server Error",
+                            "message": "Request schema configuration error"
+                        }));
+                        return Ok(());
+                    }
+                };
                 let validation = compiled.validate(body_val);
                 if let Err(errors) = validation {
                     // V3: Schema validation failed
@@ -1195,32 +1215,33 @@ impl HttpService for AppService {
                         );
 
                         // Use cached validator instead of compiling on every response
-                        let compiled = self.validator_cache
-                            .get_or_compile(&route_match.handler_name, "response", Some(hr.status), schema)
-                            .expect("invalid response schema");
-                        let validation = compiled.validate(&hr.body);
-                        if let Err(errors) = validation {
-                            // V7: Response validation failed
-                            let error_details: Vec<String> =
-                                errors.map(|e| e.to_string()).collect();
-                            let schema_path = "#/components/schemas/response";
+                        // If compilation fails, skip validation but still return response
+                        if let Some(compiled) = self.validator_cache
+                            .get_or_compile(&route_match.handler_name, "response", Some(hr.status), schema) {
+                            let validation = compiled.validate(&hr.body);
+                            if let Err(errors) = validation {
+                                // V7: Response validation failed
+                                let error_details: Vec<String> =
+                                    errors.map(|e| e.to_string()).collect();
+                                let schema_path = "#/components/schemas/response";
 
-                            error!(
-                                handler = %route_match.handler_name,
-                                status = hr.status,
-                                errors = ?error_details,
-                                schema_path = %schema_path,
-                                "Response validation failed"
-                            );
+                                error!(
+                                    handler = %route_match.handler_name,
+                                    status = hr.status,
+                                    errors = ?error_details,
+                                    schema_path = %schema_path,
+                                    "Response validation failed"
+                                );
 
-                            write_json_error(
-                                res,
-                                500, // Changed from 400 to 500 since this is a server error
-                                json!({"error": "Response validation failed", "details": error_details}),
-                            );
-                            return Ok(());
-                        }
-                    }
+                                write_json_error(
+                                    res,
+                                    500, // Changed from 400 to 500 since this is a server error
+                                    json!({"error": "Response validation failed", "details": error_details}),
+                                );
+                                return Ok(());
+                            }
+                        } // End if let Some(compiled)
+                    } // End if let Some(schema)
                     write_handler_response(res, hr.status, hr.body, is_sse, &headers);
                 }
                 None => {
