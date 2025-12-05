@@ -601,13 +601,13 @@ impl Dispatcher {
                 }
             };
             
-            // Build typed request
+            // Build typed request - extract from req (which is no longer needed after this)
             let typed_req = TypedHandlerRequest {
-                method: req.method.clone(),
-                path: req.path.clone(),
-                handler_name: req.handler_name.clone(),
-                path_params: req.path_params.clone(),
-                query_params: req.query_params.clone(),
+                method: req.method,
+                path: req.path,
+                handler_name: req.handler_name,
+                path_params: req.path_params,
+                query_params: req.query_params,
                 data,
             };
             

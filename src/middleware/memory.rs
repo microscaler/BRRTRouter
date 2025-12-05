@@ -104,7 +104,11 @@ pub struct MemoryMiddleware {
     last_measurement: RwLock<Instant>,
 }
 
+/// Per-handler memory statistics
+/// NOTE: `total_allocated` and `peak_usage` are placeholders for future
+/// request-scoped allocator tracking. Currently only `invocations` is used.
 #[derive(Debug, Clone, Default)]
+#[allow(dead_code)]  // Placeholder fields for future memory tracking
 struct HandlerMemoryStats {
     /// Total memory allocated by this handler
     total_allocated: u64,

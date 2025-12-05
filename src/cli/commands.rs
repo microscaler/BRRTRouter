@@ -226,8 +226,8 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
             }
             let dispatcher = Arc::new(RwLock::new(dispatcher));
             let mut service = AppService::new(
-                router.clone(),
-                dispatcher.clone(),
+                Arc::clone(&router),
+                Arc::clone(&dispatcher),
                 schemes,
                 spec.clone(),
                 None,
@@ -236,8 +236,8 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
             if *watch {
                 let watcher = watch_spec(
                     spec.clone(),
-                    router.clone(),
-                    dispatcher.clone(),
+                    router,      // Last usage - move instead of clone
+                    dispatcher,  // Last usage - move instead of clone
                     Some(service.validator_cache.clone()),
                     |disp, new_routes| {
                         for r in &new_routes {

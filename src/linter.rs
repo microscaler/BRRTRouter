@@ -244,7 +244,7 @@ fn lint_request_body(
     spec: &OpenApiV3Spec,
     issues: &mut Vec<LintIssue>,
     path_context: &str,
-    operation_location: &str,
+    _operation_location: &str,
     request_body: &oas3::spec::ObjectOrReference<oas3::spec::RequestBody>,
     defined_schemas: &HashSet<String>,
 ) {
@@ -275,7 +275,7 @@ fn lint_response(
     spec: &OpenApiV3Spec,
     issues: &mut Vec<LintIssue>,
     path_context: &str,
-    operation_location: &str,
+    _operation_location: &str,
     status_code: &str,
     response: &oas3::spec::ObjectOrReference<oas3::spec::Response>,
     defined_schemas: &HashSet<String>,

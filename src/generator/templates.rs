@@ -366,7 +366,7 @@ pub fn write_controller(
     let context = ControllerTemplateData {
         handler_name: handler.to_string(),
         struct_name: struct_name.to_string(),
-        response_fields: enriched_fields.clone(),
+        response_fields: enriched_fields,  // Last usage - move instead of clone
         example: example_pretty,
         has_example: example.is_some(),
         example_json,
@@ -553,7 +553,7 @@ pub(crate) fn write_cargo_toml_with_options(
                 .join(base)
         };
         let brrtrouter_abs = if brrtrouter_base.is_absolute() {
-            brrtrouter_base.to_path_buf()
+            brrtrouter_base  // Already a PathBuf, no need to clone
         } else {
             std::env::current_dir()
                 .unwrap_or_else(|_| PathBuf::from("."))
