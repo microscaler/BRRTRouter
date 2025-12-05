@@ -49,15 +49,15 @@ minijinja = "2"
 # CRITICAL: These versions work with otel-collector-contrib:0.93.0
 # DO NOT UPDATE without testing against OTEL collector!
 tracing = "0.1"
-opentelemetry = { version = "0.30", features = ["metrics", "trace"] }
-opentelemetry-otlp = { version = "0.30", features = ["grpc-tonic", "metrics", "trace"] }
-opentelemetry_sdk = { version = "0.30", features = ["metrics", "trace"] }
-opentelemetry-semantic-conventions = "0.30"
-tracing-opentelemetry = "0.31"
+opentelemetry = { version = "0.31", features = ["metrics", "trace"] }
+opentelemetry-otlp = { version = "0.31", features = ["grpc-tonic", "metrics", "trace"] }
+opentelemetry_sdk = { version = "0.31", features = ["metrics", "trace"] }
+opentelemetry-semantic-conventions = "0.31"
+tracing-opentelemetry = "0.32"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-appender = "0.2"
 
-# gRPC dependencies for OTLP (compatible with opentelemetry 0.30)
+# gRPC dependencies for OTLP (compatible with opentelemetry 0.31)
 tonic = "0.14"
 prost = "0.14"
 tokio = { version = "1.45.1", features = ["rt-multi-thread", "macros"] }
@@ -75,8 +75,7 @@ dashmap = "6.1"  # Lock-free concurrent HashMap for metrics
 [dev-dependencies]
 pet_store = { path = "./examples/pet_store" }
 criterion = "0.8"
-# Using our own OTLP test utilities compatible with opentelemetry 0.30
-# (fake-opentelemetry-collector 0.28 is incompatible - uses 0.29)
+# Using our own OTLP test utilities compatible with opentelemetry 0.31
 flamegraph = "0.6"
 tempfile = "3.8"
 bollard = { version = "0.19", features = ["ssl", "chrono"] }
