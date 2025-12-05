@@ -114,7 +114,7 @@ fn test_dispatch_post_item() {
     let (routes, _slug) = load_spec("examples/openapi.yaml").expect("load spec");
     let router = Router::new(routes);
     let mut dispatcher = Dispatcher::new();
-    registry::register_all(&mut dispatcher);
+    unsafe { registry::register_all(&mut dispatcher); }
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
@@ -161,7 +161,7 @@ fn test_dispatch_get_pet() {
     let (routes, _slug) = load_spec("examples/openapi.yaml").unwrap();
     let router = Router::new(routes);
     let mut dispatcher = Dispatcher::new();
-    registry::register_all(&mut dispatcher);
+    unsafe { registry::register_all(&mut dispatcher); }
 
     let RouteMatch { route, .. } = router.route(Method::GET, "/pets/12345").unwrap();
     let handler_name = route.handler_name.clone();
@@ -210,7 +210,7 @@ fn test_dispatch_get_pet() {
 fn test_typed_controller_params() {
     let _tracing = set_stack_size();
     let mut dispatcher = Dispatcher::new();
-    dispatcher.register_typed("assert_controller", AssertController);
+    unsafe { dispatcher.register_typed("assert_controller", AssertController); }
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
 
     let (reply_tx, reply_rx) = mpsc::channel();
@@ -247,7 +247,7 @@ fn test_typed_controller_params() {
 fn test_typed_controller_invalid_params() {
     let _tracing = set_stack_size();
     let mut dispatcher = Dispatcher::new();
-    dispatcher.register_typed("assert_controller", AssertController);
+    unsafe { dispatcher.register_typed("assert_controller", AssertController); }
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
 
     let (reply_tx, reply_rx) = mpsc::channel();
@@ -289,7 +289,7 @@ fn test_panic_handler_returns_500() {
     }
 
     let mut dispatcher = Dispatcher::new();
-    dispatcher.register_handler("panic", panic_handler);
+    unsafe { dispatcher.register_handler("panic", panic_handler); }
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
 
     let (reply_tx, reply_rx) = mpsc::channel();
@@ -324,7 +324,7 @@ fn test_dispatch_all_registry_handlers() {
     let (routes, _slug) = load_spec("examples/openapi.yaml").expect("load spec");
     let router = Router::new(routes);
     let mut dispatcher = Dispatcher::new();
-    registry::register_all(&mut dispatcher);
+    unsafe { registry::register_all(&mut dispatcher); }
 
     let handlers: Vec<String> = dispatcher.handlers.keys().cloned().collect();
     for name in handlers {

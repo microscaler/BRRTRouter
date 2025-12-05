@@ -25,7 +25,7 @@ impl StaticFileTestServer {
         let (routes, _slug) = brrtrouter::load_spec("examples/openapi.yaml").unwrap();
         let router = Arc::new(RwLock::new(Router::new(routes.clone())));
         let mut dispatcher = Dispatcher::new();
-        registry::register_from_spec(&mut dispatcher, &routes);
+        unsafe { registry::register_from_spec(&mut dispatcher, &routes); }
 
         // Important: Uses tests/staticdata for static files and includes doc directory
         // for comprehensive integration testing

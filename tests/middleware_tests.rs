@@ -52,7 +52,7 @@ fn test_metrics_middleware_counts() {
     let (routes, _slug) = load_spec("examples/openapi.yaml").unwrap();
     let router = Router::new(routes.clone());
     let mut dispatcher = Dispatcher::new();
-    registry::register_from_spec(&mut dispatcher, &routes);
+    unsafe { registry::register_from_spec(&mut dispatcher, &routes); }
     let metrics = Arc::new(MetricsMiddleware::new());
     dispatcher.add_middleware(metrics.clone());
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
@@ -75,7 +75,7 @@ fn test_metrics_stack_usage() {
     let (routes, _slug) = load_spec("examples/openapi.yaml").unwrap();
     let router = Router::new(routes.clone());
     let mut dispatcher = Dispatcher::new();
-    registry::register_from_spec(&mut dispatcher, &routes);
+    unsafe { registry::register_from_spec(&mut dispatcher, &routes); }
     let metrics = Arc::new(MetricsMiddleware::new());
     dispatcher.add_middleware(metrics.clone());
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
@@ -97,7 +97,7 @@ fn test_metrics_middleware_multiple_requests() {
     let (routes, _slug) = load_spec("examples/openapi.yaml").unwrap();
     let router = Router::new(routes.clone());
     let mut dispatcher = Dispatcher::new();
-    registry::register_from_spec(&mut dispatcher, &routes);
+    unsafe { registry::register_from_spec(&mut dispatcher, &routes); }
     let metrics = Arc::new(MetricsMiddleware::new());
     dispatcher.add_middleware(metrics.clone());
 

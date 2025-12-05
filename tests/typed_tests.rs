@@ -157,7 +157,7 @@ impl brrtrouter::typed::Handler for SumHandler {
 
 #[test]
 fn test_spawn_typed_success_and_error() {
-    let tx = brrtrouter::typed::spawn_typed(SumHandler);
+    let tx = unsafe { brrtrouter::typed::spawn_typed(SumHandler) };
     let (reply_tx, reply_rx) = mpsc::channel();
     let mut q = HashMap::new();
     q.insert("a".to_string(), "2".to_string());

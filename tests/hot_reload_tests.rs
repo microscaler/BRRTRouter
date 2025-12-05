@@ -31,7 +31,7 @@
 //! - Cross-platform FS notification differences
 
 use brrtrouter::{dispatcher::Dispatcher, hot_reload::watch_spec, load_spec, router::Router};
-use may::sync::mpmc;
+use may::sync::mpsc;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
@@ -129,7 +129,7 @@ paths:
             None, // No validator cache for this test
             move |disp, new_routes| {
                 for r in &new_routes {
-                    let (tx, _rx) = mpmc::channel();
+                    let (tx, _rx) = mpsc::channel();
                     disp.add_route(r.clone(), tx);
                 }
                 let names = new_routes.iter().map(|r| r.handler_name.clone()).collect();
@@ -280,7 +280,7 @@ paths:
             Some(cache_clone),
             move |disp, new_routes| {
                 for r in &new_routes {
-                    let (tx, _rx) = mpmc::channel();
+                    let (tx, _rx) = mpsc::channel();
                     disp.add_route(r.clone(), tx);
                 }
                 let names = new_routes.iter().map(|r| r.handler_name.clone()).collect();
@@ -461,7 +461,7 @@ paths:
             Some(cache_clone),
             move |disp, new_routes| {
                 for r in &new_routes {
-                    let (tx, _rx) = mpmc::channel();
+                    let (tx, _rx) = mpsc::channel();
                     disp.add_route(r.clone(), tx);
                 }
                 let names = new_routes.iter().map(|r| r.handler_name.clone()).collect();
@@ -609,7 +609,7 @@ paths:
             Some(cache_clone),
             move |disp, new_routes| {
                 for r in &new_routes {
-                    let (tx, _rx) = mpmc::channel();
+                    let (tx, _rx) = mpsc::channel();
                     disp.add_route(r.clone(), tx);
                 }
                 let names = new_routes.iter().map(|r| r.handler_name.clone()).collect();

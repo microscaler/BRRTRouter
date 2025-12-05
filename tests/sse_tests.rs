@@ -34,7 +34,7 @@ impl SseTestServer {
         let (routes, schemes, _slug) = brrtrouter::load_spec_full("examples/openapi.yaml").unwrap();
         let router = Arc::new(RwLock::new(Router::new(routes.clone())));
         let mut dispatcher = Dispatcher::new();
-        registry::register_from_spec(&mut dispatcher, &routes);
+        unsafe { registry::register_from_spec(&mut dispatcher, &routes); }
         dispatcher.add_middleware(Arc::new(TracingMiddleware));
         let mut service = AppService::new(
             router,
