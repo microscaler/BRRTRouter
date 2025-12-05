@@ -1,10 +1,10 @@
-use bollard::container::{
-    Config as ContainerConfig, CreateContainerOptions, RemoveContainerOptions,
+use bollard::models::{ContainerCreateBody, HostConfig, PortBinding};
+use bollard::query_parameters::{
+    BuildImageOptionsBuilder, CreateContainerOptionsBuilder, RemoveContainerOptionsBuilder,
     StartContainerOptions,
 };
-use bollard::image::BuildImageOptions;
-use bollard::models::{HostConfig, PortBinding};
-use bollard::Docker;
+use bollard::{body_full, Docker};
+use bytes::Bytes;
 use futures::executor::block_on;
 use futures_util::stream::TryStreamExt;
 use std::fs;
@@ -46,13 +46,10 @@ impl Drop for DockerTestContainer {
     fn drop(&mut self) {
         // Always clean up container, even on panic
         // This is the fix for "dozens of uncleaned containers"!
-        let _ = block_on(self.docker.remove_container(
-            &self.container_id,
-            Some(RemoveContainerOptions {
-                force: true,
-                ..Default::default()
-            }),
-        ));
+        let opts = RemoveContainerOptionsBuilder::default()
+            .force(true)
+            .build();
+        let _ = block_on(self.docker.remove_container(&self.container_id, Some(opts)));
     }
 }
 
@@ -127,14 +124,13 @@ fn test_petstore_container_health() {
         }
         builder.finish().unwrap();
     }
-    let build_opts = BuildImageOptions::<String> {
-        dockerfile: "dockerfiles/Dockerfile".to_string(),
-        t: "brrtrouter-petstore:e2e".to_string(),
-        rm: true,
-        nocache: true,
-        ..Default::default()
-    };
-    let mut stream = docker.build_image(build_opts, None, Some(archive.into()));
+    let build_opts = BuildImageOptionsBuilder::default()
+        .dockerfile("dockerfiles/Dockerfile")
+        .t("brrtrouter-petstore:e2e")
+        .rm(true)
+        .nocache(true)
+        .build();
+    let mut stream = docker.build_image(build_opts, None, Some(body_full(Bytes::from(archive))));
     while let Some(_chunk) = block_on(stream.try_next()).unwrap_or(None) {}
 
     // Create and start container with random host port for 8080/tcp
@@ -150,31 +146,31 @@ fn test_petstore_container_health() {
         port_bindings: Some(bindings),
         ..Default::default()
     };
-    let cfg = ContainerConfig {
-        image: Some("brrtrouter-petstore:e2e"),
+    let cfg = ContainerCreateBody {
+        image: Some("brrtrouter-petstore:e2e".to_string()),
         host_config: Some(host_config),
         ..Default::default()
     };
-    let created = block_on(docker.create_container(
-        Some(CreateContainerOptions {
-            name: "brrtrouter-e2e",
-            platform: None,
-        }),
-        cfg,
-    ))
-    .unwrap();
+    let create_opts = CreateContainerOptionsBuilder::default()
+        .name("brrtrouter-e2e")
+        .build();
+    let created = block_on(docker.create_container(Some(create_opts), cfg)).unwrap();
 
     // Wrap container in RAII guard for automatic cleanup
     let container = DockerTestContainer::from_id(docker.clone(), created.id);
 
-    block_on(docker.start_container(container.id(), None::<StartContainerOptions<String>>))
+    block_on(docker.start_container(container.id(), None::<StartContainerOptions>))
         .unwrap();
 
     // Give the container a moment to start
     sleep(Duration::from_secs(2));
 
     // Poll health endpoint via raw TCP to avoid curl dependency
-    let inspect = block_on(docker.inspect_container(container.id(), None)).unwrap();
+    let inspect = block_on(docker.inspect_container(
+        container.id(),
+        None::<bollard::query_parameters::InspectContainerOptions>,
+    ))
+    .unwrap();
     let mapped = inspect
         .network_settings
         .and_then(|ns| ns.ports)
