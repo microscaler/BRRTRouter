@@ -63,7 +63,7 @@ prost = "0.13"
 tokio = { version = "1.45.1", features = ["rt-multi-thread", "macros"] }
 
 # Production JWT/JWKS validation and HTTP fetch (for external providers like PropelAuth)
-jsonwebtoken = "9"  # v10 requires feature flags for RSA - keep at v9 for now
+jsonwebtoken = { version = "10", features = ["rust_crypto"] }  # rust_crypto enables RSA/EC algorithms
 reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls", "blocking"] }
 urlencoding = "2.1"
 ulid = "1.1"
