@@ -277,7 +277,8 @@ pub fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
                             format!("serde_json::Value::String({s:?}.to_string())")
                         } else {
                             // Other types: try parsing from string (e.g., Vec<i32>)
-                            format!("{s:?}.to_string().parse().unwrap()")
+                            // Use unwrap_or_default to avoid panics if parsing fails
+                            format!("{s:?}.to_string().parse().unwrap_or_default()")
                         }
                     }
                     // Numbers need type-aware conversion in arrays

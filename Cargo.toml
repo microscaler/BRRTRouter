@@ -135,8 +135,8 @@ unsafe_code = "warn"
 # =============================================================================
 # Panics terminate threads unpredictably. In production hot paths,
 # prefer Result<T, E> returns over panicking.
-unwrap_used = "warn"          # TODO: Change to "deny" after fixing 172 instances
-expect_used = "warn"          # expect() is just unwrap() with a message
+unwrap_used = "deny"          # ENFORCED: All production unwrap() fixed
+expect_used = "warn"          # expect() is just unwrap() with a message (31 remaining)
 panic = "warn"                # Explicit panic!() calls
 unreachable = "warn"          # unreachable!() panics at runtime
 

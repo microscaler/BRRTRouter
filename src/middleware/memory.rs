@@ -134,16 +134,19 @@ impl MemoryMiddleware {
     pub fn update(&self) {
         let stats = MemoryStats::current();
         
-        // Update current stats
-        *self.current.write().unwrap() = stats;
-        
-        // Update peak if necessary
-        let mut peak = self.peak.write().unwrap();
-        if stats.rss_bytes > peak.rss_bytes {
-            peak.rss_bytes = stats.rss_bytes;
+        // Update current stats (recover from poisoned lock if needed)
+        if let Ok(mut current) = self.current.write() {
+            *current = stats;
         }
-        if stats.heap_bytes > peak.heap_bytes {
-            peak.heap_bytes = stats.heap_bytes;
+        
+        // Update peak if necessary (recover from poisoned lock if needed)
+        if let Ok(mut peak) = self.peak.write() {
+            if stats.rss_bytes > peak.rss_bytes {
+                peak.rss_bytes = stats.rss_bytes;
+            }
+            if stats.heap_bytes > peak.heap_bytes {
+                peak.heap_bytes = stats.heap_bytes;
+            }
         }
         
         // Calculate growth
@@ -154,17 +157,19 @@ impl MemoryMiddleware {
         self.measurements.fetch_add(1, Ordering::Relaxed);
         
         // Update last measurement time
-        *self.last_measurement.write().unwrap() = Instant::now();
+        if let Ok(mut last) = self.last_measurement.write() {
+            *last = Instant::now();
+        }
     }
     
     /// Get current memory statistics
     pub fn current_stats(&self) -> MemoryStats {
-        *self.current.read().unwrap()
+        self.current.read().map(|g| *g).unwrap_or_default()
     }
     
     /// Get peak memory statistics
     pub fn peak_stats(&self) -> MemoryStats {
-        *self.peak.read().unwrap()
+        self.peak.read().map(|g| *g).unwrap_or_default()
     }
     
     /// Get memory growth since baseline
@@ -221,7 +226,9 @@ impl MemoryMiddleware {
         output.push_str(&format!("process_memory_baseline_rss_bytes {}\n", self.baseline.rss_bytes));
         
         // Per-handler invocation counts (we can't accurately measure per-handler memory)
-        let handler_stats = self.handler_memory.read().unwrap();
+        let Ok(handler_stats) = self.handler_memory.read() else {
+            return output;  // Return what we have if lock poisoned
+        };
         if !handler_stats.is_empty() {
             output.push_str("# HELP handler_invocations_total Number of invocations per handler\n");
             output.push_str("# TYPE handler_invocations_total counter\n");
@@ -292,13 +299,14 @@ impl Middleware for MemoryMiddleware {
         // Update overall memory stats after handler execution
         self.update();
         
-        // Track handler invocation count
-        let mut handler_stats = self.handler_memory.write().unwrap();
-        let stats = handler_stats
-            .entry(req.handler_name.clone())
-            .or_insert_with(HandlerMemoryStats::default);
-        
-        stats.invocations += 1;
+        // Track handler invocation count (skip if lock poisoned)
+        if let Ok(mut handler_stats) = self.handler_memory.write() {
+            let stats = handler_stats
+                .entry(req.handler_name.clone())
+                .or_insert_with(HandlerMemoryStats::default);
+            
+            stats.invocations += 1;
+        }
         
         // NOTE: We cannot accurately attribute memory to specific handlers
         // without request-scoped allocator tracking. We only track invocation

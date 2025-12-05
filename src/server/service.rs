@@ -805,9 +805,10 @@ impl HttpService for AppService {
         }
         if method == "GET" && path == "/metrics" {
             if let Some(metrics) = &self.metrics {
-                // Get dispatcher for worker pool metrics
-                let dispatcher = self.dispatcher.read().unwrap();
-                return metrics_endpoint(res, metrics, self.memory.as_deref(), Some(&*dispatcher));
+                // Get dispatcher for worker pool metrics (gracefully handle lock failure)
+                let dispatcher_guard = self.dispatcher.read().ok();
+                let dispatcher_ref = dispatcher_guard.as_deref();
+                return metrics_endpoint(res, metrics, self.memory.as_deref(), dispatcher_ref);
             } else {
                 write_json_error(
                     res,

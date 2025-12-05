@@ -198,8 +198,8 @@ fn lint_operation(
     let operation_id = operation.operation_id.as_deref().unwrap_or("<no-operationId>");
     let location = format!("{} {}", path_context, operation_id);
 
-    // Check for operationId
-    if operation.operation_id.is_none() {
+    // Check for operationId - use let-else for safe unwrap
+    let Some(operation_id) = operation.operation_id.as_ref() else {
         issues.push(
             LintIssue::new(
                 &location,
@@ -210,9 +210,7 @@ fn lint_operation(
             .with_suggestion("Add operationId field (should be snake_case, e.g., 'get_user')"),
         );
         return; // Can't check casing if no operationId
-    }
-
-    let operation_id = operation.operation_id.as_ref().unwrap();
+    };
 
     // Check operationId casing (must be snake_case)
     if !is_snake_case(operation_id) {
