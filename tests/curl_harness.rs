@@ -8,6 +8,16 @@ use std::time::{Duration, Instant};
 mod common;
 use common::http::wait_for_http_200;
 
+/// Environment variables set by cargo-llvm-cov that interfere with musl cross-compilation.
+/// These must be cleared when spawning the cargo build for the musl target.
+const COVERAGE_ENV_VARS: &[&str] = &[
+    "CARGO_LLVM_COV",
+    "CARGO_LLVM_COV_TARGET_DIR",
+    "LLVM_PROFILE_FILE",
+    "CARGO_INCREMENTAL",
+    // RUSTFLAGS contains -C instrument-coverage which adds __llvm_profile_runtime
+];
+
 /// Flag to track if signal handler cleanup is already running
 static SIGNAL_CLEANUP_RUNNING: AtomicBool = AtomicBool::new(false);
 
@@ -249,52 +259,92 @@ pub fn ensure_image_ready() {
 
         // On macOS, use cargo-zigbuild for cross-compilation to musl.
         // On Linux x86_64 runners, build normally for musl without zig.
+        //
+        // IMPORTANT: We must clear cargo-llvm-cov environment variables to prevent
+        // LLVM coverage instrumentation (__llvm_profile_runtime) from being added
+        // to the musl binary, which causes linker errors with zigbuild.
         let build_output = if uname_s.contains("Darwin") {
             eprintln!("      → Detected macOS host; using cargo zigbuild for cross-compilation");
-            Command::new("cargo")
-                .args([
-                    "zigbuild",
-                    "--release",
-                    "-p", "pet_store",
-                    "--target", "x86_64-unknown-linux-musl",
-                ])
-                .output()
-                .expect("failed to run cargo zigbuild")
+            let mut cmd = Command::new("cargo");
+            cmd.args([
+                "zigbuild",
+                "--release",
+                "-p", "pet_store",
+                "--target", "x86_64-unknown-linux-musl",
+            ]);
+            // Clear coverage env vars to prevent __llvm_profile_runtime linker errors
+            for var in COVERAGE_ENV_VARS {
+                cmd.env_remove(var);
+            }
+            // Clear RUSTFLAGS if it contains coverage instrumentation
+            if let Ok(flags) = std::env::var("RUSTFLAGS") {
+                if flags.contains("instrument-coverage") {
+                    cmd.env_remove("RUSTFLAGS");
+                }
+            }
+            cmd.output().expect("failed to run cargo zigbuild")
         } else if uname_s.contains("Linux") && uname_m.contains("x86_64") {
             eprintln!("      → Detected Linux x86_64 runner; using standard cargo build for musl");
             // Prefer musl-gcc if available to ensure compatibility with crates like ring
             let mut cmd = Command::new("cargo");
-            let cmd = cmd
-                .args([
-                    "build",
-                    "--release",
-                    "-p", "pet_store",
-                    "--target", "x86_64-unknown-linux-musl",
-                ])
-                .env("CC_x86_64_unknown_linux_musl", "musl-gcc")
-                .env("CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER", "musl-gcc");
+            cmd.args([
+                "build",
+                "--release",
+                "-p", "pet_store",
+                "--target", "x86_64-unknown-linux-musl",
+            ])
+            .env("CC_x86_64_unknown_linux_musl", "musl-gcc")
+            .env("CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER", "musl-gcc");
+            // Clear coverage env vars
+            for var in COVERAGE_ENV_VARS {
+                cmd.env_remove(var);
+            }
+            if let Ok(flags) = std::env::var("RUSTFLAGS") {
+                if flags.contains("instrument-coverage") {
+                    cmd.env_remove("RUSTFLAGS");
+                }
+            }
             cmd.output().expect("failed to run cargo build for musl target")
         } else {
             // Fallback: try zigbuild first; if that fails, try normal build
             eprintln!("      → Unknown host ({uname_s} {uname_m}); trying cargo zigbuild, then cargo build if needed");
-            let zig_attempt = Command::new("cargo")
-                .args([
-                    "zigbuild",
-                    "--release",
-                    "-p", "pet_store",
-                    "--target", "x86_64-unknown-linux-musl",
-                ])
-                .output();
+            let mut zig_cmd = Command::new("cargo");
+            zig_cmd.args([
+                "zigbuild",
+                "--release",
+                "-p", "pet_store",
+                "--target", "x86_64-unknown-linux-musl",
+            ]);
+            // Clear coverage env vars
+            for var in COVERAGE_ENV_VARS {
+                zig_cmd.env_remove(var);
+            }
+            if let Ok(flags) = std::env::var("RUSTFLAGS") {
+                if flags.contains("instrument-coverage") {
+                    zig_cmd.env_remove("RUSTFLAGS");
+                }
+            }
+            let zig_attempt = zig_cmd.output();
             match zig_attempt {
                 Ok(out) if out.status.success() => out,
                 _ => {
-                    Command::new("cargo")
-                        .args([
-                            "build",
-                            "--release",
-                            "-p", "pet_store",
-                            "--target", "x86_64-unknown-linux-musl",
-                        ])
+                    let mut fallback_cmd = Command::new("cargo");
+                    fallback_cmd.args([
+                        "build",
+                        "--release",
+                        "-p", "pet_store",
+                        "--target", "x86_64-unknown-linux-musl",
+                    ]);
+                    // Clear coverage env vars
+                    for var in COVERAGE_ENV_VARS {
+                        fallback_cmd.env_remove(var);
+                    }
+                    if let Ok(flags) = std::env::var("RUSTFLAGS") {
+                        if flags.contains("instrument-coverage") {
+                            fallback_cmd.env_remove("RUSTFLAGS");
+                        }
+                    }
+                    fallback_cmd
                         .env("CC_x86_64_unknown_linux_musl", "musl-gcc")
                         .env("CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER", "musl-gcc")
                         .output()
