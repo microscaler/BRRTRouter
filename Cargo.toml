@@ -39,7 +39,7 @@ regex = "1.11.1"
 url = "2.5.4"
 clap = { version = "4.5.38", features = ["cargo", "env", "derive"] }
 askama = { version = "0.14.0", features = ["full"] }
-notify = "6"  # v8 has breaking changes - needs migration
+notify = "8"
 memory-stats = "1.1"  # For cross-platform memory monitoring
 tikv-jemallocator = { version = "0.6", optional = true }
 tikv-jemalloc-ctl = { version = "0.6", optional = true }
