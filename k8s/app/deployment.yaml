@@ -121,30 +121,27 @@ spec:
             # Priority: config.yaml port > PORT env var > default 8080
             - name: PORT
               value: "8080"
-            # Reduce RUST_LOG to error level for performance testing
+            # Production logging - minimize memory usage
             - name: RUST_LOG
-              value: "error"
+              value: "info,may=warn,may_minihttp=warn"
             - name: RUST_BACKTRACE
               value: "1"
-            # Structured logging configuration - optimized for performance testing
-            # Minimize logging overhead by only logging errors
+            # Structured logging configuration
             - name: BRRTR_LOG_FORMAT
               value: "json"
             - name: BRRTR_LOG_SAMPLING_MODE
-              value: "error-only"
+              value: "sampled"
             - name: BRRTR_LOG_ASYNC
               value: "true"
             - name: BRRTR_LOG_INCLUDE_LOCATION
               value: "false"
-            # Reduce log verbosity to error level only for performance testing
             - name: BRRTR_LOG_LEVEL
-              value: "error"
+              value: "info"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector:4317"
             - name: OTEL_SERVICE_NAME
               value: "petstore"
-            # Increase stack size for safe coroutine spawning (128KB)
-            # The SafeBuilder wrapper adds some overhead, so we need more than 64KB
+            # Stack size for coroutine spawning (128KB - sufficient for handlers)
             - name: BRRTR_STACK_SIZE
               value: "0x20000"
             # Set worker pool size to 1 for performance testing (isolate worker pool overhead)
