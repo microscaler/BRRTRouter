@@ -21,10 +21,14 @@ use std::io;
 use std::path::PathBuf;
 use std::fs;
 
-// Use jemalloc as the global allocator for better memory performance
-// The feature check uses the pet_store crate's own features, not brrtrouter's
+// Use jemalloc as the global allocator for better memory performance.
+// This is gated behind the "jemalloc" feature (enabled by default).
+// Disable this feature if brrtrouter is providing jemalloc via its own "jemalloc" feature,
+// or if you want to use the system allocator: `cargo build --no-default-features`
+#[cfg(feature = "jemalloc")]
 use tikv_jemallocator::Jemalloc;
 
+#[cfg(feature = "jemalloc")]
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
