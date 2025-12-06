@@ -64,7 +64,7 @@ jobs:
 
       - name: Upload generator artifact
         if: ${{ !env.ACT }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: brrtrouter-gen-linux
           path: target/release/brrtrouter-gen
@@ -86,7 +86,7 @@ jobs:
 
       - name: Upload pet_store binary artifact
         if: ${{ !env.ACT }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: pet_store-musl
           path: target/x86_64-unknown-linux-musl/release/pet_store
@@ -132,7 +132,7 @@ jobs:
 
       - name: Upload JUnit report
         if: ${{ !env.ACT }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: junit-unit
           path: target/nextest/junit.xml
@@ -343,7 +343,7 @@ jobs:
           fi
 
       - name: Upload Goose ASCII metrics
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: goose-ascii-metrics
           retention-days: 7
@@ -352,14 +352,14 @@ jobs:
             goose-summary.md
 
       - name: Upload Goose HTML report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: goose-html-report
           retention-days: 7
           path: goose-report.html
 
       - name: Upload Goose JSON report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: goose-json-report
           retention-days: 7
@@ -367,7 +367,7 @@ jobs:
 
       - name: Upload Tilt logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: tilt-ci-logs
           retention-days: 3
