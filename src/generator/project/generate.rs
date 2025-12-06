@@ -1,10 +1,10 @@
 use std::collections::{BTreeSet, HashSet};
 use std::fs;
-use std::path::{Path, PathBuf};
 use std::io::Read;
+use std::path::{Path, PathBuf};
 
-use oas3;
 use crate::spec::load_spec;
+use oas3;
 
 use crate::generator::schema::{
     collect_component_schemas, extract_fields, is_named_type, parameter_to_field,
@@ -131,7 +131,8 @@ pub fn generate_project_with_options(
     let mut created: Vec<String> = Vec::new();
     let mut updated: Vec<String> = Vec::new();
     let mut skipped: Vec<String> = Vec::new();
-    let spec_str = spec_path.to_str()
+    let spec_str = spec_path
+        .to_str()
         .ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 in spec path"))?;
     let (mut routes, slug) = load_spec(spec_str)?;
     let base_dir = output_dir
@@ -161,14 +162,10 @@ pub fn generate_project_with_options(
     let dest_path = doc_dir_canon.join("openapi.yaml");
 
     if source_canon == dest_path {
-        println!(
-            "⚠️  Skipping spec copy: source and destination are the same → {dest_path:?}",
-        );
+        println!("⚠️  Skipping spec copy: source and destination are the same → {dest_path:?}",);
         skipped.push(format!("spec: same-path → {dest_path:?}"));
     } else if !spec_copy_path.exists() || force {
-        println!(
-            "📄 Copying spec from {source_canon:?} → {spec_copy_path:?}",
-        );
+        println!("📄 Copying spec from {source_canon:?} → {spec_copy_path:?}",);
         if dry_run {
             println!("🔎 Dry-run: would copy spec (skipped)");
             if spec_copy_path.exists() {
@@ -178,9 +175,7 @@ pub fn generate_project_with_options(
             }
         } else {
             fs::copy(&source_canon, &spec_copy_path).with_context(|| {
-                format!(
-                    "Failed to copy spec from {source_canon:?} to {spec_copy_path:?}"
-                )
+                format!("Failed to copy spec from {source_canon:?} to {spec_copy_path:?}")
             })?;
             println!("✅ Copied spec to {spec_copy_path:?}");
             if spec_copy_path.exists() {
@@ -193,14 +188,12 @@ pub fn generate_project_with_options(
             }
         }
     } else {
-        println!(
-            "ℹ️  Spec already present at {spec_copy_path:?} (use --force to overwrite)",
-        );
+        println!("ℹ️  Spec already present at {spec_copy_path:?} (use --force to overwrite)",);
         skipped.push(format!("spec: exists → {spec_copy_path:?}"));
     }
 
     let mut schema_types = collect_component_schemas(spec_path)?;
-    
+
     // Load spec once for resolving $ref in request/response schemas
     let spec: oas3::OpenApiV3Spec = if spec_path.extension().map(|s| s == "yaml").unwrap_or(false) {
         serde_yaml::from_str(&std::fs::read_to_string(spec_path)?)?
@@ -322,10 +315,10 @@ pub fn generate_project_with_options(
 
         modules_handlers.push(handler.clone());
         modules_controllers.push(handler.clone());
-        
+
         // Compute stack size for this handler
         let stack_size_bytes = compute_stack_size(&route);
-        
+
         registry_entries.push(RegistryEntry {
             name: handler.clone(),
             request_type: format!("{handler}::Request"),
@@ -530,12 +523,12 @@ pub fn generate_impl_stubs(
     force: bool,
 ) -> anyhow::Result<()> {
     use crate::generator::templates::{
-        write_impl_cargo_toml, write_impl_controller_stub, write_impl_main_rs,
-        update_impl_mod_rs,
+        update_impl_mod_rs, write_impl_cargo_toml, write_impl_controller_stub, write_impl_main_rs,
     };
 
     // Load spec
-    let spec_str = spec_path.to_str()
+    let spec_str = spec_path
+        .to_str()
         .ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 in spec path"))?;
     let (routes, _slug) = load_spec(spec_str)?;
 
@@ -600,10 +593,7 @@ pub fn generate_impl_stubs(
             .ok_or_else(|| anyhow::anyhow!("Handler not found in spec: {}", handler))?;
 
         // Extract fields and types
-        let mut request_fields = route
-            .request_schema
-            .as_ref()
-            .map_or(vec![], extract_fields);
+        let mut request_fields = route.request_schema.as_ref().map_or(vec![], extract_fields);
         for param in &route.parameters {
             request_fields.push(parameter_to_field(param));
         }

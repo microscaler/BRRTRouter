@@ -38,7 +38,9 @@ fn test_bad_operation_id_casing() {
         "Should include /users GET in location"
     );
     assert!(
-        locations.iter().any(|l| l.contains("/users/{id} POST") || l.contains(r"/users/{id} POST")),
+        locations
+            .iter()
+            .any(|l| l.contains("/users/{id} POST") || l.contains(r"/users/{id} POST")),
         "Should include /users/{{id}} POST in location"
     );
 
@@ -71,7 +73,9 @@ fn test_missing_operation_id() {
         "Should include /pets GET in location"
     );
     assert!(
-        locations.iter().any(|l| l.contains("/pets/{id} DELETE") || l.contains(r"/pets/{id} DELETE")),
+        locations
+            .iter()
+            .any(|l| l.contains("/pets/{id} DELETE") || l.contains(r"/pets/{id} DELETE")),
         "Should include /pets/{{id}} DELETE in location"
     );
 }
@@ -165,9 +169,7 @@ fn test_mixed_issues() {
     );
 
     // Verify operationId casing error
-    let casing_error = errors
-        .iter()
-        .find(|i| i.kind == "operation_id_casing");
+    let casing_error = errors.iter().find(|i| i.kind == "operation_id_casing");
     assert!(
         casing_error.is_some(),
         "Should find operationId casing error"
@@ -178,9 +180,7 @@ fn test_mixed_issues() {
     );
 
     // Verify missing operationId error
-    let missing_op_id = errors
-        .iter()
-        .find(|i| i.kind == "missing_operation_id");
+    let missing_op_id = errors.iter().find(|i| i.kind == "missing_operation_id");
     assert!(
         missing_op_id.is_some(),
         "Should find missing operationId error"
@@ -198,7 +198,10 @@ fn test_mixed_issues() {
     assert!(
         missing_ref_errors.len() >= 2,
         "Should find at least 2 missing schema ref errors (OrderList, Customer). Found: {:?}",
-        missing_ref_errors.iter().map(|e| &e.message).collect::<Vec<_>>()
+        missing_ref_errors
+            .iter()
+            .map(|e| &e.message)
+            .collect::<Vec<_>>()
     );
 
     // Note: enum without type is valid JSON Schema, so no warning expected
@@ -218,11 +221,7 @@ fn test_all_sample_files_exist() {
 
     for file in test_files {
         let path = test_file_path(file);
-        assert!(
-            path.exists(),
-            "Test file should exist: {}",
-            path.display()
-        );
+        assert!(path.exists(), "Test file should exist: {}", path.display());
         // Verify it can be parsed
         let issues = lint_spec(&path);
         assert!(
@@ -232,4 +231,3 @@ fn test_all_sample_files_exist() {
         );
     }
 }
-

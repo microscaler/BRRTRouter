@@ -122,6 +122,10 @@ jobs:
         if: ${{ !env.ACT }}
         run: mkdir -p target/nextest
 
+      - name: Clean stale coverage data
+        if: ${{ !env.ACT }}
+        run: cargo llvm-cov clean --workspace
+
       - name: Measure coverage (runs tests via nextest)
         if: ${{ !env.ACT }}
         run: cargo llvm-cov nextest --workspace --all-targets --fail-fast

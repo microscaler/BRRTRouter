@@ -34,9 +34,7 @@ impl MetricsTestServer {
         let (routes, schemes, _slug) = brrtrouter::load_spec_full("examples/openapi.yaml").unwrap();
         let router = Arc::new(RwLock::new(Router::new(routes.clone())));
         let mut dispatcher = Dispatcher::new();
-        unsafe {
-            registry::register_from_spec(&mut dispatcher, &routes);
-        }
+        unsafe { registry::register_from_spec(&mut dispatcher, &routes); }
         let metrics = Arc::new(MetricsMiddleware::new());
         dispatcher.add_middleware(metrics.clone());
         dispatcher.add_middleware(Arc::new(TracingMiddleware));

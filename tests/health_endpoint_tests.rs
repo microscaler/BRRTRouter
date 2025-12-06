@@ -28,9 +28,7 @@ impl HealthTestServer {
         let (routes, _slug) = brrtrouter::load_spec("examples/openapi.yaml").unwrap();
         let router = Arc::new(RwLock::new(Router::new(routes.clone())));
         let mut dispatcher = Dispatcher::new();
-        unsafe {
-            registry::register_from_spec(&mut dispatcher, &routes);
-        }
+        unsafe { registry::register_from_spec(&mut dispatcher, &routes); }
         dispatcher.add_middleware(Arc::new(TracingMiddleware));
         let service = AppService::new(
             router,

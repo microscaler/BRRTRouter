@@ -128,10 +128,10 @@ pub fn estimate_body_size(schema: Option<&Value>) -> Option<usize> {
 
         match type_str {
             Some("string") => {
-                let max_len = obj
-                    .get("maxLength")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(DEFAULT_MAX_STRING_LENGTH as u64) as usize;
+                let max_len =
+                    obj.get("maxLength")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(DEFAULT_MAX_STRING_LENGTH as u64) as usize;
                 // Account for JSON quotes and potential escaping
                 cmp::min(max_len * 2 + 2, MAX_ESTIMATED_BODY_SIZE)
             }
@@ -144,10 +144,10 @@ pub fn estimate_body_size(schema: Option<&Value>) -> Option<usize> {
                 5
             }
             Some("array") => {
-                let max_items = obj
-                    .get("maxItems")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(DEFAULT_MAX_ARRAY_ITEMS as u64) as usize;
+                let max_items =
+                    obj.get("maxItems")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(DEFAULT_MAX_ARRAY_ITEMS as u64) as usize;
                 let item_size = obj
                     .get("items")
                     .map(|items| estimate_schema_size(items, depth + 1))
@@ -246,7 +246,7 @@ pub fn extract_request_schema(
             req_body.content.get("application/json").and_then(|media| {
                 match media.schema.as_ref()? {
                     ObjectOrReference::Object(schema_obj) => serde_json::to_value(schema_obj).ok(),
-                    ObjectOrReference::Ref { ref_path } => resolve_schema_ref(spec, ref_path)
+                    ObjectOrReference::Ref { ref_path, .. } => resolve_schema_ref(spec, ref_path)
                         .and_then(|s| serde_json::to_value(s).ok()),
                 }
             })
@@ -307,7 +307,7 @@ pub fn extract_response_schema_and_example(
                         Some(ObjectOrReference::Object(schema_obj)) => {
                             serde_json::to_value(schema_obj).ok()
                         }
-                        Some(ObjectOrReference::Ref { ref_path }) => {
+                        Some(ObjectOrReference::Ref { ref_path, .. }) => {
                             resolve_schema_ref(spec, ref_path)
                                 .and_then(|s| serde_json::to_value(s).ok())
                         }
@@ -356,13 +356,13 @@ pub fn extract_response_schema_and_example(
         statuses.sort_unstable();
         'outer: for s in statuses.iter().filter(|s| **s >= 200 && **s < 300) {
             if let Some(mt_map) = all.get(s) {
-        for spec in mt_map.values() {
-            if spec.schema.is_some() || spec.example.is_some() {
-                default_schema = spec.schema.clone();
-                default_example = spec.example.clone();
-                break 'outer;
-            }
-        }
+                for spec in mt_map.values() {
+                    if spec.schema.is_some() || spec.example.is_some() {
+                        default_schema = spec.schema.clone();
+                        default_example = spec.example.clone();
+                        break 'outer;
+                    }
+                }
             }
         }
     }
@@ -453,13 +453,13 @@ pub fn extract_parameters(
     for p in params {
         let param = match p {
             ObjectOrReference::Object(obj) => Some(obj),
-            ObjectOrReference::Ref { ref_path } => resolve_parameter_ref(spec, ref_path),
+            ObjectOrReference::Ref { ref_path, .. } => resolve_parameter_ref(spec, ref_path),
         };
 
         if let Some(param) = param {
             let schema = param.schema.as_ref().and_then(|s| match s {
                 ObjectOrReference::Object(obj) => serde_json::to_value(obj).ok(),
-                ObjectOrReference::Ref { ref_path } => resolve_schema_ref(spec, ref_path)
+                ObjectOrReference::Ref { ref_path, .. } => resolve_schema_ref(spec, ref_path)
                     .and_then(|sch| serde_json::to_value(sch).ok()),
             });
 
@@ -514,7 +514,8 @@ pub fn extract_stack_size_override(operation: &oas3::spec::Operation) -> Option<
         .extensions
         .get("x-brrtrouter-stack-size")
         .and_then(|v| {
-            v.as_u64().map(|n| n as usize)
+            v.as_u64()
+                .map(|n| n as usize)
                 .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
         })
 }
@@ -587,7 +588,7 @@ pub fn build_routes(spec: &OpenApiV3Spec, slug: &str) -> anyhow::Result<Vec<Rout
 
                 // Estimate request body size from schema
                 let estimated_request_body_bytes = estimate_body_size(request_schema.as_ref());
-                
+
                 // Extract vendor extension for stack size override
                 let x_brrtrouter_stack_size = extract_stack_size_override(operation);
 

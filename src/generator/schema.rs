@@ -117,9 +117,10 @@ fn sanitize_rust_identifier(name: &str) -> String {
 ///
 /// Field names from OpenAPI specs may contain characters invalid in Rust (hyphens, dots, etc.).
 /// This function:
-/// 1. Replaces invalid characters with underscores
-/// 2. Ensures the name doesn't start with a digit
-/// 3. Handles empty strings
+/// 1. Converts CamelCase and kebab-case to snake_case
+/// 2. Replaces invalid characters with underscores
+/// 3. Ensures the name doesn't start with a digit
+/// 4. Handles empty strings
 ///
 /// # Arguments
 ///
@@ -127,38 +128,68 @@ fn sanitize_rust_identifier(name: &str) -> String {
 ///
 /// # Returns
 ///
-/// A valid Rust identifier
+/// A valid Rust identifier in snake_case
 ///
 /// # Example
 ///
 /// ```ignore
 /// assert_eq!(sanitize_field_name("user-id"), "user_id");
+/// assert_eq!(sanitize_field_name("X-Trace-Id"), "x_trace_id");
+/// assert_eq!(sanitize_field_name("UserId"), "user_id");
 /// assert_eq!(sanitize_field_name("123field"), "_123field");
 /// assert_eq!(sanitize_field_name(""), "_");
 /// ```
 fn sanitize_field_name(name: &str) -> String {
-    // Replace invalid identifier characters with underscores and ensure it doesn't start with a digit.
-    let mut s: String = name
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '_' {
-                c
-            } else {
-                '_'
+    // First, convert to snake_case by inserting underscores before uppercase letters
+    // and lowercasing everything
+    let mut result = String::with_capacity(name.len() + 4);
+    let mut prev_was_upper = false;
+    let mut prev_was_underscore = true; // Start as true to avoid leading underscore
+
+    for c in name.chars() {
+        if c.is_ascii_uppercase() {
+            // Insert underscore before uppercase if previous wasn't underscore/uppercase
+            if !prev_was_underscore && !prev_was_upper {
+                result.push('_');
             }
-        })
-        .collect();
-    if s.is_empty() {
-        s = "_".to_string();
+            result.push(c.to_ascii_lowercase());
+            prev_was_upper = true;
+            prev_was_underscore = false;
+        } else if c.is_ascii_alphanumeric() {
+            result.push(c);
+            prev_was_upper = false;
+            prev_was_underscore = false;
+        } else {
+            // Replace non-alphanumeric with underscore
+            if !prev_was_underscore {
+                result.push('_');
+            }
+            prev_was_upper = false;
+            prev_was_underscore = true;
+        }
     }
-    if s.chars()
+
+    // Handle edge cases
+    if result.is_empty() {
+        return "_".to_string();
+    }
+
+    // Remove trailing underscores
+    while result.ends_with('_') && result.len() > 1 {
+        result.pop();
+    }
+
+    // Ensure doesn't start with a digit
+    if result
+        .chars()
         .next()
         .map(|c| c.is_ascii_digit())
         .unwrap_or(false)
     {
-        s.insert(0, '_');
+        result.insert(0, '_');
     }
-    s
+
+    result
 }
 
 /// Generate a unique handler name to avoid duplicates (internal helper)
@@ -251,7 +282,7 @@ pub fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
             } else {
                 n.to_string()
             }
-        },
+        }
         Value::Bool(b) => b.to_string(),
         // Arrays require complex processing based on element type
         Value::Array(items) => {
@@ -277,7 +308,8 @@ pub fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
                             format!("serde_json::Value::String({s:?}.to_string())")
                         } else {
                             // Other types: try parsing from string (e.g., Vec<i32>)
-                            format!("{s:?}.to_string().parse().unwrap()")
+                            // Use unwrap_or_default to avoid panics if parsing fails
+                            format!("{s:?}.to_string().parse().unwrap_or_default()")
                         }
                     }
                     // Numbers need type-aware conversion in arrays
@@ -401,12 +433,12 @@ pub fn process_schema_type_with_spec(
     if types.contains_key(&name) {
         return;
     }
-    
+
     // First, recursively collect all referenced types from this schema
     if let Some(spec_ref) = spec {
         collect_referenced_types(schema, spec_ref, types);
     }
-    
+
     let fields = extract_fields(schema);
     if !fields.is_empty() {
         types.insert(name.clone(), TypeDefinition { name, fields });
@@ -433,12 +465,25 @@ fn collect_referenced_types(
                         match schema_obj {
                             oas3::spec::ObjectOrReference::Object(obj) => {
                                 let json = serde_json::to_value(obj).unwrap_or_default();
-                                process_schema_type_with_spec(schema_name, &json, types, Some(spec));
+                                process_schema_type_with_spec(
+                                    schema_name,
+                                    &json,
+                                    types,
+                                    Some(spec),
+                                );
                             }
-                            oas3::spec::ObjectOrReference::Ref { ref_path: nested_ref } => {
+                            oas3::spec::ObjectOrReference::Ref {
+                                ref_path: nested_ref,
+                                ..
+                            } => {
                                 if let Some(resolved) = resolve_schema_ref(spec, nested_ref) {
                                     let json = serde_json::to_value(resolved).unwrap_or_default();
-                                    process_schema_type_with_spec(schema_name, &json, types, Some(spec));
+                                    process_schema_type_with_spec(
+                                        schema_name,
+                                        &json,
+                                        types,
+                                        Some(spec),
+                                    );
                                 }
                             }
                         }
@@ -447,26 +492,26 @@ fn collect_referenced_types(
             }
         }
     }
-    
+
     // Recursively check properties for $ref
     if let Some(props) = schema.get("properties").and_then(|p| p.as_object()) {
         for (_prop_name, prop_schema) in props {
             collect_referenced_types(prop_schema, spec, types);
         }
     }
-    
+
     // Check items for arrays
     if let Some(items) = schema.get("items") {
         collect_referenced_types(items, spec, types);
     }
-    
+
     // Check oneOf variants
     if let Some(one_of) = schema.get("oneOf").and_then(|v| v.as_array()) {
         for variant in one_of {
             collect_referenced_types(variant, spec, types);
         }
     }
-    
+
     // Check allOf variants
     if let Some(all_of) = schema.get("allOf").and_then(|v| v.as_array()) {
         for variant in all_of {
@@ -626,8 +671,8 @@ pub fn extract_fields(schema: &Value) -> Vec<FieldDef> {
             let sanitized = sanitize_field_name(name);
             let rust_safe_name = sanitize_rust_identifier(&sanitized);
             fields.push(FieldDef {
-                name: rust_safe_name,            // Rust-safe identifier (escapes keywords)
-                original_name: name.clone(),     // Original JSON name for #[serde(rename)]
+                name: rust_safe_name,        // Rust-safe identifier (escapes keywords)
+                original_name: name.clone(), // Original JSON name for #[serde(rename)]
                 ty,
                 optional,
                 value,
@@ -760,7 +805,7 @@ pub fn collect_component_schemas(
                     // Pass spec context to recursively collect referenced types
                     process_schema_type_with_spec(name, &json, &mut types, Some(&spec));
                 }
-                oas3::spec::ObjectOrReference::Ref { ref_path } => {
+                oas3::spec::ObjectOrReference::Ref { ref_path, .. } => {
                     if let Some(resolved) = resolve_schema_ref(&spec, ref_path) {
                         let json = serde_json::to_value(resolved).unwrap_or_default();
                         // Pass spec context to recursively collect referenced types

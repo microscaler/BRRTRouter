@@ -1,5 +1,5 @@
 /// Integration tests for body size calculation optimizations
-/// 
+///
 /// These tests verify that:
 /// 1. Content-Length header is preferred when available
 /// 2. Estimated body size is used as fallback
@@ -11,17 +11,17 @@ use serde_json::json;
 fn test_route_has_estimated_body_size_from_spec() {
     // Load the pet store example spec
     let (routes, _slug) = load_spec("examples/openapi.yaml").unwrap();
-    
+
     // Find a route with a request body (like add_pet)
     let add_pet_route = routes
         .iter()
         .find(|r| r.handler_name == "add_pet")
         .expect("add_pet route should exist");
-    
+
     // It should have a request schema and therefore an estimated size
     assert!(add_pet_route.request_schema.is_some());
     assert!(add_pet_route.estimated_request_body_bytes.is_some());
-    
+
     let estimated = add_pet_route.estimated_request_body_bytes.unwrap();
     // Pet object should have a reasonable size (not 0, not gigantic)
     assert!(estimated > 0, "Estimated size should be positive");
@@ -32,13 +32,13 @@ fn test_route_has_estimated_body_size_from_spec() {
 fn test_route_without_body_has_no_estimate() {
     // Load the pet store example spec
     let (routes, _slug) = load_spec("examples/openapi.yaml").unwrap();
-    
+
     // Find a GET route with no body (like list_pets)
     let list_pets_route = routes
         .iter()
         .find(|r| r.handler_name == "list_pets")
         .expect("list_pets route should exist");
-    
+
     // GET routes typically don't have request bodies
     if list_pets_route.request_schema.is_none() {
         assert_eq!(list_pets_route.estimated_request_body_bytes, None);
@@ -74,10 +74,10 @@ fn test_estimate_body_size_complex_schema() {
             "active": {"type": "boolean"}
         }
     });
-    
+
     let estimated = estimate_body_size(Some(&schema));
     assert!(estimated.is_some());
-    
+
     let size = estimated.unwrap();
     // Should be a reasonable estimate for this structure
     // name: ~200, tags: ~2200, metadata: ~200, active: ~5, overhead: ~20
@@ -95,16 +95,20 @@ fn test_estimate_respects_vendor_extension() {
             "data": {"type": "string"}
         }
     });
-    
+
     let estimated = estimate_body_size(Some(&schema));
-    assert_eq!(estimated, Some(8192), "Should use vendor extension override");
+    assert_eq!(
+        estimated,
+        Some(8192),
+        "Should use vendor extension override"
+    );
 }
 
 #[test]
 fn test_all_routes_with_bodies_have_estimates() {
     // Load the spec and verify all routes with request bodies have estimates
     let (routes, _slug) = load_spec("examples/openapi.yaml").unwrap();
-    
+
     for route in routes {
         if route.request_schema.is_some() {
             assert!(

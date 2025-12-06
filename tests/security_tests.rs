@@ -199,6 +199,7 @@ paths:
     };
     let router = Arc::new(RwLock::new(Router::new(routes.clone())));
     let mut dispatcher = Dispatcher::new();
+    // SAFETY: Test context - handlers are simple closures for testing
     unsafe {
         dispatcher.register_handler("secret", |req: HandlerRequest| {
             let _ = req.reply_tx.send(HandlerResponse {
@@ -269,6 +270,7 @@ paths:
     let (routes, schemes, _slug) = load_spec_full(path.to_str().unwrap()).unwrap();
     let router = Arc::new(RwLock::new(Router::new(routes.clone())));
     let mut dispatcher = Dispatcher::new();
+    // SAFETY: Test context - handlers are simple closures for testing
     unsafe {
         dispatcher.register_handler("one", |req: HandlerRequest| {
             let _ = req.reply_tx.send(HandlerResponse {
@@ -343,6 +345,7 @@ paths:
     let (routes, schemes, _slug) = load_spec_full(path.to_str().unwrap()).unwrap();
     let router = Arc::new(RwLock::new(Router::new(routes.clone())));
     let mut dispatcher = Dispatcher::new();
+    // SAFETY: Test context - handlers are simple closures for testing
     unsafe {
         dispatcher.register_handler("header", |req: HandlerRequest| {
             let _ = req.reply_tx.send(HandlerResponse {
@@ -535,6 +538,7 @@ paths:
     let (routes, schemes, _slug) = load_spec_full(path.to_str().unwrap()).unwrap();
     let router = Arc::new(RwLock::new(Router::new(routes.clone())));
     let mut dispatcher = Dispatcher::new();
+    // SAFETY: Test context - handlers are simple closures for testing
     unsafe {
         dispatcher.register_handler("secret", |req: HandlerRequest| {
             let _ = req.reply_tx.send(HandlerResponse {
@@ -650,6 +654,7 @@ paths:
     let (routes, schemes, _slug) = load_spec_full(path.to_str().unwrap()).unwrap();
     let router = Arc::new(RwLock::new(Router::new(routes.clone())));
     let mut dispatcher = Dispatcher::new();
+    // SAFETY: Test context - handlers are simple closures for testing
     unsafe {
         dispatcher.register_handler("header", |req: HandlerRequest| {
             let _ = req.reply_tx.send(HandlerResponse {
@@ -788,6 +793,7 @@ paths:
     let (routes, schemes, _slug) = load_spec_full(path.to_str().unwrap()).unwrap();
     let router = Arc::new(RwLock::new(Router::new(routes.clone())));
     let mut dispatcher = Dispatcher::new();
+    // SAFETY: Test context - handlers are simple closures for testing
     unsafe {
         dispatcher.register_handler("secret", |req: HandlerRequest| {
             let _ = req.reply_tx.send(HandlerResponse {

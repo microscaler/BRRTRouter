@@ -79,7 +79,7 @@ fn test_router_memory_efficiency() {
         let result = router.route(Method::GET, &format!("/api/users/{}/posts", i));
         assert!(result.is_some());
     }
-    
+
     // This test primarily validates that the code runs without panicking
     // Memory profiling would show that Arc usage prevents excessive cloning
 }
@@ -131,7 +131,9 @@ fn test_router_common_prefix_efficiency() {
     // All these paths share the /api prefix - radix tree should handle efficiently
     assert!(router.route(Method::GET, "/api/v1/users").is_some());
     assert!(router.route(Method::GET, "/api/v1/users/123").is_some());
-    assert!(router.route(Method::GET, "/api/v1/users/123/profile").is_some());
+    assert!(router
+        .route(Method::GET, "/api/v1/users/123/profile")
+        .is_some());
     assert!(router.route(Method::GET, "/api/v1/posts").is_some());
     assert!(router.route(Method::GET, "/api/v2/users").is_some());
 }
@@ -139,13 +141,11 @@ fn test_router_common_prefix_efficiency() {
 #[test]
 fn test_router_parameter_extraction_performance() {
     // Test that parameter extraction doesn't slow down matching
-    let routes = vec![
-        create_route_meta(
-            Method::GET,
-            "/api/{version}/users/{user_id}/posts/{post_id}/comments/{comment_id}",
-            "get_comment",
-        ),
-    ];
+    let routes = vec![create_route_meta(
+        Method::GET,
+        "/api/{version}/users/{user_id}/posts/{post_id}/comments/{comment_id}",
+        "get_comment",
+    )];
 
     let router = Router::new(routes);
 

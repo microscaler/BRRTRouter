@@ -24,47 +24,47 @@ default-target = "x86_64-unknown-linux-gnu"
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-jsonschema = "0.17"
-serde_yaml = "0.9"
+jsonschema = "0.37"
+serde_yaml = "0.9.33"
 # Needed for simple JWT parsing in security providers
 base64 = "0.22"
 # Do not update to newer version
-oas3 = { version = "0.16.1", features = ["yaml-spec"] }
+oas3 = { version = "0.20", features = ["yaml-spec"] }
 anyhow = "1.0"
 http = "1.0"  # Do not update to newer version, it that is not compatible with may_minihttp
-may = "0.3"
+may = "0.3"  # generator-rs is patched via [patch.crates-io] section at the end of this file
 # Using our fork until PR #21 is merged upstream
 may_minihttp = { git = "https://github.com/microscaler/may_minihttp.git", branch = "feat/configurable-max-headers" }
 regex = "1.11.1"
 url = "2.5.4"
 clap = { version = "4.5.38", features = ["cargo", "env", "derive"] }
 askama = { version = "0.14.0", features = ["full"] }
-notify = "6"
+notify = "8"
 memory-stats = "1.1"  # For cross-platform memory monitoring
-tikv-jemallocator = { version = "0.5", optional = true }
-tikv-jemalloc-ctl = { version = "0.5", optional = true }
-minijinja = "1"
+tikv-jemallocator = { version = "0.6", optional = true }
+tikv-jemalloc-ctl = { version = "0.6", optional = true, features = ["stats"] }
+minijinja = "2"
 
 # OpenTelemetry observability (PROVEN VERSIONS from obsctl)
 # CRITICAL: These versions work with otel-collector-contrib:0.93.0
 # DO NOT UPDATE without testing against OTEL collector!
 tracing = "0.1"
-opentelemetry = { version = "0.30", features = ["metrics", "trace"] }
-opentelemetry-otlp = { version = "0.30", features = ["grpc-tonic", "metrics", "trace"] }
-opentelemetry_sdk = { version = "0.30", features = ["metrics", "trace"] }
-opentelemetry-semantic-conventions = "0.30"
-tracing-opentelemetry = "0.31"
+opentelemetry = { version = "0.31", features = ["metrics", "trace"] }
+opentelemetry-otlp = { version = "0.31", features = ["grpc-tonic", "metrics", "trace"] }
+opentelemetry_sdk = { version = "0.31", features = ["metrics", "trace"] }
+opentelemetry-semantic-conventions = "0.31"
+tracing-opentelemetry = "0.32"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-appender = "0.2"
 
-# gRPC dependencies for OTLP (compatible with opentelemetry 0.30)
-tonic = "0.12"
-prost = "0.13"
+# gRPC dependencies for OTLP (compatible with opentelemetry 0.31)
+tonic = "0.14"
+prost = "0.14"
 tokio = { version = "1.45.1", features = ["rt-multi-thread", "macros"] }
 
 # Production JWT/JWKS validation and HTTP fetch (for external providers like PropelAuth)
-jsonwebtoken = "9"
-reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls", "blocking"] }
+jsonwebtoken = { version = "10", features = ["rust_crypto"] }  # rust_crypto enables RSA/EC algorithms
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "blocking"] }
 urlencoding = "2.1"
 ulid = "1.1"
 sha2 = "0.10"
@@ -74,12 +74,12 @@ dashmap = "6.1"  # Lock-free concurrent HashMap for metrics
 
 [dev-dependencies]
 pet_store = { path = "./examples/pet_store" }
-criterion = "0.5"
-# Using our own OTLP test utilities compatible with opentelemetry 0.30
-# (fake-opentelemetry-collector 0.28 is incompatible - uses 0.29)
+criterion = "0.8"
+# Using our own OTLP test utilities compatible with opentelemetry 0.31
 flamegraph = "0.6"
 tempfile = "3.8"
-bollard = { version = "0.16", default-features = false, features = ["ssl", "chrono"] }
+bollard = { version = "0.19", features = ["ssl", "chrono"] }
+bytes = "1"  # For bollard body_full()
 tar = "0.4"
 walkdir = "2"
 futures-util = "0.3"
@@ -163,3 +163,10 @@ clone_on_ref_ptr = "warn"     # Clone on &Arc/&Rc - usually a mistake
 redundant_clone = "warn"      # Unnecessary clones
 large_futures = "warn"        # Futures that are too large for the stack
 large_stack_arrays = "warn"   # Stack arrays that may overflow
+
+# =============================================================================
+# CRATES.IO PATCHES
+# =============================================================================
+# Override generator-rs with our fork that fixes Rust 1.90+ macOS thread-local bug
+[patch.crates-io]
+generator = { git = "https://github.com/microscaler/generator-rs.git", branch = "fix/rust-1.90-thread-local-macos" }

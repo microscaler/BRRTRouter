@@ -91,7 +91,7 @@ pub struct RuntimeConfig {
 
 impl RuntimeConfig {
     /// Load configuration from environment variables.
-    /// 
+    ///
     /// **IMPORTANT**: Stack sizes are made odd (if even) to enable May's internal
     /// stack usage tracking. This allows us to measure actual stack usage, not just
     /// allocation size.
@@ -106,14 +106,17 @@ impl RuntimeConfig {
             }
             Err(_) => 0x10000, // 64KB default for better stability
         };
-        
+
         // Make stack size odd to enable May's stack usage tracking
         // This is an undocumented feature that provides visibility into actual usage
         if stack_size % 2 == 0 {
             stack_size += 1;
-            eprintln!("[telemetry] Adjusted stack size to {} (odd) to enable usage tracking", stack_size);
+            eprintln!(
+                "[telemetry] Adjusted stack size to {} (odd) to enable usage tracking",
+                stack_size
+            );
         }
-        
+
         // Parse schema cache configuration (default: enabled)
         let schema_cache_enabled = match env::var("BRRTR_SCHEMA_CACHE") {
             Ok(val) => {
@@ -122,7 +125,7 @@ impl RuntimeConfig {
             }
             Err(_) => true, // Default to enabled
         };
-        
+
         RuntimeConfig {
             stack_size,
             schema_cache_enabled,

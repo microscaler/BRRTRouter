@@ -169,24 +169,24 @@ pub struct MetricsSummary {
     pub p95_route_match_latency_us: u64,
     pub p99_route_match_latency_us: u64,
     pub max_route_match_latency_us: u64,
-    
+
     // Dispatch metrics
     pub avg_dispatch_latency_us: f64,
     pub p95_dispatch_latency_us: u64,
     pub p99_dispatch_latency_us: u64,
-    
+
     // Match success metrics
     pub total_requests: u64,
     pub successful_matches: u64,
     pub match_failures: u64,
     pub match_error_rate: f64,
-    
+
     // Lock contention metrics
     pub avg_lock_acquisition_us: f64,
     pub p99_lock_acquisition_us: u64,
     pub lock_contentions: u64,
     pub lock_contention_time_us: u64,
-    
+
     // Memory and GC metrics
     pub avg_memory_bytes: f64,
     pub max_memory_bytes: u64,
@@ -292,32 +292,34 @@ impl MetricsCollector {
 /// Health check with minimal route matching complexity
 async fn instrumented_health(user: &mut GooseUser) -> TransactionResult {
     let collector = get_collector(user);
-    
+
     collector.start_request();
     let request_start = Instant::now();
-    
+
     // Simulate route matching phase
     let match_start = Instant::now();
     let response = user.get("health").await?;
     let match_latency = match_start.elapsed().as_micros() as u64;
-    
+
     // Record route match metrics
-    let success = response.response.as_ref()
+    let success = response
+        .response
+        .as_ref()
         .map(|r| r.status().is_success())
         .unwrap_or(false);
     collector.record_route_match(match_latency, success);
-    
+
     // Simulate dispatch phase (for built-in endpoints this is minimal)
     let dispatch_latency = request_start.elapsed().as_micros() as u64 - match_latency;
     collector.record_dispatch(dispatch_latency);
-    
+
     // Check for GC delays (significant pause in processing)
     let total_latency = request_start.elapsed().as_micros() as u64;
     if total_latency > match_latency + dispatch_latency + 1000 {
         let gc_delay = total_latency - match_latency - dispatch_latency;
         collector.record_gc_delay(gc_delay);
     }
-    
+
     collector.end_request();
     response.response?.error_for_status()?;
     Ok(())
@@ -326,25 +328,27 @@ async fn instrumented_health(user: &mut GooseUser) -> TransactionResult {
 /// Metrics endpoint test with lock acquisition timing
 async fn instrumented_metrics(user: &mut GooseUser) -> TransactionResult {
     let collector = get_collector(user);
-    
+
     collector.start_request();
     let request_start = Instant::now();
-    
+
     // The /metrics endpoint requires reading shared state (potential lock contention)
     let lock_start = Instant::now();
     let response = user.get("metrics").await?;
     let lock_latency = lock_start.elapsed().as_micros() as u64;
-    
+
     // Detect lock contention (if acquisition takes >100µs, likely contention)
     let contention = lock_latency > 100;
     collector.record_lock_acquisition(lock_latency, contention);
-    
+
     let match_latency = request_start.elapsed().as_micros() as u64;
-    let success = response.response.as_ref()
+    let success = response
+        .response
+        .as_ref()
         .map(|r| r.status().is_success())
         .unwrap_or(false);
     collector.record_route_match(match_latency, success);
-    
+
     collector.end_request();
     response.response?.error_for_status()?;
     Ok(())
@@ -353,39 +357,39 @@ async fn instrumented_metrics(user: &mut GooseUser) -> TransactionResult {
 /// Authenticated request with route parameters
 async fn instrumented_get_pet(user: &mut GooseUser) -> TransactionResult {
     let collector = get_collector(user);
-    
+
     collector.start_request();
     let request_start = Instant::now();
-    
+
     let request_builder = user
         .get_request_builder(&GooseMethod::Get, "pets/12345")?
         .header("X-API-Key", "test123");
     let goose_request = GooseRequest::builder()
         .set_request_builder(request_builder)
         .build();
-    
+
     let match_start = Instant::now();
     let response = user.request(goose_request).await?;
     let match_latency = match_start.elapsed().as_micros() as u64;
-    
+
     let success = if let Ok(ref r) = response.response {
         r.status().is_success()
     } else {
         false
     };
-    
+
     if !success {
         if let Ok(r) = &response.response {
             collector.record_error(r.status().as_u16());
         }
     }
-    
+
     collector.record_route_match(match_latency, success);
-    
+
     // Dispatch latency for parameterized routes
     let dispatch_latency = request_start.elapsed().as_micros() as u64 - match_latency;
     collector.record_dispatch(dispatch_latency);
-    
+
     collector.end_request();
     Ok(())
 }
@@ -393,38 +397,38 @@ async fn instrumented_get_pet(user: &mut GooseUser) -> TransactionResult {
 /// Complex route with multiple parameters
 async fn instrumented_get_user_post(user: &mut GooseUser) -> TransactionResult {
     let collector = get_collector(user);
-    
+
     collector.start_request();
     let request_start = Instant::now();
-    
+
     let request_builder = user
         .get_request_builder(&GooseMethod::Get, "users/abc-123/posts/post1")?
         .header("X-API-Key", "test123");
     let goose_request = GooseRequest::builder()
         .set_request_builder(request_builder)
         .build();
-    
+
     let match_start = Instant::now();
     let response = user.request(goose_request).await?;
     let match_latency = match_start.elapsed().as_micros() as u64;
-    
+
     let success = if let Ok(ref r) = response.response {
         r.status().is_success()
     } else {
         false
     };
-    
+
     if !success {
         if let Ok(r) = &response.response {
             collector.record_error(r.status().as_u16());
         }
     }
-    
+
     collector.record_route_match(match_latency, success);
-    
+
     let dispatch_latency = request_start.elapsed().as_micros() as u64 - match_latency;
     collector.record_dispatch(dispatch_latency);
-    
+
     collector.end_request();
     Ok(())
 }
@@ -432,18 +436,18 @@ async fn instrumented_get_user_post(user: &mut GooseUser) -> TransactionResult {
 /// Test non-existent route to measure 404 handling
 async fn instrumented_not_found(user: &mut GooseUser) -> TransactionResult {
     let collector = get_collector(user);
-    
+
     collector.start_request();
     let match_start = Instant::now();
-    
+
     // Request a route that doesn't exist
     let _ = user.get("nonexistent/route/12345").await;
     let match_latency = match_start.elapsed().as_micros() as u64;
-    
+
     // This should fail route matching
     collector.record_route_match(match_latency, false);
     collector.record_error(404);
-    
+
     collector.end_request();
     Ok(())
 }
@@ -451,30 +455,32 @@ async fn instrumented_not_found(user: &mut GooseUser) -> TransactionResult {
 /// Query parameter route with search complexity
 async fn instrumented_search(user: &mut GooseUser) -> TransactionResult {
     let collector = get_collector(user);
-    
+
     collector.start_request();
     let request_start = Instant::now();
-    
+
     let request_builder = user
         .get_request_builder(&GooseMethod::Get, "search?q=test&category=all&limit=10")?
         .header("X-API-Key", "test123");
     let goose_request = GooseRequest::builder()
         .set_request_builder(request_builder)
         .build();
-    
+
     let match_start = Instant::now();
     let response = user.request(goose_request).await?;
     let match_latency = match_start.elapsed().as_micros() as u64;
-    
-    let success = response.response.as_ref()
+
+    let success = response
+        .response
+        .as_ref()
         .map(|r| r.status().is_success())
         .unwrap_or(false);
-    
+
     collector.record_route_match(match_latency, success);
-    
+
     let dispatch_latency = request_start.elapsed().as_micros() as u64 - match_latency;
     collector.record_dispatch(dispatch_latency);
-    
+
     collector.end_request();
     Ok(())
 }
@@ -482,10 +488,10 @@ async fn instrumented_search(user: &mut GooseUser) -> TransactionResult {
 /// POST request with body to test dispatch complexity
 async fn instrumented_add_pet(user: &mut GooseUser) -> TransactionResult {
     let collector = get_collector(user);
-    
+
     collector.start_request();
     let request_start = Instant::now();
-    
+
     let request_builder = user
         .get_request_builder(&GooseMethod::Post, "pets")?
         .header("X-API-Key", "test123")
@@ -494,21 +500,23 @@ async fn instrumented_add_pet(user: &mut GooseUser) -> TransactionResult {
     let goose_request = GooseRequest::builder()
         .set_request_builder(request_builder)
         .build();
-    
+
     let match_start = Instant::now();
     let response = user.request(goose_request).await?;
     let match_latency = match_start.elapsed().as_micros() as u64;
-    
-    let success = response.response.as_ref()
+
+    let success = response
+        .response
+        .as_ref()
         .map(|r| r.status().is_success())
         .unwrap_or(false);
-    
+
     collector.record_route_match(match_latency, success);
-    
+
     // POST dispatch includes body parsing
     let dispatch_latency = request_start.elapsed().as_micros() as u64 - match_latency;
     collector.record_dispatch(dispatch_latency);
-    
+
     collector.end_request();
     Ok(())
 }
@@ -516,12 +524,12 @@ async fn instrumented_add_pet(user: &mut GooseUser) -> TransactionResult {
 /// Memory sampling task that periodically records memory usage
 async fn memory_sampler(user: &mut GooseUser) -> TransactionResult {
     let collector = get_collector(user);
-    
+
     // Sample memory usage
     if let Some(usage) = memory_stats::memory_stats() {
         collector.record_memory(usage.physical_mem as u64);
     }
-    
+
     // Sleep briefly to avoid overwhelming the collector
     tokio::time::sleep(Duration::from_millis(100)).await;
     Ok(())
@@ -540,7 +548,7 @@ fn get_collector(_user: &mut GooseUser) -> MetricsCollector {
 
 // Global collector (simplified for example)
 use once_cell::sync::Lazy;
-static GLOBAL_COLLECTOR: Lazy<parking_lot::Mutex<MetricsCollector>> = 
+static GLOBAL_COLLECTOR: Lazy<parking_lot::Mutex<MetricsCollector>> =
     Lazy::new(|| parking_lot::Mutex::new(MetricsCollector::new()));
 
 // ============================================================================
@@ -561,69 +569,63 @@ async fn main() -> Result<(), GooseError> {
                 .set_weight(40)?
                 .register_transaction(
                     transaction!(instrumented_get_pet)
-                        .set_name("GET /pets/{id} - Parameterized Route")
+                        .set_name("GET /pets/{id} - Parameterized Route"),
                 )
                 .register_transaction(
                     transaction!(instrumented_get_user_post)
-                        .set_name("GET /users/{id}/posts/{post_id} - Complex Route")
+                        .set_name("GET /users/{id}/posts/{post_id} - Complex Route"),
                 )
                 .register_transaction(
                     transaction!(instrumented_search)
-                        .set_name("GET /search?q=... - Query Parameters")
-                )
+                        .set_name("GET /search?q=... - Query Parameters"),
+                ),
         )
-        
         // Error handling and edge cases (20% weight)
         .register_scenario(
             scenario!("Error Handling Performance")
                 .set_weight(20)?
                 .register_transaction(
                     transaction!(instrumented_not_found)
-                        .set_name("GET /nonexistent - 404 Handling")
-                )
+                        .set_name("GET /nonexistent - 404 Handling"),
+                ),
         )
-        
         // Lock contention tests (20% weight)
         .register_scenario(
             scenario!("Lock Contention Tests")
                 .set_weight(20)?
                 .register_transaction(
                     transaction!(instrumented_metrics)
-                        .set_name("GET /metrics - Shared State Access")
-                )
+                        .set_name("GET /metrics - Shared State Access"),
+                ),
         )
-        
         // Dispatch complexity tests (15% weight)
         .register_scenario(
             scenario!("Dispatch Performance")
                 .set_weight(15)?
                 .register_transaction(
                     transaction!(instrumented_add_pet)
-                        .set_name("POST /pets - Body Parsing & Dispatch")
-                )
+                        .set_name("POST /pets - Body Parsing & Dispatch"),
+                ),
         )
-        
         // Baseline tests (5% weight)
         .register_scenario(
             scenario!("Baseline Performance")
                 .set_weight(5)?
                 .register_transaction(
-                    transaction!(instrumented_health)
-                        .set_name("GET /health - Minimal Route")
-                )
+                    transaction!(instrumented_health).set_name("GET /health - Minimal Route"),
+                ),
         )
-        
         .execute()
         .await?;
 
     // Print metrics summary after test completes
     print_metrics_summary();
-    
+
     // Save metrics to file
     if let Err(e) = save_metrics_to_file() {
         eprintln!("Failed to save metrics to file: {}", e);
     }
-    
+
     Ok(())
 }
 
@@ -631,68 +633,110 @@ async fn main() -> Result<(), GooseError> {
 fn print_metrics_summary() {
     let collector = GLOBAL_COLLECTOR.lock();
     let summary = collector.get_summary();
-    
+
     println!("\n╔════════════════════════════════════════════════════════════════╗");
     println!("║                  PERFORMANCE METRICS SUMMARY                   ║");
     println!("╚════════════════════════════════════════════════════════════════╝\n");
-    
+
     println!("📊 Route Matching Metrics:");
-    println!("  ├─ Average Latency: {:.2} µs", summary.avg_route_match_latency_us);
-    println!("  ├─ P50 Latency: {} µs", summary.p50_route_match_latency_us);
-    println!("  ├─ P95 Latency: {} µs", summary.p95_route_match_latency_us);
-    println!("  ├─ P99 Latency: {} µs", summary.p99_route_match_latency_us);
-    println!("  └─ Max Latency: {} µs", summary.max_route_match_latency_us);
-    
+    println!(
+        "  ├─ Average Latency: {:.2} µs",
+        summary.avg_route_match_latency_us
+    );
+    println!(
+        "  ├─ P50 Latency: {} µs",
+        summary.p50_route_match_latency_us
+    );
+    println!(
+        "  ├─ P95 Latency: {} µs",
+        summary.p95_route_match_latency_us
+    );
+    println!(
+        "  ├─ P99 Latency: {} µs",
+        summary.p99_route_match_latency_us
+    );
+    println!(
+        "  └─ Max Latency: {} µs",
+        summary.max_route_match_latency_us
+    );
+
     println!("\n🎯 Match Success Rate:");
     println!("  ├─ Total Requests: {}", summary.total_requests);
     println!("  ├─ Successful Matches: {}", summary.successful_matches);
     println!("  ├─ Failed Matches (404s): {}", summary.match_failures);
     println!("  └─ Error Rate: {:.2}%", summary.match_error_rate);
-    
+
     println!("\n⚡ Handler Dispatch Metrics:");
-    println!("  ├─ Average Latency: {:.2} µs", summary.avg_dispatch_latency_us);
+    println!(
+        "  ├─ Average Latency: {:.2} µs",
+        summary.avg_dispatch_latency_us
+    );
     println!("  ├─ P95 Latency: {} µs", summary.p95_dispatch_latency_us);
     println!("  └─ P99 Latency: {} µs", summary.p99_dispatch_latency_us);
-    
+
     println!("\n🔒 Lock Contention Metrics:");
-    println!("  ├─ Average Lock Acquisition: {:.2} µs", summary.avg_lock_acquisition_us);
-    println!("  ├─ P99 Lock Acquisition: {} µs", summary.p99_lock_acquisition_us);
+    println!(
+        "  ├─ Average Lock Acquisition: {:.2} µs",
+        summary.avg_lock_acquisition_us
+    );
+    println!(
+        "  ├─ P99 Lock Acquisition: {} µs",
+        summary.p99_lock_acquisition_us
+    );
     println!("  ├─ Contentions Detected: {}", summary.lock_contentions);
-    println!("  └─ Total Contention Time: {} µs", summary.lock_contention_time_us);
-    
+    println!(
+        "  └─ Total Contention Time: {} µs",
+        summary.lock_contention_time_us
+    );
+
     println!("\n💾 Memory & GC Metrics:");
-    println!("  ├─ Average Memory: {:.2} MB", summary.avg_memory_bytes as f64 / 1_048_576.0);
-    println!("  ├─ Max Memory: {:.2} MB", summary.max_memory_bytes as f64 / 1_048_576.0);
+    println!(
+        "  ├─ Average Memory: {:.2} MB",
+        summary.avg_memory_bytes as f64 / 1_048_576.0
+    );
+    println!(
+        "  ├─ Max Memory: {:.2} MB",
+        summary.max_memory_bytes as f64 / 1_048_576.0
+    );
     println!("  ├─ GC Delays Detected: {}", summary.gc_delays_detected);
     println!("  ├─ Average GC Delay: {:.2} µs", summary.avg_gc_delay_us);
     println!("  └─ Max GC Delay: {} µs", summary.max_gc_delay_us);
-    
+
     println!("\n📈 Performance Analysis:");
-    
+
     if summary.p99_route_match_latency_us > 1000 {
         println!("  ⚠️  WARNING: P99 route matching latency exceeds 1ms");
     } else {
         println!("  ✅ Route matching latency is excellent (P99 < 1ms)");
     }
-    
+
     if summary.match_error_rate > 5.0 {
-        println!("  ⚠️  WARNING: Match error rate is high ({}%)", summary.match_error_rate);
+        println!(
+            "  ⚠️  WARNING: Match error rate is high ({}%)",
+            summary.match_error_rate
+        );
     } else {
         println!("  ✅ Match error rate is acceptable");
     }
-    
+
     if summary.lock_contentions > 100 {
-        println!("  ⚠️  WARNING: Significant lock contention detected ({} contentions)", summary.lock_contentions);
+        println!(
+            "  ⚠️  WARNING: Significant lock contention detected ({} contentions)",
+            summary.lock_contentions
+        );
     } else {
         println!("  ✅ Lock contention is minimal");
     }
-    
+
     if summary.gc_delays_detected > 10 {
-        println!("  ⚠️  WARNING: GC delays may be impacting performance ({} delays)", summary.gc_delays_detected);
+        println!(
+            "  ⚠️  WARNING: GC delays may be impacting performance ({} delays)",
+            summary.gc_delays_detected
+        );
     } else {
         println!("  ✅ GC impact is minimal");
     }
-    
+
     println!("\n");
 }
 
@@ -700,15 +744,15 @@ fn print_metrics_summary() {
 fn save_metrics_to_file() -> Result<(), Box<dyn std::error::Error>> {
     let collector = GLOBAL_COLLECTOR.lock();
     let summary = collector.get_summary();
-    
+
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?
         .as_secs();
-    
+
     let filename = format!("metrics-{}.json", timestamp);
     let json = serde_json::to_string_pretty(&summary)?;
     std::fs::write(&filename, json)?;
-    
+
     println!("📄 Detailed metrics saved to: {}", filename);
     Ok(())
 }

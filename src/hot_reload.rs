@@ -177,7 +177,7 @@ where
                             if let Some(ref cache) = validator_cache {
                                 let cache_size_before = cache.size();
                                 let old_version = cache.spec_version();
-                                
+
                                 // Clear cache and update version with content hash
                                 if let Some(content) = spec_content {
                                     cache.update_spec_version(&content);
@@ -185,7 +185,7 @@ where
                                     // Fallback to simple clear if content read failed
                                     cache.clear();
                                 }
-                                
+
                                 let new_version = cache.spec_version();
                                 info!(
                                     spec_path = %spec_path_str,

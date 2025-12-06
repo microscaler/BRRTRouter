@@ -246,14 +246,14 @@ paths:
 "#;
 
     use brrtrouter::validator_cache::ValidatorCache;
-    
+
     // Use RAII fixture for automatic cleanup
     let fixture = HotReloadTestFixture::new(SPEC_V1);
     let path = fixture.path();
     let (routes, _slug) = load_spec(path.to_str().unwrap()).unwrap();
     let router = Arc::new(RwLock::new(Router::new(routes.clone())));
     let dispatcher = Arc::new(RwLock::new(Dispatcher::new()));
-    
+
     // Create validator cache and pre-populate it
     let cache = ValidatorCache::new(true);
     let schema = serde_json::json!({
@@ -262,7 +262,7 @@ paths:
             "name": {"type": "string"}
         }
     });
-    
+
     // Compile and cache a validator
     let _validator = cache.get_or_compile("test_handler", "request", None, &schema);
     assert_eq!(cache.size(), 1, "Cache should have one entry");
@@ -302,7 +302,10 @@ paths:
         loop {
             {
                 let ups = updates.lock().unwrap();
-                if ups.iter().any(|v| v.contains(&"test_handler_v2".to_string())) {
+                if ups
+                    .iter()
+                    .any(|v| v.contains(&"test_handler_v2".to_string()))
+                {
                     break;
                 }
             }
@@ -323,11 +326,12 @@ paths:
 
     let ups = updates.lock().unwrap();
     assert!(
-        ups.iter().any(|v| v.contains(&"test_handler_v2".to_string())),
+        ups.iter()
+            .any(|v| v.contains(&"test_handler_v2".to_string())),
         "Expected 'test_handler_v2' in updates, got: {:?}",
         ups
     );
-    
+
     // Verify cache was cleared during hot reload
     assert_eq!(cache.size(), 0, "Cache should be empty after hot reload");
 
@@ -406,32 +410,41 @@ paths:
 
     use brrtrouter::validator_cache::ValidatorCache;
     use serde_json::json;
-    
+
     // Use RAII fixture for automatic cleanup
     let fixture = HotReloadTestFixture::new(SPEC_V1);
     let path = fixture.path();
     let (routes, _slug) = load_spec(path.to_str().unwrap()).unwrap();
     let router = Arc::new(RwLock::new(Router::new(routes.clone())));
     let dispatcher = Arc::new(RwLock::new(Dispatcher::new()));
-    
+
     // Create validator cache and precompile initial schemas
     let cache = ValidatorCache::new(true);
     let initial_compiled = cache.precompile_schemas(&routes);
     assert!(initial_compiled > 0, "Should precompile initial schemas");
-    
+
     // Test validation with V1 schema (requires only 'name')
     let v1_valid_request = json!({"name": "Alice"});
-    let v1_route = routes.iter().find(|r| r.handler_name == "create_user").unwrap();
-    
+    let v1_route = routes
+        .iter()
+        .find(|r| r.handler_name == "create_user")
+        .unwrap();
+
     if let Some(ref schema) = v1_route.request_schema {
-        let validator = cache.get_or_compile("create_user", "request", None, schema).unwrap();
-        assert!(validator.validate(&v1_valid_request).is_ok(), 
-                "V1: Request with only 'name' should be valid");
-        
+        let validator = cache
+            .get_or_compile("create_user", "request", None, schema)
+            .unwrap();
+        assert!(
+            validator.validate(&v1_valid_request).is_ok(),
+            "V1: Request with only 'name' should be valid"
+        );
+
         // This should be invalid in V2 but valid in V1 (missing 'age')
         let v1_missing_age = json!({"name": "Bob"});
-        assert!(validator.validate(&v1_missing_age).is_ok(),
-                "V1: Request without 'age' should be valid");
+        assert!(
+            validator.validate(&v1_missing_age).is_ok(),
+            "V1: Request without 'age' should be valid"
+        );
     }
 
     let cache_clone = cache.clone();
@@ -494,21 +507,30 @@ paths:
 
     // Load the new routes to get updated schemas
     let (new_routes, _slug) = load_spec(path.to_str().unwrap()).unwrap();
-    let v2_route = new_routes.iter().find(|r| r.handler_name == "create_user").unwrap();
-    
+    let v2_route = new_routes
+        .iter()
+        .find(|r| r.handler_name == "create_user")
+        .unwrap();
+
     // Test validation with V2 schema (requires both 'name' and 'age')
     if let Some(ref schema) = v2_route.request_schema {
-        let validator = cache.get_or_compile("create_user", "request", None, schema).unwrap();
-        
+        let validator = cache
+            .get_or_compile("create_user", "request", None, schema)
+            .unwrap();
+
         // Request with both fields should be valid
         let v2_valid_request = json!({"name": "Charlie", "age": 30});
-        assert!(validator.validate(&v2_valid_request).is_ok(),
-                "V2: Request with 'name' and 'age' should be valid");
-        
+        assert!(
+            validator.validate(&v2_valid_request).is_ok(),
+            "V2: Request with 'name' and 'age' should be valid"
+        );
+
         // Request missing 'age' should now be INVALID
         let v2_missing_age = json!({"name": "David"});
-        assert!(validator.validate(&v2_missing_age).is_err(),
-                "V2: Request without 'age' should be INVALID after hot reload");
+        assert!(
+            validator.validate(&v2_missing_age).is_err(),
+            "V2: Request without 'age' should be INVALID after hot reload"
+        );
     }
 
     // Fixture automatically cleaned up when it drops (RAII)!
@@ -563,18 +585,18 @@ paths:
 "#;
 
     use brrtrouter::validator_cache::ValidatorCache;
-    
+
     let fixture = HotReloadTestFixture::new(SPEC_V1);
     let path = fixture.path();
     let (routes, _slug) = load_spec(path.to_str().unwrap()).unwrap();
     let router = Arc::new(RwLock::new(Router::new(routes.clone())));
     let dispatcher = Arc::new(RwLock::new(Dispatcher::new()));
-    
+
     let cache = ValidatorCache::new(true);
     let initial_version = cache.spec_version();
     assert_eq!(initial_version.version, 1);
     assert_eq!(initial_version.hash, "initial");
-    
+
     let cache_clone = cache.clone();
     let updates: Arc<Mutex<Vec<Vec<String>>>> = Arc::new(Mutex::new(Vec::new()));
     let updates_clone = updates.clone();
@@ -628,8 +650,22 @@ paths:
     // Note: File watchers may fire multiple events for a single file change,
     // so version could be 2 or higher depending on how many events were triggered.
     let final_version = cache.spec_version();
-    assert!(final_version.version >= 2, "Version should increment to at least 2 (got {})", final_version.version);
-    assert_ne!(final_version.hash, "initial", "Hash should be computed from content");
-    assert_ne!(final_version.hash, initial_version.hash, "Hash should be different from initial");
-    assert_eq!(final_version.hash.len(), 16, "Hash should be 16 characters (truncated SHA-256)");
+    assert!(
+        final_version.version >= 2,
+        "Version should increment to at least 2 (got {})",
+        final_version.version
+    );
+    assert_ne!(
+        final_version.hash, "initial",
+        "Hash should be computed from content"
+    );
+    assert_ne!(
+        final_version.hash, initial_version.hash,
+        "Hash should be different from initial"
+    );
+    assert_eq!(
+        final_version.hash.len(),
+        16,
+        "Hash should be 16 characters (truncated SHA-256)"
+    );
 }

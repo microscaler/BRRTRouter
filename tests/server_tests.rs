@@ -77,9 +77,7 @@ impl PetStoreTestServer {
         let (routes, schemes, _slug) = brrtrouter::load_spec_full("examples/openapi.yaml").unwrap();
         let router = Arc::new(RwLock::new(Router::new(routes.clone())));
         let mut dispatcher = Dispatcher::new();
-        unsafe {
-            registry::register_from_spec(&mut dispatcher, &routes);
-        }
+        unsafe { registry::register_from_spec(&mut dispatcher, &routes); }
         dispatcher.add_middleware(Arc::new(TracingMiddleware));
         let mut service = AppService::new(
             router,
@@ -211,9 +209,7 @@ impl CustomServerTestFixture {
 
         let router = Arc::new(RwLock::new(Router::new(vec![route])));
         let mut dispatcher = Dispatcher::new();
-        unsafe {
-            dispatcher.register_handler(handler_name, handler);
-        }
+        unsafe { dispatcher.register_handler(handler_name, handler); }
         dispatcher.add_middleware(Arc::new(TracingMiddleware));
 
         let service = AppService::new(
@@ -266,9 +262,7 @@ fn start_petstore_service() -> (TestTracing, ServerHandle, SocketAddr) {
     let (routes, schemes, _slug) = brrtrouter::load_spec_full("examples/openapi.yaml").unwrap();
     let router = Arc::new(RwLock::new(Router::new(routes.clone())));
     let mut dispatcher = Dispatcher::new();
-    unsafe {
-        registry::register_from_spec(&mut dispatcher, &routes);
-    }
+    unsafe { registry::register_from_spec(&mut dispatcher, &routes); }
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
     let mut service = AppService::new(
         router,
