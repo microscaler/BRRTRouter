@@ -59,12 +59,21 @@
 #![deny(clippy::unnecessary_to_owned)]
 
 use http::Method;
+use smallvec::SmallVec;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use super::core::ParamVec;
 use crate::spec::RouteMeta;
+
+/// Maximum segments in a path before heap allocation.
+/// Most REST APIs have ≤8 segments (e.g., /api/v1/users/{id}/posts/{postId}).
+/// JSF Rule 206: No heap allocations in the hot path for common cases.
+const MAX_INLINE_SEGMENTS: usize = 16;
+
+/// Stack-allocated segment storage for path splitting in the hot path.
+type SegmentVec<'a> = SmallVec<[&'a str; MAX_INLINE_SEGMENTS]>;
 
 /// Node in the radix tree for efficient route matching
 ///
@@ -78,7 +87,11 @@ struct RadixNode {
     /// If this node is a terminal (end of a route), stores the route metadata per HTTP method
     routes: HashMap<Method, Arc<RouteMeta>>,
     /// Parameter name if this segment is a path parameter (e.g., "{id}" -> Some("id"))
-    param_name: Option<Cow<'static, str>>,
+    /// 
+    /// # JSF Optimization (P0)
+    /// Uses `Arc<str>` instead of `Cow` so that cloning during route matching
+    /// is O(1) atomic increment instead of O(n) string copy.
+    param_name: Option<Arc<str>>,
     /// Child nodes for more specific paths
     children: Vec<RadixNode>,
     /// Wildcard child nodes for parameterized paths (e.g., {id}, {user_id})
@@ -100,7 +113,10 @@ impl RadixNode {
     }
 
     /// Create a new parameter node
-    fn new_param(param_name: Cow<'static, str>) -> Self {
+    /// 
+    /// # JSF Optimization (P0)
+    /// Takes `Arc<str>` for O(1) cloning during route matching.
+    fn new_param(param_name: Arc<str>) -> Self {
         Self {
             segment: Cow::Borrowed(""),
             routes: HashMap::new(),
@@ -143,7 +159,8 @@ impl RadixNode {
             }
 
             // No matching param_child found, create a new one
-            let mut new_param_child = RadixNode::new_param(Cow::Owned(param_name.to_string()));
+            // JSF: Use Arc::from() for O(1) cloning during route matching
+            let mut new_param_child = RadixNode::new_param(Arc::from(param_name));
             new_param_child.insert(remaining, method, route);
             self.param_children.push(new_param_child);
             return;
@@ -166,6 +183,7 @@ impl RadixNode {
 
     /// Search for a matching route in the tree
     /// Uses ParamVec (SmallVec) for stack-allocated params in hot path
+    #[inline]
     fn search(
         &self,
         segments: &[&str],
@@ -195,7 +213,10 @@ impl RadixNode {
                 // Push the param for this branch
                 // Note: duplicate param names will result in multiple entries;
                 // use get_path_param() which returns the last occurrence (last write wins)
-                params.push((param_name.to_string(), segment.to_string()));
+                // 
+                // JSF Optimization (P0): Arc::clone() is O(1) atomic increment
+                // vs O(n) string copy for param names
+                params.push((Arc::clone(param_name), segment.to_string()));
                 if let Some(route) = param_child.search(remaining, method, params) {
                     return Some(route);
                 }
@@ -304,8 +325,12 @@ impl RadixRouter {
     ///
     /// Uses ParamVec (SmallVec) for stack-allocated parameters, avoiding heap
     /// allocation for routes with ≤8 params (the common case).
+    /// Uses SegmentVec (SmallVec) for stack-allocated path segments, avoiding heap
+    /// allocation for paths with ≤16 segments (the common case).
+    #[inline]
     pub fn route(&self, method: Method, path: &str) -> Option<(Arc<RouteMeta>, ParamVec)> {
-        let segments: Vec<&str> = path
+        // JSF: Use SmallVec to avoid heap allocation for typical paths (≤16 segments)
+        let segments: SegmentVec = path
             .trim_start_matches('/')
             .split('/')
             .filter(|s| !s.is_empty())
@@ -328,7 +353,7 @@ mod tests {
     fn get_param<'a>(params: &'a ParamVec, name: &str) -> Option<&'a str> {
         params
             .iter()
-            .rfind(|(k, _)| k == name)
+            .rfind(|(k, _)| k.as_ref() == name)
             .map(|(_, v)| v.as_str())
     }
 
@@ -379,7 +404,7 @@ mod tests {
         assert_eq!(
             params
                 .iter()
-                .find(|(k, _)| k == "id")
+                .find(|(k, _)| k.as_ref() == "id")
                 .map(|(_, v)| v.as_str()),
             Some("123")
         );
@@ -401,14 +426,14 @@ mod tests {
         assert_eq!(
             params
                 .iter()
-                .find(|(k, _)| k == "user_id")
+                .find(|(k, _)| k.as_ref() == "user_id")
                 .map(|(_, v)| v.as_str()),
             Some("123")
         );
         assert_eq!(
             params
                 .iter()
-                .find(|(k, _)| k == "post_id")
+                .find(|(k, _)| k.as_ref() == "post_id")
                 .map(|(_, v)| v.as_str()),
             Some("456")
         );
@@ -911,7 +936,7 @@ mod tests {
         assert_eq!(
             params
                 .iter()
-                .find(|(k, _)| k == "team_id")
+                .find(|(k, _)| k.as_ref() == "team_id")
                 .map(|(_, v)| v.as_str()),
             Some("team456")
         );
@@ -974,7 +999,7 @@ mod tests {
         assert_eq!(
             params
                 .iter()
-                .find(|(k, _)| k == "team_id")
+                .find(|(k, _)| k.as_ref() == "team_id")
                 .map(|(_, v)| v.as_str()),
             Some("team789")
         );

@@ -93,7 +93,7 @@ impl HandlerRequest {
     pub fn get_path_param(&self, name: &str) -> Option<&str> {
         self.path_params
             .iter()
-            .rfind(|(k, _)| k == name)
+            .rfind(|(k, _)| k.as_ref() == name)
             .map(|(_, v)| v.as_str())
     }
 
@@ -106,7 +106,7 @@ impl HandlerRequest {
     pub fn get_query_param(&self, name: &str) -> Option<&str> {
         self.query_params
             .iter()
-            .rfind(|(k, _)| k == name)
+            .rfind(|(k, _)| k.as_ref() == name)
             .map(|(_, v)| v.as_str())
     }
 
@@ -134,14 +134,20 @@ impl HandlerRequest {
     /// Note: This allocates - use get_path_param() in hot paths
     #[must_use]
     pub fn path_params_map(&self) -> HashMap<String, String> {
-        self.path_params.iter().cloned().collect()
+        self.path_params
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.clone()))
+            .collect()
     }
 
     /// Convert query_params to HashMap for compatibility
     /// Note: This allocates - use get_query_param() in hot paths
     #[must_use]
     pub fn query_params_map(&self) -> HashMap<String, String> {
-        self.query_params.iter().cloned().collect()
+        self.query_params
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.clone()))
+            .collect()
     }
 
     /// Convert headers to HashMap for compatibility

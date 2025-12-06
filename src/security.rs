@@ -126,7 +126,7 @@ impl<'a> SecurityRequest<'a> {
     pub fn get_query(&self, name: &str) -> Option<&str> {
         self.query
             .iter()
-            .find(|(k, _)| k == name)
+            .find(|(k, _)| k.as_ref() == name)
             .map(|(_, v)| v.as_str())
     }
 

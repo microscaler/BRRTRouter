@@ -15,6 +15,7 @@ use crate::router::ParamVec;
 use crate::spec::ParameterStyle;
 use may_minihttp::Request;
 use std::io::Read;
+use std::sync::Arc;
 use tracing::{debug, info};
 
 /// Parsed HTTP request data used by `AppService`.
@@ -66,7 +67,7 @@ impl ParsedRequest {
     pub fn get_query_param(&self, name: &str) -> Option<&str> {
         self.query_params
             .iter()
-            .find(|(k, _)| k == name)
+            .find(|(k, _)| k.as_ref() == name)
             .map(|(_, v)| v.as_str())
     }
 }
@@ -111,8 +112,10 @@ pub fn parse_cookies(headers: &HeaderVec) -> HeaderVec {
 pub fn parse_query_params(path: &str) -> ParamVec {
     if let Some(pos) = path.find('?') {
         let query_str = &path[pos + 1..];
+        // JSF: Use Arc::from for param names (O(1) clone in hot path)
+        // Values remain String as they're per-request data
         url::form_urlencoded::parse(query_str.as_bytes())
-            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .map(|(k, v)| (Arc::from(k.as_ref()), v.to_string()))
             .collect()
     } else {
         ParamVec::new()
@@ -322,8 +325,16 @@ pub fn parse_request(req: Request) -> ParsedRequest {
 mod tests {
     use super::*;
 
-    /// Helper to get a param value from ParamVec/HeaderVec
-    fn find_param<'a>(params: &'a [(String, String)], name: &str) -> Option<&'a str> {
+    /// Helper to get a param value from ParamVec (uses Arc<str> keys)
+    fn find_query_param<'a>(params: &'a ParamVec, name: &str) -> Option<&'a str> {
+        params
+            .iter()
+            .find(|(k, _)| k.as_ref() == name)
+            .map(|(_, v)| v.as_str())
+    }
+
+    /// Helper to get a param value from HeaderVec (uses String keys)
+    fn find_header_param<'a>(params: &'a [(String, String)], name: &str) -> Option<&'a str> {
         params
             .iter()
             .find(|(k, _)| k == name)
@@ -335,14 +346,14 @@ mod tests {
         let mut h: HeaderVec = HeaderVec::new();
         h.push(("cookie".to_string(), "a=b; c=d".to_string()));
         let cookies = parse_cookies(&h);
-        assert_eq!(find_param(&cookies, "a"), Some("b"));
-        assert_eq!(find_param(&cookies, "c"), Some("d"));
+        assert_eq!(find_header_param(&cookies, "a"), Some("b"));
+        assert_eq!(find_header_param(&cookies, "c"), Some("d"));
     }
 
     #[test]
     fn test_parse_query_params() {
         let q = parse_query_params("/p?x=1&y=2");
-        assert_eq!(find_param(&q, "x"), Some("1"));
-        assert_eq!(find_param(&q, "y"), Some("2"));
+        assert_eq!(find_query_param(&q, "x"), Some("1"));
+        assert_eq!(find_query_param(&q, "y"), Some("2"));
     }
 }
