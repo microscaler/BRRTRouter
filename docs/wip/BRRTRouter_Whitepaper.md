@@ -4,13 +4,13 @@
 
 #### 1.1 Positioning in the Market
 
-BRRTRouter is an OpenAPI-first HTTP router and backend-for-frontend (BFF) engine designed for organizations that treat their API surface as a strategic asset rather than a by-product of implementation. It sits between external clients and a fleet of internal microservices, owning request validation, routing, security enforcement, and observability while keeping business logic in downstream systems.
+BRRTRouter is an OpenAPI-first HTTP router designed for organizations that treat their API surface as a strategic asset rather than a by-product of implementation. It can serve as a backend-for-frontend (BFF) tier, as the transport layer within individual microservices, or both—enabling end-to-end contract enforcement across an entire distributed system. At each layer, BRRTRouter owns request validation, routing, security enforcement, and observability while keeping business logic where it belongs.
 
 From a market perspective, BRRTRouter occupies the space between traditional API gateways and full-stack application frameworks:
 - Compared to API gateways, it offers **first-class OpenAPI contract enforcement** and type-safe code generation rather than treating specifications as optional documentation.
 - Compared to general-purpose frameworks, it provides a **minimal, performance-focused runtime** optimized for request routing, not monolithic business logic.
 
-This makes BRRTRouter particularly relevant for fintechs, SaaS platforms, and digital-native enterprises that need a programmable, spec-driven edge or BFF tier to safely expose rapidly evolving microservice ecosystems.
+This makes BRRTRouter particularly relevant for fintechs, SaaS platforms, and digital-native enterprises that need a programmable, spec-driven routing layer—whether at the edge, within a BFF, or inside every microservice—to safely expose and interconnect rapidly evolving service ecosystems.
 
 #### 1.2 Key Differentiators
 
