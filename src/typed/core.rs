@@ -8,6 +8,7 @@ use serde::Serialize;
 use serde_json;
 use std::collections::HashMap;
 use std::convert::TryFrom;
+use tracing::error;
 
 /// Get the stack size for a handler with environment variable overrides applied
 ///
@@ -216,13 +217,23 @@ where
             }
         });
 
-    // Handle coroutine spawn failures gracefully
+    // Handle coroutine spawn failures - this is a critical error that prevents handler operation
+    // JSF Rule 115: Document panic conditions clearly
     match spawn_result {
         Ok(_) => tx,
         Err(e) => {
-            // Log the error and panic since we can't return an error from this function
-            // In production, you might want to handle this differently
-            panic!("Failed to spawn typed handler coroutine: {e}. Stack size: {stack_size} bytes. Consider increasing BRRTR_STACK_SIZE environment variable.");
+            // Log the error before panicking for better observability
+            // Note: spawn_typed doesn't have handler name - use spawn_typed_with_stack_size_and_name for named handlers
+            error!(
+                stack_size_bytes = stack_size,
+                error = %e,
+                "Critical: Failed to spawn typed handler coroutine - handler will be unavailable"
+            );
+            panic!(
+                "Failed to spawn typed handler coroutine: {}. Stack size: {} bytes. \
+                Consider increasing BRRTR_STACK_SIZE environment variable.",
+                e, stack_size
+            );
         }
     }
 }
@@ -390,13 +401,23 @@ where
             }
         });
 
-    // Handle coroutine spawn failures gracefully
+    // Handle coroutine spawn failures - this is a critical error that prevents handler operation
+    // JSF Rule 115: Document panic conditions clearly
     match spawn_result {
         Ok(_) => tx,
         Err(e) => {
-            // Log the error and panic since we can't return an error from this function
-            // In production, you might want to handle this differently
-            panic!("Failed to spawn typed handler coroutine: {e}. Stack size: {stack_size} bytes. Consider increasing stack size or BRRTR_STACK_SIZE environment variable.");
+            // Log the error before panicking for better observability
+            error!(
+                handler = %effective_name,
+                stack_size_bytes = stack_size,
+                error = %e,
+                "Critical: Failed to spawn typed handler coroutine - handler will be unavailable"
+            );
+            panic!(
+                "Failed to spawn typed handler coroutine for '{}': {}. Stack size: {} bytes. \
+                Consider increasing BRRTR_STACK_SIZE environment variable.",
+                effective_name, e, stack_size
+            );
         }
     }
 }
