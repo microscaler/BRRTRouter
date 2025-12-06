@@ -417,8 +417,9 @@ fn test_panic_recovery() {
 fn test_headers_and_cookies() {
     fn header_handler(req: HandlerRequest) {
         // Convert SmallVec to HashMap for JSON serialization
-        let headers_map: HashMap<String, String> = req.headers.iter().cloned().collect();
-        let cookies_map: HashMap<String, String> = req.cookies.iter().cloned().collect();
+        // JSF P2: HeaderVec now uses Arc<str> for keys, need to convert to String
+        let headers_map: HashMap<String, String> = req.headers.iter().map(|(k, v)| (k.to_string(), v.clone())).collect();
+        let cookies_map: HashMap<String, String> = req.cookies.iter().map(|(k, v)| (k.to_string(), v.clone())).collect();
         let response = HandlerResponse {
             status: 200,
             headers: HeaderVec::new(),

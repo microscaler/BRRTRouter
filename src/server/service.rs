@@ -1235,15 +1235,17 @@ impl HttpService for AppService {
                 Some(hr) => {
                     let mut headers = hr.headers.clone();
                     // Always echo X-Request-ID on the response if we have one
+                    // JSF P2: Use Arc::from for header names (O(1) clone, no allocation)
                     if let Some(ref rid) = _request_logger.request_id {
-                        headers.push(("X-Request-ID".to_string(), rid.to_string()));
+                        headers.push((Arc::from("x-request-id"), rid.to_string()));
                     }
                     let has_content_type = headers
                         .iter()
-                        .any(|(k, _)| k.eq_ignore_ascii_case("Content-Type"));
+                        .any(|(k, _)| k.eq_ignore_ascii_case("content-type"));
                     if !has_content_type {
                         if let Some(ct) = route_match.route.content_type_for(hr.status) {
-                            headers.push(("Content-Type".to_string(), ct));
+                            // JSF P2: Use Arc::from for header names (O(1) clone, no allocation)
+                            headers.push((Arc::from("content-type"), ct));
                         }
                     }
                     if let Some(schema) = &route_match.route.response_schema {

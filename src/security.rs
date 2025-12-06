@@ -135,7 +135,7 @@ impl<'a> SecurityRequest<'a> {
     pub fn get_cookie(&self, name: &str) -> Option<&str> {
         self.cookies
             .iter()
-            .find(|(k, _)| k == name)
+            .find(|(k, _)| k.as_ref() == name)
             .map(|(_, v)| v.as_str())
     }
 }

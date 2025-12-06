@@ -60,7 +60,7 @@ impl ParsedRequest {
     pub fn get_cookie(&self, name: &str) -> Option<&str> {
         self.cookies
             .iter()
-            .find(|(k, _)| k == name)
+            .find(|(k, _)| k.as_ref() == name)
             .map(|(_, v)| v.as_str())
     }
 
@@ -87,9 +87,10 @@ pub fn parse_cookies(headers: &HeaderVec) -> HeaderVec {
             .split(';')
             .filter_map(|pair| {
                 let mut parts = pair.trim().splitn(2, '=');
-                let name = parts.next()?.trim().to_string();
+                let name = parts.next()?.trim();
                 let value = parts.next().unwrap_or("").trim().to_string();
-                Some((name, value))
+                // JSF P2: Use Arc::from for cookie names (O(1) clone)
+                Some((Arc::from(name), value))
             })
             .collect(),
         None => HeaderVec::new(),
@@ -229,18 +230,20 @@ pub fn parse_request(req: Request) -> Result<ParsedRequest, String> {
     let http_version = format!("{:?}", req.version());
 
     // R3: Headers extracted - using SmallVec for stack allocation
+    // JSF P2: Use Arc::from for header names (O(1) clone instead of O(n) string copy)
     let headers: HeaderVec = req
         .headers()
         .iter()
         .map(|h| {
             (
-                h.name.to_ascii_lowercase(),
+                Arc::from(h.name.to_ascii_lowercase().as_str()),
                 String::from_utf8_lossy(h.value).to_string(),
             )
         })
         .collect();
 
-    let header_names: Vec<&String> = headers.iter().map(|(k, _)| k).take(20).collect();
+    // JSF P2: Header names are now Arc<str>, so we get references to the Arc
+    let header_names: Vec<&Arc<str>> = headers.iter().map(|(k, _)| k).take(20).collect();
     let header_count = headers.len();
     let size_bytes: usize = headers.iter().map(|(k, v)| k.len() + v.len()).sum();
 
@@ -253,7 +256,8 @@ pub fn parse_request(req: Request) -> Result<ParsedRequest, String> {
 
     // R7: Cookies extracted
     let cookies = parse_cookies(&headers);
-    let cookie_names: Vec<&String> = cookies.iter().map(|(k, _)| k).collect();
+    // JSF P2: Cookie names are now Arc<str>
+    let cookie_names: Vec<&Arc<str>> = cookies.iter().map(|(k, _)| k).collect();
     debug!(
         cookie_count = cookies.len(),
         cookie_names = ?cookie_names,
@@ -337,6 +341,7 @@ pub fn parse_request(req: Request) -> Result<ParsedRequest, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
 
     /// Helper to get a param value from ParamVec (uses Arc<str> keys)
     fn find_query_param<'a>(params: &'a ParamVec, name: &str) -> Option<&'a str> {
@@ -346,18 +351,20 @@ mod tests {
             .map(|(_, v)| v.as_str())
     }
 
-    /// Helper to get a param value from HeaderVec (uses String keys)
-    fn find_header_param<'a>(params: &'a [(String, String)], name: &str) -> Option<&'a str> {
+    /// Helper to get a param value from HeaderVec (uses Arc<str> keys)
+    // JSF P2: Updated to work with Arc<str> keys
+    fn find_header_param<'a>(params: &'a HeaderVec, name: &str) -> Option<&'a str> {
         params
             .iter()
-            .find(|(k, _)| k == name)
+            .find(|(k, _)| k.as_ref() == name)
             .map(|(_, v)| v.as_str())
     }
 
     #[test]
     fn test_parse_cookies() {
         let mut h: HeaderVec = HeaderVec::new();
-        h.push(("cookie".to_string(), "a=b; c=d".to_string()));
+        // JSF P2: Use Arc::from for header names
+        h.push((Arc::from("cookie"), "a=b; c=d".to_string()));
         let cookies = parse_cookies(&h);
         assert_eq!(find_header_param(&cookies, "a"), Some("b"));
         assert_eq!(find_header_param(&cookies, "c"), Some("d"));

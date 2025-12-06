@@ -6,9 +6,8 @@ use brrtrouter::{
 };
 use http::Method;
 use may::sync::mpsc;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::sync::Mutex;
+use std::time::Duration;
 
 // These tests are affected by global env vars. Use a mutex to serialize access.
 static ENV_MUTEX: Mutex<()> = Mutex::new(());
@@ -28,7 +27,7 @@ fn test_worker_pool_creation() {
     clean_worker_pool_env_vars();
 
     // Initialize may runtime
-    may::config().set_io_workers(2);
+    may::config().set_workers(2);
 
     let mut dispatcher = Dispatcher::new();
 
@@ -64,7 +63,7 @@ fn test_worker_pool_creation() {
 #[test]
 fn test_worker_pool_shed_mode() {
     // Initialize may runtime
-    may::config().set_io_workers(2);
+    may::config().set_workers(2);
 
     let mut dispatcher = Dispatcher::new();
 
@@ -138,7 +137,7 @@ fn test_worker_pool_shed_mode() {
 #[test]
 fn test_worker_pool_block_mode() {
     // Initialize may runtime
-    may::config().set_io_workers(2);
+    may::config().set_workers(2);
 
     let mut dispatcher = Dispatcher::new();
 
@@ -227,7 +226,7 @@ fn test_worker_pool_block_mode() {
 #[test]
 fn test_worker_pool_metrics() {
     // Initialize may runtime
-    may::config().set_io_workers(2);
+    may::config().set_workers(2);
 
     let mut dispatcher = Dispatcher::new();
 

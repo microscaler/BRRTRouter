@@ -1,6 +1,7 @@
 use brrtrouter::{router::Router, spec::RouteMeta};
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use http::Method;
+use std::hint::black_box;
 use std::sync::Arc;
 
 fn example_spec() -> &'static str {
