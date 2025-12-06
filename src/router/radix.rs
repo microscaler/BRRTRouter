@@ -59,12 +59,21 @@
 #![deny(clippy::unnecessary_to_owned)]
 
 use http::Method;
+use smallvec::SmallVec;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use super::core::ParamVec;
 use crate::spec::RouteMeta;
+
+/// Maximum segments in a path before heap allocation.
+/// Most REST APIs have ≤8 segments (e.g., /api/v1/users/{id}/posts/{postId}).
+/// JSF Rule 206: No heap allocations in the hot path for common cases.
+const MAX_INLINE_SEGMENTS: usize = 16;
+
+/// Stack-allocated segment storage for path splitting in the hot path.
+type SegmentVec<'a> = SmallVec<[&'a str; MAX_INLINE_SEGMENTS]>;
 
 /// Node in the radix tree for efficient route matching
 ///
@@ -166,6 +175,7 @@ impl RadixNode {
 
     /// Search for a matching route in the tree
     /// Uses ParamVec (SmallVec) for stack-allocated params in hot path
+    #[inline]
     fn search(
         &self,
         segments: &[&str],
@@ -304,8 +314,12 @@ impl RadixRouter {
     ///
     /// Uses ParamVec (SmallVec) for stack-allocated parameters, avoiding heap
     /// allocation for routes with ≤8 params (the common case).
+    /// Uses SegmentVec (SmallVec) for stack-allocated path segments, avoiding heap
+    /// allocation for paths with ≤16 segments (the common case).
+    #[inline]
     pub fn route(&self, method: Method, path: &str) -> Option<(Arc<RouteMeta>, ParamVec)> {
-        let segments: Vec<&str> = path
+        // JSF: Use SmallVec to avoid heap allocation for typical paths (≤16 segments)
+        let segments: SegmentVec = path
             .trim_start_matches('/')
             .split('/')
             .filter(|s| !s.is_empty())
