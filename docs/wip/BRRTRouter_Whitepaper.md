@@ -448,25 +448,38 @@ This is an area where BRRTRouter aims to provide **runtime configuration** so te
 
 **Per-Route Overrides**
 
-Critically, validation must be configurable at the **individual route level**, not just the instance level. This enables SREs to:
+Critically, validation must be configurable at the **individual route level**, not just the instance level. This is a bidirectional capability—SREs may need to either **disable** or **enable** validation on specific routes depending on the operational context:
+
+**Disabling Validation (bypass scenarios)**
 - **Emergency bypass**: Disable validation for a specific route that is causing errors due to schema drift, without affecting the rest of the service
-- **Gradual rollout**: Enable strict validation on new routes while leaving established routes unchanged
 - **Performance tuning**: Skip validation on high-volume, low-risk internal routes while keeping it on sensitive endpoints
 - **Incident response**: Quickly toggle validation off for a problematic route via configuration change rather than code deployment
+
+**Enabling Validation (diagnostic scenarios)**
+- **Multi-hop troubleshooting**: In a system where intermediate microservices normally trust upstream validation, temporarily enable validation on a specific route at an intermediate hop to pinpoint where contract violations originate
+- **Gradual rollout**: Enable strict validation on new routes while leaving established routes unchanged
+- **Audit mode**: Turn on validation temporarily on internal routes to verify contract compliance before a release
+- **Root cause isolation**: When an error surfaces at the BFF, enable validation progressively deeper into the microservice chain to identify the source of malformed data
 
 Example configuration (conceptual):
 ```yaml
 validation:
   default:
-    request: true
-    response: true
+    request: false    # This intermediate service trusts upstream BFF
+    response: false
   routes:
+    # Bypass: known schema drift, disable until fixed
     "/v1/legacy/bulk-import":
-      request: false   # Known schema drift, bypass until fixed
-      response: true
-    "/internal/health":
-      request: false   # Trusted internal route
+      request: false
       response: false
+    # Diagnostic: temporarily enable to trace contract violations
+    "/v1/orders/process":
+      request: true    # SRE enabled for troubleshooting
+      response: true   # Catch malformed responses from downstream
+    # Sensitive route: always validate regardless of default
+    "/v1/payments/execute":
+      request: true
+      response: true
 ```
 
 This per-route granularity ensures that a single problematic endpoint doesn't force operators to choose between full validation and no validation at the component level.
