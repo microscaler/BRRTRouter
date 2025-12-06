@@ -194,8 +194,8 @@ impl CustomServerTestFixture {
 
         let route = RouteMeta {
             method,
-            path_pattern: path.to_string(),
-            handler_name: handler_name.to_string(),
+            path_pattern: Arc::from(path),
+            handler_name: Arc::from(handler_name),
             parameters: Vec::new(),
             request_schema,
             request_body_required: false,

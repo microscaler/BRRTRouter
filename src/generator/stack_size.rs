@@ -240,7 +240,7 @@ mod tests {
     use serde_json::json;
     use std::collections::HashMap;
     use std::path::PathBuf;
-    use std::sync::Mutex;
+    use std::sync::{Arc, Mutex};
 
     // These tests are affected by global env vars. Use a mutex to serialize access.
     static ENV_MUTEX: Mutex<()> = Mutex::new(());
@@ -254,8 +254,8 @@ mod tests {
     fn create_test_route() -> RouteMeta {
         RouteMeta {
             method: Method::GET,
-            path_pattern: "/test".to_string(),
-            handler_name: "test_handler".to_string(),
+            path_pattern: Arc::from("/test"),
+            handler_name: Arc::from("test_handler"),
             parameters: vec![],
             request_schema: None,
             request_body_required: false,

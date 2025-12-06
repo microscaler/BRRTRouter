@@ -8,6 +8,13 @@ edition = "2021"
 name = "{{ crate_name }}"
 path = "src/main.rs"
 
+[features]
+default = ["jemalloc"]
+# Use jemalloc as the global allocator for better memory performance.
+# Disable this feature if brrtrouter is already providing jemalloc via its own feature,
+# or if you want to use the system allocator.
+jemalloc = ["tikv-jemallocator"]
+
 [dependencies]
 {{ crate_name }} = { path = "../{{ crate_name }}" }
 {% if use_workspace_deps %}
@@ -15,11 +22,13 @@ brrtrouter = { workspace = true }
 brrtrouter_macros = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+tikv-jemallocator = { workspace = true, optional = true }
 {% else %}
 brrtrouter = { path = "{{ brrtrouter_path }}" }
 brrtrouter_macros = { path = "{{ brrtrouter_macros_path }}" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+tikv-jemallocator = { version = "0.6", features = ["profiling"], optional = true }
 {% endif %}
 # Add your additional dependencies here
 

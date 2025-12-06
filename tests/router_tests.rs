@@ -171,7 +171,7 @@ fn assert_route_match(router: &Router, method: Method, path: &str, expected_hand
         }) => {
             println!("✅ {} {} → {}", method, path, route.handler_name);
             assert_eq!(
-                route.handler_name, expected_handler,
+                route.handler_name.as_ref(), expected_handler,
                 "Handler mismatch for {} {}: expected '{}', got '{}'",
                 method, path, expected_handler, route.handler_name
             );

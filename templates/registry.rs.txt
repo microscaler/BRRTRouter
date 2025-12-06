@@ -10,6 +10,7 @@ use brrtrouter::typed::spawn_typed_with_stack_size_and_name;
 
 /// # Safety
 /// This function spawns handler coroutines. Callers must ensure coroutine runtime is set up.
+#[allow(dead_code)]
 pub unsafe fn register_all(dispatcher: &mut Dispatcher) {
     {% for entry in entries -%}
     dispatcher.register_typed_with_stack_size(
@@ -35,13 +36,14 @@ pub unsafe fn register_from_spec(dispatcher: &mut Dispatcher, routes: &[RouteMet
     dispatcher.worker_pools.clear();
     
     for route in routes {
-        match route.handler_name.as_str() {
+        // JSF P0-2: Use as_ref() for Arc<str> -> &str conversion
+        match route.handler_name.as_ref() {
             {% for entry in entries -%}
             "{{ entry.name }}" => {
                 let tx = spawn_typed_with_stack_size_and_name(
                     crate::controllers::{{ entry.name }}::{{ entry.controller_struct }},
                     {{ entry.stack_size_bytes }},
-                    Some(route.handler_name.as_str()),
+                    Some(route.handler_name.as_ref()),
                 );
                 dispatcher.add_route(route.clone(), tx);
             }

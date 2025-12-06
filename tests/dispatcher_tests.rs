@@ -122,7 +122,8 @@ fn test_dispatch_post_item() {
     let RouteMatch { route, .. } = router
         .route(Method::POST, "/items/item-001")
         .expect("route");
-    let handler_name = route.handler_name.clone();
+    // JSF P0-2: Convert Arc<str> to String for test compatibility
+    let handler_name = route.handler_name.to_string();
 
     let (reply_tx, reply_rx) = mpsc::channel();
     let mut path_params: ParamVec = ParamVec::new();
@@ -134,7 +135,8 @@ fn test_dispatch_post_item() {
     let request = HandlerRequest {
         request_id: RequestId::new(),
         method: Method::POST,
-        path: route.path_pattern.clone(),
+        // Convert Arc<str> to String for HandlerRequest
+        path: route.path_pattern.to_string(),
         handler_name: handler_name.clone(),
         path_params,
         query_params,
@@ -166,7 +168,8 @@ fn test_dispatch_get_pet() {
     }
 
     let RouteMatch { route, .. } = router.route(Method::GET, "/pets/12345").unwrap();
-    let handler_name = route.handler_name.clone();
+    // JSF P0-2: Convert Arc<str> to String for test compatibility
+    let handler_name = route.handler_name.to_string();
 
     let (reply_tx, reply_rx) = mpsc::channel();
     let mut path_params: ParamVec = ParamVec::new();
@@ -177,7 +180,8 @@ fn test_dispatch_get_pet() {
     let request = HandlerRequest {
         request_id: RequestId::new(),
         method: Method::GET,
-        path: route.path_pattern.clone(),
+        // JSF P0-2: Convert Arc<str> to String for HandlerRequest
+        path: route.path_pattern.to_string(),
         handler_name: handler_name.clone(),
         path_params,
         query_params,

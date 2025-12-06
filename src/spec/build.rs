@@ -7,6 +7,7 @@ use oas3::spec::{MediaTypeExamples, ObjectOrReference, Parameter};
 use oas3::OpenApiV3Spec;
 use serde_json::Value;
 use std::cmp;
+use std::sync::Arc;
 
 /// Maximum estimated size for unbounded types (arrays/strings without maxItems/maxLength)
 const DEFAULT_MAX_ARRAY_ITEMS: usize = 100;
@@ -594,8 +595,9 @@ pub fn build_routes(spec: &OpenApiV3Spec, slug: &str) -> anyhow::Result<Vec<Rout
 
                 routes.push(RouteMeta {
                     method,
-                    path_pattern: path.clone(),
-                    handler_name,
+                    // JSF P0-2: Use Arc<str> for O(1) cloning
+                    path_pattern: Arc::from(path.as_str()),
+                    handler_name: Arc::from(handler_name.as_str()),
                     parameters,
                     request_schema,
                     request_body_required,

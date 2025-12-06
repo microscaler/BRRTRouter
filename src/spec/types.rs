@@ -2,6 +2,7 @@ use super::SecurityRequirement;
 use http::Method;
 use serde_json::Value;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 /// Location where a parameter can be found in an HTTP request
 ///
@@ -202,14 +203,23 @@ impl From<oas3::spec::ParameterIn> for ParameterLocation {
 ///
 /// Contains all information needed to generate handlers, validate requests/responses,
 /// and register the route with the dispatcher.
+///
+/// # JSF Optimization (P0-2)
+///
+/// `path_pattern` and `handler_name` use `Arc<str>` instead of `String` because:
+/// - These values are static (known at startup from the OpenAPI spec)
+/// - `Arc::clone()` is O(1) atomic increment vs O(n) string copy
+/// - They are frequently cloned in the request hot path
 #[derive(Debug, Clone)]
 pub struct RouteMeta {
     /// HTTP method (GET, POST, PUT, DELETE, etc.)
     pub method: Method,
     /// Path pattern with parameter placeholders (e.g., `/users/{id}`)
-    pub path_pattern: String,
+    /// Uses `Arc<str>` for O(1) cloning in the hot path (JSF P0-2)
+    pub path_pattern: Arc<str>,
     /// Generated handler function name
-    pub handler_name: String,
+    /// Uses `Arc<str>` for O(1) cloning in the hot path (JSF P0-2)
+    pub handler_name: Arc<str>,
     /// Parameters extracted from path, query, headers, and cookies
     pub parameters: Vec<ParameterMeta>,
     /// JSON Schema for request body validation

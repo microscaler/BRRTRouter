@@ -2,6 +2,7 @@ use std::collections::{BTreeSet, HashSet};
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use crate::spec::load_spec;
 use oas3;
@@ -221,7 +222,8 @@ pub fn generate_project_with_options(
 
     for route in routes.iter_mut() {
         let handler = unique_handler_name(&mut seen, &route.handler_name);
-        route.handler_name = handler.clone();
+        // JSF P0-2: Convert to Arc<str>
+        route.handler_name = Arc::from(handler.as_str());
 
         let mut request_fields = route.request_schema.as_ref().map_or(vec![], extract_fields);
         for param in &route.parameters {
@@ -562,12 +564,16 @@ pub fn generate_impl_stubs(
     }
 
     // Determine which handlers to generate stubs for
+    // JSF P0-2: Convert Arc<str> to String for the handlers list
     let handlers_to_generate: Vec<String> = if let Some(handler) = handler_name {
         // Per-path: only generate stub for specified handler
         vec![handler.to_string()]
     } else {
         // Generate stubs for all handlers
-        routes.iter().map(|r| r.handler_name.clone()).collect()
+        routes
+            .iter()
+            .map(|r| r.handler_name.to_string())
+            .collect()
     };
 
     let mut created = Vec::new();
@@ -587,9 +593,10 @@ pub fn generate_impl_stubs(
         }
 
         // Find route for this handler
+        // JSF P0-2: Compare Arc<str> with &str
         let route = routes
             .iter()
-            .find(|r| r.handler_name == handler)
+            .find(|r| r.handler_name.as_ref() == handler.as_str())
             .ok_or_else(|| anyhow::anyhow!("Handler not found in spec: {}", handler))?;
 
         // Extract fields and types

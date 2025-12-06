@@ -269,7 +269,8 @@ impl Dispatcher {
     /// replaced. The old sender will be dropped, which closes its channel and
     /// causes the old handler coroutine to exit when it tries to receive.
     pub fn add_route(&mut self, route: RouteMeta, sender: HandlerSender) {
-        let handler_name = route.handler_name;
+        // JSF P0-2: Convert Arc<str> to String for HashMap key
+        let handler_name = route.handler_name.to_string();
 
         // Check if we're replacing an existing handler
         if let Some(old_sender) = self.handlers.remove(&handler_name) {
@@ -571,7 +572,8 @@ impl Dispatcher {
         let request = HandlerRequest {
             request_id: request_id.parse().unwrap_or_else(|_| RequestId::new()),
             method: route_match.route.method.clone(),
-            path: route_match.route.path_pattern.clone(),
+            // JSF P0-2: Convert Arc<str> to String for HandlerRequest
+            path: route_match.route.path_pattern.to_string(),
             handler_name: route_match.handler_name,
             path_params: route_match.path_params,
             query_params: route_match.query_params,

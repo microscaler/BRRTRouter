@@ -88,8 +88,8 @@ fn test_load_spec_yaml_and_json() {
 
     assert_eq!(route_y.method, Method::PUT);
     assert_eq!(route_y.method, route_j.method);
-    assert_eq!(route_y.path_pattern, "/items/{id}");
-    assert_eq!(route_y.handler_name, "update_item");
+    assert_eq!(route_y.path_pattern.as_ref(), "/items/{id}");
+    assert_eq!(route_y.handler_name.as_ref(), "update_item");
     assert_eq!(route_y.handler_name, route_j.handler_name);
     assert_eq!(route_y.parameters.len(), 2);
     assert_eq!(route_y.parameters.len(), route_j.parameters.len());
@@ -240,8 +240,8 @@ fn test_sse_spec_loading() {
 
     let route = &routes[0];
     assert_eq!(route.method.as_str(), "GET");
-    assert_eq!(route.path_pattern, "/events");
-    assert_eq!(route.handler_name, "stream");
+    assert_eq!(route.path_pattern.as_ref(), "/events");
+    assert_eq!(route.handler_name.as_ref(), "stream");
 
     // Most importantly: should have SSE flag set
     assert!(route.sse, "Route should be marked as SSE stream");
