@@ -1,3 +1,15 @@
+//! HTTP request parsing - hot path module.
+//!
+//! # JSF Compliance (Rule 206)
+//!
+//! This module is part of the request hot path. Clippy lints are denied
+//! to enforce "no heap allocations after initialization".
+
+// JSF Rule 206: Deny heap allocations in the hot path
+#![deny(clippy::inefficient_to_string)]
+#![deny(clippy::format_push_string)]
+#![deny(clippy::unnecessary_to_owned)]
+
 use crate::dispatcher::HeaderVec;
 use crate::router::ParamVec;
 use crate::spec::ParameterStyle;

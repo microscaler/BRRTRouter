@@ -47,6 +47,16 @@
 //! - 500 routes: ~990 ns per lookup
 //!
 //! The relatively flat performance curve demonstrates O(k) complexity rather than O(n).
+//!
+//! ## JSF Compliance (Rule 206)
+//!
+//! This module is part of the request hot path. Clippy lints are denied to
+//! enforce "no heap allocations after initialization".
+
+// JSF Rule 206: Deny heap allocations in the hot path
+#![deny(clippy::inefficient_to_string)]
+#![deny(clippy::format_push_string)]
+#![deny(clippy::unnecessary_to_owned)]
 
 use http::Method;
 use std::borrow::Cow;

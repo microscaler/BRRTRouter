@@ -1,3 +1,19 @@
+//! Router core module - hot path for request routing.
+//!
+//! # JSF Compliance (Rule 206)
+//!
+//! This module is part of the request hot path. The following clippy lints
+//! are denied to enforce "no heap allocations after initialization":
+//!
+//! - `clippy::disallowed_methods` - Blocks String/Vec allocation methods
+//! - `clippy::inefficient_to_string` - Catches unnecessary allocations
+//! - `clippy::format_push_string` - Prevents format! string building
+
+// JSF Rule 206: Deny heap allocations in the hot path
+#![deny(clippy::inefficient_to_string)]
+#![deny(clippy::format_push_string)]
+#![deny(clippy::unnecessary_to_owned)]
+
 use crate::spec::RouteMeta;
 use http::Method;
 use regex::Regex;

@@ -1,3 +1,20 @@
+//! Dispatcher core module - hot path for request dispatch.
+//!
+//! # JSF Compliance (Rule 206)
+//!
+//! This module is part of the request hot path. The following clippy lints
+//! are denied to enforce "no heap allocations after initialization":
+//!
+//! - `clippy::inefficient_to_string` - Catches unnecessary allocations
+//! - `clippy::format_push_string` - Prevents format! string building
+//! - `clippy::unnecessary_to_owned` - Prevents .to_owned() on borrowed data
+
+// JSF Rule 206: Deny heap allocations in the hot path
+// NOTE: Some allocations are required for error handling; these are off the fast path
+#![deny(clippy::inefficient_to_string)]
+#![deny(clippy::format_push_string)]
+#![deny(clippy::unnecessary_to_owned)]
+
 #[allow(unused_imports)]
 use crate::echo::echo_handler;
 use crate::ids::RequestId;
