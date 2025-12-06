@@ -343,7 +343,7 @@ pub fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
                                 // Target is Vec<CustomType>, deserialize with fallback
                                 let json = serde_json::to_string(item).unwrap_or_else(|_| "null".to_string());
                                 format!(
-                                    "match serde_json::from_value::<{inner_ty}>(serde_json::json!({json})) {{ Ok(v) => v, Err(_) => Default::default() }}"
+                                    "serde_json::from_value::<{inner_ty}>(serde_json::json!({json})).unwrap_or_default()"
                                 )
                             } else {
                                 // Use dummy value generator for primitives
@@ -377,7 +377,7 @@ pub fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
                 format!("serde_json::json!({json})")
             } else if is_named_type(&field.ty) {
                 format!(
-                    "match serde_json::from_value::<{}>(serde_json::json!({json})) {{ Ok(v) => v, Err(_) => Default::default() }}",
+                    "serde_json::from_value::<{}>(serde_json::json!({json})).unwrap_or_default()",
                     field.ty
                 )
             } else {

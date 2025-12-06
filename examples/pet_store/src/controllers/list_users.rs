@@ -26,18 +26,14 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
 
     Response {
         users: Some(vec![
-            match serde_json::from_value::<User>(
+            serde_json::from_value::<User>(
                 serde_json::json!({"email":"john@example.com","id":"abc-123","name":"John"}),
-            ) {
-                Ok(v) => v,
-                Err(_) => Default::default(),
-            },
-            match serde_json::from_value::<User>(
+            )
+            .unwrap_or_default(),
+            serde_json::from_value::<User>(
                 serde_json::json!({"email":"jane@example.com","id":"def-456","name":"Jane"}),
-            ) {
-                Ok(v) => v,
-                Err(_) => Default::default(),
-            },
+            )
+            .unwrap_or_default(),
         ]),
     }
 }
