@@ -276,10 +276,12 @@ impl AppService {
                     SecurityScheme::ApiKey { name, location, .. } => match location.as_str() {
                         "header" => {
                             // Accept either the named header or Authorization: Bearer <key> for migration convenience
-                            let header_ok = req.get_header(&name.to_ascii_lowercase())
+                            let header_ok = req
+                                .get_header(&name.to_ascii_lowercase())
                                 .map(|v| v == self.key)
                                 .unwrap_or(false);
-                            let auth_ok = req.get_header("authorization")
+                            let auth_ok = req
+                                .get_header("authorization")
                                 .and_then(|h| h.strip_prefix("Bearer "))
                                 .map(|v| v == self.key)
                                 .unwrap_or(false);
@@ -1232,7 +1234,9 @@ impl HttpService for AppService {
                     if let Some(ref rid) = _request_logger.request_id {
                         headers.push(("X-Request-ID".to_string(), rid.to_string()));
                     }
-                    let has_content_type = headers.iter().any(|(k, _)| k.eq_ignore_ascii_case("Content-Type"));
+                    let has_content_type = headers
+                        .iter()
+                        .any(|(k, _)| k.eq_ignore_ascii_case("Content-Type"));
                     if !has_content_type {
                         if let Some(ct) = route_match.route.content_type_for(hr.status) {
                             headers.push(("Content-Type".to_string(), ct));

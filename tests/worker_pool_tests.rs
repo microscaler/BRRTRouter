@@ -1,11 +1,11 @@
 use brrtrouter::{
-    dispatcher::{Dispatcher, HandlerRequest, HandlerResponse},
+    dispatcher::{Dispatcher, HandlerRequest, HandlerResponse, HeaderVec},
     ids::RequestId,
+    router::ParamVec,
     worker_pool::{BackpressureMode, WorkerPoolConfig},
 };
 use http::Method;
 use may::sync::mpsc;
-use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};

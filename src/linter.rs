@@ -14,12 +14,16 @@
 //!
 //! ## Usage
 //!
-//! ```rust
+//! ```rust,no_run
 //! use brrtrouter::linter::{lint_spec, LintIssue, LintSeverity};
+//! use std::path::Path;
 //!
-//! let issues = lint_spec("path/to/openapi.yaml")?;
-//! for issue in &issues {
-//!     eprintln!("[{}] {}: {}", issue.severity, issue.location, issue.message);
+//! fn main() -> anyhow::Result<()> {
+//!     let issues = lint_spec(Path::new("path/to/openapi.yaml"))?;
+//!     for issue in &issues {
+//!         eprintln!("[{:?}] {}: {}", issue.severity, issue.location, issue.message);
+//!     }
+//!     Ok(())
 //! }
 //! ```
 

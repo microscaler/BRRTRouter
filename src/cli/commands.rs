@@ -51,7 +51,7 @@ pub enum Commands {
         only: Option<Vec<OnlyPart>>,
     },
     /// Generate implementation stubs in impl crate
-    /// 
+    ///
     /// Creates stub files for controllers in the {component}_impl crate.
     /// Stubs are NOT auto-regenerated - they are user-owned once created.
     /// Use --force to overwrite existing stubs (per-path basis).
@@ -59,15 +59,15 @@ pub enum Commands {
         /// Path to the OpenAPI specification file (YAML or JSON)
         #[arg(short, long)]
         spec: PathBuf,
-        
+
         /// Output directory for impl crate (e.g., crates/bff_impl)
         #[arg(short, long)]
         output: PathBuf,
-        
+
         /// Generate stub for specific handler only (per-path basis)
         #[arg(short, long)]
         path: Option<String>,
-        
+
         /// Overwrite existing stub files (required to regenerate)
         #[arg(short, long, default_value_t = false)]
         force: bool,
@@ -148,7 +148,8 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
             dry_run,
             only,
         } => {
-            let spec_path = spec.to_str()
+            let spec_path = spec
+                .to_str()
                 .ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 in spec path"))?;
             let (_routes, _slug) = load_spec(spec_path)?;
             let scope = map_only_to_scope(only.as_deref());
@@ -188,9 +189,10 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
             errors_only,
         } => {
             let issues = crate::linter::lint_spec(spec.as_path())?;
-            
+
             if *errors_only {
-                let errors: Vec<_> = issues.iter()
+                let errors: Vec<_> = issues
+                    .iter()
                     .filter(|i| i.severity == crate::linter::LintSeverity::Error)
                     .cloned()
                     .collect();
@@ -204,11 +206,12 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
                     crate::linter::fail_if_errors(&issues);
                 }
             }
-            
+
             Ok(())
         }
         Commands::Serve { spec, watch, addr } => {
-            let spec_path = spec.to_str()
+            let spec_path = spec
+                .to_str()
                 .ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 in spec path"))?;
             let (routes, schemes, _slug) = crate::spec::load_spec_full(spec_path)?;
             let router = Arc::new(RwLock::new(Router::new(routes.clone())));

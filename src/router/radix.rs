@@ -35,7 +35,7 @@
 //! // Fast O(k) lookup
 //! if let Some((route, params)) = router.route(Method::GET, "/api/users/123") {
 //!     println!("Handler: {}", route.handler_name);
-//!     println!("User ID: {}", params.get("id").unwrap());
+//!     println!("User ID: {}", get_param(&params, "id").unwrap());
 //! }
 //! ```
 //!
@@ -183,6 +183,8 @@ impl RadixNode {
         for param_child in &self.param_children {
             if let Some(ref param_name) = param_child.param_name {
                 // Push the param for this branch
+                // Note: duplicate param names will result in multiple entries;
+                // use get_path_param() which returns the last occurrence (last write wins)
                 params.push((param_name.to_string(), segment.to_string()));
                 if let Some(route) = param_child.search(remaining, method, params) {
                     return Some(route);
@@ -292,11 +294,7 @@ impl RadixRouter {
     ///
     /// Uses ParamVec (SmallVec) for stack-allocated parameters, avoiding heap
     /// allocation for routes with ≤8 params (the common case).
-    pub fn route(
-        &self,
-        method: Method,
-        path: &str,
-    ) -> Option<(Arc<RouteMeta>, ParamVec)> {
+    pub fn route(&self, method: Method, path: &str) -> Option<(Arc<RouteMeta>, ParamVec)> {
         let segments: Vec<&str> = path
             .trim_start_matches('/')
             .split('/')
@@ -314,6 +312,15 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
     use std::path::PathBuf;
+
+    /// Helper to get a param value from ParamVec (for test assertions)
+    /// Returns the last occurrence to match HashMap semantics (last write wins)
+    fn get_param<'a>(params: &'a ParamVec, name: &str) -> Option<&'a str> {
+        params
+            .iter()
+            .rfind(|(k, _)| k == name)
+            .map(|(_, v)| v.as_str())
+    }
 
     // Helper function to create a basic RouteMeta for testing
     fn create_route_meta(method: Method, path: &str, handler: &str) -> RouteMeta {
@@ -359,7 +366,13 @@ mod tests {
         assert!(result.is_some());
         let (route, params) = result.unwrap();
         assert_eq!(route.handler_name, "get_user");
-        assert_eq!(params.get("id"), Some(&"123".to_string()));
+        assert_eq!(
+            params
+                .iter()
+                .find(|(k, _)| k == "id")
+                .map(|(_, v)| v.as_str()),
+            Some("123")
+        );
     }
 
     #[test]
@@ -375,8 +388,20 @@ mod tests {
         assert!(result.is_some());
         let (route, params) = result.unwrap();
         assert_eq!(route.handler_name, "get_post");
-        assert_eq!(params.get("user_id"), Some(&"123".to_string()));
-        assert_eq!(params.get("post_id"), Some(&"456".to_string()));
+        assert_eq!(
+            params
+                .iter()
+                .find(|(k, _)| k == "user_id")
+                .map(|(_, v)| v.as_str()),
+            Some("123")
+        );
+        assert_eq!(
+            params
+                .iter()
+                .find(|(k, _)| k == "post_id")
+                .map(|(_, v)| v.as_str()),
+            Some("456")
+        );
     }
 
     #[test]
@@ -446,16 +471,16 @@ mod tests {
         assert!(result1.is_some());
         let (route1, params1) = result1.unwrap();
         assert_eq!(route1.handler_name, "get_user_posts");
-        assert_eq!(params1.get("user_id"), Some(&"123".to_string()));
-        assert!(params1.get("id").is_none()); // Should NOT have 'id' parameter
+        assert_eq!(get_param(&params1, "user_id"), Some("123"));
+        assert!(get_param(&params1, "id").is_none()); // Should NOT have 'id' parameter
 
         // Test second route - should extract id parameter
         let result2 = router.route(Method::GET, "/users/456/comments");
         assert!(result2.is_some());
         let (route2, params2) = result2.unwrap();
         assert_eq!(route2.handler_name, "get_user_comments");
-        assert_eq!(params2.get("id"), Some(&"456".to_string()));
-        assert!(params2.get("user_id").is_none()); // Should NOT have 'user_id' parameter
+        assert_eq!(get_param(&params2, "id"), Some("456"));
+        assert!(get_param(&params2, "user_id").is_none()); // Should NOT have 'user_id' parameter
     }
 
     #[test]
@@ -477,22 +502,22 @@ mod tests {
         assert!(result1.is_some());
         let (route1, params1) = result1.unwrap();
         assert_eq!(route1.handler_name, "get_user_v1");
-        assert_eq!(params1.get("version"), Some(&"v1".to_string()));
-        assert_eq!(params1.get("user_id"), Some(&"123".to_string()));
+        assert_eq!(get_param(&params1, "version"), Some("v1"));
+        assert_eq!(get_param(&params1, "user_id"), Some("123"));
 
         let result2 = router.route(Method::GET, "/api/v2/products/456");
         assert!(result2.is_some());
         let (route2, params2) = result2.unwrap();
         assert_eq!(route2.handler_name, "get_product");
-        assert_eq!(params2.get("v"), Some(&"v2".to_string()));
-        assert_eq!(params2.get("product_id"), Some(&"456".to_string()));
+        assert_eq!(get_param(&params2, "v"), Some("v2"));
+        assert_eq!(get_param(&params2, "product_id"), Some("456"));
 
         let result3 = router.route(Method::GET, "/api/v3/orders/789");
         assert!(result3.is_some());
         let (route3, params3) = result3.unwrap();
         assert_eq!(route3.handler_name, "get_order");
-        assert_eq!(params3.get("api_version"), Some(&"v3".to_string()));
-        assert_eq!(params3.get("order_id"), Some(&"789".to_string()));
+        assert_eq!(get_param(&params3, "api_version"), Some("v3"));
+        assert_eq!(get_param(&params3, "order_id"), Some("789"));
     }
 
     #[test]
@@ -522,9 +547,9 @@ mod tests {
         assert!(result1.is_some());
         let (route1, params1) = result1.unwrap();
         assert_eq!(route1.handler_name, "get_org_project_issue");
-        assert_eq!(params1.get("org_id"), Some(&"acme".to_string()));
-        assert_eq!(params1.get("project_id"), Some(&"web-app".to_string()));
-        assert_eq!(params1.get("issue_id"), Some(&"42".to_string()));
+        assert_eq!(get_param(&params1, "org_id"), Some("acme"));
+        assert_eq!(get_param(&params1, "project_id"), Some("web-app"));
+        assert_eq!(get_param(&params1, "issue_id"), Some("42"));
         assert_eq!(params1.len(), 3);
 
         // Test second route - should extract organization, repository, commit_sha
@@ -532,9 +557,9 @@ mod tests {
         assert!(result2.is_some());
         let (route2, params2) = result2.unwrap();
         assert_eq!(route2.handler_name, "get_org_repo_commit");
-        assert_eq!(params2.get("organization"), Some(&"github".to_string()));
-        assert_eq!(params2.get("repository"), Some(&"rust".to_string()));
-        assert_eq!(params2.get("commit_sha"), Some(&"abc123".to_string()));
+        assert_eq!(get_param(&params2, "organization"), Some("github"));
+        assert_eq!(get_param(&params2, "repository"), Some("rust"));
+        assert_eq!(get_param(&params2, "commit_sha"), Some("abc123"));
         assert_eq!(params2.len(), 3);
 
         // Test third route - should extract org, team, member
@@ -545,9 +570,9 @@ mod tests {
         assert!(result3.is_some());
         let (route3, params3) = result3.unwrap();
         assert_eq!(route3.handler_name, "get_org_team_member");
-        assert_eq!(params3.get("org"), Some(&"mycompany".to_string()));
-        assert_eq!(params3.get("team"), Some(&"engineering".to_string()));
-        assert_eq!(params3.get("member"), Some(&"alice".to_string()));
+        assert_eq!(get_param(&params3, "org"), Some("mycompany"));
+        assert_eq!(get_param(&params3, "team"), Some("engineering"));
+        assert_eq!(get_param(&params3, "member"), Some("alice"));
         assert_eq!(params3.len(), 3);
     }
 
@@ -578,10 +603,10 @@ mod tests {
         assert!(result1.is_some());
         let (route1, params1) = result1.unwrap();
         assert_eq!(route1.handler_name, "get_user_post_comment");
-        assert_eq!(params1.get("version"), Some(&"v1".to_string()));
-        assert_eq!(params1.get("user_id"), Some(&"john".to_string()));
-        assert_eq!(params1.get("post_id"), Some(&"100".to_string()));
-        assert_eq!(params1.get("comment_id"), Some(&"5".to_string()));
+        assert_eq!(get_param(&params1, "version"), Some("v1"));
+        assert_eq!(get_param(&params1, "user_id"), Some("john"));
+        assert_eq!(get_param(&params1, "post_id"), Some("100"));
+        assert_eq!(get_param(&params1, "comment_id"), Some("5"));
         assert_eq!(params1.len(), 4);
 
         // Test second route - 4 levels with different parameter names
@@ -589,10 +614,10 @@ mod tests {
         assert!(result2.is_some());
         let (route2, params2) = result2.unwrap();
         assert_eq!(route2.handler_name, "get_org_repo_issue");
-        assert_eq!(params2.get("v"), Some(&"v2".to_string()));
-        assert_eq!(params2.get("org"), Some(&"github".to_string()));
-        assert_eq!(params2.get("repo"), Some(&"rust-lang".to_string()));
-        assert_eq!(params2.get("issue_num"), Some(&"42".to_string()));
+        assert_eq!(get_param(&params2, "v"), Some("v2"));
+        assert_eq!(get_param(&params2, "org"), Some("github"));
+        assert_eq!(get_param(&params2, "repo"), Some("rust-lang"));
+        assert_eq!(get_param(&params2, "issue_num"), Some("42"));
         assert_eq!(params2.len(), 4);
 
         // Test third route - 4 levels with yet another set of parameter names
@@ -603,10 +628,10 @@ mod tests {
         assert!(result3.is_some());
         let (route3, params3) = result3.unwrap();
         assert_eq!(route3.handler_name, "get_company_dept_employee");
-        assert_eq!(params3.get("api_ver"), Some(&"v3".to_string()));
-        assert_eq!(params3.get("company_id"), Some(&"acme".to_string()));
-        assert_eq!(params3.get("dept_id"), Some(&"engineering".to_string()));
-        assert_eq!(params3.get("emp_id"), Some(&"alice".to_string()));
+        assert_eq!(get_param(&params3, "api_ver"), Some("v3"));
+        assert_eq!(get_param(&params3, "company_id"), Some("acme"));
+        assert_eq!(get_param(&params3, "dept_id"), Some("engineering"));
+        assert_eq!(get_param(&params3, "emp_id"), Some("alice"));
         assert_eq!(params3.len(), 4);
     }
 
@@ -643,7 +668,7 @@ mod tests {
         assert!(result1.is_some());
         let (route1, params1) = result1.unwrap();
         assert_eq!(route1.handler_name, "get_user_profile");
-        assert_eq!(params1.get("user_id"), Some(&"alice".to_string()));
+        assert_eq!(get_param(&params1, "user_id"), Some("alice"));
         assert_eq!(params1.len(), 1);
 
         // Test similar route with different parameter name
@@ -651,7 +676,7 @@ mod tests {
         assert!(result2.is_some());
         let (route2, params2) = result2.unwrap();
         assert_eq!(route2.handler_name, "get_user_posts");
-        assert_eq!(params2.get("id"), Some(&"bob".to_string()));
+        assert_eq!(get_param(&params2, "id"), Some("bob"));
         assert_eq!(params2.len(), 1);
 
         // Test 2-level parameters
@@ -659,8 +684,8 @@ mod tests {
         assert!(result3.is_some());
         let (route3, params3) = result3.unwrap();
         assert_eq!(route3.handler_name, "get_user_post");
-        assert_eq!(params3.get("user_id"), Some(&"charlie".to_string()));
-        assert_eq!(params3.get("post_id"), Some(&"123".to_string()));
+        assert_eq!(get_param(&params3, "user_id"), Some("charlie"));
+        assert_eq!(get_param(&params3, "post_id"), Some("123"));
         assert_eq!(params3.len(), 2);
 
         // Test 2-level parameters with different names
@@ -668,8 +693,8 @@ mod tests {
         assert!(result4.is_some());
         let (route4, params4) = result4.unwrap();
         assert_eq!(route4.handler_name, "get_user_setting");
-        assert_eq!(params4.get("uid"), Some(&"dave".to_string()));
-        assert_eq!(params4.get("setting_key"), Some(&"theme".to_string()));
+        assert_eq!(get_param(&params4, "uid"), Some("dave"));
+        assert_eq!(get_param(&params4, "setting_key"), Some("theme"));
         assert_eq!(params4.len(), 2);
 
         // Test 3-level parameters
@@ -677,9 +702,9 @@ mod tests {
         assert!(result5.is_some());
         let (route5, params5) = result5.unwrap();
         assert_eq!(route5.handler_name, "get_post_comment_reply");
-        assert_eq!(params5.get("post_id"), Some(&"456".to_string()));
-        assert_eq!(params5.get("comment_id"), Some(&"789".to_string()));
-        assert_eq!(params5.get("reply_id"), Some(&"101".to_string()));
+        assert_eq!(get_param(&params5, "post_id"), Some("456"));
+        assert_eq!(get_param(&params5, "comment_id"), Some("789"));
+        assert_eq!(get_param(&params5, "reply_id"), Some("101"));
         assert_eq!(params5.len(), 3);
     }
 
@@ -710,25 +735,25 @@ mod tests {
         assert!(result1.is_some());
         let (route1, params1) = result1.unwrap();
         assert_eq!(route1.handler_name, "edit_user_post");
-        assert_eq!(params1.get("version"), Some(&"v1".to_string()));
-        assert_eq!(params1.get("user_id"), Some(&"alice".to_string()));
-        assert_eq!(params1.get("post_id"), Some(&"123".to_string()));
+        assert_eq!(get_param(&params1, "version"), Some("v1"));
+        assert_eq!(get_param(&params1, "user_id"), Some("alice"));
+        assert_eq!(get_param(&params1, "post_id"), Some("123"));
 
         let result2 = router.route(Method::GET, "/api/v2/users/bob/posts/456/delete");
         assert!(result2.is_some());
         let (route2, params2) = result2.unwrap();
         assert_eq!(route2.handler_name, "delete_user_post");
-        assert_eq!(params2.get("v"), Some(&"v2".to_string()));
-        assert_eq!(params2.get("id"), Some(&"bob".to_string()));
-        assert_eq!(params2.get("pid"), Some(&"456".to_string()));
+        assert_eq!(get_param(&params2, "v"), Some("v2"));
+        assert_eq!(get_param(&params2, "id"), Some("bob"));
+        assert_eq!(get_param(&params2, "pid"), Some("456"));
 
         let result3 = router.route(Method::GET, "/api/v3/users/charlie/comments/789/approve");
         assert!(result3.is_some());
         let (route3, params3) = result3.unwrap();
         assert_eq!(route3.handler_name, "approve_user_comment");
-        assert_eq!(params3.get("api_v"), Some(&"v3".to_string()));
-        assert_eq!(params3.get("uid"), Some(&"charlie".to_string()));
-        assert_eq!(params3.get("cid"), Some(&"789".to_string()));
+        assert_eq!(get_param(&params3, "api_v"), Some("v3"));
+        assert_eq!(get_param(&params3, "uid"), Some("charlie"));
+        assert_eq!(get_param(&params3, "cid"), Some("789"));
     }
 
     #[test]
@@ -752,23 +777,23 @@ mod tests {
         let router = RadixRouter::new(routes);
 
         // Test route with duplicate {id} parameter at different depths
-        // The last occurrence should win (user id = "alice")
+        // The last occurrence should win (user id = "alice") via get_param()
         let result1 = router.route(Method::GET, "/org/org123/team/team456/user/alice");
         assert!(result1.is_some());
         let (route1, params1) = result1.unwrap();
         assert_eq!(route1.handler_name, "get_org_team_user");
-        // The second {id} (user id) should overwrite the first {id} (org id)
-        assert_eq!(params1.get("id"), Some(&"alice".to_string()));
-        assert_eq!(params1.get("team_id"), Some(&"team456".to_string()));
-        // Should have 2 unique parameters (id and team_id)
-        assert_eq!(params1.len(), 2);
+        // get_param returns the last {id} (user id = "alice")
+        assert_eq!(get_param(&params1, "id"), Some("alice"));
+        assert_eq!(get_param(&params1, "team_id"), Some("team456"));
+        // With SmallVec, duplicates are stored (org_id + team_id + user_id = 3)
+        assert_eq!(params1.len(), 3);
 
         // Test simpler route with single {id}
         let result2 = router.route(Method::GET, "/org/org789/projects");
         assert!(result2.is_some());
         let (route2, params2) = result2.unwrap();
         assert_eq!(route2.handler_name, "get_org_projects");
-        assert_eq!(params2.get("id"), Some(&"org789".to_string()));
+        assert_eq!(get_param(&params2, "id"), Some("org789"));
         assert_eq!(params2.len(), 1);
 
         // Test another route with duplicate {id} at different depths
@@ -779,10 +804,11 @@ mod tests {
         assert!(result3.is_some());
         let (route3, params3) = result3.unwrap();
         assert_eq!(route3.handler_name, "get_company_dept_employee");
-        // The second {id} (employee id) should overwrite the first {id} (company id)
-        assert_eq!(params3.get("id"), Some(&"bob".to_string()));
-        assert_eq!(params3.get("dept_id"), Some(&"engineering".to_string()));
-        assert_eq!(params3.len(), 2);
+        // get_param returns the last {id} (employee id = "bob")
+        assert_eq!(get_param(&params3, "id"), Some("bob"));
+        assert_eq!(get_param(&params3, "dept_id"), Some("engineering"));
+        // With SmallVec, duplicates are stored (company_id + dept_id + employee_id = 3)
+        assert_eq!(params3.len(), 3);
     }
 
     #[test]
@@ -802,28 +828,29 @@ mod tests {
         assert!(result1.is_some());
         let (route1, params1) = result1.unwrap();
         assert_eq!(route1.handler_name, "get_user");
-        assert_eq!(params1.get("id"), Some(&"user123".to_string()));
+        assert_eq!(get_param(&params1, "id"), Some("user123"));
 
         let result2 = router.route(Method::GET, "/posts/post456");
         assert!(result2.is_some());
         let (route2, params2) = result2.unwrap();
         assert_eq!(route2.handler_name, "get_post");
-        assert_eq!(params2.get("id"), Some(&"post456".to_string()));
+        assert_eq!(get_param(&params2, "id"), Some("post456"));
 
         let result3 = router.route(Method::GET, "/comments/comment789");
         assert!(result3.is_some());
         let (route3, params3) = result3.unwrap();
         assert_eq!(route3.handler_name, "get_comment");
-        assert_eq!(params3.get("id"), Some(&"comment789".to_string()));
+        assert_eq!(get_param(&params3, "id"), Some("comment789"));
 
-        // Route with duplicate {id} - second one should overwrite first
+        // Route with duplicate {id} - get_param returns the last one
         let result4 = router.route(Method::GET, "/users/user999/posts/post111");
         assert!(result4.is_some());
         let (route4, params4) = result4.unwrap();
         assert_eq!(route4.handler_name, "get_user_post");
-        // The second {id} should overwrite the first
-        assert_eq!(params4.get("id"), Some(&"post111".to_string()));
-        assert_eq!(params4.len(), 1);
+        // get_param returns the last {id}
+        assert_eq!(get_param(&params4, "id"), Some("post111"));
+        // With SmallVec, duplicates are stored (user_id + post_id = 2)
+        assert_eq!(params4.len(), 2);
     }
 
     #[test]
@@ -867,11 +894,17 @@ mod tests {
         // The bug manifests here: "id" parameter is missing because it was removed
         // during backtracking instead of being restored to "org123"
         assert_eq!(
-            params.get("id"),
-            Some(&"org123".to_string()),
+            get_param(&params, "id"),
+            Some("org123"),
             "org id should be preserved after backtracking from failed route"
         );
-        assert_eq!(params.get("team_id"), Some(&"team456".to_string()));
+        assert_eq!(
+            params
+                .iter()
+                .find(|(k, _)| k == "team_id")
+                .map(|(_, v)| v.as_str()),
+            Some("team456")
+        );
         assert_eq!(params.len(), 2);
 
         // Test the first route that should also work
@@ -879,9 +912,10 @@ mod tests {
         assert!(result2.is_some());
         let (route2, params2) = result2.unwrap();
         assert_eq!(route2.handler_name, "get_org_team_members");
-        // In this case, the second {id} overwrites the first, which is expected
-        assert_eq!(params2.get("id"), Some(&"team888".to_string()));
-        assert_eq!(params2.len(), 1);
+        // get_param returns the last {id} (team888)
+        assert_eq!(get_param(&params2, "id"), Some("team888"));
+        // With SmallVec, duplicates are stored (org_id + team_id = 2)
+        assert_eq!(params2.len(), 2);
     }
 
     #[test]
@@ -918,16 +952,22 @@ mod tests {
 
         // All three parameters should be present and correct
         assert_eq!(
-            params.get("version"),
-            Some(&"v2".to_string()),
+            get_param(&params, "version"),
+            Some("v2"),
             "version parameter should be preserved after multiple backtracks"
         );
         assert_eq!(
-            params.get("id"),
-            Some(&"org456".to_string()),
+            get_param(&params, "id"),
+            Some("org456"),
             "org id should be preserved after multiple backtracks"
         );
-        assert_eq!(params.get("team_id"), Some(&"team789".to_string()));
+        assert_eq!(
+            params
+                .iter()
+                .find(|(k, _)| k == "team_id")
+                .map(|(_, v)| v.as_str()),
+            Some("team789")
+        );
         assert_eq!(params.len(), 3);
     }
 }

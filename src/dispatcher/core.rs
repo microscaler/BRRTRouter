@@ -1,10 +1,10 @@
 #[allow(unused_imports)]
 use crate::echo::echo_handler;
+use crate::ids::RequestId;
 use crate::router::{ParamVec, RouteMatch};
 use crate::spec::RouteMeta;
 use crate::worker_pool::{WorkerPool, WorkerPoolConfig};
 use http::Method;
-use crate::ids::RequestId;
 use may::coroutine;
 use may::sync::mpsc;
 use serde::Serialize;
@@ -141,14 +141,22 @@ pub struct HandlerResponse {
 impl HandlerResponse {
     /// Create a new response with the given status, headers, and body
     pub fn new(status: u16, headers: HeaderVec, body: Value) -> Self {
-        Self { status, headers, body }
+        Self {
+            status,
+            headers,
+            body,
+        }
     }
 
     /// Create a JSON response with default headers
     pub fn json(status: u16, body: Value) -> Self {
         let mut headers = HeaderVec::new();
         headers.push(("Content-Type".to_string(), "application/json".to_string()));
-        Self { status, headers, body }
+        Self {
+            status,
+            headers,
+            body,
+        }
     }
 
     /// Create an error response
@@ -213,13 +221,13 @@ impl Dispatcher {
 
     /// Add a handler sender for the given route metadata. This allows handlers
     /// to be registered after the dispatcher has been created.
-    /// 
+    ///
     /// **IMPORTANT**: If a handler with the same name already exists, it will be
     /// replaced. The old sender will be dropped, which closes its channel and
     /// causes the old handler coroutine to exit when it tries to receive.
     pub fn add_route(&mut self, route: RouteMeta, sender: HandlerSender) {
         let handler_name = route.handler_name;
-        
+
         // Check if we're replacing an existing handler
         if let Some(old_sender) = self.handlers.remove(&handler_name) {
             // Drop the old sender explicitly to ensure the channel closes
@@ -230,13 +238,13 @@ impl Dispatcher {
                 "Replaced existing handler - old coroutine will exit"
             );
         }
-        
+
         info!(
             handler_name = %handler_name,
             total_handlers = self.handlers.len() + 1,
             "Handler registered successfully"
         );
-        
+
         self.handlers.insert(handler_name, sender);
     }
 
@@ -344,9 +352,10 @@ impl Dispatcher {
                         );
 
                         // Send an error response if the handler panicked
-                        let error_response = HandlerResponse::error(500, &format!(
-                            "Handler panicked: {}", panic_message
-                        ));
+                        let error_response = HandlerResponse::error(
+                            500,
+                            &format!("Handler panicked: {}", panic_message),
+                        );
                         let _ = reply_tx.send(error_response);
                     } else {
                         // H4: Handler execution complete
@@ -419,12 +428,11 @@ impl Dispatcher {
         name: &str,
         handler_fn: F,
         config: WorkerPoolConfig,
-    )
-    where
+    ) where
         F: Fn(HandlerRequest) + Send + 'static + Clone,
     {
         let name = name.to_string();
-        
+
         // Check if we're replacing an existing handler
         if let Some(old_sender) = self.handlers.remove(&name) {
             drop(old_sender);
@@ -433,16 +441,16 @@ impl Dispatcher {
                 "Replaced existing handler with worker pool - old coroutine will exit"
             );
         }
-        
+
         // Remove any existing worker pool
         if let Some(old_pool) = self.worker_pools.remove(&name) {
             drop(old_pool);
         }
-        
+
         // Create worker pool
         let pool = WorkerPool::new(name.clone(), config, handler_fn);
         let sender = pool.sender();
-        
+
         // Store both the sender and the pool
         self.handlers.insert(name.clone(), sender);
         self.worker_pools.insert(name, Arc::new(pool));
@@ -631,13 +639,16 @@ impl Dispatcher {
                         error = %e,
                         "Handler channel closed - handler may have crashed"
                     );
-                    
+
                     // Return a 503 Service Unavailable response instead of None
                     // This prevents connection drops and indicates server issue
-                    return Some(HandlerResponse::error(503, &format!(
+                    return Some(HandlerResponse::error(
+                        503,
+                        &format!(
                         "Handler '{}' is not responding - possible crash or resource exhaustion",
                         request.handler_name
-                    )));
+                    ),
+                    ));
                 }
             };
             (r, start.elapsed())

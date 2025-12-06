@@ -38,13 +38,14 @@ use brrtrouter::middleware::TracingMiddleware;
 use brrtrouter::server::{HttpServer, ServerHandle};
 use brrtrouter::spec::SecurityScheme;
 use brrtrouter::{
-    dispatcher::{Dispatcher, HandlerRequest, HandlerResponse},
+    dispatcher::{Dispatcher, HandlerRequest, HandlerResponse, HeaderVec},
     load_spec_full,
-    router::Router,
+    router::{ParamVec, Router},
     server::AppService,
     BearerJwtProvider, OAuth2Provider, SecurityProvider, SecurityRequest,
 };
 use serde_json::json;
+use smallvec::smallvec;
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
@@ -155,15 +156,15 @@ struct ApiKeyProvider {
 impl SecurityProvider for ApiKeyProvider {
     fn validate(&self, scheme: &SecurityScheme, _scopes: &[String], req: &SecurityRequest) -> bool {
         match scheme {
-            SecurityScheme::ApiKey { name, location, .. } => {
-                let expected = &self.key;
-                match location.as_str() {
-                    "header" => req.headers.get(&name.to_ascii_lowercase()) == Some(expected),
-                    "query" => req.query.get(name) == Some(expected),
-                    "cookie" => req.cookies.get(name) == Some(expected),
-                    _ => false,
-                }
-            }
+            SecurityScheme::ApiKey { name, location, .. } => match location.as_str() {
+                "header" => req
+                    .get_header(&name.to_ascii_lowercase())
+                    .map(|v| v == self.key)
+                    .unwrap_or(false),
+                "query" => req.get_query(name).map(|v| v == self.key).unwrap_or(false),
+                "cookie" => req.get_cookie(name).map(|v| v == self.key).unwrap_or(false),
+                _ => false,
+            },
             _ => false,
         }
     }
@@ -944,12 +945,12 @@ fn test_bearer_jwt_token_validation() {
 
     // Test valid token with no scopes
     let token = make_token("");
-    let mut headers = HashMap::new();
-    headers.insert("authorization".to_string(), format!("Bearer {}", token));
+    let mut headers: HeaderVec = HeaderVec::new();
+    headers.push(("authorization".to_string(), format!("Bearer {}", token)));
     let req = SecurityRequest {
         headers: &headers,
-        query: &HashMap::new(),
-        cookies: &HashMap::new(),
+        query: &ParamVec::new(),
+        cookies: &HeaderVec::new(),
     };
 
     assert!(provider.validate(&scheme, &[], &req));
@@ -965,12 +966,12 @@ fn test_bearer_jwt_invalid_signature() {
     };
 
     let token = make_token("");
-    let mut headers = HashMap::new();
-    headers.insert("authorization".to_string(), format!("Bearer {}", token));
+    let mut headers: HeaderVec = HeaderVec::new();
+    headers.push(("authorization".to_string(), format!("Bearer {}", token)));
     let req = SecurityRequest {
         headers: &headers,
-        query: &HashMap::new(),
-        cookies: &HashMap::new(),
+        query: &ParamVec::new(),
+        cookies: &HeaderVec::new(),
     };
 
     assert!(!provider.validate(&scheme, &[], &req));
@@ -986,15 +987,15 @@ fn test_bearer_jwt_malformed_token() {
     };
 
     // Test malformed token (missing parts)
-    let mut headers = HashMap::new();
-    headers.insert(
+    let mut headers: HeaderVec = HeaderVec::new();
+    headers.push((
         "authorization".to_string(),
         "Bearer invalid.token".to_string(),
-    );
+    ));
     let req = SecurityRequest {
         headers: &headers,
-        query: &HashMap::new(),
-        cookies: &HashMap::new(),
+        query: &ParamVec::new(),
+        cookies: &HeaderVec::new(),
     };
 
     assert!(!provider.validate(&scheme, &[], &req));
@@ -1010,15 +1011,15 @@ fn test_bearer_jwt_invalid_base64() {
     };
 
     // Test token with invalid base64 payload
-    let mut headers = HashMap::new();
-    headers.insert(
+    let mut headers: HeaderVec = HeaderVec::new();
+    headers.push((
         "authorization".to_string(),
         "Bearer header.invalid_base64.sig".to_string(),
-    );
+    ));
     let req = SecurityRequest {
         headers: &headers,
-        query: &HashMap::new(),
-        cookies: &HashMap::new(),
+        query: &ParamVec::new(),
+        cookies: &HeaderVec::new(),
     };
 
     assert!(!provider.validate(&scheme, &[], &req));
@@ -1038,12 +1039,12 @@ fn test_bearer_jwt_invalid_json() {
     let payload = general_purpose::STANDARD.encode(b"invalid json");
     let token = format!("{}.{}.sig", header, payload);
 
-    let mut headers = HashMap::new();
-    headers.insert("authorization".to_string(), format!("Bearer {}", token));
+    let mut headers: HeaderVec = HeaderVec::new();
+    headers.push(("authorization".to_string(), format!("Bearer {}", token)));
     let req = SecurityRequest {
         headers: &headers,
-        query: &HashMap::new(),
-        cookies: &HashMap::new(),
+        query: &ParamVec::new(),
+        cookies: &HeaderVec::new(),
     };
 
     assert!(!provider.validate(&scheme, &[], &req));
@@ -1060,12 +1061,12 @@ fn test_bearer_jwt_scope_validation() {
 
     // Test token with read scope
     let token = make_token("read write");
-    let mut headers = HashMap::new();
-    headers.insert("authorization".to_string(), format!("Bearer {}", token));
+    let mut headers: HeaderVec = HeaderVec::new();
+    headers.push(("authorization".to_string(), format!("Bearer {}", token)));
     let req = SecurityRequest {
         headers: &headers,
-        query: &HashMap::new(),
-        cookies: &HashMap::new(),
+        query: &ParamVec::new(),
+        cookies: &HeaderVec::new(),
     };
 
     // Should pass with read scope
@@ -1091,11 +1092,11 @@ fn test_bearer_jwt_cookie_extraction() {
     };
 
     let token = make_token("");
-    let mut cookies = HashMap::new();
-    cookies.insert("auth_token".to_string(), token);
+    let mut cookies: HeaderVec = HeaderVec::new();
+    cookies.push(("auth_token".to_string(), token));
     let req = SecurityRequest {
-        headers: &HashMap::new(),
-        query: &HashMap::new(),
+        headers: &HeaderVec::new(),
+        query: &ParamVec::new(),
         cookies: &cookies,
     };
 
@@ -1112,12 +1113,12 @@ fn test_bearer_jwt_wrong_scheme() {
     };
 
     let token = make_token("");
-    let mut headers = HashMap::new();
-    headers.insert("authorization".to_string(), format!("Bearer {}", token));
+    let mut headers: HeaderVec = HeaderVec::new();
+    headers.push(("authorization".to_string(), format!("Bearer {}", token)));
     let req = SecurityRequest {
         headers: &headers,
-        query: &HashMap::new(),
-        cookies: &HashMap::new(),
+        query: &ParamVec::new(),
+        cookies: &HeaderVec::new(),
     };
 
     assert!(!provider.validate(&scheme, &[], &req));
@@ -1132,12 +1133,12 @@ fn test_oauth2_provider_validation() {
     };
 
     let token = make_token("read");
-    let mut headers = HashMap::new();
-    headers.insert("authorization".to_string(), format!("Bearer {}", token));
+    let mut headers: HeaderVec = HeaderVec::new();
+    headers.push(("authorization".to_string(), format!("Bearer {}", token)));
     let req = SecurityRequest {
         headers: &headers,
-        query: &HashMap::new(),
-        cookies: &HashMap::new(),
+        query: &ParamVec::new(),
+        cookies: &HeaderVec::new(),
     };
 
     assert!(provider.validate(&scheme, &["read".to_string()], &req));
@@ -1152,11 +1153,11 @@ fn test_oauth2_provider_cookie() {
     };
 
     let token = make_token("read");
-    let mut cookies = HashMap::new();
-    cookies.insert("oauth_token".to_string(), token);
+    let mut cookies: HeaderVec = HeaderVec::new();
+    cookies.push(("oauth_token".to_string(), token));
     let req = SecurityRequest {
-        headers: &HashMap::new(),
-        query: &HashMap::new(),
+        headers: &HeaderVec::new(),
+        query: &ParamVec::new(),
         cookies: &cookies,
     };
 
@@ -1173,12 +1174,12 @@ fn test_oauth2_provider_wrong_scheme() {
     };
 
     let token = make_token("");
-    let mut headers = HashMap::new();
-    headers.insert("authorization".to_string(), format!("Bearer {}", token));
+    let mut headers: HeaderVec = HeaderVec::new();
+    headers.push(("authorization".to_string(), format!("Bearer {}", token)));
     let req = SecurityRequest {
         headers: &headers,
-        query: &HashMap::new(),
-        cookies: &HashMap::new(),
+        query: &ParamVec::new(),
+        cookies: &HeaderVec::new(),
     };
 
     assert!(!provider.validate(&scheme, &[], &req));
@@ -1195,12 +1196,12 @@ fn test_api_key_provider_header() {
         description: None,
     };
 
-    let mut headers = HashMap::new();
-    headers.insert("x-api-key".to_string(), "test_key".to_string());
+    let mut headers: HeaderVec = HeaderVec::new();
+    headers.push(("x-api-key".to_string(), "test_key".to_string()));
     let req = SecurityRequest {
         headers: &headers,
-        query: &HashMap::new(),
-        cookies: &HashMap::new(),
+        query: &ParamVec::new(),
+        cookies: &HeaderVec::new(),
     };
 
     assert!(provider.validate(&scheme, &[], &req));
@@ -1217,12 +1218,12 @@ fn test_api_key_provider_query() {
         description: None,
     };
 
-    let mut query = HashMap::new();
-    query.insert("api_key".to_string(), "test_key".to_string());
+    let mut query: ParamVec = ParamVec::new();
+    query.push(("api_key".to_string(), "test_key".to_string()));
     let req = SecurityRequest {
-        headers: &HashMap::new(),
+        headers: &HeaderVec::new(),
         query: &query,
-        cookies: &HashMap::new(),
+        cookies: &HeaderVec::new(),
     };
 
     assert!(provider.validate(&scheme, &[], &req));
@@ -1239,11 +1240,11 @@ fn test_api_key_provider_cookie() {
         description: None,
     };
 
-    let mut cookies = HashMap::new();
-    cookies.insert("api_key".to_string(), "test_key".to_string());
+    let mut cookies: HeaderVec = HeaderVec::new();
+    cookies.push(("api_key".to_string(), "test_key".to_string()));
     let req = SecurityRequest {
-        headers: &HashMap::new(),
-        query: &HashMap::new(),
+        headers: &HeaderVec::new(),
+        query: &ParamVec::new(),
         cookies: &cookies,
     };
 
@@ -1262,9 +1263,9 @@ fn test_api_key_provider_invalid_location() {
     };
 
     let req = SecurityRequest {
-        headers: &HashMap::new(),
-        query: &HashMap::new(),
-        cookies: &HashMap::new(),
+        headers: &HeaderVec::new(),
+        query: &ParamVec::new(),
+        cookies: &HeaderVec::new(),
     };
 
     assert!(!provider.validate(&scheme, &[], &req));
@@ -1280,9 +1281,9 @@ fn test_missing_authorization_header() {
     };
 
     let req = SecurityRequest {
-        headers: &HashMap::new(),
-        query: &HashMap::new(),
-        cookies: &HashMap::new(),
+        headers: &HeaderVec::new(),
+        query: &ParamVec::new(),
+        cookies: &HeaderVec::new(),
     };
 
     assert!(!provider.validate(&scheme, &[], &req));
@@ -1297,15 +1298,15 @@ fn test_malformed_authorization_header() {
         description: None,
     };
 
-    let mut headers = HashMap::new();
-    headers.insert(
+    let mut headers: HeaderVec = HeaderVec::new();
+    headers.push((
         "authorization".to_string(),
         "Basic dXNlcjpwYXNz".to_string(),
-    ); // Basic auth instead of Bearer
+    )); // Basic auth instead of Bearer
     let req = SecurityRequest {
         headers: &headers,
-        query: &HashMap::new(),
-        cookies: &HashMap::new(),
+        query: &ParamVec::new(),
+        cookies: &HeaderVec::new(),
     };
 
     assert!(!provider.validate(&scheme, &[], &req));
@@ -1321,12 +1322,12 @@ fn test_case_insensitive_bearer_scheme() {
     };
 
     let token = make_token("");
-    let mut headers = HashMap::new();
-    headers.insert("authorization".to_string(), format!("Bearer {}", token));
+    let mut headers: HeaderVec = HeaderVec::new();
+    headers.push(("authorization".to_string(), format!("Bearer {}", token)));
     let req = SecurityRequest {
         headers: &headers,
-        query: &HashMap::new(),
-        cookies: &HashMap::new(),
+        query: &ParamVec::new(),
+        cookies: &HeaderVec::new(),
     };
 
     assert!(provider.validate(&scheme, &[], &req));
@@ -1342,12 +1343,12 @@ fn test_empty_token_scopes() {
     };
 
     let token = make_token(""); // Empty scope
-    let mut headers = HashMap::new();
-    headers.insert("authorization".to_string(), format!("Bearer {}", token));
+    let mut headers: HeaderVec = HeaderVec::new();
+    headers.push(("authorization".to_string(), format!("Bearer {}", token)));
     let req = SecurityRequest {
         headers: &headers,
-        query: &HashMap::new(),
-        cookies: &HashMap::new(),
+        query: &ParamVec::new(),
+        cookies: &HeaderVec::new(),
     };
 
     // Should pass with no required scopes

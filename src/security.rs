@@ -32,15 +32,14 @@
 //! ```rust
 //! use brrtrouter::security::{SecurityProvider, SecurityRequest};
 //! use brrtrouter::spec::SecurityScheme;
-//! use std::collections::HashMap;
 //!
 //! // Simple static API key validation
 //! struct ApiKeyProvider { key: String }
 //!
 //! impl SecurityProvider for ApiKeyProvider {
 //!     fn validate(&self, scheme: &SecurityScheme, scopes: &[String], req: &SecurityRequest) -> bool {
-//!         req.headers.get("X-API-Key")
-//!             .map(|k| k == &self.key)
+//!         req.get_header("x-api-key")
+//!             .map(|k| k == self.key)
 //!             .unwrap_or(false)
 //!     }
 //! }
@@ -752,11 +751,10 @@ impl RemoteApiKeyProvider {
 
     fn extract_key<'a>(&self, req: &'a SecurityRequest, header_name: &str) -> Option<&'a str> {
         // Prefer named header, also accept Authorization: Bearer <key>
-        req.get_header(header_name)
-            .or_else(|| {
-                req.get_header("authorization")
-                    .and_then(|h| h.strip_prefix("Bearer "))
-            })
+        req.get_header(header_name).or_else(|| {
+            req.get_header("authorization")
+                .and_then(|h| h.strip_prefix("Bearer "))
+        })
     }
 }
 

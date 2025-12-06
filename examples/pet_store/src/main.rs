@@ -271,13 +271,12 @@ fn main() -> io::Result<()> {
                                 .as_ref()
                                 .map(|s| s.as_str())
                                 .unwrap_or_else(|| name);
-                            req.headers
-                                .get(&target.to_ascii_lowercase())
-                                .map(|s| s.as_str())
-                                == Some(self.key.as_str())
+                            req.get_header(&target.to_ascii_lowercase())
+                                .map(|v| v == self.key)
+                                .unwrap_or(false)
                         }
-                        "query" => req.query.get(name) == Some(&self.key),
-                        "cookie" => req.cookies.get(name) == Some(&self.key),
+                        "query" => req.get_query(name).map(|v| v == self.key).unwrap_or(false),
+                        "cookie" => req.get_cookie(name).map(|v| v == self.key).unwrap_or(false),
                         _ => false,
                     },
                     _ => false,

@@ -1,17 +1,20 @@
-use crate::dispatcher::{HandlerRequest, HandlerResponse, HeaderVec};
+use crate::dispatcher::{HandlerRequest, HandlerResponse};
 
 // Example handler: just echoes back input for now
 // This handler is useful for testing and debugging purposes.
 #[allow(dead_code)]
 pub fn echo_handler(req: HandlerRequest) {
-    let response = HandlerResponse::json(200, serde_json::json!({
-        "handler": req.handler_name,
-        "method": req.method.to_string(),
-        "path": req.path,
-        "params": req.path_params,
-        "query": req.query_params,
-        "body": req.body,
-    }));
+    let response = HandlerResponse::json(
+        200,
+        serde_json::json!({
+            "handler": req.handler_name,
+            "method": req.method.to_string(),
+            "path": req.path,
+            "params": req.path_params,
+            "query": req.query_params,
+            "body": req.body,
+        }),
+    );
 
     let _ = req.reply_tx.send(response);
 }

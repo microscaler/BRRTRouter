@@ -100,7 +100,7 @@ fn test_router_route_with_parameters() {
     // Test parameterized route
     let route_match = router.route(Method::GET, "/users/123").unwrap();
     assert_eq!(route_match.handler_name, "get_user");
-    assert_eq!(route_match.path_params.get("id"), Some(&"123".to_string()));
+    assert_eq!(route_match.get_path_param("id"), Some("123"));
 
     // Test non-parameterized route
     let route_match = router.route(Method::POST, "/users").unwrap();
@@ -222,18 +222,9 @@ fn test_router_complex_parameter_extraction() {
         .route(Method::GET, "/api/v1/users/123/posts/456/comments/789")
         .unwrap();
     assert_eq!(route_match.handler_name, "get_comment");
-    assert_eq!(
-        route_match.path_params.get("user_id"),
-        Some(&"123".to_string())
-    );
-    assert_eq!(
-        route_match.path_params.get("post_id"),
-        Some(&"456".to_string())
-    );
-    assert_eq!(
-        route_match.path_params.get("comment_id"),
-        Some(&"789".to_string())
-    );
+    assert_eq!(route_match.get_path_param("user_id"), Some("123"));
+    assert_eq!(route_match.get_path_param("post_id"), Some("456"));
+    assert_eq!(route_match.get_path_param("comment_id"), Some("789"));
 }
 
 #[test]
@@ -266,7 +257,7 @@ fn test_route_match_structure() {
 
     // Test RouteMatch structure
     assert_eq!(route_match.handler_name, "get_user");
-    assert_eq!(route_match.path_params.get("id"), Some(&"123".to_string()));
+    assert_eq!(route_match.get_path_param("id"), Some("123"));
     assert!(route_match.query_params.is_empty());
     assert_eq!(route_match.route.method, Method::GET);
     assert_eq!(route_match.route.path_pattern, "/users/{id}");
@@ -286,23 +277,23 @@ fn test_router_different_param_names_same_position() {
     // Test first route - should extract user_id parameter
     let match1 = router.route(Method::GET, "/users/123/posts").unwrap();
     assert_eq!(match1.handler_name, "get_user_posts");
-    assert_eq!(match1.path_params.get("user_id"), Some(&"123".to_string()));
-    assert!(match1.path_params.get("id").is_none());
-    assert!(match1.path_params.get("uid").is_none());
+    assert_eq!(match1.get_path_param("user_id"), Some("123"));
+    assert!(match1.get_path_param("id").is_none());
+    assert!(match1.get_path_param("uid").is_none());
 
     // Test second route - should extract id parameter
     let match2 = router.route(Method::GET, "/users/456/comments").unwrap();
     assert_eq!(match2.handler_name, "get_user_comments");
-    assert_eq!(match2.path_params.get("id"), Some(&"456".to_string()));
-    assert!(match2.path_params.get("user_id").is_none());
-    assert!(match2.path_params.get("uid").is_none());
+    assert_eq!(match2.get_path_param("id"), Some("456"));
+    assert!(match2.get_path_param("user_id").is_none());
+    assert!(match2.get_path_param("uid").is_none());
 
     // Test third route - should extract uid parameter
     let match3 = router.route(Method::GET, "/users/789/settings").unwrap();
     assert_eq!(match3.handler_name, "get_user_settings");
-    assert_eq!(match3.path_params.get("uid"), Some(&"789".to_string()));
-    assert!(match3.path_params.get("id").is_none());
-    assert!(match3.path_params.get("user_id").is_none());
+    assert_eq!(match3.get_path_param("uid"), Some("789"));
+    assert!(match3.get_path_param("id").is_none());
+    assert!(match3.get_path_param("user_id").is_none());
 }
 
 #[test]

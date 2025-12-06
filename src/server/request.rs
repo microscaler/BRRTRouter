@@ -2,7 +2,6 @@ use crate::dispatcher::HeaderVec;
 use crate::router::ParamVec;
 use crate::spec::ParameterStyle;
 use may_minihttp::Request;
-use std::collections::HashMap;
 use std::io::Read;
 use tracing::{debug, info};
 
@@ -44,7 +43,10 @@ impl ParsedRequest {
     /// Get a cookie by name
     #[inline]
     pub fn get_cookie(&self, name: &str) -> Option<&str> {
-        self.cookies.iter().find(|(k, _)| k == name).map(|(_, v)| v.as_str())
+        self.cookies
+            .iter()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.as_str())
     }
 
     /// Get a query parameter by name
@@ -308,19 +310,27 @@ pub fn parse_request(req: Request) -> ParsedRequest {
 mod tests {
     use super::*;
 
+    /// Helper to get a param value from ParamVec/HeaderVec
+    fn find_param<'a>(params: &'a [(String, String)], name: &str) -> Option<&'a str> {
+        params
+            .iter()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.as_str())
+    }
+
     #[test]
     fn test_parse_cookies() {
-        let mut h = std::collections::HashMap::new();
-        h.insert("cookie".to_string(), "a=b; c=d".to_string());
+        let mut h: HeaderVec = HeaderVec::new();
+        h.push(("cookie".to_string(), "a=b; c=d".to_string()));
         let cookies = parse_cookies(&h);
-        assert_eq!(cookies.get("a"), Some(&"b".to_string()));
-        assert_eq!(cookies.get("c"), Some(&"d".to_string()));
+        assert_eq!(find_param(&cookies, "a"), Some("b"));
+        assert_eq!(find_param(&cookies, "c"), Some("d"));
     }
 
     #[test]
     fn test_parse_query_params() {
         let q = parse_query_params("/p?x=1&y=2");
-        assert_eq!(q.get("x"), Some(&"1".to_string()));
-        assert_eq!(q.get("y"), Some(&"2".to_string()));
+        assert_eq!(find_param(&q, "x"), Some("1"));
+        assert_eq!(find_param(&q, "y"), Some("2"));
     }
 }

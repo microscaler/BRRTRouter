@@ -95,8 +95,8 @@ mod tests {
 
     impl HttpService for HandlerService {
         fn call(&mut self, _req: Request, res: &mut Response) -> std::io::Result<()> {
-            let mut headers = HashMap::new();
-            headers.insert("X-Test".to_string(), "foo".to_string());
+            let mut headers: HeaderVec = HeaderVec::new();
+            headers.push(("X-Test".to_string(), "foo".to_string()));
             write_handler_response(res, 201, serde_json::json!({"ok": true}), false, &headers);
             Ok(())
         }

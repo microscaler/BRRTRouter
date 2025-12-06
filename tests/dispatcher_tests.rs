@@ -74,13 +74,11 @@ impl TryFrom<HandlerRequest> for TypedReq {
 
     fn try_from(req: HandlerRequest) -> Result<Self, Self::Error> {
         let id = req
-            .path_params
-            .get("id")
+            .get_path_param("id")
             .ok_or_else(|| anyhow::anyhow!("missing id"))?
             .parse()?;
         let debug = req
-            .query_params
-            .get("debug")
+            .get_query_param("debug")
             .map(|v| v.parse::<bool>())
             .transpose()?;
         Ok(TypedReq {
@@ -114,7 +112,9 @@ fn test_dispatch_post_item() {
     let (routes, _slug) = load_spec("examples/openapi.yaml").expect("load spec");
     let router = Router::new(routes);
     let mut dispatcher = Dispatcher::new();
-    unsafe { registry::register_all(&mut dispatcher); }
+    unsafe {
+        registry::register_all(&mut dispatcher);
+    }
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
@@ -125,10 +125,10 @@ fn test_dispatch_post_item() {
     let handler_name = route.handler_name.clone();
 
     let (reply_tx, reply_rx) = mpsc::channel();
-    let mut path_params = HashMap::new();
-    path_params.insert("id".to_string(), "item-001".to_string());
-    let mut query_params = HashMap::new();
-    query_params.insert("debug".to_string(), "true".to_string());
+    let mut path_params: ParamVec = ParamVec::new();
+    path_params.push(("id".to_string(), "item-001".to_string()));
+    let mut query_params: ParamVec = ParamVec::new();
+    query_params.push(("debug".to_string(), "true".to_string()));
     let body = json!({"name": "New Item"});
 
     let request = HandlerRequest {
@@ -161,16 +161,18 @@ fn test_dispatch_get_pet() {
     let (routes, _slug) = load_spec("examples/openapi.yaml").unwrap();
     let router = Router::new(routes);
     let mut dispatcher = Dispatcher::new();
-    unsafe { registry::register_all(&mut dispatcher); }
+    unsafe {
+        registry::register_all(&mut dispatcher);
+    }
 
     let RouteMatch { route, .. } = router.route(Method::GET, "/pets/12345").unwrap();
     let handler_name = route.handler_name.clone();
 
     let (reply_tx, reply_rx) = mpsc::channel();
-    let mut path_params = HashMap::new();
-    path_params.insert("id".to_string(), "12345".to_string());
-    let mut query_params = HashMap::new();
-    query_params.insert("include".to_string(), "stats".to_string());
+    let mut path_params: ParamVec = ParamVec::new();
+    path_params.push(("id".to_string(), "12345".to_string()));
+    let mut query_params: ParamVec = ParamVec::new();
+    query_params.push(("include".to_string(), "stats".to_string()));
 
     let request = HandlerRequest {
         request_id: RequestId::new(),
@@ -210,14 +212,16 @@ fn test_dispatch_get_pet() {
 fn test_typed_controller_params() {
     let _tracing = set_stack_size();
     let mut dispatcher = Dispatcher::new();
-    unsafe { dispatcher.register_typed("assert_controller", AssertController); }
+    unsafe {
+        dispatcher.register_typed("assert_controller", AssertController);
+    }
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
 
     let (reply_tx, reply_rx) = mpsc::channel();
-    let mut path_params = HashMap::new();
-    path_params.insert("id".to_string(), "42".to_string());
-    let mut query_params = HashMap::new();
-    query_params.insert("debug".to_string(), "true".to_string());
+    let mut path_params: ParamVec = ParamVec::new();
+    path_params.push(("id".to_string(), "42".to_string()));
+    let mut query_params: ParamVec = ParamVec::new();
+    query_params.push(("debug".to_string(), "true".to_string()));
 
     let request = HandlerRequest {
         request_id: RequestId::new(),
@@ -247,15 +251,17 @@ fn test_typed_controller_params() {
 fn test_typed_controller_invalid_params() {
     let _tracing = set_stack_size();
     let mut dispatcher = Dispatcher::new();
-    unsafe { dispatcher.register_typed("assert_controller", AssertController); }
+    unsafe {
+        dispatcher.register_typed("assert_controller", AssertController);
+    }
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
 
     let (reply_tx, reply_rx) = mpsc::channel();
-    let mut path_params = HashMap::new();
+    let mut path_params: ParamVec = ParamVec::new();
     // invalid integer value for id
-    path_params.insert("id".to_string(), "not_an_int".to_string());
-    let mut query_params = HashMap::new();
-    query_params.insert("debug".to_string(), "true".to_string());
+    path_params.push(("id".to_string(), "not_an_int".to_string()));
+    let mut query_params: ParamVec = ParamVec::new();
+    query_params.push(("debug".to_string(), "true".to_string()));
 
     let request = HandlerRequest {
         request_id: RequestId::new(),
@@ -289,7 +295,9 @@ fn test_panic_handler_returns_500() {
     }
 
     let mut dispatcher = Dispatcher::new();
-    unsafe { dispatcher.register_handler("panic", panic_handler); }
+    unsafe {
+        dispatcher.register_handler("panic", panic_handler);
+    }
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
 
     let (reply_tx, reply_rx) = mpsc::channel();
@@ -324,7 +332,9 @@ fn test_dispatch_all_registry_handlers() {
     let (routes, _slug) = load_spec("examples/openapi.yaml").expect("load spec");
     let router = Router::new(routes);
     let mut dispatcher = Dispatcher::new();
-    unsafe { registry::register_all(&mut dispatcher); }
+    unsafe {
+        registry::register_all(&mut dispatcher);
+    }
 
     let handlers: Vec<String> = dispatcher.handlers.keys().cloned().collect();
     for name in handlers {
