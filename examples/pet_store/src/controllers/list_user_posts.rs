@@ -24,18 +24,5 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     //   }
     // ]
 
-    Response(vec![
-        match serde_json::from_value::<Post>(
-            serde_json::json!({"author_id":"abc-123","body":"Welcome to the blog","id":"post1","title":"Intro"}),
-        ) {
-            Ok(v) => v,
-            Err(_) => Default::default(),
-        },
-        match serde_json::from_value::<Post>(
-            serde_json::json!({"author_id":"abc-123","body":"Thanks for reading","id":"post2","title":"Follow-up"}),
-        ) {
-            Ok(v) => v,
-            Err(_) => Default::default(),
-        },
-    ])
+    Response(vec![serde_json::from_value::<Post>(serde_json::json!({"author_id":"abc-123","body":"Welcome to the blog","id":"post1","title":"Intro"})).unwrap_or_default(), serde_json::from_value::<Post>(serde_json::json!({"author_id":"abc-123","body":"Thanks for reading","id":"post2","title":"Follow-up"})).unwrap_or_default()])
 }

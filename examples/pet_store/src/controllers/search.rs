@@ -24,18 +24,14 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
 
     Response {
         results: Some(vec![
-            match serde_json::from_value::<Item>(
+            serde_json::from_value::<Item>(
                 serde_json::json!({"id":"item-001","name":"Sample Item"}),
-            ) {
-                Ok(v) => v,
-                Err(_) => Default::default(),
-            },
-            match serde_json::from_value::<Item>(
+            )
+            .unwrap_or_default(),
+            serde_json::from_value::<Item>(
                 serde_json::json!({"id":"item-002","name":"Another Item"}),
-            ) {
-                Ok(v) => v,
-                Err(_) => Default::default(),
-            },
+            )
+            .unwrap_or_default(),
         ]),
     }
 }
