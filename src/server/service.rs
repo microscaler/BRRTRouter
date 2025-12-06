@@ -8,6 +8,7 @@ use crate::security::{SecurityProvider, SecurityRequest};
 use crate::spec::SecurityScheme;
 use crate::static_files::StaticFiles;
 use crate::validator_cache::ValidatorCache;
+use http::Method;
 use may_minihttp::{HttpService, Request, Response};
 use serde_json::json;
 use std::collections::HashMap;
@@ -688,7 +689,7 @@ impl HttpService for AppService {
         /// This ensures we log timing even if we return early
         struct RequestLogger {
             request_id: Option<RequestId>,
-            method: String,
+            method: Method,
             path: String,
             start: std::time::Instant,
             total_size_bytes: usize,
@@ -740,6 +741,7 @@ impl HttpService for AppService {
         // Start timing immediately
         let request_start = std::time::Instant::now();
 
+        // Parse request and validate HTTP method
         let ParsedRequest {
             method,
             path,
@@ -747,7 +749,21 @@ impl HttpService for AppService {
             cookies,
             query_params,
             body,
-        } = parse_request(req);
+        } = match parse_request(req) {
+            Ok(parsed) => parsed,
+            Err(invalid_method) => {
+                // Reject invalid HTTP methods with 400 Bad Request
+                write_json_error(
+                    res,
+                    400,
+                    serde_json::json!({
+                        "error": "Bad Request",
+                        "message": format!("Invalid HTTP method: {}", invalid_method)
+                    }),
+                );
+                return Ok(());
+            }
+        };
 
         // Create a span for this request with key fields
         let span = info_span!(
@@ -809,10 +825,10 @@ impl HttpService for AppService {
             metrics.inc_top_level_request();
         }
 
-        if method == "GET" && path == "/health" {
+        if method == Method::GET && path == "/health" {
             return health_endpoint(res);
         }
-        if method == "GET" && path == "/metrics" {
+        if method == Method::GET && path == "/metrics" {
             if let Some(metrics) = &self.metrics {
                 // Get dispatcher for worker pool metrics (gracefully handle lock failure)
                 let dispatcher_guard = self.dispatcher.read().ok();
@@ -822,15 +838,15 @@ impl HttpService for AppService {
                 write_json_error(
                     res,
                     404,
-                    serde_json::json!({"error": "Not Found", "method": method, "path": path}),
+                    serde_json::json!({"error": "Not Found", "method": method.to_string(), "path": path}),
                 );
                 return Ok(());
             }
         }
-        if method == "GET" && path == "/openapi.yaml" {
+        if method == Method::GET && path == "/openapi.yaml" {
             return openapi_endpoint(res, &self.spec_path);
         }
-        if method == "GET" && path == "/docs" {
+        if method == Method::GET && path == "/docs" {
             if let Some(docs) = &self.doc_files {
                 return swagger_ui_endpoint(res, docs);
             } else {
@@ -843,7 +859,7 @@ impl HttpService for AppService {
             }
         }
 
-        if method == "GET" {
+        if method == Method::GET {
             if let Some(sf) = &self.static_files {
                 let p = path.trim_start_matches('/');
                 let p = if p.is_empty() { "index.html" } else { p };
@@ -871,22 +887,9 @@ impl HttpService for AppService {
                 .router
                 .read()
                 .expect("router RwLock poisoned - critical error");
-            // Parse HTTP method - return 400 if somehow invalid
-            let http_method = match method.parse() {
-                Ok(m) => m,
-                Err(_) => {
-                    write_json_error(
-                        res,
-                        400,
-                        serde_json::json!({
-                            "error": "Bad Request",
-                            "message": format!("Invalid HTTP method: {}", method)
-                        }),
-                    );
-                    return Ok(());
-                }
-            };
-            router.route(http_method, &path)
+            // JSF P1: method is already Method enum, no parsing needed
+            // Clone method since router.route() takes ownership and we need it later for logging
+            router.route(method.clone(), &path)
         };
         if let Some(mut route_match) = route_opt {
             route_match.query_params = query_params.clone();
@@ -1092,7 +1095,7 @@ impl HttpService for AppService {
                     });
                     if debug {
                         if let Some(map) = body.as_object_mut() {
-                            map.insert("method".to_string(), json!(method));
+                            map.insert("method".to_string(), json!(method.to_string()));
                             map.insert("path".to_string(), json!(path));
                             map.insert(
                                 "handler".to_string(),
@@ -1293,7 +1296,7 @@ impl HttpService for AppService {
                         500,
                         serde_json::json!({
                             "error": "Handler failed or not registered",
-                            "method": method,
+                            "method": method.to_string(),
                             "path": path
                         }),
                     );
@@ -1303,7 +1306,7 @@ impl HttpService for AppService {
             write_json_error(
                 res,
                 404,
-                serde_json::json!({"error": "Not Found", "method": method, "path": path}),
+                serde_json::json!({"error": "Not Found", "method": method.to_string(), "path": path}),
             );
         }
         Ok(())
