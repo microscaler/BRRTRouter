@@ -26,28 +26,29 @@ This document catalogs all heap allocations in the BRRTRouter request hot path, 
 
 ### 1. Router Module (`src/router/radix.rs`)
 
-#### Current State (Phase 3 Complete)
+#### Current State (Phase 3 Complete - P0-1 DONE ✅)
 - ✅ Uses `SmallVec<[&str; 16]>` for path segments (avoids Vec allocation)
-- ✅ Uses `SmallVec<[(String, String); 8]>` for params (ParamVec)
+- ✅ Uses `SmallVec<[(Arc<str>, String); 8]>` for params (ParamVec) - **P0-1 COMPLETE**
 - ✅ `#[inline]` hints on hot methods
+- ✅ `param_name` stored as `Arc<str>` in `RadixNode` - **P0-1 COMPLETE**
 
 #### Remaining Allocations
 
-| Line | Code | Allocation Type | Per-Request? | Fix |
-|------|------|-----------------|--------------|-----|
-| 208 | `param_name.to_string()` | String clone | Yes (per param) | Use `Arc<str>` |
+| Line | Code | Allocation Type | Per-Request? | Status |
+|------|------|-----------------|--------------|--------|
+| 208 | `Arc::clone(param_name)` | Atomic increment | Yes (per param) | ✅ **OPTIMIZED** - O(1) |
 | 208 | `segment.to_string()` | String clone | Yes (per param) | Required (request data) |
 
-#### Recommended Fix (jsf3-9)
+#### Completed Fix (jsf3-9) - **MERGED**
 ```rust
-// Current:
+// Before:
 pub type ParamVec = SmallVec<[(String, String); 8]>;
 
-// Proposed:
+// After (P0-1):
 pub type ParamVec = SmallVec<[(Arc<str>, String); 8]>;
 ```
 
-**Rationale**: Param names come from the static tree (`Cow<'static, str>`). Converting to `Arc<str>` makes cloning O(1) atomic increment instead of O(n) string copy.
+**Impact**: Param name cloning now O(1) atomic increment instead of O(n) string copy. All 198+ tests passing.
 
 **Impact**: ~28 files need updates. Estimate: 2-3 hours.
 
