@@ -45,8 +45,10 @@ fn test_worker_pool_creation() {
     }
 
     // Verify the worker pool was created
+    // Note: Worker pool handlers use the pool for dispatch, not the handlers map
     assert!(dispatcher.worker_pools.contains_key("test_handler"));
-    assert!(dispatcher.handlers.contains_key("test_handler"));
+    // Handler entry is NOT created - dispatch goes through the worker pool
+    assert!(!dispatcher.handlers.contains_key("test_handler"));
 
     // Get the pool and verify config
     let pool = dispatcher.worker_pools.get("test_handler").unwrap();

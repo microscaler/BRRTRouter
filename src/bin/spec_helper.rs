@@ -1,3 +1,5 @@
+#![allow(clippy::expect_used)]
+
 use brrtrouter::load_spec;
 
 fn main() {

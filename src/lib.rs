@@ -1,3 +1,21 @@
+// Clippy configuration for production code quality
+// Allow unsafe code - required for coroutine spawning (may runtime)
+#![allow(unsafe_code)]
+// Allow expect() in non-hot-path code (startup, configuration)
+#![allow(clippy::expect_used)]
+// Must-use is enforced on key types; remaining are less critical
+#![allow(clippy::must_use_candidate)]
+// Format string inlining is a style preference
+#![allow(clippy::uninlined_format_args)]
+// Channel sends intentionally ignore results (receiver may be gone)
+#![allow(clippy::let_underscore_must_use)]
+// Arc::clone vs .clone() is a style preference; both are correct
+#![allow(clippy::clone_on_ref_ptr)]
+// Panic paths exist for critical startup errors (config, spec parsing)
+#![allow(clippy::panic)]
+// HandlerResponse in Result Err variant is large but necessary for error handling
+#![allow(clippy::result_large_err)]
+
 //! # BRRTRouter
 //!
 //! **BRRTRouter** is a high-performance, coroutine-powered HTTP router for Rust, driven entirely by

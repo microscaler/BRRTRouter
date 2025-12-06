@@ -1,0 +1,149 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: petstore-config
+  namespace: brrtrouter-dev
+data:
+  config.yaml: |
+    # BRRTRouter Pet Store Configuration
+    # This ConfigMap contains the full application configuration for Kubernetes deployment
+    
+    # Server port configuration
+    # Note: The PORT environment variable takes precedence over this setting
+    port: 8080
+    
+    security:
+      # Static API keys bound to specific OpenAPI security scheme names
+      api_keys:
+        ApiKeyHeader:
+          key: "test123"
+    
+    http:
+      keep_alive: true
+      timeout_secs: 5
+      max_requests: 50000
+    
+    # Database connection (PostgreSQL)
+    database:
+      host: "postgres"
+      port: 5432
+      name: "brrtrouter"
+      user: "brrtrouter"
+      password: "dev_password_change_in_prod"
+      max_connections: 10
+    
+    # Redis cache configuration
+    redis:
+      host: "redis"
+      port: 6379
+      db: 0
+      max_connections: 10
+    
+    # Observability configuration
+    observability:
+      metrics_enabled: true
+      tracing_enabled: true
+      otlp_endpoint: "http://otel-collector:4317"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: petstore
+  namespace: brrtrouter-dev
+  labels:
+    app: petstore
+    version: dev
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: petstore
+  template:
+    metadata:
+      labels:
+        app: petstore
+        version: dev
+      annotations:
+        checksum/config: "{{ .Values.configChecksum }}"
+    spec:
+      containers:
+        - name: petstore
+          image: localhost:5001/brrtrouter-petstore
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: PORT
+              value: "8080"
+            # Base logging - production-like (info level)
+            - name: RUST_LOG
+              value: "info,may=warn,may_minihttp=warn"
+            - name: RUST_BACKTRACE
+              value: "0"
+            # Structured logging configuration
+            - name: BRRTR_LOG_FORMAT
+              value: "json"
+            - name: BRRTR_LOG_SAMPLING_MODE
+              value: "sampled"
+            - name: BRRTR_LOG_ASYNC
+              value: "true"
+            - name: BRRTR_LOG_INCLUDE_LOCATION
+              value: "false"
+            - name: BRRTR_LOG_LEVEL
+              value: "info"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector:4317"
+            - name: OTEL_SERVICE_NAME
+              value: "petstore"
+            - name: BRRTR_STACK_SIZE
+              value: "0x20000"
+            - name: BRRTR_HANDLER_WORKERS
+              value: "1"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "1000m"
+            limits:
+              memory: "2Gi"
+              cpu: "4000m"
+          volumeMounts:
+            - name: config
+              mountPath: /app/config
+              readOnly: true
+            - name: logs
+              mountPath: /app/logs
+            - name: data
+              mountPath: /app/data
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: petstore-config
+        - name: logs
+          emptyDir: {}
+        - name: data
+          emptyDir: {}
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 128Mi
+

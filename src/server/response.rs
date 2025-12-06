@@ -85,7 +85,6 @@ pub fn write_json_error(res: &mut Response, status: u16, body: Value) {
 mod tests {
     use super::*;
     use may_minihttp::{HttpServer, HttpService, Request, Response};
-    use std::collections::HashMap;
     use std::io::{Read, Write};
     use std::net::{TcpListener, TcpStream};
     use std::time::Duration;

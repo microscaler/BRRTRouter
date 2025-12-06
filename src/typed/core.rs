@@ -90,7 +90,7 @@ pub trait Handler: Send + 'static {
 
 /// Trait for converting HandlerRequest to TypedHandlerRequest
 ///
-/// Implemented automatically for TypedHandlerRequest<T> where T can be converted from HandlerRequest.
+/// Implemented automatically for `TypedHandlerRequest<T>` where T can be converted from HandlerRequest.
 pub trait TypedHandlerFor<T>: Sized {
     /// Convert a generic HandlerRequest to a typed request
     ///
@@ -139,7 +139,7 @@ where
                 // These are cheap clones (sender clones or small strings) and are ok to clone.
                 let reply_tx_outer = req.reply_tx.clone();
                 let handler_name_outer = req.handler_name.clone();
-                let request_id = req.request_id;
+                let _request_id = req.request_id;
 
                 // COMPLEX PANIC HANDLING: Wrap entire request processing in catch_unwind
                 // This prevents a panicking handler from killing the entire coroutine

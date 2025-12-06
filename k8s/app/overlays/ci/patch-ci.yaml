@@ -1,0 +1,35 @@
+# CI settings patch for automated testing
+# Minimal logging, no backtraces, optimized for performance testing
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: petstore
+  namespace: brrtrouter-dev
+spec:
+  template:
+    spec:
+      containers:
+        - name: petstore
+          env:
+            # Production-like logging - only warnings and errors
+            - name: RUST_LOG
+              value: "warn,brrtrouter=info,may=warn,may_minihttp=warn"
+            # Disable backtraces for performance
+            - name: RUST_BACKTRACE
+              value: "0"
+            # JSON logs for structured parsing
+            - name: BRRTR_LOG_FORMAT
+              value: "json"
+            # Sampled logging for performance
+            - name: BRRTR_LOG_SAMPLING_MODE
+              value: "sampled"
+            # Sync logging (simpler for CI)
+            - name: BRRTR_LOG_ASYNC
+              value: "false"
+            # No source locations (smaller logs)
+            - name: BRRTR_LOG_INCLUDE_LOCATION
+              value: "false"
+            # Info level (not debug)
+            - name: BRRTR_LOG_LEVEL
+              value: "info"
+

@@ -1,0 +1,11 @@
+# Local development overlay for Tilt
+# Enables debug logging and verbose output for troubleshooting
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+patches:
+  - path: patch-debug.yaml
+

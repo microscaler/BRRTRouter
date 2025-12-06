@@ -30,9 +30,10 @@ COPY ./examples/pet_store/static_site /app/static_site
 # Expose HTTP port
 EXPOSE 8080
 
-# Set runtime environment
-ENV RUST_BACKTRACE=1
-ENV RUST_LOG=debug
+# Set runtime environment defaults (can be overridden by k8s env vars)
+# Use info level as default - debug is enabled via k8s/app/overlays/local
+ENV RUST_BACKTRACE=0
+ENV RUST_LOG=info,may=warn,may_minihttp=warn
 
 # Run the service
 ENTRYPOINT ["/app/pet_store", \

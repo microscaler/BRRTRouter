@@ -1,7 +1,17 @@
 //! Unit tests for the OpenAPI linter
 
 use crate::linter::{lint_spec, LintSeverity};
+use std::io::Write;
 use std::path::Path;
+use tempfile::NamedTempFile;
+
+/// Helper to create a temp file with YAML content and run lint_spec on it
+fn lint_yaml(content: &str) -> Vec<crate::linter::LintIssue> {
+    let mut temp = NamedTempFile::with_suffix(".yaml").expect("create temp file");
+    temp.write_all(content.as_bytes()).expect("write spec");
+    temp.flush().expect("flush");
+    lint_spec(temp.path()).expect("lint spec")
+}
 
 #[test]
 fn test_lint_missing_operation_id() {
@@ -19,10 +29,7 @@ paths:
           description: OK
 "#;
 
-    let temp_file = std::env::temp_dir().join("test_missing_operation_id.yaml");
-    std::fs::write(&temp_file, spec).unwrap();
-
-    let issues = lint_spec(&temp_file).unwrap();
+    let issues = lint_yaml(spec);
     let missing_op_id_issues: Vec<_> = issues
         .iter()
         .filter(|i| i.kind == "missing_operation_id")
@@ -33,8 +40,6 @@ paths:
         "Should detect missing operationId"
     );
     assert_eq!(missing_op_id_issues[0].severity, LintSeverity::Error);
-
-    std::fs::remove_file(&temp_file).ok();
 }
 
 #[test]
@@ -54,10 +59,7 @@ paths:
           description: OK
 "#;
 
-    let temp_file = std::env::temp_dir().join("test_operation_id_casing.yaml");
-    std::fs::write(&temp_file, spec).unwrap();
-
-    let issues = lint_spec(&temp_file).unwrap();
+    let issues = lint_yaml(spec);
     let casing_issues: Vec<_> = issues
         .iter()
         .filter(|i| i.kind == "operation_id_casing")
@@ -72,8 +74,6 @@ paths:
         casing_issues[0].suggestion.is_some(),
         "Should provide suggestion"
     );
-
-    std::fs::remove_file(&temp_file).ok();
 }
 
 #[test]
@@ -93,10 +93,7 @@ paths:
           description: OK
 "#;
 
-    let temp_file = std::env::temp_dir().join("test_snake_case_ok.yaml");
-    std::fs::write(&temp_file, spec).unwrap();
-
-    let issues = lint_spec(&temp_file).unwrap();
+    let issues = lint_yaml(spec);
     let casing_issues: Vec<_> = issues
         .iter()
         .filter(|i| i.kind == "operation_id_casing")
@@ -106,8 +103,6 @@ paths:
         casing_issues.is_empty(),
         "Should not flag snake_case operationId"
     );
-
-    std::fs::remove_file(&temp_file).ok();
 }
 
 #[test]
@@ -132,10 +127,7 @@ components:
   schemas: {}
 "#;
 
-    let temp_file = std::env::temp_dir().join("test_missing_schema_ref.yaml");
-    std::fs::write(&temp_file, spec).unwrap();
-
-    let issues = lint_spec(&temp_file).unwrap();
+    let issues = lint_yaml(spec);
     let missing_ref_issues: Vec<_> = issues
         .iter()
         .filter(|i| i.kind == "missing_schema_ref")
@@ -146,8 +138,6 @@ components:
         "Should detect missing schema reference"
     );
     assert_eq!(missing_ref_issues[0].severity, LintSeverity::Error);
-
-    std::fs::remove_file(&temp_file).ok();
 }
 
 #[test]
@@ -177,10 +167,7 @@ components:
           type: string
 "#;
 
-    let temp_file = std::env::temp_dir().join("test_valid_schema_ref.yaml");
-    std::fs::write(&temp_file, spec).unwrap();
-
-    let issues = lint_spec(&temp_file).unwrap();
+    let issues = lint_yaml(spec);
     let missing_ref_issues: Vec<_> = issues
         .iter()
         .filter(|i| i.kind == "missing_schema_ref")
@@ -190,8 +177,6 @@ components:
         missing_ref_issues.is_empty(),
         "Should not flag valid schema reference"
     );
-
-    std::fs::remove_file(&temp_file).ok();
 }
 
 #[test]
@@ -215,10 +200,7 @@ components:
           type: string
 "#;
 
-    let temp_file = std::env::temp_dir().join("test_required_format.yaml");
-    std::fs::write(&temp_file, spec).unwrap();
-
-    let issues = lint_spec(&temp_file).unwrap();
+    let issues = lint_yaml(spec);
     let required_format_issues: Vec<_> = issues
         .iter()
         .filter(|i| i.kind == "required_field_format")
@@ -229,8 +211,6 @@ components:
         required_format_issues.is_empty(),
         "Should not flag array format for required field"
     );
-
-    std::fs::remove_file(&temp_file).ok();
 }
 
 #[test]
@@ -249,10 +229,7 @@ components:
           description: Missing type
 "#;
 
-    let temp_file = std::env::temp_dir().join("test_missing_property_type.yaml");
-    std::fs::write(&temp_file, spec).unwrap();
-
-    let issues = lint_spec(&temp_file).unwrap();
+    let issues = lint_yaml(spec);
     let missing_type_issues: Vec<_> = issues
         .iter()
         .filter(|i| i.kind == "missing_property_type")
@@ -263,8 +240,6 @@ components:
         "Should detect missing property type"
     );
     assert_eq!(missing_type_issues[0].severity, LintSeverity::Warning);
-
-    std::fs::remove_file(&temp_file).ok();
 }
 
 #[test]

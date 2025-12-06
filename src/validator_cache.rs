@@ -204,7 +204,7 @@ impl Default for SpecVersion {
 /// ```
 #[derive(Clone)]
 pub struct ValidatorCache {
-    /// Internal cache storage: key -> Arc<Validator>
+    /// Internal cache storage: key -> `Arc<Validator>`
     /// Key format: "{spec_version}:{spec_hash}:{handler_name}:{kind}:{status}"
     cache: Arc<RwLock<HashMap<String, Arc<Validator>>>>,
     /// Whether the cache is enabled (from BRRTR_SCHEMA_CACHE env var)

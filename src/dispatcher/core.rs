@@ -43,6 +43,7 @@ pub const MAX_INLINE_HEADERS: usize = 16;
 pub type HeaderVec = SmallVec<[(String, String); MAX_INLINE_HEADERS]>;
 
 /// Generate a unique request ID for tracing (ULID string)
+#[must_use]
 pub fn generate_request_id() -> String {
     RequestId::new().to_string()
 }
@@ -83,34 +84,45 @@ pub struct HandlerRequest {
 
 impl HandlerRequest {
     /// Get a path parameter by name
+    ///
+    /// Uses "last write wins" semantics: if duplicate parameter names exist
+    /// at different path depths (e.g., `/org/{id}/team/{team_id}/user/{id}`),
+    /// returns the last occurrence (the user id, not the org id).
     #[inline]
+    #[must_use]
     pub fn get_path_param(&self, name: &str) -> Option<&str> {
         self.path_params
             .iter()
-            .find(|(k, _)| k == name)
+            .rfind(|(k, _)| k == name)
             .map(|(_, v)| v.as_str())
     }
 
     /// Get a query parameter by name
+    ///
+    /// Uses "last write wins" semantics: if duplicate query parameter names exist
+    /// (e.g., `?limit=10&limit=20`), returns the last occurrence.
     #[inline]
+    #[must_use]
     pub fn get_query_param(&self, name: &str) -> Option<&str> {
         self.query_params
             .iter()
-            .find(|(k, _)| k == name)
+            .rfind(|(k, _)| k == name)
             .map(|(_, v)| v.as_str())
     }
 
-    /// Get a header by name (case-sensitive)
+    /// Get a header by name (case-insensitive per RFC 7230)
     #[inline]
+    #[must_use]
     pub fn get_header(&self, name: &str) -> Option<&str> {
         self.headers
             .iter()
-            .find(|(k, _)| k == name)
+            .find(|(k, _)| k.eq_ignore_ascii_case(name))
             .map(|(_, v)| v.as_str())
     }
 
     /// Get a cookie by name
     #[inline]
+    #[must_use]
     pub fn get_cookie(&self, name: &str) -> Option<&str> {
         self.cookies
             .iter()
@@ -120,18 +132,21 @@ impl HandlerRequest {
 
     /// Convert path_params to HashMap for compatibility
     /// Note: This allocates - use get_path_param() in hot paths
+    #[must_use]
     pub fn path_params_map(&self) -> HashMap<String, String> {
         self.path_params.iter().cloned().collect()
     }
 
     /// Convert query_params to HashMap for compatibility
     /// Note: This allocates - use get_query_param() in hot paths
+    #[must_use]
     pub fn query_params_map(&self) -> HashMap<String, String> {
         self.query_params.iter().cloned().collect()
     }
 
     /// Convert headers to HashMap for compatibility
     /// Note: This allocates - use get_header() in hot paths
+    #[must_use]
     pub fn headers_map(&self) -> HashMap<String, String> {
         self.headers.iter().cloned().collect()
     }
@@ -157,6 +172,7 @@ pub struct HandlerResponse {
 
 impl HandlerResponse {
     /// Create a new response with the given status, headers, and body
+    #[must_use]
     pub fn new(status: u16, headers: HeaderVec, body: Value) -> Self {
         Self {
             status,
@@ -166,6 +182,7 @@ impl HandlerResponse {
     }
 
     /// Create a JSON response with default headers
+    #[must_use]
     pub fn json(status: u16, body: Value) -> Self {
         let mut headers = HeaderVec::new();
         headers.push(("Content-Type".to_string(), "application/json".to_string()));
@@ -177,12 +194,14 @@ impl HandlerResponse {
     }
 
     /// Create an error response
+    #[must_use]
     pub fn error(status: u16, message: &str) -> Self {
         Self::json(status, serde_json::json!({ "error": message }))
     }
 
     /// Get a header by name
     #[inline]
+    #[must_use]
     pub fn get_header(&self, name: &str) -> Option<&str> {
         self.headers
             .iter()
@@ -228,6 +247,7 @@ impl Dispatcher {
     /// Create a new empty dispatcher
     ///
     /// Handlers must be registered using `register_handler` or `add_route`.
+    #[must_use]
     pub fn new() -> Self {
         Dispatcher {
             handlers: HashMap::new(),
@@ -466,10 +486,10 @@ impl Dispatcher {
 
         // Create worker pool
         let pool = WorkerPool::new(name.clone(), config, handler_fn);
-        let sender = pool.sender();
 
-        // Store both the sender and the pool
-        self.handlers.insert(name.clone(), sender);
+        // Store only the pool - dispatch goes through the pool directly, not the handlers map
+        // The handlers map entry (if any) will be removed since we use the pool for dispatch
+        self.handlers.remove(&name);
         self.worker_pools.insert(name, Arc::new(pool));
     }
 
@@ -497,6 +517,7 @@ impl Dispatcher {
     /// # JSF Compliance
     ///
     /// Uses HeaderVec (SmallVec) for headers/cookies to avoid heap allocation.
+    #[must_use]
     pub fn dispatch(
         &self,
         route_match: RouteMatch,
@@ -691,6 +712,7 @@ impl Dispatcher {
     ///
     /// Returns a map of handler names to their worker pool metrics.
     /// This is useful for monitoring queue depth and shed count.
+    #[must_use]
     pub fn worker_pool_metrics(&self) -> HashMap<String, (usize, u64, u64, u64)> {
         let mut metrics = HashMap::new();
         for (name, pool) in &self.worker_pools {

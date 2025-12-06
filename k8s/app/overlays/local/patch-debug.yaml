@@ -1,0 +1,32 @@
+# Debug settings patch for local development
+# Enables verbose logging, backtraces, and source locations
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: petstore
+  namespace: brrtrouter-dev
+spec:
+  template:
+    spec:
+      containers:
+        - name: petstore
+          env:
+            # Debug logging - verbose output for troubleshooting
+            - name: RUST_LOG
+              value: "debug,may=info,may_minihttp=info,hyper=warn,h2=warn"
+            # Enable full backtraces for debugging
+            - name: RUST_BACKTRACE
+              value: "full"
+            # Pretty-printed logs for human readability
+            - name: BRRTR_LOG_FORMAT
+              value: "pretty"
+            # Log all requests (no sampling)
+            - name: BRRTR_LOG_SAMPLING_MODE
+              value: "all"
+            # Include source file locations in logs
+            - name: BRRTR_LOG_INCLUDE_LOCATION
+              value: "true"
+            # Debug log level
+            - name: BRRTR_LOG_LEVEL
+              value: "debug"
+

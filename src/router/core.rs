@@ -58,20 +58,28 @@ pub struct RouteMatch {
 impl RouteMatch {
     /// Get a path parameter by name
     ///
+    /// Uses "last write wins" semantics: if duplicate parameter names exist
+    /// at different path depths (e.g., `/org/{id}/team/{team_id}/user/{id}`),
+    /// returns the last occurrence (the user id, not the org id).
+    ///
     /// # Arguments
     /// * `name` - The parameter name (e.g., "id")
     ///
     /// # Returns
     /// The parameter value if found, None otherwise
     #[inline]
+    #[must_use]
     pub fn get_path_param(&self, name: &str) -> Option<&str> {
         self.path_params
             .iter()
-            .find(|(k, _)| k == name)
+            .rfind(|(k, _)| k == name)
             .map(|(_, v)| v.as_str())
     }
 
     /// Get a query parameter by name
+    ///
+    /// Uses "last write wins" semantics: if duplicate query parameter names exist
+    /// (e.g., `?limit=10&limit=20`), returns the last occurrence.
     ///
     /// # Arguments
     /// * `name` - The parameter name
@@ -79,21 +87,24 @@ impl RouteMatch {
     /// # Returns
     /// The parameter value if found, None otherwise
     #[inline]
+    #[must_use]
     pub fn get_query_param(&self, name: &str) -> Option<&str> {
         self.query_params
             .iter()
-            .find(|(k, _)| k == name)
+            .rfind(|(k, _)| k == name)
             .map(|(_, v)| v.as_str())
     }
 
     /// Convert path_params to HashMap for compatibility with existing code
     /// Note: This allocates - use get_path_param() in hot paths instead
+    #[must_use]
     pub fn path_params_map(&self) -> HashMap<String, String> {
         self.path_params.iter().cloned().collect()
     }
 
     /// Convert query_params to HashMap for compatibility with existing code
     /// Note: This allocates - use get_query_param() in hot paths instead
+    #[must_use]
     pub fn query_params_map(&self) -> HashMap<String, String> {
         self.query_params.iter().cloned().collect()
     }
@@ -136,6 +147,7 @@ impl Router {
     /// # Returns
     ///
     /// A new `Router` ready to match incoming requests
+    #[must_use]
     pub fn new(routes: Vec<RouteMeta>) -> Self {
         // Filter out routes that are not HTTP methods we care about
         let supported_methods = [
@@ -248,6 +260,7 @@ impl Router {
     ///     println!("User ID: {}", m.path_params["id"]);
     /// }
     /// ```
+    #[must_use]
     pub fn route(&self, method: Method, path: &str) -> Option<RouteMatch> {
         // RT1: Route match attempt
         debug!(
@@ -329,6 +342,7 @@ impl Router {
     /// let paths = router.get_all_path_patterns();
     /// metrics.pre_register_paths(&paths);
     /// ```
+    #[must_use]
     pub fn get_all_path_patterns(&self) -> Vec<String> {
         self.routes
             .iter()

@@ -67,7 +67,7 @@ pub fn compute_stack_size(route: &RouteMeta) -> usize {
 
     // Add 4 KiB for every 5 parameters
     if relevant_param_count > 0 {
-        let param_chunks = (relevant_param_count + 4) / 5; // ceiling division
+        let param_chunks = relevant_param_count.div_ceil(5);
         stack_size += param_chunks * STACK_PER_5_PARAMS;
     }
 

@@ -186,8 +186,8 @@ fn test_auth_middleware_missing_token() {
 fn test_auth_middleware_case_insensitive_header() {
     let auth = AuthMiddleware::new("Bearer valid-token".to_string());
 
-    // Note: Header names are stored as-is (lowercase in this case)
-    // The lookup is case-insensitive
+    // HTTP headers are case-insensitive per RFC 7230
+    // "Authorization" should match when looking for "authorization"
     let headers: HeaderVec = smallvec![(
         "Authorization".to_string(),
         "Bearer valid-token".to_string()
@@ -196,10 +196,8 @@ fn test_auth_middleware_case_insensitive_header() {
     let req = create_test_request(Method::GET, "/protected", headers);
     let result = auth.before(&req);
 
-    // Should still fail because the middleware expects lowercase
-    assert!(result.is_some());
-    let response = result.unwrap();
-    assert_eq!(response.status, 401);
+    // Should succeed (return None) because header lookup is case-insensitive per RFC 7230
+    assert!(result.is_none(), "Header lookup should be case-insensitive per RFC 7230");
 }
 
 #[test]
