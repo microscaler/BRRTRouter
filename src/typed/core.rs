@@ -1,6 +1,6 @@
 // typed.rs
 #[allow(unused_imports)]
-use crate::dispatcher::{Dispatcher, HandlerRequest, HandlerResponse};
+use crate::dispatcher::{Dispatcher, HandlerRequest, HandlerResponse, HeaderVec};
 use anyhow::Result;
 use http::Method;
 use may::sync::mpsc;
@@ -42,15 +42,13 @@ fn get_stack_size_with_overrides(handler_name: &str, stack_size_bytes: usize) ->
         })
         .or_else(|| {
             // Try global override
-            std::env::var("BRRTR_STACK_SIZE")
-                .ok()
-                .and_then(|s| {
-                    if let Some(hex) = s.strip_prefix("0x") {
-                        usize::from_str_radix(hex, 16).ok()
-                    } else {
-                        s.parse().ok()
-                    }
-                })
+            std::env::var("BRRTR_STACK_SIZE").ok().and_then(|s| {
+                if let Some(hex) = s.strip_prefix("0x") {
+                    usize::from_str_radix(hex, 16).ok()
+                } else {
+                    s.parse().ok()
+                }
+            })
         })
         .unwrap_or(stack_size_bytes);
 
@@ -92,7 +90,7 @@ pub trait Handler: Send + 'static {
 
 /// Trait for converting HandlerRequest to TypedHandlerRequest
 ///
-/// Implemented automatically for TypedHandlerRequest<T> where T can be converted from HandlerRequest.
+/// Implemented automatically for `TypedHandlerRequest<T>` where T can be converted from HandlerRequest.
 pub trait TypedHandlerFor<T>: Sized {
     /// Convert a generic HandlerRequest to a typed request
     ///
@@ -141,7 +139,7 @@ where
                 // These are cheap clones (sender clones or small strings) and are ok to clone.
                 let reply_tx_outer = req.reply_tx.clone();
                 let handler_name_outer = req.handler_name.clone();
-                let request_id = req.request_id;
+                let _request_id = req.request_id;
 
                 // COMPLEX PANIC HANDLING: Wrap entire request processing in catch_unwind
                 // This prevents a panicking handler from killing the entire coroutine
@@ -162,8 +160,10 @@ where
                         let method = req.method.clone();
                         let path = req.path.clone();
                         let handler_name = req.handler_name.clone();
-                        let path_params = req.path_params.clone();
-                        let query_params = req.query_params.clone();
+                        let path_params: HashMap<String, String> =
+                            req.path_params.iter().cloned().collect();
+                        let query_params: HashMap<String, String> =
+                            req.query_params.iter().cloned().collect();
 
                         // STEP 1: Type conversion - consume the HandlerRequest to produce handler data
                         // This intentionally consumes `req` (no req.clone()) to avoid heavy copies.
@@ -171,15 +171,10 @@ where
                             Ok(v) => v,
                             Err(err) => {
                                 // Validation failed - send 400 Bad Request
-                                let _ = reply_tx_inner.send(HandlerResponse {
-                                    status: 400,
-                                    headers: HashMap::new(),
-                                    body: serde_json::json!({
-                                        "error": "Invalid request data",
-                                        "message": err.to_string(),
-                                        "request_id": request_id.to_string(),
-                                    }),
-                                });
+                                let _ = reply_tx_inner.send(HandlerResponse::error(
+                                    400,
+                                    &format!("Invalid request data: {}", err),
+                                ));
                                 return; // Early return from closure
                             }
                         };
@@ -198,31 +193,24 @@ where
                         let result = handler.handle(typed_req);
 
                         // STEP 4: Serialize and send response
-                        let _ = reply_tx_inner.send(HandlerResponse {
-                            status: 200,
-                            headers: HashMap::new(),
-                            body: serde_json::to_value(result).unwrap_or_else(
-                                |e| serde_json::json!({
+                        let _ = reply_tx_inner.send(HandlerResponse::json(
+                            200,
+                            serde_json::to_value(result).unwrap_or_else(|e| {
+                                serde_json::json!({
                                     "error": "Failed to serialize response",
                                     "details": e.to_string(),
-                                    "request_id": request_id.to_string(),
-                                }),
-                            ),
-                        });
+                                })
+                            }),
+                        ));
                     }
                 }));
 
                 // PANIC RECOVERY: If handler panicked, send 500 error
                 if let Err(panic) = result {
-                    let _ = reply_tx_outer.send(HandlerResponse {
-                        status: 500,
-                        headers: HashMap::new(),
-                        body: serde_json::json!({
-                            "error": "Handler panicked",
-                            "details": format!("{:?}", panic),
-                            "request_id": request_id.to_string(),
-                        }),
-                    });
+                    let _ = reply_tx_outer.send(HandlerResponse::error(
+                        500,
+                        &format!("Handler panicked: {:?}", panic),
+                    ));
                     eprintln!("Handler '{handler_name_outer}' panicked: {panic:?}");
                 }
             }
@@ -338,8 +326,11 @@ where
                         let method = req.method.clone();
                         let path = req.path.clone();
                         let handler_name = req.handler_name.clone();
-                        let path_params = req.path_params.clone();
-                        let query_params = req.query_params.clone();
+                        // Convert SmallVec to HashMap for TypedHandlerRequest API
+                        let path_params: HashMap<String, String> =
+                            req.path_params.iter().cloned().collect();
+                        let query_params: HashMap<String, String> =
+                            req.query_params.iter().cloned().collect();
 
                         // STEP 1: Type conversion - consume the HandlerRequest to produce handler data
                         // This intentionally consumes `req` (no req.clone()) to avoid heavy copies.
@@ -347,15 +338,10 @@ where
                             Ok(v) => v,
                             Err(err) => {
                                 // Validation failed - send 400 Bad Request
-                                let _ = reply_tx_inner.send(HandlerResponse {
-                                    status: 400,
-                                    headers: HashMap::new(),
-                                    body: serde_json::json!({
-                                        "error": "Invalid request data",
-                                        "message": err.to_string(),
-                                        "request_id": request_id.to_string(),
-                                    }),
-                                });
+                                let _ = reply_tx_inner.send(HandlerResponse::error(
+                                    400,
+                                    &format!("Invalid request data: {}", err),
+                                ));
                                 return; // Early return from closure
                             }
                         };
@@ -376,14 +362,14 @@ where
                         // STEP 4: Serialize and send response
                         let _ = reply_tx_inner.send(HandlerResponse {
                             status: 200,
-                            headers: HashMap::new(),
-                            body: serde_json::to_value(result).unwrap_or_else(
-                                |e| serde_json::json!({
+                            headers: HeaderVec::new(),
+                            body: serde_json::to_value(result).unwrap_or_else(|e| {
+                                serde_json::json!({
                                     "error": "Failed to serialize response",
                                     "details": e.to_string(),
                                     "request_id": request_id.to_string(),
-                                }),
-                            ),
+                                })
+                            }),
                         });
                     }
                 }));
@@ -392,7 +378,7 @@ where
                 if let Err(panic) = result {
                     let _ = reply_tx_outer.send(HandlerResponse {
                         status: 500,
-                        headers: HashMap::new(),
+                        headers: HeaderVec::new(),
                         body: serde_json::json!({
                             "error": "Handler panicked",
                             "details": format!("{:?}", panic),
@@ -446,8 +432,9 @@ where
             method: req.method,
             path: req.path,
             handler_name: req.handler_name,
-            path_params: req.path_params,
-            query_params: req.query_params,
+            // Convert SmallVec to HashMap for API compatibility
+            path_params: req.path_params.iter().cloned().collect(),
+            query_params: req.query_params.iter().cloned().collect(),
             data,
         })
     }
@@ -480,19 +467,22 @@ impl Dispatcher {
         H: Handler + Send + 'static,
     {
         let name = name.to_string();
-        
+
         // Check if we're replacing an existing handler
         if let Some(old_sender) = self.handlers.remove(&name) {
             // Drop the old sender to close its channel and stop the old coroutine
             drop(old_sender);
-            eprintln!("Warning: Replacing existing typed handler '{}' - old coroutine will exit", name);
+            eprintln!(
+                "Warning: Replacing existing typed handler '{}' - old coroutine will exit",
+                name
+            );
         }
-        
+
         // Also clean up any existing worker pool for this handler to prevent resource leaks
         if let Some(old_pool) = self.worker_pools.remove(&name) {
             drop(old_pool);
         }
-        
+
         let tx = spawn_typed(handler);
         self.handlers.insert(name, tx);
     }
@@ -529,24 +519,26 @@ impl Dispatcher {
         name: &str,
         handler: H,
         stack_size_bytes: usize,
-    )
-    where
+    ) where
         H: Handler + Send + 'static,
     {
         let name = name.to_string();
-        
+
         // Check if we're replacing an existing handler
         if let Some(old_sender) = self.handlers.remove(&name) {
             // Drop the old sender to close its channel and stop the old coroutine
             drop(old_sender);
-            eprintln!("Warning: Replacing existing typed handler '{}' - old coroutine will exit", name);
+            eprintln!(
+                "Warning: Replacing existing typed handler '{}' - old coroutine will exit",
+                name
+            );
         }
-        
+
         // Also clean up any existing worker pool for this handler to prevent resource leaks
         if let Some(old_pool) = self.worker_pools.remove(&name) {
             drop(old_pool);
         }
-        
+
         // Use the internal function with handler name for per-handler env var support
         let tx = spawn_typed_with_stack_size_and_name(handler, stack_size_bytes, Some(&name));
         self.handlers.insert(name, tx);
@@ -575,49 +567,44 @@ impl Dispatcher {
         H: Handler + Send + 'static + Clone,
     {
         use crate::worker_pool::WorkerPoolConfig;
-        
+
         let config = WorkerPoolConfig::from_env();
-        
+
         // Create a closure that wraps the typed handler
         let handler_fn = move |req: HandlerRequest| {
             let handler = handler.clone();
             let reply_tx = req.reply_tx.clone();
             let request_id = req.request_id;
-            
+
             // Try to convert the request
             let data = match H::Request::try_from(req.clone()) {
                 Ok(v) => v,
                 Err(err) => {
-                    let _ = reply_tx.send(HandlerResponse {
-                        status: 400,
-                        headers: HashMap::new(),
-                        body: serde_json::json!({
-                            "error": "Invalid request data",
-                            "message": err.to_string(),
-                            "request_id": request_id.to_string(),
-                        }),
-                    });
+                    let _ = reply_tx.send(HandlerResponse::error(
+                        400,
+                        &format!("Invalid request data: {}", err),
+                    ));
                     return;
                 }
             };
-            
-            // Build typed request
+
+            // Build typed request (convert SmallVec to HashMap for API compatibility)
             let typed_req = TypedHandlerRequest {
                 method: req.method.clone(),
                 path: req.path.clone(),
                 handler_name: req.handler_name.clone(),
-                path_params: req.path_params.clone(),
-                query_params: req.query_params.clone(),
+                path_params: req.path_params.iter().cloned().collect(),
+                query_params: req.query_params.iter().cloned().collect(),
                 data,
             };
-            
+
             // Call the handler
             let result = handler.handle(typed_req);
-            
+
             // Send response
             let _ = reply_tx.send(HandlerResponse {
                 status: 200,
-                headers: HashMap::new(),
+                headers: HeaderVec::new(),
                 body: serde_json::to_value(result).unwrap_or_else(|e| {
                     serde_json::json!({
                         "error": "Failed to serialize response",
@@ -627,7 +614,7 @@ impl Dispatcher {
                 }),
             });
         };
-        
+
         self.register_handler_with_pool_config(name, handler_fn, config);
     }
 }
@@ -655,13 +642,13 @@ mod tests {
         let _guard = ENV_MUTEX.lock().unwrap();
         let handler = "per_handler_test";
         clean_stack_env_vars(handler);
-        
+
         // Set per-handler override
         std::env::set_var("BRRTR_STACK_SIZE__PER_HANDLER_TEST", "32768");
-        
+
         let stack_size = get_stack_size_with_overrides(handler, 16384);
         assert_eq!(stack_size, 32768);
-        
+
         clean_stack_env_vars(handler);
     }
 
@@ -670,13 +657,13 @@ mod tests {
         let _guard = ENV_MUTEX.lock().unwrap();
         let handler = "global_override_test";
         clean_stack_env_vars(handler);
-        
+
         // Set global override
         std::env::set_var("BRRTR_STACK_SIZE", "49152");
-        
+
         let stack_size = get_stack_size_with_overrides(handler, 16384);
         assert_eq!(stack_size, 49152);
-        
+
         clean_stack_env_vars(handler);
     }
 
@@ -685,15 +672,15 @@ mod tests {
         let _guard = ENV_MUTEX.lock().unwrap();
         let handler = "precedence_test";
         clean_stack_env_vars(handler);
-        
+
         // Set both overrides
         std::env::set_var("BRRTR_STACK_SIZE__PRECEDENCE_TEST", "32768");
         std::env::set_var("BRRTR_STACK_SIZE", "49152");
-        
+
         let stack_size = get_stack_size_with_overrides(handler, 16384);
         // Per-handler should take precedence
         assert_eq!(stack_size, 32768);
-        
+
         clean_stack_env_vars(handler);
     }
 
@@ -702,13 +689,13 @@ mod tests {
         let _guard = ENV_MUTEX.lock().unwrap();
         let handler = "hex_format_test";
         clean_stack_env_vars(handler);
-        
+
         // Test hex format
         std::env::set_var("BRRTR_STACK_SIZE__HEX_FORMAT_TEST", "0x10000");
-        
+
         let stack_size = get_stack_size_with_overrides(handler, 16384);
         assert_eq!(stack_size, 65536);
-        
+
         clean_stack_env_vars(handler);
     }
 
@@ -717,21 +704,21 @@ mod tests {
         let _guard = ENV_MUTEX.lock().unwrap();
         let handler = "clamping_test";
         clean_stack_env_vars(handler);
-        
+
         // Set custom min/max
         std::env::set_var("BRRTR_STACK_MIN_BYTES", "32768");
         std::env::set_var("BRRTR_STACK_MAX_BYTES", "65536");
-        
+
         // Test clamping to min
         std::env::set_var("BRRTR_STACK_SIZE__CLAMPING_TEST", "16384");
         let stack_size = get_stack_size_with_overrides(handler, 16384);
         assert_eq!(stack_size, 32768);
-        
+
         // Test clamping to max
         std::env::set_var("BRRTR_STACK_SIZE__CLAMPING_TEST", "131072");
         let stack_size = get_stack_size_with_overrides(handler, 131072);
         assert_eq!(stack_size, 65536);
-        
+
         clean_stack_env_vars(handler);
     }
 
@@ -740,11 +727,11 @@ mod tests {
         let _guard = ENV_MUTEX.lock().unwrap();
         let handler = "no_override_test";
         clean_stack_env_vars(handler);
-        
+
         // No overrides set, should return default
         let stack_size = get_stack_size_with_overrides(handler, 16384);
         assert_eq!(stack_size, 16384);
-        
+
         clean_stack_env_vars(handler);
     }
 }

@@ -1,0 +1,11 @@
+# Base kustomization for Pet Store application
+# Use overlays/local for development or overlays/ci for CI builds
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: brrtrouter-dev
+
+resources:
+  - deployment.yaml
+  - service.yaml
+

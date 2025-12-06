@@ -317,7 +317,7 @@ pub fn generate_project_with_options(
         modules_controllers.push(handler.clone());
 
         // Compute stack size for this handler
-        let stack_size_bytes = compute_stack_size(&route);
+        let stack_size_bytes = compute_stack_size(route);
 
         registry_entries.push(RegistryEntry {
             name: handler.clone(),

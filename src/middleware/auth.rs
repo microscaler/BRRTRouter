@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::time::Duration;
 
 use super::Middleware;
@@ -62,13 +61,9 @@ impl Middleware for AuthMiddleware {
     /// - `None` - Token is valid, proceed to handler
     /// - `Some(401 response)` - Token is invalid or missing
     fn before(&self, req: &HandlerRequest) -> Option<HandlerResponse> {
-        match req.headers.get("authorization") {
-            Some(h) if h == &self.token => None,
-            _ => Some(HandlerResponse {
-                status: 401,
-                headers: HashMap::new(),
-                body: serde_json::json!({ "error": "Unauthorized" }),
-            }),
+        match req.get_header("authorization") {
+            Some(h) if h == self.token => None,
+            _ => Some(HandlerResponse::error(401, "Unauthorized")),
         }
     }
 

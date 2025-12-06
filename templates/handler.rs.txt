@@ -51,13 +51,13 @@ impl TryFrom<HandlerRequest> for Request {
 
         {% for p in parameters %}
         {% if p.location == crate::spec::ParameterLocation::Path %}
-        if let Some(v) = req.path_params.get("{{ p.name }}") {
+        if let Some(v) = req.get_path_param("{{ p.name }}") {
         {% elif p.location == crate::spec::ParameterLocation::Query %}
-        if let Some(v) = req.query_params.get("{{ p.name }}") {
+        if let Some(v) = req.get_query_param("{{ p.name }}") {
         {% elif p.location == crate::spec::ParameterLocation::Header %}
-        if let Some(v) = req.headers.get("{{ p.name | lower }}") {
+        if let Some(v) = req.get_header("{{ p.name | lower }}") {
         {% else %}
-        if let Some(v) = req.cookies.get("{{ p.name }}") {
+        if let Some(v) = req.get_cookie("{{ p.name }}") {
         {% endif %}
             data_map.insert(
                 "{{ p.name }}".to_string(),

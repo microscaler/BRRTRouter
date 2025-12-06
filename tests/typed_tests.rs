@@ -1,13 +1,14 @@
 use anyhow::anyhow;
 use brrtrouter::typed::TypedHandlerFor;
 use brrtrouter::{
-    dispatcher::{HandlerRequest, HandlerResponse},
+    dispatcher::{HandlerRequest, HandlerResponse, HeaderVec},
+    router::ParamVec,
     typed::TypedHandlerRequest,
 };
 use http::Method;
 use may::sync::mpsc;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use smallvec::smallvec;
 use std::convert::TryFrom;
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -21,13 +22,11 @@ impl TryFrom<HandlerRequest> for Req {
 
     fn try_from(req: HandlerRequest) -> Result<Self, Self::Error> {
         let id = req
-            .path_params
-            .get("id")
+            .get_path_param("id")
             .ok_or_else(|| anyhow::anyhow!("missing id"))?
             .parse()?;
         let active = req
-            .query_params
-            .get("active")
+            .get_query_param("active")
             .map(|v| v.parse::<bool>())
             .transpose()?;
         Ok(Req {
@@ -40,10 +39,8 @@ impl TryFrom<HandlerRequest> for Req {
 #[test]
 fn test_from_handler_non_string_params() {
     let (tx, _rx) = mpsc::channel::<HandlerResponse>();
-    let mut path_params = HashMap::new();
-    path_params.insert("id".to_string(), "42".to_string());
-    let mut query_params = HashMap::new();
-    query_params.insert("active".to_string(), "true".to_string());
+    let path_params: ParamVec = smallvec![("id".to_string(), "42".to_string())];
+    let query_params: ParamVec = smallvec![("active".to_string(), "true".to_string())];
 
     let req = HandlerRequest {
         request_id: brrtrouter::ids::RequestId::new(),
@@ -52,8 +49,8 @@ fn test_from_handler_non_string_params() {
         handler_name: "test".to_string(),
         path_params: path_params.clone(),
         query_params: query_params.clone(),
-        headers: HashMap::new(),
-        cookies: HashMap::new(),
+        headers: HeaderVec::new(),
+        cookies: HeaderVec::new(),
         body: None,
         reply_tx: tx,
     };
@@ -74,14 +71,12 @@ impl TryFrom<HandlerRequest> for HeaderCookieReq {
 
     fn try_from(req: HandlerRequest) -> Result<Self, Self::Error> {
         let token = req
-            .headers
-            .get("x-token")
-            .cloned()
+            .get_header("x-token")
+            .map(|s| s.to_string())
             .ok_or_else(|| anyhow!("missing token"))?;
         let session = req
-            .cookies
-            .get("session")
-            .cloned()
+            .get_cookie("session")
+            .map(|s| s.to_string())
             .ok_or_else(|| anyhow!("missing session"))?;
         Ok(HeaderCookieReq { token, session })
     }
@@ -90,18 +85,16 @@ impl TryFrom<HandlerRequest> for HeaderCookieReq {
 #[test]
 fn test_header_cookie_params() {
     let (tx, _rx) = mpsc::channel::<HandlerResponse>();
-    let mut headers = HashMap::new();
-    headers.insert("x-token".to_string(), "secret".to_string());
-    let mut cookies = HashMap::new();
-    cookies.insert("session".to_string(), "abc123".to_string());
+    let headers: HeaderVec = smallvec![("x-token".to_string(), "secret".to_string())];
+    let cookies: HeaderVec = smallvec![("session".to_string(), "abc123".to_string())];
 
     let req = HandlerRequest {
         request_id: brrtrouter::ids::RequestId::new(),
         method: Method::GET,
         path: "/items".to_string(),
         handler_name: "test".to_string(),
-        path_params: HashMap::new(),
-        query_params: HashMap::new(),
+        path_params: ParamVec::new(),
+        query_params: ParamVec::new(),
         headers,
         cookies,
         body: None,
@@ -126,13 +119,11 @@ impl TryFrom<HandlerRequest> for SumReq {
     type Error = anyhow::Error;
     fn try_from(req: HandlerRequest) -> Result<Self, Self::Error> {
         let a = req
-            .query_params
-            .get("a")
+            .get_query_param("a")
             .ok_or_else(|| anyhow!("missing a"))?
             .parse()?;
         let b = req
-            .query_params
-            .get("b")
+            .get_query_param("b")
             .ok_or_else(|| anyhow!("missing b"))?
             .parse()?;
         Ok(SumReq { a, b })
@@ -159,18 +150,19 @@ impl brrtrouter::typed::Handler for SumHandler {
 fn test_spawn_typed_success_and_error() {
     let tx = unsafe { brrtrouter::typed::spawn_typed(SumHandler) };
     let (reply_tx, reply_rx) = mpsc::channel();
-    let mut q = HashMap::new();
-    q.insert("a".to_string(), "2".to_string());
-    q.insert("b".to_string(), "3".to_string());
+    let q: ParamVec = smallvec![
+        ("a".to_string(), "2".to_string()),
+        ("b".to_string(), "3".to_string())
+    ];
     tx.send(HandlerRequest {
         request_id: brrtrouter::ids::RequestId::new(),
         method: Method::GET,
         path: "/sum".into(),
         handler_name: "sum".into(),
-        path_params: HashMap::new(),
+        path_params: ParamVec::new(),
         query_params: q.clone(),
-        headers: HashMap::new(),
-        cookies: HashMap::new(),
+        headers: HeaderVec::new(),
+        cookies: HeaderVec::new(),
         body: None,
         reply_tx,
     })
@@ -180,17 +172,16 @@ fn test_spawn_typed_success_and_error() {
     assert_eq!(resp.body["total"], 5);
 
     let (reply_tx, reply_rx) = mpsc::channel();
-    let mut bad_q = HashMap::new();
-    bad_q.insert("a".to_string(), "2".to_string());
+    let bad_q: ParamVec = smallvec![("a".to_string(), "2".to_string())];
     tx.send(HandlerRequest {
         request_id: brrtrouter::ids::RequestId::new(),
         method: Method::GET,
         path: "/sum".into(),
         handler_name: "sum".into(),
-        path_params: HashMap::new(),
+        path_params: ParamVec::new(),
         query_params: bad_q,
-        headers: HashMap::new(),
-        cookies: HashMap::new(),
+        headers: HeaderVec::new(),
+        cookies: HeaderVec::new(),
         body: None,
         reply_tx,
     })

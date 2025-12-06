@@ -330,7 +330,7 @@ impl Middleware for MemoryMiddleware {
         // aggregate level.
 
         // Periodic logging (every 100 requests)
-        if self.measurements.load(Ordering::Relaxed) % 100 == 0 {
+        if self.measurements.load(Ordering::Relaxed).is_multiple_of(100) {
             self.log_stats();
         }
     }

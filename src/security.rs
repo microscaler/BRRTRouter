@@ -32,15 +32,14 @@
 //! ```rust
 //! use brrtrouter::security::{SecurityProvider, SecurityRequest};
 //! use brrtrouter::spec::SecurityScheme;
-//! use std::collections::HashMap;
 //!
 //! // Simple static API key validation
 //! struct ApiKeyProvider { key: String }
 //!
 //! impl SecurityProvider for ApiKeyProvider {
 //!     fn validate(&self, scheme: &SecurityScheme, scopes: &[String], req: &SecurityRequest) -> bool {
-//!         req.headers.get("X-API-Key")
-//!             .map(|k| k == &self.key)
+//!         req.get_header("x-api-key")
+//!             .map(|k| k == self.key)
 //!             .unwrap_or(false)
 //!     }
 //! }
@@ -89,6 +88,8 @@
 //! service.register_security_provider("bearerAuth", Arc::new(jwt_provider));
 //! ```
 
+use crate::dispatcher::HeaderVec;
+use crate::router::ParamVec;
 use crate::spec::SecurityScheme;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -97,13 +98,46 @@ use std::time::{Duration, Instant};
 ///
 /// Contains extracted credentials from various sources (headers, query, cookies)
 /// that security providers can use to validate the request.
+///
+/// # JSF Compliance
+///
+/// Uses SmallVec (HeaderVec/ParamVec) references to avoid copying request data.
 pub struct SecurityRequest<'a> {
-    /// HTTP headers from the request
-    pub headers: &'a HashMap<String, String>,
-    /// Query parameters from the request URL
-    pub query: &'a HashMap<String, String>,
-    /// Cookies from the request
-    pub cookies: &'a HashMap<String, String>,
+    /// HTTP headers from the request (SmallVec for stack allocation)
+    pub headers: &'a HeaderVec,
+    /// Query parameters from the request URL (SmallVec for stack allocation)
+    pub query: &'a ParamVec,
+    /// Cookies from the request (SmallVec for stack allocation)
+    pub cookies: &'a HeaderVec,
+}
+
+impl<'a> SecurityRequest<'a> {
+    /// Get a header by name (case-insensitive)
+    #[inline]
+    pub fn get_header(&self, name: &str) -> Option<&str> {
+        self.headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case(name))
+            .map(|(_, v)| v.as_str())
+    }
+
+    /// Get a query parameter by name
+    #[inline]
+    pub fn get_query(&self, name: &str) -> Option<&str> {
+        self.query
+            .iter()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.as_str())
+    }
+
+    /// Get a cookie by name
+    #[inline]
+    pub fn get_cookie(&self, name: &str) -> Option<&str> {
+        self.cookies
+            .iter()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.as_str())
+    }
 }
 
 /// Trait for implementing security validation providers.
@@ -163,12 +197,11 @@ impl BearerJwtProvider {
 
     fn extract_token<'a>(&self, req: &'a SecurityRequest) -> Option<&'a str> {
         if let Some(name) = &self.cookie_name {
-            if let Some(t) = req.cookies.get(name) {
+            if let Some(t) = req.get_cookie(name) {
                 return Some(t);
             }
         }
-        req.headers
-            .get("authorization")
+        req.get_header("authorization")
             .and_then(|h| h.strip_prefix("Bearer "))
     }
 
@@ -286,12 +319,11 @@ impl OAuth2Provider {
 
     fn extract_token<'a>(&self, req: &'a SecurityRequest) -> Option<&'a str> {
         if let Some(name) = &self.cookie_name {
-            if let Some(t) = req.cookies.get(name) {
+            if let Some(t) = req.get_cookie(name) {
                 return Some(t);
             }
         }
-        req.headers
-            .get("authorization")
+        req.get_header("authorization")
             .and_then(|h| h.strip_prefix("Bearer "))
     }
 }
@@ -431,8 +463,7 @@ impl JwksBearerProvider {
     }
 
     fn extract_token<'a>(&self, req: &'a SecurityRequest) -> Option<&'a str> {
-        req.headers
-            .get("authorization")
+        req.get_header("authorization")
             .and_then(|h| h.strip_prefix("Bearer "))
     }
 
@@ -720,14 +751,10 @@ impl RemoteApiKeyProvider {
 
     fn extract_key<'a>(&self, req: &'a SecurityRequest, header_name: &str) -> Option<&'a str> {
         // Prefer named header, also accept Authorization: Bearer <key>
-        req.headers
-            .get(header_name)
-            .map(|s| s.as_str())
-            .or_else(|| {
-                req.headers
-                    .get("authorization")
-                    .and_then(|h| h.strip_prefix("Bearer "))
-            })
+        req.get_header(header_name).or_else(|| {
+            req.get_header("authorization")
+                .and_then(|h| h.strip_prefix("Bearer "))
+        })
     }
 }
 

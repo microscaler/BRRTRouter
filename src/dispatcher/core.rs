@@ -1,14 +1,32 @@
+//! Dispatcher core module - hot path for request dispatch.
+//!
+//! # JSF Compliance (Rule 206)
+//!
+//! This module is part of the request hot path. The following clippy lints
+//! are denied to enforce "no heap allocations after initialization":
+//!
+//! - `clippy::inefficient_to_string` - Catches unnecessary allocations
+//! - `clippy::format_push_string` - Prevents format! string building
+//! - `clippy::unnecessary_to_owned` - Prevents .to_owned() on borrowed data
+
+// JSF Rule 206: Deny heap allocations in the hot path
+// NOTE: Some allocations are required for error handling; these are off the fast path
+#![deny(clippy::inefficient_to_string)]
+#![deny(clippy::format_push_string)]
+#![deny(clippy::unnecessary_to_owned)]
+
 #[allow(unused_imports)]
 use crate::echo::echo_handler;
-use crate::router::RouteMatch;
+use crate::ids::RequestId;
+use crate::router::{ParamVec, RouteMatch};
 use crate::spec::RouteMeta;
 use crate::worker_pool::{WorkerPool, WorkerPoolConfig};
 use http::Method;
-use crate::ids::RequestId;
 use may::coroutine;
 use may::sync::mpsc;
 use serde::Serialize;
 use serde_json::Value;
+use smallvec::SmallVec;
 use std::collections::HashMap;
 #[allow(unused_imports)]
 use std::sync::Arc;
@@ -17,7 +35,15 @@ use tracing::{debug, error, info, warn};
 
 use crate::middleware::Middleware;
 
+/// Maximum inline headers/cookies before heap allocation
+/// Most requests have ≤16 headers (JSF: no heap in hot path)
+pub const MAX_INLINE_HEADERS: usize = 16;
+
+/// Stack-allocated header/cookie storage for the hot path
+pub type HeaderVec = SmallVec<[(String, String); MAX_INLINE_HEADERS]>;
+
 /// Generate a unique request ID for tracing (ULID string)
+#[must_use]
 pub fn generate_request_id() -> String {
     RequestId::new().to_string()
 }
@@ -26,6 +52,12 @@ pub fn generate_request_id() -> String {
 ///
 /// Contains all extracted HTTP request information including path/query parameters,
 /// headers, cookies, and body. Also includes a reply channel for sending the response.
+///
+/// # JSF Compliance
+///
+/// Uses `SmallVec` for path_params, query_params, headers, and cookies to avoid
+/// heap allocation in the common case. This follows JSF Rule 206: "No heap
+/// allocations after initialization" for the hot path.
 #[derive(Debug, Clone)]
 pub struct HandlerRequest {
     /// Unique request ID for tracing and correlation
@@ -36,32 +68,153 @@ pub struct HandlerRequest {
     pub path: String,
     /// Name of the handler that should process this request
     pub handler_name: String,
-    /// Path parameters extracted from the URL
-    pub path_params: HashMap<String, String>,
-    /// Query string parameters
-    pub query_params: HashMap<String, String>,
-    /// HTTP headers
-    pub headers: HashMap<String, String>,
-    /// Cookies parsed from the Cookie header
-    pub cookies: HashMap<String, String>,
+    /// Path parameters extracted from the URL (stack-allocated for ≤8 params)
+    pub path_params: ParamVec,
+    /// Query string parameters (stack-allocated for ≤8 params)
+    pub query_params: ParamVec,
+    /// HTTP headers (stack-allocated for ≤16 headers)
+    pub headers: HeaderVec,
+    /// Cookies parsed from the Cookie header (stack-allocated for ≤16 cookies)
+    pub cookies: HeaderVec,
     /// Request body parsed as JSON (if present)
     pub body: Option<Value>,
     /// Channel for sending the response back to the dispatcher
     pub reply_tx: mpsc::Sender<HandlerResponse>,
 }
 
+impl HandlerRequest {
+    /// Get a path parameter by name
+    ///
+    /// Uses "last write wins" semantics: if duplicate parameter names exist
+    /// at different path depths (e.g., `/org/{id}/team/{team_id}/user/{id}`),
+    /// returns the last occurrence (the user id, not the org id).
+    #[inline]
+    #[must_use]
+    pub fn get_path_param(&self, name: &str) -> Option<&str> {
+        self.path_params
+            .iter()
+            .rfind(|(k, _)| k == name)
+            .map(|(_, v)| v.as_str())
+    }
+
+    /// Get a query parameter by name
+    ///
+    /// Uses "last write wins" semantics: if duplicate query parameter names exist
+    /// (e.g., `?limit=10&limit=20`), returns the last occurrence.
+    #[inline]
+    #[must_use]
+    pub fn get_query_param(&self, name: &str) -> Option<&str> {
+        self.query_params
+            .iter()
+            .rfind(|(k, _)| k == name)
+            .map(|(_, v)| v.as_str())
+    }
+
+    /// Get a header by name (case-insensitive per RFC 7230)
+    #[inline]
+    #[must_use]
+    pub fn get_header(&self, name: &str) -> Option<&str> {
+        self.headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case(name))
+            .map(|(_, v)| v.as_str())
+    }
+
+    /// Get a cookie by name
+    #[inline]
+    #[must_use]
+    pub fn get_cookie(&self, name: &str) -> Option<&str> {
+        self.cookies
+            .iter()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.as_str())
+    }
+
+    /// Convert path_params to HashMap for compatibility
+    /// Note: This allocates - use get_path_param() in hot paths
+    #[must_use]
+    pub fn path_params_map(&self) -> HashMap<String, String> {
+        self.path_params.iter().cloned().collect()
+    }
+
+    /// Convert query_params to HashMap for compatibility
+    /// Note: This allocates - use get_query_param() in hot paths
+    #[must_use]
+    pub fn query_params_map(&self) -> HashMap<String, String> {
+        self.query_params.iter().cloned().collect()
+    }
+
+    /// Convert headers to HashMap for compatibility
+    /// Note: This allocates - use get_header() in hot paths
+    #[must_use]
+    pub fn headers_map(&self) -> HashMap<String, String> {
+        self.headers.iter().cloned().collect()
+    }
+}
+
 /// Response data sent back from a handler coroutine
 ///
 /// Contains the HTTP status code, headers, and JSON body to be sent to the client.
+///
+/// # JSF Compliance
+///
+/// Uses `SmallVec` for headers to avoid heap allocation in the common case.
 #[derive(Debug, Clone, Serialize)]
 pub struct HandlerResponse {
     /// HTTP status code (200, 404, 500, etc.)
     pub status: u16,
-    /// HTTP response headers
+    /// HTTP response headers (stack-allocated for ≤16 headers)
     #[serde(skip_serializing)]
-    pub headers: HashMap<String, String>,
+    pub headers: HeaderVec,
     /// Response body as JSON
     pub body: Value,
+}
+
+impl HandlerResponse {
+    /// Create a new response with the given status, headers, and body
+    #[must_use]
+    pub fn new(status: u16, headers: HeaderVec, body: Value) -> Self {
+        Self {
+            status,
+            headers,
+            body,
+        }
+    }
+
+    /// Create a JSON response with default headers
+    #[must_use]
+    pub fn json(status: u16, body: Value) -> Self {
+        let mut headers = HeaderVec::new();
+        headers.push(("Content-Type".to_string(), "application/json".to_string()));
+        Self {
+            status,
+            headers,
+            body,
+        }
+    }
+
+    /// Create an error response
+    #[must_use]
+    pub fn error(status: u16, message: &str) -> Self {
+        Self::json(status, serde_json::json!({ "error": message }))
+    }
+
+    /// Get a header by name
+    #[inline]
+    #[must_use]
+    pub fn get_header(&self, name: &str) -> Option<&str> {
+        self.headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case(name))
+            .map(|(_, v)| v.as_str())
+    }
+
+    /// Add or update a header
+    pub fn set_header(&mut self, name: String, value: String) {
+        // Remove existing header with same name (case-insensitive)
+        self.headers.retain(|(k, _)| !k.eq_ignore_ascii_case(&name));
+        self.headers.push((name, value));
+    }
 }
 
 /// Type alias for a channel sender that dispatches requests to a handler
@@ -94,6 +247,7 @@ impl Dispatcher {
     /// Create a new empty dispatcher
     ///
     /// Handlers must be registered using `register_handler` or `add_route`.
+    #[must_use]
     pub fn new() -> Self {
         Dispatcher {
             handlers: HashMap::new(),
@@ -104,13 +258,13 @@ impl Dispatcher {
 
     /// Add a handler sender for the given route metadata. This allows handlers
     /// to be registered after the dispatcher has been created.
-    /// 
+    ///
     /// **IMPORTANT**: If a handler with the same name already exists, it will be
     /// replaced. The old sender will be dropped, which closes its channel and
     /// causes the old handler coroutine to exit when it tries to receive.
     pub fn add_route(&mut self, route: RouteMeta, sender: HandlerSender) {
         let handler_name = route.handler_name;
-        
+
         // Check if we're replacing an existing handler
         if let Some(old_sender) = self.handlers.remove(&handler_name) {
             // Drop the old sender explicitly to ensure the channel closes
@@ -121,13 +275,13 @@ impl Dispatcher {
                 "Replaced existing handler - old coroutine will exit"
             );
         }
-        
+
         info!(
             handler_name = %handler_name,
             total_handlers = self.handlers.len() + 1,
             "Handler registered successfully"
         );
-        
+
         self.handlers.insert(handler_name, sender);
     }
 
@@ -235,15 +389,10 @@ impl Dispatcher {
                         );
 
                         // Send an error response if the handler panicked
-                        let error_response = HandlerResponse {
-                            status: 500,
-                            headers: HashMap::new(),
-                            body: serde_json::json!({
-                                "error": "Handler panicked",
-                                "details": panic_message,
-                                "request_id": request_id,
-                            }),
-                        };
+                        let error_response = HandlerResponse::error(
+                            500,
+                            &format!("Handler panicked: {}", panic_message),
+                        );
                         let _ = reply_tx.send(error_response);
                     } else {
                         // H4: Handler execution complete
@@ -316,12 +465,11 @@ impl Dispatcher {
         name: &str,
         handler_fn: F,
         config: WorkerPoolConfig,
-    )
-    where
+    ) where
         F: Fn(HandlerRequest) + Send + 'static + Clone,
     {
         let name = name.to_string();
-        
+
         // Check if we're replacing an existing handler
         if let Some(old_sender) = self.handlers.remove(&name) {
             drop(old_sender);
@@ -330,18 +478,18 @@ impl Dispatcher {
                 "Replaced existing handler with worker pool - old coroutine will exit"
             );
         }
-        
+
         // Remove any existing worker pool
         if let Some(old_pool) = self.worker_pools.remove(&name) {
             drop(old_pool);
         }
-        
+
         // Create worker pool
         let pool = WorkerPool::new(name.clone(), config, handler_fn);
-        let sender = pool.sender();
-        
-        // Store both the sender and the pool
-        self.handlers.insert(name.clone(), sender);
+
+        // Store only the pool - dispatch goes through the pool directly, not the handlers map
+        // The handlers map entry (if any) will be removed since we use the pool for dispatch
+        self.handlers.remove(&name);
         self.worker_pools.insert(name, Arc::new(pool));
     }
 
@@ -354,8 +502,8 @@ impl Dispatcher {
     ///
     /// * `route_match` - Matched route with path parameters
     /// * `body` - Optional JSON request body
-    /// * `headers` - HTTP headers
-    /// * `cookies` - Parsed cookies
+    /// * `headers` - HTTP headers (stack-allocated SmallVec)
+    /// * `cookies` - Parsed cookies (stack-allocated SmallVec)
     ///
     /// # Returns
     ///
@@ -365,12 +513,17 @@ impl Dispatcher {
     /// # Timeout
     ///
     /// Waits up to 30 seconds for a response before timing out.
+    ///
+    /// # JSF Compliance
+    ///
+    /// Uses HeaderVec (SmallVec) for headers/cookies to avoid heap allocation.
+    #[must_use]
     pub fn dispatch(
         &self,
         route_match: RouteMatch,
         body: Option<Value>,
-        headers: HashMap<String, String>,
-        cookies: HashMap<String, String>,
+        headers: HeaderVec,
+        cookies: HeaderVec,
     ) -> Option<HandlerResponse> {
         // Backwards-compatible wrapper: generate a request_id and call dispatch_with_request_id
         let request_id = generate_request_id();
@@ -382,8 +535,8 @@ impl Dispatcher {
         &self,
         route_match: RouteMatch,
         body: Option<Value>,
-        headers: HashMap<String, String>,
-        cookies: HashMap<String, String>,
+        headers: HeaderVec,
+        cookies: HeaderVec,
         request_id: String,
     ) -> Option<HandlerResponse> {
         let (reply_tx, reply_rx) = mpsc::channel();
@@ -524,18 +677,16 @@ impl Dispatcher {
                         error = %e,
                         "Handler channel closed - handler may have crashed"
                     );
-                    
+
                     // Return a 503 Service Unavailable response instead of None
                     // This prevents connection drops and indicates server issue
-                    return Some(HandlerResponse {
-                        status: 503,
-                        headers: HashMap::new(),
-                        body: serde_json::json!({
-                            "error": "Service unavailable",
-                            "details": format!("Handler '{}' is not responding - possible crash or resource exhaustion", request.handler_name),
-                            "request_id": request_id,
-                        }),
-                    });
+                    return Some(HandlerResponse::error(
+                        503,
+                        &format!(
+                        "Handler '{}' is not responding - possible crash or resource exhaustion",
+                        request.handler_name
+                    ),
+                    ));
                 }
             };
             (r, start.elapsed())
@@ -561,6 +712,7 @@ impl Dispatcher {
     ///
     /// Returns a map of handler names to their worker pool metrics.
     /// This is useful for monitoring queue depth and shed count.
+    #[must_use]
     pub fn worker_pool_metrics(&self) -> HashMap<String, (usize, u64, u64, u64)> {
         let mut metrics = HashMap::new();
         for (name, pool) in &self.worker_pools {

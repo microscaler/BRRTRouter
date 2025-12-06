@@ -21,7 +21,7 @@ pub enum ParameterLocation {
 /// Serialization style for parameters as defined by OpenAPI
 ///
 /// Determines how arrays and objects are serialized in different parameter locations.
-/// See: https://spec.openapis.org/oas/v3.1.0#style-values
+/// See: <https://spec.openapis.org/oas/v3.1.0#style-values>
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParameterStyle {
     /// Path-style parameters (e.g., `;color=blue;color=green`)

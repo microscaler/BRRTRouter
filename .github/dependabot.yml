@@ -36,6 +36,9 @@ updates:
       # May uses our patched generator - updates could break compatibility
       - dependency-name: "may"
         update-types: ["version-update:semver-major"]
+      # Our fork with Rust 1.90+ thread-local fix
+      - dependency-name: "http"
+        update-types: ["version-update:semver-major", "version-update:semver-minor", "version-update:semver-patch"]
 
   # GitHub Actions
   - package-ecosystem: "github-actions"

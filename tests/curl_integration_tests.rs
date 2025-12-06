@@ -62,7 +62,6 @@ fn run_http(url: &str) -> (bool, String, String) {
 
 #[test]
 fn curl_health_works() {
-
     let url = format!("{}/health", curl_harness::base_url());
     let (ok, _body, headers) = run_http(&url);
     assert!(ok, "GET /health failed: headers=\n{}", headers);
@@ -70,7 +69,6 @@ fn curl_health_works() {
 
 #[test]
 fn curl_openapi_yaml_served() {
-
     let url = format!("{}/openapi.yaml", curl_harness::base_url());
     let (ok, body, headers) = run_http(&url);
     assert!(ok, "GET /openapi.yaml failed: headers=\n{}", headers);
@@ -79,7 +77,6 @@ fn curl_openapi_yaml_served() {
 
 #[test]
 fn curl_docs_html_served() {
-
     let url = format!("{}/docs", curl_harness::base_url());
     let (ok, body, headers) = run_http(&url);
     assert!(ok, "GET /docs failed: headers=\n{}", headers);
@@ -88,7 +85,6 @@ fn curl_docs_html_served() {
 
 #[test]
 fn curl_metrics_exposes_prometheus() {
-
     // Hit a routed endpoint once so counters increment
     let _ = run_http(&format!("{}/pets", curl_harness::base_url()));
     let opts = HttpOptions {
@@ -107,7 +103,6 @@ fn curl_metrics_exposes_prometheus() {
 
 #[test]
 fn curl_auth_api_key_unauthorized_then_authorized() {
-
     // Without API key should be 401
     let url = format!("{}/pets", curl_harness::base_url());
     let (ok_no_key, _body_no_key, headers_no_key) = run_http(&url);
@@ -133,7 +128,6 @@ fn curl_auth_api_key_unauthorized_then_authorized() {
 
 #[test]
 fn curl_static_index_html_served() {
-
     // The container ships a static index. This could be either:
     // 1. Simple "It works!" HTML (default static_site/index.html)
     // 2. SolidJS Pet Store Dashboard (if sample-ui has been built)

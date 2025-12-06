@@ -18,7 +18,7 @@
 //! - `BRRTR_BACKPRESSURE_TIMEOUT_MS`: Timeout setting (not used, kept for compatibility)
 
 use crate::dispatcher::{HandlerRequest, HandlerResponse};
-use may::sync::mpsc;
+use may::sync::mpmc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use tracing::{debug, error, info};
@@ -34,7 +34,7 @@ pub enum BackpressureMode {
 
 impl BackpressureMode {
     /// Parse backpressure mode from string
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "block" => Some(Self::Block),
             "shed" => Some(Self::Shed),
@@ -79,7 +79,7 @@ impl WorkerPoolConfig {
 
         let backpressure_mode = std::env::var("BRRTR_BACKPRESSURE_MODE")
             .ok()
-            .and_then(|s| BackpressureMode::from_str(&s))
+            .and_then(|s| BackpressureMode::parse(&s))
             .unwrap_or_default();
 
         let backpressure_timeout_ms = std::env::var("BRRTR_BACKPRESSURE_TIMEOUT_MS")
@@ -209,8 +209,8 @@ impl Default for WorkerPoolMetrics {
 pub struct WorkerPool {
     /// Configuration for the pool
     config: WorkerPoolConfig,
-    /// Sender for dispatching requests to workers
-    sender: mpsc::Sender<HandlerRequest>,
+    /// Sender for dispatching requests to workers (MPMC for safe multi-worker access)
+    sender: mpmc::Sender<HandlerRequest>,
     /// Metrics for monitoring
     metrics: Arc<WorkerPoolMetrics>,
     /// Handler name for logging
@@ -234,10 +234,13 @@ impl WorkerPool {
     where
         F: Fn(HandlerRequest) + Send + 'static + Clone,
     {
-        let (tx, rx) = mpsc::channel::<HandlerRequest>();
+        // Use MPMC channel - multiple workers can safely receive from the same channel
+        // This is critical: MPSC receivers are NOT safe to share via Arc!
+        let (tx, rx) = mpmc::channel::<HandlerRequest>();
         let metrics = Arc::new(WorkerPoolMetrics::new());
-        
+
         // Create a shared receiver wrapped in Arc for all workers to share
+        // MPMC receivers ARE designed to be shared across multiple consumers
         let rx = Arc::new(rx);
 
         info!(
@@ -268,42 +271,37 @@ impl WorkerPool {
                     // Process requests until channel closes
                     // Note: All workers share the same receiver, so they will
                     // automatically load balance across incoming requests
-                    loop {
-                        match rx_clone.recv() {
-                            Ok(req) => {
-                                let request_id = req.request_id;
-                                let handler_name = req.handler_name.clone();
+                    while let Ok(req) = rx_clone.recv() {
+                        let request_id = req.request_id;
+                        let handler_name = req.handler_name.clone();
 
-                                debug!(
-                                    request_id = %request_id,
-                                    handler_name = %handler_name,
-                                    worker_id = worker_id,
-                                    "Worker processing request"
-                                );
+                        debug!(
+                            request_id = %request_id,
+                            handler_name = %handler_name,
+                            worker_id = worker_id,
+                            "Worker processing request"
+                        );
 
-                                // Call the handler function with panic recovery
-                                if let Err(panic) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                                    handler_fn(req);
-                                })) {
-                                    // Handler panicked - send 500 error response
-                                    error!(
-                                        request_id = %request_id,
-                                        handler_name = %handler_name,
-                                        worker_id = worker_id,
-                                        panic_message = ?panic,
-                                        "Handler panicked - CRITICAL"
-                                    );
-                                }
-
-                                // Record completion
-                                metrics_clone.record_completion();
-                            }
-                            Err(_) => {
-                                // Channel closed, exit worker
-                                break;
-                            }
+                        // Call the handler function with panic recovery
+                        if let Err(panic) =
+                            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                handler_fn(req);
+                            }))
+                        {
+                            // Handler panicked - send 500 error response
+                            error!(
+                                request_id = %request_id,
+                                handler_name = %handler_name,
+                                worker_id = worker_id,
+                                panic_message = ?panic,
+                                "Handler panicked - CRITICAL"
+                            );
                         }
+
+                        // Record completion
+                        metrics_clone.record_completion();
                     }
+                    // Channel closed, worker exits
 
                     debug!(
                         handler_name = %handler_name_clone,
@@ -355,11 +353,11 @@ impl WorkerPool {
     /// Dispatch to the unbounded channel (block mode - no actual blocking)
     fn dispatch_with_blocking(&self, req: HandlerRequest) -> Result<(), HandlerResponse> {
         let request_id = req.request_id;
-        
+
         // Simply send to the unbounded channel
         // Note: The channel is unbounded, so this will always succeed unless disconnected
         self.metrics.record_dispatch();
-        
+
         if let Err(e) = self.sender.send(req) {
             // Channel disconnected - workers are gone
             error!(
@@ -368,30 +366,24 @@ impl WorkerPool {
                 error = %e,
                 "Worker pool channel disconnected"
             );
-            
-            return Err(HandlerResponse {
-                status: 503,
-                headers: std::collections::HashMap::new(),
-                body: serde_json::json!({
-                    "error": "Service Unavailable",
-                    "details": "Handler workers are not responding",
-                    "request_id": request_id.to_string(),
-                    "handler_name": self.handler_name,
-                }),
-            });
+
+            return Err(HandlerResponse::error(
+                503,
+                "Handler workers are not responding",
+            ));
         }
-        
+
         Ok(())
     }
 
     /// Dispatch to the unbounded channel (shed mode - no actual shedding)
     fn dispatch_with_shedding(&self, req: HandlerRequest) -> Result<(), HandlerResponse> {
         let request_id = req.request_id;
-        
+
         // Simply send to the unbounded channel
         // Note: The channel is unbounded, so this will always succeed unless disconnected
         self.metrics.record_dispatch();
-        
+
         if let Err(e) = self.sender.send(req) {
             // Channel disconnected - workers are gone
             error!(
@@ -400,24 +392,18 @@ impl WorkerPool {
                 error = %e,
                 "Worker pool channel disconnected"
             );
-            
-            return Err(HandlerResponse {
-                status: 503,
-                headers: std::collections::HashMap::new(),
-                body: serde_json::json!({
-                    "error": "Service Unavailable",
-                    "details": "Handler workers are not responding",
-                    "request_id": request_id.to_string(),
-                    "handler_name": self.handler_name,
-                }),
-            });
+
+            return Err(HandlerResponse::error(
+                503,
+                "Handler workers are not responding",
+            ));
         }
-        
+
         Ok(())
     }
 
     /// Get the sender for this worker pool
-    pub fn sender(&self) -> mpsc::Sender<HandlerRequest> {
+    pub fn sender(&self) -> mpmc::Sender<HandlerRequest> {
         self.sender.clone()
     }
 
@@ -438,13 +424,31 @@ mod tests {
 
     #[test]
     fn test_backpressure_mode_from_str() {
-        assert_eq!(BackpressureMode::from_str("block"), Some(BackpressureMode::Block));
-        assert_eq!(BackpressureMode::from_str("Block"), Some(BackpressureMode::Block));
-        assert_eq!(BackpressureMode::from_str("BLOCK"), Some(BackpressureMode::Block));
-        assert_eq!(BackpressureMode::from_str("shed"), Some(BackpressureMode::Shed));
-        assert_eq!(BackpressureMode::from_str("Shed"), Some(BackpressureMode::Shed));
-        assert_eq!(BackpressureMode::from_str("SHED"), Some(BackpressureMode::Shed));
-        assert_eq!(BackpressureMode::from_str("invalid"), None);
+        assert_eq!(
+            BackpressureMode::parse("block"),
+            Some(BackpressureMode::Block)
+        );
+        assert_eq!(
+            BackpressureMode::parse("Block"),
+            Some(BackpressureMode::Block)
+        );
+        assert_eq!(
+            BackpressureMode::parse("BLOCK"),
+            Some(BackpressureMode::Block)
+        );
+        assert_eq!(
+            BackpressureMode::parse("shed"),
+            Some(BackpressureMode::Shed)
+        );
+        assert_eq!(
+            BackpressureMode::parse("Shed"),
+            Some(BackpressureMode::Shed)
+        );
+        assert_eq!(
+            BackpressureMode::parse("SHED"),
+            Some(BackpressureMode::Shed)
+        );
+        assert_eq!(BackpressureMode::parse("invalid"), None);
     }
 
     #[test]
@@ -460,20 +464,20 @@ mod tests {
     #[test]
     fn test_worker_pool_metrics() {
         let metrics = WorkerPoolMetrics::new();
-        
+
         assert_eq!(metrics.get_shed_count(), 0);
         assert_eq!(metrics.get_queue_depth(), 0);
         assert_eq!(metrics.get_dispatched_count(), 0);
         assert_eq!(metrics.get_completed_count(), 0);
-        
+
         metrics.record_dispatch();
         assert_eq!(metrics.get_dispatched_count(), 1);
         assert_eq!(metrics.get_queue_depth(), 1);
-        
+
         metrics.record_completion();
         assert_eq!(metrics.get_completed_count(), 1);
         assert_eq!(metrics.get_queue_depth(), 0);
-        
+
         metrics.record_shed();
         assert_eq!(metrics.get_shed_count(), 1);
     }

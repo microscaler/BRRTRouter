@@ -14,7 +14,9 @@ fn test_tracing_middleware_emits_spans() {
     let (routes, _slug) = load_spec("examples/openapi.yaml").unwrap();
     let router = Router::new(routes.clone());
     let mut dispatcher = Dispatcher::new();
-    unsafe { registry::register_from_spec(&mut dispatcher, &routes); }
+    unsafe {
+        registry::register_from_spec(&mut dispatcher, &routes);
+    }
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
 
     let route_match = router.route(Method::GET, "/pets/12345").unwrap();

@@ -1,0 +1,34 @@
+# BRRTRouter Clippy Configuration
+#
+# JSF Rule 206 Compliance: "No heap allocations after initialization"
+#
+# Hot path modules (router, dispatcher, server/request) have module-level
+# #![deny(...)] attributes for allocation-related lints. This file provides
+# project-wide configuration.
+
+# Warn on large stack allocations (might indicate need for arena allocation)
+# Most request data should fit within these bounds
+stack-size-threshold = 512000
+
+# Allow reasonable enum variant size differences for pattern matching
+# (routing enums may have different-sized variants)
+enum-variant-size-threshold = 256
+
+# Type complexity threshold for hot path types
+type-complexity-threshold = 300
+
+# Cognitive complexity threshold (JSF: functions should be simple)
+cognitive-complexity-threshold = 30
+
+# Documentation requirements
+missing-docs-in-crate-items = false
+
+# Allow reasonable function argument counts for handlers
+too-many-arguments-threshold = 8
+
+# Struct field threshold
+too-many-lines-threshold = 200
+
+# Single char binding names allowed in closures
+single-char-binding-names-threshold = 4
+

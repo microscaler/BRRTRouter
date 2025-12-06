@@ -34,7 +34,9 @@ impl SseTestServer {
         let (routes, schemes, _slug) = brrtrouter::load_spec_full("examples/openapi.yaml").unwrap();
         let router = Arc::new(RwLock::new(Router::new(routes.clone())));
         let mut dispatcher = Dispatcher::new();
-        unsafe { registry::register_from_spec(&mut dispatcher, &routes); }
+        unsafe {
+            registry::register_from_spec(&mut dispatcher, &routes);
+        }
         dispatcher.add_middleware(Arc::new(TracingMiddleware));
         let mut service = AppService::new(
             router,
@@ -58,9 +60,12 @@ impl SseTestServer {
             ) -> bool {
                 match scheme {
                     SecurityScheme::ApiKey { name, location, .. } => match location.as_str() {
-                        "header" => req.headers.get(&name.to_ascii_lowercase()) == Some(&self.key),
-                        "query" => req.query.get(name) == Some(&self.key),
-                        "cookie" => req.cookies.get(name) == Some(&self.key),
+                        "header" => req
+                            .get_header(&name.to_ascii_lowercase())
+                            .map(|v| v == self.key)
+                            .unwrap_or(false),
+                        "query" => req.get_query(name).map(|v| v == self.key).unwrap_or(false),
+                        "cookie" => req.get_cookie(name).map(|v| v == self.key).unwrap_or(false),
                         _ => false,
                     },
                     _ => false,

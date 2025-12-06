@@ -36,6 +36,7 @@ may = "0.3"  # generator-rs is patched via [patch.crates-io] section at the end 
 # Using our fork until PR #21 is merged upstream
 may_minihttp = { git = "https://github.com/microscaler/may_minihttp.git", branch = "feat/configurable-max-headers" }
 regex = "1.11.1"
+smallvec = { version = "1.13", features = ["serde"] }  # Stack-allocated vectors for hot path (JSF: no heap in dispatch)
 url = "2.5.4"
 clap = { version = "4.5.38", features = ["cargo", "env", "derive"] }
 askama = { version = "0.14.0", features = ["full"] }

@@ -1,11 +1,11 @@
 use brrtrouter::{
-    dispatcher::{Dispatcher, HandlerRequest, HandlerResponse},
+    dispatcher::{Dispatcher, HandlerRequest, HandlerResponse, HeaderVec},
     ids::RequestId,
+    router::ParamVec,
     worker_pool::{BackpressureMode, WorkerPoolConfig},
 };
 use http::Method;
 use may::sync::mpsc;
-use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -38,15 +38,17 @@ fn test_worker_pool_creation() {
             // Send response
             let _ = req.reply_tx.send(HandlerResponse {
                 status: 200,
-                headers: HashMap::new(),
+                headers: HeaderVec::new(),
                 body: serde_json::json!({"status": "ok"}),
             });
         });
     }
 
     // Verify the worker pool was created
+    // Note: Worker pool handlers use the pool for dispatch, not the handlers map
     assert!(dispatcher.worker_pools.contains_key("test_handler"));
-    assert!(dispatcher.handlers.contains_key("test_handler"));
+    // Handler entry is NOT created - dispatch goes through the worker pool
+    assert!(!dispatcher.handlers.contains_key("test_handler"));
 
     // Get the pool and verify config
     let pool = dispatcher.worker_pools.get("test_handler").unwrap();
@@ -85,7 +87,7 @@ fn test_worker_pool_shed_mode() {
 
                 let _ = req.reply_tx.send(HandlerResponse {
                     status: 200,
-                    headers: HashMap::new(),
+                    headers: HeaderVec::new(),
                     body: serde_json::json!({"status": "ok"}),
                 });
             },
@@ -109,10 +111,10 @@ fn test_worker_pool_shed_mode() {
             method: Method::GET,
             path: "/test".to_string(),
             handler_name: "slow_handler".to_string(),
-            path_params: HashMap::new(),
-            query_params: HashMap::new(),
-            headers: HashMap::new(),
-            cookies: HashMap::new(),
+            path_params: ParamVec::new(),
+            query_params: ParamVec::new(),
+            headers: HeaderVec::new(),
+            cookies: HeaderVec::new(),
             body: None,
             reply_tx,
         };
@@ -159,7 +161,7 @@ fn test_worker_pool_block_mode() {
 
                 let _ = req.reply_tx.send(HandlerResponse {
                     status: 200,
-                    headers: HashMap::new(),
+                    headers: HeaderVec::new(),
                     body: serde_json::json!({"status": "ok"}),
                 });
             },
@@ -186,10 +188,10 @@ fn test_worker_pool_block_mode() {
             method: Method::GET,
             path: "/test".to_string(),
             handler_name: "fast_handler".to_string(),
-            path_params: HashMap::new(),
-            query_params: HashMap::new(),
-            headers: HashMap::new(),
-            cookies: HashMap::new(),
+            path_params: ParamVec::new(),
+            query_params: ParamVec::new(),
+            headers: HeaderVec::new(),
+            cookies: HeaderVec::new(),
             body: None,
             reply_tx,
         };
@@ -236,7 +238,7 @@ fn test_worker_pool_metrics() {
 
             let _ = req.reply_tx.send(HandlerResponse {
                 status: 200,
-                headers: HashMap::new(),
+                headers: HeaderVec::new(),
                 body: serde_json::json!({"status": "ok"}),
             });
         });
@@ -260,10 +262,10 @@ fn test_worker_pool_metrics() {
             method: Method::GET,
             path: "/test".to_string(),
             handler_name: "metrics_handler".to_string(),
-            path_params: HashMap::new(),
-            query_params: HashMap::new(),
-            headers: HashMap::new(),
-            cookies: HashMap::new(),
+            path_params: ParamVec::new(),
+            query_params: ParamVec::new(),
+            headers: HeaderVec::new(),
+            cookies: HeaderVec::new(),
             body: None,
             reply_tx,
         };

@@ -34,7 +34,7 @@
 use brrtrouter::server::{HttpServer, ServerHandle};
 use brrtrouter::spec::SecurityScheme;
 use brrtrouter::{
-    dispatcher::{Dispatcher, HandlerRequest, HandlerResponse},
+    dispatcher::{Dispatcher, HandlerRequest, HandlerResponse, HeaderVec},
     router::Router,
     server::AppService,
     spec::RouteMeta,
@@ -77,7 +77,9 @@ impl PetStoreTestServer {
         let (routes, schemes, _slug) = brrtrouter::load_spec_full("examples/openapi.yaml").unwrap();
         let router = Arc::new(RwLock::new(Router::new(routes.clone())));
         let mut dispatcher = Dispatcher::new();
-        unsafe { registry::register_from_spec(&mut dispatcher, &routes); }
+        unsafe {
+            registry::register_from_spec(&mut dispatcher, &routes);
+        }
         dispatcher.add_middleware(Arc::new(TracingMiddleware));
         let mut service = AppService::new(
             router,
@@ -101,9 +103,12 @@ impl PetStoreTestServer {
             ) -> bool {
                 match scheme {
                     SecurityScheme::ApiKey { name, location, .. } => match location.as_str() {
-                        "header" => req.headers.get(&name.to_ascii_lowercase()) == Some(&self.key),
-                        "query" => req.query.get(name) == Some(&self.key),
-                        "cookie" => req.cookies.get(name) == Some(&self.key),
+                        "header" => req
+                            .get_header(&name.to_ascii_lowercase())
+                            .map(|v| v == self.key)
+                            .unwrap_or(false),
+                        "query" => req.get_query(name).map(|v| v == self.key).unwrap_or(false),
+                        "cookie" => req.get_cookie(name).map(|v| v == self.key).unwrap_or(false),
                         _ => false,
                     },
                     _ => false,
@@ -209,7 +214,9 @@ impl CustomServerTestFixture {
 
         let router = Arc::new(RwLock::new(Router::new(vec![route])));
         let mut dispatcher = Dispatcher::new();
-        unsafe { dispatcher.register_handler(handler_name, handler); }
+        unsafe {
+            dispatcher.register_handler(handler_name, handler);
+        }
         dispatcher.add_middleware(Arc::new(TracingMiddleware));
 
         let service = AppService::new(
@@ -262,7 +269,9 @@ fn start_petstore_service() -> (TestTracing, ServerHandle, SocketAddr) {
     let (routes, schemes, _slug) = brrtrouter::load_spec_full("examples/openapi.yaml").unwrap();
     let router = Arc::new(RwLock::new(Router::new(routes.clone())));
     let mut dispatcher = Dispatcher::new();
-    unsafe { registry::register_from_spec(&mut dispatcher, &routes); }
+    unsafe {
+        registry::register_from_spec(&mut dispatcher, &routes);
+    }
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
     let mut service = AppService::new(
         router,
@@ -285,9 +294,12 @@ fn start_petstore_service() -> (TestTracing, ServerHandle, SocketAddr) {
         ) -> bool {
             match scheme {
                 SecurityScheme::ApiKey { name, location, .. } => match location.as_str() {
-                    "header" => req.headers.get(&name.to_ascii_lowercase()) == Some(&self.key),
-                    "query" => req.query.get(name) == Some(&self.key),
-                    "cookie" => req.cookies.get(name) == Some(&self.key),
+                    "header" => req
+                        .get_header(&name.to_ascii_lowercase())
+                        .map(|v| v == self.key)
+                        .unwrap_or(false),
+                    "query" => req.get_query(name).map(|v| v == self.key).unwrap_or(false),
+                    "cookie" => req.get_cookie(name).map(|v| v == self.key).unwrap_or(false),
                     _ => false,
                 },
                 _ => false,
@@ -404,12 +416,15 @@ fn test_panic_recovery() {
 #[test]
 fn test_headers_and_cookies() {
     fn header_handler(req: HandlerRequest) {
+        // Convert SmallVec to HashMap for JSON serialization
+        let headers_map: HashMap<String, String> = req.headers.iter().cloned().collect();
+        let cookies_map: HashMap<String, String> = req.cookies.iter().cloned().collect();
         let response = HandlerResponse {
             status: 200,
-            headers: HashMap::new(),
+            headers: HeaderVec::new(),
             body: json!({
-                "headers": req.headers,
-                "cookies": req.cookies,
+                "headers": headers_map,
+                "cookies": cookies_map,
             }),
         };
         let _ = req.reply_tx.send(response);
@@ -442,7 +457,7 @@ fn test_status_201_json() {
     fn create_handler(req: HandlerRequest) {
         let response = HandlerResponse {
             status: 201,
-            headers: HashMap::new(),
+            headers: HeaderVec::new(),
             body: json!({"created": true}),
         };
         let _ = req.reply_tx.send(response);
@@ -469,7 +484,7 @@ fn test_text_plain_error() {
     fn text_handler(req: HandlerRequest) {
         let response = HandlerResponse {
             status: 400,
-            headers: HashMap::new(),
+            headers: HeaderVec::new(),
             body: json!("bad request"),
         };
         let _ = req.reply_tx.send(response);
@@ -496,7 +511,7 @@ fn test_request_body_validation_failure() {
     fn echo_handler(req: HandlerRequest) {
         let response = HandlerResponse {
             status: 200,
-            headers: HashMap::new(),
+            headers: HeaderVec::new(),
             body: json!({"ok": true}),
         };
         let _ = req.reply_tx.send(response);
@@ -537,7 +552,7 @@ fn test_response_body_validation_failure() {
     fn bad_handler(req: HandlerRequest) {
         let response = HandlerResponse {
             status: 200,
-            headers: HashMap::new(),
+            headers: HeaderVec::new(),
             body: json!({"name": 123}),
         };
         let _ = req.reply_tx.send(response);

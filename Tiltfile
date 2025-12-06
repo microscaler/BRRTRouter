@@ -213,12 +213,15 @@ k8s_yaml([
 ])
 
 # ============================================================================
-# Load Application (Pet Store)
+# Load Application (Pet Store) - Using Kustomize overlays
 # ============================================================================
-k8s_yaml([
-    'k8s/app/deployment.yaml',
-    'k8s/app/service.yaml',
-])
+# Automatically detect CI environment and use appropriate overlay:
+# - CI (GitHub Actions): Uses ci overlay with production-like settings
+# - Local development: Uses local overlay with debug logging
+is_ci = os.environ.get('CI', 'false').lower() == 'true'
+app_overlay = 'k8s/app/overlays/ci' if is_ci else 'k8s/app/overlays/local'
+print('📦 Using kustomize overlay: ' + app_overlay + (' (CI detected)' if is_ci else ' (local dev)'))
+k8s_yaml(kustomize(app_overlay))
 
 # ============================================================================
 # RESOURCE CONFIGURATION

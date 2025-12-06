@@ -1,0 +1,11 @@
+# CI overlay for GitHub Actions and automated testing
+# Production-like settings with minimal logging for performance
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+patches:
+  - path: patch-ci.yaml
+

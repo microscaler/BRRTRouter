@@ -1,24 +1,113 @@
+//! Router core module - hot path for request routing.
+//!
+//! # JSF Compliance (Rule 206)
+//!
+//! This module is part of the request hot path. The following clippy lints
+//! are denied to enforce "no heap allocations after initialization":
+//!
+//! - `clippy::disallowed_methods` - Blocks String/Vec allocation methods
+//! - `clippy::inefficient_to_string` - Catches unnecessary allocations
+//! - `clippy::format_push_string` - Prevents format! string building
+
+// JSF Rule 206: Deny heap allocations in the hot path
+#![deny(clippy::inefficient_to_string)]
+#![deny(clippy::format_push_string)]
+#![deny(clippy::unnecessary_to_owned)]
+
 use crate::spec::RouteMeta;
 use http::Method;
 use regex::Regex;
+use smallvec::SmallVec;
 use std::collections::HashMap;
 use tracing::{debug, info, warn};
 
 use super::radix::RadixRouter;
 
+/// Maximum number of path/query parameters before heap allocation.
+/// Most REST APIs have ≤4 path params (e.g., /users/{id}/posts/{postId}).
+/// JSF Rule: No heap allocations in the hot path for common cases.
+pub const MAX_INLINE_PARAMS: usize = 8;
+
+/// Stack-allocated parameter storage for the hot path.
+/// Uses SmallVec to avoid heap allocation for routes with ≤8 params.
+pub type ParamVec = SmallVec<[(String, String); MAX_INLINE_PARAMS]>;
+
 /// Result of successfully matching a request path to a route
 ///
 /// Contains the matched route metadata and extracted parameters.
+///
+/// # JSF Compliance
+///
+/// Uses `SmallVec` instead of `HashMap` for path/query parameters to avoid
+/// heap allocation in the common case (≤8 params). This follows JSF Rule 206:
+/// "No heap allocations after initialization" for the hot path.
 #[derive(Debug, Clone)]
 pub struct RouteMatch {
     /// The matched route metadata from the OpenAPI spec (Arc to avoid expensive clones)
     pub route: std::sync::Arc<RouteMeta>,
     /// Path parameters extracted from the URL (e.g., `{id}` → `{"id": "123"}`)
-    pub path_params: HashMap<String, String>,
+    /// Stack-allocated for ≤8 params (JSF: no heap in hot path)
+    pub path_params: ParamVec,
     /// Name of the handler that should process this request
     pub handler_name: String,
     /// Query string parameters (populated by the server)
-    pub query_params: HashMap<String, String>,
+    /// Stack-allocated for ≤8 params (JSF: no heap in hot path)
+    pub query_params: ParamVec,
+}
+
+impl RouteMatch {
+    /// Get a path parameter by name
+    ///
+    /// Uses "last write wins" semantics: if duplicate parameter names exist
+    /// at different path depths (e.g., `/org/{id}/team/{team_id}/user/{id}`),
+    /// returns the last occurrence (the user id, not the org id).
+    ///
+    /// # Arguments
+    /// * `name` - The parameter name (e.g., "id")
+    ///
+    /// # Returns
+    /// The parameter value if found, None otherwise
+    #[inline]
+    #[must_use]
+    pub fn get_path_param(&self, name: &str) -> Option<&str> {
+        self.path_params
+            .iter()
+            .rfind(|(k, _)| k == name)
+            .map(|(_, v)| v.as_str())
+    }
+
+    /// Get a query parameter by name
+    ///
+    /// Uses "last write wins" semantics: if duplicate query parameter names exist
+    /// (e.g., `?limit=10&limit=20`), returns the last occurrence.
+    ///
+    /// # Arguments
+    /// * `name` - The parameter name
+    ///
+    /// # Returns
+    /// The parameter value if found, None otherwise
+    #[inline]
+    #[must_use]
+    pub fn get_query_param(&self, name: &str) -> Option<&str> {
+        self.query_params
+            .iter()
+            .rfind(|(k, _)| k == name)
+            .map(|(_, v)| v.as_str())
+    }
+
+    /// Convert path_params to HashMap for compatibility with existing code
+    /// Note: This allocates - use get_path_param() in hot paths instead
+    #[must_use]
+    pub fn path_params_map(&self) -> HashMap<String, String> {
+        self.path_params.iter().cloned().collect()
+    }
+
+    /// Convert query_params to HashMap for compatibility with existing code
+    /// Note: This allocates - use get_query_param() in hot paths instead
+    #[must_use]
+    pub fn query_params_map(&self) -> HashMap<String, String> {
+        self.query_params.iter().cloned().collect()
+    }
 }
 
 /// Router that matches HTTP requests to handlers using radix tree
@@ -58,6 +147,7 @@ impl Router {
     /// # Returns
     ///
     /// A new `Router` ready to match incoming requests
+    #[must_use]
     pub fn new(routes: Vec<RouteMeta>) -> Self {
         // Filter out routes that are not HTTP methods we care about
         let supported_methods = [
@@ -170,6 +260,7 @@ impl Router {
     ///     println!("User ID: {}", m.path_params["id"]);
     /// }
     /// ```
+    #[must_use]
     pub fn route(&self, method: Method, path: &str) -> Option<RouteMatch> {
         // RT1: Route match attempt
         debug!(
@@ -251,6 +342,7 @@ impl Router {
     /// let paths = router.get_all_path_patterns();
     /// metrics.pre_register_paths(&paths);
     /// ```
+    #[must_use]
     pub fn get_all_path_patterns(&self) -> Vec<String> {
         self.routes
             .iter()

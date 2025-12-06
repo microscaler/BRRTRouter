@@ -39,6 +39,112 @@ watch spec="examples/openapi.yaml" addr="0.0.0.0:8080":
 	cargo run --bin brrtrouter-gen -- serve --watch --spec {{spec}} --addr {{addr}}
 
 # ============================================================================
+# Debug & Troubleshooting
+# ============================================================================
+
+# Start pet_store server with full debug logging and backtrace (logs to /tmp/petstore_debug.log)
+debug-petstore:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	echo "🔍 Starting pet_store with debug logging..."
+	pkill -f "target/release/pet_store" 2>/dev/null || true
+	sleep 1
+	
+	# Build release with debug symbols
+	cargo build --release -p pet_store
+	
+	cd examples/pet_store && \
+	RUST_BACKTRACE=full \
+	RUST_LOG=debug,may=warn,may_minihttp=warn \
+	BRRTR_STACK_SIZE=0x100000 \
+	BRRTR_LOG_LEVEL=debug \
+	BRRTR_LOG_FORMAT=json \
+	../../target/release/pet_store \
+		--spec doc/openapi.yaml \
+		--config config/config.yaml \
+		--static-dir static_site \
+		--doc-dir doc \
+		--test-api-key test123 2>&1 | tee /tmp/petstore_debug.log &
+	
+	sleep 3
+	echo ""
+	echo "✅ Server started in background"
+	echo "   Log file: /tmp/petstore_debug.log"
+	echo "   Health:   curl http://127.0.0.1:8080/health"
+	echo "   Stop:     pkill -f pet_store"
+	echo ""
+	echo "Verifying server is running..."
+	curl -s http://127.0.0.1:8080/health && echo ""
+
+# Stop pet_store server
+stop-petstore:
+	@pkill -f "target/release/pet_store" 2>/dev/null && echo "✅ Server stopped" || echo "⚠️ Server not running"
+
+# Watch pet_store debug logs live
+watch-petstore:
+	@tail -f /tmp/petstore_debug.log
+
+# Show last 100 lines of pet_store logs
+logs-petstore:
+	@tail -100 /tmp/petstore_debug.log
+
+# Run Goose load test against local server (logs to /tmp/goose_test.log)
+goose-test users="10" runtime="30s":
+	#!/usr/bin/env bash
+	set -euo pipefail
+	echo "🦆 Running Goose load test..."
+	echo "   Users:   {{users}}"
+	echo "   Runtime: {{runtime}}"
+	echo "   Target:  http://127.0.0.1:8080"
+	echo "   Log:     /tmp/goose_test.log"
+	echo ""
+	
+	# Check if server is running
+	if ! curl -s http://127.0.0.1:8080/health > /dev/null 2>&1; then
+		echo "❌ Server not responding on port 8080"
+		echo "   Start it first with: just debug-petstore"
+		exit 1
+	fi
+	
+	RUST_LOG=warn \
+	cargo run --release --example api_load_test -- \
+		--host http://127.0.0.1:8080 \
+		--users {{users}} \
+		--run-time {{runtime}} \
+		--no-reset-metrics \
+		--report-file /tmp/goose_report.html \
+		2>&1 | tee /tmp/goose_test.log
+	
+	echo ""
+	echo "✅ Goose test complete"
+	echo "   Log:    /tmp/goose_test.log"
+	echo "   Report: /tmp/goose_report.html"
+
+# Quick smoke test - start server, run brief load test, stop
+smoke-test:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	echo "🔥 Running smoke test..."
+	
+	# Start server
+	just debug-petstore
+	sleep 2
+	
+	# Run brief load test
+	just goose-test users=5 runtime=10s || true
+	
+	# Check if server crashed
+	if ! curl -s http://127.0.0.1:8080/health > /dev/null 2>&1; then
+		echo ""
+		echo "❌ SERVER CRASHED during load test!"
+		echo "   Check logs: tail -50 /tmp/petstore_debug.log"
+		exit 1
+	fi
+	
+	echo ""
+	echo "✅ Smoke test passed - server survived load test"
+
+# ============================================================================
 # Testing & Quality
 # ============================================================================
 

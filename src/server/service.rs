@@ -276,18 +276,19 @@ impl AppService {
                     SecurityScheme::ApiKey { name, location, .. } => match location.as_str() {
                         "header" => {
                             // Accept either the named header or Authorization: Bearer <key> for migration convenience
-                            let header_ok =
-                                req.headers.get(&name.to_ascii_lowercase()) == Some(&self.key);
+                            let header_ok = req
+                                .get_header(&name.to_ascii_lowercase())
+                                .map(|v| v == self.key)
+                                .unwrap_or(false);
                             let auth_ok = req
-                                .headers
-                                .get("authorization")
+                                .get_header("authorization")
                                 .and_then(|h| h.strip_prefix("Bearer "))
                                 .map(|v| v == self.key)
                                 .unwrap_or(false);
                             header_ok || auth_ok
                         }
-                        "query" => req.query.get(name) == Some(&self.key),
-                        "cookie" => req.cookies.get(name) == Some(&self.key),
+                        "query" => req.get_query(name).map(|v| v == self.key).unwrap_or(false),
+                        "cookie" => req.get_cookie(name).map(|v| v == self.key).unwrap_or(false),
                         _ => false,
                     },
                     _ => false,
@@ -343,12 +344,13 @@ impl AppService {
 
 /// Basic health check endpoint returning `{ "status": "ok" }`.
 pub fn health_endpoint(res: &mut Response) -> io::Result<()> {
+    use crate::dispatcher::HeaderVec;
     write_handler_response(
         res,
         200,
         serde_json::json!({ "status": "ok" }),
         false,
-        &HashMap::new(),
+        &HeaderVec::new(),
     );
     Ok(())
 }
@@ -567,12 +569,13 @@ pub fn metrics_endpoint(
         body.push_str(&memory_mw.export_metrics());
     }
 
+    use crate::dispatcher::HeaderVec;
     write_handler_response(
         res,
         200,
         serde_json::Value::String(body),
         false,
-        &HashMap::new(),
+        &HeaderVec::new(),
     );
     Ok(())
 }
@@ -763,14 +766,11 @@ impl HttpService for AppService {
 
         // Calculate body size using Content-Length header if available
         // This avoids expensive JSON serialization in the hot path
-        let body_size_bytes = if let Some(content_length_str) = headers.get("content-length") {
-            // Prefer Content-Length header when available (most accurate and cheap)
-            content_length_str.parse::<usize>().unwrap_or(0)
-        } else {
-            // Fallback: will use estimated size from route or 0 if not available
-            // This will be updated after routing if an estimate is available
-            0
-        };
+        let body_size_bytes = headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case("content-length"))
+            .and_then(|(_, v)| v.parse::<usize>().ok())
+            .unwrap_or(0);
 
         let total_size_bytes = header_size_bytes + body_size_bytes;
 
@@ -858,13 +858,11 @@ impl HttpService for AppService {
         }
 
         // Determine/accept request id from headers; fallback to generated
-        let inbound_req_id = headers.get("x-request-id").and_then(|s| {
-            if s.trim().is_empty() {
-                None
-            } else {
-                Some(s.as_str())
-            }
-        });
+        let inbound_req_id = headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case("x-request-id"))
+            .map(|(_, v)| v.as_str())
+            .filter(|s| !s.trim().is_empty());
         let canonical_req_id = RequestId::from_header_or_new(inbound_req_id);
 
         let route_opt = {
@@ -1234,11 +1232,14 @@ impl HttpService for AppService {
                     let mut headers = hr.headers.clone();
                     // Always echo X-Request-ID on the response if we have one
                     if let Some(ref rid) = _request_logger.request_id {
-                        headers.insert("X-Request-ID".to_string(), rid.to_string());
+                        headers.push(("X-Request-ID".to_string(), rid.to_string()));
                     }
-                    if !headers.contains_key("Content-Type") {
+                    let has_content_type = headers
+                        .iter()
+                        .any(|(k, _)| k.eq_ignore_ascii_case("Content-Type"));
+                    if !has_content_type {
                         if let Some(ct) = route_match.route.content_type_for(hr.status) {
-                            headers.insert("Content-Type".to_string(), ct);
+                            headers.push(("Content-Type".to_string(), ct));
                         }
                     }
                     if let Some(schema) = &route_match.route.response_schema {

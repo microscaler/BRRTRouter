@@ -1,3 +1,4 @@
+use crate::dispatcher::HeaderVec;
 use may_minihttp::Response;
 use serde_json::Value;
 
@@ -13,8 +14,6 @@ fn status_reason(status: u16) -> &'static str {
     }
 }
 
-use std::collections::HashMap;
-
 /// Write a handler response to the HTTP response object
 ///
 /// Serializes the response body as JSON or plain text and sets appropriate headers.
@@ -26,13 +25,13 @@ use std::collections::HashMap;
 /// * `status` - HTTP status code (e.g., 200, 404, 500)
 /// * `body` - Response body as JSON value
 /// * `is_sse` - Whether this is a Server-Sent Events response
-/// * `headers` - Additional HTTP headers to include
+/// * `headers` - Additional HTTP headers to include (SmallVec for stack allocation)
 pub fn write_handler_response(
     res: &mut Response,
     status: u16,
     body: Value,
     is_sse: bool,
-    headers: &HashMap<String, String>,
+    headers: &HeaderVec,
 ) {
     let reason = status_reason(status);
     res.status_code(status as usize, reason);
@@ -86,7 +85,6 @@ pub fn write_json_error(res: &mut Response, status: u16, body: Value) {
 mod tests {
     use super::*;
     use may_minihttp::{HttpServer, HttpService, Request, Response};
-    use std::collections::HashMap;
     use std::io::{Read, Write};
     use std::net::{TcpListener, TcpStream};
     use std::time::Duration;
@@ -96,8 +94,8 @@ mod tests {
 
     impl HttpService for HandlerService {
         fn call(&mut self, _req: Request, res: &mut Response) -> std::io::Result<()> {
-            let mut headers = HashMap::new();
-            headers.insert("X-Test".to_string(), "foo".to_string());
+            let mut headers: HeaderVec = HeaderVec::new();
+            headers.push(("X-Test".to_string(), "foo".to_string()));
             write_handler_response(res, 201, serde_json::json!({"ok": true}), false, &headers);
             Ok(())
         }

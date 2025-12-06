@@ -8,7 +8,9 @@ fn test_dynamic_register_get_pet() {
     let (routes, _slug) = load_spec("examples/openapi.yaml").expect("load spec");
     let router = Router::new(routes.clone());
     let mut dispatcher = Dispatcher::new();
-    unsafe { registry::register_from_spec(&mut dispatcher, &routes); }
+    unsafe {
+        registry::register_from_spec(&mut dispatcher, &routes);
+    }
 
     let route_match = router
         .route(Method::GET, "/pets/12345")
@@ -24,7 +26,9 @@ fn test_dynamic_register_post_item() {
     let (routes, _slug) = load_spec("examples/openapi.yaml").expect("load spec");
     let router = Router::new(routes.clone());
     let mut dispatcher = Dispatcher::new();
-    unsafe { registry::register_from_spec(&mut dispatcher, &routes); }
+    unsafe {
+        registry::register_from_spec(&mut dispatcher, &routes);
+    }
 
     let route_match = router
         .route(Method::POST, "/items/item-001")
@@ -56,7 +60,9 @@ fn test_dynamic_register_with_per_handler_stack_override() {
     let mut dispatcher = Dispatcher::new();
 
     // Register handlers - this should use the per-handler override for get_pet
-    unsafe { registry::register_from_spec(&mut dispatcher, &routes); }
+    unsafe {
+        registry::register_from_spec(&mut dispatcher, &routes);
+    }
 
     // Verify the handler works correctly
     let route_match = router
@@ -89,7 +95,9 @@ fn test_dynamic_register_with_stack_clamping() {
     let mut dispatcher = Dispatcher::new();
 
     // Register handlers - stack size should be clamped to minimum
-    unsafe { registry::register_from_spec(&mut dispatcher, &routes); }
+    unsafe {
+        registry::register_from_spec(&mut dispatcher, &routes);
+    }
 
     // Verify the handler works correctly
     let route_match = router.route(Method::GET, "/pets").expect("route match");

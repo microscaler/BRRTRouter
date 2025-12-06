@@ -34,7 +34,7 @@ impl TryFrom<HandlerRequest> for Request {
 
         let mut data_map = Map::new();
 
-        if let Some(v) = req.path_params.get("user_id") {
+        if let Some(v) = req.get_path_param("user_id") {
             data_map.insert(
                 "user_id".to_string(),
                 brrtrouter::server::request::decode_param_value(
@@ -48,7 +48,7 @@ impl TryFrom<HandlerRequest> for Request {
             return Err(anyhow::anyhow!("Missing required parameter 'user_id'"));
         }
 
-        if let Some(v) = req.query_params.get("limit") {
+        if let Some(v) = req.get_query_param("limit") {
             data_map.insert(
                 "limit".to_string(),
                 brrtrouter::server::request::decode_param_value(
@@ -60,7 +60,7 @@ impl TryFrom<HandlerRequest> for Request {
             // optional parameter
         }
 
-        if let Some(v) = req.query_params.get("offset") {
+        if let Some(v) = req.get_query_param("offset") {
             data_map.insert(
                 "offset".to_string(),
                 brrtrouter::server::request::decode_param_value(

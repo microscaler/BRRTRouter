@@ -14,12 +14,16 @@
 //!
 //! ## Usage
 //!
-//! ```rust
+//! ```rust,no_run
 //! use brrtrouter::linter::{lint_spec, LintIssue, LintSeverity};
+//! use std::path::Path;
 //!
-//! let issues = lint_spec("path/to/openapi.yaml")?;
-//! for issue in &issues {
-//!     eprintln!("[{}] {}: {}", issue.severity, issue.location, issue.message);
+//! fn main() -> anyhow::Result<()> {
+//!     let issues = lint_spec(Path::new("path/to/openapi.yaml"))?;
+//!     for issue in &issues {
+//!         eprintln!("[{:?}] {}: {}", issue.severity, issue.location, issue.message);
+//!     }
+//!     Ok(())
 //! }
 //! ```
 
@@ -106,7 +110,7 @@ pub fn lint_spec(spec_path: &Path) -> anyhow::Result<Vec<LintIssue>> {
     // Collect all defined schema names
     let mut defined_schemas = HashSet::new();
     if let Some(components) = spec.components.as_ref() {
-        for (name, _) in &components.schemas {
+        for name in components.schemas.keys() {
             defined_schemas.insert(name.clone());
         }
     }
@@ -291,12 +295,12 @@ fn lint_request_body(
         }
     };
 
-    for (_content_type, media_type) in &body.content {
+    for media_type in body.content.values() {
         if let Some(schema_ref) = &media_type.schema {
             lint_schema_ref(
                 spec,
                 issues,
-                &format!("{} (requestBody)", path_context),
+                &format!("{path_context} (requestBody)"),
                 schema_ref,
                 defined_schemas,
             );
@@ -329,12 +333,12 @@ fn lint_response(
         }
     };
 
-    for (_content_type, media_type) in &resp.content {
+    for media_type in resp.content.values() {
         if let Some(schema_ref) = &media_type.schema {
             lint_schema_ref(
                 spec,
                 issues,
-                &format!("{} (response {})", path_context, status_code),
+                &format!("{path_context} (response {status_code})"),
                 schema_ref,
                 defined_schemas,
             );
@@ -454,10 +458,10 @@ fn lint_schema_object(
             if let Some(name) = ref_path.strip_prefix("#/components/schemas/") {
                 if !defined_schemas.contains(name) {
                     issues.push(LintIssue::new(
-                        &format!("{}.items", location),
+                        format!("{location}.items"),
                         LintSeverity::Error,
                         "missing_schema_ref",
-                        format!("items $ref '{}' not found", name),
+                        format!("items $ref '{name}' not found"),
                     ));
                 }
             }
@@ -472,10 +476,10 @@ fn lint_schema_object(
                     if let Some(name) = ref_path.strip_prefix("#/components/schemas/") {
                         if !defined_schemas.contains(name) {
                             issues.push(LintIssue::new(
-                                &format!("{}.allOf[{}]", location, idx),
+                                format!("{location}.allOf[{idx}]"),
                                 LintSeverity::Error,
                                 "missing_schema_ref",
-                                format!("allOf reference '{}' not found", name),
+                                format!("allOf reference '{name}' not found"),
                             ));
                         }
                     }
@@ -556,9 +560,9 @@ pub(crate) fn is_snake_case(s: &str) -> bool {
 /// Convert a string to snake_case
 pub(crate) fn to_snake_case(s: &str) -> String {
     let mut result = String::new();
-    let mut chars = s.chars().peekable();
+    let chars = s.chars();
 
-    while let Some(ch) = chars.next() {
+    for ch in chars {
         if ch.is_uppercase() {
             if !result.is_empty() && !result.ends_with('_') {
                 result.push('_');

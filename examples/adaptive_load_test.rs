@@ -72,17 +72,6 @@ async fn get_pet(user: &mut GooseUser) -> TransactionResult {
     Ok(())
 }
 
-async fn search_pets(user: &mut GooseUser) -> TransactionResult {
-    let request_builder = user
-        .get_request_builder(&GooseMethod::Get, "/pets?name=fluffy")?
-        .header("X-API-Key", "test123");
-    let goose_request = GooseRequest::builder()
-        .set_request_builder(request_builder)
-        .build();
-    user.request(goose_request).await?;
-    Ok(())
-}
-
 async fn list_users(user: &mut GooseUser) -> TransactionResult {
     let request_builder = user
         .get_request_builder(&GooseMethod::Get, "/users")?
@@ -464,6 +453,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
         // Run Goose attack for this cycle
+        // IMPORTANT: This must exactly mirror api_load_test.rs structure for comparable results
         GooseAttack::initialize()?
             .set_default(GooseDefault::Host, config.host.as_str())?
             .set_default(GooseDefault::Users, current_users)?
@@ -472,50 +462,88 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 GooseDefault::HatchRate,
                 config.hatch_rate.to_string().as_str(),
             )?
+            // Built-in endpoints (10% weight) - no auth required
             .register_scenario(
-                scenario!("Infrastructure")
+                scenario!("Built-in Endpoints")
                     .set_weight(10)?
-                    .register_transaction(transaction!(health_check))
-                    .register_transaction(transaction!(test_metrics)),
+                    .register_transaction(transaction!(health_check).set_name("GET /health"))
+                    .register_transaction(transaction!(test_metrics).set_name("GET /metrics")),
             )
+            // Pet API (25% weight) - requires API key
             .register_scenario(
-                scenario!("Pet Store API")
-                    .set_weight(30)?
-                    .register_transaction(transaction!(list_pets).set_weight(4)?)
-                    .register_transaction(transaction!(get_pet).set_weight(5)?)
-                    .register_transaction(transaction!(search_pets).set_weight(3)?)
-                    .register_transaction(transaction!(add_pet).set_weight(2)?),
+                scenario!("Pet API")
+                    .set_weight(25)?
+                    .register_transaction(
+                        transaction!(list_pets).set_name("GET /pets (with auth)"),
+                    )
+                    .register_transaction(
+                        transaction!(get_pet).set_name("GET /pets/{id} (with auth)"),
+                    )
+                    .register_transaction(
+                        transaction!(add_pet).set_name("POST /pets (with auth)"),
+                    ),
             )
+            // User API (20% weight) - requires API key
             .register_scenario(
                 scenario!("User API")
                     .set_weight(20)?
-                    .register_transaction(transaction!(list_users).set_weight(3)?)
-                    .register_transaction(transaction!(get_user).set_weight(4)?)
-                    .register_transaction(transaction!(list_user_posts).set_weight(2)?)
-                    .register_transaction(transaction!(get_user_post).set_weight(2)?)
-                    .register_transaction(transaction!(delete_user).set_weight(1)?),
+                    .register_transaction(
+                        transaction!(list_users).set_name("GET /users (with auth)"),
+                    )
+                    .register_transaction(
+                        transaction!(get_user).set_name("GET /users/{id} (with auth)"),
+                    )
+                    .register_transaction(
+                        transaction!(list_user_posts).set_name("GET /users/{id}/posts (with auth)"),
+                    )
+                    .register_transaction(
+                        transaction!(get_user_post).set_name("GET /users/{id}/posts/{post_id} (with auth)"),
+                    )
+                    .register_transaction(
+                        transaction!(delete_user).set_name("DELETE /users/{id} (with auth)"),
+                    ),
             )
+            // Advanced API (25% weight) - requires API key
             .register_scenario(
                 scenario!("Advanced API")
-                    .set_weight(20)?
-                    .register_transaction(transaction!(search_api).set_weight(3)?)
-                    .register_transaction(transaction!(get_item).set_weight(2)?)
-                    .register_transaction(transaction!(post_item).set_weight(1)?)
-                    .register_transaction(transaction!(get_admin_settings).set_weight(1)?)
-                    .register_transaction(transaction!(get_download).set_weight(1)?)
-                    .register_transaction(transaction!(post_webhook).set_weight(1)?),
+                    .set_weight(25)?
+                    .register_transaction(
+                        transaction!(search_api).set_name("GET /search?q=test (with auth)"),
+                    )
+                    .register_transaction(
+                        transaction!(get_item).set_name("GET /items/{id} (with auth)"),
+                    )
+                    .register_transaction(
+                        transaction!(post_item).set_name("POST /items/{id} (with auth)"),
+                    )
+                    .register_transaction(
+                        transaction!(get_admin_settings).set_name("GET /admin/settings (with auth)"),
+                    )
+                    // Note: download endpoint included in adaptive but commented out in api_load_test
+                    .register_transaction(
+                        transaction!(get_download).set_name("GET /download/{id} (with auth)"),
+                    )
+                    .register_transaction(
+                        transaction!(post_webhook).set_name("POST /webhooks (with auth)"),
+                    ),
             )
+            // Path Parameters (10% weight) - requires API key
             .register_scenario(
                 scenario!("Path Parameters")
                     .set_weight(10)?
-                    .register_transaction(transaction!(label_path)),
+                    .register_transaction(
+                        transaction!(label_path).set_name("GET /labels/{color} (label-style)"),
+                    ),
             )
+            // Static Files (10% weight)
             .register_scenario(
-                scenario!("Static Resources")
+                scenario!("Static Files")
                     .set_weight(10)?
-                    .register_transaction(transaction!(load_openapi))
-                    .register_transaction(transaction!(load_index))
-                    .register_transaction(transaction!(test_swagger_ui)),
+                    .register_transaction(transaction!(load_openapi).set_name("GET /openapi.yaml"))
+                    .register_transaction(
+                        transaction!(test_swagger_ui).set_name("GET /docs (Swagger UI)"),
+                    )
+                    .register_transaction(transaction!(load_index).set_name("GET / (root)")),
             )
             .execute()
             .await?;

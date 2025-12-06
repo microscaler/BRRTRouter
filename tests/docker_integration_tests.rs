@@ -46,9 +46,7 @@ impl Drop for DockerTestContainer {
     fn drop(&mut self) {
         // Always clean up container, even on panic
         // This is the fix for "dozens of uncleaned containers"!
-        let opts = RemoveContainerOptionsBuilder::default()
-            .force(true)
-            .build();
+        let opts = RemoveContainerOptionsBuilder::default().force(true).build();
         let _ = block_on(self.docker.remove_container(&self.container_id, Some(opts)));
     }
 }
@@ -159,8 +157,7 @@ fn test_petstore_container_health() {
     // Wrap container in RAII guard for automatic cleanup
     let container = DockerTestContainer::from_id(docker.clone(), created.id);
 
-    block_on(docker.start_container(container.id(), None::<StartContainerOptions>))
-        .unwrap();
+    block_on(docker.start_container(container.id(), None::<StartContainerOptions>)).unwrap();
 
     // Give the container a moment to start
     sleep(Duration::from_secs(2));
