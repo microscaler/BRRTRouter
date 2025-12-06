@@ -414,7 +414,37 @@ Recommended defaults differ by environment:
 - **Staging/Performance**: production-like logging and metrics, but lower concurrency limits.
 - **Production**: 16KB stacks, schema caching enabled, and concurrency caps informed by tests similar to those described in Section 7.
 
-#### 8.4 End-to-End Contract Enforcement Across Microservices
+#### 8.4 Validation Granularity: Trade-offs Across Layers
+
+When BRRTRouter is deployed at multiple layers (BFF, intermediate services, leaf services), organizations must consider where validation should occur:
+
+**Request Validation Options**
+
+| Strategy | Description | Trade-off |
+|----------|-------------|-----------|
+| **Full at every layer** | Every BRRTRouter instance validates requests against its contract | Maximum safety; defense in depth; highest latency cost |
+| **Edge-only** | Only the BFF validates; internal services trust upstream | Fastest; single point of validation; riskier if internal services are accessed directly |
+| **Edge + leaf** | BFF validates incoming; leaf services validate at the boundary | Balanced; catches drift at generation point; skips intermediaries |
+
+**Response Validation Options**
+
+| Strategy | Description | Trade-off |
+|----------|-------------|-----------|
+| **Source-only** | Generating microservice validates its own response | Fastest return path; trusts downstream to be correct |
+| **Every layer** | Each BRRTRouter validates responses before forwarding | Maximum contract enforcement; catches drift at every hop; higher latency |
+| **Edge-only** | Only BFF validates before returning to client | Single validation point on egress; good for catching aggregate issues |
+
+**Recommended Approach**
+
+For most deployments, a pragmatic middle ground is:
+- **Request validation**: Full at BFF; optional/configurable at internal services based on trust model
+- **Response validation**: At the generating service (catches errors at source) and at the BFF (catches aggregation issues before client sees them)
+
+This is an area where BRRTRouter aims to provide **runtime configuration** so teams can tune validation granularity per-environment:
+- Development: full validation everywhere for early contract violation detection
+- Production: edge + leaf validation, with intermediaries doing lightweight or no validation
+
+#### 8.5 End-to-End Contract Enforcement Across Microservices
 
 In the PriceWhisperer reference model, BRRTRouter is not limited to the edge BFF. Each internal microservice also runs its own BRRTRouter instance, generated from its own OpenAPI contract. This creates a **layered contract chain**:
 - The BFF’s BRRTRouter instance validates and routes external traffic according to the public API.
@@ -515,7 +545,12 @@ In the near term, several enhancements are planned or underway:
 
 #### 10.2 Medium-Term Initiatives
 
-Medium-term initiatives focus on broadening BRRTRouter’s applicability:
+Medium-term initiatives focus on broadening BRRTRouter's applicability:
+- **Configurable validation granularity**, allowing operators to enable/disable request and response validation independently at each layer. This enables patterns like "edge + leaf" validation where the BFF and generating services validate, but intermediate hops skip validation for performance. Configuration would support:
+  - Per-instance request validation toggle
+  - Per-instance response validation toggle
+  - Trust-boundary markers (e.g., "trust upstream BFF validation")
+  - Environment-based defaults (full in dev, selective in prod)
 - **Multi-tenant routing and sharding**, enabling a single deployment to safely serve multiple logical tenants with isolated routing trees and quotas.
 - **Streaming extensions**, including better support for server-sent events and WebSocket-style interactions where appropriate.
 - **Richer policy hooks** so that organizations can integrate custom rate limiting, quota management, and feature flagging into the routing layer.
