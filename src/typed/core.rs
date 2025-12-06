@@ -161,10 +161,17 @@ where
                         let method = req.method.clone();
                         let path = req.path.clone();
                         let handler_name = req.handler_name.clone();
-                        let path_params: HashMap<String, String> =
-                            req.path_params.iter().cloned().collect();
-                        let query_params: HashMap<String, String> =
-                            req.query_params.iter().cloned().collect();
+                        // JSF: Map Arc<str> to String for HashMap
+                        let path_params: HashMap<String, String> = req
+                            .path_params
+                            .iter()
+                            .map(|(k, v)| (k.to_string(), v.clone()))
+                            .collect();
+                        let query_params: HashMap<String, String> = req
+                            .query_params
+                            .iter()
+                            .map(|(k, v)| (k.to_string(), v.clone()))
+                            .collect();
 
                         // STEP 1: Type conversion - consume the HandlerRequest to produce handler data
                         // This intentionally consumes `req` (no req.clone()) to avoid heavy copies.
@@ -338,10 +345,17 @@ where
                         let path = req.path.clone();
                         let handler_name = req.handler_name.clone();
                         // Convert SmallVec to HashMap for TypedHandlerRequest API
-                        let path_params: HashMap<String, String> =
-                            req.path_params.iter().cloned().collect();
-                        let query_params: HashMap<String, String> =
-                            req.query_params.iter().cloned().collect();
+                        // JSF: Map Arc<str> to String for HashMap
+                        let path_params: HashMap<String, String> = req
+                            .path_params
+                            .iter()
+                            .map(|(k, v)| (k.to_string(), v.clone()))
+                            .collect();
+                        let query_params: HashMap<String, String> = req
+                            .query_params
+                            .iter()
+                            .map(|(k, v)| (k.to_string(), v.clone()))
+                            .collect();
 
                         // STEP 1: Type conversion - consume the HandlerRequest to produce handler data
                         // This intentionally consumes `req` (no req.clone()) to avoid heavy copies.
@@ -454,8 +468,17 @@ where
             path: req.path,
             handler_name: req.handler_name,
             // Convert SmallVec to HashMap for API compatibility
-            path_params: req.path_params.iter().cloned().collect(),
-            query_params: req.query_params.iter().cloned().collect(),
+            // JSF: Map Arc<str> to String
+            path_params: req
+                .path_params
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.clone()))
+                .collect(),
+            query_params: req
+                .query_params
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.clone()))
+                .collect(),
             data,
         })
     }
@@ -610,12 +633,21 @@ impl Dispatcher {
             };
 
             // Build typed request (convert SmallVec to HashMap for API compatibility)
+            // JSF: Map Arc<str> to String
             let typed_req = TypedHandlerRequest {
                 method: req.method.clone(),
                 path: req.path.clone(),
                 handler_name: req.handler_name.clone(),
-                path_params: req.path_params.iter().cloned().collect(),
-                query_params: req.query_params.iter().cloned().collect(),
+                path_params: req
+                    .path_params
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), v.clone()))
+                    .collect(),
+                query_params: req
+                    .query_params
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), v.clone()))
+                    .collect(),
                 data,
             };
 

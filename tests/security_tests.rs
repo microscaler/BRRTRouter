@@ -1219,7 +1219,7 @@ fn test_api_key_provider_query() {
     };
 
     let mut query: ParamVec = ParamVec::new();
-    query.push(("api_key".to_string(), "test_key".to_string()));
+    query.push((Arc::from("api_key"), "test_key".to_string()));
     let req = SecurityRequest {
         headers: &HeaderVec::new(),
         query: &query,

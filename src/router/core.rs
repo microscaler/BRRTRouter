@@ -19,6 +19,7 @@ use http::Method;
 use regex::Regex;
 use smallvec::SmallVec;
 use std::collections::HashMap;
+use std::sync::Arc;
 use tracing::{debug, info, warn};
 
 use super::radix::RadixRouter;
@@ -30,7 +31,14 @@ pub const MAX_INLINE_PARAMS: usize = 8;
 
 /// Stack-allocated parameter storage for the hot path.
 /// Uses SmallVec to avoid heap allocation for routes with ≤8 params.
-pub type ParamVec = SmallVec<[(String, String); MAX_INLINE_PARAMS]>;
+/// 
+/// # JSF Optimization (P0)
+/// 
+/// Param names use `Arc<str>` instead of `String` because:
+/// - Names come from the static route tree (known at startup)
+/// - `Arc::clone()` is O(1) atomic increment vs O(n) string copy
+/// - Values remain `String` as they're per-request data from the URL
+pub type ParamVec = SmallVec<[(Arc<str>, String); MAX_INLINE_PARAMS]>;
 
 /// Result of successfully matching a request path to a route
 ///
@@ -72,7 +80,7 @@ impl RouteMatch {
     pub fn get_path_param(&self, name: &str) -> Option<&str> {
         self.path_params
             .iter()
-            .rfind(|(k, _)| k == name)
+            .rfind(|(k, _)| k.as_ref() == name)
             .map(|(_, v)| v.as_str())
     }
 
@@ -91,7 +99,7 @@ impl RouteMatch {
     pub fn get_query_param(&self, name: &str) -> Option<&str> {
         self.query_params
             .iter()
-            .rfind(|(k, _)| k == name)
+            .rfind(|(k, _)| k.as_ref() == name)
             .map(|(_, v)| v.as_str())
     }
 
@@ -99,14 +107,20 @@ impl RouteMatch {
     /// Note: This allocates - use get_path_param() in hot paths instead
     #[must_use]
     pub fn path_params_map(&self) -> HashMap<String, String> {
-        self.path_params.iter().cloned().collect()
+        self.path_params
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.clone()))
+            .collect()
     }
 
     /// Convert query_params to HashMap for compatibility with existing code
     /// Note: This allocates - use get_query_param() in hot paths instead
     #[must_use]
     pub fn query_params_map(&self) -> HashMap<String, String> {
-        self.query_params.iter().cloned().collect()
+        self.query_params
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.clone()))
+            .collect()
     }
 }
 

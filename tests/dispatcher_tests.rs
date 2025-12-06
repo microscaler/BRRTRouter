@@ -126,9 +126,9 @@ fn test_dispatch_post_item() {
 
     let (reply_tx, reply_rx) = mpsc::channel();
     let mut path_params: ParamVec = ParamVec::new();
-    path_params.push(("id".to_string(), "item-001".to_string()));
+    path_params.push((Arc::from("id"), "item-001".to_string()));
     let mut query_params: ParamVec = ParamVec::new();
-    query_params.push(("debug".to_string(), "true".to_string()));
+    query_params.push((Arc::from("debug"), "true".to_string()));
     let body = json!({"name": "New Item"});
 
     let request = HandlerRequest {
@@ -170,9 +170,9 @@ fn test_dispatch_get_pet() {
 
     let (reply_tx, reply_rx) = mpsc::channel();
     let mut path_params: ParamVec = ParamVec::new();
-    path_params.push(("id".to_string(), "12345".to_string()));
+    path_params.push((Arc::from("id"), "12345".to_string()));
     let mut query_params: ParamVec = ParamVec::new();
-    query_params.push(("include".to_string(), "stats".to_string()));
+    query_params.push((Arc::from("include"), "stats".to_string()));
 
     let request = HandlerRequest {
         request_id: RequestId::new(),
@@ -219,9 +219,9 @@ fn test_typed_controller_params() {
 
     let (reply_tx, reply_rx) = mpsc::channel();
     let mut path_params: ParamVec = ParamVec::new();
-    path_params.push(("id".to_string(), "42".to_string()));
+    path_params.push((Arc::from("id"), "42".to_string()));
     let mut query_params: ParamVec = ParamVec::new();
-    query_params.push(("debug".to_string(), "true".to_string()));
+    query_params.push((Arc::from("debug"), "true".to_string()));
 
     let request = HandlerRequest {
         request_id: RequestId::new(),
@@ -259,9 +259,9 @@ fn test_typed_controller_invalid_params() {
     let (reply_tx, reply_rx) = mpsc::channel();
     let mut path_params: ParamVec = ParamVec::new();
     // invalid integer value for id
-    path_params.push(("id".to_string(), "not_an_int".to_string()));
+    path_params.push((Arc::from("id"), "not_an_int".to_string()));
     let mut query_params: ParamVec = ParamVec::new();
-    query_params.push(("debug".to_string(), "true".to_string()));
+    query_params.push((Arc::from("debug"), "true".to_string()));
 
     let request = HandlerRequest {
         request_id: RequestId::new(),

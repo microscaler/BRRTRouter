@@ -10,6 +10,7 @@ use may::sync::mpsc;
 use serde::{Deserialize, Serialize};
 use smallvec::smallvec;
 use std::convert::TryFrom;
+use std::sync::Arc;
 
 #[derive(Debug, Deserialize, Serialize)]
 struct Req {
@@ -39,8 +40,8 @@ impl TryFrom<HandlerRequest> for Req {
 #[test]
 fn test_from_handler_non_string_params() {
     let (tx, _rx) = mpsc::channel::<HandlerResponse>();
-    let path_params: ParamVec = smallvec![("id".to_string(), "42".to_string())];
-    let query_params: ParamVec = smallvec![("active".to_string(), "true".to_string())];
+    let path_params: ParamVec = smallvec![(Arc::from("id"), "42".to_string())];
+    let query_params: ParamVec = smallvec![(Arc::from("active"), "true".to_string())];
 
     let req = HandlerRequest {
         request_id: brrtrouter::ids::RequestId::new(),
@@ -151,8 +152,8 @@ fn test_spawn_typed_success_and_error() {
     let tx = unsafe { brrtrouter::typed::spawn_typed(SumHandler) };
     let (reply_tx, reply_rx) = mpsc::channel();
     let q: ParamVec = smallvec![
-        ("a".to_string(), "2".to_string()),
-        ("b".to_string(), "3".to_string())
+        (Arc::from("a"), "2".to_string()),
+        (Arc::from("b"), "3".to_string())
     ];
     tx.send(HandlerRequest {
         request_id: brrtrouter::ids::RequestId::new(),
@@ -172,7 +173,7 @@ fn test_spawn_typed_success_and_error() {
     assert_eq!(resp.body["total"], 5);
 
     let (reply_tx, reply_rx) = mpsc::channel();
-    let bad_q: ParamVec = smallvec![("a".to_string(), "2".to_string())];
+    let bad_q: ParamVec = smallvec![(Arc::from("a"), "2".to_string())];
     tx.send(HandlerRequest {
         request_id: brrtrouter::ids::RequestId::new(),
         method: Method::GET,
