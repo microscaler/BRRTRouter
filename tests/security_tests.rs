@@ -45,8 +45,6 @@ use brrtrouter::{
     BearerJwtProvider, OAuth2Provider, SecurityProvider, SecurityRequest,
 };
 use serde_json::json;
-use smallvec::smallvec;
-use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::PathBuf;
@@ -946,7 +944,8 @@ fn test_bearer_jwt_token_validation() {
     // Test valid token with no scopes
     let token = make_token("");
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push(("authorization".to_string(), format!("Bearer {}", token)));
+    // JSF P2: HeaderVec now uses Arc<str> for keys
+    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -967,7 +966,8 @@ fn test_bearer_jwt_invalid_signature() {
 
     let token = make_token("");
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push(("authorization".to_string(), format!("Bearer {}", token)));
+    // JSF P2: HeaderVec now uses Arc<str> for keys
+    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -988,8 +988,9 @@ fn test_bearer_jwt_malformed_token() {
 
     // Test malformed token (missing parts)
     let mut headers: HeaderVec = HeaderVec::new();
+    // JSF P2: HeaderVec now uses Arc<str> for keys
     headers.push((
-        "authorization".to_string(),
+        Arc::from("authorization"),
         "Bearer invalid.token".to_string(),
     ));
     let req = SecurityRequest {
@@ -1012,8 +1013,9 @@ fn test_bearer_jwt_invalid_base64() {
 
     // Test token with invalid base64 payload
     let mut headers: HeaderVec = HeaderVec::new();
+    // JSF P2: HeaderVec now uses Arc<str> for keys
     headers.push((
-        "authorization".to_string(),
+        Arc::from("authorization"),
         "Bearer header.invalid_base64.sig".to_string(),
     ));
     let req = SecurityRequest {
@@ -1040,7 +1042,8 @@ fn test_bearer_jwt_invalid_json() {
     let token = format!("{}.{}.sig", header, payload);
 
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push(("authorization".to_string(), format!("Bearer {}", token)));
+    // JSF P2: HeaderVec now uses Arc<str> for keys
+    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -1062,7 +1065,8 @@ fn test_bearer_jwt_scope_validation() {
     // Test token with read scope
     let token = make_token("read write");
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push(("authorization".to_string(), format!("Bearer {}", token)));
+    // JSF P2: HeaderVec now uses Arc<str> for keys
+    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -1093,7 +1097,8 @@ fn test_bearer_jwt_cookie_extraction() {
 
     let token = make_token("");
     let mut cookies: HeaderVec = HeaderVec::new();
-    cookies.push(("auth_token".to_string(), token));
+    // JSF P2: HeaderVec now uses Arc<str> for keys
+    cookies.push((Arc::from("auth_token"), token));
     let req = SecurityRequest {
         headers: &HeaderVec::new(),
         query: &ParamVec::new(),
@@ -1114,7 +1119,8 @@ fn test_bearer_jwt_wrong_scheme() {
 
     let token = make_token("");
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push(("authorization".to_string(), format!("Bearer {}", token)));
+    // JSF P2: HeaderVec now uses Arc<str> for keys
+    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -1134,7 +1140,8 @@ fn test_oauth2_provider_validation() {
 
     let token = make_token("read");
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push(("authorization".to_string(), format!("Bearer {}", token)));
+    // JSF P2: HeaderVec now uses Arc<str> for keys
+    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -1154,7 +1161,8 @@ fn test_oauth2_provider_cookie() {
 
     let token = make_token("read");
     let mut cookies: HeaderVec = HeaderVec::new();
-    cookies.push(("oauth_token".to_string(), token));
+    // JSF P2: HeaderVec now uses Arc<str> for keys
+    cookies.push((Arc::from("oauth_token"), token));
     let req = SecurityRequest {
         headers: &HeaderVec::new(),
         query: &ParamVec::new(),
@@ -1175,7 +1183,8 @@ fn test_oauth2_provider_wrong_scheme() {
 
     let token = make_token("");
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push(("authorization".to_string(), format!("Bearer {}", token)));
+    // JSF P2: HeaderVec now uses Arc<str> for keys
+    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -1197,7 +1206,8 @@ fn test_api_key_provider_header() {
     };
 
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push(("x-api-key".to_string(), "test_key".to_string()));
+    // JSF P2: HeaderVec now uses Arc<str> for keys
+    headers.push((Arc::from("x-api-key"), "test_key".to_string()));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -1241,7 +1251,8 @@ fn test_api_key_provider_cookie() {
     };
 
     let mut cookies: HeaderVec = HeaderVec::new();
-    cookies.push(("api_key".to_string(), "test_key".to_string()));
+    // JSF P2: HeaderVec now uses Arc<str> for keys
+    cookies.push((Arc::from("api_key"), "test_key".to_string()));
     let req = SecurityRequest {
         headers: &HeaderVec::new(),
         query: &ParamVec::new(),
@@ -1300,7 +1311,7 @@ fn test_malformed_authorization_header() {
 
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((
-        "authorization".to_string(),
+        Arc::from("authorization"),
         "Basic dXNlcjpwYXNz".to_string(),
     )); // Basic auth instead of Bearer
     let req = SecurityRequest {
@@ -1323,7 +1334,8 @@ fn test_case_insensitive_bearer_scheme() {
 
     let token = make_token("");
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push(("authorization".to_string(), format!("Bearer {}", token)));
+    // JSF P2: HeaderVec now uses Arc<str> for keys
+    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -1344,7 +1356,8 @@ fn test_empty_token_scopes() {
 
     let token = make_token(""); // Empty scope
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push(("authorization".to_string(), format!("Bearer {}", token)));
+    // JSF P2: HeaderVec now uses Arc<str> for keys
+    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),

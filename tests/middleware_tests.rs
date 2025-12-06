@@ -130,8 +130,9 @@ fn test_metrics_middleware_zero_requests() {
 fn test_auth_middleware_valid_token() {
     let auth = AuthMiddleware::new("Bearer valid-token".to_string());
 
+    // JSF P2: HeaderVec now uses Arc<str> for keys
     let headers: HeaderVec = smallvec![(
-        "authorization".to_string(),
+        Arc::from("authorization"),
         "Bearer valid-token".to_string()
     )];
 
@@ -146,8 +147,9 @@ fn test_auth_middleware_valid_token() {
 fn test_auth_middleware_invalid_token() {
     let auth = AuthMiddleware::new("Bearer valid-token".to_string());
 
+    // JSF P2: HeaderVec now uses Arc<str> for keys
     let headers: HeaderVec = smallvec![(
-        "authorization".to_string(),
+        Arc::from("authorization"),
         "Bearer invalid-token".to_string()
     )];
 
@@ -187,9 +189,10 @@ fn test_auth_middleware_case_insensitive_header() {
     let auth = AuthMiddleware::new("Bearer valid-token".to_string());
 
     // HTTP headers are case-insensitive per RFC 7230
-    // "Authorization" should match when looking for "authorization"
+    // "Authorization" (capital A) should match when looking for "authorization" (lowercase)
+    // JSF P2: HeaderVec now uses Arc<str> for keys
     let headers: HeaderVec = smallvec![(
-        "Authorization".to_string(),
+        Arc::from("Authorization"),
         "Bearer valid-token".to_string()
     )];
 
@@ -349,8 +352,9 @@ fn test_middleware_combination_auth_and_cors() {
     let auth = AuthMiddleware::new("Bearer valid-token".to_string());
     let cors = CorsMiddleware::default();
 
+    // JSF P2: HeaderVec now uses Arc<str> for keys
     let headers: HeaderVec = smallvec![(
-        "authorization".to_string(),
+        Arc::from("authorization"),
         "Bearer valid-token".to_string()
     )];
 
@@ -475,7 +479,7 @@ fn test_middleware_response_modification() {
     let mut resp = create_test_response(404);
 
     // Add some existing headers
-    resp.set_header("Content-Type".to_string(), "application/json".to_string());
+    resp.set_header("Content-Type", "application/json".to_string());
 
     cors.after(&req, &mut resp, Duration::from_millis(0));
 

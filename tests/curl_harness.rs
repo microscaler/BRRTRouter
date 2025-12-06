@@ -628,18 +628,50 @@ impl ContainerHarness {
         );
         let container_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
-        // Query mapped port
-        let port_out = Command::new("docker")
-            .args([
-                "inspect",
-                "-f",
-                "{{(index (index .NetworkSettings.Ports \"8080/tcp\") 0).HostPort}}",
-                &container_id,
-            ])
-            .output()
-            .expect("failed to inspect container port");
-        assert!(port_out.status.success(), "docker inspect failed");
-        let host_port = String::from_utf8_lossy(&port_out.stdout).trim().to_string();
+        // Query mapped port with retry - Docker needs a moment to set up network settings
+        // Retry up to 10 times with exponential backoff (max ~5 seconds total)
+        let mut host_port = String::new();
+        let mut retries = 0;
+        let max_retries = 10;
+        loop {
+            let port_out = Command::new("docker")
+                .args([
+                    "inspect",
+                    "-f",
+                    "{{(index (index .NetworkSettings.Ports \"8080/tcp\") 0).HostPort}}",
+                    &container_id,
+                ])
+                .output()
+                .expect("failed to inspect container port");
+            
+            if port_out.status.success() {
+                let port_str = String::from_utf8_lossy(&port_out.stdout).trim().to_string();
+                if !port_str.is_empty() {
+                    host_port = port_str;
+                    break;
+                }
+            }
+            
+            retries += 1;
+            if retries >= max_retries {
+                let stderr = String::from_utf8_lossy(&port_out.stderr);
+                panic!(
+                    "docker inspect failed after {} retries: {}\nContainer ID: {}\nStderr: {}",
+                    max_retries,
+                    if port_out.status.code().is_some() {
+                        format!("exit code {:?}", port_out.status.code())
+                    } else {
+                        "unknown error".to_string()
+                    },
+                    container_id,
+                    stderr
+                );
+            }
+            
+            // Exponential backoff: 50ms, 100ms, 200ms, 400ms, 800ms, etc.
+            let delay_ms = 50 * (1 << (retries - 1).min(6)); // Cap at 3.2s
+            thread::sleep(Duration::from_millis(delay_ms));
+        }
         let base_url = format!("http://127.0.0.1:{}", host_port);
 
         // Wait for readiness using shared helper

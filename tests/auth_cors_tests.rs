@@ -5,13 +5,15 @@ use brrtrouter::router::ParamVec;
 use http::Method;
 use may::sync::mpsc;
 use smallvec::smallvec;
+use std::sync::Arc;
 use std::time::Duration;
 
 #[test]
 fn test_auth_middleware_allows_valid_token() {
     let mw = AuthMiddleware::new("secret".into());
     let (tx, _rx) = mpsc::channel::<HandlerResponse>();
-    let headers: HeaderVec = smallvec![("authorization".to_string(), "secret".to_string())];
+    // JSF P2: HeaderVec now uses Arc<str> for keys
+    let headers: HeaderVec = smallvec![(Arc::from("authorization"), "secret".to_string())];
     let req = HandlerRequest {
         request_id: RequestId::new(),
         method: Method::GET,

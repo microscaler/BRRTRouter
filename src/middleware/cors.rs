@@ -141,10 +141,10 @@ impl Middleware for CorsMiddleware {
     /// - `Access-Control-Allow-Headers`: First allowed header or `*`
     fn after(&self, _req: &HandlerRequest, res: &mut HandlerResponse, _latency: Duration) {
         let origins = self.allowed_origins.join(", ");
-        res.set_header("Access-Control-Allow-Origin".to_string(), origins);
+        res.set_header("Access-Control-Allow-Origin", origins);
 
         let headers = self.allowed_headers.join(", ");
-        res.set_header("Access-Control-Allow-Headers".to_string(), headers);
+        res.set_header("Access-Control-Allow-Headers", headers);
 
         let methods = self
             .allowed_methods
@@ -152,6 +152,6 @@ impl Middleware for CorsMiddleware {
             .map(|m| m.as_str())
             .collect::<Vec<_>>()
             .join(", ");
-        res.set_header("Access-Control-Allow-Methods".to_string(), methods);
+        res.set_header("Access-Control-Allow-Methods", methods);
     }
 }

@@ -30,7 +30,7 @@
 //! - This is a framework limitation, not a production issue
 
 use brrtrouter::{
-    dispatcher::{Dispatcher, HandlerRequest, HandlerResponse, HeaderVec},
+    dispatcher::{Dispatcher, HandlerRequest, HeaderVec},
     load_spec,
     router::{ParamVec, RouteMatch, Router},
     typed::{Handler, TypedHandlerRequest},
@@ -40,7 +40,6 @@ use may::sync::mpsc;
 use pet_store::registry;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use smallvec::smallvec;
 use std::convert::TryFrom;
 use std::sync::Arc;
 mod tracing_util;

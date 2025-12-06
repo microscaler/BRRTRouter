@@ -40,7 +40,15 @@ use crate::middleware::Middleware;
 pub const MAX_INLINE_HEADERS: usize = 16;
 
 /// Stack-allocated header/cookie storage for the hot path
-pub type HeaderVec = SmallVec<[(String, String); MAX_INLINE_HEADERS]>;
+/// 
+/// # JSF Optimization (P2)
+/// 
+/// Header names use `Arc<str>` instead of `String` because:
+/// - Header names are often repeated (Content-Type, Authorization, etc.)
+/// - `Arc::clone()` is O(1) atomic increment vs O(n) string copy
+/// - Values remain `String` as they're per-request data from the HTTP request
+/// - Matches the optimization pattern used in ParamVec (P0-1)
+pub type HeaderVec = SmallVec<[(Arc<str>, String); MAX_INLINE_HEADERS]>;
 
 /// Generate a unique request ID for tracing (ULID string)
 #[must_use]
@@ -126,7 +134,7 @@ impl HandlerRequest {
     pub fn get_cookie(&self, name: &str) -> Option<&str> {
         self.cookies
             .iter()
-            .find(|(k, _)| k == name)
+            .find(|(k, _)| k.as_ref() == name)
             .map(|(_, v)| v.as_str())
     }
 
@@ -154,7 +162,10 @@ impl HandlerRequest {
     /// Note: This allocates - use get_header() in hot paths
     #[must_use]
     pub fn headers_map(&self) -> HashMap<String, String> {
-        self.headers.iter().cloned().collect()
+        self.headers
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.clone()))
+            .collect()
     }
 }
 
@@ -191,7 +202,8 @@ impl HandlerResponse {
     #[must_use]
     pub fn json(status: u16, body: Value) -> Self {
         let mut headers = HeaderVec::new();
-        headers.push(("Content-Type".to_string(), "application/json".to_string()));
+        // JSF P2: Use Arc::from for header names (O(1) clone)
+        headers.push((Arc::from("content-type"), "application/json".to_string()));
         Self {
             status,
             headers,
@@ -216,10 +228,11 @@ impl HandlerResponse {
     }
 
     /// Add or update a header
-    pub fn set_header(&mut self, name: String, value: String) {
+    // JSF P2: Accept &str and convert to Arc<str> (O(1) for static strings)
+    pub fn set_header(&mut self, name: &str, value: String) {
         // Remove existing header with same name (case-insensitive)
-        self.headers.retain(|(k, _)| !k.eq_ignore_ascii_case(&name));
-        self.headers.push((name, value));
+        self.headers.retain(|(k, _)| !k.eq_ignore_ascii_case(name));
+        self.headers.push((Arc::from(name), value));
     }
 }
 

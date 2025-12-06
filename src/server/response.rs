@@ -1,6 +1,7 @@
 use crate::dispatcher::HeaderVec;
 use may_minihttp::Response;
 use serde_json::Value;
+use std::sync::Arc;
 
 fn status_reason(status: u16) -> &'static str {
     match status {
@@ -95,7 +96,8 @@ mod tests {
     impl HttpService for HandlerService {
         fn call(&mut self, _req: Request, res: &mut Response) -> std::io::Result<()> {
             let mut headers: HeaderVec = HeaderVec::new();
-            headers.push(("X-Test".to_string(), "foo".to_string()));
+            // JSF P2: Use Arc::from for header names
+            headers.push((Arc::from("x-test"), "foo".to_string()));
             write_handler_response(res, 201, serde_json::json!({"ok": true}), false, &headers);
             Ok(())
         }

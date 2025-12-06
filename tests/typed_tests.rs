@@ -86,8 +86,9 @@ impl TryFrom<HandlerRequest> for HeaderCookieReq {
 #[test]
 fn test_header_cookie_params() {
     let (tx, _rx) = mpsc::channel::<HandlerResponse>();
-    let headers: HeaderVec = smallvec![("x-token".to_string(), "secret".to_string())];
-    let cookies: HeaderVec = smallvec![("session".to_string(), "abc123".to_string())];
+    // JSF P2: HeaderVec now uses Arc<str> for keys
+    let headers: HeaderVec = smallvec![(Arc::from("x-token"), "secret".to_string())];
+    let cookies: HeaderVec = smallvec![(Arc::from("session"), "abc123".to_string())];
 
     let req = HandlerRequest {
         request_id: brrtrouter::ids::RequestId::new(),
