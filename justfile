@@ -120,6 +120,18 @@ goose-test users="10" runtime="30s":
 	echo "   Log:    /tmp/goose_test.log"
 	echo "   Report: /tmp/goose_report.html"
 
+# Run consistent Goose performance test with metrics tracking (for JSF improvements)
+goose-jsf label users="2000" runtime="60s" hatch-rate="200" baseline="" warmup="10":
+	#!/usr/bin/env bash
+	set -euo pipefail
+	python3 scripts/run_goose_tests.py \
+		--label {{label}} \
+		--users {{users}} \
+		--run-time {{runtime}} \
+		--hatch-rate {{hatch-rate}} \
+		--warmup-time {{warmup}} \
+		{{if baseline}}--baseline {{baseline}}{{fi}}
+
 # Quick smoke test - start server, run brief load test, stop
 smoke-test:
 	#!/usr/bin/env bash
