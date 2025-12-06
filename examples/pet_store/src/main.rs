@@ -2,6 +2,7 @@
 // ⚠️ DO NOT MODIFY - Changes will be overwritten on next generation
 // ⚠️ To modify API behavior, edit the OpenAPI spec and regenerate
 // ⚠️ To implement business logic, edit the corresponding controller file
+#![allow(clippy::uninlined_format_args)]
 use brrtrouter::dispatcher::Dispatcher;
 use brrtrouter::middleware::MetricsMiddleware;
 use brrtrouter::router::Router;
@@ -19,11 +20,14 @@ use std::fs;
 use std::io;
 use std::path::PathBuf;
 
-// Only use jemalloc if BRRTRouter isn't already providing it
-#[cfg(not(feature = "brrtrouter/jemalloc"))]
+// Use jemalloc as the global allocator for better memory performance.
+// This is gated behind the "jemalloc" feature (enabled by default).
+// Disable this feature if brrtrouter is providing jemalloc via its own "jemalloc" feature,
+// or if you want to use the system allocator: `cargo build --no-default-features`
+#[cfg(feature = "jemalloc")]
 use tikv_jemallocator::Jemalloc;
 
-#[cfg(not(feature = "brrtrouter/jemalloc"))]
+#[cfg(feature = "jemalloc")]
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
@@ -140,7 +144,8 @@ fn main() -> io::Result<()> {
         println!("[info] hot-reload requested (handled internally by service watcher if enabled)");
     }
     if let Some(k) = &args.test_api_key {
-        println!("[info] test-api-key provided ({} chars)", k.len());
+        let key_len = k.len();
+        println!("[info] test-api-key provided ({key_len} chars)");
     }
     let (routes, schemes, _slug) = brrtrouter::spec::load_spec_full(spec_path.to_str().unwrap())
         .expect("failed to load OpenAPI spec");
@@ -221,20 +226,23 @@ fn main() -> io::Result<()> {
         }
     };
     // Log startup context to console
-    println!("[startup] spec_path={}", spec_path.display());
+    let spec_display = spec_path.display();
+    let doc_display = args.doc_dir.display();
+    let stack_size = config.stack_size;
+    let routes_count = routes.len();
+    let hot_reload = args.hot_reload;
+    println!("[startup] spec_path={spec_display}");
     if let Some(sd) = &args.static_dir {
-        println!("[startup] static_dir={}", sd.display());
+        let sd_display = sd.display();
+        println!("[startup] static_dir={sd_display}");
     }
-    println!("[startup] doc_dir={}", args.doc_dir.display());
+    println!("[startup] doc_dir={doc_display}");
     println!(
-        "[startup] stack_size={} routes_count={} hot_reload={}",
-        config.stack_size,
-        routes.len(),
-        args.hot_reload
+        "[startup] stack_size={stack_size} routes_count={routes_count} hot_reload={hot_reload}"
     );
 
     match serde_yaml::to_string(&app_config) {
-        Ok(y) => println!("[config]\n{}", y),
+        Ok(y) => println!("[config]\n{y}"),
         Err(_) => println!("[config] <failed to serialize config>"),
     }
 
@@ -266,11 +274,7 @@ fn main() -> io::Result<()> {
                 match scheme {
                     SecurityScheme::ApiKey { name, location, .. } => match location.as_str() {
                         "header" => {
-                            let target = self
-                                .header_override
-                                .as_ref()
-                                .map(|s| s.as_str())
-                                .unwrap_or_else(|| name);
+                            let target = self.header_override.as_deref().unwrap_or(name);
                             req.get_header(&target.to_ascii_lowercase())
                                 .map(|v| v == self.key)
                                 .unwrap_or(false)
@@ -353,7 +357,7 @@ fn main() -> io::Result<()> {
                         });
                         let mut p = JwksBearerProvider::new(&jwks_url);
                         let issuer_opt: Option<&str> =
-                            pa.issuer.as_deref().or_else(|| Some(pa.auth_url.as_str()));
+                            pa.issuer.as_deref().or(Some(pa.auth_url.as_str()));
                         if let Some(iss) = issuer_opt {
                             p = p.issuer(iss);
                         }
@@ -417,7 +421,7 @@ fn main() -> io::Result<()> {
                         });
                         let mut p = JwksBearerProvider::new(&jwks_url);
                         let issuer_opt: Option<&str> =
-                            pa.issuer.as_deref().or_else(|| Some(pa.auth_url.as_str()));
+                            pa.issuer.as_deref().or(Some(pa.auth_url.as_str()));
                         if let Some(iss) = issuer_opt {
                             p = p.issuer(iss);
                         }
@@ -469,7 +473,7 @@ fn main() -> io::Result<()> {
                     if let Some(cookie) = cookie_opt.clone() {
                         p = p.cookie_name(cookie);
                     }
-                    println!("[auth] register OAuth2Provider scheme={} source=mock signature_len={} cookie={:?}", scheme_name, sig_len, cookie_opt);
+                    println!("[auth] register OAuth2Provider scheme={scheme_name} source=mock signature_len={sig_len} cookie={cookie_opt:?}");
                     service.register_security_provider(&scheme_name, std::sync::Arc::new(p));
                 }
                 _ => {}
@@ -487,9 +491,9 @@ fn main() -> io::Result<()> {
         })
         .unwrap_or(8080);
     let addr = if std::env::var("BRRTR_LOCAL").is_ok() {
-        format!("127.0.0.1:{}", port)
+        format!("127.0.0.1:{port}")
     } else {
-        format!("0.0.0.0:{}", port)
+        format!("0.0.0.0:{port}")
     };
     println!("🚀 pet_store example server listening on {addr}");
     let server = HttpServer(service).start(&addr).map_err(io::Error::other)?;

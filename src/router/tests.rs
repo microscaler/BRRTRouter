@@ -1,6 +1,7 @@
 use super::Router;
 use crate::spec::RouteMeta;
 use http::Method;
+use std::sync::Arc;
 
 // Helper function to create a basic RouteMeta for testing
 fn create_route_meta(method: Method, path: &str, handler: &str) -> RouteMeta {
@@ -9,8 +10,8 @@ fn create_route_meta(method: Method, path: &str, handler: &str) -> RouteMeta {
 
     RouteMeta {
         method,
-        path_pattern: path.to_string(),
-        handler_name: handler.to_string(),
+        path_pattern: Arc::from(path),
+        handler_name: Arc::from(handler),
         base_path: String::new(),
         parameters: Vec::new(),
         request_schema: None,
@@ -260,7 +261,7 @@ fn test_route_match_structure() {
     assert_eq!(route_match.get_path_param("id"), Some("123"));
     assert!(route_match.query_params.is_empty());
     assert_eq!(route_match.route.method, Method::GET);
-    assert_eq!(route_match.route.path_pattern, "/users/{id}");
+    assert_eq!(route_match.route.path_pattern.as_ref(), "/users/{id}");
 }
 
 #[test]

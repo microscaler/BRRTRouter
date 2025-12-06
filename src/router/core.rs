@@ -294,7 +294,8 @@ impl Router {
 
         if let Some((route, params)) = result {
             // RT3: Route matched
-            let handler_name = route.handler_name.clone();
+            // JSF P0-2: Convert Arc<str> to String for RouteMatch
+            let handler_name = route.handler_name.to_string();
 
             if match_duration > std::time::Duration::from_millis(1) {
                 warn!(

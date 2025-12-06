@@ -1,6 +1,7 @@
 use brrtrouter::{router::Router, spec::RouteMeta};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use http::Method;
+use std::sync::Arc;
 
 fn example_spec() -> &'static str {
     r#"openapi: 3.1.0
@@ -116,8 +117,8 @@ fn bench_route_scalability(c: &mut Criterion) {
         for i in 0..*route_count {
             routes.push(RouteMeta {
                 method: Method::GET,
-                path_pattern: format!("/api/v1/resource{}/{{id}}", i),
-                handler_name: format!("handler_{}", i),
+                path_pattern: Arc::from(format!("/api/v1/resource{}/{{id}}", i).as_str()),
+                handler_name: Arc::from(format!("handler_{}", i).as_str()),
                 base_path: String::new(),
                 parameters: Vec::new(),
                 request_schema: None,

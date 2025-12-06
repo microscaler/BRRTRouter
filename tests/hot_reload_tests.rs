@@ -132,7 +132,7 @@ paths:
                     let (tx, _rx) = mpsc::channel();
                     disp.add_route(r.clone(), tx);
                 }
-                let names = new_routes.iter().map(|r| r.handler_name.clone()).collect();
+                let names: Vec<String> = new_routes.iter().map(|r| r.handler_name.to_string()).collect();
                 updates_clone.lock().unwrap().push(names);
             },
         )
@@ -283,7 +283,7 @@ paths:
                     let (tx, _rx) = mpsc::channel();
                     disp.add_route(r.clone(), tx);
                 }
-                let names = new_routes.iter().map(|r| r.handler_name.clone()).collect();
+                let names: Vec<String> = new_routes.iter().map(|r| r.handler_name.to_string()).collect();
                 updates_clone.lock().unwrap().push(names);
             },
         )
@@ -427,7 +427,7 @@ paths:
     let v1_valid_request = json!({"name": "Alice"});
     let v1_route = routes
         .iter()
-        .find(|r| r.handler_name == "create_user")
+        .find(|r| r.handler_name.as_ref() == "create_user")
         .unwrap();
 
     if let Some(ref schema) = v1_route.request_schema {
@@ -464,7 +464,7 @@ paths:
                     let (tx, _rx) = mpsc::channel();
                     disp.add_route(r.clone(), tx);
                 }
-                let names = new_routes.iter().map(|r| r.handler_name.clone()).collect();
+                let names: Vec<String> = new_routes.iter().map(|r| r.handler_name.to_string()).collect();
                 updates_clone.lock().unwrap().push(names);
             },
         )
@@ -509,7 +509,7 @@ paths:
     let (new_routes, _slug) = load_spec(path.to_str().unwrap()).unwrap();
     let v2_route = new_routes
         .iter()
-        .find(|r| r.handler_name == "create_user")
+        .find(|r| r.handler_name.as_ref() == "create_user")
         .unwrap();
 
     // Test validation with V2 schema (requires both 'name' and 'age')
@@ -612,7 +612,7 @@ paths:
                     let (tx, _rx) = mpsc::channel();
                     disp.add_route(r.clone(), tx);
                 }
-                let names = new_routes.iter().map(|r| r.handler_name.clone()).collect();
+                let names: Vec<String> = new_routes.iter().map(|r| r.handler_name.to_string()).collect();
                 updates_clone.lock().unwrap().push(names);
             },
         )

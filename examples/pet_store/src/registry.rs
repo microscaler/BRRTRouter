@@ -9,6 +9,7 @@ use brrtrouter::typed::spawn_typed_with_stack_size_and_name;
 
 /// # Safety
 /// This function spawns handler coroutines. Callers must ensure coroutine runtime is set up.
+#[allow(dead_code)]
 pub unsafe fn register_all(dispatcher: &mut Dispatcher) {
     dispatcher.register_typed_with_stack_size(
         "admin_settings",
@@ -137,12 +138,13 @@ pub unsafe fn register_from_spec(dispatcher: &mut Dispatcher, routes: &[RouteMet
     dispatcher.worker_pools.clear();
 
     for route in routes {
-        match route.handler_name.as_str() {
+        // JSF P0-2: Use as_ref() for Arc<str> -> &str conversion
+        match route.handler_name.as_ref() {
             "admin_settings" => {
                 let tx = spawn_typed_with_stack_size_and_name(
                     crate::controllers::admin_settings::AdminSettingsController,
                     16384,
-                    Some(route.handler_name.as_str()),
+                    Some(route.handler_name.as_ref()),
                 );
                 dispatcher.add_route(route.clone(), tx);
             }
@@ -150,7 +152,7 @@ pub unsafe fn register_from_spec(dispatcher: &mut Dispatcher, routes: &[RouteMet
                 let tx = spawn_typed_with_stack_size_and_name(
                     crate::controllers::download_file::DownloadFileController,
                     20480,
-                    Some(route.handler_name.as_str()),
+                    Some(route.handler_name.as_ref()),
                 );
                 dispatcher.add_route(route.clone(), tx);
             }
@@ -158,7 +160,7 @@ pub unsafe fn register_from_spec(dispatcher: &mut Dispatcher, routes: &[RouteMet
                 let tx = spawn_typed_with_stack_size_and_name(
                     crate::controllers::stream_events::StreamEventsController,
                     24576,
-                    Some(route.handler_name.as_str()),
+                    Some(route.handler_name.as_ref()),
                 );
                 dispatcher.add_route(route.clone(), tx);
             }
@@ -166,7 +168,7 @@ pub unsafe fn register_from_spec(dispatcher: &mut Dispatcher, routes: &[RouteMet
                 let tx = spawn_typed_with_stack_size_and_name(
                     crate::controllers::submit_form::SubmitFormController,
                     16384,
-                    Some(route.handler_name.as_str()),
+                    Some(route.handler_name.as_ref()),
                 );
                 dispatcher.add_route(route.clone(), tx);
             }
@@ -174,7 +176,7 @@ pub unsafe fn register_from_spec(dispatcher: &mut Dispatcher, routes: &[RouteMet
                 let tx = spawn_typed_with_stack_size_and_name(
                     crate::controllers::get_item::GetItemController,
                     20480,
-                    Some(route.handler_name.as_str()),
+                    Some(route.handler_name.as_ref()),
                 );
                 dispatcher.add_route(route.clone(), tx);
             }
@@ -182,7 +184,7 @@ pub unsafe fn register_from_spec(dispatcher: &mut Dispatcher, routes: &[RouteMet
                 let tx = spawn_typed_with_stack_size_and_name(
                     crate::controllers::post_item::PostItemController,
                     20480,
-                    Some(route.handler_name.as_str()),
+                    Some(route.handler_name.as_ref()),
                 );
                 dispatcher.add_route(route.clone(), tx);
             }
@@ -190,7 +192,7 @@ pub unsafe fn register_from_spec(dispatcher: &mut Dispatcher, routes: &[RouteMet
                 let tx = spawn_typed_with_stack_size_and_name(
                     crate::controllers::get_label::GetLabelController,
                     20480,
-                    Some(route.handler_name.as_str()),
+                    Some(route.handler_name.as_ref()),
                 );
                 dispatcher.add_route(route.clone(), tx);
             }
@@ -198,7 +200,7 @@ pub unsafe fn register_from_spec(dispatcher: &mut Dispatcher, routes: &[RouteMet
                 let tx = spawn_typed_with_stack_size_and_name(
                     crate::controllers::get_matrix::GetMatrixController,
                     20480,
-                    Some(route.handler_name.as_str()),
+                    Some(route.handler_name.as_ref()),
                 );
                 dispatcher.add_route(route.clone(), tx);
             }
@@ -206,7 +208,7 @@ pub unsafe fn register_from_spec(dispatcher: &mut Dispatcher, routes: &[RouteMet
                 let tx = spawn_typed_with_stack_size_and_name(
                     crate::controllers::list_pets::ListPetsController,
                     20480,
-                    Some(route.handler_name.as_str()),
+                    Some(route.handler_name.as_ref()),
                 );
                 dispatcher.add_route(route.clone(), tx);
             }
@@ -214,7 +216,7 @@ pub unsafe fn register_from_spec(dispatcher: &mut Dispatcher, routes: &[RouteMet
                 let tx = spawn_typed_with_stack_size_and_name(
                     crate::controllers::add_pet::AddPetController,
                     16384,
-                    Some(route.handler_name.as_str()),
+                    Some(route.handler_name.as_ref()),
                 );
                 dispatcher.add_route(route.clone(), tx);
             }
@@ -222,7 +224,7 @@ pub unsafe fn register_from_spec(dispatcher: &mut Dispatcher, routes: &[RouteMet
                 let tx = spawn_typed_with_stack_size_and_name(
                     crate::controllers::get_pet::GetPetController,
                     20480,
-                    Some(route.handler_name.as_str()),
+                    Some(route.handler_name.as_ref()),
                 );
                 dispatcher.add_route(route.clone(), tx);
             }
@@ -230,7 +232,7 @@ pub unsafe fn register_from_spec(dispatcher: &mut Dispatcher, routes: &[RouteMet
                 let tx = spawn_typed_with_stack_size_and_name(
                     crate::controllers::search::SearchController,
                     20480,
-                    Some(route.handler_name.as_str()),
+                    Some(route.handler_name.as_ref()),
                 );
                 dispatcher.add_route(route.clone(), tx);
             }
@@ -238,7 +240,7 @@ pub unsafe fn register_from_spec(dispatcher: &mut Dispatcher, routes: &[RouteMet
                 let tx = spawn_typed_with_stack_size_and_name(
                     crate::controllers::secure_endpoint::SecureEndpointController,
                     16384,
-                    Some(route.handler_name.as_str()),
+                    Some(route.handler_name.as_ref()),
                 );
                 dispatcher.add_route(route.clone(), tx);
             }
@@ -246,7 +248,7 @@ pub unsafe fn register_from_spec(dispatcher: &mut Dispatcher, routes: &[RouteMet
                 let tx = spawn_typed_with_stack_size_and_name(
                     crate::controllers::upload_file::UploadFileController,
                     16384,
-                    Some(route.handler_name.as_str()),
+                    Some(route.handler_name.as_ref()),
                 );
                 dispatcher.add_route(route.clone(), tx);
             }
@@ -254,7 +256,7 @@ pub unsafe fn register_from_spec(dispatcher: &mut Dispatcher, routes: &[RouteMet
                 let tx = spawn_typed_with_stack_size_and_name(
                     crate::controllers::list_users::ListUsersController,
                     20480,
-                    Some(route.handler_name.as_str()),
+                    Some(route.handler_name.as_ref()),
                 );
                 dispatcher.add_route(route.clone(), tx);
             }
@@ -262,7 +264,7 @@ pub unsafe fn register_from_spec(dispatcher: &mut Dispatcher, routes: &[RouteMet
                 let tx = spawn_typed_with_stack_size_and_name(
                     crate::controllers::get_user::GetUserController,
                     20480,
-                    Some(route.handler_name.as_str()),
+                    Some(route.handler_name.as_ref()),
                 );
                 dispatcher.add_route(route.clone(), tx);
             }
@@ -270,7 +272,7 @@ pub unsafe fn register_from_spec(dispatcher: &mut Dispatcher, routes: &[RouteMet
                 let tx = spawn_typed_with_stack_size_and_name(
                     crate::controllers::delete_user::DeleteUserController,
                     20480,
-                    Some(route.handler_name.as_str()),
+                    Some(route.handler_name.as_ref()),
                 );
                 dispatcher.add_route(route.clone(), tx);
             }
@@ -278,7 +280,7 @@ pub unsafe fn register_from_spec(dispatcher: &mut Dispatcher, routes: &[RouteMet
                 let tx = spawn_typed_with_stack_size_and_name(
                     crate::controllers::options_user::OptionsUserController,
                     20480,
-                    Some(route.handler_name.as_str()),
+                    Some(route.handler_name.as_ref()),
                 );
                 dispatcher.add_route(route.clone(), tx);
             }
@@ -286,7 +288,7 @@ pub unsafe fn register_from_spec(dispatcher: &mut Dispatcher, routes: &[RouteMet
                 let tx = spawn_typed_with_stack_size_and_name(
                     crate::controllers::head_user::HeadUserController,
                     20480,
-                    Some(route.handler_name.as_str()),
+                    Some(route.handler_name.as_ref()),
                 );
                 dispatcher.add_route(route.clone(), tx);
             }
@@ -294,7 +296,7 @@ pub unsafe fn register_from_spec(dispatcher: &mut Dispatcher, routes: &[RouteMet
                 let tx = spawn_typed_with_stack_size_and_name(
                     crate::controllers::list_user_posts::ListUserPostsController,
                     20480,
-                    Some(route.handler_name.as_str()),
+                    Some(route.handler_name.as_ref()),
                 );
                 dispatcher.add_route(route.clone(), tx);
             }
@@ -302,7 +304,7 @@ pub unsafe fn register_from_spec(dispatcher: &mut Dispatcher, routes: &[RouteMet
                 let tx = spawn_typed_with_stack_size_and_name(
                     crate::controllers::get_post::GetPostController,
                     20480,
-                    Some(route.handler_name.as_str()),
+                    Some(route.handler_name.as_ref()),
                 );
                 dispatcher.add_route(route.clone(), tx);
             }
@@ -310,7 +312,7 @@ pub unsafe fn register_from_spec(dispatcher: &mut Dispatcher, routes: &[RouteMet
                 let tx = spawn_typed_with_stack_size_and_name(
                     crate::controllers::register_webhook::RegisterWebhookController,
                     16384,
-                    Some(route.handler_name.as_str()),
+                    Some(route.handler_name.as_ref()),
                 );
                 dispatcher.add_route(route.clone(), tx);
             }

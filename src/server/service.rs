@@ -1096,7 +1096,8 @@ impl HttpService for AppService {
                             map.insert("path".to_string(), json!(path));
                             map.insert(
                                 "handler".to_string(),
-                                json!(route_match.route.handler_name.clone()),
+                                // Convert Arc<str> to &str for JSON serialization
+                                json!(route_match.route.handler_name.as_ref()),
                             );
                         }
                     }

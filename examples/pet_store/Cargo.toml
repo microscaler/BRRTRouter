@@ -3,6 +3,13 @@ name = "pet_store"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = ["jemalloc"]
+# Use jemalloc as the global allocator for better memory performance.
+# Disable this feature if brrtrouter is already providing jemalloc via its own feature,
+# or if you want to use the system allocator.
+jemalloc = ["tikv-jemallocator"]
+
 [dependencies]
 
 brrtrouter = { path = "../.." }
@@ -16,4 +23,4 @@ may = "0.3"
 may_minihttp = "0.1"
 anyhow = "1.0"
 clap = { version = "4.5.39", features = ["derive"] }
-tikv-jemallocator = { version = "0.6", features = ["profiling"] }
+tikv-jemallocator = { version = "0.6", features = ["profiling"], optional = true }
