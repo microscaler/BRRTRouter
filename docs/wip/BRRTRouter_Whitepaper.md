@@ -440,9 +440,36 @@ For most deployments, a pragmatic middle ground is:
 - **Request validation**: Full at BFF; optional/configurable at internal services based on trust model
 - **Response validation**: At the generating service (catches errors at source) and at the BFF (catches aggregation issues before client sees them)
 
-This is an area where BRRTRouter aims to provide **runtime configuration** so teams can tune validation granularity per-environment:
+This is an area where BRRTRouter aims to provide **runtime configuration** so teams can tune validation granularity at multiple levels:
+
+**Per-Environment Defaults**
 - Development: full validation everywhere for early contract violation detection
 - Production: edge + leaf validation, with intermediaries doing lightweight or no validation
+
+**Per-Route Overrides**
+
+Critically, validation must be configurable at the **individual route level**, not just the instance level. This enables SREs to:
+- **Emergency bypass**: Disable validation for a specific route that is causing errors due to schema drift, without affecting the rest of the service
+- **Gradual rollout**: Enable strict validation on new routes while leaving established routes unchanged
+- **Performance tuning**: Skip validation on high-volume, low-risk internal routes while keeping it on sensitive endpoints
+- **Incident response**: Quickly toggle validation off for a problematic route via configuration change rather than code deployment
+
+Example configuration (conceptual):
+```yaml
+validation:
+  default:
+    request: true
+    response: true
+  routes:
+    "/v1/legacy/bulk-import":
+      request: false   # Known schema drift, bypass until fixed
+      response: true
+    "/internal/health":
+      request: false   # Trusted internal route
+      response: false
+```
+
+This per-route granularity ensures that a single problematic endpoint doesn't force operators to choose between full validation and no validation at the component level.
 
 #### 8.5 End-to-End Contract Enforcement Across Microservices
 
@@ -546,11 +573,12 @@ In the near term, several enhancements are planned or underway:
 #### 10.2 Medium-Term Initiatives
 
 Medium-term initiatives focus on broadening BRRTRouter's applicability:
-- **Configurable validation granularity**, allowing operators to enable/disable request and response validation independently at each layer. This enables patterns like "edge + leaf" validation where the BFF and generating services validate, but intermediate hops skip validation for performance. Configuration would support:
-  - Per-instance request validation toggle
-  - Per-instance response validation toggle
+- **Configurable validation granularity**, allowing operators to enable/disable request and response validation at multiple levels of specificity. This enables patterns like "edge + leaf" validation where the BFF and generating services validate, but intermediate hops skip validation for performance. Configuration would support:
+  - Per-route request/response validation toggles (highest priority)
+  - Per-instance default validation settings
   - Trust-boundary markers (e.g., "trust upstream BFF validation")
   - Environment-based defaults (full in dev, selective in prod)
+  - Runtime reconfiguration without restart (for incident response)
 - **Multi-tenant routing and sharding**, enabling a single deployment to safely serve multiple logical tenants with isolated routing trees and quotas.
 - **Streaming extensions**, including better support for server-sent events and WebSocket-style interactions where appropriate.
 - **Richer policy hooks** so that organizations can integrate custom rate limiting, quota management, and feature flagging into the routing layer.
