@@ -5,6 +5,9 @@ Consistent Goose performance test runner for BRRTRouter JSF improvements.
 This script runs Goose load tests with consistent methodology, extracts metrics,
 and compares against baselines to track JSF optimization progress.
 
+The script runs each test 3 times and averages the results to reduce variance
+and provide more reliable performance metrics.
+
 Usage:
     python3 scripts/run_goose_tests.py --label jsf-p0-1 --users 2000 --run-time 60s
     python3 scripts/run_goose_tests.py --label jsf-p0-2 --baseline jsf-p0-1
@@ -136,6 +139,50 @@ def extract_metrics_from_output(output_file: Path) -> Dict:
         metrics['latency_p99_99_ms'] = int(percentile_match.group(6))
     
     return metrics
+
+
+def average_metrics(metrics_list: List[Dict]) -> Dict:
+    """Average metrics from multiple test runs."""
+    if not metrics_list:
+        return {}
+    
+    # Start with the first run's metadata (non-numeric fields)
+    averaged = {
+        'timestamp': datetime.now().isoformat(),
+        'label': metrics_list[0].get('label', 'unknown'),
+        'output_file': metrics_list[0].get('output_file', ''),
+        'config': metrics_list[0].get('config', {}),
+        'runs': len(metrics_list),
+    }
+    
+    # Numeric metrics to average
+    numeric_metrics = [
+        'total_requests', 'total_failures', 'failure_rate',
+        'throughput_req_per_sec', 'latency_avg_ms', 'latency_min_ms',
+        'latency_max_ms', 'latency_median_ms', 'latency_p50_ms',
+        'latency_p75_ms', 'latency_p98_ms', 'latency_p99_ms',
+        'latency_p99_9_ms', 'latency_p99_99_ms'
+    ]
+    
+    # Calculate averages for each metric
+    for metric in numeric_metrics:
+        values = []
+        for run_metrics in metrics_list:
+            if metric in run_metrics:
+                values.append(run_metrics[metric])
+        
+        if values:
+            if metric in ['total_requests', 'total_failures', 'latency_min_ms', 
+                         'latency_max_ms', 'latency_median_ms', 'latency_p50_ms',
+                         'latency_p75_ms', 'latency_p98_ms', 'latency_p99_ms',
+                         'latency_p99_9_ms', 'latency_p99_99_ms']:
+                # Integer metrics - round to nearest integer
+                averaged[metric] = round(sum(values) / len(values))
+            else:
+                # Float metrics - keep precision
+                averaged[metric] = sum(values) / len(values)
+    
+    return averaged
 
 
 def save_metrics(metrics: Dict, label: str, output_dir: Path) -> Path:
@@ -304,34 +351,65 @@ def main():
             sys.exit(1)
         print("✅ Server is ready\n")
     
-    # Warmup
+    # Warmup (only once before all runs)
     if not args.skip_warmup:
         warmup_server(args.host, args.warmup_time)
     
-    # Run test
-    output_file = Path(f"/tmp/goose_{args.label}_{args.users}users.txt")
-    result = run_goose_test(
-        args.host, args.users, args.run_time, args.hatch_rate, output_file
-    )
+    # Run test 3 times and collect metrics
+    print("🔄 Running best-of-3 performance test...\n")
+    all_metrics = []
     
-    if result.returncode != 0:
-        print(f"❌ Goose test failed with exit code {result.returncode}")
-        sys.exit(1)
+    for run_num in range(1, 4):
+        print(f"📊 Run {run_num}/3")
+        output_file = Path(f"/tmp/goose_{args.label}_{args.users}users_run{run_num}.txt")
+        
+        result = run_goose_test(
+            args.host, args.users, args.run_time, args.hatch_rate, output_file
+        )
+        
+        if result.returncode != 0:
+            print(f"❌ Goose test failed with exit code {result.returncode}")
+            sys.exit(1)
+        
+        # Extract metrics from this run
+        print(f"📊 Extracting metrics from run {run_num}...")
+        run_metrics = extract_metrics_from_output(output_file)
+        run_metrics['label'] = args.label
+        run_metrics['config'] = {
+            'host': args.host,
+            'users': args.users,
+            'run_time': args.run_time,
+            'hatch_rate': args.hatch_rate,
+        }
+        run_metrics['run_number'] = run_num
+        
+        all_metrics.append(run_metrics)
+        
+        # Print quick summary for this run
+        print(f"  Run {run_num}: {run_metrics.get('throughput_req_per_sec', 0):,.0f} req/s, "
+              f"P50={run_metrics.get('latency_p50_ms', 0)}ms, "
+              f"P99={run_metrics.get('latency_p99_ms', 0)}ms\n")
+        
+        # Small delay between runs to let system stabilize
+        if run_num < 3:
+            print("⏳ Waiting 5s before next run...\n")
+            time.sleep(5)
     
-    # Extract metrics
-    print("📊 Extracting metrics...")
-    metrics = extract_metrics_from_output(output_file)
-    metrics['label'] = args.label
-    metrics['config'] = {
-        'host': args.host,
-        'users': args.users,
-        'run_time': args.run_time,
-        'hatch_rate': args.hatch_rate,
-    }
+    # Average all metrics
+    print("📊 Averaging metrics from 3 runs...")
+    metrics = average_metrics(all_metrics)
     
-    # Save metrics
+    # Save individual run metrics for reference
+    for run_metrics in all_metrics:
+        run_num = run_metrics['run_number']
+        run_file = args.output_dir / f"{args.label}_run{run_num}_metrics.json"
+        run_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(run_file, 'w') as f:
+            json.dump(run_metrics, f, indent=2)
+    
+    # Save averaged metrics
     metrics_file = save_metrics(metrics, args.label, args.output_dir)
-    print(f"✅ Metrics saved to {metrics_file}\n")
+    print(f"✅ Averaged metrics saved to {metrics_file}\n")
     
     # Print current metrics
     print("📈 CURRENT METRICS:")
