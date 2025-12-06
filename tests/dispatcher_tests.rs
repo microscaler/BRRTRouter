@@ -30,9 +30,9 @@
 //! - This is a framework limitation, not a production issue
 
 use brrtrouter::{
-    dispatcher::{Dispatcher, HandlerRequest},
+    dispatcher::{Dispatcher, HandlerRequest, HandlerResponse, HeaderVec},
     load_spec,
-    router::{RouteMatch, Router},
+    router::{ParamVec, RouteMatch, Router},
     typed::{Handler, TypedHandlerRequest},
 };
 use http::Method;
@@ -40,7 +40,7 @@ use may::sync::mpsc;
 use pet_store::registry;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::collections::HashMap;
+use smallvec::smallvec;
 use std::convert::TryFrom;
 use std::sync::Arc;
 mod tracing_util;
@@ -138,8 +138,8 @@ fn test_dispatch_post_item() {
         handler_name: handler_name.clone(),
         path_params,
         query_params,
-        headers: HashMap::new(),
-        cookies: HashMap::new(),
+        headers: HeaderVec::new(),
+        cookies: HeaderVec::new(),
         body: Some(body),
         reply_tx,
     };
@@ -179,8 +179,8 @@ fn test_dispatch_get_pet() {
         handler_name: handler_name.clone(),
         path_params,
         query_params,
-        headers: HashMap::new(),
-        cookies: HashMap::new(),
+        headers: HeaderVec::new(),
+        cookies: HeaderVec::new(),
         body: None,
         reply_tx,
     };
@@ -226,8 +226,8 @@ fn test_typed_controller_params() {
         handler_name: "assert_controller".to_string(),
         path_params,
         query_params,
-        headers: HashMap::new(),
-        cookies: HashMap::new(),
+        headers: HeaderVec::new(),
+        cookies: HeaderVec::new(),
         body: None,
         reply_tx,
     };
@@ -264,8 +264,8 @@ fn test_typed_controller_invalid_params() {
         handler_name: "assert_controller".to_string(),
         path_params,
         query_params,
-        headers: HashMap::new(),
-        cookies: HashMap::new(),
+        headers: HeaderVec::new(),
+        cookies: HeaderVec::new(),
         body: None,
         reply_tx,
     };
@@ -299,10 +299,10 @@ fn test_panic_handler_returns_500() {
         method: Method::GET,
         path: "/panic".to_string(),
         handler_name: "panic".to_string(),
-        path_params: HashMap::new(),
-        query_params: HashMap::new(),
-        headers: HashMap::new(),
-        cookies: HashMap::new(),
+        path_params: ParamVec::new(),
+        query_params: ParamVec::new(),
+        headers: HeaderVec::new(),
+        cookies: HeaderVec::new(),
         body: None,
         reply_tx,
     };

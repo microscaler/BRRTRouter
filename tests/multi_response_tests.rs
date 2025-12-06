@@ -1,6 +1,6 @@
 use brrtrouter::server::{HttpServer, ServerHandle};
 use brrtrouter::{
-    dispatcher::{Dispatcher, HandlerRequest, HandlerResponse},
+    dispatcher::{Dispatcher, HandlerRequest, HandlerResponse, HeaderVec},
     router::Router,
     server::AppService,
     spec::{ResponseSpec, RouteMeta},
@@ -66,11 +66,7 @@ impl MultiResponseTestServer {
         let mut dispatcher = Dispatcher::new();
         unsafe {
             dispatcher.register_handler("h", |_req: HandlerRequest| {
-                let resp = HandlerResponse {
-                    status: 201,
-                    headers: HashMap::new(),
-                    body: json!("ok"),
-                };
+                let resp = HandlerResponse::json(201, json!("ok"));
                 let _ = _req.reply_tx.send(resp);
             });
         }

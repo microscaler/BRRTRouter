@@ -1,6 +1,7 @@
 // typed.rs
 #[allow(unused_imports)]
-use crate::dispatcher::{Dispatcher, HandlerRequest, HandlerResponse};
+use crate::dispatcher::{Dispatcher, HandlerRequest, HandlerResponse, HeaderVec};
+use crate::router::ParamVec;
 use anyhow::Result;
 use http::Method;
 use may::sync::mpsc;
@@ -162,8 +163,8 @@ where
                         let method = req.method.clone();
                         let path = req.path.clone();
                         let handler_name = req.handler_name.clone();
-                        let path_params = req.path_params.clone();
-                        let query_params = req.query_params.clone();
+                        let path_params: HashMap<String, String> = req.path_params.iter().cloned().collect();
+                        let query_params: HashMap<String, String> = req.query_params.iter().cloned().collect();
 
                         // STEP 1: Type conversion - consume the HandlerRequest to produce handler data
                         // This intentionally consumes `req` (no req.clone()) to avoid heavy copies.
@@ -171,15 +172,9 @@ where
                             Ok(v) => v,
                             Err(err) => {
                                 // Validation failed - send 400 Bad Request
-                                let _ = reply_tx_inner.send(HandlerResponse {
-                                    status: 400,
-                                    headers: HashMap::new(),
-                                    body: serde_json::json!({
-                                        "error": "Invalid request data",
-                                        "message": err.to_string(),
-                                        "request_id": request_id.to_string(),
-                                    }),
-                                });
+                                let _ = reply_tx_inner.send(HandlerResponse::error(400, &format!(
+                                    "Invalid request data: {}", err
+                                )));
                                 return; // Early return from closure
                             }
                         };
@@ -198,31 +193,20 @@ where
                         let result = handler.handle(typed_req);
 
                         // STEP 4: Serialize and send response
-                        let _ = reply_tx_inner.send(HandlerResponse {
-                            status: 200,
-                            headers: HashMap::new(),
-                            body: serde_json::to_value(result).unwrap_or_else(
-                                |e| serde_json::json!({
-                                    "error": "Failed to serialize response",
-                                    "details": e.to_string(),
-                                    "request_id": request_id.to_string(),
-                                }),
-                            ),
-                        });
+                        let _ = reply_tx_inner.send(HandlerResponse::json(200,
+                            serde_json::to_value(result).unwrap_or_else(|e| serde_json::json!({
+                                "error": "Failed to serialize response",
+                                "details": e.to_string(),
+                            })),
+                        ));
                     }
                 }));
 
                 // PANIC RECOVERY: If handler panicked, send 500 error
                 if let Err(panic) = result {
-                    let _ = reply_tx_outer.send(HandlerResponse {
-                        status: 500,
-                        headers: HashMap::new(),
-                        body: serde_json::json!({
-                            "error": "Handler panicked",
-                            "details": format!("{:?}", panic),
-                            "request_id": request_id.to_string(),
-                        }),
-                    });
+                    let _ = reply_tx_outer.send(HandlerResponse::error(500, &format!(
+                        "Handler panicked: {:?}", panic
+                    )));
                     eprintln!("Handler '{handler_name_outer}' panicked: {panic:?}");
                 }
             }
@@ -338,8 +322,9 @@ where
                         let method = req.method.clone();
                         let path = req.path.clone();
                         let handler_name = req.handler_name.clone();
-                        let path_params = req.path_params.clone();
-                        let query_params = req.query_params.clone();
+                        // Convert SmallVec to HashMap for TypedHandlerRequest API
+                        let path_params: HashMap<String, String> = req.path_params.iter().cloned().collect();
+                        let query_params: HashMap<String, String> = req.query_params.iter().cloned().collect();
 
                         // STEP 1: Type conversion - consume the HandlerRequest to produce handler data
                         // This intentionally consumes `req` (no req.clone()) to avoid heavy copies.
@@ -347,15 +332,9 @@ where
                             Ok(v) => v,
                             Err(err) => {
                                 // Validation failed - send 400 Bad Request
-                                let _ = reply_tx_inner.send(HandlerResponse {
-                                    status: 400,
-                                    headers: HashMap::new(),
-                                    body: serde_json::json!({
-                                        "error": "Invalid request data",
-                                        "message": err.to_string(),
-                                        "request_id": request_id.to_string(),
-                                    }),
-                                });
+                                let _ = reply_tx_inner.send(HandlerResponse::error(400, &format!(
+                                    "Invalid request data: {}", err
+                                )));
                                 return; // Early return from closure
                             }
                         };
@@ -376,7 +355,7 @@ where
                         // STEP 4: Serialize and send response
                         let _ = reply_tx_inner.send(HandlerResponse {
                             status: 200,
-                            headers: HashMap::new(),
+                            headers: HeaderVec::new(),
                             body: serde_json::to_value(result).unwrap_or_else(
                                 |e| serde_json::json!({
                                     "error": "Failed to serialize response",
@@ -392,7 +371,7 @@ where
                 if let Err(panic) = result {
                     let _ = reply_tx_outer.send(HandlerResponse {
                         status: 500,
-                        headers: HashMap::new(),
+                        headers: HeaderVec::new(),
                         body: serde_json::json!({
                             "error": "Handler panicked",
                             "details": format!("{:?}", panic),
@@ -446,8 +425,9 @@ where
             method: req.method,
             path: req.path,
             handler_name: req.handler_name,
-            path_params: req.path_params,
-            query_params: req.query_params,
+            // Convert SmallVec to HashMap for API compatibility
+            path_params: req.path_params.iter().cloned().collect(),
+            query_params: req.query_params.iter().cloned().collect(),
             data,
         })
     }
@@ -588,26 +568,20 @@ impl Dispatcher {
             let data = match H::Request::try_from(req.clone()) {
                 Ok(v) => v,
                 Err(err) => {
-                    let _ = reply_tx.send(HandlerResponse {
-                        status: 400,
-                        headers: HashMap::new(),
-                        body: serde_json::json!({
-                            "error": "Invalid request data",
-                            "message": err.to_string(),
-                            "request_id": request_id.to_string(),
-                        }),
-                    });
+                    let _ = reply_tx.send(HandlerResponse::error(400, &format!(
+                        "Invalid request data: {}", err
+                    )));
                     return;
                 }
             };
             
-            // Build typed request
+            // Build typed request (convert SmallVec to HashMap for API compatibility)
             let typed_req = TypedHandlerRequest {
                 method: req.method.clone(),
                 path: req.path.clone(),
                 handler_name: req.handler_name.clone(),
-                path_params: req.path_params.clone(),
-                query_params: req.query_params.clone(),
+                path_params: req.path_params.iter().cloned().collect(),
+                query_params: req.query_params.iter().cloned().collect(),
                 data,
             };
             
@@ -617,7 +591,7 @@ impl Dispatcher {
             // Send response
             let _ = reply_tx.send(HandlerResponse {
                 status: 200,
-                headers: HashMap::new(),
+                headers: HeaderVec::new(),
                 body: serde_json::to_value(result).unwrap_or_else(|e| {
                     serde_json::json!({
                         "error": "Failed to serialize response",

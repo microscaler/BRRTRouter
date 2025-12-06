@@ -406,7 +406,7 @@ fn test_headers_and_cookies() {
     fn header_handler(req: HandlerRequest) {
         let response = HandlerResponse {
             status: 200,
-            headers: HashMap::new(),
+            headers: HeaderVec::new(),
             body: json!({
                 "headers": req.headers,
                 "cookies": req.cookies,
@@ -442,7 +442,7 @@ fn test_status_201_json() {
     fn create_handler(req: HandlerRequest) {
         let response = HandlerResponse {
             status: 201,
-            headers: HashMap::new(),
+            headers: HeaderVec::new(),
             body: json!({"created": true}),
         };
         let _ = req.reply_tx.send(response);
@@ -469,7 +469,7 @@ fn test_text_plain_error() {
     fn text_handler(req: HandlerRequest) {
         let response = HandlerResponse {
             status: 400,
-            headers: HashMap::new(),
+            headers: HeaderVec::new(),
             body: json!("bad request"),
         };
         let _ = req.reply_tx.send(response);
@@ -496,7 +496,7 @@ fn test_request_body_validation_failure() {
     fn echo_handler(req: HandlerRequest) {
         let response = HandlerResponse {
             status: 200,
-            headers: HashMap::new(),
+            headers: HeaderVec::new(),
             body: json!({"ok": true}),
         };
         let _ = req.reply_tx.send(response);
@@ -537,7 +537,7 @@ fn test_response_body_validation_failure() {
     fn bad_handler(req: HandlerRequest) {
         let response = HandlerResponse {
             status: 200,
-            headers: HashMap::new(),
+            headers: HeaderVec::new(),
             body: json!({"name": 123}),
         };
         let _ = req.reply_tx.send(response);

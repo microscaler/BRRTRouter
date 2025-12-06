@@ -35,7 +35,7 @@ impl TryFrom<HandlerRequest> for Request {
 
         let mut data_map = Map::new();
 
-        if let Some(v) = req.query_params.get("limit") {
+        if let Some(v) = req.get_query_param("limit") {
             data_map.insert(
                 "limit".to_string(),
                 brrtrouter::server::request::decode_param_value(
@@ -47,7 +47,7 @@ impl TryFrom<HandlerRequest> for Request {
             // optional parameter
         }
 
-        if let Some(v) = req.query_params.get("offset") {
+        if let Some(v) = req.get_query_param("offset") {
             data_map.insert(
                 "offset".to_string(),
                 brrtrouter::server::request::decode_param_value(
@@ -62,7 +62,7 @@ impl TryFrom<HandlerRequest> for Request {
             // optional parameter
         }
 
-        if let Some(v) = req.query_params.get("tags") {
+        if let Some(v) = req.get_query_param("tags") {
             data_map.insert(
                 "tags".to_string(),
                 brrtrouter::server::request::decode_param_value(

@@ -70,4 +70,4 @@ mod radix;
 #[cfg(test)]
 mod tests;
 
-pub use core::{RouteMatch, Router};
+pub use core::{ParamVec, RouteMatch, Router, MAX_INLINE_PARAMS};

@@ -17,7 +17,7 @@
 //! - `BRRTR_BACKPRESSURE_MODE`: Backpressure mode setting (not used, kept for compatibility)
 //! - `BRRTR_BACKPRESSURE_TIMEOUT_MS`: Timeout setting (not used, kept for compatibility)
 
-use crate::dispatcher::{HandlerRequest, HandlerResponse};
+use crate::dispatcher::{HandlerRequest, HandlerResponse, HeaderVec};
 use may::sync::mpsc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -369,16 +369,7 @@ impl WorkerPool {
                 "Worker pool channel disconnected"
             );
             
-            return Err(HandlerResponse {
-                status: 503,
-                headers: std::collections::HashMap::new(),
-                body: serde_json::json!({
-                    "error": "Service Unavailable",
-                    "details": "Handler workers are not responding",
-                    "request_id": request_id.to_string(),
-                    "handler_name": self.handler_name,
-                }),
-            });
+            return Err(HandlerResponse::error(503, "Handler workers are not responding"));
         }
         
         Ok(())
@@ -401,16 +392,7 @@ impl WorkerPool {
                 "Worker pool channel disconnected"
             );
             
-            return Err(HandlerResponse {
-                status: 503,
-                headers: std::collections::HashMap::new(),
-                body: serde_json::json!({
-                    "error": "Service Unavailable",
-                    "details": "Handler workers are not responding",
-                    "request_id": request_id.to_string(),
-                    "handler_name": self.handler_name,
-                }),
-            });
+            return Err(HandlerResponse::error(503, "Handler workers are not responding"));
         }
         
         Ok(())

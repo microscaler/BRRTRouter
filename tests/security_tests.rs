@@ -204,7 +204,7 @@ paths:
         dispatcher.register_handler("secret", |req: HandlerRequest| {
             let _ = req.reply_tx.send(HandlerResponse {
                 status: 200,
-                headers: HashMap::new(),
+                headers: HeaderVec::new(),
                 body: json!({"ok": true}),
             });
         });
@@ -275,14 +275,14 @@ paths:
         dispatcher.register_handler("one", |req: HandlerRequest| {
             let _ = req.reply_tx.send(HandlerResponse {
                 status: 200,
-                headers: HashMap::new(),
+                headers: HeaderVec::new(),
                 body: json!({"one": true}),
             });
         });
         dispatcher.register_handler("two", |req: HandlerRequest| {
             let _ = req.reply_tx.send(HandlerResponse {
                 status: 200,
-                headers: HashMap::new(),
+                headers: HeaderVec::new(),
                 body: json!({"two": true}),
             });
         });
@@ -350,14 +350,14 @@ paths:
         dispatcher.register_handler("header", |req: HandlerRequest| {
             let _ = req.reply_tx.send(HandlerResponse {
                 status: 200,
-                headers: HashMap::new(),
+                headers: HeaderVec::new(),
                 body: json!({"header": true}),
             });
         });
         dispatcher.register_handler("cookie", |req: HandlerRequest| {
             let _ = req.reply_tx.send(HandlerResponse {
                 status: 200,
-                headers: HashMap::new(),
+                headers: HeaderVec::new(),
                 body: json!({"cookie": true}),
             });
         });
@@ -543,7 +543,7 @@ paths:
         dispatcher.register_handler("secret", |req: HandlerRequest| {
             let _ = req.reply_tx.send(HandlerResponse {
                 status: 200,
-                headers: HashMap::new(),
+                headers: HeaderVec::new(),
                 body: json!({"ok": true}),
             });
         });
@@ -659,7 +659,7 @@ paths:
         dispatcher.register_handler("header", |req: HandlerRequest| {
             let _ = req.reply_tx.send(HandlerResponse {
                 status: 200,
-                headers: HashMap::new(),
+                headers: HeaderVec::new(),
                 body: json!({"header": true}),
             });
         });
@@ -798,7 +798,7 @@ paths:
         dispatcher.register_handler("secret", |req: HandlerRequest| {
             let _ = req.reply_tx.send(HandlerResponse {
                 status: 200,
-                headers: HashMap::new(),
+                headers: HeaderVec::new(),
                 body: json!({"ok": true}),
             });
         });

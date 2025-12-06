@@ -41,7 +41,7 @@ impl TryFrom<HandlerRequest> for Request {
 
         let mut data_map = Map::new();
 
-        if let Some(v) = req.path_params.get("user_id") {
+        if let Some(v) = req.get_path_param("user_id") {
             data_map.insert(
                 "user_id".to_string(),
                 brrtrouter::server::request::decode_param_value(
@@ -55,7 +55,7 @@ impl TryFrom<HandlerRequest> for Request {
             return Err(anyhow::anyhow!("Missing required parameter 'user_id'"));
         }
 
-        if let Some(v) = req.path_params.get("post_id") {
+        if let Some(v) = req.get_path_param("post_id") {
             data_map.insert(
                 "post_id".to_string(),
                 brrtrouter::server::request::decode_param_value(

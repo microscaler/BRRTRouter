@@ -1,11 +1,10 @@
-use std::collections::HashMap;
 use std::time::Duration;
 
 use http::Method;
 use serde_json::Value;
 
 use super::Middleware;
-use crate::dispatcher::{HandlerRequest, HandlerResponse};
+use crate::dispatcher::{HandlerRequest, HandlerResponse, HeaderVec};
 
 /// CORS (Cross-Origin Resource Sharing) middleware
 ///
@@ -118,11 +117,7 @@ impl Middleware for CorsMiddleware {
     /// - `None` - For all other requests (proceed to handler)
     fn before(&self, req: &HandlerRequest) -> Option<HandlerResponse> {
         if req.method == Method::OPTIONS {
-            Some(HandlerResponse {
-                status: 204,
-                headers: HashMap::new(),
-                body: Value::Null,
-            })
+            Some(HandlerResponse::new(204, HeaderVec::new(), Value::Null))
         } else {
             None
         }
@@ -146,12 +141,10 @@ impl Middleware for CorsMiddleware {
     /// - `Access-Control-Allow-Headers`: First allowed header or `*`
     fn after(&self, _req: &HandlerRequest, res: &mut HandlerResponse, _latency: Duration) {
         let origins = self.allowed_origins.join(", ");
-        res.headers
-            .insert("Access-Control-Allow-Origin".into(), origins);
+        res.set_header("Access-Control-Allow-Origin".to_string(), origins);
 
         let headers = self.allowed_headers.join(", ");
-        res.headers
-            .insert("Access-Control-Allow-Headers".into(), headers);
+        res.set_header("Access-Control-Allow-Headers".to_string(), headers);
 
         let methods = self
             .allowed_methods
@@ -159,7 +152,6 @@ impl Middleware for CorsMiddleware {
             .map(|m| m.as_str())
             .collect::<Vec<_>>()
             .join(", ");
-        res.headers
-            .insert("Access-Control-Allow-Methods".into(), methods);
+        res.set_header("Access-Control-Allow-Methods".to_string(), methods);
     }
 }

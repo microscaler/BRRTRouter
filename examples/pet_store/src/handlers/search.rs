@@ -43,7 +43,7 @@ impl TryFrom<HandlerRequest> for Request {
 
         let mut data_map = Map::new();
 
-        if let Some(v) = req.query_params.get("tags") {
+        if let Some(v) = req.get_query_param("tags") {
             data_map.insert(
                 "tags".to_string(),
                 brrtrouter::server::request::decode_param_value(
@@ -58,7 +58,7 @@ impl TryFrom<HandlerRequest> for Request {
             // optional parameter
         }
 
-        if let Some(v) = req.query_params.get("filters") {
+        if let Some(v) = req.get_query_param("filters") {
             data_map.insert(
                 "filters".to_string(),
                 brrtrouter::server::request::decode_param_value(
@@ -70,7 +70,7 @@ impl TryFrom<HandlerRequest> for Request {
             // optional parameter
         }
 
-        if let Some(v) = req.headers.get("x-trace-id") {
+        if let Some(v) = req.get_header("x-trace-id") {
             data_map.insert(
                 "X-Trace-Id".to_string(),
                 brrtrouter::server::request::decode_param_value(
@@ -85,7 +85,7 @@ impl TryFrom<HandlerRequest> for Request {
             // optional parameter
         }
 
-        if let Some(v) = req.cookies.get("session") {
+        if let Some(v) = req.get_cookie("session") {
             data_map.insert(
                 "session".to_string(),
                 brrtrouter::server::request::decode_param_value(

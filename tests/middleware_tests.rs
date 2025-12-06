@@ -28,10 +28,10 @@ fn create_test_request(
         method,
         path: path.to_string(),
         handler_name: "test_handler".to_string(),
-        path_params: HashMap::new(),
-        query_params: HashMap::new(),
+        path_params: ParamVec::new(),
+        query_params: ParamVec::new(),
         headers,
-        cookies: HashMap::new(),
+        cookies: HeaderVec::new(),
         body: None,
         reply_tx: tx,
     }
@@ -41,7 +41,7 @@ fn create_test_request(
 fn create_test_response(status: u16) -> HandlerResponse {
     HandlerResponse {
         status,
-        headers: HashMap::new(),
+        headers: HeaderVec::new(),
         body: serde_json::Value::Null,
     }
 }

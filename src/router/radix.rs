@@ -53,6 +53,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use super::core::ParamVec;
 use crate::spec::RouteMeta;
 
 /// Node in the radix tree for efficient route matching
@@ -154,11 +155,12 @@ impl RadixNode {
     }
 
     /// Search for a matching route in the tree
+    /// Uses ParamVec (SmallVec) for stack-allocated params in hot path
     fn search(
         &self,
         segments: &[&str],
         method: &Method,
-        params: &mut HashMap<String, String>,
+        params: &mut ParamVec,
     ) -> Option<Arc<RouteMeta>> {
         if segments.is_empty() {
             // We've consumed all segments, check if this node has a route for the method
@@ -180,20 +182,13 @@ impl RadixNode {
         // If no exact match, try all parameter children
         for param_child in &self.param_children {
             if let Some(ref param_name) = param_child.param_name {
-                // Save the previous value (if any) before overwriting
-                let previous_value = params.insert(param_name.to_string(), segment.to_string());
+                // Push the param for this branch
+                params.push((param_name.to_string(), segment.to_string()));
                 if let Some(route) = param_child.search(remaining, method, params) {
                     return Some(route);
                 }
-                // Backtrack: restore the previous value instead of removing it
-                match previous_value {
-                    Some(prev) => {
-                        params.insert(param_name.to_string(), prev);
-                    }
-                    None => {
-                        params.remove(param_name.as_ref());
-                    }
-                }
+                // Backtrack: remove the param we just pushed
+                params.pop();
             }
         }
 
@@ -292,18 +287,23 @@ impl RadixRouter {
     ///
     /// * `Some((route, params))` - If a matching route is found with extracted parameters
     /// * `None` - If no route matches
+    ///
+    /// # JSF Compliance
+    ///
+    /// Uses ParamVec (SmallVec) for stack-allocated parameters, avoiding heap
+    /// allocation for routes with ≤8 params (the common case).
     pub fn route(
         &self,
         method: Method,
         path: &str,
-    ) -> Option<(Arc<RouteMeta>, HashMap<String, String>)> {
+    ) -> Option<(Arc<RouteMeta>, ParamVec)> {
         let segments: Vec<&str> = path
             .trim_start_matches('/')
             .split('/')
             .filter(|s| !s.is_empty())
             .collect();
 
-        let mut params = HashMap::new();
+        let mut params = ParamVec::new();
         let route = self.root.search(&segments, &method, &mut params)?;
         Some((route, params))
     }

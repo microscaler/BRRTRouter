@@ -1,3 +1,4 @@
+use crate::dispatcher::HeaderVec;
 use may_minihttp::Response;
 use serde_json::Value;
 
@@ -13,8 +14,6 @@ fn status_reason(status: u16) -> &'static str {
     }
 }
 
-use std::collections::HashMap;
-
 /// Write a handler response to the HTTP response object
 ///
 /// Serializes the response body as JSON or plain text and sets appropriate headers.
@@ -26,13 +25,13 @@ use std::collections::HashMap;
 /// * `status` - HTTP status code (e.g., 200, 404, 500)
 /// * `body` - Response body as JSON value
 /// * `is_sse` - Whether this is a Server-Sent Events response
-/// * `headers` - Additional HTTP headers to include
+/// * `headers` - Additional HTTP headers to include (SmallVec for stack allocation)
 pub fn write_handler_response(
     res: &mut Response,
     status: u16,
     body: Value,
     is_sse: bool,
-    headers: &HashMap<String, String>,
+    headers: &HeaderVec,
 ) {
     let reason = status_reason(status);
     res.status_code(status as usize, reason);

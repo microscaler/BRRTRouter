@@ -64,4 +64,7 @@
 
 mod core;
 
-pub use core::{generate_request_id, Dispatcher, HandlerRequest, HandlerResponse, HandlerSender};
+pub use core::{
+    generate_request_id, Dispatcher, HandlerRequest, HandlerResponse, HandlerSender, HeaderVec,
+    MAX_INLINE_HEADERS,
+};

@@ -38,7 +38,7 @@ fn test_worker_pool_creation() {
             // Send response
             let _ = req.reply_tx.send(HandlerResponse {
                 status: 200,
-                headers: HashMap::new(),
+                headers: HeaderVec::new(),
                 body: serde_json::json!({"status": "ok"}),
             });
         });
@@ -85,7 +85,7 @@ fn test_worker_pool_shed_mode() {
 
                 let _ = req.reply_tx.send(HandlerResponse {
                     status: 200,
-                    headers: HashMap::new(),
+                    headers: HeaderVec::new(),
                     body: serde_json::json!({"status": "ok"}),
                 });
             },
@@ -109,10 +109,10 @@ fn test_worker_pool_shed_mode() {
             method: Method::GET,
             path: "/test".to_string(),
             handler_name: "slow_handler".to_string(),
-            path_params: HashMap::new(),
-            query_params: HashMap::new(),
-            headers: HashMap::new(),
-            cookies: HashMap::new(),
+            path_params: ParamVec::new(),
+            query_params: ParamVec::new(),
+            headers: HeaderVec::new(),
+            cookies: HeaderVec::new(),
             body: None,
             reply_tx,
         };
@@ -159,7 +159,7 @@ fn test_worker_pool_block_mode() {
 
                 let _ = req.reply_tx.send(HandlerResponse {
                     status: 200,
-                    headers: HashMap::new(),
+                    headers: HeaderVec::new(),
                     body: serde_json::json!({"status": "ok"}),
                 });
             },
@@ -186,10 +186,10 @@ fn test_worker_pool_block_mode() {
             method: Method::GET,
             path: "/test".to_string(),
             handler_name: "fast_handler".to_string(),
-            path_params: HashMap::new(),
-            query_params: HashMap::new(),
-            headers: HashMap::new(),
-            cookies: HashMap::new(),
+            path_params: ParamVec::new(),
+            query_params: ParamVec::new(),
+            headers: HeaderVec::new(),
+            cookies: HeaderVec::new(),
             body: None,
             reply_tx,
         };
@@ -236,7 +236,7 @@ fn test_worker_pool_metrics() {
 
             let _ = req.reply_tx.send(HandlerResponse {
                 status: 200,
-                headers: HashMap::new(),
+                headers: HeaderVec::new(),
                 body: serde_json::json!({"status": "ok"}),
             });
         });
@@ -260,10 +260,10 @@ fn test_worker_pool_metrics() {
             method: Method::GET,
             path: "/test".to_string(),
             handler_name: "metrics_handler".to_string(),
-            path_params: HashMap::new(),
-            query_params: HashMap::new(),
-            headers: HashMap::new(),
-            cookies: HashMap::new(),
+            path_params: ParamVec::new(),
+            query_params: ParamVec::new(),
+            headers: HeaderVec::new(),
+            cookies: HeaderVec::new(),
             body: None,
             reply_tx,
         };

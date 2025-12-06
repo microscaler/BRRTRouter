@@ -29,7 +29,7 @@ impl TryFrom<HandlerRequest> for Request {
 
         let mut data_map = Map::new();
 
-        if let Some(v) = req.path_params.get("coords") {
+        if let Some(v) = req.get_path_param("coords") {
             data_map.insert(
                 "coords".to_string(),
                 brrtrouter::server::request::decode_param_value(
