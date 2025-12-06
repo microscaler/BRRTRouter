@@ -16,8 +16,8 @@ use std::sync::{Arc, RwLock};
 fn create_route_meta(method: Method, path: &str, handler: &str) -> RouteMeta {
     RouteMeta {
         method,
-        path_pattern: path.to_string(),
-        handler_name: handler.to_string(),
+        path_pattern: Arc::from(path),
+        handler_name: Arc::from(handler),
         base_path: String::new(),
         parameters: Vec::new(),
         request_schema: None,

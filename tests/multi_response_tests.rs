@@ -44,8 +44,8 @@ impl MultiResponseTestServer {
 
         let route = RouteMeta {
             method: Method::POST,
-            path_pattern: "/resp".to_string(),
-            handler_name: "h".to_string(),
+            path_pattern: Arc::from("/resp"),
+            handler_name: Arc::from("h"),
             parameters: vec![],
             request_schema: None,
             request_body_required: false,

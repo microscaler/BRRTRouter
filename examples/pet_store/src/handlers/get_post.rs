@@ -86,6 +86,7 @@ impl TryFrom<HandlerRequest> for Request {
     }
 }
 
+#[allow(dead_code)]
 pub fn handler(req: TypedHandlerRequest<Request>) -> Response {
     crate::controllers::get_post::handle(req)
 }

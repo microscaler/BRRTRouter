@@ -50,6 +50,7 @@ impl TryFrom<HandlerRequest> for Request {
     }
 }
 
+#[allow(dead_code)]
 pub fn handler(req: TypedHandlerRequest<Request>) -> Response {
     crate::controllers::register_webhook::handle(req)
 }

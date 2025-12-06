@@ -671,8 +671,9 @@ pub fn write_main_rs_with_options(
         .into_iter()
         .map(|r| RouteDisplay {
             method: r.method.to_string(),
-            path: r.path_pattern,
-            handler: r.handler_name,
+            // JSF P0-2: Convert Arc<str> to String for template
+            path: r.path_pattern.to_string(),
+            handler: r.handler_name.to_string(),
         })
         .collect();
     let rendered = MainRsTemplateData {
@@ -984,8 +985,9 @@ pub fn write_impl_main_rs(
         .iter()
         .map(|r| RouteDisplay {
             method: format!("{:?}", r.method),
-            path: r.path_pattern.clone(),
-            handler: r.handler_name.clone(),
+            // JSF P0-2: Convert Arc<str> to String for template
+            path: r.path_pattern.to_string(),
+            handler: r.handler_name.to_string(),
         })
         .collect();
 

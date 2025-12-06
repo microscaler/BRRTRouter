@@ -15,7 +15,7 @@ fn test_route_has_estimated_body_size_from_spec() {
     // Find a route with a request body (like add_pet)
     let add_pet_route = routes
         .iter()
-        .find(|r| r.handler_name == "add_pet")
+        .find(|r| r.handler_name.as_ref() == "add_pet")
         .expect("add_pet route should exist");
 
     // It should have a request schema and therefore an estimated size
@@ -36,7 +36,7 @@ fn test_route_without_body_has_no_estimate() {
     // Find a GET route with no body (like list_pets)
     let list_pets_route = routes
         .iter()
-        .find(|r| r.handler_name == "list_pets")
+        .find(|r| r.handler_name.as_ref() == "list_pets")
         .expect("list_pets route should exist");
 
     // GET routes typically don't have request bodies

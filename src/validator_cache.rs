@@ -665,6 +665,7 @@ mod tests {
         use http::Method;
         use std::collections::HashMap;
         use std::path::PathBuf;
+        use std::sync::Arc;
 
         let cache = ValidatorCache::new(true);
 
@@ -688,8 +689,8 @@ mod tests {
 
         let route = RouteMeta {
             method: Method::POST,
-            path_pattern: "/test".to_string(),
-            handler_name: "test_handler".to_string(),
+            path_pattern: Arc::from("/test"),
+            handler_name: Arc::from("test_handler"),
             parameters: vec![],
             request_schema: Some(json!({
                 "type": "object",
@@ -748,6 +749,7 @@ mod tests {
         use http::Method;
         use std::collections::HashMap;
         use std::path::PathBuf;
+        use std::sync::Arc;
 
         let cache = ValidatorCache::new(false); // Cache disabled
 
@@ -764,8 +766,8 @@ mod tests {
 
         let route = RouteMeta {
             method: Method::POST,
-            path_pattern: "/test".to_string(),
-            handler_name: "test_handler".to_string(),
+            path_pattern: Arc::from("/test"),
+            handler_name: Arc::from("test_handler"),
             parameters: vec![],
             request_schema: Some(json!({"type": "object"})),
             request_body_required: true,
@@ -799,6 +801,7 @@ mod tests {
         use http::Method;
         use std::collections::HashMap;
         use std::path::PathBuf;
+        use std::sync::Arc;
 
         let cache = ValidatorCache::new(true);
 
@@ -843,8 +846,8 @@ mod tests {
 
         let route = RouteMeta {
             method: Method::POST,
-            path_pattern: "/multi".to_string(),
-            handler_name: "multi_handler".to_string(),
+            path_pattern: Arc::from("/multi"),
+            handler_name: Arc::from("multi_handler"),
             parameters: vec![],
             request_schema: Some(json!({"type": "object"})),
             request_body_required: true,
