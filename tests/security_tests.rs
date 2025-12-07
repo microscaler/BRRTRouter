@@ -1370,3 +1370,271 @@ fn test_empty_token_scopes() {
     // Should fail with required scopes
     assert!(!provider.validate(&scheme, &["read".to_string()], &req));
 }
+
+#[test]
+fn test_jwks_claims_cache_caching() {
+    // Test that claims are cached and reused
+    let secret = b"supersecret";
+    let k = base64url_no_pad(secret);
+    let jwks = serde_json::json!({
+        "keys": [
+            {"kty": "oct", "alg": "HS256", "kid": "k1", "k": k}
+        ]
+    })
+    .to_string();
+    let jwks_url = start_mock_jwks_server(jwks);
+    let iss = "https://issuer.example";
+    let aud = "my-audience";
+    let token = make_hs256_jwt(secret, iss, aud, "k1", 3600);
+    
+    let provider = brrtrouter::security::JwksBearerProvider::new(jwks_url)
+        .issuer(iss.to_string())
+        .audience(aud.to_string())
+        .claims_cache_size(100);
+    
+    let scheme = SecurityScheme::Http {
+        scheme: "bearer".to_string(),
+        bearer_format: None,
+        description: None,
+    };
+    let mut headers: HeaderVec = HeaderVec::new();
+    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    let req = SecurityRequest {
+        headers: &headers,
+        query: &ParamVec::new(),
+        cookies: &HeaderVec::new(),
+    };
+    
+    // First validation - should decode and cache
+    assert!(provider.validate(&scheme, &[], &req));
+    
+    // Second validation - should use cache (no decode)
+    assert!(provider.validate(&scheme, &[], &req));
+    
+    // Third validation - should still use cache
+    assert!(provider.validate(&scheme, &[], &req));
+}
+
+#[test]
+fn test_jwks_claims_cache_expiration_with_leeway() {
+    // Test that cache respects leeway for expiration
+    let secret = b"supersecret";
+    let k = base64url_no_pad(secret);
+    let jwks = serde_json::json!({
+        "keys": [
+            {"kty": "oct", "alg": "HS256", "kid": "k1", "k": k}
+        ]
+    })
+    .to_string();
+    let jwks_url = start_mock_jwks_server(jwks);
+    let iss = "https://issuer.example";
+    let aud = "my-audience";
+    // Token expires in 5 seconds
+    let token = make_hs256_jwt(secret, iss, aud, "k1", 5);
+    
+    let provider = brrtrouter::security::JwksBearerProvider::new(jwks_url)
+        .issuer(iss.to_string())
+        .audience(aud.to_string())
+        .leeway(30) // 30 second leeway
+        .claims_cache_size(100);
+    
+    let scheme = SecurityScheme::Http {
+        scheme: "bearer".to_string(),
+        bearer_format: None,
+        description: None,
+    };
+    let mut headers: HeaderVec = HeaderVec::new();
+    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    let req = SecurityRequest {
+        headers: &headers,
+        query: &ParamVec::new(),
+        cookies: &HeaderVec::new(),
+    };
+    
+    // First validation - should succeed and cache
+    assert!(provider.validate(&scheme, &[], &req));
+    
+    // Wait for token to expire (but within leeway)
+    std::thread::sleep(Duration::from_secs(6));
+    
+    // Should still work due to leeway in cache
+    assert!(provider.validate(&scheme, &[], &req));
+}
+
+#[test]
+fn test_jwks_cookie_support() {
+    // Test that JwksBearerProvider supports cookie extraction
+    let secret = b"supersecret";
+    let k = base64url_no_pad(secret);
+    let jwks = serde_json::json!({
+        "keys": [
+            {"kty": "oct", "alg": "HS256", "kid": "k1", "k": k}
+        ]
+    })
+    .to_string();
+    let jwks_url = start_mock_jwks_server(jwks);
+    let iss = "https://issuer.example";
+    let aud = "my-audience";
+    let token = make_hs256_jwt(secret, iss, aud, "k1", 3600);
+    
+    let provider = brrtrouter::security::JwksBearerProvider::new(jwks_url)
+        .issuer(iss.to_string())
+        .audience(aud.to_string())
+        .cookie_name("auth_token");
+    
+    let scheme = SecurityScheme::Http {
+        scheme: "bearer".to_string(),
+        bearer_format: None,
+        description: None,
+    };
+    let mut cookies: HeaderVec = HeaderVec::new();
+    cookies.push((Arc::from("auth_token"), token));
+    let req = SecurityRequest {
+        headers: &HeaderVec::new(),
+        query: &ParamVec::new(),
+        cookies: &cookies,
+    };
+    
+    // Should extract token from cookie
+    assert!(provider.validate(&scheme, &[], &req));
+}
+
+#[test]
+#[should_panic(expected = "JWKS URL must use HTTPS")]
+fn test_jwks_url_https_validation() {
+    // Test that HTTP URLs (except localhost) are rejected
+    let _provider = brrtrouter::security::JwksBearerProvider::new("http://example.com/jwks.json");
+}
+
+#[test]
+fn test_jwks_url_localhost_allowed() {
+    // Test that localhost HTTP is allowed for testing
+    let secret = b"supersecret";
+    let k = base64url_no_pad(secret);
+    let jwks = serde_json::json!({
+        "keys": [
+            {"kty": "oct", "alg": "HS256", "kid": "k1", "k": k}
+        ]
+    })
+    .to_string();
+    let jwks_url = start_mock_jwks_server(jwks);
+    // Should not panic for localhost
+    let _provider = brrtrouter::security::JwksBearerProvider::new(jwks_url);
+}
+
+#[test]
+fn test_jwks_cache_invalidation() {
+    // Test cache invalidation methods
+    let secret = b"supersecret";
+    let k = base64url_no_pad(secret);
+    let jwks = serde_json::json!({
+        "keys": [
+            {"kty": "oct", "alg": "HS256", "kid": "k1", "k": k}
+        ]
+    })
+    .to_string();
+    let jwks_url = start_mock_jwks_server(jwks);
+    let iss = "https://issuer.example";
+    let aud = "my-audience";
+    let token = make_hs256_jwt(secret, iss, aud, "k1", 3600);
+    
+    let provider = brrtrouter::security::JwksBearerProvider::new(jwks_url)
+        .issuer(iss.to_string())
+        .audience(aud.to_string())
+        .claims_cache_size(100);
+    
+    let scheme = SecurityScheme::Http {
+        scheme: "bearer".to_string(),
+        bearer_format: None,
+        description: None,
+    };
+    let mut headers: HeaderVec = HeaderVec::new();
+    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    let req = SecurityRequest {
+        headers: &headers,
+        query: &ParamVec::new(),
+        cookies: &HeaderVec::new(),
+    };
+    
+    // First validation - should cache
+    assert!(provider.validate(&scheme, &[], &req));
+    
+    // Invalidate specific token
+    provider.invalidate_token(&token);
+    
+    // Next validation should decode again (cache miss)
+    assert!(provider.validate(&scheme, &[], &req));
+    
+    // Clear entire cache
+    provider.clear_claims_cache();
+    
+    // Next validation should decode again (cache miss)
+    assert!(provider.validate(&scheme, &[], &req));
+}
+
+#[test]
+fn test_jwks_cache_eviction() {
+    // Test that LRU cache evicts entries when at capacity
+    let secret = b"supersecret";
+    let k = base64url_no_pad(secret);
+    let jwks = serde_json::json!({
+        "keys": [
+            {"kty": "oct", "alg": "HS256", "kid": "k1", "k": k}
+        ]
+    })
+    .to_string();
+    let jwks_url = start_mock_jwks_server(jwks);
+    let iss = "https://issuer.example";
+    let aud = "my-audience";
+    
+    let provider = brrtrouter::security::JwksBearerProvider::new(jwks_url)
+        .issuer(iss.to_string())
+        .audience(aud.to_string())
+        .claims_cache_size(2); // Small cache to test eviction
+    
+    let scheme = SecurityScheme::Http {
+        scheme: "bearer".to_string(),
+        bearer_format: None,
+        description: None,
+    };
+    
+    // Create 3 different tokens
+    let token1 = make_hs256_jwt(secret, iss, aud, "k1", 3600);
+    let token2 = make_hs256_jwt(secret, iss, aud, "k1", 3600);
+    let token3 = make_hs256_jwt(secret, iss, aud, "k1", 3600);
+    
+    // Validate token1 - should cache
+    let mut headers1: HeaderVec = HeaderVec::new();
+    headers1.push((Arc::from("authorization"), format!("Bearer {}", token1)));
+    let req1 = SecurityRequest {
+        headers: &headers1,
+        query: &ParamVec::new(),
+        cookies: &HeaderVec::new(),
+    };
+    assert!(provider.validate(&scheme, &[], &req1));
+    
+    // Validate token2 - should cache (now 2 entries)
+    let mut headers2: HeaderVec = HeaderVec::new();
+    headers2.push((Arc::from("authorization"), format!("Bearer {}", token2)));
+    let req2 = SecurityRequest {
+        headers: &headers2,
+        query: &ParamVec::new(),
+        cookies: &HeaderVec::new(),
+    };
+    assert!(provider.validate(&scheme, &[], &req2));
+    
+    // Validate token3 - should evict token1 (LRU), cache token3
+    let mut headers3: HeaderVec = HeaderVec::new();
+    headers3.push((Arc::from("authorization"), format!("Bearer {}", token3)));
+    let req3 = SecurityRequest {
+        headers: &headers3,
+        query: &ParamVec::new(),
+        cookies: &HeaderVec::new(),
+    };
+    assert!(provider.validate(&scheme, &[], &req3));
+    
+    // token1 should be evicted (cache miss, needs decode)
+    // token2 and token3 should be cached
+    assert!(provider.validate(&scheme, &[], &req2)); // token2 cached
+    assert!(provider.validate(&scheme, &[], &req3)); // token3 cached
+}

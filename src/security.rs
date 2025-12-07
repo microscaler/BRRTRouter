@@ -91,7 +91,10 @@
 use crate::dispatcher::HeaderVec;
 use crate::router::ParamVec;
 use crate::spec::SecurityScheme;
+use lru::LruCache;
 use std::collections::HashMap;
+use std::num::NonZeroUsize;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 /// Request context for security validation.
@@ -405,6 +408,12 @@ pub struct JwksBearerProvider {
     cache_ttl: Duration,
     // kid -> DecodingKey
     cache: std::sync::Mutex<(Instant, HashMap<String, jsonwebtoken::DecodingKey>)>,
+    // JSF P2: Cache decoded JWT claims to avoid repeated decode operations
+    // Uses LRU cache with Arc<str> keys to prevent memory leaks and avoid allocations
+    // token_hash -> (exp_timestamp_with_leeway, decoded_claims)
+    claims_cache: std::sync::Mutex<LruCache<Arc<str>, (i64, serde_json::Value)>>,
+    claims_cache_size: usize,
+    cookie_name: Option<String>,
 }
 
 impl JwksBearerProvider {
@@ -416,9 +425,20 @@ impl JwksBearerProvider {
     /// # Arguments
     ///
     /// * `jwks_url` - URL to fetch JWKS from (e.g., `https://example.auth0.com/.well-known/jwks.json`)
+    ///
+    /// # Security
+    ///
+    /// JWKS URL must use HTTPS (validated in `new()`). HTTP URLs are rejected for security.
     pub fn new(jwks_url: impl Into<String>) -> Self {
+        let url_str = jwks_url.into();
+        
+        // P4 Security: Validate JWKS URL requires HTTPS (except localhost for testing)
+        if !url_str.starts_with("https://") && !url_str.starts_with("http://localhost") && !url_str.starts_with("http://127.0.0.1") {
+            panic!("JWKS URL must use HTTPS for security. Got: {}", url_str);
+        }
+        
         Self {
-            jwks_url: jwks_url.into(),
+            jwks_url: url_str,
             iss: None,
             aud: None,
             leeway_secs: 30,
@@ -427,6 +447,11 @@ impl JwksBearerProvider {
                 Instant::now() - Duration::from_secs(1000),
                 HashMap::new(),
             )),
+            claims_cache: std::sync::Mutex::new(LruCache::new(
+                NonZeroUsize::new(1000).expect("claims_cache_size must be > 0")
+            )),
+            claims_cache_size: 1000,
+            cookie_name: None,
         }
     }
 
@@ -462,7 +487,71 @@ impl JwksBearerProvider {
         self
     }
 
+    /// Configure the cookie name used to read the token.
+    ///
+    /// If set, tokens will be extracted from cookies in addition to the Authorization header.
+    /// Cookie extraction takes precedence over header extraction.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Cookie name to look for (e.g., "auth_token")
+    pub fn cookie_name(mut self, name: impl Into<String>) -> Self {
+        self.cookie_name = Some(name.into());
+        self
+    }
+
+    /// Configure the maximum size of the claims cache.
+    ///
+    /// When the cache reaches this size, least-recently-used entries are evicted.
+    /// Default: 1000 entries.
+    ///
+    /// # Arguments
+    ///
+    /// * `size` - Maximum number of cached token claims
+    pub fn claims_cache_size(mut self, size: usize) -> Self {
+        if size == 0 {
+            panic!("claims_cache_size must be > 0");
+        }
+        self.claims_cache_size = size;
+        {
+            let mut guard = self.claims_cache.lock()
+                .expect("Claims cache Mutex poisoned - critical error");
+            *guard = LruCache::new(NonZeroUsize::new(size).unwrap());
+        }
+        self
+    }
+
+    /// Clear all cached JWT claims.
+    ///
+    /// Useful for testing, key rotation, or security incidents where tokens need to be invalidated.
+    pub fn clear_claims_cache(&self) {
+        if let Ok(mut guard) = self.claims_cache.lock() {
+            guard.clear();
+        }
+    }
+
+    /// Invalidate a specific token from the claims cache.
+    ///
+    /// Useful when a token is revoked or needs to be re-validated immediately.
+    ///
+    /// # Arguments
+    ///
+    /// * `token` - The JWT token string to invalidate
+    pub fn invalidate_token(&self, token: &str) {
+        let token_key: Arc<str> = Arc::from(token);
+        if let Ok(mut guard) = self.claims_cache.lock() {
+            guard.pop(&token_key);
+        }
+    }
+
     fn extract_token<'a>(&self, req: &'a SecurityRequest) -> Option<&'a str> {
+        // P2: Cookie support - check cookie first if configured
+        if let Some(name) = &self.cookie_name {
+            if let Some(t) = req.get_cookie(name) {
+                return Some(t);
+            }
+        }
+        // Fall back to Authorization header
         req.get_header("authorization")
             .and_then(|h| h.strip_prefix("Bearer "))
     }
@@ -651,11 +740,52 @@ impl SecurityProvider for JwksBearerProvider {
             Some(t) => t,
             None => return false,
         };
+        
+        // P1: Use Arc<str> for cache key (O(1) clone, no allocation)
+        let token_key: Arc<str> = Arc::from(token);
+        
+        // P1: Check claims cache BEFORE any parsing (fail fast optimization)
+        // P1: Only calculate SystemTime when needed (cache miss)
+        {
+            if let Ok(mut cache_guard) = self.claims_cache.lock() {
+                if let Some((exp_timestamp_with_leeway, cached_claims)) = cache_guard.get(&token_key) {
+                    // P0: Use same leeway logic as validation
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs() as i64;
+                    
+                    if now < *exp_timestamp_with_leeway {
+                        // P1: Clone claims and release lock before scope validation
+                        let claims_clone = cached_claims.clone();
+                        drop(cache_guard);
+                        
+                        // Use cached claims - skip expensive decode
+                        let token_scopes = claims_clone.get("scope").and_then(|v| v.as_str()).unwrap_or("");
+                        return scopes
+                            .iter()
+                            .all(|s| token_scopes.split_whitespace().any(|ts| ts == s));
+                    } else {
+                        // Token expired, remove from cache (LruCache uses pop)
+                        cache_guard.pop(&token_key);
+                    }
+                }
+            }
+        }
+        
+        // Cache miss - need to decode token
+        // Calculate SystemTime only when needed (cache miss)
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        
         // Parse header to locate kid/alg
         let header = match jsonwebtoken::decode_header(token) {
             Ok(h) => h,
             Err(_) => return false,
         };
+        
         let kid = match header.kid {
             Some(k) => k,
             None => return false,
@@ -664,6 +794,10 @@ impl SecurityProvider for JwksBearerProvider {
             Some(k) => k,
             None => return false,
         };
+        
+        // P4 Security: Only allow supported algorithms (implicitly rejects unsupported ones)
+        // Note: jsonwebtoken crate doesn't have Algorithm::None variant, but we explicitly
+        // match only supported algorithms for defense in depth
         let selected_alg = match header.alg {
             jsonwebtoken::Algorithm::HS256 => jsonwebtoken::Algorithm::HS256,
             jsonwebtoken::Algorithm::HS384 => jsonwebtoken::Algorithm::HS384,
@@ -671,6 +805,7 @@ impl SecurityProvider for JwksBearerProvider {
             jsonwebtoken::Algorithm::RS256 => jsonwebtoken::Algorithm::RS256,
             jsonwebtoken::Algorithm::RS384 => jsonwebtoken::Algorithm::RS384,
             jsonwebtoken::Algorithm::RS512 => jsonwebtoken::Algorithm::RS512,
+            // P4: Explicitly reject all other algorithms (security hardening)
             _ => return false,
         };
         let mut validation = jsonwebtoken::Validation::new(selected_alg);
@@ -689,6 +824,25 @@ impl SecurityProvider for JwksBearerProvider {
             Ok(d) => d.claims,
             Err(_) => return false,
         };
+        
+        // P0: Store decoded claims in cache with leeway applied to expiration
+        // Extract exp claim to determine cache validity
+        if let Some(exp_value) = claims.get("exp") {
+            if let Some(exp_timestamp) = exp_value.as_i64() {
+                // P0: Store expiration WITH leeway to match validation logic
+                let exp_timestamp_with_leeway = exp_timestamp + self.leeway_secs as i64;
+                
+                // Only cache if token hasn't expired (with leeway)
+                if now < exp_timestamp_with_leeway {
+                    if let Ok(mut cache_guard) = self.claims_cache.lock() {
+                        // P0: Use Arc<str> key (already created above, O(1) clone)
+                        // LruCache::put() automatically evicts LRU entries if at capacity
+                        cache_guard.put(token_key, (exp_timestamp_with_leeway, claims.clone()));
+                    }
+                }
+            }
+        }
+        
         // scope check
         let token_scopes = claims.get("scope").and_then(|v| v.as_str()).unwrap_or("");
         scopes

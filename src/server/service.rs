@@ -11,6 +11,7 @@ use crate::validator_cache::ValidatorCache;
 use http::Method;
 use may_minihttp::{HttpService, Request, Response};
 use serde_json::json;
+use smallvec::SmallVec;
 use std::collections::HashMap;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -865,8 +866,24 @@ impl HttpService for AppService {
                 let p = if p.is_empty() { "index.html" } else { p };
                 if let Ok((bytes, ct)) = sf.load(p, None) {
                     res.status_code(200, "OK");
-                    let header = format!("Content-Type: {ct}").into_boxed_str();
-                    res.header(Box::leak(header));
+                    // JSF P1: Pre-intern common Content-Type headers to avoid format! allocation
+                    if matches!(ct, "text/html" | "text/css" | "application/javascript" | "application/json" | "text/plain" | "application/octet-stream") {
+                        // Use static string for common types
+                        let header = match ct {
+                            "text/html" => "Content-Type: text/html",
+                            "text/css" => "Content-Type: text/css",
+                            "application/javascript" => "Content-Type: application/javascript",
+                            "application/json" => "Content-Type: application/json",
+                            "text/plain" => "Content-Type: text/plain",
+                            "application/octet-stream" => "Content-Type: application/octet-stream",
+                            _ => unreachable!(),
+                        };
+                        res.header(header);
+                    } else {
+                        // Fallback for uncommon types (rare case)
+                        let header = format!("Content-Type: {ct}").into_boxed_str();
+                        res.header(Box::leak(header));
+                    }
                     res.body_vec(bytes);
                     return Ok(());
                 }
@@ -904,13 +921,14 @@ impl HttpService for AppService {
             // Perform security validation first
             if !route_match.route.security.is_empty() {
                 // S1: Security check start
-                let schemes_required: Vec<String> = route_match
+                // JSF P1: Use SmallVec for security scheme collection (stack-allocated for ≤4 schemes)
+                let schemes_required: SmallVec<[String; 4]> = route_match
                     .route
                     .security
                     .iter()
                     .flat_map(|req| req.0.keys().cloned())
                     .collect();
-                let scopes_required: Vec<String> = route_match
+                let scopes_required: SmallVec<[String; 4]> = route_match
                     .route
                     .security
                     .iter()
