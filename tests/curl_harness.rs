@@ -629,34 +629,51 @@ impl ContainerHarness {
         let container_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
         // Query mapped port with retry - Docker needs a moment to set up network settings
-        // Retry up to 10 times with exponential backoff (max ~5 seconds total)
+        // Use `docker port` which is simpler and more reliable than `docker inspect` template
+        // Retry up to 15 times with exponential backoff (max ~10 seconds total)
         let mut host_port = String::new();
         let mut retries = 0;
-        let max_retries = 10;
+        let max_retries = 15;
         loop {
-            let port_out = Command::new("docker")
-                .args([
-                    "inspect",
-                    "-f",
-                    "{{(index (index .NetworkSettings.Ports \"8080/tcp\") 0).HostPort}}",
-                    &container_id,
-                ])
+            // First check if container is still running
+            let status_out = Command::new("docker")
+                .args(["inspect", "-f", "{{.State.Running}}", &container_id])
                 .output()
-                .expect("failed to inspect container port");
+                .expect("failed to check container status");
+            
+            if !status_out.status.success() {
+                let stderr = String::from_utf8_lossy(&status_out.stderr);
+                panic!(
+                    "Container {} is not running or does not exist: {}",
+                    container_id, stderr
+                );
+            }
+            
+            // Use `docker port` which is more reliable than inspect template
+            let port_out = Command::new("docker")
+                .args(["port", &container_id, "8080/tcp"])
+                .output()
+                .expect("failed to get container port");
             
             if port_out.status.success() {
-                let port_str = String::from_utf8_lossy(&port_out.stdout).trim().to_string();
-                if !port_str.is_empty() {
-                    host_port = port_str;
-                    break;
+                let output = String::from_utf8_lossy(&port_out.stdout);
+                // docker port output format: "0.0.0.0:PORT" or "127.0.0.1:PORT"
+                // Extract just the port number
+                if let Some(colon_pos) = output.rfind(':') {
+                    let port_str = output[colon_pos + 1..].trim().to_string();
+                    if !port_str.is_empty() && port_str.parse::<u16>().is_ok() {
+                        host_port = port_str;
+                        break;
+                    }
                 }
             }
             
             retries += 1;
             if retries >= max_retries {
                 let stderr = String::from_utf8_lossy(&port_out.stderr);
+                let stdout = String::from_utf8_lossy(&port_out.stdout);
                 panic!(
-                    "docker inspect failed after {} retries: {}\nContainer ID: {}\nStderr: {}",
+                    "docker port failed after {} retries: {}\nContainer ID: {}\nStdout: {}\nStderr: {}",
                     max_retries,
                     if port_out.status.code().is_some() {
                         format!("exit code {:?}", port_out.status.code())
@@ -664,12 +681,13 @@ impl ContainerHarness {
                         "unknown error".to_string()
                     },
                     container_id,
+                    stdout,
                     stderr
                 );
             }
             
-            // Exponential backoff: 50ms, 100ms, 200ms, 400ms, 800ms, etc.
-            let delay_ms = 50 * (1 << (retries - 1).min(6)); // Cap at 3.2s
+            // Exponential backoff: 100ms, 200ms, 400ms, 800ms, 1.6s, 3.2s, etc.
+            let delay_ms = 100 * (1 << (retries - 1).min(6)); // Cap at 6.4s
             thread::sleep(Duration::from_millis(delay_ms));
         }
         let base_url = format!("http://127.0.0.1:{}", host_port);

@@ -70,6 +70,7 @@ urlencoding = "2.1"
 ulid = "1.1"
 sha2 = "0.10"
 dashmap = "6.1"  # Lock-free concurrent HashMap for metrics
+lru = "0.12"  # LRU cache for JWT claims to prevent memory leaks
 
 
 
@@ -96,6 +97,10 @@ path = "src/bin/brrtrouter_gen.rs"
 
 [[bench]]
 name = "throughput"
+harness = false
+
+[[bench]]
+name = "jwt_cache_performance"
 harness = false
 
 [features]

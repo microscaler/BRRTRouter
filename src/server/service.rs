@@ -11,7 +11,9 @@ use crate::validator_cache::ValidatorCache;
 use http::Method;
 use may_minihttp::{HttpService, Request, Response};
 use serde_json::json;
+use smallvec::SmallVec;
 use std::collections::HashMap;
+use std::fmt::Write;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -364,6 +366,12 @@ pub fn health_endpoint(res: &mut Response) -> io::Result<()> {
 /// - Request duration histogram (for p50/p95/p99 percentiles)
 /// - Worker pool metrics (queue depth, shed count)
 /// - Memory usage metrics (RSS, heap, growth)
+/// Helper function to escape Prometheus label values
+#[inline]
+fn escape_prometheus_label(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
 /// - Legacy per-path metrics (backward compatible)
 pub fn metrics_endpoint(
     res: &mut Response,
@@ -372,29 +380,32 @@ pub fn metrics_endpoint(
     dispatcher: Option<&Dispatcher>,
 ) -> io::Result<()> {
     let (stack_size, used_stack) = metrics.stack_usage();
-    let mut body = String::with_capacity(8192); // Pre-allocate for performance
+    
+    // Pre-allocate buffer with better capacity estimation
+    // Estimate: ~200 bytes per metric line × expected paths
+    let status_stats = metrics.status_stats();
+    let path_stats = metrics.path_stats();
+    let estimated_capacity = 8192 + (status_stats.len() + path_stats.len() * 4) * 200;
+    let mut body = String::with_capacity(estimated_capacity);
 
     // Active requests (NEW - for Grafana "Active Requests" panel)
     body.push_str(
         "# HELP brrtrouter_active_requests Number of requests currently being processed\n",
     );
     body.push_str("# TYPE brrtrouter_active_requests gauge\n");
-    body.push_str(&format!(
-        "brrtrouter_active_requests {}\n",
-        metrics.active_requests()
-    ));
+    let _ = write!(body, "brrtrouter_active_requests {}\n", metrics.active_requests());
 
     // Requests with status code labels (NEW - for Grafana "Error Rate" panel)
     body.push_str(
         "# HELP brrtrouter_requests_total Total number of HTTP requests by path and status\n",
     );
     body.push_str("# TYPE brrtrouter_requests_total counter\n");
-    let status_stats = metrics.status_stats();
     for ((path, status), count) in &status_stats {
-        let escaped_path = path.replace('\\', "\\\\").replace('"', "\\\"");
-        body.push_str(&format!(
+        let escaped_path = escape_prometheus_label(path);
+        let _ = write!(
+            body,
             "brrtrouter_requests_total{{path=\"{escaped_path}\",status=\"{status}\"}} {count}\n",
-        ));
+        );
     }
 
     // Request duration histogram (NEW - for Grafana "Response Latency" p50/p95/p99 panel)
@@ -405,78 +416,78 @@ pub fn metrics_endpoint(
 
     // Emit histogram buckets
     for (i, &boundary) in bucket_boundaries.iter().enumerate() {
-        body.push_str(&format!(
+        let _ = write!(
+            body,
             "brrtrouter_request_duration_seconds_bucket{{le=\"{boundary}\"}} {}\n",
             buckets[i]
-        ));
+        );
     }
     // +Inf bucket (cumulative)
-    body.push_str(&format!(
+    let _ = write!(
+        body,
         "brrtrouter_request_duration_seconds_bucket{{le=\"+Inf\"}} {}\n",
         buckets[bucket_boundaries.len()]
-    ));
+    );
     // Histogram sum and count
     let sum_secs = sum_ns as f64 / 1_000_000_000.0;
-    body.push_str(&format!(
-        "brrtrouter_request_duration_seconds_sum {sum_secs:.6}\n",
-    ));
-    body.push_str(&format!(
-        "brrtrouter_request_duration_seconds_count {count}\n",
-    ));
+    let _ = write!(body, "brrtrouter_request_duration_seconds_sum {sum_secs:.6}\n");
+    let _ = write!(body, "brrtrouter_request_duration_seconds_count {count}\n");
 
     // Legacy metrics (backward compatible)
     body.push_str("# HELP brrtrouter_top_level_requests_total Total number of received requests\n");
     body.push_str("# TYPE brrtrouter_top_level_requests_total counter\n");
-    body.push_str(&format!(
+    let _ = write!(
+        body,
         "brrtrouter_top_level_requests_total {}\n",
         metrics.top_level_request_count()
-    ));
+    );
 
     body.push_str(
         "# HELP brrtrouter_auth_failures_total Total number of authentication failures\n",
     );
     body.push_str("# TYPE brrtrouter_auth_failures_total counter\n");
-    body.push_str(&format!(
-        "brrtrouter_auth_failures_total {}\n",
-        metrics.auth_failures()
-    ));
+    let _ = write!(body, "brrtrouter_auth_failures_total {}\n", metrics.auth_failures());
 
     // Connection metrics
     body.push_str("# HELP brrtrouter_connection_closes_total Total number of connection close events (client disconnects)\n");
     body.push_str("# TYPE brrtrouter_connection_closes_total counter\n");
-    body.push_str(&format!(
+    let _ = write!(
+        body,
         "brrtrouter_connection_closes_total {}\n",
         metrics.connection_closes()
-    ));
+    );
 
     body.push_str("# HELP brrtrouter_connection_errors_total Total number of connection errors (broken pipe, reset, etc.)\n");
     body.push_str("# TYPE brrtrouter_connection_errors_total counter\n");
-    body.push_str(&format!(
+    let _ = write!(
+        body,
         "brrtrouter_connection_errors_total {}\n",
         metrics.connection_errors()
-    ));
+    );
 
     body.push_str("# HELP brrtrouter_connection_health_ratio Ratio of successful requests to total connection events\n");
     body.push_str("# TYPE brrtrouter_connection_health_ratio gauge\n");
-    body.push_str(&format!(
+    let _ = write!(
+        body,
         "brrtrouter_connection_health_ratio {:.4}\n",
         metrics.connection_health_ratio()
-    ));
+    );
 
     body.push_str("# HELP brrtrouter_request_latency_seconds Average request latency in seconds\n");
     body.push_str("# TYPE brrtrouter_request_latency_seconds gauge\n");
     let avg = metrics.average_latency().as_secs_f64();
-    body.push_str(&format!("brrtrouter_request_latency_seconds {avg:.6}\n",));
+    let _ = write!(body, "brrtrouter_request_latency_seconds {avg:.6}\n");
 
     body.push_str("# HELP brrtrouter_coroutine_stack_bytes Configured coroutine stack size\n");
     body.push_str("# TYPE brrtrouter_coroutine_stack_bytes gauge\n");
-    body.push_str(&format!("brrtrouter_coroutine_stack_bytes {stack_size}\n"));
+    let _ = write!(body, "brrtrouter_coroutine_stack_bytes {stack_size}\n");
 
     body.push_str("# HELP brrtrouter_coroutine_stack_used_bytes Coroutine stack bytes used\n");
     body.push_str("# TYPE brrtrouter_coroutine_stack_used_bytes gauge\n");
-    body.push_str(&format!(
+    let _ = write!(
+        body,
         "brrtrouter_coroutine_stack_used_bytes {used_stack}\n",
-    ));
+    );
 
     // Worker pool metrics (NEW - for backpressure monitoring)
     if let Some(disp) = dispatcher {
@@ -487,81 +498,93 @@ pub fn metrics_endpoint(
             body.push_str("# HELP brrtrouter_worker_pool_queue_depth Current queue depth for worker pool handlers\n");
             body.push_str("# TYPE brrtrouter_worker_pool_queue_depth gauge\n");
             for (handler, (queue_depth, _, _, _)) in &worker_metrics {
-                let escaped_handler = handler.replace('\\', "\\\\").replace('"', "\\\"");
-                body.push_str(&format!(
+                let escaped_handler = escape_prometheus_label(handler);
+                let _ = write!(
+                    body,
                     "brrtrouter_worker_pool_queue_depth{{handler=\"{escaped_handler}\"}} {queue_depth}\n",
-                ));
+                );
             }
 
             body.push_str("# HELP brrtrouter_worker_pool_shed_total Total requests shed due to backpressure\n");
             body.push_str("# TYPE brrtrouter_worker_pool_shed_total counter\n");
             for (handler, (_, shed_count, _, _)) in &worker_metrics {
-                let escaped_handler = handler.replace('\\', "\\\\").replace('"', "\\\"");
-                body.push_str(&format!(
+                let escaped_handler = escape_prometheus_label(handler);
+                let _ = write!(
+                    body,
                     "brrtrouter_worker_pool_shed_total{{handler=\"{escaped_handler}\"}} {shed_count}\n",
-                ));
+                );
             }
 
             body.push_str("# HELP brrtrouter_worker_pool_dispatched_total Total requests dispatched to worker pool\n");
             body.push_str("# TYPE brrtrouter_worker_pool_dispatched_total counter\n");
             for (handler, (_, _, dispatched, _)) in &worker_metrics {
-                let escaped_handler = handler.replace('\\', "\\\\").replace('"', "\\\"");
-                body.push_str(&format!(
+                let escaped_handler = escape_prometheus_label(handler);
+                let _ = write!(
+                    body,
                     "brrtrouter_worker_pool_dispatched_total{{handler=\"{escaped_handler}\"}} {dispatched}\n",
-                ));
+                );
             }
 
             body.push_str("# HELP brrtrouter_worker_pool_completed_total Total requests completed by worker pool\n");
             body.push_str("# TYPE brrtrouter_worker_pool_completed_total counter\n");
             for (handler, (_, _, _, completed)) in &worker_metrics {
-                let escaped_handler = handler.replace('\\', "\\\\").replace('"', "\\\"");
-                body.push_str(&format!(
+                let escaped_handler = escape_prometheus_label(handler);
+                let _ = write!(
+                    body,
                     "brrtrouter_worker_pool_completed_total{{handler=\"{escaped_handler}\"}} {completed}\n",
-                ));
+                );
             }
         }
     }
 
     // Legacy per-path metrics (backward compatible)
-    let path_stats = metrics.path_stats();
+    // Pre-escape all paths once to avoid repeated escaping
+    let escaped_paths: HashMap<&String, String> = path_stats
+        .keys()
+        .map(|path| (path, escape_prometheus_label(path)))
+        .collect();
 
     body.push_str("# HELP brrtrouter_path_requests_total Total requests per path (legacy)\n");
     body.push_str("# TYPE brrtrouter_path_requests_total counter\n");
     for (path, (count, _, _, _)) in &path_stats {
-        let escaped_path = path.replace('\\', "\\\\").replace('"', "\\\"");
-        body.push_str(&format!(
+        let escaped_path = escaped_paths.get(path).unwrap();
+        let _ = write!(
+            body,
             "brrtrouter_path_requests_total{{path=\"{escaped_path}\"}} {count}\n",
-        ));
+        );
     }
 
     body.push_str("# HELP brrtrouter_path_latency_seconds_avg Average latency per path\n");
     body.push_str("# TYPE brrtrouter_path_latency_seconds_avg gauge\n");
     for (path, (_, avg_ns, _, _)) in &path_stats {
-        let escaped_path = path.replace('\\', "\\\\").replace('"', "\\\"");
+        let escaped_path = escaped_paths.get(path).unwrap();
         let avg_secs = (*avg_ns as f64) / 1_000_000_000.0;
-        body.push_str(&format!(
+        let _ = write!(
+            body,
             "brrtrouter_path_latency_seconds_avg{{path=\"{escaped_path}\"}} {avg_secs:.6}\n",
-        ));
+        );
     }
 
     body.push_str("# HELP brrtrouter_path_latency_seconds_min Minimum latency per path\n");
     body.push_str("# TYPE brrtrouter_path_latency_seconds_min gauge\n");
     for (path, (_, _, min_ns, _)) in &path_stats {
-        let escaped_path = path.replace('\\', "\\\\").replace('"', "\\\"");
+        let escaped_path = escaped_paths.get(path).unwrap();
         let min_secs = (*min_ns as f64) / 1_000_000_000.0;
-        body.push_str(&format!(
+        let _ = write!(
+            body,
             "brrtrouter_path_latency_seconds_min{{path=\"{escaped_path}\"}} {min_secs:.6}\n",
-        ));
+        );
     }
 
     body.push_str("# HELP brrtrouter_path_latency_seconds_max Maximum latency per path\n");
     body.push_str("# TYPE brrtrouter_path_latency_seconds_max gauge\n");
     for (path, (_, _, _, max_ns)) in &path_stats {
-        let escaped_path = path.replace('\\', "\\\\").replace('"', "\\\"");
+        let escaped_path = escaped_paths.get(path).unwrap();
         let max_secs = (*max_ns as f64) / 1_000_000_000.0;
-        body.push_str(&format!(
+        let _ = write!(
+            body,
             "brrtrouter_path_latency_seconds_max{{path=\"{escaped_path}\"}} {max_secs:.6}\n",
-        ));
+        );
     }
 
     // Add memory metrics if middleware is available
@@ -865,8 +888,24 @@ impl HttpService for AppService {
                 let p = if p.is_empty() { "index.html" } else { p };
                 if let Ok((bytes, ct)) = sf.load(p, None) {
                     res.status_code(200, "OK");
-                    let header = format!("Content-Type: {ct}").into_boxed_str();
-                    res.header(Box::leak(header));
+                    // JSF P1: Pre-intern common Content-Type headers to avoid format! allocation
+                    if matches!(ct, "text/html" | "text/css" | "application/javascript" | "application/json" | "text/plain" | "application/octet-stream") {
+                        // Use static string for common types
+                        let header = match ct {
+                            "text/html" => "Content-Type: text/html",
+                            "text/css" => "Content-Type: text/css",
+                            "application/javascript" => "Content-Type: application/javascript",
+                            "application/json" => "Content-Type: application/json",
+                            "text/plain" => "Content-Type: text/plain",
+                            "application/octet-stream" => "Content-Type: application/octet-stream",
+                            _ => unreachable!(),
+                        };
+                        res.header(header);
+                    } else {
+                        // Fallback for uncommon types (rare case)
+                        let header = format!("Content-Type: {ct}").into_boxed_str();
+                        res.header(Box::leak(header));
+                    }
                     res.body_vec(bytes);
                     return Ok(());
                 }
@@ -904,13 +943,14 @@ impl HttpService for AppService {
             // Perform security validation first
             if !route_match.route.security.is_empty() {
                 // S1: Security check start
-                let schemes_required: Vec<String> = route_match
+                // JSF P1: Use SmallVec for security scheme collection (stack-allocated for ≤4 schemes)
+                let schemes_required: SmallVec<[String; 4]> = route_match
                     .route
                     .security
                     .iter()
                     .flat_map(|req| req.0.keys().cloned())
                     .collect();
-                let scopes_required: Vec<String> = route_match
+                let scopes_required: SmallVec<[String; 4]> = route_match
                     .route
                     .security
                     .iter()
@@ -1223,12 +1263,38 @@ impl HttpService for AppService {
                     .request_id
                     .unwrap_or(canonical_req_id)
                     .to_string();
+                // Extract JWT claims if available (moved here to ensure it's in scope)
+                let jwt_claims = if !route_match.route.security.is_empty() {
+                    let sec_req = SecurityRequest {
+                        headers: &headers,
+                        query: &route_match.query_params,
+                        cookies: &cookies,
+                    };
+                    route_match.route.security.iter()
+                        .find_map(|requirement| {
+                            requirement.0.iter().find_map(|(scheme_name, _)| {
+                                if let Some(provider) = self.security_providers.get(scheme_name) {
+                                    if let Some(scheme) = self.security_schemes.get(scheme_name) {
+                                        provider.extract_claims(scheme, &sec_req)
+                                    } else {
+                                        None
+                                    }
+                                } else {
+                                    None
+                                }
+                            })
+                        })
+                } else {
+                    None
+                };
+                
                 dispatcher.dispatch_with_request_id(
                     route_match.clone(),
                     body,
                     headers.clone(),
                     cookies,
                     req_id,
+                    jwt_claims,
                 )
             };
             match handler_response {

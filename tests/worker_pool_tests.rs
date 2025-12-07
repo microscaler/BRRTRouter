@@ -115,6 +115,7 @@ fn test_worker_pool_shed_mode() {
             headers: HeaderVec::new(),
             cookies: HeaderVec::new(),
             body: None,
+            jwt_claims: None,
             reply_tx,
         };
 
@@ -192,6 +193,7 @@ fn test_worker_pool_block_mode() {
             headers: HeaderVec::new(),
             cookies: HeaderVec::new(),
             body: None,
+            jwt_claims: None,
             reply_tx,
         };
 
@@ -266,6 +268,7 @@ fn test_worker_pool_metrics() {
             headers: HeaderVec::new(),
             cookies: HeaderVec::new(),
             body: None,
+            jwt_claims: None,
             reply_tx,
         };
 

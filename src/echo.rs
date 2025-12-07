@@ -61,6 +61,7 @@ mod tests {
             headers: HeaderVec::new(),
             cookies: HeaderVec::new(),
             body: Some(body.clone()),
+            jwt_claims: None,
             reply_tx: tx,
         };
 

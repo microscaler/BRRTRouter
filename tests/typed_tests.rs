@@ -53,7 +53,8 @@ fn test_from_handler_non_string_params() {
         headers: HeaderVec::new(),
         cookies: HeaderVec::new(),
         body: None,
-        reply_tx: tx,
+        jwt_claims: None,
+            reply_tx: tx,
     };
 
     let typed = TypedHandlerRequest::<Req>::from_handler(req).expect("conversion failed");
@@ -100,7 +101,8 @@ fn test_header_cookie_params() {
         headers,
         cookies,
         body: None,
-        reply_tx: tx,
+        jwt_claims: None,
+            reply_tx: tx,
     };
 
     let typed = TypedHandlerRequest::<HeaderCookieReq>::from_handler(req).unwrap();
@@ -166,6 +168,7 @@ fn test_spawn_typed_success_and_error() {
         headers: HeaderVec::new(),
         cookies: HeaderVec::new(),
         body: None,
+        jwt_claims: None,
         reply_tx,
     })
     .unwrap();
@@ -185,6 +188,7 @@ fn test_spawn_typed_success_and_error() {
         headers: HeaderVec::new(),
         cookies: HeaderVec::new(),
         body: None,
+        jwt_claims: None,
         reply_tx,
     })
     .unwrap();
