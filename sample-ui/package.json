@@ -13,7 +13,7 @@
     "solid-js": "^1.9.9"
   },
   "devDependencies": {
-    "vite": "^7.1.9",
+    "vite": "^7.2.6",
     "vite-plugin-solid": "^2.11.9",
     "autoprefixer": "^10.4.17",
     "postcss": "^8.4.35",
