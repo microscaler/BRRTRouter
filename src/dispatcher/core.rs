@@ -86,6 +86,25 @@ pub struct HandlerRequest {
     pub cookies: HeaderVec,
     /// Request body parsed as JSON (if present)
     pub body: Option<Value>,
+    /// Decoded JWT claims (if request was authenticated with JWT)
+    /// 
+    /// This field is populated when a JWT token is successfully validated.
+    /// Contains the decoded claims from the JWT payload (e.g., `sub`, `email`, `scope`, etc.).
+    /// 
+    /// # Example
+    /// 
+    /// ```rust,no_run
+    /// use brrtrouter::dispatcher::HandlerRequest;
+    /// 
+    /// fn handler(req: HandlerRequest) {
+    ///     if let Some(claims) = &req.jwt_claims {
+    ///         let user_id = claims.get("sub").and_then(|v| v.as_str());
+    ///         let email = claims.get("email").and_then(|v| v.as_str());
+    ///         // Use claims for business logic or forwarding to downstream services
+    ///     }
+    /// }
+    /// ```
+    pub jwt_claims: Option<Value>,
     /// Channel for sending the response back to the dispatcher
     pub reply_tx: mpsc::Sender<HandlerResponse>,
 }
@@ -547,7 +566,7 @@ impl Dispatcher {
     ) -> Option<HandlerResponse> {
         // Backwards-compatible wrapper: generate a request_id and call dispatch_with_request_id
         let request_id = generate_request_id();
-        self.dispatch_with_request_id(route_match, body, headers, cookies, request_id)
+        self.dispatch_with_request_id(route_match, body, headers, cookies, request_id, None)
     }
 
     /// Dispatch a request with a pre-determined request_id (for correlation)
@@ -558,6 +577,7 @@ impl Dispatcher {
         headers: HeaderVec,
         cookies: HeaderVec,
         request_id: String,
+        jwt_claims: Option<Value>,
     ) -> Option<HandlerResponse> {
         let (reply_tx, reply_rx) = mpsc::channel();
 
@@ -593,6 +613,7 @@ impl Dispatcher {
             headers,
             cookies,
             body,
+            jwt_claims,
             reply_tx,
         };
 

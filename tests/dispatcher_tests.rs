@@ -142,6 +142,7 @@ fn test_dispatch_post_item() {
         headers: HeaderVec::new(),
         cookies: HeaderVec::new(),
         body: Some(body),
+        jwt_claims: None,
         reply_tx,
     };
 
@@ -187,6 +188,7 @@ fn test_dispatch_get_pet() {
         headers: HeaderVec::new(),
         cookies: HeaderVec::new(),
         body: None,
+        jwt_claims: None,
         reply_tx,
     };
 
@@ -236,6 +238,7 @@ fn test_typed_controller_params() {
         headers: HeaderVec::new(),
         cookies: HeaderVec::new(),
         body: None,
+        jwt_claims: None,
         reply_tx,
     };
 
@@ -276,6 +279,7 @@ fn test_typed_controller_invalid_params() {
         headers: HeaderVec::new(),
         cookies: HeaderVec::new(),
         body: None,
+        jwt_claims: None,
         reply_tx,
     };
 
@@ -315,6 +319,7 @@ fn test_panic_handler_returns_500() {
         headers: HeaderVec::new(),
         cookies: HeaderVec::new(),
         body: None,
+        jwt_claims: None,
         reply_tx,
     };
 

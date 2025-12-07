@@ -1263,12 +1263,38 @@ impl HttpService for AppService {
                     .request_id
                     .unwrap_or(canonical_req_id)
                     .to_string();
+                // Extract JWT claims if available (moved here to ensure it's in scope)
+                let jwt_claims = if !route_match.route.security.is_empty() {
+                    let sec_req = SecurityRequest {
+                        headers: &headers,
+                        query: &route_match.query_params,
+                        cookies: &cookies,
+                    };
+                    route_match.route.security.iter()
+                        .find_map(|requirement| {
+                            requirement.0.iter().find_map(|(scheme_name, _)| {
+                                if let Some(provider) = self.security_providers.get(scheme_name) {
+                                    if let Some(scheme) = self.security_schemes.get(scheme_name) {
+                                        provider.extract_claims(scheme, &sec_req)
+                                    } else {
+                                        None
+                                    }
+                                } else {
+                                    None
+                                }
+                            })
+                        })
+                } else {
+                    None
+                };
+                
                 dispatcher.dispatch_with_request_id(
                     route_match.clone(),
                     body,
                     headers.clone(),
                     cookies,
                     req_id,
+                    jwt_claims,
                 )
             };
             match handler_response {

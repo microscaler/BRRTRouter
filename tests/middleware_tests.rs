@@ -29,6 +29,7 @@ fn create_test_request(method: Method, path: &str, headers: HeaderVec) -> Handle
         headers,
         cookies: HeaderVec::new(),
         body: None,
+        jwt_claims: None,
         reply_tx: tx,
     }
 }

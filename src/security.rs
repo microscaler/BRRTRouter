@@ -76,6 +76,78 @@
 //! - Negative results can be cached to prevent brute force attacks
 //! - TTL-based expiration ensures credentials are re-validated periodically
 //!
+//! ## JWT Claims Extraction (BFF Pattern)
+//!
+//! For Backend-for-Frontend (BFF) architectures where a BFF service needs to forward
+//! user context to downstream microservices, BRRTRouter provides JWT claims extraction.
+//!
+//! When a JWT token is successfully validated, the decoded claims are automatically
+//! made available to handlers via `HandlerRequest::jwt_claims`. This enables:
+//!
+//! 1. **Accessing user information** in handlers (e.g., user ID, email, roles)
+//! 2. **Forwarding claims to downstream services** as headers or in request bodies
+//! 3. **Making authorization decisions** based on claims
+//! 4. **Logging user context** for observability
+//!
+//! ### Example: Accessing Claims in Handlers
+//!
+//! ```rust,no_run
+//! use brrtrouter::dispatcher::HandlerRequest;
+//!
+//! fn handler(req: HandlerRequest) {
+//!     if let Some(claims) = &req.jwt_claims {
+//!         let user_id = claims.get("sub").and_then(|v| v.as_str());
+//!         let email = claims.get("email").and_then(|v| v.as_str());
+//!         let org_id = claims.get("org_id").and_then(|v| v.as_str());
+//!
+//!         // Use claims for business logic
+//!         println!("User {} ({}) from org {}", 
+//!                  user_id.unwrap_or("unknown"),
+//!                  email.unwrap_or("unknown"),
+//!                  org_id.unwrap_or("unknown"));
+//!     }
+//! }
+//! ```
+//!
+//! ### Example: Forwarding Claims to Downstream Services
+//!
+//! ```rust,no_run
+//! use brrtrouter::dispatcher::HandlerRequest;
+//! use reqwest::blocking::Client;
+//!
+//! fn bff_handler(req: HandlerRequest) -> Result<(), Box<dyn std::error::Error>> {
+//!     let client = Client::new();
+//!     let mut downstream_req = client.get("http://downstream-service/api/data");
+//!
+//!     // Forward JWT token (Option 1: Forward original token)
+//!     if let Some(token) = req.get_header("authorization") {
+//!         downstream_req = downstream_req.header("Authorization", token);
+//!     }
+//!
+//!     // Forward claims as headers (Option 2: Extract and forward claims)
+//!     if let Some(claims) = &req.jwt_claims {
+//!         if let Some(user_id) = claims.get("sub").and_then(|v| v.as_str()) {
+//!             downstream_req = downstream_req.header("X-User-ID", user_id);
+//!         }
+//!         if let Some(email) = claims.get("email").and_then(|v| v.as_str()) {
+//!             downstream_req = downstream_req.header("X-User-Email", email);
+//!         }
+//!     }
+//!
+//!     let response = downstream_req.send()?;
+//!     // ... handle response
+//!     Ok(())
+//! }
+//! ```
+//!
+//! ### Claims Cache Performance
+//!
+//! JWT claims are cached after validation to avoid repeated decoding. The cache:
+//! - Uses LRU eviction when capacity is reached
+//! - Respects token expiration (with leeway)
+//! - Invalidates on key rotation (via `kid` in cache key)
+//! - Provides cache statistics via `JwksBearerProvider::cache_stats()`
+//!
 //! ## Example
 //!
 //! ```rust,ignore
@@ -191,6 +263,32 @@ pub trait SecurityProvider: Send + Sync {
     ///
     /// `true` if the request is authenticated and authorized, `false` otherwise
     fn validate(&self, scheme: &SecurityScheme, scopes: &[String], req: &SecurityRequest) -> bool;
+
+    /// Extract claims from a validated request (optional).
+    ///
+    /// This method is called after `validate()` returns `true` to extract any
+    /// claims or user information from the validated credentials. For JWT-based
+    /// providers, this returns the decoded JWT claims. For other providers, this
+    /// may return `None` or provider-specific information.
+    ///
+    /// # Arguments
+    ///
+    /// * `scheme` - The OpenAPI security scheme definition
+    /// * `req` - The security request context with credentials
+    ///
+    /// # Returns
+    ///
+    /// * `Some(Value)` - The extracted claims/information as JSON
+    /// * `None` - No claims available or provider doesn't support claims extraction
+    ///
+    /// # Default Implementation
+    ///
+    /// Returns `None` by default. Providers that support claims extraction should
+    /// override this method.
+    fn extract_claims(&self, scheme: &SecurityScheme, req: &SecurityRequest) -> Option<serde_json::Value> {
+        let _ = (scheme, req);
+        None
+    }
 }
 
 use base64::{engine::general_purpose, Engine as _};
@@ -1180,6 +1278,137 @@ impl SecurityProvider for JwksBearerProvider {
         }
         
         has_all_scopes
+    }
+
+    /// Extract JWT claims from a validated request.
+    ///
+    /// This method retrieves the decoded JWT claims from the cache if available,
+    /// or decodes the token if not cached. The claims are returned as a JSON Value
+    /// containing all claims from the JWT payload (e.g., `sub`, `email`, `scope`, etc.).
+    ///
+    /// # Arguments
+    ///
+    /// * `scheme` - The OpenAPI security scheme definition
+    /// * `req` - The security request context with credentials
+    ///
+    /// # Returns
+    ///
+    /// * `Some(Value)` - The decoded JWT claims if token is valid and present
+    /// * `None` - Token is missing, invalid, or cannot be decoded
+    fn extract_claims(&self, scheme: &SecurityScheme, req: &SecurityRequest) -> Option<serde_json::Value> {
+        match scheme {
+            SecurityScheme::Http { scheme, .. } if scheme.eq_ignore_ascii_case("bearer") => {}
+            _ => return None,
+        }
+        
+        let token = match self.extract_token(req) {
+            Some(t) => t,
+            None => return None,
+        };
+        
+        // Parse header to get kid for cache key
+        let header = match jsonwebtoken::decode_header(token) {
+            Ok(h) => h,
+            Err(_) => return None,
+        };
+        
+        let kid = match header.kid {
+            Some(k) => k,
+            None => return None,
+        };
+        
+        // Check cache first
+        // SECURITY: On cache hit, verify key still exists in JWKS before using cached claims
+        // This ensures tokens are invalidated when keys are rotated/revoked
+        let token_key: Arc<str> = Arc::from(format!("{}|{}", token, kid));
+        {
+            // CRITICAL: Clone all needed values and release lock before calling get_key_for
+            // get_key_for() can trigger HTTP requests (up to 1.5+ seconds) via refresh_jwks_if_needed(),
+            // which would block all other threads from accessing the claims cache
+            let cached_data = {
+                if let Ok(mut cache_guard) = self.claims_cache.write() {
+                    if let Some((exp_timestamp_with_leeway, cached_claims, cached_kid)) = cache_guard.get(&token_key) {
+                        // Clone all values while holding the lock
+                        Some((
+                            *exp_timestamp_with_leeway,
+                            cached_claims.clone(),
+                            cached_kid.clone(),
+                        ))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            };
+            
+            if let Some((exp_timestamp_clone, cached_claims_clone, cached_kid_clone)) = cached_data {
+                // Lock is now released - safe to call get_key_for which may trigger HTTP requests
+                // SECURITY: Verify the key still exists in JWKS (key rotation check)
+                // If key was rotated, this will return None and we'll re-validate
+                if self.get_key_for(&cached_kid_clone).is_none() {
+                    // Key no longer exists (rotated/revoked), remove from cache
+                    debug!("JWT cache: key '{}' no longer in JWKS, invalidating cache entry", cached_kid_clone);
+                    // Re-acquire lock to remove cache entry
+                    if let Ok(mut cache_guard) = self.claims_cache.write() {
+                        cache_guard.pop(&token_key);
+                    }
+                    // Fall through to full decode below
+                } else {
+                    // Key still exists, check expiration
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs() as i64;
+                    
+                    if now < exp_timestamp_clone {
+                        // SECURITY: Key verified, expiration checked, use cached claims
+                        // Note: We skip signature/issuer/audience re-validation here for performance,
+                        // but the key existence check ensures rotation is detected
+                        return Some(cached_claims_clone);
+                    } else {
+                        // Token expired, remove from cache
+                        debug!("JWT cache: token expired, removing from cache");
+                        // Re-acquire lock to remove expired entry
+                        if let Ok(mut cache_guard) = self.claims_cache.write() {
+                            cache_guard.pop(&token_key);
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Cache miss - decode token (same logic as validate, but we return claims)
+        let key = match self.get_key_for(&kid) {
+            Some(k) => k,
+            None => return None,
+        };
+        
+        let selected_alg = match header.alg {
+            jsonwebtoken::Algorithm::HS256 => jsonwebtoken::Algorithm::HS256,
+            jsonwebtoken::Algorithm::HS384 => jsonwebtoken::Algorithm::HS384,
+            jsonwebtoken::Algorithm::HS512 => jsonwebtoken::Algorithm::HS512,
+            jsonwebtoken::Algorithm::RS256 => jsonwebtoken::Algorithm::RS256,
+            jsonwebtoken::Algorithm::RS384 => jsonwebtoken::Algorithm::RS384,
+            jsonwebtoken::Algorithm::RS512 => jsonwebtoken::Algorithm::RS512,
+            _ => return None,
+        };
+        
+        let mut validation = jsonwebtoken::Validation::new(selected_alg);
+        validation.validate_exp = true;
+        validation.set_required_spec_claims(&["exp"]);
+        validation.leeway = self.leeway_secs;
+        if let Some(ref iss) = self.iss {
+            validation.set_issuer(&[iss]);
+        }
+        if let Some(ref aud) = self.aud {
+            validation.set_audience(&[aud]);
+        }
+        
+        match jsonwebtoken::decode(token, &key, &validation) {
+            Ok(data) => Some(data.claims),
+            Err(_) => None,
+        }
     }
 }
 

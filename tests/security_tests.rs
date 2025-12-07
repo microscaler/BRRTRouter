@@ -1725,6 +1725,78 @@ fn test_jwks_cache_invalidation_does_not_clear_other_tokens() {
 }
 
 #[test]
+fn test_jwks_extract_claims() {
+    // Test that extract_claims() returns decoded JWT claims for BFF pattern
+    let secret = b"supersecret";
+    let k = base64url_no_pad(secret);
+    let jwks = serde_json::json!({
+        "keys": [
+            {"kty": "oct", "alg": "HS256", "kid": "k1", "k": k}
+        ]
+    })
+    .to_string();
+    let jwks_url = start_mock_jwks_server(jwks);
+    
+    let iss = "https://issuer.example";
+    let aud = "my-audience";
+    let token = make_hs256_jwt(secret, iss, aud, "k1", 3600);
+    
+    let provider = brrtrouter::security::JwksBearerProvider::new(jwks_url)
+        .issuer(iss.to_string())
+        .audience(aud.to_string())
+        .claims_cache_size(100);
+    
+    let scheme = SecurityScheme::Http {
+        scheme: "bearer".to_string(),
+        bearer_format: None,
+        description: None,
+    };
+    
+    let mut headers: HeaderVec = HeaderVec::new();
+    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    let req = SecurityRequest {
+        headers: &headers,
+        query: &ParamVec::new(),
+        cookies: &HeaderVec::new(),
+    };
+    
+    // First validate to populate cache
+    assert!(provider.validate(&scheme, &[], &req));
+    
+    // Extract claims - should return decoded claims
+    let claims = provider.extract_claims(&scheme, &req);
+    assert!(claims.is_some(), "extract_claims should return claims for valid token");
+    
+    let claims = claims.unwrap();
+    assert_eq!(claims.get("iss").and_then(|v| v.as_str()), Some(iss));
+    assert_eq!(claims.get("aud").and_then(|v| v.as_str()), Some(aud));
+    assert!(claims.get("exp").is_some(), "Claims should contain exp");
+    assert!(claims.get("scope").is_some(), "Claims should contain scope");
+    
+    // Test extract_claims with invalid token
+    let mut invalid_headers: HeaderVec = HeaderVec::new();
+    invalid_headers.push((Arc::from("authorization"), "Bearer invalid.token.here".to_string()));
+    let invalid_req = SecurityRequest {
+        headers: &invalid_headers,
+        query: &ParamVec::new(),
+        cookies: &HeaderVec::new(),
+    };
+    
+    let invalid_claims = provider.extract_claims(&scheme, &invalid_req);
+    assert!(invalid_claims.is_none(), "extract_claims should return None for invalid token");
+    
+    // Test extract_claims with missing token
+    let empty_req = SecurityRequest {
+        headers: &HeaderVec::new(),
+        query: &ParamVec::new(),
+        cookies: &HeaderVec::new(),
+    };
+    
+    let empty_claims = provider.extract_claims(&scheme, &empty_req);
+    assert!(empty_claims.is_none(), "extract_claims should return None when token is missing");
+}
+
+#[test]
 fn test_jwks_cache_eviction() {
     // Test that LRU cache evicts entries when at capacity
     let secret = b"supersecret";
