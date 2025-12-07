@@ -98,6 +98,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tracing::{debug, warn};
+use url::Url;
 
 /// Cache statistics for JWT claims cache
 #[derive(Debug, Clone, Copy)]
@@ -498,8 +499,32 @@ impl JwksBearerProvider {
         let url_str = jwks_url.into();
         
         // P4 Security: Validate JWKS URL requires HTTPS (except localhost for testing)
-        if !url_str.starts_with("https://") && !url_str.starts_with("http://localhost") && !url_str.starts_with("http://127.0.0.1") {
-            panic!("JWKS URL must use HTTPS for security. Got: {}", url_str);
+        // SECURITY FIX: Parse URL properly to prevent hostname prefix attacks (e.g., localhost.attacker.com)
+        let parsed_url = match Url::parse(&url_str) {
+            Ok(u) => u,
+            Err(e) => {
+                panic!("JWKS URL is invalid: {}. Error: {}", url_str, e);
+            }
+        };
+        
+        // Allow HTTPS for all hosts
+        if parsed_url.scheme() == "https" {
+            // HTTPS is always allowed
+        } else if parsed_url.scheme() == "http" {
+            // HTTP only allowed for exact localhost or 127.0.0.1 (not subdomains)
+            let host = match parsed_url.host_str() {
+                Some(h) => h,
+                None => {
+                    panic!("JWKS URL must have a valid hostname. Got: {}", url_str);
+                }
+            };
+            
+            // Only allow exact "localhost" or "127.0.0.1" - reject subdomains like "localhost.attacker.com"
+            if host != "localhost" && host != "127.0.0.1" {
+                panic!("JWKS URL must use HTTPS for security (HTTP only allowed for localhost/127.0.0.1). Got: {}", url_str);
+            }
+        } else {
+            panic!("JWKS URL must use HTTPS or HTTP (for localhost only). Got: {}", url_str);
         }
         
         Self {
@@ -602,6 +627,9 @@ impl JwksBearerProvider {
     /// Invalidate a specific token from the claims cache.
     ///
     /// Useful when a token is revoked or needs to be re-validated immediately.
+    /// This method extracts the key ID (kid) from the token header and invalidates
+    /// only that specific token entry, avoiding the thundering herd problem of
+    /// clearing the entire cache.
     ///
     /// # Arguments
     ///
@@ -609,13 +637,38 @@ impl JwksBearerProvider {
     /// 
     /// # Note
     ///
-    /// This invalidates the token for all key IDs. For more precise invalidation,
-    /// use `invalidate_token_with_kid()`.
+    /// If the token cannot be parsed (missing or invalid header), this method
+    /// will log a warning and return without invalidating. Tokens without valid
+    /// headers are not cached, so this is safe. For manual invalidation with a
+    /// known key ID, use `invalidate_token_with_kid()`.
     pub fn invalidate_token(&self, token: &str) {
-        // SECURITY: Cache key format is "token|kid", so we need to iterate or use a different approach
-        // For now, clear entire cache if token needs invalidation (rare operation)
-        // TODO: Could maintain reverse index token -> [kid1, kid2] for efficient invalidation
-        self.clear_claims_cache();
+        // SECURITY: Cache key format is "token|kid", so we need to extract kid from token
+        // Parse the token header to get the kid
+        let header = match jsonwebtoken::decode_header(token) {
+            Ok(h) => h,
+            Err(e) => {
+                warn!(
+                    "JWT invalidation failed: cannot parse token header - {:?}. \
+                     Token may not be cached, skipping invalidation.",
+                    e
+                );
+                return;
+            }
+        };
+        
+        let kid = match header.kid {
+            Some(k) => k,
+            None => {
+                warn!(
+                    "JWT invalidation failed: missing 'kid' (key ID) in token header. \
+                     Tokens without kids are not cached, skipping invalidation."
+                );
+                return;
+            }
+        };
+        
+        // Use the more precise invalidation method with the extracted kid
+        self.invalidate_token_with_kid(token, &kid);
     }
     
     /// Invalidate a specific token with a specific key ID from the claims cache.
@@ -692,9 +745,25 @@ impl JwksBearerProvider {
             Ordering::Acquire,
             Ordering::Relaxed,
         ).is_err() {
-            // Another thread is refreshing, wait a bit and return
-            // The cache will be updated by the other thread
-            std::thread::sleep(Duration::from_millis(100));
+            // Another thread is refreshing, wait for it to complete
+            // HTTP requests can take up to 1.5s (500ms timeout × 3 retries),
+            // so we poll with exponential backoff until refresh completes
+            let start = Instant::now();
+            let timeout = Duration::from_secs(2); // Allow 2s for refresh (1.5s max + buffer)
+            let mut wait_ms = 10; // Start with 10ms
+            
+            while self.refresh_in_progress.load(Ordering::Acquire) {
+                if start.elapsed() >= timeout {
+                    // Timeout - refresh may have failed, proceed to read cache anyway
+                    // (will use stale data or fail validation, which is acceptable)
+                    warn!("JWKS refresh timeout after 2s, proceeding with stale cache");
+                    return;
+                }
+                std::thread::sleep(Duration::from_millis(wait_ms));
+                // Exponential backoff: 10ms, 20ms, 40ms, 80ms, 100ms (capped)
+                wait_ms = (wait_ms * 2).min(100);
+            }
+            // Refresh completed, cache is now fresh - return to allow caller to read it
             return;
         }
         
@@ -706,7 +775,11 @@ impl JwksBearerProvider {
             .build()
         {
             Ok(c) => c,
-            Err(_) => return,
+            Err(_) => {
+                // P2: Clear refresh flag on client build failure
+                self.refresh_in_progress.store(false, Ordering::Release);
+                return;
+            },
         };
         let mut body_opt: Option<String> = None;
         for _ in 0..3 {
@@ -915,52 +988,72 @@ impl SecurityProvider for JwksBearerProvider {
         // SECURITY: On cache hit, verify key still exists in JWKS before using cached claims
         // This ensures tokens are invalidated when keys are rotated/revoked
         {
-            if let Ok(mut cache_guard) = self.claims_cache.write() {
-                if let Some((exp_timestamp_with_leeway, cached_claims, cached_kid)) = cache_guard.get(&token_key) {
-                    // SECURITY: Verify the key still exists in JWKS (key rotation check)
-                    // If key was rotated, this will return None and we'll re-validate
-                    if self.get_key_for(cached_kid).is_none() {
-                        // Key no longer exists (rotated/revoked), remove from cache
-                        debug!("JWT cache: key '{}' no longer in JWKS, invalidating cache entry", cached_kid);
-                        cache_guard.pop(&token_key);
-                        drop(cache_guard);
-                        // Fall through to full validation below
+            // CRITICAL: Clone all needed values and release lock before calling get_key_for
+            // get_key_for() can trigger HTTP requests (up to 1.5+ seconds) via refresh_jwks_if_needed(),
+            // which would block all other threads from accessing the claims cache
+            let cached_data = {
+                if let Ok(mut cache_guard) = self.claims_cache.write() {
+                    if let Some((exp_timestamp_with_leeway, cached_claims, cached_kid)) = cache_guard.get(&token_key) {
+                        // Clone all values while holding the lock
+                        Some((
+                            *exp_timestamp_with_leeway,
+                            cached_claims.clone(),
+                            cached_kid.clone(),
+                        ))
                     } else {
-                        // Key still exists, check expiration
-                        let now = std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .as_secs() as i64;
+                        None
+                    }
+                } else {
+                    None
+                }
+            };
+            
+            if let Some((exp_timestamp_clone, cached_claims_clone, cached_kid_clone)) = cached_data {
+                // Lock is now released - safe to call get_key_for which may trigger HTTP requests
+                // SECURITY: Verify the key still exists in JWKS (key rotation check)
+                // If key was rotated, this will return None and we'll re-validate
+                if self.get_key_for(&cached_kid_clone).is_none() {
+                    // Key no longer exists (rotated/revoked), remove from cache
+                    debug!("JWT cache: key '{}' no longer in JWKS, invalidating cache entry", cached_kid_clone);
+                    // Re-acquire lock to remove cache entry
+                    if let Ok(mut cache_guard) = self.claims_cache.write() {
+                        cache_guard.pop(&token_key);
+                    }
+                    // Fall through to full validation below
+                } else {
+                    // Key still exists, check expiration
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs() as i64;
+                    
+                    if now < exp_timestamp_clone {
+                        // P2: Track cache hit
+                        self.cache_hits.fetch_add(1, Ordering::Relaxed);
                         
-                        if now < *exp_timestamp_with_leeway {
-                            // P2: Track cache hit
-                            self.cache_hits.fetch_add(1, Ordering::Relaxed);
-                            
-                            // P1: Clone claims and release lock before scope validation
-                            let claims_clone = cached_claims.clone();
-                            drop(cache_guard);
-                            
-                            // SECURITY: Key verified, expiration checked, use cached claims
-                            // Note: We skip signature/issuer/audience re-validation here for performance,
-                            // but the key existence check ensures rotation is detected
-                            let token_scopes = claims_clone.get("scope").and_then(|v| v.as_str()).unwrap_or("");
-                            let has_all_scopes = scopes
-                                .iter()
-                                .all(|s| token_scopes.split_whitespace().any(|ts| ts == s));
-                            
-                            if has_all_scopes {
-                                debug!("JWT validation succeeded: cache hit, key verified, scopes valid");
-                            } else {
-                                warn!(
-                                    "JWT validation failed: missing required scopes (token: {:?}, required: {:?})",
-                                    token_scopes,
-                                    scopes
-                                );
-                            }
-                            return has_all_scopes;
+                        // SECURITY: Key verified, expiration checked, use cached claims
+                        // Note: We skip signature/issuer/audience re-validation here for performance,
+                        // but the key existence check ensures rotation is detected
+                        let token_scopes = cached_claims_clone.get("scope").and_then(|v| v.as_str()).unwrap_or("");
+                        let has_all_scopes = scopes
+                            .iter()
+                            .all(|s| token_scopes.split_whitespace().any(|ts| ts == s));
+                        
+                        if has_all_scopes {
+                            debug!("JWT validation succeeded: cache hit, key verified, scopes valid");
                         } else {
-                            // Token expired, remove from cache (already have write lock)
-                            debug!("JWT cache: token expired, removing from cache");
+                            warn!(
+                                "JWT validation failed: missing required scopes (token: {:?}, required: {:?})",
+                                token_scopes,
+                                scopes
+                            );
+                        }
+                        return has_all_scopes;
+                    } else {
+                        // Token expired, remove from cache
+                        debug!("JWT cache: token expired, removing from cache");
+                        // Re-acquire lock to remove expired entry
+                        if let Ok(mut cache_guard) = self.claims_cache.write() {
                             cache_guard.pop(&token_key);
                         }
                     }
@@ -1051,11 +1144,18 @@ impl SecurityProvider for JwksBearerProvider {
                     if let Ok(mut cache_guard) = self.claims_cache.write() {
                         // P0: Use Arc<str> key (already created above with kid included)
                         // P1: Write lock for cache insert (eviction may occur)
-                        // P2: LruCache::put() returns Some(evicted_entry) if eviction occurred
-                        // SECURITY: Store (exp, claims, kid) so we can verify key on cache hit
-                        // LruCache::put() automatically evicts LRU entries if at capacity
-                        if cache_guard.put(token_key.clone(), (exp_timestamp_with_leeway, claims.clone(), kid.clone())).is_some() {
-                            // P2: Track eviction (put() returned evicted entry)
+                        // P2: Track evictions correctly - LruCache::put() returns Some(old_value) when
+                        //     updating an existing key, NOT when evicting. To detect evictions, we must
+                        //     check if the key doesn't exist AND the cache is at capacity before inserting.
+                        let key_exists = cache_guard.peek(&token_key).is_some();
+                        let cache_at_capacity = cache_guard.len() >= cache_guard.cap().get();
+                        let will_evict = !key_exists && cache_at_capacity;
+                        
+                        // Insert/update the cache entry
+                        cache_guard.put(token_key.clone(), (exp_timestamp_with_leeway, claims.clone(), kid.clone()));
+                        
+                        // Track eviction only if we inserted a new key when cache was at capacity
+                        if will_evict {
                             self.cache_evictions.fetch_add(1, Ordering::Relaxed);
                         }
                     }

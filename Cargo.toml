@@ -99,6 +99,10 @@ path = "src/bin/brrtrouter_gen.rs"
 name = "throughput"
 harness = false
 
+[[bench]]
+name = "jwt_cache_performance"
+harness = false
+
 [features]
 default = []
 jemalloc = ["tikv-jemallocator", "tikv-jemalloc-ctl"]  # Enable jemalloc for accurate heap tracking

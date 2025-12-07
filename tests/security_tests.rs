@@ -1507,6 +1507,21 @@ fn test_jwks_url_https_validation() {
 }
 
 #[test]
+#[should_panic(expected = "JWKS URL must use HTTPS")]
+fn test_jwks_url_localhost_subdomain_attack() {
+    // SECURITY TEST: Verify that localhost.attacker.com is rejected
+    // The old starts_with("http://localhost") check would incorrectly allow this
+    let _provider = brrtrouter::security::JwksBearerProvider::new("http://localhost.attacker.com/jwks.json");
+}
+
+#[test]
+#[should_panic(expected = "JWKS URL must use HTTPS")]
+fn test_jwks_url_127_subdomain_attack() {
+    // SECURITY TEST: Verify that 127.0.0.1.attacker.com is rejected
+    let _provider = brrtrouter::security::JwksBearerProvider::new("http://127.0.0.1.attacker.com/jwks.json");
+}
+
+#[test]
 fn test_jwks_url_localhost_allowed() {
     // Test that localhost HTTP is allowed for testing
     let secret = b"supersecret";
@@ -1520,6 +1535,24 @@ fn test_jwks_url_localhost_allowed() {
     let jwks_url = start_mock_jwks_server(jwks);
     // Should not panic for localhost
     let _provider = brrtrouter::security::JwksBearerProvider::new(jwks_url);
+}
+
+#[test]
+fn test_jwks_url_localhost_with_port() {
+    // Test that localhost with port is allowed
+    let _provider = brrtrouter::security::JwksBearerProvider::new("http://localhost:8080/jwks.json");
+}
+
+#[test]
+fn test_jwks_url_localhost_with_path() {
+    // Test that localhost with path is allowed
+    let _provider = brrtrouter::security::JwksBearerProvider::new("http://localhost/.well-known/jwks.json");
+}
+
+#[test]
+fn test_jwks_url_127_with_port() {
+    // Test that 127.0.0.1 with port is allowed
+    let _provider = brrtrouter::security::JwksBearerProvider::new("http://127.0.0.1:8080/jwks.json");
 }
 
 #[test]
@@ -1573,6 +1606,125 @@ fn test_jwks_cache_invalidation() {
 }
 
 #[test]
+fn test_jwks_cache_invalidation_does_not_clear_other_tokens() {
+    // Test that invalidate_token() only invalidates the specific token,
+    // not the entire cache (fixes thundering herd bug)
+    let secret = b"supersecret";
+    let k = base64url_no_pad(secret);
+    let jwks = serde_json::json!({
+        "keys": [
+            {"kty": "oct", "alg": "HS256", "kid": "k1", "k": k}
+        ]
+    })
+    .to_string();
+    let jwks_url = start_mock_jwks_server(jwks);
+    
+    let iss = "https://issuer.example";
+    let aud = "my-audience";
+    
+    // Create two different tokens with unique subjects to ensure they're different
+    // (JWT encoding may be non-deterministic, but adding unique claims guarantees different tokens)
+    let token1 = {
+        use jsonwebtoken::{Algorithm, EncodingKey, Header};
+        use serde_json::json;
+        let header = Header {
+            kid: Some("k1".to_string()),
+            alg: Algorithm::HS256,
+            ..Default::default()
+        };
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        let claims = json!({
+            "iss": iss,
+            "aud": aud,
+            "exp": now + 3600,
+            "sub": "user1",
+            "scope": "read write"
+        });
+        jsonwebtoken::encode(&header, &claims, &EncodingKey::from_secret(secret)).unwrap()
+    };
+    let token2 = {
+        use jsonwebtoken::{Algorithm, EncodingKey, Header};
+        use serde_json::json;
+        let header = Header {
+            kid: Some("k1".to_string()),
+            alg: Algorithm::HS256,
+            ..Default::default()
+        };
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        let claims = json!({
+            "iss": iss,
+            "aud": aud,
+            "exp": now + 3600,
+            "sub": "user2",
+            "scope": "read write"
+        });
+        jsonwebtoken::encode(&header, &claims, &EncodingKey::from_secret(secret)).unwrap()
+    };
+    
+    let provider = brrtrouter::security::JwksBearerProvider::new(jwks_url)
+        .issuer(iss.to_string())
+        .audience(aud.to_string())
+        .claims_cache_size(100);
+    
+    let scheme = SecurityScheme::Http {
+        scheme: "bearer".to_string(),
+        bearer_format: None,
+        description: None,
+    };
+    
+    // Create requests for both tokens
+    let mut headers1: HeaderVec = HeaderVec::new();
+    headers1.push((Arc::from("authorization"), format!("Bearer {}", token1)));
+    let req1 = SecurityRequest {
+        headers: &headers1,
+        query: &ParamVec::new(),
+        cookies: &HeaderVec::new(),
+    };
+    
+    let mut headers2: HeaderVec = HeaderVec::new();
+    headers2.push((Arc::from("authorization"), format!("Bearer {}", token2)));
+    let req2 = SecurityRequest {
+        headers: &headers2,
+        query: &ParamVec::new(),
+        cookies: &HeaderVec::new(),
+    };
+    
+    // Validate both tokens - should cache both
+    assert!(provider.validate(&scheme, &[], &req1));
+    assert!(provider.validate(&scheme, &[], &req2));
+    
+    // Check cache stats - should have 2 entries
+    let stats_before = provider.cache_stats();
+    assert_eq!(stats_before.size, 2, "Both tokens should be cached");
+    
+    // Invalidate only token1
+    provider.invalidate_token(&token1);
+    
+    // Check cache stats - should have 1 entry (token2 still cached)
+    let stats_after = provider.cache_stats();
+    assert_eq!(stats_after.size, 1, "Only token2 should remain in cache after invalidating token1");
+    
+    // token1 should be a cache miss (requires decode)
+    // token2 should be a cache hit (still cached)
+    let cache_misses_before = provider.cache_stats().misses;
+    assert!(provider.validate(&scheme, &[], &req1)); // token1 - cache miss
+    let cache_misses_after_token1 = provider.cache_stats().misses;
+    assert_eq!(cache_misses_after_token1, cache_misses_before + 1, "token1 should be a cache miss");
+    
+    // token2 should still be cached (cache hit)
+    let cache_hits_before = provider.cache_stats().hits;
+    assert!(provider.validate(&scheme, &[], &req2)); // token2 - cache hit
+    let cache_hits_after = provider.cache_stats().hits;
+    assert_eq!(cache_hits_after, cache_hits_before + 1, "token2 should be a cache hit");
+}
+
+#[test]
 fn test_jwks_cache_eviction() {
     // Test that LRU cache evicts entries when at capacity
     let secret = b"supersecret";
@@ -1598,10 +1750,54 @@ fn test_jwks_cache_eviction() {
         description: None,
     };
     
-    // Create 3 different tokens
-    let token1 = make_hs256_jwt(secret, iss, aud, "k1", 3600);
-    let token2 = make_hs256_jwt(secret, iss, aud, "k1", 3600);
-    let token3 = make_hs256_jwt(secret, iss, aud, "k1", 3600);
+    // Create 3 different tokens with unique jti (JWT ID) to ensure they're distinct
+    use jsonwebtoken::{Algorithm, EncodingKey, Header};
+    use serde_json::json;
+    let token1 = {
+        let header = Header {
+            kid: Some("k1".to_string()),
+            alg: Algorithm::HS256,
+            ..Default::default()
+        };
+        let claims = json!({
+            "iss": iss,
+            "aud": aud,
+            "exp": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64 + 3600,
+            "scope": "read write",
+            "jti": "token1"
+        });
+        jsonwebtoken::encode(&header, &claims, &EncodingKey::from_secret(secret)).unwrap()
+    };
+    let token2 = {
+        let header = Header {
+            kid: Some("k1".to_string()),
+            alg: Algorithm::HS256,
+            ..Default::default()
+        };
+        let claims = json!({
+            "iss": iss,
+            "aud": aud,
+            "exp": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64 + 3600,
+            "scope": "read write",
+            "jti": "token2"
+        });
+        jsonwebtoken::encode(&header, &claims, &EncodingKey::from_secret(secret)).unwrap()
+    };
+    let token3 = {
+        let header = Header {
+            kid: Some("k1".to_string()),
+            alg: Algorithm::HS256,
+            ..Default::default()
+        };
+        let claims = json!({
+            "iss": iss,
+            "aud": aud,
+            "exp": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64 + 3600,
+            "scope": "read write",
+            "jti": "token3"
+        });
+        jsonwebtoken::encode(&header, &claims, &EncodingKey::from_secret(secret)).unwrap()
+    };
     
     // Validate token1 - should cache
     let mut headers1: HeaderVec = HeaderVec::new();
@@ -1637,4 +1833,165 @@ fn test_jwks_cache_eviction() {
     // token2 and token3 should be cached
     assert!(provider.validate(&scheme, &[], &req2)); // token2 cached
     assert!(provider.validate(&scheme, &[], &req3)); // token3 cached
+    
+    // Verify evictions counter was incremented (token3 insertion evicted token1)
+    let stats = provider.cache_stats();
+    assert_eq!(stats.evictions, 1, "Expected 1 eviction when inserting token3 at capacity");
+}
+
+#[test]
+fn test_jwks_cache_evictions_counter() {
+    // Test that evictions counter correctly tracks LRU evictions
+    let secret = b"supersecret";
+    let k = base64url_no_pad(secret);
+    let jwks = serde_json::json!({
+        "keys": [
+            {"kty": "oct", "alg": "HS256", "kid": "k1", "k": k}
+        ]
+    })
+    .to_string();
+    let jwks_url = start_mock_jwks_server(jwks);
+    let iss = "https://issuer.example";
+    let aud = "my-audience";
+    
+    let provider = brrtrouter::security::JwksBearerProvider::new(jwks_url)
+        .issuer(iss.to_string())
+        .audience(aud.to_string())
+        .claims_cache_size(2); // Small cache to test eviction
+    
+    let scheme = SecurityScheme::Http {
+        scheme: "bearer".to_string(),
+        bearer_format: None,
+        description: None,
+    };
+    
+    // Initial state: no evictions
+    let stats = provider.cache_stats();
+    assert_eq!(stats.evictions, 0, "Initial evictions should be 0");
+    
+    // Fill cache to capacity (2 entries) - no evictions yet
+    // Generate unique tokens by including a unique jti (JWT ID) claim
+    use jsonwebtoken::{Algorithm, EncodingKey, Header};
+    use serde_json::json;
+    let token1 = {
+        let header = Header {
+            kid: Some("k1".to_string()),
+            alg: Algorithm::HS256,
+            ..Default::default()
+        };
+        let claims = json!({
+            "iss": iss,
+            "aud": aud,
+            "exp": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64 + 3600,
+            "scope": "read write",
+            "jti": "token1"
+        });
+        jsonwebtoken::encode(&header, &claims, &EncodingKey::from_secret(secret)).unwrap()
+    };
+    let token2 = {
+        let header = Header {
+            kid: Some("k1".to_string()),
+            alg: Algorithm::HS256,
+            ..Default::default()
+        };
+        let claims = json!({
+            "iss": iss,
+            "aud": aud,
+            "exp": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64 + 3600,
+            "scope": "read write",
+            "jti": "token2"
+        });
+        jsonwebtoken::encode(&header, &claims, &EncodingKey::from_secret(secret)).unwrap()
+    };
+    
+    let mut headers1: HeaderVec = HeaderVec::new();
+    headers1.push((Arc::from("authorization"), format!("Bearer {}", token1)));
+    let req1 = SecurityRequest {
+        headers: &headers1,
+        query: &ParamVec::new(),
+        cookies: &HeaderVec::new(),
+    };
+    assert!(provider.validate(&scheme, &[], &req1));
+    
+    let mut headers2: HeaderVec = HeaderVec::new();
+    headers2.push((Arc::from("authorization"), format!("Bearer {}", token2)));
+    let req2 = SecurityRequest {
+        headers: &headers2,
+        query: &ParamVec::new(),
+        cookies: &HeaderVec::new(),
+    };
+    assert!(provider.validate(&scheme, &[], &req2));
+    
+    // Still no evictions (cache not at capacity yet)
+    let stats = provider.cache_stats();
+    assert_eq!(stats.evictions, 0, "No evictions when filling cache to capacity");
+    assert_eq!(stats.size, 2, "Cache should have 2 entries");
+    
+    // Insert token3 - should evict token1 (LRU)
+    let token3 = {
+        let header = Header {
+            kid: Some("k1".to_string()),
+            alg: Algorithm::HS256,
+            ..Default::default()
+        };
+        let claims = json!({
+            "iss": iss,
+            "aud": aud,
+            "exp": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64 + 3600,
+            "scope": "read write",
+            "jti": "token3"
+        });
+        jsonwebtoken::encode(&header, &claims, &EncodingKey::from_secret(secret)).unwrap()
+    };
+    let mut headers3: HeaderVec = HeaderVec::new();
+    headers3.push((Arc::from("authorization"), format!("Bearer {}", token3)));
+    let req3 = SecurityRequest {
+        headers: &headers3,
+        query: &ParamVec::new(),
+        cookies: &HeaderVec::new(),
+    };
+    assert!(provider.validate(&scheme, &[], &req3));
+    
+    // Should have 1 eviction
+    let stats = provider.cache_stats();
+    assert_eq!(stats.evictions, 1, "Expected 1 eviction when inserting at capacity");
+    assert_eq!(stats.size, 2, "Cache should still have 2 entries (capacity)");
+    
+    // Insert token4 - should evict token2 (LRU, token3 is now most recent)
+    let token4 = {
+        let header = Header {
+            kid: Some("k1".to_string()),
+            alg: Algorithm::HS256,
+            ..Default::default()
+        };
+        let claims = json!({
+            "iss": iss,
+            "aud": aud,
+            "exp": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64 + 3600,
+            "scope": "read write",
+            "jti": "token4"
+        });
+        jsonwebtoken::encode(&header, &claims, &EncodingKey::from_secret(secret)).unwrap()
+    };
+    let mut headers4: HeaderVec = HeaderVec::new();
+    headers4.push((Arc::from("authorization"), format!("Bearer {}", token4)));
+    let req4 = SecurityRequest {
+        headers: &headers4,
+        query: &ParamVec::new(),
+        cookies: &HeaderVec::new(),
+    };
+    assert!(provider.validate(&scheme, &[], &req4));
+    
+    // Should have 2 evictions total
+    let stats = provider.cache_stats();
+    assert_eq!(stats.evictions, 2, "Expected 2 evictions total");
+    assert_eq!(stats.size, 2, "Cache should still have 2 entries (capacity)");
+    
+    // Updating an existing token should NOT increment evictions
+    // Re-validate token4 (updates LRU order but doesn't evict)
+    assert!(provider.validate(&scheme, &[], &req4));
+    
+    // Evictions should still be 2 (no new eviction for update)
+    let stats = provider.cache_stats();
+    assert_eq!(stats.evictions, 2, "Updating existing entry should not increment evictions");
 }
