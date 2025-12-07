@@ -94,8 +94,38 @@ use crate::spec::SecurityScheme;
 use lru::LruCache;
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tracing::{debug, warn};
+
+/// Cache statistics for JWT claims cache
+#[derive(Debug, Clone, Copy)]
+pub struct CacheStats {
+    /// Number of cache hits (successful lookups)
+    pub hits: u64,
+    /// Number of cache misses (lookups that required decode)
+    pub misses: u64,
+    /// Number of entries evicted due to LRU capacity
+    pub evictions: u64,
+    /// Current number of entries in cache
+    pub size: usize,
+    /// Maximum capacity of cache
+    pub capacity: usize,
+}
+
+impl CacheStats {
+    /// Calculate cache hit rate as a percentage
+    #[must_use]
+    pub fn hit_rate(&self) -> f64 {
+        let total = self.hits + self.misses;
+        if total == 0 {
+            0.0
+        } else {
+            (self.hits as f64 / total as f64) * 100.0
+        }
+    }
+}
 
 /// Request context for security validation.
 ///
@@ -214,6 +244,7 @@ impl BearerJwtProvider {
         let payload = parts.next();
         let sig = parts.next();
         if header.is_none() || payload.is_none() || sig != Some(self.signature.as_str()) {
+            debug!("BearerJWT token validation failed: malformed token or invalid signature");
             return false;
         }
         // Safe to unwrap here because we checked is_none() above
@@ -221,16 +252,32 @@ impl BearerJwtProvider {
             .decode(payload.expect("payload already validated as Some"))
         {
             Ok(b) => b,
-            Err(_) => return false,
+            Err(e) => {
+                debug!("BearerJWT token validation failed: invalid base64 payload - {:?}", e);
+                return false;
+            }
         };
         let json: Value = match serde_json::from_slice(&payload_bytes) {
             Ok(v) => v,
-            Err(_) => return false,
+            Err(e) => {
+                debug!("BearerJWT token validation failed: invalid JSON payload - {:?}", e);
+                return false;
+            }
         };
         let token_scopes = json.get("scope").and_then(|v| v.as_str()).unwrap_or("");
-        scopes
+        let has_all_scopes = scopes
             .iter()
-            .all(|s| token_scopes.split_whitespace().any(|ts| ts == s))
+            .all(|s| token_scopes.split_whitespace().any(|ts| ts == s));
+        
+        if !has_all_scopes {
+            warn!(
+                "BearerJWT validation failed: missing required scopes (token: {:?}, required: {:?})",
+                token_scopes,
+                scopes
+            );
+        }
+        
+        has_all_scopes
     }
 }
 
@@ -278,13 +325,23 @@ impl SecurityProvider for BearerJwtProvider {
     fn validate(&self, scheme: &SecurityScheme, scopes: &[String], req: &SecurityRequest) -> bool {
         match scheme {
             SecurityScheme::Http { scheme, .. } if scheme.eq_ignore_ascii_case("bearer") => {}
-            _ => return false,
+            _ => {
+                debug!("BearerJWT validation failed: unsupported security scheme");
+                return false;
+            }
         }
         let token = match self.extract_token(req) {
             Some(t) => t,
-            None => return false,
+            None => {
+                debug!("BearerJWT validation failed: missing token (no Authorization header or cookie)");
+                return false;
+            }
         };
-        self.validate_token(token, scopes)
+        let result = self.validate_token(token, scopes);
+        if result {
+            debug!("BearerJWT validation succeeded: token valid");
+        }
+        result
     }
 }
 
@@ -410,10 +467,15 @@ pub struct JwksBearerProvider {
     cache: std::sync::Mutex<(Instant, HashMap<String, jsonwebtoken::DecodingKey>)>,
     // JSF P2: Cache decoded JWT claims to avoid repeated decode operations
     // Uses LRU cache with Arc<str> keys to prevent memory leaks and avoid allocations
+    // P1: RwLock for explicit read/write separation (LruCache::get() requires &mut for LRU updates)
     // token_hash -> (exp_timestamp_with_leeway, decoded_claims)
-    claims_cache: std::sync::Mutex<LruCache<Arc<str>, (i64, serde_json::Value)>>,
+    claims_cache: std::sync::RwLock<LruCache<Arc<str>, (i64, serde_json::Value)>>,
     claims_cache_size: usize,
     cookie_name: Option<String>,
+    // P2: Cache metrics for observability and tuning
+    cache_hits: AtomicU64,
+    cache_misses: AtomicU64,
+    cache_evictions: AtomicU64,
 }
 
 impl JwksBearerProvider {
@@ -447,11 +509,14 @@ impl JwksBearerProvider {
                 Instant::now() - Duration::from_secs(1000),
                 HashMap::new(),
             )),
-            claims_cache: std::sync::Mutex::new(LruCache::new(
+            claims_cache: std::sync::RwLock::new(LruCache::new(
                 NonZeroUsize::new(1000).expect("claims_cache_size must be > 0")
             )),
             claims_cache_size: 1000,
             cookie_name: None,
+            cache_hits: AtomicU64::new(0),
+            cache_misses: AtomicU64::new(0),
+            cache_evictions: AtomicU64::new(0),
         }
     }
 
@@ -514,8 +579,8 @@ impl JwksBearerProvider {
         }
         self.claims_cache_size = size;
         {
-            let mut guard = self.claims_cache.lock()
-                .expect("Claims cache Mutex poisoned - critical error");
+            let mut guard = self.claims_cache.write()
+                .expect("Claims cache RwLock poisoned - critical error");
             *guard = LruCache::new(NonZeroUsize::new(size).unwrap());
         }
         self
@@ -525,7 +590,7 @@ impl JwksBearerProvider {
     ///
     /// Useful for testing, key rotation, or security incidents where tokens need to be invalidated.
     pub fn clear_claims_cache(&self) {
-        if let Ok(mut guard) = self.claims_cache.lock() {
+        if let Ok(mut guard) = self.claims_cache.write() {
             guard.clear();
         }
     }
@@ -539,8 +604,35 @@ impl JwksBearerProvider {
     /// * `token` - The JWT token string to invalidate
     pub fn invalidate_token(&self, token: &str) {
         let token_key: Arc<str> = Arc::from(token);
-        if let Ok(mut guard) = self.claims_cache.lock() {
+        if let Ok(mut guard) = self.claims_cache.write() {
             guard.pop(&token_key);
+        }
+    }
+
+    /// Get cache statistics for observability and tuning.
+    ///
+    /// Returns hit/miss counts, evictions, and current cache size.
+    ///
+    /// # Returns
+    ///
+    /// A struct containing cache metrics:
+    /// - `hits`: Number of cache hits (successful lookups)
+    /// - `misses`: Number of cache misses (lookups that required decode)
+    /// - `evictions`: Number of entries evicted due to LRU capacity
+    /// - `size`: Current number of entries in cache
+    /// - `capacity`: Maximum cache capacity
+    pub fn cache_stats(&self) -> CacheStats {
+        let cache_size = self
+            .claims_cache
+            .read()
+            .map(|guard| guard.len())
+            .unwrap_or(0);
+        CacheStats {
+            hits: self.cache_hits.load(Ordering::Relaxed),
+            misses: self.cache_misses.load(Ordering::Relaxed),
+            evictions: self.cache_evictions.load(Ordering::Relaxed),
+            size: cache_size,
+            capacity: self.claims_cache_size,
         }
     }
 
@@ -746,8 +838,11 @@ impl SecurityProvider for JwksBearerProvider {
         
         // P1: Check claims cache BEFORE any parsing (fail fast optimization)
         // P1: Only calculate SystemTime when needed (cache miss)
+        // Note: LruCache::get() requires &mut to update LRU order, so we use write() lock
+        // However, RwLock still provides benefit: explicit read/write separation and
+        // potential for future optimization if cache implementation changes
         {
-            if let Ok(mut cache_guard) = self.claims_cache.lock() {
+            if let Ok(mut cache_guard) = self.claims_cache.write() {
                 if let Some((exp_timestamp_with_leeway, cached_claims)) = cache_guard.get(&token_key) {
                     // P0: Use same leeway logic as validation
                     let now = std::time::SystemTime::now()
@@ -756,17 +851,32 @@ impl SecurityProvider for JwksBearerProvider {
                         .as_secs() as i64;
                     
                     if now < *exp_timestamp_with_leeway {
+                        // P2: Track cache hit
+                        self.cache_hits.fetch_add(1, Ordering::Relaxed);
+                        
                         // P1: Clone claims and release lock before scope validation
                         let claims_clone = cached_claims.clone();
                         drop(cache_guard);
                         
                         // Use cached claims - skip expensive decode
                         let token_scopes = claims_clone.get("scope").and_then(|v| v.as_str()).unwrap_or("");
-                        return scopes
+                        let has_all_scopes = scopes
                             .iter()
                             .all(|s| token_scopes.split_whitespace().any(|ts| ts == s));
+                        
+                        if has_all_scopes {
+                            debug!("JWT validation succeeded: cache hit, scopes valid");
+                        } else {
+                            warn!(
+                                "JWT validation failed: missing required scopes (token: {:?}, required: {:?})",
+                                token_scopes,
+                                scopes
+                            );
+                        }
+                        return has_all_scopes;
                     } else {
-                        // Token expired, remove from cache (LruCache uses pop)
+                        // Token expired, remove from cache (already have write lock)
+                        debug!("JWT cache: token expired, removing from cache");
                         cache_guard.pop(&token_key);
                     }
                 }
@@ -774,6 +884,9 @@ impl SecurityProvider for JwksBearerProvider {
         }
         
         // Cache miss - need to decode token
+        // P2: Track cache miss
+        self.cache_misses.fetch_add(1, Ordering::Relaxed);
+        
         // Calculate SystemTime only when needed (cache miss)
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -783,16 +896,25 @@ impl SecurityProvider for JwksBearerProvider {
         // Parse header to locate kid/alg
         let header = match jsonwebtoken::decode_header(token) {
             Ok(h) => h,
-            Err(_) => return false,
+            Err(e) => {
+                warn!("JWT validation failed: invalid token header - {:?}", e);
+                return false;
+            }
         };
         
         let kid = match header.kid {
             Some(k) => k,
-            None => return false,
+            None => {
+                warn!("JWT validation failed: missing 'kid' (key ID) in token header");
+                return false;
+            }
         };
         let key = match self.get_key_for(&kid) {
             Some(k) => k,
-            None => return false,
+            None => {
+                warn!("JWT validation failed: key not found for kid '{}' in JWKS", kid);
+                return false;
+            }
         };
         
         // P4 Security: Only allow supported algorithms (implicitly rejects unsupported ones)
@@ -806,7 +928,10 @@ impl SecurityProvider for JwksBearerProvider {
             jsonwebtoken::Algorithm::RS384 => jsonwebtoken::Algorithm::RS384,
             jsonwebtoken::Algorithm::RS512 => jsonwebtoken::Algorithm::RS512,
             // P4: Explicitly reject all other algorithms (security hardening)
-            _ => return false,
+            unsupported => {
+                warn!("JWT validation failed: unsupported algorithm '{:?}'", unsupported);
+                return false;
+            }
         };
         let mut validation = jsonwebtoken::Validation::new(selected_alg);
         validation.validate_exp = true;
@@ -818,11 +943,29 @@ impl SecurityProvider for JwksBearerProvider {
         if let Some(ref aud) = self.aud {
             validation.set_audience(&[aud]);
         }
-        let data: Result<jsonwebtoken::TokenData<serde_json::Value>, _> =
+        let data: Result<jsonwebtoken::TokenData<serde_json::Value>, jsonwebtoken::errors::Error> =
             jsonwebtoken::decode(token, &key, &validation);
         let claims = match data {
             Ok(d) => d.claims,
-            Err(_) => return false,
+            Err(e) => {
+                // Log specific error types for better debugging
+                let error_msg = match e.kind() {
+                    jsonwebtoken::errors::ErrorKind::ExpiredSignature => "token expired",
+                    jsonwebtoken::errors::ErrorKind::InvalidSignature => "invalid signature",
+                    jsonwebtoken::errors::ErrorKind::InvalidIssuer => "invalid issuer",
+                    jsonwebtoken::errors::ErrorKind::InvalidAudience => "invalid audience",
+                    jsonwebtoken::errors::ErrorKind::InvalidSubject => "invalid subject",
+                    jsonwebtoken::errors::ErrorKind::MissingRequiredClaim(claim) => {
+                        return {
+                            warn!("JWT validation failed: missing required claim '{}'", claim);
+                            false
+                        };
+                    }
+                    _ => "decode error",
+                };
+                warn!("JWT validation failed: {} - {:?}", error_msg, e);
+                return false;
+            }
         };
         
         // P0: Store decoded claims in cache with leeway applied to expiration
@@ -834,10 +977,15 @@ impl SecurityProvider for JwksBearerProvider {
                 
                 // Only cache if token hasn't expired (with leeway)
                 if now < exp_timestamp_with_leeway {
-                    if let Ok(mut cache_guard) = self.claims_cache.lock() {
+                    if let Ok(mut cache_guard) = self.claims_cache.write() {
                         // P0: Use Arc<str> key (already created above, O(1) clone)
+                        // P1: Write lock for cache insert (eviction may occur)
+                        // P2: LruCache::put() returns Some(evicted_entry) if eviction occurred
                         // LruCache::put() automatically evicts LRU entries if at capacity
-                        cache_guard.put(token_key, (exp_timestamp_with_leeway, claims.clone()));
+                        if cache_guard.put(token_key, (exp_timestamp_with_leeway, claims.clone())).is_some() {
+                            // P2: Track eviction (put() returned evicted entry)
+                            self.cache_evictions.fetch_add(1, Ordering::Relaxed);
+                        }
                     }
                 }
             }
@@ -845,9 +993,21 @@ impl SecurityProvider for JwksBearerProvider {
         
         // scope check
         let token_scopes = claims.get("scope").and_then(|v| v.as_str()).unwrap_or("");
-        scopes
+        let has_all_scopes = scopes
             .iter()
-            .all(|s| token_scopes.split_whitespace().any(|ts| ts == s))
+            .all(|s| token_scopes.split_whitespace().any(|ts| ts == s));
+        
+        if has_all_scopes {
+            debug!("JWT validation succeeded: token valid, scopes present");
+        } else {
+            warn!(
+                "JWT validation failed: missing required scopes (token: {:?}, required: {:?})",
+                token_scopes,
+                scopes
+            );
+        }
+        
+        has_all_scopes
     }
 }
 
