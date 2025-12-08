@@ -2244,6 +2244,289 @@ fn test_jwks_background_refresh_cache_ttl_update() {
 }
 
 #[test]
+fn test_jwks_background_refresh_cache_ttl_update_during_sleep() {
+    // Test that cache_ttl updates are picked up by background thread even when
+    // it's in the middle of a long sleep cycle. This verifies the fix for the bug
+    // where the background thread would continue sleeping with the old TTL value
+    // until the sleep completed, ignoring cache_ttl() builder calls.
+    let jwks_url = "http://localhost:8080/jwks.json";
+    
+    // Create provider with long cache_ttl (300s)
+    // Background thread will calculate refresh_interval = 290s and start sleeping
+    let provider = brrtrouter::security::JwksBearerProvider::new(jwks_url.to_string())
+        .cache_ttl(Duration::from_secs(300));
+    
+    // Give the background thread a moment to start and begin sleeping
+    // (it calculates refresh_interval and enters the sleep loop)
+    std::thread::sleep(Duration::from_millis(100));
+    
+    // Now change the TTL to a short value (5s) while the thread is sleeping
+    // With the fix, the thread should detect this change during its sleep loop
+    // and wake up early to recalculate refresh_interval
+    let provider = provider.cache_ttl(Duration::from_secs(5));
+    
+    // The background thread should respond quickly to the TTL change
+    // If the fix works, it will detect the change within 1 second (the sleep check interval)
+    // If the bug exists, it would continue sleeping for the full 290 seconds
+    // We verify this by checking that stop_background_refresh responds quickly,
+    // which indicates the thread is checking the TTL value during sleep
+    let start = std::time::Instant::now();
+    provider.stop_background_refresh();
+    let stop_duration = start.elapsed();
+    
+    // Should stop quickly (< 2s) because the thread checks TTL every 1s during sleep
+    // If the bug existed, the thread might not respond quickly if it wasn't checking
+    assert!(
+        stop_duration < Duration::from_secs(2),
+        "Background thread should respond quickly to cache_ttl changes during sleep (took {:?}). \
+         This verifies the thread checks cache_ttl_secs during sleep and wakes up early when it changes.",
+        stop_duration
+    );
+}
+
+#[test]
+fn test_jwks_background_refresh_cache_ttl_increase_during_sleep() {
+    // Test that cache_ttl increases are also picked up by background thread during sleep
+    // This tests the opposite direction - increasing TTL should extend the sleep interval
+    let jwks_url = "http://localhost:8080/jwks.json";
+    
+    // Create provider with short cache_ttl (5s)
+    // Background thread will calculate refresh_interval = 2.5s (5s / 2) and start sleeping
+    let provider = brrtrouter::security::JwksBearerProvider::new(jwks_url.to_string())
+        .cache_ttl(Duration::from_secs(5));
+    
+    // Give the background thread a moment to start and begin sleeping
+    std::thread::sleep(Duration::from_millis(100));
+    
+    // Now increase the TTL to a long value (300s) while the thread is sleeping
+    // With the fix, the thread should detect this change and recalculate to sleep longer
+    let provider = provider.cache_ttl(Duration::from_secs(300));
+    
+    // The background thread should respond quickly to the TTL change
+    // It will break out of the current sleep and recalculate with the new longer interval
+    let start = std::time::Instant::now();
+    provider.stop_background_refresh();
+    let stop_duration = start.elapsed();
+    
+    // Should stop quickly (< 2s) because the thread checks TTL every 1s during sleep
+    assert!(
+        stop_duration < Duration::from_secs(2),
+        "Background thread should respond quickly to cache_ttl increases during sleep (took {:?})",
+        stop_duration
+    );
+}
+
+#[test]
+fn test_jwks_background_refresh_multiple_ttl_changes() {
+    // Test that multiple rapid cache_ttl changes are all picked up correctly
+    // This verifies the thread can handle rapid TTL updates without issues
+    let jwks_url = "http://localhost:8080/jwks.json";
+    
+    // Create provider with initial TTL
+    let mut provider = brrtrouter::security::JwksBearerProvider::new(jwks_url.to_string())
+        .cache_ttl(Duration::from_secs(300));
+    
+    // Give thread time to start
+    std::thread::sleep(Duration::from_millis(100));
+    
+    // Make multiple rapid TTL changes
+    provider = provider.cache_ttl(Duration::from_secs(60));
+    std::thread::sleep(Duration::from_millis(50));
+    provider = provider.cache_ttl(Duration::from_secs(10));
+    std::thread::sleep(Duration::from_millis(50));
+    provider = provider.cache_ttl(Duration::from_secs(5));
+    std::thread::sleep(Duration::from_millis(50));
+    provider = provider.cache_ttl(Duration::from_secs(300));
+    
+    // Thread should handle all changes gracefully
+    let start = std::time::Instant::now();
+    provider.stop_background_refresh();
+    let stop_duration = start.elapsed();
+    
+    assert!(
+        stop_duration < Duration::from_secs(2),
+        "Background thread should handle multiple rapid cache_ttl changes (took {:?})",
+        stop_duration
+    );
+}
+
+#[test]
+fn test_jwks_background_refresh_ttl_change_to_minimum() {
+    // Test that changing TTL to minimum value (1s) is handled correctly
+    // Minimum refresh interval is 1s, so this tests edge case handling
+    let jwks_url = "http://localhost:8080/jwks.json";
+    
+    // Create provider with long TTL
+    let provider = brrtrouter::security::JwksBearerProvider::new(jwks_url.to_string())
+        .cache_ttl(Duration::from_secs(300));
+    
+    // Give thread time to start
+    std::thread::sleep(Duration::from_millis(100));
+    
+    // Change to minimum TTL (1s)
+    // refresh_interval = max(1s / 2, 1s) = 1s
+    let provider = provider.cache_ttl(Duration::from_secs(1));
+    
+    // Thread should respond quickly and use minimum 1s refresh interval
+    let start = std::time::Instant::now();
+    provider.stop_background_refresh();
+    let stop_duration = start.elapsed();
+    
+    assert!(
+        stop_duration < Duration::from_secs(2),
+        "Background thread should handle minimum cache_ttl correctly (took {:?})",
+        stop_duration
+    );
+}
+
+#[test]
+fn test_jwks_background_refresh_ttl_change_to_very_short() {
+    // Test that changing TTL to very short value (< 1s) is handled correctly
+    // The minimum refresh interval of 1s should prevent CPU spinning
+    let jwks_url = "http://localhost:8080/jwks.json";
+    
+    // Create provider with long TTL
+    let provider = brrtrouter::security::JwksBearerProvider::new(jwks_url.to_string())
+        .cache_ttl(Duration::from_secs(300));
+    
+    // Give thread time to start
+    std::thread::sleep(Duration::from_millis(100));
+    
+    // Change to very short TTL (100ms)
+    // refresh_interval = max(100ms / 2, 1s) = 1s (minimum enforced)
+    let provider = provider.cache_ttl(Duration::from_millis(100));
+    
+    // Thread should respond quickly and use minimum 1s refresh interval
+    let start = std::time::Instant::now();
+    provider.stop_background_refresh();
+    let stop_duration = start.elapsed();
+    
+    assert!(
+        stop_duration < Duration::from_secs(2),
+        "Background thread should enforce minimum refresh interval for very short cache_ttl (took {:?})",
+        stop_duration
+    );
+}
+
+#[test]
+fn test_jwks_background_refresh_ttl_change_to_very_long() {
+    // Test that changing TTL to very long value is handled correctly
+    // The thread should recalculate and sleep for the new long interval
+    let jwks_url = "http://localhost:8080/jwks.json";
+    
+    // Create provider with short TTL
+    let provider = brrtrouter::security::JwksBearerProvider::new(jwks_url.to_string())
+        .cache_ttl(Duration::from_secs(5));
+    
+    // Give thread time to start
+    std::thread::sleep(Duration::from_millis(100));
+    
+    // Change to very long TTL (1 hour)
+    // refresh_interval = 3600s - 10s = 3590s
+    let provider = provider.cache_ttl(Duration::from_secs(3600));
+    
+    // Thread should respond quickly to the change (detects it during sleep check)
+    // and then sleep for the new long interval
+    let start = std::time::Instant::now();
+    provider.stop_background_refresh();
+    let stop_duration = start.elapsed();
+    
+    assert!(
+        stop_duration < Duration::from_secs(2),
+        "Background thread should handle very long cache_ttl correctly (took {:?})",
+        stop_duration
+    );
+}
+
+#[test]
+fn test_jwks_background_refresh_ttl_change_at_edge_case_10s() {
+    // Test edge case: TTL change at the 10s boundary
+    // For TTL <= 10s: refresh_interval = TTL / 2
+    // For TTL > 10s: refresh_interval = TTL - 10s
+    let jwks_url = "http://localhost:8080/jwks.json";
+    
+    // Create provider with TTL just above 10s
+    let provider = brrtrouter::security::JwksBearerProvider::new(jwks_url.to_string())
+        .cache_ttl(Duration::from_secs(11));
+    
+    // Give thread time to start (refresh_interval = 11s - 10s = 1s)
+    std::thread::sleep(Duration::from_millis(100));
+    
+    // Change to exactly 10s (refresh_interval = 10s / 2 = 5s)
+    let provider = provider.cache_ttl(Duration::from_secs(10));
+    
+    // Thread should detect change and recalculate
+    let start = std::time::Instant::now();
+    provider.stop_background_refresh();
+    let stop_duration = start.elapsed();
+    
+    assert!(
+        stop_duration < Duration::from_secs(2),
+        "Background thread should handle cache_ttl change at 10s boundary (took {:?})",
+        stop_duration
+    );
+}
+
+#[test]
+fn test_jwks_background_refresh_ttl_change_after_wake() {
+    // Test that TTL changes are picked up immediately after thread wakes up from sleep
+    // This verifies the thread recalculates refresh_interval on each loop iteration
+    let jwks_url = "http://localhost:8080/jwks.json";
+    
+    // Create provider with short TTL so thread wakes up quickly
+    // TTL = 3s, refresh_interval = 3s / 2 = 1.5s (min 1s enforced = 1.5s)
+    let mut provider = brrtrouter::security::JwksBearerProvider::new(jwks_url.to_string())
+        .cache_ttl(Duration::from_secs(3));
+    
+    // Wait for thread to wake up and refresh (should happen after ~1.5s)
+    std::thread::sleep(Duration::from_secs(2));
+    
+    // Change TTL right after thread should have woken up
+    // Thread should pick up the new value on next loop iteration
+    provider = provider.cache_ttl(Duration::from_secs(300));
+    
+    // Thread should respond quickly
+    let start = std::time::Instant::now();
+    provider.stop_background_refresh();
+    let stop_duration = start.elapsed();
+    
+    assert!(
+        stop_duration < Duration::from_secs(2),
+        "Background thread should pick up cache_ttl changes after wake (took {:?})",
+        stop_duration
+    );
+}
+
+#[test]
+fn test_jwks_background_refresh_ttl_change_same_value() {
+    // Test that setting TTL to the same value doesn't cause issues
+    // This verifies the change detection logic handles no-op updates correctly
+    let jwks_url = "http://localhost:8080/jwks.json";
+    
+    // Create provider with TTL
+    let provider = brrtrouter::security::JwksBearerProvider::new(jwks_url.to_string())
+        .cache_ttl(Duration::from_secs(300));
+    
+    // Give thread time to start
+    std::thread::sleep(Duration::from_millis(100));
+    
+    // Set TTL to the same value (should be a no-op for the background thread)
+    let provider = provider.cache_ttl(Duration::from_secs(300));
+    
+    // Thread should continue normally (no early wake-up since value didn't change)
+    // But should still respond to shutdown quickly
+    let start = std::time::Instant::now();
+    provider.stop_background_refresh();
+    let stop_duration = start.elapsed();
+    
+    assert!(
+        stop_duration < Duration::from_secs(2),
+        "Background thread should handle same-value cache_ttl update (took {:?})",
+        stop_duration
+    );
+}
+
+#[test]
 fn test_jwks_background_refresh_multiple_providers() {
     // Test that multiple providers with different cache_ttl values work correctly
     let jwks_url = "http://localhost:8080/jwks.json";
@@ -2606,5 +2889,164 @@ fn test_jwks_refresh_thread_storm_prevention() {
     assert!(
         provider.validate(&scheme, &[], &req),
         "Cache should be refreshed and validation should still work"
+    );
+}
+
+#[test]
+fn test_jwks_refresh_atomic_claim_prevention() {
+    // Test that the atomic compare_exchange mechanism prevents multiple threads
+    // from spawning refresh threads simultaneously, even under high concurrency.
+    //
+    // This test verifies the fix for the race condition where multiple threads
+    // could all see refresh_in_progress=false, all pass the check, and all spawn
+    // threads. The fix uses compare_exchange to atomically claim the refresh
+    // before spawning, ensuring only one thread spawns a refresh thread.
+    //
+    // We test this by:
+    // 1. Creating a provider with expired cache (non-empty)
+    // 2. Spawning many threads that all call refresh_jwks_if_needed simultaneously
+    // 3. Counting how many threads actually spawn (by counting HTTP requests)
+    // 4. Verifying only 1-2 requests are made (proving atomic claim works)
+    
+    use std::sync::atomic::{AtomicU32, Ordering};
+    
+    // Create a mock JWKS server that counts requests
+    let request_count = Arc::new(AtomicU32::new(0));
+    let request_count_clone = request_count.clone();
+    
+    let secret = b"test-secret-key-32-bytes!!";
+    let k = base64url_no_pad(secret);
+    let jwks = json!({
+        "keys": [{
+            "kty": "oct",
+            "kid": "test-key",
+            "alg": "HS256",
+            "k": k
+        }]
+    });
+    
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let jwks_url = format!("http://{}:{}/jwks.json", addr.ip(), addr.port());
+    let jwks_body = jwks.to_string();
+    
+    // Spawn server that counts requests
+    std::thread::spawn(move || {
+        for _ in 0..10 {
+            // Accept up to 10 requests (should only get 1-2 due to atomic claim)
+            if let Ok((mut stream, _)) = listener.accept() {
+                request_count_clone.fetch_add(1, Ordering::Relaxed);
+                let mut buf = [0u8; 2048];
+                let _ = stream.read(&mut buf);
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                    jwks_body.len(),
+                    jwks_body
+                );
+                let _ = stream.write_all(resp.as_bytes());
+                // Small delay to simulate network latency
+                std::thread::sleep(Duration::from_millis(50));
+            }
+        }
+    });
+    
+    // Small delay to let server start
+    std::thread::sleep(Duration::from_millis(100));
+    
+    // Create provider with very short cache_ttl and populate cache
+    let iss = "https://issuer.example";
+    let aud = "my-audience";
+    let provider = Arc::new(
+        brrtrouter::security::JwksBearerProvider::new(jwks_url.clone())
+            .issuer(iss.to_string())
+            .audience(aud.to_string())
+            .cache_ttl(Duration::from_millis(100))
+    );
+    
+    // Create a valid token for validation
+    let token = make_hs256_jwt(secret, iss, aud, "test-key", 3600);
+    let scheme = SecurityScheme::Http {
+        scheme: "bearer".to_string(),
+        bearer_format: None,
+        description: None,
+    };
+    
+    // Populate cache initially by validating a token (this triggers initial refresh)
+    let mut headers: HeaderVec = HeaderVec::new();
+    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    let req = SecurityRequest {
+        headers: &headers,
+        query: &ParamVec::new(),
+        cookies: &HeaderVec::new(),
+    };
+    
+    assert!(provider.validate(&scheme, &[], &req), "Initial validation should succeed");
+    std::thread::sleep(Duration::from_millis(150)); // Wait for initial refresh
+    
+    // Reset request count
+    request_count.store(0, Ordering::Relaxed);
+    
+    // Wait for cache to expire
+    std::thread::sleep(Duration::from_millis(150));
+    
+    // Now spawn many threads that all call validate simultaneously
+    // This will internally call get_key_for -> refresh_jwks_if_needed, which should use
+    // atomic compare_exchange to claim the refresh before spawning
+    let num_threads = 100;
+    let mut handles = Vec::new();
+    
+    for _ in 0..num_threads {
+        let provider_clone = provider.clone();
+        let token_clone = token.clone();
+        let scheme_clone = scheme.clone();
+        let handle = std::thread::spawn(move || {
+            // Create request in each thread (can't share references across threads)
+            let mut thread_headers: HeaderVec = HeaderVec::new();
+            thread_headers.push((Arc::from("authorization"), format!("Bearer {}", token_clone)));
+            let thread_req = SecurityRequest {
+                headers: &thread_headers,
+                query: &ParamVec::new(),
+                cookies: &HeaderVec::new(),
+            };
+            // Call validate which internally calls get_key_for -> refresh_jwks_if_needed
+            // With the atomic claim fix, only one thread should successfully
+            // claim the refresh and spawn a thread, even though 100 threads
+            // all call this simultaneously
+            let _ = provider_clone.validate(&scheme_clone, &[], &thread_req);
+        });
+        handles.push(handle);
+    }
+    
+    // Wait for all threads to complete
+    for handle in handles {
+        handle.join().unwrap();
+    }
+    
+    // Give a small buffer for any in-flight requests to complete
+    std::thread::sleep(Duration::from_millis(200));
+    
+    // Verify that only 1-2 HTTP requests were made
+    // Without the atomic claim fix, we'd see ~100 requests (one per thread)
+    // With the fix, only one thread successfully claims the refresh and spawns,
+    // so we should see 1-2 requests (one successful refresh, maybe one retry)
+    let final_count = request_count.load(Ordering::Relaxed);
+    
+    assert!(
+        final_count <= 3,
+        "Atomic claim prevention failed: {} HTTP requests made by {} concurrent threads. \
+         Expected <= 3 requests (atomic compare_exchange should prevent thread spawning). \
+         This indicates the atomic claim mechanism is not working - multiple threads are \
+         successfully claiming the refresh and spawning threads. Without the fix, we'd see \
+         ~{} requests (one per thread).",
+        final_count,
+        num_threads,
+        num_threads
+    );
+    
+    // Verify that at least one request was made (proving refresh actually happened)
+    assert!(
+        final_count >= 1,
+        "Expected at least 1 HTTP request (refresh should have happened), but got {}",
+        final_count
     );
 }

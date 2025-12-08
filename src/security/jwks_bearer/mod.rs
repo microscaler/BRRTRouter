@@ -7,7 +7,7 @@ use lru::LruCache;
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Condvar, Mutex, RwLock};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 use tracing::{debug, warn};
@@ -39,6 +39,9 @@ pub struct JwksBearerProvider {
     cache: Arc<RwLock<(Instant, HashMap<String, jsonwebtoken::DecodingKey>)>>,
     // P2: Debounce JWKS refresh to prevent concurrent HTTP requests
     refresh_in_progress: Arc<AtomicBool>,
+    // P1: Condition variable to notify waiting threads when refresh completes
+    // Waiting threads use wait_timeout to be woken immediately when refresh finishes
+    refresh_complete: Arc<(Mutex<()>, Condvar)>,
     // P1: Background refresh task handle for lifecycle management
     background_handle: Option<Arc<RwLock<Option<JoinHandle<()>>>>>,
     // P1: Shutdown flag for graceful background thread termination
@@ -112,6 +115,7 @@ impl JwksBearerProvider {
         )));
         let background_handle = Arc::new(RwLock::new(None::<JoinHandle<()>>));
         let refresh_in_progress = Arc::new(AtomicBool::new(false));
+        let refresh_complete = Arc::new((Mutex::new(()), Condvar::new()));
         let shutdown = Arc::new(AtomicBool::new(false));
         let cache_ttl_secs = Arc::new(std::sync::atomic::AtomicU64::new(300));
         
@@ -124,6 +128,7 @@ impl JwksBearerProvider {
             cache_ttl_secs: cache_ttl_secs.clone(),
             cache: cache.clone(),
             refresh_in_progress: refresh_in_progress.clone(),
+            refresh_complete: refresh_complete.clone(),
             claims_cache: std::sync::RwLock::new(LruCache::new(
                 NonZeroUsize::new(1000).expect("claims_cache_size must be > 0"),
             )),
@@ -140,6 +145,7 @@ impl JwksBearerProvider {
         provider.start_background_refresh_internal(
             cache,
             refresh_in_progress,
+            refresh_complete,
             shutdown,
             background_handle,
         );
@@ -337,6 +343,7 @@ impl JwksBearerProvider {
         &self,
         cache: Arc<RwLock<(Instant, HashMap<String, jsonwebtoken::DecodingKey>)>>,
         refresh_in_progress: Arc<AtomicBool>,
+        refresh_complete: Arc<(Mutex<()>, Condvar)>,
         shutdown: Arc<AtomicBool>,
         handle_lock: Arc<RwLock<Option<JoinHandle<()>>>>,
     ) {
@@ -364,27 +371,51 @@ impl JwksBearerProvider {
                 // Ensure minimum refresh interval of 1 second to prevent CPU spinning
                 let refresh_interval = refresh_interval.max(Duration::from_secs(1));
                 
-                // Sleep until next refresh time (with periodic shutdown checks)
+                // Sleep until next refresh time (with periodic shutdown and cache_ttl change checks)
+                // If cache_ttl is updated via cache_ttl() builder, we need to wake up early
+                // and recalculate refresh_interval with the new value
                 let sleep_duration = Duration::from_secs(1).min(refresh_interval);
                 let mut slept = Duration::ZERO;
+                let initial_cache_ttl_secs = cache_ttl_secs.load(Ordering::Acquire);
+                let mut ttl_changed = false;
                 while slept < refresh_interval {
                     if shutdown.load(Ordering::Acquire) {
                         debug!("JWKS background refresh thread shutting down");
                         return;
                     }
+                    // Check if cache_ttl has changed (cache_ttl() builder was called)
+                    // If it has, break out of sleep loop early to recalculate refresh_interval
+                    let current_cache_ttl_secs = cache_ttl_secs.load(Ordering::Acquire);
+                    if current_cache_ttl_secs != initial_cache_ttl_secs {
+                        debug!(
+                            "JWKS cache_ttl changed from {}s to {}s, recalculating refresh interval",
+                            initial_cache_ttl_secs,
+                            current_cache_ttl_secs
+                        );
+                        ttl_changed = true;
+                        break; // Break out of sleep loop to recalculate refresh_interval
+                    }
                     thread::sleep(sleep_duration);
                     slept += sleep_duration;
                 }
                 
-                // After sleeping for refresh_interval, always refresh proactively
-                // The refresh_interval is calculated to wake up before expiration,
-                // so we should refresh now to keep the cache fresh.
-                // The debounce mechanism in refresh_jwks_internal prevents concurrent refreshes.
-                Self::refresh_jwks_internal(
-                    &cache,
-                    &jwks_url,
-                    &refresh_in_progress,
-                );
+                // Only refresh if we completed the full sleep interval (TTL didn't change)
+                // If TTL changed, skip refresh and continue to next loop iteration to recalculate
+                if !ttl_changed {
+                    // After sleeping for refresh_interval, always refresh proactively
+                    // The refresh_interval is calculated to wake up before expiration,
+                    // so we should refresh now to keep the cache fresh.
+                    // The debounce mechanism in refresh_jwks_internal prevents concurrent refreshes.
+                    Self::refresh_jwks_internal(
+                        &cache,
+                        &jwks_url,
+                        &refresh_in_progress,
+                        &refresh_complete,
+                        false, // Background thread claims the refresh itself
+                    );
+                }
+                // If ttl_changed is true, we continue to the next loop iteration
+                // which will recalculate refresh_interval based on the new cache_ttl value
             }
         });
         
@@ -412,18 +443,27 @@ impl JwksBearerProvider {
     }
     
     /// Internal method to refresh JWKS (can be called from background thread or on-demand)
+    /// 
+    /// # Arguments
+    /// * `already_claimed` - If true, the caller has already atomically claimed the refresh
+    ///   (set refresh_in_progress to true). If false, this method will atomically claim it.
     fn refresh_jwks_internal(
         cache: &Arc<RwLock<(Instant, HashMap<String, jsonwebtoken::DecodingKey>)>>,
         jwks_url: &str,
         refresh_in_progress: &Arc<AtomicBool>,
+        refresh_complete: &Arc<(Mutex<()>, Condvar)>,
+        already_claimed: bool,
     ) {
         // P2: Debounce - check if another thread is already refreshing
-        if refresh_in_progress
-            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
-            .is_err()
-        {
-            // Another thread is refreshing, skip this cycle
-            return;
+        // If already_claimed is true, we've already set the flag, so skip the check
+        if !already_claimed {
+            if refresh_in_progress
+                .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+                .is_err()
+            {
+                // Another thread is refreshing, skip this cycle
+                return;
+            }
         }
         
         let refresh_start = Instant::now();
@@ -434,6 +474,10 @@ impl JwksBearerProvider {
             Ok(c) => c,
             Err(_) => {
                 refresh_in_progress.store(false, Ordering::Release);
+                // Notify waiting threads even on failure so they don't wait forever
+                let (lock, cvar) = &**refresh_complete;
+                let _guard = lock.lock().unwrap();
+                cvar.notify_all();
                 return;
             }
         };
@@ -452,6 +496,10 @@ impl JwksBearerProvider {
             Some(b) => b,
             None => {
                 refresh_in_progress.store(false, Ordering::Release);
+                // Notify waiting threads even on failure so they don't wait forever
+                let (lock, cvar) = &**refresh_complete;
+                let _guard = lock.lock().unwrap();
+                cvar.notify_all();
                 return;
             }
         };
@@ -460,6 +508,10 @@ impl JwksBearerProvider {
             Ok(v) => v,
             Err(_) => {
                 refresh_in_progress.store(false, Ordering::Release);
+                // Notify waiting threads even on failure so they don't wait forever
+                let (lock, cvar) = &**refresh_complete;
+                let _guard = lock.lock().unwrap();
+                cvar.notify_all();
                 return;
             }
         };
@@ -519,6 +571,12 @@ impl JwksBearerProvider {
         
         refresh_in_progress.store(false, Ordering::Release);
         
+        // Notify all waiting threads that refresh has completed
+        // This wakes them immediately instead of waiting for their next poll
+        let (lock, cvar) = &**refresh_complete;
+        let _guard = lock.lock().unwrap();
+        cvar.notify_all();
+        
         debug!(
             "JWKS refresh completed in {:?} (keys: {})",
             refresh_duration, key_count
@@ -529,6 +587,8 @@ impl JwksBearerProvider {
     /// Uses stale cache if refresh fails (graceful degradation)
     /// 
     /// If cache is empty, does a blocking initial refresh to ensure first validation succeeds.
+    /// When cache is empty and another thread is refreshing, waits with exponential backoff
+    /// to ensure concurrent threads don't fail validation due to empty cache.
     fn refresh_jwks_if_needed(&self) {
         // Read current cache_ttl from atomic (picks up changes from cache_ttl() builder)
         let current_cache_ttl = Duration::from_secs(self.cache_ttl_secs.load(Ordering::Acquire));
@@ -549,33 +609,147 @@ impl JwksBearerProvider {
         // If cache is empty, do a blocking initial refresh to ensure first validation succeeds
         // After that, background refresh will keep it updated
         if is_empty {
-            // Blocking initial refresh
-            Self::refresh_jwks_internal(
-                &self.cache,
-                &self.jwks_url,
-                &self.refresh_in_progress,
-            );
+            // Try to claim the refresh - if we win, do blocking refresh
+            // If we lose, another thread is refreshing - wait for it with exponential backoff
+            if self
+                .refresh_in_progress
+                .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+                .is_ok()
+            {
+                // We won the race - do blocking initial refresh
+                Self::refresh_jwks_internal(
+                    &self.cache,
+                    &self.jwks_url,
+                    &self.refresh_in_progress,
+                    &self.refresh_complete,
+                    true, // We already claimed the flag
+                );
+            } else {
+                // Another thread is refreshing - wait for it to complete using condition variable
+                // This is more efficient than polling - threads are woken immediately when refresh completes
+                let timeout = Duration::from_secs(2); // Allow 2s for refresh (400ms max + buffer for network issues)
+                let (lock, cvar) = &*self.refresh_complete;
+                let guard = lock.lock().unwrap();
+                
+                // Wait for refresh to complete, with timeout
+                // The condvar will wake us immediately when refresh_in_progress becomes false
+                let wait_result = cvar.wait_timeout_while(
+                    guard,
+                    timeout,
+                    |_| {
+                        // Continue waiting while refresh is in progress
+                        self.refresh_in_progress.load(Ordering::Acquire)
+                    },
+                );
+                
+                let (wait_guard, wait_timeout_result) = match wait_result {
+                    Ok(result) => result,
+                    Err(_) => {
+                        // Lock poisoned, give up
+                        return;
+                    }
+                };
+                
+                drop(wait_guard);
+                
+                // Check if we timed out or if refresh completed
+                if wait_timeout_result.timed_out() && self.refresh_in_progress.load(Ordering::Acquire) {
+                    // Timeout - refresh may have failed, check if cache is still empty
+                    // If still empty, try one more refresh attempt ourselves
+                    let still_empty = {
+                        if let Ok(guard) = self.cache.read() {
+                            guard.1.is_empty()
+                        } else {
+                            // Lock poisoned, give up
+                            return;
+                        }
+                    };
+                    
+                    if still_empty {
+                        // Cache is still empty after timeout - try one more refresh
+                        // This handles the case where the first refresh failed silently
+                        if self
+                            .refresh_in_progress
+                            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+                            .is_ok()
+                        {
+                            // We can now claim the refresh - do blocking refresh
+                            Self::refresh_jwks_internal(
+                                &self.cache,
+                                &self.jwks_url,
+                                &self.refresh_in_progress,
+                                &self.refresh_complete,
+                                true, // We already claimed the flag
+                            );
+                        }
+                    }
+                    // If cache is no longer empty, the refresh succeeded - return
+                    return;
+                }
+                
+                // Refresh completed (flag cleared) - verify cache is populated
+                // If refresh failed silently, cache may still be empty - try one more refresh
+                let still_empty = {
+                    if let Ok(guard) = self.cache.read() {
+                        guard.1.is_empty()
+                    } else {
+                        // Lock poisoned, give up
+                        return;
+                    }
+                };
+                
+                if still_empty {
+                    // Cache is still empty after refresh completed - the refresh likely failed
+                    // Try one more refresh attempt ourselves
+                    if self
+                        .refresh_in_progress
+                        .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+                        .is_ok()
+                    {
+                        // We can now claim the refresh - do blocking refresh
+                        Self::refresh_jwks_internal(
+                            &self.cache,
+                            &self.jwks_url,
+                            &self.refresh_in_progress,
+                            &self.refresh_complete,
+                            true, // We already claimed the flag
+                        );
+                    }
+                }
+                // Return to allow caller to read the cache (populated or empty)
+            }
         } else {
             // Cache exists but expired - trigger refresh in background (non-blocking)
-            // P1: Check if refresh is already in progress to avoid thread storm
-            // Under load during expiry window, multiple requests would spawn threads
-            // that immediately return (refresh_jwks_internal checks the flag and exits),
-            // causing unbounded thread creation and CPU/memory pressure
-            if self.refresh_in_progress.load(Ordering::Acquire) {
-                // Refresh already in progress, skip spawning thread
-                // The background refresh thread or another request thread is handling it
+            // P1: Atomically claim the right to spawn a refresh thread to avoid thread storm
+            // Under load during expiry window, multiple requests would all see refresh_in_progress=false,
+            // all pass the check, and all spawn threads that immediately return when refresh_jwks_internal
+            // sees the flag is already set. This causes unbounded thread creation and CPU/memory pressure.
+            //
+            // Solution: Use compare_exchange to atomically check and set the flag BEFORE spawning.
+            // Only one thread will successfully claim the refresh, preventing thread storms.
+            if self
+                .refresh_in_progress
+                .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+                .is_err()
+            {
+                // Another thread already claimed the refresh (or background thread is refreshing)
+                // Skip spawning - the existing refresh will handle it
+                // For expired cache, we can use stale data (graceful degradation)
                 return;
             }
             
-            // Spawn a one-off refresh task (don't wait for it)
-            // refresh_jwks_internal will atomically check and set the flag to prevent
-            // concurrent refreshes, so at most one thread will do the actual work
+            // We successfully claimed the refresh - spawn thread to do the actual work
+            // Note: refresh_jwks_internal will clear the flag when done, so we don't need to
+            // handle that here. If refresh_jwks_internal fails, it also clears the flag.
             let cache = self.cache.clone();
             let jwks_url = self.jwks_url.clone();
             let refresh_in_progress = self.refresh_in_progress.clone();
+            let refresh_complete = self.refresh_complete.clone();
             
             thread::spawn(move || {
-                Self::refresh_jwks_internal(&cache, &jwks_url, &refresh_in_progress);
+                // We've already atomically claimed the refresh (set flag to true above),
+                // so pass already_claimed=true to skip the flag check in refresh_jwks_internal
+                Self::refresh_jwks_internal(&cache, &jwks_url, &refresh_in_progress, &refresh_complete, true);
             });
         }
     }
