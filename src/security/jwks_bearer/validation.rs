@@ -14,23 +14,164 @@ use tracing::{debug, warn};
 // Re-export constants from parent module
 use super::SUPPORTED_ALGORITHMS;
 
+/// Internal error types for JWT validation
+///
+/// These error types provide detailed information about validation failures
+/// for better observability and debugging. They are used internally and
+/// logged via structured logging, but the public API still returns `bool`
+/// to maintain backward compatibility.
+#[derive(Debug, Clone)]
+pub(super) enum ValidationError {
+    /// Token is missing from request (no Authorization header or cookie)
+    MissingToken,
+    /// Token format is invalid (cannot parse header)
+    InvalidTokenFormat { error: String },
+    /// Token header is missing required 'kid' (key ID)
+    MissingKeyId,
+    /// Key not found in JWKS for the given kid
+    MissingKey { kid: String },
+    /// Token signature is invalid
+    InvalidSignature,
+    /// Token has expired
+    ExpiredToken { exp: i64, now: i64 },
+    /// Token issuer doesn't match expected value
+    InvalidIssuer { expected: Option<String>, got: Option<String> },
+    /// Token audience doesn't match expected value
+    InvalidAudience { expected: Option<String>, got: Option<String> },
+    /// Token is missing a required claim
+    MissingRequiredClaim { claim: String },
+    /// Token uses an unsupported algorithm
+    UnsupportedAlgorithm { alg: String },
+    /// JWKS fetch failed
+    #[allow(dead_code)] // Reserved for future use when JWKS fetch errors are tracked
+    JwksFetchError { url: String, error: String },
+    /// Token is missing required scopes
+    InsufficientScopes { required: Vec<String>, got: Vec<String> },
+    /// Security scheme doesn't match (not HTTP Bearer)
+    InvalidSecurityScheme { scheme: String },
+}
+
+impl ValidationError {
+    /// Get a human-readable error message
+    #[allow(dead_code)] // Reserved for future use (e.g., error callbacks)
+    fn message(&self) -> &'static str {
+        match self {
+            ValidationError::MissingToken => "missing token",
+            ValidationError::InvalidTokenFormat { .. } => "invalid token format",
+            ValidationError::MissingKeyId => "missing key ID",
+            ValidationError::MissingKey { .. } => "key not found in JWKS",
+            ValidationError::InvalidSignature => "invalid signature",
+            ValidationError::ExpiredToken { .. } => "token expired",
+            ValidationError::InvalidIssuer { .. } => "invalid issuer",
+            ValidationError::InvalidAudience { .. } => "invalid audience",
+            ValidationError::MissingRequiredClaim { .. } => "missing required claim",
+            ValidationError::UnsupportedAlgorithm { .. } => "unsupported algorithm",
+            ValidationError::JwksFetchError { .. } => "JWKS fetch failed",
+            ValidationError::InsufficientScopes { .. } => "insufficient scopes",
+            ValidationError::InvalidSecurityScheme { .. } => "invalid security scheme",
+        }
+    }
+
+    /// Log the error with structured logging
+    fn log(&self) {
+        match self {
+            ValidationError::MissingToken => {
+                debug!("JWT validation failed: missing token (no Authorization header or cookie)");
+            }
+            ValidationError::InvalidTokenFormat { error } => {
+                warn!("JWT validation failed: invalid token format - {}", error);
+            }
+            ValidationError::MissingKeyId => {
+                warn!("JWT validation failed: missing 'kid' (key ID) in token header");
+            }
+            ValidationError::MissingKey { kid } => {
+                warn!("JWT validation failed: key not found for kid '{}' in JWKS", kid);
+            }
+            ValidationError::InvalidSignature => {
+                warn!("JWT validation failed: invalid signature");
+            }
+            ValidationError::ExpiredToken { exp, now } => {
+                warn!("JWT validation failed: token expired (exp: {}, now: {})", exp, now);
+            }
+            ValidationError::InvalidIssuer { expected, got } => {
+                warn!(
+                    "JWT validation failed: invalid issuer (expected: {:?}, got: {:?})",
+                    expected, got
+                );
+            }
+            ValidationError::InvalidAudience { expected, got } => {
+                warn!(
+                    "JWT validation failed: invalid audience (expected: {:?}, got: {:?})",
+                    expected, got
+                );
+            }
+            ValidationError::MissingRequiredClaim { claim } => {
+                warn!("JWT validation failed: missing required claim '{}'", claim);
+            }
+            ValidationError::UnsupportedAlgorithm { alg } => {
+                warn!("JWT validation failed: unsupported algorithm '{}'", alg);
+            }
+            ValidationError::JwksFetchError { url, error } => {
+                warn!("JWT validation failed: JWKS fetch error for {} - {}", url, error);
+            }
+            ValidationError::InsufficientScopes { required, got } => {
+                warn!(
+                    "JWT validation failed: insufficient scopes (required: {:?}, got: {:?})",
+                    required, got
+                );
+            }
+            ValidationError::InvalidSecurityScheme { scheme } => {
+                debug!("JWT validation failed: invalid security scheme '{}'", scheme);
+            }
+        }
+    }
+}
+
 /// Internal helper to validate a JWT token
+///
+/// Returns `bool` for backward compatibility, but uses structured error types
+/// internally for better observability via logging.
 pub(super) fn validate_token_impl(
     provider: &super::JwksBearerProvider,
     scheme: &SecurityScheme,
     scopes: &[String],
     req: &SecurityRequest,
 ) -> bool {
+    match validate_token_internal(provider, scheme, scopes, req) {
+        Ok(valid) => valid,
+        Err(e) => {
+            e.log();
+            false
+        }
+    }
+}
+
+/// Internal validation with structured error types
+fn validate_token_internal(
+    provider: &super::JwksBearerProvider,
+    scheme: &SecurityScheme,
+    scopes: &[String],
+    req: &SecurityRequest,
+) -> Result<bool, ValidationError> {
+    // Check security scheme
     match scheme {
         SecurityScheme::Http { scheme, .. } if scheme.eq_ignore_ascii_case("bearer") => {}
-        _ => return false,
+        SecurityScheme::Http { scheme, .. } => {
+            return Err(ValidationError::InvalidSecurityScheme {
+                scheme: scheme.clone(),
+            });
+        }
+        _ => {
+            return Err(ValidationError::InvalidSecurityScheme {
+                scheme: format!("{:?}", scheme),
+            });
+        }
     }
+
+    // Extract token
     let token = match provider.extract_token(req) {
         Some(t) => t,
-        None => {
-            debug!("JWT validation failed: missing token (no Authorization header or cookie)");
-            return false;
-        }
+        None => return Err(ValidationError::MissingToken),
     };
 
     // SECURITY: Parse header FIRST to get kid before cache lookup
@@ -38,17 +179,15 @@ pub(super) fn validate_token_impl(
     let header = match jsonwebtoken::decode_header(token) {
         Ok(h) => h,
         Err(e) => {
-            warn!("JWT validation failed: invalid token header - {:?}", e);
-            return false;
+            return Err(ValidationError::InvalidTokenFormat {
+                error: format!("{:?}", e),
+            });
         }
     };
 
     let kid = match header.kid {
         Some(k) => k,
-        None => {
-            warn!("JWT validation failed: missing 'kid' (key ID) in token header");
-            return false;
-        }
+        None => return Err(ValidationError::MissingKeyId),
     };
 
     // SECURITY: Include kid in cache key so cache invalidates on key rotation
@@ -120,14 +259,15 @@ pub(super) fn validate_token_impl(
 
                     if has_all_scopes {
                         debug!("JWT validation succeeded: cache hit, key verified, scopes valid");
+                        return Ok(true);
                     } else {
-                        warn!(
-                            "JWT validation failed: missing required scopes (token: {:?}, required: {:?})",
-                            token_scopes,
-                            scopes
-                        );
+                        let required: Vec<String> = scopes.iter().cloned().collect();
+                        let got: Vec<String> = token_scopes
+                            .split_whitespace()
+                            .map(|s| s.to_string())
+                            .collect();
+                        return Err(ValidationError::InsufficientScopes { required, got });
                     }
-                    return has_all_scopes;
                 } else {
                     // Token expired, remove from cache
                     debug!("JWT cache: token expired, removing from cache");
@@ -153,23 +293,15 @@ pub(super) fn validate_token_impl(
     // Get key for validation (will trigger JWKS refresh if needed)
     let key = match provider.get_key_for(&kid) {
         Some(k) => k,
-        None => {
-            warn!(
-                "JWT validation failed: key not found for kid '{}' in JWKS",
-                kid
-            );
-            return false;
-        }
+        None => return Err(ValidationError::MissingKey { kid: kid.clone() }),
     };
 
     // P4 Security: Only allow supported algorithms (whitelist approach for security)
     // P3: Simplified algorithm selection using whitelist instead of verbose match
     if !SUPPORTED_ALGORITHMS.contains(&header.alg) {
-        warn!(
-            "JWT validation failed: unsupported algorithm '{:?}'",
-            header.alg
-        );
-        return false;
+        return Err(ValidationError::UnsupportedAlgorithm {
+            alg: format!("{:?}", header.alg),
+        });
     }
     let selected_alg = header.alg;
     let mut validation = jsonwebtoken::Validation::new(selected_alg);
@@ -187,23 +319,41 @@ pub(super) fn validate_token_impl(
     let claims = match data {
         Ok(d) => d.claims,
         Err(e) => {
-            // Log specific error types for better debugging
-            let error_msg = match e.kind() {
-                jsonwebtoken::errors::ErrorKind::ExpiredSignature => "token expired",
-                jsonwebtoken::errors::ErrorKind::InvalidSignature => "invalid signature",
-                jsonwebtoken::errors::ErrorKind::InvalidIssuer => "invalid issuer",
-                jsonwebtoken::errors::ErrorKind::InvalidAudience => "invalid audience",
-                jsonwebtoken::errors::ErrorKind::InvalidSubject => "invalid subject",
-                jsonwebtoken::errors::ErrorKind::MissingRequiredClaim(claim) => {
-                    return {
-                        warn!("JWT validation failed: missing required claim '{}'", claim);
-                        false
-                    };
+            // Map jsonwebtoken errors to our structured error types
+            return Err(match e.kind() {
+                jsonwebtoken::errors::ErrorKind::ExpiredSignature => {
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs() as i64;
+                    // Try to extract exp from the error if available
+                    let exp = now; // Default to now if we can't extract
+                    ValidationError::ExpiredToken { exp, now }
                 }
-                _ => "decode error",
-            };
-            warn!("JWT validation failed: {} - {:?}", error_msg, e);
-            return false;
+                jsonwebtoken::errors::ErrorKind::InvalidSignature => {
+                    ValidationError::InvalidSignature
+                }
+                jsonwebtoken::errors::ErrorKind::InvalidIssuer => {
+                    ValidationError::InvalidIssuer {
+                        expected: provider.iss.clone(),
+                        got: None, // jsonwebtoken doesn't provide the actual value
+                    }
+                }
+                jsonwebtoken::errors::ErrorKind::InvalidAudience => {
+                    ValidationError::InvalidAudience {
+                        expected: provider.aud.clone(),
+                        got: None, // jsonwebtoken doesn't provide the actual value
+                    }
+                }
+                jsonwebtoken::errors::ErrorKind::MissingRequiredClaim(claim) => {
+                    ValidationError::MissingRequiredClaim {
+                        claim: claim.clone(),
+                    }
+                }
+                _ => ValidationError::InvalidTokenFormat {
+                    error: format!("{:?}", e),
+                },
+            });
         }
     };
 
@@ -250,14 +400,15 @@ pub(super) fn validate_token_impl(
 
     if has_all_scopes {
         debug!("JWT validation succeeded: token valid, scopes present");
+        Ok(true)
     } else {
-        warn!(
-            "JWT validation failed: missing required scopes (token: {:?}, required: {:?})",
-            token_scopes, scopes
-        );
+        let required: Vec<String> = scopes.iter().cloned().collect();
+        let got: Vec<String> = token_scopes
+            .split_whitespace()
+            .map(|s| s.to_string())
+            .collect();
+        Err(ValidationError::InsufficientScopes { required, got })
     }
-
-    has_all_scopes
 }
 
 /// Internal helper to extract JWT claims

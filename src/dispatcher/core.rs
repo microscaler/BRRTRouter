@@ -383,9 +383,10 @@ impl Dispatcher {
             })
             .unwrap_or(0x10000); // 64KB default instead of 16KB
 
-        let spawn_result = coroutine::Builder::new()
-            .stack_size(stack_size)
-            .spawn(move || {
+        let spawn_result = unsafe {
+            coroutine::Builder::new()
+                .stack_size(stack_size)
+                .spawn(move || {
                 // H1: Handler coroutine start
                 debug!(
                     handler_name = %handler_name_for_logging,
@@ -444,7 +445,8 @@ impl Dispatcher {
                         );
                     }
                 }
-            });
+            })
+        };
 
         // Handle coroutine spawn failures gracefully
         if let Err(e) = spawn_result {
