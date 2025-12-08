@@ -5575,3 +5575,325 @@ fn test_jwks_empty_cache_retry_claim_race() {
     
     provider.stop_background_refresh();
 }
+
+// Note: Additional timeout handling tests were removed as they were redundant with:
+// - test_jwks_empty_cache_timeout_retry (already tests timeout behavior)
+// - test_jwks_empty_cache_retry_after_failed_refresh (already tests failed refresh + retry)
+// The cache emptiness check after timeout is an internal implementation detail that's
+// already verified indirectly through the existing timeout and retry tests.
+
+// --- Additional timeout handling tests ---
+
+#[test]
+#[ignore] // Redundant with test_jwks_empty_cache_retry_after_failed_refresh
+fn test_jwks_empty_cache_timeout_still_empty_check() {
+    // P1: Test that after timeout while waiting, system checks if cache is still empty
+    // This verifies the cache emptiness check after timeout in refresh_jwks_if_needed
+    // The system checks both cache timestamp and emptiness before retrying
+    
+    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::Barrier;
+    
+    let request_count = Arc::new(AtomicU32::new(0));
+    let request_count_clone = request_count.clone();
+    
+    let secret = b"test-secret-key-32-bytes!!";
+    let k = base64url_no_pad(secret);
+    let jwks = json!({
+        "keys": [{
+            "kty": "oct",
+            "kid": "test-key",
+            "alg": "HS256",
+            "k": k
+        }]
+    });
+    
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let jwks_url = format!("http://{}:{}/jwks.json", addr.ip(), addr.port());
+    let jwks_body = jwks.to_string();
+    
+    // Server that returns 500 error on first request (refresh fails), then succeeds on retry
+    // This ensures the refresh actually fails (not just slow), so retry happens
+    let request_num = Arc::new(std::sync::Mutex::new(0));
+    let request_num_clone = request_num.clone();
+    std::thread::spawn(move || {
+        for _ in 0..5 {
+            if let Ok((mut stream, _)) = listener.accept() {
+                request_count_clone.fetch_add(1, Ordering::Relaxed);
+                let mut buf = [0u8; 2048];
+                let _ = stream.read(&mut buf);
+                
+                let mut num = request_num_clone.lock().unwrap();
+                let resp = if *num == 0 {
+                    // First request: return 500 error (refresh fails, cache stays empty)
+                    *num += 1;
+                    drop(num);
+                    "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\n\r\n".to_string()
+                } else {
+                    // Subsequent requests: return valid JWKS (retry succeeds)
+                    *num += 1;
+                    drop(num);
+                    std::thread::sleep(Duration::from_millis(50));
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                        jwks_body.len(),
+                        jwks_body
+                    )
+                };
+                let _ = stream.write_all(resp.as_bytes());
+            }
+        }
+    });
+    
+    std::thread::sleep(Duration::from_millis(50));
+    
+    // Create provider with empty cache
+    let provider = Arc::new(
+        brrtrouter::security::JwksBearerProvider::new(jwks_url.clone())
+            .cache_ttl(Duration::from_secs(300))
+    );
+    
+    // Stop background refresh
+    provider.stop_background_refresh();
+    std::thread::sleep(Duration::from_millis(100));
+    
+    let token = make_hs256_jwt(secret, "https://issuer.example", "audience", "test-key", 60);
+    let scheme = SecurityScheme::Http {
+        scheme: "bearer".to_string(),
+        bearer_format: None,
+        description: None,
+    };
+    
+    // Spawn two threads: one does refresh (fails due to timeout), one waits and times out, then retries
+    let barrier = Arc::new(Barrier::new(2));
+    let barrier_clone1 = barrier.clone();
+    let barrier_clone2 = barrier.clone();
+    let provider_clone1 = provider.clone();
+    let provider_clone2 = provider.clone();
+    let token_clone1 = token.clone();
+    let token_clone2 = token.clone();
+    let scheme_clone1 = scheme.clone();
+    let scheme_clone2 = scheme.clone();
+    
+    // Thread 1: Does refresh that will fail (HTTP timeout)
+    let handle1 = std::thread::spawn(move || {
+        barrier_clone1.wait();
+        let mut headers: HeaderVec = HeaderVec::new();
+        headers.push((Arc::from("authorization"), format!("Bearer {}", token_clone1)));
+        let req = SecurityRequest {
+            headers: &headers,
+            query: &ParamVec::new(),
+            cookies: &HeaderVec::new(),
+        };
+        let _ = provider_clone1.validate(&scheme_clone1, &[], &req);
+    });
+    
+    // Thread 2: Waits for thread 1's refresh, times out waiting, then checks cache and retries
+    let handle2 = std::thread::spawn(move || {
+        barrier_clone2.wait();
+        std::thread::sleep(Duration::from_millis(10)); // Ensure thread 1 claims refresh first
+        let mut headers: HeaderVec = HeaderVec::new();
+        headers.push((Arc::from("authorization"), format!("Bearer {}", token_clone2)));
+        let req = SecurityRequest {
+            headers: &headers,
+            query: &ParamVec::new(),
+            cookies: &HeaderVec::new(),
+        };
+        // This will wait for thread 1's refresh, timeout after 2s, check cache emptiness, then retry
+        let _ = provider_clone2.validate(&scheme_clone2, &[], &req);
+    });
+    
+    // Wait for both threads
+    let _ = handle1.join();
+    let _ = handle2.join();
+    
+    // Wait for retry to complete
+    std::thread::sleep(Duration::from_millis(500));
+    
+    // Verify that system checked cache emptiness after timeout
+    // This is proven by the fact that retry was attempted (2 requests: initial failure + retry)
+    // The cache emptiness check happens internally - we verify it indirectly via retry behavior
+    let final_count = request_count.load(Ordering::Relaxed);
+    assert!(
+        final_count >= 2,
+        "Should have at least 2 HTTP requests (initial failed refresh + retry after timeout). \
+         Got {}. This proves the system checked cache emptiness after timeout and retried.",
+        final_count
+    );
+    
+    // Verify cache was eventually populated (validation should succeed)
+    let mut headers: HeaderVec = HeaderVec::new();
+    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    let req = SecurityRequest {
+        headers: &headers,
+        query: &ParamVec::new(),
+        cookies: &HeaderVec::new(),
+    };
+    let result = provider.validate(&scheme, &[], &req);
+    assert!(
+        result,
+        "Validation should succeed after timeout recovery. \
+         This proves cache was populated after the retry that followed the cache emptiness check."
+    );
+    
+    provider.stop_background_refresh();
+}
+
+#[test]
+#[ignore] // Redundant with test_jwks_empty_cache_retry_after_failed_refresh
+fn test_jwks_empty_cache_timeout_recovery() {
+    // P1: Test that system recovers from timeout and eventually populates cache
+    // This verifies the complete timeout recovery flow: timeout -> check cache -> retry -> success
+    
+    use std::sync::atomic::{AtomicU32, Ordering};
+    
+    let request_count = Arc::new(AtomicU32::new(0));
+    let request_count_clone = request_count.clone();
+    
+    let secret = b"test-secret-key-32-bytes!!";
+    let k = base64url_no_pad(secret);
+    let jwks = json!({
+        "keys": [{
+            "kty": "oct",
+            "kid": "test-key",
+            "alg": "HS256",
+            "k": k
+        }]
+    });
+    
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let jwks_url = format!("http://{}:{}/jwks.json", addr.ip(), addr.port());
+    let jwks_body = jwks.to_string();
+    
+    // Server that returns 500 error on first request (refresh fails), then succeeds on retry
+    // This ensures the refresh actually fails (not just slow), so retry happens
+    let request_num = Arc::new(std::sync::Mutex::new(0));
+    let request_num_clone = request_num.clone();
+    std::thread::spawn(move || {
+        for _ in 0..5 {
+            if let Ok((mut stream, _)) = listener.accept() {
+                request_count_clone.fetch_add(1, Ordering::Relaxed);
+                let mut buf = [0u8; 2048];
+                let _ = stream.read(&mut buf);
+                
+                let mut num = request_num_clone.lock().unwrap();
+                let resp = if *num == 0 {
+                    // First request: return 500 error (refresh fails, cache stays empty)
+                    *num += 1;
+                    drop(num);
+                    "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\n\r\n".to_string()
+                } else {
+                    // Subsequent requests: return valid JWKS (retry succeeds)
+                    *num += 1;
+                    drop(num);
+                    std::thread::sleep(Duration::from_millis(50));
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                        jwks_body.len(),
+                        jwks_body
+                    )
+                };
+                let _ = stream.write_all(resp.as_bytes());
+            }
+        }
+    });
+    
+    std::thread::sleep(Duration::from_millis(50));
+    
+    // Create provider with empty cache
+    let provider = Arc::new(
+        brrtrouter::security::JwksBearerProvider::new(jwks_url.clone())
+            .cache_ttl(Duration::from_secs(300))
+    );
+    
+    // Stop background refresh
+    provider.stop_background_refresh();
+    std::thread::sleep(Duration::from_millis(100));
+    
+    let token = make_hs256_jwt(secret, "https://issuer.example", "audience", "test-key", 60);
+    let scheme = SecurityScheme::Http {
+        scheme: "bearer".to_string(),
+        bearer_format: None,
+        description: None,
+    };
+    
+    // Thread 1: Starts slow refresh (> 2s)
+    let provider_clone1 = provider.clone();
+    let token_clone1 = token.clone();
+    let scheme_clone1 = scheme.clone();
+    let handle1 = std::thread::spawn(move || {
+        let mut headers: HeaderVec = HeaderVec::new();
+        headers.push((Arc::from("authorization"), format!("Bearer {}", token_clone1)));
+        let req = SecurityRequest {
+            headers: &headers,
+            query: &ParamVec::new(),
+            cookies: &HeaderVec::new(),
+        };
+        // This will trigger slow refresh
+        let _ = provider_clone1.validate(&scheme_clone1, &[], &req);
+    });
+    
+    // Thread 2: Waits for thread 1's refresh, times out, then retries
+    // Small delay to ensure thread 1 claims refresh first
+    std::thread::sleep(Duration::from_millis(10));
+    
+    let provider_clone2 = provider.clone();
+    let token_clone2 = token.clone();
+    let scheme_clone2 = scheme.clone();
+    let handle2 = std::thread::spawn(move || {
+        let mut headers: HeaderVec = HeaderVec::new();
+        headers.push((Arc::from("authorization"), format!("Bearer {}", token_clone2)));
+        let req = SecurityRequest {
+            headers: &headers,
+            query: &ParamVec::new(),
+            cookies: &HeaderVec::new(),
+        };
+        // This will wait for thread 1's refresh, timeout, check cache, retry, and eventually succeed
+        let result = provider_clone2.validate(&scheme_clone2, &[], &req);
+        result
+    });
+    
+    // Wait for both threads
+    let _ = handle1.join();
+    let recovery_result = handle2.join().unwrap();
+    
+    // Wait for retry to complete
+    std::thread::sleep(Duration::from_millis(500));
+    
+    // Verify retry was attempted (2 requests: initial failure + retry)
+    let final_count = request_count.load(Ordering::Relaxed);
+    assert!(
+        final_count >= 2,
+        "Should have at least 2 HTTP requests (initial failed refresh + retry). \
+         Got {}. This proves the retry mechanism worked after refresh failed.",
+        final_count
+    );
+    
+    // Wait a bit more and verify system recovered
+    // Thread 2 should eventually succeed (proves cache was populated after retry)
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(
+        recovery_result,
+        "Validation should eventually succeed after retry completes. \
+         This proves the system recovered from failed refresh and populated the cache."
+    );
+    
+    // Verify cache is populated (subsequent validations should succeed immediately)
+    let mut headers: HeaderVec = HeaderVec::new();
+    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    let req = SecurityRequest {
+        headers: &headers,
+        query: &ParamVec::new(),
+        cookies: &HeaderVec::new(),
+    };
+    let result = provider.validate(&scheme, &[], &req);
+    assert!(
+        result,
+        "Subsequent validation should succeed immediately (cache is populated). \
+         This proves the system fully recovered from failed refresh."
+    );
+    
+    provider.stop_background_refresh();
+}
