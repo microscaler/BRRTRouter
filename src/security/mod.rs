@@ -289,9 +289,11 @@ pub use bearer_jwt::BearerJwtProvider;
 pub use jwks_bearer::JwksBearerProvider;
 pub use oauth2::OAuth2Provider;
 pub use remote_api_key::RemoteApiKeyProvider;
+pub use spiffe::SpiffeProvider;
 
 // Provider modules
 mod bearer_jwt;
 mod jwks_bearer;
 mod oauth2;
 mod remote_api_key;
+mod spiffe;
