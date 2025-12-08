@@ -54,7 +54,7 @@ fn test_auth_middleware_blocks_invalid_token() {
 
 #[test]
 fn test_cors_middleware_sets_headers() {
-    let mw = CorsMiddleware::default();
+    let mw = CorsMiddleware::permissive();
     let (tx, _rx) = mpsc::channel::<HandlerResponse>();
     // Add Origin header for CORS validation
     let headers: HeaderVec = smallvec![(Arc::from("origin"), "https://example.com".to_string())];

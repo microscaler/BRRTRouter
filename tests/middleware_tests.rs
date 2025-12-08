@@ -205,7 +205,7 @@ fn test_auth_middleware_case_insensitive_header() {
 
 #[test]
 fn test_cors_custom_headers() {
-    let mw = CorsMiddleware::new(
+    let mw = CorsMiddleware::new_legacy(
         vec!["https://example.com".into()],
         vec!["X-Token".into()],
         vec![Method::GET, Method::POST],
@@ -236,7 +236,7 @@ fn test_cors_custom_headers() {
 
 #[test]
 fn test_cors_preflight_response() {
-    let mw = CorsMiddleware::default();
+    let mw = CorsMiddleware::permissive();
 
     // Create preflight request with Origin and requested method/headers
     let mut headers = HeaderVec::new();
@@ -261,7 +261,7 @@ fn test_cors_preflight_response() {
 
 #[test]
 fn test_cors_non_preflight_request() {
-    let mw = CorsMiddleware::default();
+    let mw = CorsMiddleware::permissive();
 
     let req = create_test_request(Method::GET, "/api/data", HeaderVec::new());
     let result = mw.before(&req);
@@ -272,7 +272,7 @@ fn test_cors_non_preflight_request() {
 
 #[test]
 fn test_cors_multiple_origins() {
-    let mw = CorsMiddleware::new(
+    let mw = CorsMiddleware::new_legacy(
         vec![
             "https://example.com".into(),
             "https://api.example.com".into(),
@@ -307,7 +307,7 @@ fn test_cors_multiple_origins() {
 
 #[test]
 fn test_cors_multiple_headers() {
-    let mw = CorsMiddleware::new(
+    let mw = CorsMiddleware::new_legacy(
         vec!["*".into()],
         vec![
             "Content-Type".into(),
@@ -332,7 +332,7 @@ fn test_cors_multiple_headers() {
 
 #[test]
 fn test_cors_multiple_methods() {
-    let mw = CorsMiddleware::new(
+    let mw = CorsMiddleware::new_legacy(
         vec!["*".into()],
         vec!["Content-Type".into()],
         vec![
@@ -359,7 +359,7 @@ fn test_cors_multiple_methods() {
 
 #[test]
 fn test_cors_default_configuration() {
-    let mw = CorsMiddleware::default();
+    let mw = CorsMiddleware::permissive();
 
     // Create request with Origin header (cross-origin)
     let mut headers = HeaderVec::new();
@@ -385,7 +385,7 @@ fn test_cors_default_configuration() {
 #[test]
 fn test_middleware_combination_auth_and_cors() {
     let auth = AuthMiddleware::new("Bearer valid-token".to_string());
-    let cors = CorsMiddleware::default();
+    let cors = CorsMiddleware::permissive();
 
     // JSF P2: HeaderVec now uses Arc<str> for keys
     let mut headers: HeaderVec =
@@ -412,7 +412,7 @@ fn test_middleware_combination_auth_and_cors() {
 #[test]
 fn test_middleware_combination_auth_failure_with_cors() {
     let auth = AuthMiddleware::new("Bearer valid-token".to_string());
-    let cors = CorsMiddleware::default();
+    let cors = CorsMiddleware::permissive();
 
     // Add Origin header for CORS (no auth header - will fail auth)
     let mut headers = HeaderVec::new();
@@ -491,7 +491,7 @@ fn test_middleware_after_method_called() {
 
 #[test]
 fn test_middleware_edge_case_empty_headers() {
-    let cors = CorsMiddleware::new(
+    let cors = CorsMiddleware::new_legacy(
         vec![], // Empty origins
         vec![], // Empty headers
         vec![], // Empty methods
@@ -514,7 +514,7 @@ fn test_middleware_edge_case_empty_headers() {
 
 #[test]
 fn test_middleware_response_modification() {
-    let cors = CorsMiddleware::default();
+    let cors = CorsMiddleware::permissive();
 
     // Add Origin header for CORS validation
     let mut headers = HeaderVec::new();
@@ -564,4 +564,112 @@ fn test_middleware_thread_safety() {
     // Should have processed 10 requests
     assert_eq!(metrics.request_count(), 10);
     assert_eq!(metrics.average_latency(), Duration::from_millis(10));
+}
+
+#[test]
+fn test_cors_credentials_support() {
+    let mw = CorsMiddleware::new(
+        vec!["https://example.com".into()],
+        vec!["Content-Type".into()],
+        vec![Method::GET, Method::POST],
+        true, // allow credentials
+        vec![], // no exposed headers
+        None, // no max age
+    );
+
+    let mut headers = HeaderVec::new();
+    headers.push((Arc::from("origin"), "https://example.com".to_string()));
+    let req = create_test_request(Method::GET, "/", headers);
+    let mut resp = create_test_response(200);
+
+    mw.after(&req, &mut resp, Duration::from_millis(0));
+    assert_eq!(resp.get_header("access-control-allow-credentials"), Some("true"));
+    assert_eq!(resp.get_header("access-control-allow-origin"), Some("https://example.com"));
+}
+
+#[test]
+#[should_panic(expected = "Cannot use wildcard origin")]
+fn test_cors_credentials_with_wildcard_panics() {
+    // This should panic because wildcard + credentials is invalid
+    let _mw = CorsMiddleware::new(
+        vec!["*".into()],
+        vec!["Content-Type".into()],
+        vec![Method::GET],
+        true, // allow credentials - INVALID with wildcard
+        vec![],
+        None,
+    );
+}
+
+#[test]
+fn test_cors_exposed_headers() {
+    let mw = CorsMiddleware::new(
+        vec!["https://example.com".into()],
+        vec!["Content-Type".into()],
+        vec![Method::GET],
+        false,
+        vec!["X-Total-Count".into(), "X-Page-Number".into()],
+        None,
+    );
+
+    let mut headers = HeaderVec::new();
+    headers.push((Arc::from("origin"), "https://example.com".to_string()));
+    let req = create_test_request(Method::GET, "/", headers);
+    let mut resp = create_test_response(200);
+
+    mw.after(&req, &mut resp, Duration::from_millis(0));
+    assert_eq!(
+        resp.get_header("access-control-expose-headers"),
+        Some("X-Total-Count, X-Page-Number")
+    );
+}
+
+#[test]
+fn test_cors_preflight_max_age() {
+    let mw = CorsMiddleware::new(
+        vec!["https://example.com".into()],
+        vec!["Content-Type".into()],
+        vec![Method::GET, Method::POST],
+        false,
+        vec![],
+        Some(3600), // 1 hour cache
+    );
+
+    let mut headers = HeaderVec::new();
+    headers.push((Arc::from("origin"), "https://example.com".to_string()));
+    headers.push((Arc::from("access-control-request-method"), "GET".to_string()));
+    let req = create_test_request(Method::OPTIONS, "/", headers);
+
+    let resp = mw.before(&req).expect("should return preflight response");
+    assert_eq!(resp.get_header("access-control-max-age"), Some("3600"));
+    assert_eq!(resp.get_header("access-control-allow-origin"), Some("https://example.com"));
+}
+
+#[test]
+fn test_cors_secure_default() {
+    let mw = CorsMiddleware::default();
+
+    // Default should have empty origins (secure)
+    let mut headers = HeaderVec::new();
+    headers.push((Arc::from("origin"), "https://example.com".to_string()));
+    let req = create_test_request(Method::GET, "/", headers);
+    let mut resp = create_test_response(200);
+
+    mw.after(&req, &mut resp, Duration::from_millis(0));
+    // With empty origins, no CORS headers should be added
+    assert_eq!(resp.get_header("access-control-allow-origin"), None);
+}
+
+#[test]
+fn test_cors_permissive_for_development() {
+    let mw = CorsMiddleware::permissive();
+
+    let mut headers = HeaderVec::new();
+    headers.push((Arc::from("origin"), "https://example.com".to_string()));
+    let req = create_test_request(Method::GET, "/", headers);
+    let mut resp = create_test_response(200);
+
+    mw.after(&req, &mut resp, Duration::from_millis(0));
+    // Permissive should allow all origins
+    assert_eq!(resp.get_header("access-control-allow-origin"), Some("*"));
 }
