@@ -621,6 +621,16 @@ impl JwksBearerProvider {
         // If cache is empty, do a blocking initial refresh to ensure first validation succeeds
         // After that, background refresh will keep it updated
         if is_empty {
+            // Record cache timestamp BEFORE refresh to detect if refresh succeeded
+            let cache_timestamp_before = {
+                if let Ok(guard) = self.cache.read() {
+                    guard.0
+                } else {
+                    // Lock poisoned, give up
+                    return;
+                }
+            };
+            
             // Try to claim the refresh - if we win, do blocking refresh
             // If we lose, another thread is refreshing - wait for it with exponential backoff
             if self
@@ -636,9 +646,60 @@ impl JwksBearerProvider {
                     &self.refresh_complete,
                     true, // We already claimed the flag
                 );
+                
+                // Check if refresh succeeded by comparing timestamps
+                // If timestamp unchanged, refresh failed - retry
+                let cache_timestamp_after = {
+                    if let Ok(guard) = self.cache.read() {
+                        guard.0
+                    } else {
+                        // Lock poisoned, give up
+                        return;
+                    }
+                };
+                
+                // Only retry if timestamp unchanged (refresh failed) AND cache still empty
+                if cache_timestamp_after == cache_timestamp_before {
+                    let still_empty = {
+                        if let Ok(guard) = self.cache.read() {
+                            guard.1.is_empty()
+                        } else {
+                            // Lock poisoned, give up
+                            return;
+                        }
+                    };
+                    
+                    if still_empty {
+                        // Refresh failed - retry once
+                        if self
+                            .refresh_in_progress
+                            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+                            .is_ok()
+                        {
+                            Self::refresh_jwks_internal(
+                                &self.cache,
+                                &self.jwks_url,
+                                &self.refresh_in_progress,
+                                &self.refresh_complete,
+                                true, // We already claimed the flag
+                            );
+                        }
+                    }
+                }
             } else {
                 // Another thread is refreshing - wait for it to complete using condition variable
                 // This is more efficient than polling - threads are woken immediately when refresh completes
+                
+                // Record cache timestamp BEFORE waiting to detect if refresh succeeded
+                let cache_timestamp_before = {
+                    if let Ok(guard) = self.cache.read() {
+                        guard.0
+                    } else {
+                        // Lock poisoned, give up
+                        return;
+                    }
+                };
+                
                 let timeout = Duration::from_secs(2); // Allow 2s for refresh (400ms max + buffer for network issues)
                 let (lock, cvar) = &*self.refresh_complete;
                 let guard = lock.lock().unwrap();
@@ -666,8 +727,65 @@ impl JwksBearerProvider {
                 
                 // Check if we timed out or if refresh completed
                 if wait_timeout_result.timed_out() && self.refresh_in_progress.load(Ordering::Acquire) {
-                    // Timeout - refresh may have failed, check if cache is still empty
-                    // If still empty, try one more refresh attempt ourselves
+                    // Timeout - refresh may have failed, check if cache timestamp was updated
+                    // If timestamp unchanged, refresh failed and we should retry
+                    let cache_timestamp_after = {
+                        if let Ok(guard) = self.cache.read() {
+                            guard.0
+                        } else {
+                            // Lock poisoned, give up
+                            return;
+                        }
+                    };
+                    
+                    // If timestamp didn't change, refresh failed (cache not updated)
+                    // Only retry if cache is still empty AND timestamp unchanged
+                    if cache_timestamp_after == cache_timestamp_before {
+                        let still_empty = {
+                            if let Ok(guard) = self.cache.read() {
+                                guard.1.is_empty()
+                            } else {
+                                // Lock poisoned, give up
+                                return;
+                            }
+                        };
+                        
+                        if still_empty {
+                            // Cache timestamp unchanged and still empty - refresh failed, retry
+                            if self
+                                .refresh_in_progress
+                                .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+                                .is_ok()
+                            {
+                                // We can now claim the refresh - do blocking refresh
+                                Self::refresh_jwks_internal(
+                                    &self.cache,
+                                    &self.jwks_url,
+                                    &self.refresh_in_progress,
+                                    &self.refresh_complete,
+                                    true, // We already claimed the flag
+                                );
+                            }
+                        }
+                    }
+                    // If timestamp changed, refresh succeeded (even if empty keys) - return
+                    return;
+                }
+                
+                // Refresh completed (flag cleared) - check if refresh succeeded by comparing timestamps
+                // If timestamp changed, refresh succeeded (even if empty keys) - don't retry
+                // If timestamp unchanged, refresh failed - retry
+                let cache_timestamp_after = {
+                    if let Ok(guard) = self.cache.read() {
+                        guard.0
+                    } else {
+                        // Lock poisoned, give up
+                        return;
+                    }
+                };
+                
+                // Only retry if timestamp unchanged (refresh failed) AND cache still empty
+                if cache_timestamp_after == cache_timestamp_before {
                     let still_empty = {
                         if let Ok(guard) = self.cache.read() {
                             guard.1.is_empty()
@@ -678,8 +796,7 @@ impl JwksBearerProvider {
                     };
                     
                     if still_empty {
-                        // Cache is still empty after timeout - try one more refresh
-                        // This handles the case where the first refresh failed silently
+                        // Cache timestamp unchanged and still empty - refresh failed, retry
                         if self
                             .refresh_in_progress
                             .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
@@ -695,39 +812,8 @@ impl JwksBearerProvider {
                             );
                         }
                     }
-                    // If cache is no longer empty, the refresh succeeded - return
-                    return;
                 }
-                
-                // Refresh completed (flag cleared) - verify cache is populated
-                // If refresh failed silently, cache may still be empty - try one more refresh
-                let still_empty = {
-                    if let Ok(guard) = self.cache.read() {
-                        guard.1.is_empty()
-                    } else {
-                        // Lock poisoned, give up
-                        return;
-                    }
-                };
-                
-                if still_empty {
-                    // Cache is still empty after refresh completed - the refresh likely failed
-                    // Try one more refresh attempt ourselves
-                    if self
-                        .refresh_in_progress
-                        .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
-                        .is_ok()
-                    {
-                        // We can now claim the refresh - do blocking refresh
-                        Self::refresh_jwks_internal(
-                            &self.cache,
-                            &self.jwks_url,
-                            &self.refresh_in_progress,
-                            &self.refresh_complete,
-                            true, // We already claimed the flag
-                        );
-                    }
-                }
+                // If timestamp changed, refresh succeeded (even if empty keys) - return
                 // Return to allow caller to read the cache (populated or empty)
             }
         } else {
