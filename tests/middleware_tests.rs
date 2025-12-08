@@ -211,41 +211,52 @@ fn test_cors_custom_headers() {
         vec![Method::GET, Method::POST],
     );
 
-    let req = create_test_request(Method::GET, "/", HeaderVec::new());
+    // Create request with Origin header (cross-origin)
+    let mut headers = HeaderVec::new();
+    headers.push((Arc::from("origin"), "https://example.com".to_string()));
+    let req = create_test_request(Method::GET, "/", headers);
     let mut resp = create_test_response(200);
 
     mw.after(&req, &mut resp, Duration::from_millis(0));
     assert_eq!(
-        resp.get_header("Access-Control-Allow-Origin"),
+        resp.get_header("access-control-allow-origin"),
         Some("https://example.com")
     );
     assert_eq!(
-        resp.get_header("Access-Control-Allow-Headers"),
+        resp.get_header("access-control-allow-headers"),
         Some("X-Token")
     );
     assert_eq!(
-        resp.get_header("Access-Control-Allow-Methods"),
+        resp.get_header("access-control-allow-methods"),
         Some("GET, POST")
     );
+    // Vary header should be present
+    assert_eq!(resp.get_header("vary"), Some("Origin"));
 }
 
 #[test]
 fn test_cors_preflight_response() {
     let mw = CorsMiddleware::default();
 
-    let req = create_test_request(Method::OPTIONS, "/", HeaderVec::new());
-    let mut resp = mw.before(&req).expect("should return response");
-    assert_eq!(resp.status, 204);
-    mw.after(&req, &mut resp, Duration::from_millis(0));
-    assert_eq!(resp.get_header("Access-Control-Allow-Origin"), Some("*"));
+    // Create preflight request with Origin and requested method/headers
+    let mut headers = HeaderVec::new();
+    headers.push((Arc::from("origin"), "https://example.com".to_string()));
+    headers.push((Arc::from("access-control-request-method"), "GET".to_string()));
+    headers.push((Arc::from("access-control-request-headers"), "Content-Type".to_string()));
+    let req = create_test_request(Method::OPTIONS, "/", headers);
+    
+    let resp = mw.before(&req).expect("should return response");
+    assert_eq!(resp.status, 200); // Preflight returns 200 with CORS headers
+    assert_eq!(resp.get_header("access-control-allow-origin"), Some("*"));
     assert_eq!(
-        resp.get_header("Access-Control-Allow-Headers"),
+        resp.get_header("access-control-allow-headers"),
         Some("Content-Type, Authorization")
     );
     assert_eq!(
-        resp.get_header("Access-Control-Allow-Methods"),
+        resp.get_header("access-control-allow-methods"),
         Some("GET, POST, PUT, DELETE, OPTIONS")
     );
+    assert_eq!(resp.get_header("vary"), Some("Origin"));
 }
 
 #[test]
@@ -270,13 +281,27 @@ fn test_cors_multiple_origins() {
         vec![Method::GET],
     );
 
-    let req = create_test_request(Method::GET, "/", HeaderVec::new());
-    let mut resp = create_test_response(200);
-
-    mw.after(&req, &mut resp, Duration::from_millis(0));
+    // Test with first origin
+    let mut headers1 = HeaderVec::new();
+    headers1.push((Arc::from("origin"), "https://example.com".to_string()));
+    let req1 = create_test_request(Method::GET, "/", headers1);
+    let mut resp1 = create_test_response(200);
+    mw.after(&req1, &mut resp1, Duration::from_millis(0));
+    // CORS spec: only one origin per response (the matching one)
     assert_eq!(
-        resp.get_header("Access-Control-Allow-Origin"),
-        Some("https://example.com, https://api.example.com")
+        resp1.get_header("access-control-allow-origin"),
+        Some("https://example.com")
+    );
+
+    // Test with second origin
+    let mut headers2 = HeaderVec::new();
+    headers2.push((Arc::from("origin"), "https://api.example.com".to_string()));
+    let req2 = create_test_request(Method::GET, "/", headers2);
+    let mut resp2 = create_test_response(200);
+    mw.after(&req2, &mut resp2, Duration::from_millis(0));
+    assert_eq!(
+        resp2.get_header("access-control-allow-origin"),
+        Some("https://api.example.com")
     );
 }
 
@@ -292,12 +317,15 @@ fn test_cors_multiple_headers() {
         vec![Method::GET],
     );
 
-    let req = create_test_request(Method::GET, "/", HeaderVec::new());
+    // Create request with Origin header (cross-origin)
+    let mut headers = HeaderVec::new();
+    headers.push((Arc::from("origin"), "https://example.com".to_string()));
+    let req = create_test_request(Method::GET, "/", headers);
     let mut resp = create_test_response(200);
 
     mw.after(&req, &mut resp, Duration::from_millis(0));
     assert_eq!(
-        resp.get_header("Access-Control-Allow-Headers"),
+        resp.get_header("access-control-allow-headers"),
         Some("Content-Type, Authorization, X-Custom")
     );
 }
@@ -316,12 +344,15 @@ fn test_cors_multiple_methods() {
         ],
     );
 
-    let req = create_test_request(Method::GET, "/", HeaderVec::new());
+    // Create request with Origin header (cross-origin)
+    let mut headers = HeaderVec::new();
+    headers.push((Arc::from("origin"), "https://example.com".to_string()));
+    let req = create_test_request(Method::GET, "/", headers);
     let mut resp = create_test_response(200);
 
     mw.after(&req, &mut resp, Duration::from_millis(0));
     assert_eq!(
-        resp.get_header("Access-Control-Allow-Methods"),
+        resp.get_header("access-control-allow-methods"),
         Some("GET, POST, PUT, DELETE, PATCH")
     );
 }
@@ -330,21 +361,25 @@ fn test_cors_multiple_methods() {
 fn test_cors_default_configuration() {
     let mw = CorsMiddleware::default();
 
-    let req = create_test_request(Method::GET, "/", HeaderVec::new());
+    // Create request with Origin header (cross-origin)
+    let mut headers = HeaderVec::new();
+    headers.push((Arc::from("origin"), "https://example.com".to_string()));
+    let req = create_test_request(Method::GET, "/", headers);
     let mut resp = create_test_response(200);
 
     mw.after(&req, &mut resp, Duration::from_millis(0));
 
     // Check default values
-    assert_eq!(resp.get_header("Access-Control-Allow-Origin"), Some("*"));
+    assert_eq!(resp.get_header("access-control-allow-origin"), Some("*"));
     assert_eq!(
-        resp.get_header("Access-Control-Allow-Headers"),
+        resp.get_header("access-control-allow-headers"),
         Some("Content-Type, Authorization")
     );
     assert_eq!(
-        resp.get_header("Access-Control-Allow-Methods"),
+        resp.get_header("access-control-allow-methods"),
         Some("GET, POST, PUT, DELETE, OPTIONS")
     );
+    assert_eq!(resp.get_header("vary"), Some("Origin"));
 }
 
 #[test]
@@ -353,8 +388,10 @@ fn test_middleware_combination_auth_and_cors() {
     let cors = CorsMiddleware::default();
 
     // JSF P2: HeaderVec now uses Arc<str> for keys
-    let headers: HeaderVec =
+    let mut headers: HeaderVec =
         smallvec![(Arc::from("authorization"), "Bearer valid-token".to_string())];
+    // Add Origin header for CORS
+    headers.push((Arc::from("origin"), "https://example.com".to_string()));
 
     let req = create_test_request(Method::GET, "/protected", headers);
     let mut resp = create_test_response(200);
@@ -365,11 +402,11 @@ fn test_middleware_combination_auth_and_cors() {
 
     // Test CORS middleware after
     let cors_result = cors.before(&req);
-    assert!(cors_result.is_none()); // Should not interfere with non-OPTIONS
+    assert!(cors_result.is_none()); // Should not interfere with non-OPTIONS (origin is valid)
 
     // Apply CORS headers
     cors.after(&req, &mut resp, Duration::from_millis(10));
-    assert!(resp.get_header("Access-Control-Allow-Origin").is_some());
+    assert!(resp.get_header("access-control-allow-origin").is_some());
 }
 
 #[test]
@@ -377,7 +414,9 @@ fn test_middleware_combination_auth_failure_with_cors() {
     let auth = AuthMiddleware::new("Bearer valid-token".to_string());
     let cors = CorsMiddleware::default();
 
-    let headers = HeaderVec::new(); // No auth header
+    // Add Origin header for CORS (no auth header - will fail auth)
+    let mut headers = HeaderVec::new();
+    headers.push((Arc::from("origin"), "https://example.com".to_string()));
     let req = create_test_request(Method::GET, "/protected", headers);
 
     // Test auth middleware first - should fail
@@ -387,9 +426,9 @@ fn test_middleware_combination_auth_failure_with_cors() {
     let mut resp = auth_result.unwrap();
     assert_eq!(resp.status, 401);
 
-    // Even on auth failure, CORS headers should be applied
+    // Even on auth failure, CORS headers should be applied if origin is valid
     cors.after(&req, &mut resp, Duration::from_millis(10));
-    assert!(resp.get_header("Access-Control-Allow-Origin").is_some());
+    assert!(resp.get_header("access-control-allow-origin").is_some());
 }
 
 #[test]

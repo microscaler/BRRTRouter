@@ -56,6 +56,8 @@ fn test_auth_middleware_blocks_invalid_token() {
 fn test_cors_middleware_sets_headers() {
     let mw = CorsMiddleware::default();
     let (tx, _rx) = mpsc::channel::<HandlerResponse>();
+    // Add Origin header for CORS validation
+    let headers: HeaderVec = smallvec![(Arc::from("origin"), "https://example.com".to_string())];
     let req = HandlerRequest {
         request_id: RequestId::new(),
         method: Method::GET,
@@ -63,7 +65,7 @@ fn test_cors_middleware_sets_headers() {
         handler_name: "test".into(),
         path_params: ParamVec::new(),
         query_params: ParamVec::new(),
-        headers: HeaderVec::new(),
+        headers,
         cookies: HeaderVec::new(),
         body: None,
         jwt_claims: None,
@@ -71,13 +73,14 @@ fn test_cors_middleware_sets_headers() {
     };
     let mut resp = HandlerResponse::new(200, HeaderVec::new(), serde_json::Value::Null);
     mw.after(&req, &mut resp, Duration::from_millis(0));
-    assert_eq!(resp.get_header("Access-Control-Allow-Origin"), Some("*"));
+    assert_eq!(resp.get_header("access-control-allow-origin"), Some("*"));
     assert_eq!(
-        resp.get_header("Access-Control-Allow-Headers"),
+        resp.get_header("access-control-allow-headers"),
         Some("Content-Type, Authorization")
     );
     assert_eq!(
-        resp.get_header("Access-Control-Allow-Methods"),
+        resp.get_header("access-control-allow-methods"),
         Some("GET, POST, PUT, DELETE, OPTIONS")
     );
+    assert_eq!(resp.get_header("vary"), Some("Origin"));
 }
