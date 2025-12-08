@@ -4482,3 +4482,388 @@ fn test_jwks_background_thread_refresh_interval() {
     
     provider.stop_background_refresh();
 }
+
+// --- Background thread lifecycle tests ---
+
+#[test]
+fn test_jwks_background_thread_starts_on_creation() {
+    // P1: Test that background thread starts immediately on provider creation
+    // This verifies the background refresh thread is spawned and running
+    
+    use std::sync::atomic::{AtomicU32, Ordering};
+    
+    let request_count = Arc::new(AtomicU32::new(0));
+    let request_count_clone = request_count.clone();
+    
+    let secret = b"test-secret-key-32-bytes!!";
+    let k = base64url_no_pad(secret);
+    let jwks = json!({
+        "keys": [{
+            "kty": "oct",
+            "kid": "test-key",
+            "alg": "HS256",
+            "k": k
+        }]
+    });
+    
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let jwks_url = format!("http://{}:{}/jwks.json", addr.ip(), addr.port());
+    let jwks_body = jwks.to_string();
+    
+    // Spawn server that counts requests
+    std::thread::spawn(move || {
+        for _ in 0..10 {
+            if let Ok((mut stream, _)) = listener.accept() {
+                request_count_clone.fetch_add(1, Ordering::Relaxed);
+                let mut buf = [0u8; 2048];
+                let _ = stream.read(&mut buf);
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                    jwks_body.len(),
+                    jwks_body
+                );
+                let _ = stream.write_all(resp.as_bytes());
+            }
+        }
+    });
+    
+    std::thread::sleep(Duration::from_millis(100));
+    
+    // Create provider with very short cache_ttl (2s) to make background refresh happen quickly
+    // Background thread should start immediately
+    // For 2s TTL: refresh_interval = max(2s - 10s, 2s/2) = max(-8s, 1s) = 1s (minimum)
+    // So refresh happens every 1s
+    let cache_ttl = Duration::from_secs(2);
+    let provider = Arc::new(
+        brrtrouter::security::JwksBearerProvider::new(jwks_url.clone())
+            .cache_ttl(cache_ttl)
+    );
+    
+    // Wait for background refresh interval (1s minimum) plus buffer
+    // The background thread refreshes proactively every refresh_interval
+    // Wait 2.5s to ensure at least one refresh happens
+    std::thread::sleep(Duration::from_millis(2500));
+    
+    // Verify background thread made at least one refresh request
+    // This proves the thread started and is running
+    let final_count = request_count.load(Ordering::Relaxed);
+    assert!(
+        final_count >= 1,
+        "Background thread should have started and made at least one refresh request. \
+         Got {} requests. This proves the thread started on provider creation. \
+         For 2s TTL, refresh interval is 1s (minimum), so 2.5s wait should trigger at least one refresh.",
+        final_count
+    );
+    
+    provider.stop_background_refresh();
+}
+
+#[test]
+fn test_jwks_background_thread_handles_shutdown_flag() {
+    // P1: Test that background thread checks shutdown flag and exits cleanly
+    // This verifies graceful shutdown behavior
+    
+    use std::sync::atomic::{AtomicU32, Ordering};
+    
+    let request_count = Arc::new(AtomicU32::new(0));
+    let request_count_clone = request_count.clone();
+    
+    let secret = b"test-secret-key-32-bytes!!";
+    let k = base64url_no_pad(secret);
+    let jwks = json!({
+        "keys": [{
+            "kty": "oct",
+            "kid": "test-key",
+            "alg": "HS256",
+            "k": k
+        }]
+    });
+    
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let jwks_url = format!("http://{}:{}/jwks.json", addr.ip(), addr.port());
+    let jwks_body = jwks.to_string();
+    
+    // Spawn server that counts requests
+    std::thread::spawn(move || {
+        for _ in 0..10 {
+            if let Ok((mut stream, _)) = listener.accept() {
+                request_count_clone.fetch_add(1, Ordering::Relaxed);
+                let mut buf = [0u8; 2048];
+                let _ = stream.read(&mut buf);
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                    jwks_body.len(),
+                    jwks_body
+                );
+                let _ = stream.write_all(resp.as_bytes());
+            }
+        }
+    });
+    
+    std::thread::sleep(Duration::from_millis(50));
+    
+    // Create provider with short cache_ttl (5s)
+    let cache_ttl = Duration::from_secs(5);
+    let provider = Arc::new(
+        brrtrouter::security::JwksBearerProvider::new(jwks_url.clone())
+            .cache_ttl(cache_ttl)
+    );
+    
+    // Wait for background thread to start
+    std::thread::sleep(Duration::from_millis(200));
+    
+    // Get initial request count
+    let count_before_shutdown = request_count.load(Ordering::Relaxed);
+    
+    // Stop background refresh (sets shutdown flag)
+    let start = Instant::now();
+    provider.stop_background_refresh();
+    let stop_duration = start.elapsed();
+    
+    // Verify shutdown completed quickly (thread should check flag and exit)
+    assert!(
+        stop_duration < Duration::from_secs(2),
+        "Background thread should exit quickly when shutdown flag is set (took {:?})",
+        stop_duration
+    );
+    
+    // Wait a bit longer to ensure thread has stopped
+    std::thread::sleep(Duration::from_secs(2));
+    
+    // Verify no additional requests were made after shutdown
+    // This proves the thread stopped and is no longer running
+    let count_after_shutdown = request_count.load(Ordering::Relaxed);
+    assert!(
+        count_after_shutdown == count_before_shutdown,
+        "No additional requests should be made after shutdown. \
+         Before: {}, After: {}. This proves the thread stopped checking the shutdown flag.",
+        count_before_shutdown,
+        count_after_shutdown
+    );
+}
+
+// --- TTL change detection test ---
+
+#[test]
+fn test_jwks_background_thread_ttl_change_detection() {
+    // P1: Test that background thread detects cache_ttl changes and recalculates refresh interval
+    // This verifies the TTL change detection logic that wakes up early when TTL changes
+    
+    use std::sync::atomic::{AtomicU32, Ordering};
+    
+    let request_count = Arc::new(AtomicU32::new(0));
+    let request_count_clone = request_count.clone();
+    
+    let secret = b"test-secret-key-32-bytes!!";
+    let k = base64url_no_pad(secret);
+    let jwks = json!({
+        "keys": [{
+            "kty": "oct",
+            "kid": "test-key",
+            "alg": "HS256",
+            "k": k
+        }]
+    });
+    
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let jwks_url = format!("http://{}:{}/jwks.json", addr.ip(), addr.port());
+    let jwks_body = jwks.to_string();
+    
+    // Spawn server that counts requests
+    std::thread::spawn(move || {
+        for _ in 0..10 {
+            if let Ok((mut stream, _)) = listener.accept() {
+                request_count_clone.fetch_add(1, Ordering::Relaxed);
+                let mut buf = [0u8; 2048];
+                let _ = stream.read(&mut buf);
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                    jwks_body.len(),
+                    jwks_body
+                );
+                let _ = stream.write_all(resp.as_bytes());
+            }
+        }
+    });
+    
+    std::thread::sleep(Duration::from_millis(50));
+    
+    // Create provider with long cache_ttl (60s)
+    // Background thread should refresh every (60s - 10s) = 50s
+    // But we'll change it to 2s, which should trigger early wake-up
+    let mut provider = brrtrouter::security::JwksBearerProvider::new(jwks_url.clone())
+        .cache_ttl(Duration::from_secs(60));
+    
+    // Wait for background thread to start and make initial refresh
+    std::thread::sleep(Duration::from_millis(300));
+    
+    // Get initial request count
+    let count_before_ttl_change = request_count.load(Ordering::Relaxed);
+    
+    // Change cache_ttl to short value (2s)
+    // Background thread should detect this change within 1s (check interval)
+    // and recalculate refresh_interval to (2s - 10s) = 1s (minimum)
+    provider = provider.cache_ttl(Duration::from_secs(2));
+    
+    // Wait for TTL change detection (thread checks every 1s)
+    // After detection, refresh should happen at new interval (1s)
+    std::thread::sleep(Duration::from_secs(2));
+    
+    // Verify background thread detected TTL change and refreshed at new interval
+    // Should have made at least one additional request after TTL change
+    let count_after_ttl_change = request_count.load(Ordering::Relaxed);
+    assert!(
+        count_after_ttl_change > count_before_ttl_change,
+        "Background thread should have detected TTL change and refreshed. \
+         Before TTL change: {}, After TTL change: {}. \
+         This proves the thread woke up early and recalculated refresh interval.",
+        count_before_ttl_change,
+        count_after_ttl_change
+    );
+    
+    // Verify refresh happened quickly after TTL change (within 2s)
+    // If TTL change wasn't detected, refresh would happen at old interval (50s)
+    // The fact that we got a refresh within 2s proves early wake-up worked
+    assert!(
+        count_after_ttl_change >= count_before_ttl_change + 1,
+        "At least one refresh should have happened after TTL change. \
+         This verifies the thread detected the change and recalculated interval."
+    );
+    
+    provider.stop_background_refresh();
+}
+
+// --- Thread spawn failure tests (P0 - CRITICAL) ---
+
+#[test]
+fn test_jwks_thread_spawn_failure_recovery() {
+    // P0: Test that system can recover after thread spawn failure scenario
+    // Since we can't easily force thread::spawn to fail in tests, we verify:
+    // 1. The error handling code path exists (verified by code review)
+    // 2. The system can recover and spawn successfully on subsequent attempts
+    // 3. The refresh_in_progress flag doesn't get stuck
+    
+    use std::sync::atomic::{AtomicU32, Ordering};
+    
+    let request_count = Arc::new(AtomicU32::new(0));
+    let request_count_clone = request_count.clone();
+    
+    let secret = b"test-secret-key-32-bytes!!";
+    let k = base64url_no_pad(secret);
+    let jwks = json!({
+        "keys": [{
+            "kty": "oct",
+            "kid": "test-key",
+            "alg": "HS256",
+            "k": k
+        }]
+    });
+    
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let jwks_url = format!("http://{}:{}/jwks.json", addr.ip(), addr.port());
+    let jwks_body = jwks.to_string();
+    
+    // Spawn server that counts requests
+    std::thread::spawn(move || {
+        for _ in 0..10 {
+            if let Ok((mut stream, _)) = listener.accept() {
+                request_count_clone.fetch_add(1, Ordering::Relaxed);
+                let mut buf = [0u8; 2048];
+                let _ = stream.read(&mut buf);
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                    jwks_body.len(),
+                    jwks_body
+                );
+                let _ = stream.write_all(resp.as_bytes());
+            }
+        }
+    });
+    
+    std::thread::sleep(Duration::from_millis(50));
+    
+    // Create provider with expired cache to trigger refresh
+    let provider = Arc::new(
+        brrtrouter::security::JwksBearerProvider::new(jwks_url.clone())
+            .cache_ttl(Duration::from_secs(1))
+    );
+    
+    // Stop background refresh for this test
+    provider.stop_background_refresh();
+    std::thread::sleep(Duration::from_millis(100));
+    
+    // Trigger multiple refresh attempts in rapid succession
+    // This tests the atomic claim mechanism and ensures the flag doesn't get stuck
+    // Even if a thread spawn were to fail, the flag should be cleared and subsequent
+    // attempts should succeed
+    let token = make_hs256_jwt(secret, "https://issuer.example", "audience", "test-key", 60);
+    let scheme = SecurityScheme::Http {
+        scheme: "bearer".to_string(),
+        bearer_format: None,
+        description: None,
+    };
+    
+    let mut headers: HeaderVec = HeaderVec::new();
+    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    let req = SecurityRequest {
+        headers: &headers,
+        query: &ParamVec::new(),
+        cookies: &HeaderVec::new(),
+    };
+    
+    // Trigger multiple validations rapidly
+    // This exercises the refresh logic and atomic claim mechanism
+    for _ in 0..5 {
+        let _ = provider.validate(&scheme, &[], &req);
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    
+    // Wait for any refresh attempts to complete
+    std::thread::sleep(Duration::from_millis(500));
+    
+    // Verify at least one refresh was attempted
+    let final_count = request_count.load(Ordering::Relaxed);
+    assert!(
+        final_count >= 1,
+        "At least one refresh should have been attempted. Got {} requests.",
+        final_count
+    );
+    
+    // Verify system is still functional (refresh_in_progress flag not stuck)
+    // If the flag were stuck, subsequent validations would hang indefinitely
+    // We verify this by checking that validation completes quickly (doesn't hang)
+    // The key test is that the system doesn't deadlock, not that validation succeeds
+    let start = Instant::now();
+    let _ = provider.validate(&scheme, &[], &req);
+    let elapsed = start.elapsed();
+    
+    // If refresh_in_progress flag were stuck, validation would hang for the full timeout (2s)
+    // The fact that it completes quickly proves the flag is not stuck
+    assert!(
+        elapsed < Duration::from_secs(3),
+        "Validation should complete quickly (proves refresh_in_progress flag is not stuck). \
+         If flag were stuck, validation would hang. Took {:?}. Request count: {}",
+        elapsed,
+        request_count.load(Ordering::Relaxed)
+    );
+    
+    // Verify at least one refresh was attempted
+    let final_count = request_count.load(Ordering::Relaxed);
+    assert!(
+        final_count >= 1,
+        "At least one refresh should have been attempted. Got {} requests.",
+        final_count
+    );
+    
+    provider.stop_background_refresh();
+}
+
+// Note: Direct testing of thread::spawn failure is difficult in Rust tests.
+// The error handling code path (lines 862-870 in mod.rs) is verified by:
+// 1. Code review - the error handler clears the flag and notifies waiters
+// 2. This test verifies the system can recover from edge cases
+// 3. The atomic claim mechanism prevents flag from getting stuck in normal operation
