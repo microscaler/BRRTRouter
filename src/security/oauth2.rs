@@ -110,4 +110,3 @@ impl SecurityProvider for OAuth2Provider {
         helper.validate_token(token, scopes)
     }
 }
-

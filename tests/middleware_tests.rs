@@ -132,10 +132,8 @@ fn test_auth_middleware_valid_token() {
     let auth = AuthMiddleware::new("Bearer valid-token".to_string());
 
     // JSF P2: HeaderVec now uses Arc<str> for keys
-    let headers: HeaderVec = smallvec![(
-        Arc::from("authorization"),
-        "Bearer valid-token".to_string()
-    )];
+    let headers: HeaderVec =
+        smallvec![(Arc::from("authorization"), "Bearer valid-token".to_string())];
 
     let req = create_test_request(Method::GET, "/protected", headers);
     let result = auth.before(&req);
@@ -192,16 +190,17 @@ fn test_auth_middleware_case_insensitive_header() {
     // HTTP headers are case-insensitive per RFC 7230
     // "Authorization" (capital A) should match when looking for "authorization" (lowercase)
     // JSF P2: HeaderVec now uses Arc<str> for keys
-    let headers: HeaderVec = smallvec![(
-        Arc::from("Authorization"),
-        "Bearer valid-token".to_string()
-    )];
+    let headers: HeaderVec =
+        smallvec![(Arc::from("Authorization"), "Bearer valid-token".to_string())];
 
     let req = create_test_request(Method::GET, "/protected", headers);
     let result = auth.before(&req);
 
     // Should succeed (return None) because header lookup is case-insensitive per RFC 7230
-    assert!(result.is_none(), "Header lookup should be case-insensitive per RFC 7230");
+    assert!(
+        result.is_none(),
+        "Header lookup should be case-insensitive per RFC 7230"
+    );
 }
 
 #[test]
@@ -354,10 +353,8 @@ fn test_middleware_combination_auth_and_cors() {
     let cors = CorsMiddleware::default();
 
     // JSF P2: HeaderVec now uses Arc<str> for keys
-    let headers: HeaderVec = smallvec![(
-        Arc::from("authorization"),
-        "Bearer valid-token".to_string()
-    )];
+    let headers: HeaderVec =
+        smallvec![(Arc::from("authorization"), "Bearer valid-token".to_string())];
 
     let req = create_test_request(Method::GET, "/protected", headers);
     let mut resp = create_test_response(200);

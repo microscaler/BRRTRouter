@@ -102,7 +102,9 @@ fn test_router_worst_case_performance() {
     // Even with deep nesting, performance should remain consistent (O(k))
     let start = Instant::now();
     for _ in 0..1000 {
-        router.route(Method::GET, "/a/b/c/d/e/f");
+        let _result = router.route(Method::GET, "/a/b/c/d/e/f");
+        // Use the result to ensure it's properly dropped
+        assert!(_result.is_some());
     }
     let duration = start.elapsed();
 

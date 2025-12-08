@@ -87,7 +87,7 @@ struct RadixNode {
     /// If this node is a terminal (end of a route), stores the route metadata per HTTP method
     routes: HashMap<Method, Arc<RouteMeta>>,
     /// Parameter name if this segment is a path parameter (e.g., "{id}" -> Some("id"))
-    /// 
+    ///
     /// # JSF Optimization (P0)
     /// Uses `Arc<str>` instead of `Cow` so that cloning during route matching
     /// is O(1) atomic increment instead of O(n) string copy.
@@ -113,7 +113,7 @@ impl RadixNode {
     }
 
     /// Create a new parameter node
-    /// 
+    ///
     /// # JSF Optimization (P0)
     /// Takes `Arc<str>` for O(1) cloning during route matching.
     fn new_param(param_name: Arc<str>) -> Self {
@@ -213,7 +213,7 @@ impl RadixNode {
                 // Push the param for this branch
                 // Note: duplicate param names will result in multiple entries;
                 // use get_path_param() which returns the last occurrence (last write wins)
-                // 
+                //
                 // JSF Optimization (P0): Arc::clone() is O(1) atomic increment
                 // vs O(n) string copy for param names
                 params.push((Arc::clone(param_name), segment.to_string()));

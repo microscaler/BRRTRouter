@@ -418,8 +418,16 @@ fn test_headers_and_cookies() {
     fn header_handler(req: HandlerRequest) {
         // Convert SmallVec to HashMap for JSON serialization
         // JSF P2: HeaderVec now uses Arc<str> for keys, need to convert to String
-        let headers_map: HashMap<String, String> = req.headers.iter().map(|(k, v)| (k.to_string(), v.clone())).collect();
-        let cookies_map: HashMap<String, String> = req.cookies.iter().map(|(k, v)| (k.to_string(), v.clone())).collect();
+        let headers_map: HashMap<String, String> = req
+            .headers
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.clone()))
+            .collect();
+        let cookies_map: HashMap<String, String> = req
+            .cookies
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.clone()))
+            .collect();
         let response = HandlerResponse {
             status: 200,
             headers: HeaderVec::new(),
@@ -595,17 +603,17 @@ fn test_invalid_http_method_rejected() {
     //
     // The actual fix is in parse_request() which uses `?` to propagate errors instead of
     // unwrap_or_else(|_| Method::GET), and service.rs handles the error with 400 Bad Request.
-    
+
     // Verify the implementation is correct by checking the code structure:
     // 1. parse_request() returns Result<ParsedRequest, String> (line 219)
     // 2. Method parsing uses `?` operator to propagate errors (line 223)
     // 3. service.rs handles errors with match and returns 400 Bad Request (lines 752-766)
     // 4. There is NO unwrap_or_else(|_| Method::GET) in the server code
-    
+
     // This test serves as documentation that the fix is in place.
     // The actual rejection happens at the HTTP parser level for malformed requests,
     // and at our code level for methods that fail to parse as http::Method.
-    
+
     fn echo_handler(req: HandlerRequest) {
         let response = HandlerResponse {
             status: 200,
@@ -629,7 +637,7 @@ fn test_invalid_http_method_rejected() {
     // - parse_request() correctly returns Result and propagates errors
     // - service.rs correctly handles errors with 400 Bad Request
     // - No unwrap_or_else(|_| Method::GET) exists in the codebase
-    
+
     let resp = send_request(
         &server.addr(),
         "GET /echo HTTP/1.1\r\nHost: localhost\r\n\r\n",

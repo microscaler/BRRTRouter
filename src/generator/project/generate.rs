@@ -570,10 +570,7 @@ pub fn generate_impl_stubs(
         vec![handler.to_string()]
     } else {
         // Generate stubs for all handlers
-        routes
-            .iter()
-            .map(|r| r.handler_name.to_string())
-            .collect()
+        routes.iter().map(|r| r.handler_name.to_string()).collect()
     };
 
     let mut created = Vec::new();

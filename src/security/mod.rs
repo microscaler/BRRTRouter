@@ -101,7 +101,7 @@
 //!         let org_id = claims.get("org_id").and_then(|v| v.as_str());
 //!
 //!         // Use claims for business logic
-//!         println!("User {} ({}) from org {}", 
+//!         println!("User {} ({}) from org {}",
 //!                  user_id.unwrap_or("unknown"),
 //!                  email.unwrap_or("unknown"),
 //!                  org_id.unwrap_or("unknown"));
@@ -295,4 +295,3 @@ mod bearer_jwt;
 mod jwks_bearer;
 mod oauth2;
 mod remote_api_key;
-

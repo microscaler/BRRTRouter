@@ -400,11 +400,7 @@ mod tests {
 
         for (method_str, expected_method) in valid_methods {
             let result = test_method_parsing(method_str);
-            assert!(
-                result.is_ok(),
-                "Method '{}' should be accepted",
-                method_str
-            );
+            assert!(result.is_ok(), "Method '{}' should be accepted", method_str);
             assert_eq!(
                 result.unwrap(),
                 expected_method,
@@ -420,13 +416,13 @@ mod tests {
         // Test methods that actually fail to parse (http::Method accepts custom methods,
         // so we test only methods with invalid characters that cause parse failures)
         let invalid_methods = vec![
-            "G E T",   // With spaces (invalid token character)
-            "GET\n",   // With newline
-            "GET\r",   // With carriage return
-            "GET\t",   // With tab
-            "GET/",    // With forward slash
-            "GET@",    // With @ symbol
-            "",        // Empty string
+            "G E T", // With spaces (invalid token character)
+            "GET\n", // With newline
+            "GET\r", // With carriage return
+            "GET\t", // With tab
+            "GET/",  // With forward slash
+            "GET@",  // With @ symbol
+            "",      // Empty string
         ];
 
         for method_str in invalid_methods {
@@ -468,8 +464,14 @@ mod tests {
     fn test_parse_request_method_case_handling() {
         // Test case sensitivity - HTTP methods are case-sensitive per RFC 7231
         // Standard uppercase methods should work
-        assert!(test_method_parsing("GET").is_ok(), "GET (uppercase) should be valid");
-        assert!(test_method_parsing("POST").is_ok(), "POST (uppercase) should be valid");
+        assert!(
+            test_method_parsing("GET").is_ok(),
+            "GET (uppercase) should be valid"
+        );
+        assert!(
+            test_method_parsing("POST").is_ok(),
+            "POST (uppercase) should be valid"
+        );
 
         // Note: http::Method::from_str() may or may not accept lowercase depending on implementation
         // The important thing is that clearly invalid methods are rejected
