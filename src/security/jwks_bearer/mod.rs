@@ -755,14 +755,34 @@ impl JwksBearerProvider {
             // handle that here. If refresh_jwks_internal fails, it also clears the flag.
             let cache = self.cache.clone();
             let jwks_url = self.jwks_url.clone();
-            let refresh_in_progress = self.refresh_in_progress.clone();
-            let refresh_complete = self.refresh_complete.clone();
+            // Clone Arc references - one set for the spawned thread, one for error handling
+            let refresh_in_progress_thread = self.refresh_in_progress.clone();
+            let refresh_complete_thread = self.refresh_complete.clone();
+            let refresh_in_progress_error = self.refresh_in_progress.clone();
+            let refresh_complete_error = self.refresh_complete.clone();
             
-            thread::spawn(move || {
-                // We've already atomically claimed the refresh (set flag to true above),
-                // so pass already_claimed=true to skip the flag check in refresh_jwks_internal
-                Self::refresh_jwks_internal(&cache, &jwks_url, &refresh_in_progress, &refresh_complete, true);
-            });
+            // CRITICAL: If thread::spawn panics (e.g., resource exhaustion), we must clear
+            // the refresh_in_progress flag to prevent permanent deadlock. The spawned thread
+            // is responsible for clearing it, but if spawning fails, that never happens.
+            match thread::Builder::new()
+                .spawn(move || {
+                    // We've already atomically claimed the refresh (set flag to true above),
+                    // so pass already_claimed=true to skip the flag check in refresh_jwks_internal
+                    Self::refresh_jwks_internal(&cache, &jwks_url, &refresh_in_progress_thread, &refresh_complete_thread, true);
+                }) {
+                Ok(_) => {
+                    // Thread spawned successfully - it will clear the flag when done
+                }
+                Err(e) => {
+                    // Thread spawn failed (resource exhaustion, etc.) - clear flag to prevent deadlock
+                    warn!("Failed to spawn JWKS refresh thread: {}. Clearing refresh_in_progress flag to prevent deadlock.", e);
+                    refresh_in_progress_error.store(false, Ordering::Release);
+                    // Notify any waiting threads that refresh won't happen
+                    let (lock, cvar) = &*refresh_complete_error;
+                    let _guard = lock.lock().unwrap();
+                    cvar.notify_all();
+                }
+            }
         }
     }
 
