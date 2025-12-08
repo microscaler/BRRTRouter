@@ -376,26 +376,15 @@ impl JwksBearerProvider {
                     slept += sleep_duration;
                 }
                 
-                // Check if refresh is needed (non-blocking check)
-                // Re-read cache_ttl in case it changed during sleep
-                let current_cache_ttl = Duration::from_secs(cache_ttl_secs.load(Ordering::Acquire));
-                let needs_refresh = {
-                    if let Ok(guard) = cache.read() {
-                        guard.0.elapsed() >= current_cache_ttl || guard.1.is_empty()
-                    } else {
-                        // Lock poisoned, skip this cycle
-                        continue;
-                    }
-                };
-                
-                if needs_refresh {
-                    // Trigger refresh (non-blocking - don't wait for completion)
-                    Self::refresh_jwks_internal(
-                        &cache,
-                        &jwks_url,
-                        &refresh_in_progress,
-                    );
-                }
+                // After sleeping for refresh_interval, always refresh proactively
+                // The refresh_interval is calculated to wake up before expiration,
+                // so we should refresh now to keep the cache fresh.
+                // The debounce mechanism in refresh_jwks_internal prevents concurrent refreshes.
+                Self::refresh_jwks_internal(
+                    &cache,
+                    &jwks_url,
+                    &refresh_in_progress,
+                );
             }
         });
         
