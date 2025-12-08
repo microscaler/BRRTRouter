@@ -672,6 +672,122 @@ fn test_cors_builder_max_age() {
 }
 
 #[test]
+fn test_cors_regex_pattern_matching() {
+    use brrtrouter::middleware::CorsMiddleware;
+    use http::Method;
+
+    // Test regex pattern matching - allow all *.example.com subdomains
+    let cors = CorsMiddleware::with_regex_patterns(
+        vec![r"^https://.*\.example\.com$".to_string()],
+        vec!["Content-Type".to_string()],
+        vec![Method::GET],
+        false,
+        vec![],
+        None,
+    );
+
+    // Test matching origin
+    let mut headers_match = HeaderVec::new();
+    headers_match.push((Arc::from("origin"), "https://api.example.com".to_string()));
+    let req_match = create_test_request(Method::GET, "/", headers_match);
+    let mut resp_match = create_test_response(200);
+    cors.after(&req_match, &mut resp_match, Duration::from_millis(0));
+    assert_eq!(
+        resp_match.get_header("access-control-allow-origin"),
+        Some("https://api.example.com")
+    );
+
+    // Test non-matching origin
+    let mut headers_no_match = HeaderVec::new();
+    headers_no_match.push((Arc::from("origin"), "https://evil.com".to_string()));
+    let req_no_match = create_test_request(Method::GET, "/", headers_no_match);
+    let mut resp_no_match = create_test_response(200);
+    cors.after(&req_no_match, &mut resp_no_match, Duration::from_millis(0));
+    assert_eq!(resp_no_match.get_header("access-control-allow-origin"), None);
+}
+
+#[test]
+fn test_cors_builder_regex_patterns() {
+    use brrtrouter::middleware::CorsMiddlewareBuilder;
+    use http::Method;
+
+    let cors = CorsMiddlewareBuilder::new()
+        .allowed_origins_regex(&[r"^https://.*\.example\.com$", r"^https://api\.example\.org$"])
+        .allowed_methods(&[Method::GET])
+        .build()
+        .expect("Valid CORS configuration");
+
+    // Test matching origin
+    let mut headers = HeaderVec::new();
+    headers.push((Arc::from("origin"), "https://www.example.com".to_string()));
+    let req = create_test_request(Method::GET, "/", headers);
+    let mut resp = create_test_response(200);
+    cors.after(&req, &mut resp, Duration::from_millis(0));
+    assert_eq!(
+        resp.get_header("access-control-allow-origin"),
+        Some("https://www.example.com")
+    );
+}
+
+#[test]
+fn test_cors_custom_validator() {
+    use brrtrouter::middleware::CorsMiddleware;
+    use http::Method;
+
+    // Test custom validator - allow origins ending with .example.com
+    let cors = CorsMiddleware::with_custom_validator(
+        |origin: &str| origin.ends_with(".example.com"),
+        vec!["Content-Type".to_string()],
+        vec![Method::GET],
+        false,
+        vec![],
+        None,
+    );
+
+    // Test matching origin
+    let mut headers_match = HeaderVec::new();
+    headers_match.push((Arc::from("origin"), "https://api.example.com".to_string()));
+    let req_match = create_test_request(Method::GET, "/", headers_match);
+    let mut resp_match = create_test_response(200);
+    cors.after(&req_match, &mut resp_match, Duration::from_millis(0));
+    assert_eq!(
+        resp_match.get_header("access-control-allow-origin"),
+        Some("https://api.example.com")
+    );
+
+    // Test non-matching origin
+    let mut headers_no_match = HeaderVec::new();
+    headers_no_match.push((Arc::from("origin"), "https://evil.com".to_string()));
+    let req_no_match = create_test_request(Method::GET, "/", headers_no_match);
+    let mut resp_no_match = create_test_response(200);
+    cors.after(&req_no_match, &mut resp_no_match, Duration::from_millis(0));
+    assert_eq!(resp_no_match.get_header("access-control-allow-origin"), None);
+}
+
+#[test]
+fn test_cors_builder_custom_validator() {
+    use brrtrouter::middleware::CorsMiddlewareBuilder;
+    use http::Method;
+
+    let cors = CorsMiddlewareBuilder::new()
+        .allowed_origins_custom(|origin| origin.contains("example") && origin.starts_with("https://"))
+        .allowed_methods(&[Method::GET])
+        .build()
+        .expect("Valid CORS configuration");
+
+    // Test matching origin
+    let mut headers = HeaderVec::new();
+    headers.push((Arc::from("origin"), "https://example.com".to_string()));
+    let req = create_test_request(Method::GET, "/", headers);
+    let mut resp = create_test_response(200);
+    cors.after(&req, &mut resp, Duration::from_millis(0));
+    assert_eq!(
+        resp.get_header("access-control-allow-origin"),
+        Some("https://example.com")
+    );
+}
+
+#[test]
 fn test_cors_credentials_support() {
     let mw = CorsMiddleware::new(
         vec!["https://example.com".into()],

@@ -4,9 +4,11 @@ mod error;
 pub use builder::CorsMiddlewareBuilder;
 pub use error::CorsConfigError;
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use http::Method;
+use regex::Regex;
 use serde_json::Value;
 use tracing::{debug, warn};
 
@@ -64,8 +66,38 @@ use crate::middleware::Middleware;
 ///     Some(3600),  // cache preflight for 1 hour
 /// );
 /// ```
+/// Origin validation strategy
+#[derive(Clone)]
+pub(crate) enum OriginValidation {
+    /// Exact string matching
+    Exact(Vec<String>),
+    /// Wildcard (allow all origins)
+    Wildcard,
+    /// Regex pattern matching
+    Regex(Vec<Regex>),
+    /// Custom validation function
+    Custom(Arc<dyn Fn(&str) -> bool + Send + Sync>),
+}
+
+impl OriginValidation {
+    /// Check if an origin is allowed
+    fn is_allowed(&self, origin: &str) -> bool {
+        match self {
+            OriginValidation::Exact(origins) => origins.iter().any(|o| o == origin),
+            OriginValidation::Wildcard => true,
+            OriginValidation::Regex(patterns) => patterns.iter().any(|re| re.is_match(origin)),
+            OriginValidation::Custom(validator) => validator(origin),
+        }
+    }
+
+    /// Check if wildcard is enabled (for credentials validation)
+    fn is_wildcard(&self) -> bool {
+        matches!(self, OriginValidation::Wildcard)
+    }
+}
+
 pub struct CorsMiddleware {
-    pub(crate) allowed_origins: Vec<String>,
+    pub(crate) origin_validation: OriginValidation,
     pub(crate) allowed_headers: Vec<String>,
     pub(crate) allowed_methods: Vec<Method>,
     pub(crate) allow_credentials: bool,
@@ -117,8 +149,15 @@ impl CorsMiddleware {
         expose_headers: Vec<String>,
         max_age: Option<u32>,
     ) -> Self {
+        // Determine origin validation strategy
+        let origin_validation = if allowed_origins.iter().any(|o| o == "*") {
+            OriginValidation::Wildcard
+        } else {
+            OriginValidation::Exact(allowed_origins)
+        };
+
         // Validate: cannot use wildcard with credentials (CORS spec requirement)
-        if allow_credentials && allowed_origins.iter().any(|o| o == "*") {
+        if allow_credentials && origin_validation.is_wildcard() {
             panic!(
                 "CORS configuration error: Cannot use wildcard origin (*) with credentials. \
                 When allow_credentials is true, you must specify exact origins."
@@ -126,7 +165,128 @@ impl CorsMiddleware {
         }
 
         Self {
-            allowed_origins,
+            origin_validation,
+            allowed_headers,
+            allowed_methods,
+            allow_credentials,
+            expose_headers,
+            max_age,
+        }
+    }
+
+    /// Create a new CORS middleware with regex pattern matching
+    ///
+    /// Allows origins that match any of the provided regex patterns.
+    ///
+    /// # Arguments
+    ///
+    /// * `origin_patterns` - Vector of regex patterns (e.g., `vec![r"^https://.*\.example\.com$"]`)
+    /// * `allowed_headers` - List of allowed headers
+    /// * `allowed_methods` - List of allowed HTTP methods
+    /// * `allow_credentials` - If `true`, sets `Access-Control-Allow-Credentials: true`
+    /// * `expose_headers` - List of headers to expose to JavaScript
+    /// * `max_age` - Preflight cache duration in seconds
+    ///
+    /// # Panics
+    ///
+    /// Panics if any regex pattern is invalid or if `allow_credentials` is `true` with wildcard patterns.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use brrtrouter::middleware::CorsMiddleware;
+    /// use http::Method;
+    ///
+    /// let cors = CorsMiddleware::with_regex_patterns(
+    ///     vec![r"^https://.*\.example\.com$".to_string()],
+    ///     vec!["Content-Type".to_string()],
+    ///     vec![Method::GET, Method::POST],
+    ///     false,
+    ///     vec![],
+    ///     None,
+    /// );
+    /// ```
+    pub fn with_regex_patterns(
+        origin_patterns: Vec<String>,
+        allowed_headers: Vec<String>,
+        allowed_methods: Vec<Method>,
+        allow_credentials: bool,
+        expose_headers: Vec<String>,
+        max_age: Option<u32>,
+    ) -> Self {
+        // Compile regex patterns
+        let patterns: Result<Vec<Regex>, _> = origin_patterns
+            .iter()
+            .map(|p| Regex::new(p))
+            .collect();
+
+        let patterns = patterns.unwrap_or_else(|e| {
+            panic!("CORS configuration error: Invalid regex pattern: {}", e);
+        });
+
+        let origin_validation = OriginValidation::Regex(patterns);
+
+        // Validate: cannot use wildcard with credentials
+        if allow_credentials && origin_validation.is_wildcard() {
+            panic!(
+                "CORS configuration error: Cannot use wildcard patterns with credentials. \
+                When allow_credentials is true, you must use exact origins or specific regex patterns."
+            );
+        }
+
+        Self {
+            origin_validation,
+            allowed_headers,
+            allowed_methods,
+            allow_credentials,
+            expose_headers,
+            max_age,
+        }
+    }
+
+    /// Create a new CORS middleware with custom validation function
+    ///
+    /// Allows origins based on a custom validation function.
+    ///
+    /// # Arguments
+    ///
+    /// * `validator` - Function that takes an origin string and returns `true` if allowed
+    /// * `allowed_headers` - List of allowed headers
+    /// * `allowed_methods` - List of allowed HTTP methods
+    /// * `allow_credentials` - If `true`, sets `Access-Control-Allow-Credentials: true`
+    /// * `expose_headers` - List of headers to expose to JavaScript
+    /// * `max_age` - Preflight cache duration in seconds
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use brrtrouter::middleware::CorsMiddleware;
+    /// use http::Method;
+    ///
+    /// let cors = CorsMiddleware::with_custom_validator(
+    ///     |origin: &str| origin.ends_with(".example.com"),
+    ///     vec!["Content-Type".to_string()],
+    ///     vec![Method::GET, Method::POST],
+    ///     false,
+    ///     vec![],
+    ///     None,
+    /// );
+    /// ```
+    pub fn with_custom_validator<F>(
+        validator: F,
+        allowed_headers: Vec<String>,
+        allowed_methods: Vec<Method>,
+        allow_credentials: bool,
+        expose_headers: Vec<String>,
+        max_age: Option<u32>,
+    ) -> Self
+    where
+        F: Fn(&str) -> bool + Send + Sync + 'static,
+    {
+        let origin_validation = OriginValidation::Custom(Arc::new(validator));
+
+        Self {
+            origin_validation,
             allowed_headers,
             allowed_methods,
             allow_credentials,
@@ -169,7 +329,7 @@ impl CorsMiddleware {
     /// Validate an origin against the allowed origins list
     ///
     /// Returns the validated origin string if valid, None otherwise.
-    /// Handles wildcard "*" origin (allows all origins).
+    /// Supports exact matching, wildcard, regex patterns, and custom validators.
     ///
     /// # Arguments
     ///
@@ -180,17 +340,16 @@ impl CorsMiddleware {
     /// * `Some(origin)` - If origin is allowed (returns the origin string to use in headers)
     /// * `None` - If origin is not allowed
     fn validate_origin(&self, origin: &str) -> Option<String> {
-        // Check for wildcard "*" in allowed origins
-        if self.allowed_origins.iter().any(|o| o == "*") {
-            return Some("*".to_string());
+        if self.origin_validation.is_allowed(origin) {
+            // For wildcard, return "*", otherwise return the origin itself
+            if self.origin_validation.is_wildcard() {
+                Some("*".to_string())
+            } else {
+                Some(origin.to_string())
+            }
+        } else {
+            None
         }
-
-        // Exact match against allowed origins
-        if self.allowed_origins.iter().any(|o| o == origin) {
-            return Some(origin.to_string());
-        }
-
-        None
     }
 
     /// Check if a request is same-origin (no CORS headers needed)
@@ -356,7 +515,7 @@ impl CorsMiddleware {
     /// ```
     pub fn permissive() -> Self {
         Self {
-            allowed_origins: vec!["*".into()],
+            origin_validation: OriginValidation::Wildcard,
             allowed_headers: vec!["Content-Type".into(), "Authorization".into()],
             allowed_methods: vec![
                 Method::GET,
@@ -405,7 +564,7 @@ impl Default for CorsMiddleware {
     /// ```
     fn default() -> Self {
         Self {
-            allowed_origins: vec![], // Empty - secure by default
+            origin_validation: OriginValidation::Exact(vec![]), // Empty - secure by default
             allowed_headers: vec!["Content-Type".into(), "Authorization".into()],
             allowed_methods: vec![
                 Method::GET,
