@@ -497,22 +497,29 @@ fn test_middleware_edge_case_empty_headers() {
         vec![], // Empty methods
     );
 
-    let req = create_test_request(Method::GET, "/", HeaderVec::new());
+    // Add Origin header for CORS validation
+    let mut headers = HeaderVec::new();
+    headers.push((Arc::from("origin"), "https://example.com".to_string()));
+    let req = create_test_request(Method::GET, "/", headers);
     let mut resp = create_test_response(200);
 
     cors.after(&req, &mut resp, Duration::from_millis(0));
 
-    // Should set empty strings for the headers
-    assert_eq!(resp.get_header("Access-Control-Allow-Origin"), Some(""));
-    assert_eq!(resp.get_header("Access-Control-Allow-Headers"), Some(""));
-    assert_eq!(resp.get_header("Access-Control-Allow-Methods"), Some(""));
+    // With empty origins list, origin validation fails, so no CORS headers should be added
+    // This is the correct behavior - empty origins means no origins are allowed
+    assert_eq!(resp.get_header("access-control-allow-origin"), None);
+    assert_eq!(resp.get_header("access-control-allow-headers"), None);
+    assert_eq!(resp.get_header("access-control-allow-methods"), None);
 }
 
 #[test]
 fn test_middleware_response_modification() {
     let cors = CorsMiddleware::default();
 
-    let req = create_test_request(Method::GET, "/", HeaderVec::new());
+    // Add Origin header for CORS validation
+    let mut headers = HeaderVec::new();
+    headers.push((Arc::from("origin"), "https://example.com".to_string()));
+    let req = create_test_request(Method::GET, "/", headers);
     let mut resp = create_test_response(404);
 
     // Add some existing headers
@@ -522,9 +529,10 @@ fn test_middleware_response_modification() {
 
     // Should preserve existing headers and add CORS headers
     assert_eq!(resp.get_header("Content-Type"), Some("application/json"));
-    assert!(resp.get_header("Access-Control-Allow-Origin").is_some());
-    assert!(resp.get_header("Access-Control-Allow-Headers").is_some());
-    assert!(resp.get_header("Access-Control-Allow-Methods").is_some());
+    assert!(resp.get_header("access-control-allow-origin").is_some());
+    assert!(resp.get_header("access-control-allow-headers").is_some());
+    assert!(resp.get_header("access-control-allow-methods").is_some());
+    assert_eq!(resp.get_header("vary"), Some("Origin"));
 }
 
 #[test]
