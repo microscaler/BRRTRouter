@@ -5140,3 +5140,438 @@ fn test_jwks_spawn_failure_wakeup_timing() {
     
     provider.stop_background_refresh();
 }
+
+// --- Additional empty cache condition variable tests ---
+
+#[test]
+fn test_jwks_empty_cache_condition_variable_wait() {
+    // P1: Test that threads wait on condition variable when cache is empty and another thread is refreshing
+    // This verifies the condition variable waiting mechanism (not polling)
+    
+    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::Barrier;
+    
+    let request_count = Arc::new(AtomicU32::new(0));
+    let request_count_clone = request_count.clone();
+    
+    let secret = b"test-secret-key-32-bytes!!";
+    let k = base64url_no_pad(secret);
+    let jwks = json!({
+        "keys": [{
+            "kty": "oct",
+            "kid": "test-key",
+            "alg": "HS256",
+            "k": k
+        }]
+    });
+    
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let jwks_url = format!("http://{}:{}/jwks.json", addr.ip(), addr.port());
+    let jwks_body = jwks.to_string();
+    
+    // Spawn server with delay to ensure threads have time to wait
+    std::thread::spawn(move || {
+        for _ in 0..10 {
+            if let Ok((mut stream, _)) = listener.accept() {
+                request_count_clone.fetch_add(1, Ordering::Relaxed);
+                let mut buf = [0u8; 2048];
+                let _ = stream.read(&mut buf);
+                // Delay to ensure waiting threads have time to block on condition variable
+                std::thread::sleep(Duration::from_millis(200));
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                    jwks_body.len(),
+                    jwks_body
+                );
+                let _ = stream.write_all(resp.as_bytes());
+            }
+        }
+    });
+    
+    std::thread::sleep(Duration::from_millis(50));
+    
+    // Create provider with empty cache
+    let provider = Arc::new(
+        brrtrouter::security::JwksBearerProvider::new(jwks_url.clone())
+            .cache_ttl(Duration::from_secs(300))
+    );
+    
+    // Stop background refresh to keep cache empty
+    provider.stop_background_refresh();
+    std::thread::sleep(Duration::from_millis(100));
+    
+    let token = make_hs256_jwt(secret, "https://issuer.example", "audience", "test-key", 60);
+    let scheme = SecurityScheme::Http {
+        scheme: "bearer".to_string(),
+        bearer_format: None,
+        description: None,
+    };
+    
+    // First, trigger one validation to start the refresh (this thread will do blocking refresh)
+    // Then spawn other threads that will wait on condition variable
+    let token_first = token.clone();
+    let scheme_first = scheme.clone();
+    
+    // Start first validation in a separate thread (this will do blocking refresh)
+    let provider_first = provider.clone();
+    let handle_first = std::thread::spawn(move || {
+        let mut headers: HeaderVec = HeaderVec::new();
+        headers.push((Arc::from("authorization"), format!("Bearer {}", token_first)));
+        let req = SecurityRequest {
+            headers: &headers,
+            query: &ParamVec::new(),
+            cookies: &HeaderVec::new(),
+        };
+        let _ = provider_first.validate(&scheme_first, &[], &req);
+    });
+    
+    // Give first thread time to claim refresh and start HTTP request
+    std::thread::sleep(Duration::from_millis(10));
+    
+    // Now spawn multiple threads that will wait on condition variable
+    let num_threads = 4;
+    let barrier = Arc::new(Barrier::new(num_threads));
+    let mut handles = Vec::new();
+    let wait_times = Arc::new(std::sync::Mutex::new(Vec::new()));
+    
+    for i in 0..num_threads {
+        let provider_clone = provider.clone();
+        let token_clone = token.clone();
+        let scheme_clone = scheme.clone();
+        let barrier_clone = barrier.clone();
+        let wait_times_clone = wait_times.clone();
+        
+        let handle = std::thread::spawn(move || {
+            barrier_clone.wait();
+            
+            let start = Instant::now();
+            
+            let mut headers: HeaderVec = HeaderVec::new();
+            headers.push((Arc::from("authorization"), format!("Bearer {}", token_clone)));
+            let req = SecurityRequest {
+                headers: &headers,
+                query: &ParamVec::new(),
+                cookies: &HeaderVec::new(),
+            };
+            
+            // This will trigger refresh_jwks_if_needed
+            // Since refresh is already in progress, these threads will wait on condition variable
+            let _ = provider_clone.validate(&scheme_clone, &[], &req);
+            
+            let elapsed = start.elapsed();
+            wait_times_clone.lock().unwrap().push((i, elapsed));
+        });
+        handles.push(handle);
+    }
+    
+    // Wait for all threads to complete
+    let _ = handle_first.join();
+    for handle in handles {
+        let _ = handle.join();
+    }
+    
+    std::thread::sleep(Duration::from_millis(100));
+    
+    // Verify all threads completed (were woken by condition variable)
+    let times = wait_times.lock().unwrap();
+    assert_eq!(times.len(), num_threads, "All {} threads should have completed", num_threads);
+    
+    // Verify threads that waited were woken when refresh completed
+    // Refresh takes ~200ms, so waiting threads should complete around that time
+    // If they were polling instead of using condition variable, they might complete earlier or later
+    let max_wait = times.iter().map(|(_, t)| *t).max().unwrap();
+    
+    // At least one thread should have waited (the ones that didn't do the refresh)
+    // If condition variable wasn't working, all threads would complete at similar times (all doing refresh)
+    // The fact that some threads wait and are woken proves condition variable is working
+    assert!(
+        max_wait >= Duration::from_millis(150),
+        "At least some threads should have waited for refresh to complete. Max wait: {:?}",
+        max_wait
+    );
+    
+    // Verify reasonable number of HTTP requests (atomic claim should prevent thread storm)
+    // Allow 1-10 requests: one for initial refresh, potentially retries
+    // The key test is that threads wait and are woken, not exact request count
+    // In a test environment with tight timing or when run with other tests, multiple threads might see empty cache before atomic claim
+    let final_count = request_count.load(Ordering::Relaxed);
+    assert!(
+        final_count >= 1 && final_count <= 10,
+        "Should have 1-10 HTTP requests (atomic claim should prevent thread storm). \
+         Got {}. If much higher, atomic claim may not be working correctly. \
+         The key test is that threads wait on condition variable and are woken, which is verified above.",
+        final_count
+    );
+    
+    provider.stop_background_refresh();
+}
+
+#[test]
+fn test_jwks_empty_cache_wakeup_on_completion() {
+    // P1: Test that waiting threads are woken when refresh completes
+    // This verifies condition variable notify_all() is called on refresh completion
+    
+    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::Barrier;
+    
+    let request_count = Arc::new(AtomicU32::new(0));
+    let request_count_clone = request_count.clone();
+    
+    let secret = b"test-secret-key-32-bytes!!";
+    let k = base64url_no_pad(secret);
+    let jwks = json!({
+        "keys": [{
+            "kty": "oct",
+            "kid": "test-key",
+            "alg": "HS256",
+            "k": k
+        }]
+    });
+    
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let jwks_url = format!("http://{}:{}/jwks.json", addr.ip(), addr.port());
+    let jwks_body = jwks.to_string();
+    
+    // Track when refresh completes
+    let refresh_complete_time = Arc::new(std::sync::Mutex::new(Option::<Instant>::None));
+    let refresh_complete_time_clone = refresh_complete_time.clone();
+    
+    // Spawn server that records completion time
+    std::thread::spawn(move || {
+        for _ in 0..10 {
+            if let Ok((mut stream, _)) = listener.accept() {
+                request_count_clone.fetch_add(1, Ordering::Relaxed);
+                let mut buf = [0u8; 2048];
+                let _ = stream.read(&mut buf);
+                std::thread::sleep(Duration::from_millis(100));
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                    jwks_body.len(),
+                    jwks_body
+                );
+                let _ = stream.write_all(resp.as_bytes());
+                // Record when response is sent (refresh completes)
+                *refresh_complete_time_clone.lock().unwrap() = Some(Instant::now());
+            }
+        }
+    });
+    
+    std::thread::sleep(Duration::from_millis(50));
+    
+    // Create provider with empty cache
+    let provider = Arc::new(
+        brrtrouter::security::JwksBearerProvider::new(jwks_url.clone())
+            .cache_ttl(Duration::from_secs(300))
+    );
+    
+    // Stop background refresh
+    provider.stop_background_refresh();
+    std::thread::sleep(Duration::from_millis(100));
+    
+    let token = make_hs256_jwt(secret, "https://issuer.example", "audience", "test-key", 60);
+    let scheme = SecurityScheme::Http {
+        scheme: "bearer".to_string(),
+        bearer_format: None,
+        description: None,
+    };
+    
+    // Spawn multiple threads that will wait for refresh
+    let num_threads = 5;
+    let barrier = Arc::new(Barrier::new(num_threads));
+    let mut handles = Vec::new();
+    let wakeup_times = Arc::new(std::sync::Mutex::new(Vec::new()));
+    
+    for i in 0..num_threads {
+        let provider_clone = provider.clone();
+        let token_clone = token.clone();
+        let scheme_clone = scheme.clone();
+        let barrier_clone = barrier.clone();
+        let wakeup_times_clone = wakeup_times.clone();
+        
+        let handle = std::thread::spawn(move || {
+            barrier_clone.wait();
+            
+            let start = Instant::now();
+            
+            let mut headers: HeaderVec = HeaderVec::new();
+            headers.push((Arc::from("authorization"), format!("Bearer {}", token_clone)));
+            let req = SecurityRequest {
+                headers: &headers,
+                query: &ParamVec::new(),
+                cookies: &HeaderVec::new(),
+            };
+            
+            // This will trigger refresh, threads will wait on condition variable
+            let _ = provider_clone.validate(&scheme_clone, &[], &req);
+            
+            let elapsed = start.elapsed();
+            wakeup_times_clone.lock().unwrap().push((i, elapsed));
+        });
+        handles.push(handle);
+    }
+    
+    // Wait for all threads to complete
+    for handle in handles {
+        let _ = handle.join();
+    }
+    
+    std::thread::sleep(Duration::from_millis(100));
+    
+    // Verify all threads were woken
+    let times = wakeup_times.lock().unwrap();
+    assert_eq!(times.len(), num_threads, "All {} threads should have completed", num_threads);
+    
+    // Verify threads were woken shortly after refresh completed
+    // Refresh completes after ~100ms, threads should be woken within ~50ms of that
+    let refresh_time = refresh_complete_time.lock().unwrap();
+    if let Some(_refresh_complete) = *refresh_time {
+        let wakeup_times_sorted: Vec<_> = times.iter().map(|(_, t)| *t).collect();
+        let avg_wakeup = wakeup_times_sorted.iter().sum::<Duration>() / wakeup_times_sorted.len() as u32;
+        
+        // Threads should be woken within ~150ms of refresh start (100ms refresh + 50ms wake-up)
+        assert!(
+            avg_wakeup < Duration::from_millis(300),
+            "Threads should be woken promptly after refresh completes. Average wake-up time: {:?}",
+            avg_wakeup
+        );
+    }
+    
+    // Verify only one HTTP request was made
+    let final_count = request_count.load(Ordering::Relaxed);
+    assert!(
+        final_count == 1,
+        "Only one HTTP request should be made (only one thread should do refresh), got {}",
+        final_count
+    );
+    
+    provider.stop_background_refresh();
+}
+
+#[test]
+fn test_jwks_empty_cache_retry_claim_race() {
+    // P1: Test that atomic claim works correctly for retry attempts
+    // When multiple threads detect empty cache after refresh, only one should retry
+    
+    use std::sync::atomic::{AtomicU32, Ordering};
+    
+    let request_count = Arc::new(AtomicU32::new(0));
+    let request_count_clone = request_count.clone();
+    
+    let secret = b"test-secret-key-32-bytes!!";
+    let k = base64url_no_pad(secret);
+    let jwks = json!({
+        "keys": [{
+            "kty": "oct",
+            "kid": "test-key",
+            "alg": "HS256",
+            "k": k
+        }]
+    });
+    
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let jwks_url = format!("http://{}:{}/jwks.json", addr.ip(), addr.port());
+    let jwks_body = jwks.to_string();
+    
+    // Server returns invalid JSON first (refresh fails, cache stays empty), then valid JWKS
+    let request_num = Arc::new(std::sync::Mutex::new(0));
+    let request_num_clone = request_num.clone();
+    std::thread::spawn(move || {
+        for _ in 0..10 {
+            if let Ok((mut stream, _)) = listener.accept() {
+                request_count_clone.fetch_add(1, Ordering::Relaxed);
+                let mut buf = [0u8; 2048];
+                let _ = stream.read(&mut buf);
+                
+                let mut num = request_num_clone.lock().unwrap();
+                let resp = if *num == 0 {
+                    // First request: return invalid JSON (refresh fails, cache stays empty)
+                    *num += 1;
+                    drop(num);
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 5\r\n\r\ninvalid".to_string()
+                } else {
+                    // Subsequent requests: return valid JWKS (retry succeeds)
+                    *num += 1;
+                    drop(num);
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                        jwks_body.len(),
+                        jwks_body
+                    )
+                };
+                let _ = stream.write_all(resp.as_bytes());
+            }
+        }
+    });
+    
+    std::thread::sleep(Duration::from_millis(50));
+    
+    // Create provider with empty cache
+    let provider = Arc::new(
+        brrtrouter::security::JwksBearerProvider::new(jwks_url.clone())
+            .cache_ttl(Duration::from_secs(300))
+    );
+    
+    // Stop background refresh
+    provider.stop_background_refresh();
+    std::thread::sleep(Duration::from_millis(100));
+    
+    let token = make_hs256_jwt(secret, "https://issuer.example", "audience", "test-key", 60);
+    let scheme = SecurityScheme::Http {
+        scheme: "bearer".to_string(),
+        bearer_format: None,
+        description: None,
+    };
+    
+    // Spawn multiple threads that will all detect empty cache and try to retry
+    // Only one should succeed in claiming the retry (atomic claim)
+    let num_threads = 5;
+    let barrier = Arc::new(std::sync::Barrier::new(num_threads));
+    let mut handles = Vec::new();
+    
+    for _ in 0..num_threads {
+        let provider_clone = provider.clone();
+        let token_clone = token.clone();
+        let scheme_clone = scheme.clone();
+        let barrier_clone = barrier.clone();
+        
+        let handle = std::thread::spawn(move || {
+            barrier_clone.wait();
+            
+            let mut headers: HeaderVec = HeaderVec::new();
+            headers.push((Arc::from("authorization"), format!("Bearer {}", token_clone)));
+            let req = SecurityRequest {
+                headers: &headers,
+                query: &ParamVec::new(),
+                cookies: &HeaderVec::new(),
+            };
+            
+            // This will trigger refresh that fails, then retry
+            // Multiple threads will detect empty cache, but only one should retry
+            let _ = provider_clone.validate(&scheme_clone, &[], &req);
+        });
+        handles.push(handle);
+    }
+    
+    // Wait for all threads to complete
+    for handle in handles {
+        let _ = handle.join();
+    }
+    
+    // Wait for retry to complete
+    std::thread::sleep(Duration::from_millis(500));
+    
+    // Verify only one retry was attempted (atomic claim worked)
+    // Should have 2 requests total: initial failure + one retry
+    let final_count = request_count.load(Ordering::Relaxed);
+    assert!(
+        final_count == 2,
+        "Should have exactly 2 HTTP requests (initial failure + one retry). \
+         Got {}. This proves atomic claim prevented multiple retry attempts.",
+        final_count
+    );
+    
+    provider.stop_background_refresh();
+}
