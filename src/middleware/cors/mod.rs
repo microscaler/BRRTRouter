@@ -1,11 +1,17 @@
+mod builder;
+mod error;
+
+pub use builder::CorsMiddlewareBuilder;
+pub use error::CorsConfigError;
+
 use std::time::Duration;
 
 use http::Method;
 use serde_json::Value;
 use tracing::{debug, warn};
 
-use super::Middleware;
 use crate::dispatcher::{HandlerRequest, HandlerResponse, HeaderVec};
+use crate::middleware::Middleware;
 
 /// CORS (Cross-Origin Resource Sharing) middleware
 ///
@@ -26,13 +32,45 @@ use crate::dispatcher::{HandlerRequest, HandlerResponse, HeaderVec};
 /// is set to `true`. **Important**: When credentials are allowed, wildcard origin (`*`)
 /// is not permitted by the CORS specification. The middleware will panic if this
 /// invalid combination is detected.
+///
+/// # Usage
+///
+/// ## Builder Pattern (Recommended)
+///
+/// ```rust,ignore
+/// use brrtrouter::middleware::CorsMiddlewareBuilder;
+/// use http::Method;
+///
+/// let cors = CorsMiddlewareBuilder::new()
+///     .allowed_origins(&["https://example.com"])
+///     .allowed_methods(&[Method::GET, Method::POST])
+///     .allow_credentials(true)
+///     .build()
+///     .expect("Invalid CORS configuration");
+/// ```
+///
+/// ## Direct Construction
+///
+/// ```rust,ignore
+/// use brrtrouter::middleware::CorsMiddleware;
+/// use http::Method;
+///
+/// let cors = CorsMiddleware::new(
+///     vec!["https://example.com".to_string()],
+///     vec!["Content-Type".to_string()],
+///     vec![Method::GET, Method::POST],
+///     true,  // allow credentials
+///     vec!["X-Total-Count".to_string()],  // expose headers
+///     Some(3600),  // cache preflight for 1 hour
+/// );
+/// ```
 pub struct CorsMiddleware {
-    allowed_origins: Vec<String>,
-    allowed_headers: Vec<String>,
-    allowed_methods: Vec<Method>,
-    allow_credentials: bool,
-    expose_headers: Vec<String>,
-    max_age: Option<u32>,
+    pub(crate) allowed_origins: Vec<String>,
+    pub(crate) allowed_headers: Vec<String>,
+    pub(crate) allowed_methods: Vec<Method>,
+    pub(crate) allow_credentials: bool,
+    pub(crate) expose_headers: Vec<String>,
+    pub(crate) max_age: Option<u32>,
 }
 
 impl CorsMiddleware {
@@ -100,8 +138,7 @@ impl CorsMiddleware {
     /// Create a new CORS middleware with legacy configuration (backward compatibility)
     ///
     /// This method maintains backward compatibility with the old API.
-    /// For new code, prefer using `CorsMiddleware::new()` with explicit credential/expose/max_age parameters,
-    /// or use `CorsMiddlewareBuilder` for a more ergonomic API.
+    /// For new code, prefer using `CorsMiddlewareBuilder` for a more ergonomic API.
     ///
     /// # Arguments
     ///
@@ -295,6 +332,44 @@ impl CorsMiddleware {
 
         Some(HandlerResponse::new(200, headers, Value::Null))
     }
+
+    /// Create a permissive CORS middleware for development/testing
+    ///
+    /// This configuration allows all origins and is suitable for development
+    /// and testing environments. **Do not use in production.**
+    ///
+    /// Configuration:
+    /// - `allowed_origins`: `["*"]` (all origins)
+    /// - `allowed_headers`: `["Content-Type", "Authorization"]`
+    /// - `allowed_methods`: `GET, POST, PUT, DELETE, OPTIONS`
+    /// - `allow_credentials`: `false` (cannot be true with wildcard)
+    /// - `expose_headers`: `[]` (empty)
+    /// - `max_age`: `None` (no preflight caching)
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use brrtrouter::middleware::CorsMiddleware;
+    ///
+    /// let cors = CorsMiddleware::permissive();
+    /// // Allows all origins - suitable for development only
+    /// ```
+    pub fn permissive() -> Self {
+        Self {
+            allowed_origins: vec!["*".into()],
+            allowed_headers: vec!["Content-Type".into(), "Authorization".into()],
+            allowed_methods: vec![
+                Method::GET,
+                Method::POST,
+                Method::PUT,
+                Method::DELETE,
+                Method::OPTIONS,
+            ],
+            allow_credentials: false, // Cannot be true with wildcard
+            expose_headers: vec![],
+            max_age: None,
+        }
+    }
 }
 
 /// Default CORS policy - secure by default
@@ -346,61 +421,6 @@ impl Default for CorsMiddleware {
     }
 }
 
-impl CorsMiddleware {
-    /// Create a permissive CORS middleware for development/testing
-    ///
-    /// This configuration allows all origins and is suitable for development
-    /// and testing environments. **Do not use in production.**
-    ///
-    /// Configuration:
-    /// - `allowed_origins`: `["*"]` (all origins)
-    /// - `allowed_headers`: `["Content-Type", "Authorization"]`
-    /// - `allowed_methods`: `GET, POST, PUT, DELETE, OPTIONS`
-    /// - `allow_credentials`: `false` (cannot be true with wildcard)
-    /// - `expose_headers`: `[]` (empty)
-    /// - `max_age`: `None` (no preflight caching)
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use brrtrouter::middleware::CorsMiddleware;
-    ///
-    /// let cors = CorsMiddleware::permissive();
-    /// // Allows all origins - suitable for development only
-    /// ```
-    pub fn permissive() -> Self {
-        Self {
-            allowed_origins: vec!["*".into()],
-            allowed_headers: vec!["Content-Type".into(), "Authorization".into()],
-            allowed_methods: vec![
-                Method::GET,
-                Method::POST,
-                Method::PUT,
-                Method::DELETE,
-                Method::OPTIONS,
-            ],
-            allow_credentials: false, // Cannot be true with wildcard
-            expose_headers: vec![],
-            max_age: None,
-        }
-    }
-}
-
-/// CORS middleware implementation
-///
-/// Handles CORS preflight (OPTIONS) requests and adds CORS headers to all responses.
-/// This ensures browsers can make cross-origin requests according to the configured policy.
-///
-/// # CORS Flow
-///
-/// 1. **Preflight (OPTIONS)**: Returns 200 with CORS headers, no handler invoked
-/// 2. **Actual Request**: Handler executes, CORS headers added to response in `after()`
-///
-/// # Security
-///
-/// - Default config allows all origins (`*`) - restrict in production
-/// - Validates Origin header against `allowed_origins`
-/// - Exposes CORS headers via `Access-Control-Expose-Headers`
 impl Middleware for CorsMiddleware {
     /// Handle CORS preflight requests (OPTIONS)
     ///
@@ -536,3 +556,4 @@ impl Middleware for CorsMiddleware {
         res.set_header("vary", "Origin".to_string());
     }
 }
+

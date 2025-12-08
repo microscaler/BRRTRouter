@@ -567,6 +567,111 @@ fn test_middleware_thread_safety() {
 }
 
 #[test]
+fn test_cors_builder_basic() {
+    use brrtrouter::middleware::CorsMiddlewareBuilder;
+    use http::Method;
+
+    let cors = CorsMiddlewareBuilder::new()
+        .allowed_origins(&["https://example.com"])
+        .allowed_methods(&[Method::GET, Method::POST])
+        .allowed_headers(&["Content-Type"])
+        .build()
+        .expect("Valid CORS configuration");
+
+    let mut headers = HeaderVec::new();
+    headers.push((Arc::from("origin"), "https://example.com".to_string()));
+    let req = create_test_request(Method::GET, "/", headers);
+    let mut resp = create_test_response(200);
+
+    cors.after(&req, &mut resp, Duration::from_millis(0));
+    assert_eq!(resp.get_header("access-control-allow-origin"), Some("https://example.com"));
+}
+
+#[test]
+fn test_cors_builder_with_credentials() {
+    use brrtrouter::middleware::CorsMiddlewareBuilder;
+    use http::Method;
+
+    let cors = CorsMiddlewareBuilder::new()
+        .allowed_origins(&["https://example.com"])
+        .allowed_methods(&[Method::GET])
+        .allow_credentials(true)
+        .build()
+        .expect("Valid CORS configuration");
+
+    let mut headers = HeaderVec::new();
+    headers.push((Arc::from("origin"), "https://example.com".to_string()));
+    let req = create_test_request(Method::GET, "/", headers);
+    let mut resp = create_test_response(200);
+
+    cors.after(&req, &mut resp, Duration::from_millis(0));
+    assert_eq!(resp.get_header("access-control-allow-credentials"), Some("true"));
+}
+
+#[test]
+fn test_cors_builder_wildcard_with_credentials_error() {
+    use brrtrouter::middleware::{CorsConfigError, CorsMiddlewareBuilder};
+    use http::Method;
+
+    let result = CorsMiddlewareBuilder::new()
+        .allowed_origins(&["*"])
+        .allowed_methods(&[Method::GET])
+        .allow_credentials(true)
+        .build();
+
+    assert!(result.is_err());
+    match result {
+        Err(CorsConfigError::WildcardWithCredentials) => {}
+        _ => panic!("Expected WildcardWithCredentials error"),
+    }
+}
+
+#[test]
+fn test_cors_builder_expose_headers() {
+    use brrtrouter::middleware::CorsMiddlewareBuilder;
+    use http::Method;
+
+    let cors = CorsMiddlewareBuilder::new()
+        .allowed_origins(&["https://example.com"])
+        .allowed_methods(&[Method::GET])
+        .expose_headers(&["X-Total-Count", "X-Page-Number"])
+        .build()
+        .expect("Valid CORS configuration");
+
+    let mut headers = HeaderVec::new();
+    headers.push((Arc::from("origin"), "https://example.com".to_string()));
+    let req = create_test_request(Method::GET, "/", headers);
+    let mut resp = create_test_response(200);
+
+    cors.after(&req, &mut resp, Duration::from_millis(0));
+    assert_eq!(
+        resp.get_header("access-control-expose-headers"),
+        Some("X-Total-Count, X-Page-Number")
+    );
+}
+
+#[test]
+fn test_cors_builder_max_age() {
+    use brrtrouter::middleware::CorsMiddlewareBuilder;
+    use http::Method;
+
+    let cors = CorsMiddlewareBuilder::new()
+        .allowed_origins(&["https://example.com"])
+        .allowed_methods(&[Method::GET, Method::POST])
+        .max_age(3600)
+        .build()
+        .expect("Valid CORS configuration");
+
+    let mut headers = HeaderVec::new();
+    headers.push((Arc::from("origin"), "https://example.com".to_string()));
+    headers.push((Arc::from("access-control-request-method"), "GET".to_string()));
+    let req = create_test_request(Method::OPTIONS, "/", headers);
+
+    let resp = cors.before(&req).expect("Should return preflight response");
+    assert_eq!(resp.get_header("access-control-max-age"), Some("3600"));
+}
+
+#[test]
 fn test_cors_credentials_support() {
     let mw = CorsMiddleware::new(
         vec!["https://example.com".into()],
