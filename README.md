@@ -76,6 +76,7 @@ This marks a **monumental milestone** - BRRTRouter has successfully transitioned
 - **🎨 Interactive Dashboard**: Production-ready SolidJS UI with live data, SSE streaming, and comprehensive API testing
 - **⚡ Coroutine-Powered**: Built on `may` coroutines for lightweight concurrency (800+ concurrent connections on 1MB stack)
 - **🔐 Security Built-In**: JWT/JWKS, OAuth2, API Keys with auto-registration from OpenAPI `securitySchemes`
+- **🌐 RFC-Compliant CORS**: Full CORS support with route-specific configuration, credentials, and environment-specific origins
 - **📊 Zero-Config Observability**: Prometheus metrics, OpenTelemetry tracing, health checks out of the box
 - **🔥 Hot Reload**: Live spec reloading without server restart
 - **🧪 Well-Tested**: 219 tests, 80%+ coverage, parallel execution support
@@ -200,6 +201,7 @@ open http://localhost:8080/
 | **Structured tracing (OTEL)**                    | ✅      | OpenTelemetry tracing implemented with test support; integrated with Jaeger in Tilt environment                                                                                                                                                 |
 | **Configurable stack size with instrumentation** | ✅      | Stack size comes from `BRRTR_STACK_SIZE` environment variable and is logged in metrics; no runtime API or used-stack metrics.                                                                                                                   |
 | **Hot reload on spec change**                    | ✅      | `hot_reload::watch_spec` rebuilds the `Router`, the server automatically updates the dispatcher and registers new routes.                                                                                                                       |
+| **RFC-compliant CORS middleware**                | ✅      | Full CORS implementation with origin validation, preflight handling, credentials support, exposed headers, preflight caching; route-specific config via OpenAPI `x-cors`; origins from `config.yaml`; regex patterns and custom validators; JSF-compliant startup processing |
 | **Extend fake otel collector across all tests**  | 🚧     | Fake OpenTelemetry collector is used in just tests, but not all tests utilize it.                                                                                                                                                               |
 | **handler coroutine stack size**                 | 🚧     | Coroutine stack size is set via `BRRTR_STACK_SIZE` env var, but not dynamically adjustable or measured.                                                                                                                                         |
 | **Deep dive into OpenAPI spec**                  | 🚧     | OpenAPI spec parsing is basic; does not handle all features like `callbacks` and other functions, produce GAP analysis in order to completely support OpenAPI 3.1.0 spec.                                                                       |
@@ -344,6 +346,15 @@ Build the fastest, most predictable OpenAPI-native router in Rust — capable of
   - Docker Hub proxy cache (70% faster startup, saves ~4GB bandwidth/day)
 
 - **🎉 100% Documentation Coverage**: All public APIs, impl blocks, complex functions, and test modules comprehensively documented
+
+- **🌐 RFC-Compliant CORS Implementation**: Complete CORS middleware rewrite achieving full RFC 6454 compliance
+  - Origin validation, preflight handling, credentials support, exposed headers, preflight caching
+  - Route-specific CORS configuration via OpenAPI `x-cors` extension
+  - Environment-specific origins from `config.yaml` (not in OpenAPI spec)
+  - Advanced features: regex pattern matching, custom validation functions
+  - JSF-compliant: all configuration processed at startup, zero runtime parsing
+  - **26 CORS-specific tests** (all passing), feature parity with Rocket-RS
+  - **Production-ready** with comprehensive security posture
 
 - **✅ Parallel Test Execution**: Fixed Docker container conflicts for nextest parallel execution (219 tests pass)
 
@@ -650,7 +661,7 @@ We welcome contributions that improve:
 - 🧪 Test coverage and spec validation
 - 🧠 Coroutine handler ergonomics
 - 📊 Benchmarks for match throughput (goal: 100k matches/sec)
-- 🔐 Middleware hooks (metrics, tracing, auth, CORS)
+- 🔐 Middleware hooks (metrics, tracing, auth, **RFC-compliant CORS with route-specific configuration**)
 - 💥 Reusable SDK packaging and publishing to crates.io
 
 **Benchmark goal:**

@@ -97,6 +97,7 @@ fn test_template_writers() {
         sse: false,
         estimated_request_body_bytes: None,
         x_brrtrouter_stack_size: None,
+        cors_config: None,
     };
     write_main_rs(&src_dir, "tester", vec![route]).unwrap();
 

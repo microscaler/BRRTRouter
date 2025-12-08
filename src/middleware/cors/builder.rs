@@ -335,6 +335,40 @@ impl CorsMiddlewareBuilder {
 
         Ok(cors)
     }
+
+    /// Build CORS middleware with route-specific configurations from OpenAPI
+    ///
+    /// This method extracts route-specific CORS configs from route metadata
+    /// and creates a route-aware CORS middleware.
+    ///
+    /// # Arguments
+    ///
+    /// * `routes` - Route metadata from OpenAPI spec
+    ///
+    /// # Returns
+    ///
+    /// A `CorsMiddleware` configured with both global and route-specific settings
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use brrtrouter::middleware::CorsMiddlewareBuilder;
+    /// use brrtrouter::spec::load_spec;
+    ///
+    /// let (routes, _) = load_spec("openapi.yaml")?;
+    /// let cors = CorsMiddlewareBuilder::new()
+    ///     .allowed_origins(&["https://example.com"])
+    ///     .build_with_routes(&routes)?;
+    /// ```
+    pub fn build_with_routes(
+        self,
+        routes: &[crate::spec::RouteMeta],
+    ) -> Result<CorsMiddleware, CorsConfigError> {
+        use super::build_route_cors_map;
+        let global_cors = self.build()?;
+        let route_configs = build_route_cors_map(routes);
+        Ok(CorsMiddleware::with_route_configs(global_cors, route_configs))
+    }
 }
 
 impl Default for CorsMiddlewareBuilder {

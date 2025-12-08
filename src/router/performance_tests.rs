@@ -30,6 +30,7 @@ fn create_route_meta(method: Method, path: &str, handler: &str) -> RouteMeta {
         sse: false,
         estimated_request_body_bytes: None,
         x_brrtrouter_stack_size: None,
+        cors_config: None,
     }
 }
 

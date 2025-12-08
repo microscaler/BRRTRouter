@@ -93,7 +93,10 @@ mod tracing;
 
 pub use auth::AuthMiddleware;
 pub use core::Middleware;
-pub use cors::{CorsConfigError, CorsMiddleware, CorsMiddlewareBuilder};
+pub use cors::{
+    build_route_cors_map, extract_route_cors_config, CorsConfigError, CorsMiddleware,
+    CorsMiddlewareBuilder, RouteCorsConfig,
+};
 pub use memory::MemoryMiddleware;
 pub use metrics::MetricsMiddleware;
 pub use tracing::TracingMiddleware;

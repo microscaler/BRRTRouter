@@ -1,8 +1,12 @@
 mod builder;
 mod error;
+mod route_config;
 
 pub use builder::CorsMiddlewareBuilder;
 pub use error::CorsConfigError;
+pub use route_config::{
+    build_route_cors_map, extract_route_cors_config, RouteCorsConfig,
+};
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -68,7 +72,7 @@ use crate::middleware::Middleware;
 /// ```
 /// Origin validation strategy
 #[derive(Clone)]
-pub(crate) enum OriginValidation {
+pub enum OriginValidation {
     /// Exact string matching
     Exact(Vec<String>),
     /// Wildcard (allow all origins)
@@ -77,6 +81,21 @@ pub(crate) enum OriginValidation {
     Regex(Vec<Regex>),
     /// Custom validation function
     Custom(Arc<dyn Fn(&str) -> bool + Send + Sync>),
+}
+
+impl std::fmt::Debug for OriginValidation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OriginValidation::Exact(origins) => f.debug_tuple("Exact").field(origins).finish(),
+            OriginValidation::Wildcard => write!(f, "Wildcard"),
+            OriginValidation::Regex(patterns) => {
+                f.debug_tuple("Regex")
+                    .field(&patterns.iter().map(|re| re.as_str()).collect::<Vec<_>>())
+                    .finish()
+            }
+            OriginValidation::Custom(_) => write!(f, "Custom(<function>)"),
+        }
+    }
 }
 
 impl OriginValidation {
@@ -103,6 +122,9 @@ pub struct CorsMiddleware {
     pub(crate) allow_credentials: bool,
     pub(crate) expose_headers: Vec<String>,
     pub(crate) max_age: Option<u32>,
+    /// Route-specific CORS configurations keyed by handler name
+    /// If a route has an `x-cors` extension in OpenAPI, it overrides global settings
+    pub(crate) route_configs: std::collections::HashMap<String, RouteCorsConfig>,
 }
 
 impl CorsMiddleware {
@@ -171,6 +193,49 @@ impl CorsMiddleware {
             allow_credentials,
             expose_headers,
             max_age,
+            route_configs: std::collections::HashMap::new(),
+        }
+    }
+
+    /// Create a route-aware CORS middleware with OpenAPI route configurations
+    ///
+    /// This constructor allows you to provide route-specific CORS configurations
+    /// extracted from OpenAPI `x-cors` extensions. Routes with `x-cors` will
+    /// use their specific config, others will use the global config.
+    ///
+    /// # Arguments
+    ///
+    /// * `global_config` - Global CORS configuration (used as fallback)
+    /// * `route_configs` - Map of handler names to route-specific CORS configs
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use brrtrouter::middleware::{CorsMiddleware, RouteCorsConfig};
+    /// use brrtrouter::spec::load_spec;
+    /// use std::collections::HashMap;
+    ///
+    /// let (routes, _) = load_spec("openapi.yaml")?;
+    /// let route_configs = build_route_cors_map(&routes);
+    ///
+    /// let global_cors = CorsMiddlewareBuilder::new()
+    ///     .allowed_origins(&["https://example.com"])
+    ///     .build()?;
+    ///
+    /// let cors = CorsMiddleware::with_route_configs(global_cors, route_configs);
+    /// ```
+    pub fn with_route_configs(
+        global_config: CorsMiddleware,
+        route_configs: std::collections::HashMap<String, RouteCorsConfig>,
+    ) -> Self {
+        Self {
+            origin_validation: global_config.origin_validation,
+            allowed_headers: global_config.allowed_headers,
+            allowed_methods: global_config.allowed_methods,
+            allow_credentials: global_config.allow_credentials,
+            expose_headers: global_config.expose_headers,
+            max_age: global_config.max_age,
+            route_configs,
         }
     }
 
@@ -241,6 +306,7 @@ impl CorsMiddleware {
             allow_credentials,
             expose_headers,
             max_age,
+            route_configs: std::collections::HashMap::new(),
         }
     }
 
@@ -292,7 +358,21 @@ impl CorsMiddleware {
             allow_credentials,
             expose_headers,
             max_age,
+            route_configs: std::collections::HashMap::new(),
         }
+    }
+
+    /// Get route-specific CORS config for a handler, or return global config
+    ///
+    /// # Arguments
+    ///
+    /// * `handler_name` - The handler name to look up
+    ///
+    /// # Returns
+    ///
+    /// Route-specific config if found, otherwise uses global config
+    fn get_route_config(&self, handler_name: &str) -> Option<&RouteCorsConfig> {
+        self.route_configs.get(handler_name)
     }
 
     /// Create a new CORS middleware with legacy configuration (backward compatibility)
@@ -330,19 +410,32 @@ impl CorsMiddleware {
     ///
     /// Returns the validated origin string if valid, None otherwise.
     /// Supports exact matching, wildcard, regex patterns, and custom validators.
+    /// Uses route-specific config if available, otherwise falls back to global config.
+    ///
+    /// **JSF Compliance**: All configuration is pre-processed at startup.
+    /// This method only performs O(1) HashMap lookups and string comparisons.
+    /// The only allocation is for the return value (necessary for response headers).
     ///
     /// # Arguments
     ///
     /// * `origin` - The Origin header value from the request
+    /// * `handler_name` - The handler name (for route-specific config lookup)
     ///
     /// # Returns
     ///
     /// * `Some(origin)` - If origin is allowed (returns the origin string to use in headers)
     /// * `None` - If origin is not allowed
-    fn validate_origin(&self, origin: &str) -> Option<String> {
-        if self.origin_validation.is_allowed(origin) {
+    fn validate_origin(&self, origin: &str, handler_name: &str) -> Option<String> {
+        // Check for route-specific config first
+        let validation = if let Some(route_config) = self.get_route_config(handler_name) {
+            &route_config.origin_validation
+        } else {
+            &self.origin_validation
+        };
+
+        if validation.is_allowed(origin) {
             // For wildcard, return "*", otherwise return the origin itself
-            if self.origin_validation.is_wildcard() {
+            if validation.is_wildcard() {
                 Some("*".to_string())
             } else {
                 Some(origin.to_string())
@@ -390,6 +483,7 @@ impl CorsMiddleware {
     /// Validate a preflight request
     ///
     /// Checks that the requested method and headers are in the allowed lists.
+    /// Uses route-specific config if available.
     ///
     /// # Arguments
     ///
@@ -401,6 +495,23 @@ impl CorsMiddleware {
     /// * `Some(response)` - Valid preflight request with CORS headers
     /// * `None` - Invalid preflight request (should return 403)
     fn handle_preflight(&self, req: &HandlerRequest, origin: &str) -> Option<HandlerResponse> {
+        // Get route-specific config if available
+        let (allowed_methods, allowed_headers, allow_credentials, max_age) =
+            if let Some(route_config) = self.get_route_config(&req.handler_name) {
+                (
+                    &route_config.allowed_methods,
+                    &route_config.allowed_headers,
+                    route_config.allow_credentials,
+                    route_config.max_age,
+                )
+            } else {
+                (
+                    &self.allowed_methods,
+                    &self.allowed_headers,
+                    self.allow_credentials,
+                    self.max_age,
+                )
+            };
         // Extract requested method
         let requested_method = req.get_header("access-control-request-method")?;
         let requested_method = match requested_method.parse::<Method>() {
@@ -412,7 +523,7 @@ impl CorsMiddleware {
         };
 
         // Validate method
-        if !self.allowed_methods.contains(&requested_method) {
+        if !allowed_methods.contains(&requested_method) {
             warn!(
                 "CORS preflight: method {} not in allowed methods",
                 requested_method.as_str()
@@ -430,11 +541,10 @@ impl CorsMiddleware {
 
             // Check if all requested headers are allowed
             // If allowed_headers contains "*", allow all
-            let allow_all_headers = self.allowed_headers.iter().any(|h| h == "*");
+            let allow_all_headers = allowed_headers.iter().any(|h| h == "*");
             if !allow_all_headers {
                 for header in &requested_headers_list {
-                    if !self
-                        .allowed_headers
+                    if !allowed_headers
                         .iter()
                         .any(|h| h.eq_ignore_ascii_case(header))
                     {
@@ -456,7 +566,7 @@ impl CorsMiddleware {
         ));
         headers.push((
             std::sync::Arc::from("access-control-allow-methods"),
-            self.allowed_methods
+            allowed_methods
                 .iter()
                 .map(|m| m.as_str())
                 .collect::<Vec<_>>()
@@ -464,11 +574,11 @@ impl CorsMiddleware {
         ));
         headers.push((
             std::sync::Arc::from("access-control-allow-headers"),
-            self.allowed_headers.join(", "),
+            allowed_headers.join(", "),
         ));
 
         // Add credentials header if enabled
-        if self.allow_credentials {
+        if allow_credentials {
             headers.push((
                 std::sync::Arc::from("access-control-allow-credentials"),
                 "true".to_string(),
@@ -476,7 +586,7 @@ impl CorsMiddleware {
         }
 
         // Add preflight cache duration if configured
-        if let Some(age) = self.max_age {
+        if let Some(age) = max_age {
             headers.push((
                 std::sync::Arc::from("access-control-max-age"),
                 age.to_string(),
@@ -527,6 +637,7 @@ impl CorsMiddleware {
             allow_credentials: false, // Cannot be true with wildcard
             expose_headers: vec![],
             max_age: None,
+            route_configs: std::collections::HashMap::new(),
         }
     }
 }
@@ -576,6 +687,7 @@ impl Default for CorsMiddleware {
             allow_credentials: false,
             expose_headers: vec![],
             max_age: None,
+            route_configs: std::collections::HashMap::new(),
         }
     }
 }
@@ -608,8 +720,11 @@ impl Middleware for CorsMiddleware {
                 }
             };
 
-            // Validate origin
-            let validated_origin = match self.validate_origin(origin) {
+            // Get handler name for route-specific config lookup
+            let handler_name = req.handler_name.as_str();
+
+            // Validate origin (uses route-specific config if available)
+            let validated_origin = match self.validate_origin(origin, handler_name) {
                 Some(o) => o,
                 None => {
                     warn!("CORS preflight: invalid origin '{}'", origin);
@@ -630,7 +745,7 @@ impl Middleware for CorsMiddleware {
             // Non-OPTIONS request - validate origin but don't short-circuit
             // We'll add CORS headers in after() if origin is valid
             if let Some(origin) = req.get_header("origin") {
-                if self.validate_origin(origin).is_none() {
+                if self.validate_origin(origin, &req.handler_name).is_none() {
                     warn!("CORS: invalid origin '{}'", origin);
                     // Return 403 Forbidden for invalid origin
                     return Some(HandlerResponse::new(403, HeaderVec::new(), Value::Null));
@@ -674,8 +789,26 @@ impl Middleware for CorsMiddleware {
             return;
         }
 
-        // Validate origin
-        let validated_origin = match self.validate_origin(origin) {
+        // Get route-specific config if available
+        let (allowed_methods, allowed_headers, allow_credentials, expose_headers) =
+            if let Some(route_config) = self.get_route_config(&req.handler_name) {
+                (
+                    &route_config.allowed_methods,
+                    &route_config.allowed_headers,
+                    route_config.allow_credentials,
+                    &route_config.expose_headers,
+                )
+            } else {
+                (
+                    &self.allowed_methods,
+                    &self.allowed_headers,
+                    self.allow_credentials,
+                    &self.expose_headers,
+                )
+            };
+
+        // Validate origin (uses route-specific config if available)
+        let validated_origin = match self.validate_origin(origin, &req.handler_name) {
             Some(o) => o,
             None => {
                 // Invalid origin - should have been caught in before(), but log and skip
@@ -688,8 +821,7 @@ impl Middleware for CorsMiddleware {
         res.set_header("access-control-allow-origin", validated_origin);
 
         // Set allowed methods
-        let methods = self
-            .allowed_methods
+        let methods = allowed_methods
             .iter()
             .map(|m| m.as_str())
             .collect::<Vec<_>>()
@@ -697,17 +829,17 @@ impl Middleware for CorsMiddleware {
         res.set_header("access-control-allow-methods", methods);
 
         // Set allowed headers
-        let headers = self.allowed_headers.join(", ");
+        let headers = allowed_headers.join(", ");
         res.set_header("access-control-allow-headers", headers);
 
         // Add credentials header if enabled
-        if self.allow_credentials {
+        if allow_credentials {
             res.set_header("access-control-allow-credentials", "true".to_string());
         }
 
         // Add exposed headers if configured
-        if !self.expose_headers.is_empty() {
-            let exposed = self.expose_headers.join(", ");
+        if !expose_headers.is_empty() {
+            let exposed = expose_headers.join(", ");
             res.set_header("access-control-expose-headers", exposed);
         }
 

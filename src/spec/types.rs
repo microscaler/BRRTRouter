@@ -249,6 +249,9 @@ pub struct RouteMeta {
     pub estimated_request_body_bytes: Option<usize>,
     /// Vendor extension override for stack size (x-brrtrouter-stack-size)
     pub x_brrtrouter_stack_size: Option<usize>,
+    /// Route-specific CORS configuration from OpenAPI `x-cors` extension
+    /// If present, this overrides the global CORS middleware settings for this route
+    pub cors_config: Option<crate::middleware::RouteCorsConfig>,
 }
 
 impl RouteMeta {
