@@ -640,7 +640,7 @@ impl ContainerHarness {
                 .args(["inspect", "-f", "{{.State.Running}}", &container_id])
                 .output()
                 .expect("failed to check container status");
-            
+
             if !status_out.status.success() {
                 let stderr = String::from_utf8_lossy(&status_out.stderr);
                 panic!(
@@ -648,13 +648,13 @@ impl ContainerHarness {
                     container_id, stderr
                 );
             }
-            
+
             // Use `docker port` which is more reliable than inspect template
             let port_out = Command::new("docker")
                 .args(["port", &container_id, "8080/tcp"])
                 .output()
                 .expect("failed to get container port");
-            
+
             if port_out.status.success() {
                 let output = String::from_utf8_lossy(&port_out.stdout);
                 // docker port output format: "0.0.0.0:PORT" or "127.0.0.1:PORT"
@@ -667,7 +667,7 @@ impl ContainerHarness {
                     }
                 }
             }
-            
+
             retries += 1;
             if retries >= max_retries {
                 let stderr = String::from_utf8_lossy(&port_out.stderr);
@@ -685,7 +685,7 @@ impl ContainerHarness {
                     stderr
                 );
             }
-            
+
             // Exponential backoff: 100ms, 200ms, 400ms, 800ms, 1.6s, 3.2s, etc.
             let delay_ms = 100 * (1 << (retries - 1).min(6)); // Cap at 6.4s
             thread::sleep(Duration::from_millis(delay_ms));

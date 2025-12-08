@@ -62,14 +62,20 @@ impl BearerJwtProvider {
         {
             Ok(b) => b,
             Err(e) => {
-                debug!("BearerJWT token validation failed: invalid base64 payload - {:?}", e);
+                debug!(
+                    "BearerJWT token validation failed: invalid base64 payload - {:?}",
+                    e
+                );
                 return false;
             }
         };
         let json: Value = match serde_json::from_slice(&payload_bytes) {
             Ok(v) => v,
             Err(e) => {
-                debug!("BearerJWT token validation failed: invalid JSON payload - {:?}", e);
+                debug!(
+                    "BearerJWT token validation failed: invalid JSON payload - {:?}",
+                    e
+                );
                 return false;
             }
         };
@@ -77,7 +83,7 @@ impl BearerJwtProvider {
         let has_all_scopes = scopes
             .iter()
             .all(|s| token_scopes.split_whitespace().any(|ts| ts == s));
-        
+
         if !has_all_scopes {
             warn!(
                 "BearerJWT validation failed: missing required scopes (token: {:?}, required: {:?})",
@@ -85,7 +91,7 @@ impl BearerJwtProvider {
                 scopes
             );
         }
-        
+
         has_all_scopes
     }
 }
@@ -153,4 +159,3 @@ impl SecurityProvider for BearerJwtProvider {
         result
     }
 }
-

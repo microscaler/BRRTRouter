@@ -380,7 +380,7 @@ pub fn metrics_endpoint(
     dispatcher: Option<&Dispatcher>,
 ) -> io::Result<()> {
     let (stack_size, used_stack) = metrics.stack_usage();
-    
+
     // Pre-allocate buffer with better capacity estimation
     // Estimate: ~200 bytes per metric line × expected paths
     let status_stats = metrics.status_stats();
@@ -393,7 +393,11 @@ pub fn metrics_endpoint(
         "# HELP brrtrouter_active_requests Number of requests currently being processed\n",
     );
     body.push_str("# TYPE brrtrouter_active_requests gauge\n");
-    let _ = write!(body, "brrtrouter_active_requests {}\n", metrics.active_requests());
+    let _ = write!(
+        body,
+        "brrtrouter_active_requests {}\n",
+        metrics.active_requests()
+    );
 
     // Requests with status code labels (NEW - for Grafana "Error Rate" panel)
     body.push_str(
@@ -430,7 +434,10 @@ pub fn metrics_endpoint(
     );
     // Histogram sum and count
     let sum_secs = sum_ns as f64 / 1_000_000_000.0;
-    let _ = write!(body, "brrtrouter_request_duration_seconds_sum {sum_secs:.6}\n");
+    let _ = write!(
+        body,
+        "brrtrouter_request_duration_seconds_sum {sum_secs:.6}\n"
+    );
     let _ = write!(body, "brrtrouter_request_duration_seconds_count {count}\n");
 
     // Legacy metrics (backward compatible)
@@ -446,7 +453,11 @@ pub fn metrics_endpoint(
         "# HELP brrtrouter_auth_failures_total Total number of authentication failures\n",
     );
     body.push_str("# TYPE brrtrouter_auth_failures_total counter\n");
-    let _ = write!(body, "brrtrouter_auth_failures_total {}\n", metrics.auth_failures());
+    let _ = write!(
+        body,
+        "brrtrouter_auth_failures_total {}\n",
+        metrics.auth_failures()
+    );
 
     // Connection metrics
     body.push_str("# HELP brrtrouter_connection_closes_total Total number of connection close events (client disconnects)\n");
@@ -484,10 +495,7 @@ pub fn metrics_endpoint(
 
     body.push_str("# HELP brrtrouter_coroutine_stack_used_bytes Coroutine stack bytes used\n");
     body.push_str("# TYPE brrtrouter_coroutine_stack_used_bytes gauge\n");
-    let _ = write!(
-        body,
-        "brrtrouter_coroutine_stack_used_bytes {used_stack}\n",
-    );
+    let _ = write!(body, "brrtrouter_coroutine_stack_used_bytes {used_stack}\n",);
 
     // Worker pool metrics (NEW - for backpressure monitoring)
     if let Some(disp) = dispatcher {
@@ -889,7 +897,15 @@ impl HttpService for AppService {
                 if let Ok((bytes, ct)) = sf.load(p, None) {
                     res.status_code(200, "OK");
                     // JSF P1: Pre-intern common Content-Type headers to avoid format! allocation
-                    if matches!(ct, "text/html" | "text/css" | "application/javascript" | "application/json" | "text/plain" | "application/octet-stream") {
+                    if matches!(
+                        ct,
+                        "text/html"
+                            | "text/css"
+                            | "application/javascript"
+                            | "application/json"
+                            | "text/plain"
+                            | "application/octet-stream"
+                    ) {
                         // Use static string for common types
                         let header = match ct {
                             "text/html" => "Content-Type: text/html",
@@ -1270,24 +1286,23 @@ impl HttpService for AppService {
                         query: &route_match.query_params,
                         cookies: &cookies,
                     };
-                    route_match.route.security.iter()
-                        .find_map(|requirement| {
-                            requirement.0.iter().find_map(|(scheme_name, _)| {
-                                if let Some(provider) = self.security_providers.get(scheme_name) {
-                                    if let Some(scheme) = self.security_schemes.get(scheme_name) {
-                                        provider.extract_claims(scheme, &sec_req)
-                                    } else {
-                                        None
-                                    }
+                    route_match.route.security.iter().find_map(|requirement| {
+                        requirement.0.iter().find_map(|(scheme_name, _)| {
+                            if let Some(provider) = self.security_providers.get(scheme_name) {
+                                if let Some(scheme) = self.security_schemes.get(scheme_name) {
+                                    provider.extract_claims(scheme, &sec_req)
                                 } else {
                                     None
                                 }
-                            })
+                            } else {
+                                None
+                            }
                         })
+                    })
                 } else {
                     None
                 };
-                
+
                 dispatcher.dispatch_with_request_id(
                     route_match.clone(),
                     body,

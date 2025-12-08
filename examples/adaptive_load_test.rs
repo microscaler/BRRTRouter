@@ -473,15 +473,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .register_scenario(
                 scenario!("Pet API")
                     .set_weight(25)?
-                    .register_transaction(
-                        transaction!(list_pets).set_name("GET /pets (with auth)"),
-                    )
+                    .register_transaction(transaction!(list_pets).set_name("GET /pets (with auth)"))
                     .register_transaction(
                         transaction!(get_pet).set_name("GET /pets/{id} (with auth)"),
                     )
-                    .register_transaction(
-                        transaction!(add_pet).set_name("POST /pets (with auth)"),
-                    ),
+                    .register_transaction(transaction!(add_pet).set_name("POST /pets (with auth)")),
             )
             // User API (20% weight) - requires API key
             .register_scenario(
@@ -497,7 +493,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         transaction!(list_user_posts).set_name("GET /users/{id}/posts (with auth)"),
                     )
                     .register_transaction(
-                        transaction!(get_user_post).set_name("GET /users/{id}/posts/{post_id} (with auth)"),
+                        transaction!(get_user_post)
+                            .set_name("GET /users/{id}/posts/{post_id} (with auth)"),
                     )
                     .register_transaction(
                         transaction!(delete_user).set_name("DELETE /users/{id} (with auth)"),
@@ -517,7 +514,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         transaction!(post_item).set_name("POST /items/{id} (with auth)"),
                     )
                     .register_transaction(
-                        transaction!(get_admin_settings).set_name("GET /admin/settings (with auth)"),
+                        transaction!(get_admin_settings)
+                            .set_name("GET /admin/settings (with auth)"),
                     )
                     // Note: download endpoint included in adaptive but commented out in api_load_test
                     .register_transaction(

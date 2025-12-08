@@ -1,0 +1,25 @@
+# Preflight check exclusions
+# Files and directories listed here will be excluded from preflight checks
+# Format: one pattern per line (supports glob patterns)
+
+# Sample UI (SolidJS) - legitimate JavaScript/JSX files for UI project
+sample-ui/
+
+# Node modules (should already be in .gitignore, but ensure preflight respects it)
+**/node_modules/
+
+# Build artifacts and generated files
+target/
+
+# Vendored dependencies (third-party code)
+vendor/
+
+# Test fixtures and generated static assets
+tests/staticdata/
+examples/pet_store/static_site/
+
+# Shell scripts in scripts/ (TODO: migrate to Python per zero shell script policy)
+# These are still in active use (e.g., host-aware-build.sh in Tiltfile)
+# and need to be migrated to Python as part of a larger refactoring effort
+scripts/
+

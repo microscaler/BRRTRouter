@@ -31,9 +31,9 @@ pub const MAX_INLINE_PARAMS: usize = 8;
 
 /// Stack-allocated parameter storage for the hot path.
 /// Uses SmallVec to avoid heap allocation for routes with ≤8 params.
-/// 
+///
 /// # JSF Optimization (P0)
-/// 
+///
 /// Param names use `Arc<str>` instead of `String` because:
 /// - Names come from the static route tree (known at startup)
 /// - `Arc::clone()` is O(1) atomic increment vs O(n) string copy
@@ -309,7 +309,9 @@ impl Router {
                     "Slow route matching detected"
                 );
             } else {
-                info!(
+                // Only log at debug level to avoid accumulating events in performance tests
+                // Use debug! instead of info! to reduce tracing overhead
+                debug!(
                     method = %method,
                     path = %path,
                     handler_name = %handler_name,

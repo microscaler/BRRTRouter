@@ -219,14 +219,14 @@ fn bench_cache_eviction(c: &mut Criterion) {
     let secret = b"supersecret";
     let jwks = create_mock_jwks(secret);
     let server = MockJwksServer::new(jwks);
-    
+
     let mut group = c.benchmark_group("jwt_cache_eviction");
     for cache_size in [10, 100, 1000].iter() {
         let provider = JwksBearerProvider::new(&server.url())
             .issuer("https://issuer.example".to_string())
             .audience("my-audience".to_string())
             .claims_cache_size(*cache_size);
-        
+
         let scheme = SecurityScheme::Http {
             scheme: "bearer".to_string(),
             bearer_format: None,
@@ -251,7 +251,11 @@ fn bench_cache_eviction(c: &mut Criterion) {
                 b.iter(|| {
                     let token = make_token(secret, "k1", 3600);
                     let req = create_request(&token, &mut headers, &query, &cookies);
-                    black_box(provider.validate(black_box(&scheme), black_box(&[]), black_box(&req)))
+                    black_box(provider.validate(
+                        black_box(&scheme),
+                        black_box(&[]),
+                        black_box(&req),
+                    ))
                 })
             },
         );
@@ -282,9 +286,7 @@ fn bench_cache_stats(c: &mut Criterion) {
     }
 
     c.bench_function("jwt_cache_stats", |b| {
-        b.iter(|| {
-            black_box(provider.cache_stats())
-        })
+        b.iter(|| black_box(provider.cache_stats()))
     });
 }
 
@@ -297,4 +299,3 @@ criterion_group!(
     bench_cache_stats
 );
 criterion_main!(benches);
-

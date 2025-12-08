@@ -132,7 +132,10 @@ paths:
                     let (tx, _rx) = mpsc::channel();
                     disp.add_route(r.clone(), tx);
                 }
-                let names: Vec<String> = new_routes.iter().map(|r| r.handler_name.to_string()).collect();
+                let names: Vec<String> = new_routes
+                    .iter()
+                    .map(|r| r.handler_name.to_string())
+                    .collect();
                 updates_clone.lock().unwrap().push(names);
             },
         )
@@ -283,7 +286,10 @@ paths:
                     let (tx, _rx) = mpsc::channel();
                     disp.add_route(r.clone(), tx);
                 }
-                let names: Vec<String> = new_routes.iter().map(|r| r.handler_name.to_string()).collect();
+                let names: Vec<String> = new_routes
+                    .iter()
+                    .map(|r| r.handler_name.to_string())
+                    .collect();
                 updates_clone.lock().unwrap().push(names);
             },
         )
@@ -464,7 +470,10 @@ paths:
                     let (tx, _rx) = mpsc::channel();
                     disp.add_route(r.clone(), tx);
                 }
-                let names: Vec<String> = new_routes.iter().map(|r| r.handler_name.to_string()).collect();
+                let names: Vec<String> = new_routes
+                    .iter()
+                    .map(|r| r.handler_name.to_string())
+                    .collect();
                 updates_clone.lock().unwrap().push(names);
             },
         )
@@ -612,7 +621,10 @@ paths:
                     let (tx, _rx) = mpsc::channel();
                     disp.add_route(r.clone(), tx);
                 }
-                let names: Vec<String> = new_routes.iter().map(|r| r.handler_name.to_string()).collect();
+                let names: Vec<String> = new_routes
+                    .iter()
+                    .map(|r| r.handler_name.to_string())
+                    .collect();
                 updates_clone.lock().unwrap().push(names);
             },
         )

@@ -54,7 +54,7 @@ fn test_from_handler_non_string_params() {
         cookies: HeaderVec::new(),
         body: None,
         jwt_claims: None,
-            reply_tx: tx,
+        reply_tx: tx,
     };
 
     let typed = TypedHandlerRequest::<Req>::from_handler(req).expect("conversion failed");
@@ -102,7 +102,7 @@ fn test_header_cookie_params() {
         cookies,
         body: None,
         jwt_claims: None,
-            reply_tx: tx,
+        reply_tx: tx,
     };
 
     let typed = TypedHandlerRequest::<HeaderCookieReq>::from_handler(req).unwrap();
