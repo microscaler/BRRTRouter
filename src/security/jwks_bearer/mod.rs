@@ -366,9 +366,12 @@ impl JwksBearerProvider {
                     break;
                 }
                 
-                // Read current cache_ttl from atomic (picks up changes from cache_ttl() builder)
+                // Read current cache_ttl from atomic ONCE to ensure consistency
+                // This value is used for both refresh_interval calculation and change detection
+                // Reading twice could cause inconsistency if TTL changes between reads
+                let initial_cache_ttl_millis = cache_ttl_millis.load(Ordering::Acquire);
                 // Convert from milliseconds to Duration, preserving sub-second precision
-                let cache_ttl = Duration::from_millis(cache_ttl_millis.load(Ordering::Acquire));
+                let cache_ttl = Duration::from_millis(initial_cache_ttl_millis);
                 // Refresh interval: cache_ttl - 10s to stay ahead of expiration
                 // For cache_ttl <= 10s, use cache_ttl / 2 to avoid zero interval and CPU spinning
                 let refresh_interval = if cache_ttl <= Duration::from_secs(10) {
@@ -385,7 +388,6 @@ impl JwksBearerProvider {
                 // and recalculate refresh_interval with the new value
                 let sleep_duration = Duration::from_secs(1).min(refresh_interval);
                 let mut slept = Duration::ZERO;
-                let initial_cache_ttl_millis = cache_ttl_millis.load(Ordering::Acquire);
                 let mut ttl_changed = false;
                 while slept < refresh_interval {
                     if shutdown.load(Ordering::Acquire) {
