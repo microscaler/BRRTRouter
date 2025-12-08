@@ -7,7 +7,8 @@ use lru::LruCache;
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
+use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 use tracing::{debug, warn};
 use url::Url;
@@ -30,10 +31,18 @@ pub struct JwksBearerProvider {
     pub(super) aud: Option<String>,
     pub(super) leeway_secs: u64,
     cache_ttl: Duration,
+    // P1: Shared cache_ttl for background thread to read current value
+    // Stored as seconds (u64) in AtomicU64 for lock-free reads
+    cache_ttl_secs: Arc<std::sync::atomic::AtomicU64>,
+    // P1: Background refresh - use Arc<RwLock> for lock-free reads
     // kid -> DecodingKey
-    cache: std::sync::Mutex<(Instant, HashMap<String, jsonwebtoken::DecodingKey>)>,
+    cache: Arc<RwLock<(Instant, HashMap<String, jsonwebtoken::DecodingKey>)>>,
     // P2: Debounce JWKS refresh to prevent concurrent HTTP requests
-    refresh_in_progress: AtomicBool,
+    refresh_in_progress: Arc<AtomicBool>,
+    // P1: Background refresh task handle for lifecycle management
+    background_handle: Option<Arc<RwLock<Option<JoinHandle<()>>>>>,
+    // P1: Shutdown flag for graceful background thread termination
+    shutdown: Arc<AtomicBool>,
     // JSF P2: Cache decoded JWT claims to avoid repeated decode operations
     // Uses LRU cache with Arc<str> keys to prevent memory leaks and avoid allocations
     // P1: RwLock for explicit read/write separation (LruCache::get() requires &mut for LRU updates)
@@ -97,17 +106,24 @@ impl JwksBearerProvider {
             );
         }
 
-        Self {
+        let cache = Arc::new(RwLock::new((
+            Instant::now() - Duration::from_secs(1000),
+            HashMap::new(),
+        )));
+        let background_handle = Arc::new(RwLock::new(None::<JoinHandle<()>>));
+        let refresh_in_progress = Arc::new(AtomicBool::new(false));
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let cache_ttl_secs = Arc::new(std::sync::atomic::AtomicU64::new(300));
+        
+        let provider = Self {
             jwks_url: url_str,
             iss: None,
             aud: None,
             leeway_secs: 30,
             cache_ttl: Duration::from_secs(300),
-            cache: std::sync::Mutex::new((
-                Instant::now() - Duration::from_secs(1000),
-                HashMap::new(),
-            )),
-            refresh_in_progress: AtomicBool::new(false),
+            cache_ttl_secs: cache_ttl_secs.clone(),
+            cache: cache.clone(),
+            refresh_in_progress: refresh_in_progress.clone(),
             claims_cache: std::sync::RwLock::new(LruCache::new(
                 NonZeroUsize::new(1000).expect("claims_cache_size must be > 0"),
             )),
@@ -116,7 +132,19 @@ impl JwksBearerProvider {
             cache_hits: AtomicU64::new(0),
             cache_misses: AtomicU64::new(0),
             cache_evictions: AtomicU64::new(0),
-        }
+            background_handle: Some(background_handle.clone()),
+            shutdown: shutdown.clone(),
+        };
+        
+        // Start background refresh task
+        provider.start_background_refresh_internal(
+            cache,
+            refresh_in_progress,
+            shutdown,
+            background_handle,
+        );
+        
+        provider
     }
 
     /// Configure the expected JWT issuer claim
@@ -146,8 +174,11 @@ impl JwksBearerProvider {
     /// Configure the TTL for cached JWKS keys
     ///
     /// Keys are cached to avoid repeated HTTP requests to the JWKS URL.
+    /// This updates both the field and the background refresh thread's interval.
     pub fn cache_ttl(mut self, ttl: Duration) -> Self {
         self.cache_ttl = ttl;
+        // Update atomic value so background thread picks up the new TTL
+        self.cache_ttl_secs.store(ttl.as_secs(), Ordering::Release);
         self
     }
 
@@ -298,50 +329,106 @@ impl JwksBearerProvider {
             .and_then(|h| h.strip_prefix("Bearer "))
     }
 
-    fn refresh_jwks_if_needed(&self) {
-        let mut guard = self
-            .cache
-            .lock()
-            .expect("JWKS cache Mutex poisoned - critical error");
-        let (last, map) = &mut *guard;
-        if last.elapsed() < self.cache_ttl && !map.is_empty() {
-            return;
+    /// Start background refresh task that proactively refreshes JWKS
+    ///
+    /// The background task refreshes JWKS every (cache_ttl - 10s) to stay ahead of expiration.
+    /// This ensures validation threads never block on HTTP requests.
+    fn start_background_refresh_internal(
+        &self,
+        cache: Arc<RwLock<(Instant, HashMap<String, jsonwebtoken::DecodingKey>)>>,
+        refresh_in_progress: Arc<AtomicBool>,
+        shutdown: Arc<AtomicBool>,
+        handle_lock: Arc<RwLock<Option<JoinHandle<()>>>>,
+    ) {
+        let jwks_url = self.jwks_url.clone();
+        let cache_ttl_secs = self.cache_ttl_secs.clone();
+        
+        let handle = thread::spawn(move || {
+            loop {
+                // Check shutdown flag
+                if shutdown.load(Ordering::Acquire) {
+                    debug!("JWKS background refresh thread shutting down");
+                    break;
+                }
+                
+                // Read current cache_ttl from atomic (picks up changes from cache_ttl() builder)
+                let cache_ttl = Duration::from_secs(cache_ttl_secs.load(Ordering::Acquire));
+                // Refresh interval: cache_ttl - 10s to stay ahead of expiration
+                let refresh_interval = cache_ttl.saturating_sub(Duration::from_secs(10));
+                
+                // Sleep until next refresh time (with periodic shutdown checks)
+                let sleep_duration = Duration::from_secs(1).min(refresh_interval);
+                let mut slept = Duration::ZERO;
+                while slept < refresh_interval {
+                    if shutdown.load(Ordering::Acquire) {
+                        debug!("JWKS background refresh thread shutting down");
+                        return;
+                    }
+                    thread::sleep(sleep_duration);
+                    slept += sleep_duration;
+                }
+                
+                // Check if refresh is needed (non-blocking check)
+                // Re-read cache_ttl in case it changed during sleep
+                let current_cache_ttl = Duration::from_secs(cache_ttl_secs.load(Ordering::Acquire));
+                let needs_refresh = {
+                    if let Ok(guard) = cache.read() {
+                        guard.0.elapsed() >= current_cache_ttl || guard.1.is_empty()
+                    } else {
+                        // Lock poisoned, skip this cycle
+                        continue;
+                    }
+                };
+                
+                if needs_refresh {
+                    // Trigger refresh (non-blocking - don't wait for completion)
+                    Self::refresh_jwks_internal(
+                        &cache,
+                        &jwks_url,
+                        &refresh_in_progress,
+                    );
+                }
+            }
+        });
+        
+        if let Ok(mut guard) = handle_lock.write() {
+            *guard = Some(handle);
         }
-        drop(guard);
-
+    }
+    
+    /// Stop the background refresh task
+    ///
+    /// This should be called during cleanup/shutdown to gracefully stop the background thread.
+    pub fn stop_background_refresh(&self) {
+        // Signal shutdown
+        self.shutdown.store(true, Ordering::Release);
+        
+        // Wait for thread to finish
+        if let Some(handle_lock) = &self.background_handle {
+            if let Ok(mut guard) = handle_lock.write() {
+                if let Some(handle) = guard.take() {
+                    // Wait for thread to finish (will exit when shutdown flag is set)
+                    let _ = handle.join();
+                }
+            }
+        }
+    }
+    
+    /// Internal method to refresh JWKS (can be called from background thread or on-demand)
+    fn refresh_jwks_internal(
+        cache: &Arc<RwLock<(Instant, HashMap<String, jsonwebtoken::DecodingKey>)>>,
+        jwks_url: &str,
+        refresh_in_progress: &Arc<AtomicBool>,
+    ) {
         // P2: Debounce - check if another thread is already refreshing
-        // Use compare_and_swap to atomically set the flag
-        if self
-            .refresh_in_progress
+        if refresh_in_progress
             .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
             .is_err()
         {
-            // Another thread is refreshing, wait for it to complete
-            // HTTP requests can take up to 400ms (200ms timeout × 2 retries),
-            // so we poll with exponential backoff until refresh completes
-            let start = Instant::now();
-            let timeout = Duration::from_secs(1); // Allow 1s for refresh (400ms max + buffer)
-            let mut wait_ms = 10; // Start with 10ms
-
-            while self.refresh_in_progress.load(Ordering::Acquire) {
-                if start.elapsed() >= timeout {
-                    // Timeout - refresh may have failed, proceed to read cache anyway
-                    // (will use stale data or fail validation, which is acceptable)
-                    warn!("JWKS refresh timeout after 2s, proceeding with stale cache");
-                    return;
-                }
-                std::thread::sleep(Duration::from_millis(wait_ms));
-                // Exponential backoff: 10ms, 20ms, 40ms, 80ms, 100ms (capped)
-                wait_ms = (wait_ms * 2).min(100);
-            }
-            // Refresh completed, cache is now fresh - return to allow caller to read it
+            // Another thread is refreshing, skip this cycle
             return;
         }
-
-        // We're the thread doing the refresh - proceed
-        // The flag will be cleared when we're done (success or failure)
-        // P1: Optimized timeout and retries for faster failure (200ms timeout, 2 retries)
-        // This reduces maximum blocking time from 1.5s (500ms × 3) to 400ms (200ms × 2)
+        
         let refresh_start = Instant::now();
         let client = match reqwest::blocking::Client::builder()
             .timeout(Duration::from_millis(200))
@@ -349,42 +436,44 @@ impl JwksBearerProvider {
         {
             Ok(c) => c,
             Err(_) => {
-                // P2: Clear refresh flag on client build failure
-                self.refresh_in_progress.store(false, Ordering::Release);
+                refresh_in_progress.store(false, Ordering::Release);
                 return;
             }
         };
+        
         let mut body_opt: Option<String> = None;
         for _ in 0..2 {
-            if let Ok(r) = client.get(&self.jwks_url).send() {
+            if let Ok(r) = client.get(jwks_url).send() {
                 if let Ok(t) = r.text() {
                     body_opt = Some(t);
                     break;
                 }
             }
         }
+        
         let body = match body_opt {
             Some(b) => b,
             None => {
-                // P2: Clear refresh flag on failure
-                self.refresh_in_progress.store(false, Ordering::Release);
+                refresh_in_progress.store(false, Ordering::Release);
                 return;
             }
         };
+        
         let parsed: serde_json::Value = match serde_json::from_str(&body) {
             Ok(v) => v,
             Err(_) => {
-                // P2: Clear refresh flag on parse failure
-                self.refresh_in_progress.store(false, Ordering::Release);
+                refresh_in_progress.store(false, Ordering::Release);
                 return;
             }
         };
+        
         let mut new_map: HashMap<String, jsonwebtoken::DecodingKey> = HashMap::new();
         if let Some(keys) = parsed.get("keys").and_then(|v| v.as_array()) {
             for k in keys {
                 let kid = k.get("kid").and_then(|v| v.as_str()).unwrap_or("");
                 let kty = k.get("kty").and_then(|v| v.as_str()).unwrap_or("");
                 let alg = k.get("alg").and_then(|v| v.as_str()).unwrap_or("");
+                
                 // HMAC (oct) keys for HS* algorithms
                 if kty.eq_ignore_ascii_case("oct")
                     && (alg.eq_ignore_ascii_case("HS256")
@@ -392,7 +481,6 @@ impl JwksBearerProvider {
                         || alg.eq_ignore_ascii_case("HS512"))
                 {
                     if let Some(kval) = k.get("k").and_then(|v| v.as_str()) {
-                        // base64url decode secret
                         if let Ok(secret) =
                             base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(kval)
                         {
@@ -402,6 +490,7 @@ impl JwksBearerProvider {
                     }
                     continue;
                 }
+                
                 // RSA public keys for RS* algorithms
                 if kty.eq_ignore_ascii_case("RSA")
                     && (alg.eq_ignore_ascii_case("RS256")
@@ -416,41 +505,88 @@ impl JwksBearerProvider {
                         Some(v) => v,
                         None => continue,
                     };
-                    // jsonwebtoken expects base64url-encoded components for RSA
                     if let Ok(dk) = jsonwebtoken::DecodingKey::from_rsa_components(n, e) {
                         new_map.insert(kid.to_string(), dk);
                     }
                     continue;
                 }
-                // Unsupported kty/alg combinations are skipped
             }
         }
-        // P1: Log refresh latency for observability (get key count before moving)
+        
         let key_count = new_map.len();
         let refresh_duration = refresh_start.elapsed();
-
-        let mut guard = self
-            .cache
-            .lock()
-            .expect("JWKS cache Mutex poisoned - critical error");
-        *guard = (Instant::now(), new_map);
-
-        // P2: Clear refresh flag on success
-        self.refresh_in_progress.store(false, Ordering::Release);
-
+        
+        if let Ok(mut guard) = cache.write() {
+            *guard = (Instant::now(), new_map);
+        }
+        
+        refresh_in_progress.store(false, Ordering::Release);
+        
         debug!(
             "JWKS refresh completed in {:?} (keys: {})",
             refresh_duration, key_count
         );
     }
+    
+    /// P1: Non-blocking refresh check - triggers refresh if needed but doesn't wait
+    /// Uses stale cache if refresh fails (graceful degradation)
+    /// 
+    /// If cache is empty, does a blocking initial refresh to ensure first validation succeeds.
+    fn refresh_jwks_if_needed(&self) {
+        // Read current cache_ttl from atomic (picks up changes from cache_ttl() builder)
+        let current_cache_ttl = Duration::from_secs(self.cache_ttl_secs.load(Ordering::Acquire));
+        // Check if refresh is needed (non-blocking read)
+        let (needs_refresh, is_empty) = {
+            if let Ok(guard) = self.cache.read() {
+                (guard.0.elapsed() >= current_cache_ttl || guard.1.is_empty(), guard.1.is_empty())
+            } else {
+                // Lock poisoned, skip refresh
+                return;
+            }
+        };
+        
+        if !needs_refresh {
+            return;
+        }
+        
+        // If cache is empty, do a blocking initial refresh to ensure first validation succeeds
+        // After that, background refresh will keep it updated
+        if is_empty {
+            // Blocking initial refresh
+            Self::refresh_jwks_internal(
+                &self.cache,
+                &self.jwks_url,
+                &self.refresh_in_progress,
+            );
+        } else {
+            // Cache exists but expired - trigger refresh in background (non-blocking)
+            // If refresh fails, we'll use stale cache (graceful degradation)
+            let cache = self.cache.clone();
+            let jwks_url = self.jwks_url.clone();
+            let refresh_in_progress = self.refresh_in_progress.clone();
+            
+            // Spawn a one-off refresh task (don't wait for it)
+            thread::spawn(move || {
+                Self::refresh_jwks_internal(&cache, &jwks_url, &refresh_in_progress);
+            });
+        }
+    }
 
+    /// Get decoding key for a given key ID (kid)
+    ///
+    /// P1: Non-blocking - uses lock-free reads (RwLock) and triggers refresh in background.
+    /// If refresh fails, uses stale cache (graceful degradation).
     pub(super) fn get_key_for(&self, kid: &str) -> Option<jsonwebtoken::DecodingKey> {
+        // Trigger refresh if needed (non-blocking)
         self.refresh_jwks_if_needed();
-        let guard = self
-            .cache
-            .lock()
-            .expect("JWKS cache Mutex poisoned - critical error");
-        guard.1.get(kid).cloned()
+        
+        // Lock-free read (RwLock allows concurrent reads)
+        if let Ok(guard) = self.cache.read() {
+            guard.1.get(kid).cloned()
+        } else {
+            // Lock poisoned, return None
+            None
+        }
     }
 }
 
