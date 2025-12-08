@@ -354,7 +354,15 @@ impl JwksBearerProvider {
                 // Read current cache_ttl from atomic (picks up changes from cache_ttl() builder)
                 let cache_ttl = Duration::from_secs(cache_ttl_secs.load(Ordering::Acquire));
                 // Refresh interval: cache_ttl - 10s to stay ahead of expiration
-                let refresh_interval = cache_ttl.saturating_sub(Duration::from_secs(10));
+                // For cache_ttl <= 10s, use cache_ttl / 2 to avoid zero interval and CPU spinning
+                let refresh_interval = if cache_ttl <= Duration::from_secs(10) {
+                    // For very short TTLs, refresh at half the TTL interval
+                    cache_ttl / 2
+                } else {
+                    cache_ttl.saturating_sub(Duration::from_secs(10))
+                };
+                // Ensure minimum refresh interval of 1 second to prevent CPU spinning
+                let refresh_interval = refresh_interval.max(Duration::from_secs(1));
                 
                 // Sleep until next refresh time (with periodic shutdown checks)
                 let sleep_duration = Duration::from_secs(1).min(refresh_interval);
@@ -587,6 +595,16 @@ impl JwksBearerProvider {
             // Lock poisoned, return None
             None
         }
+    }
+}
+
+impl Drop for JwksBearerProvider {
+    /// Clean up background thread when provider is dropped
+    ///
+    /// Ensures the background refresh thread is properly stopped to prevent
+    /// resource leaks and orphaned threads holding references to shared state.
+    fn drop(&mut self) {
+        self.stop_background_refresh();
     }
 }
 

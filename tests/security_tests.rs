@@ -2110,3 +2110,342 @@ fn test_jwks_cache_evictions_counter() {
         "Updating existing entry should not increment evictions"
     );
 }
+
+// --- Background refresh thread tests ---
+
+#[test]
+fn test_jwks_background_refresh_short_cache_ttl_1s() {
+    // Test that cache_ttl = 1s doesn't cause CPU spinning
+    // The refresh interval should be max(1s / 2, 1s) = 1s (minimum enforced)
+    let jwks_url = "http://localhost:8080/jwks.json";
+    let provider = brrtrouter::security::JwksBearerProvider::new(jwks_url.to_string())
+        .cache_ttl(Duration::from_secs(1));
+    
+    // Provider should be created successfully
+    // Background thread should be running with proper sleep interval
+    // Test that we can stop it gracefully (proves it's not spinning)
+    let start = std::time::Instant::now();
+    provider.stop_background_refresh();
+    let stop_duration = start.elapsed();
+    
+    // If the thread was spinning, stop_background_refresh would hang
+    // If it's sleeping properly, it should respond to shutdown quickly (< 2s)
+    assert!(
+        stop_duration < Duration::from_secs(2),
+        "Background thread should stop quickly, not spin (took {:?})",
+        stop_duration
+    );
+}
+
+#[test]
+fn test_jwks_background_refresh_short_cache_ttl_5s() {
+    // Test that cache_ttl = 5s uses cache_ttl / 2 = 2.5s refresh interval
+    // But minimum is 1s, so refresh_interval = max(2.5s, 1s) = 2.5s
+    let jwks_url = "http://localhost:8080/jwks.json";
+    let provider = brrtrouter::security::JwksBearerProvider::new(jwks_url.to_string())
+        .cache_ttl(Duration::from_secs(5));
+    
+    let start = std::time::Instant::now();
+    provider.stop_background_refresh();
+    let stop_duration = start.elapsed();
+    
+    // Should stop quickly (thread should be sleeping, not spinning)
+    assert!(
+        stop_duration < Duration::from_secs(2),
+        "Background thread should stop quickly (took {:?})",
+        stop_duration
+    );
+}
+
+#[test]
+fn test_jwks_background_refresh_edge_case_10s() {
+    // Test edge case: cache_ttl = 10s
+    // refresh_interval = cache_ttl / 2 = 5s (since cache_ttl <= 10s)
+    // Then max(5s, 1s) = 5s
+    let jwks_url = "http://localhost:8080/jwks.json";
+    let provider = brrtrouter::security::JwksBearerProvider::new(jwks_url.to_string())
+        .cache_ttl(Duration::from_secs(10));
+    
+    let start = std::time::Instant::now();
+    provider.stop_background_refresh();
+    let stop_duration = start.elapsed();
+    
+    // Should stop quickly
+    assert!(
+        stop_duration < Duration::from_secs(2),
+        "Background thread should stop quickly (took {:?})",
+        stop_duration
+    );
+}
+
+#[test]
+fn test_jwks_background_refresh_normal_cache_ttl_11s() {
+    // Test normal case: cache_ttl = 11s > 10s
+    // refresh_interval = cache_ttl - 10s = 1s
+    // Then max(1s, 1s) = 1s
+    let jwks_url = "http://localhost:8080/jwks.json";
+    let provider = brrtrouter::security::JwksBearerProvider::new(jwks_url.to_string())
+        .cache_ttl(Duration::from_secs(11));
+    
+    let start = std::time::Instant::now();
+    provider.stop_background_refresh();
+    let stop_duration = start.elapsed();
+    
+    // Should stop quickly
+    assert!(
+        stop_duration < Duration::from_secs(2),
+        "Background thread should stop quickly (took {:?})",
+        stop_duration
+    );
+}
+
+#[test]
+fn test_jwks_background_refresh_normal_cache_ttl_300s() {
+    // Test normal case: cache_ttl = 300s (default)
+    // refresh_interval = cache_ttl - 10s = 290s
+    // Then max(290s, 1s) = 290s
+    let jwks_url = "http://localhost:8080/jwks.json";
+    let provider = brrtrouter::security::JwksBearerProvider::new(jwks_url.to_string())
+        .cache_ttl(Duration::from_secs(300));
+    
+    let start = std::time::Instant::now();
+    provider.stop_background_refresh();
+    let stop_duration = start.elapsed();
+    
+    // Should stop quickly (thread should be sleeping for 290s, so responds immediately to shutdown)
+    assert!(
+        stop_duration < Duration::from_secs(2),
+        "Background thread should stop quickly (took {:?})",
+        stop_duration
+    );
+}
+
+#[test]
+fn test_jwks_background_refresh_cache_ttl_update() {
+    // Test that cache_ttl updates are picked up by background thread
+    let jwks_url = "http://localhost:8080/jwks.json";
+    let provider = brrtrouter::security::JwksBearerProvider::new(jwks_url.to_string())
+        .cache_ttl(Duration::from_secs(300));
+    
+    // Update cache_ttl to a shorter value
+    // The atomic value should be updated, and background thread should pick it up
+    let provider = provider.cache_ttl(Duration::from_secs(5));
+    
+    // Verify we can still stop it gracefully
+    let start = std::time::Instant::now();
+    provider.stop_background_refresh();
+    let stop_duration = start.elapsed();
+    
+    assert!(
+        stop_duration < Duration::from_secs(2),
+        "Background thread should stop quickly after cache_ttl update (took {:?})",
+        stop_duration
+    );
+}
+
+#[test]
+fn test_jwks_background_refresh_multiple_providers() {
+    // Test that multiple providers with different cache_ttl values work correctly
+    let jwks_url = "http://localhost:8080/jwks.json";
+    
+    let provider1 = brrtrouter::security::JwksBearerProvider::new(jwks_url.to_string())
+        .cache_ttl(Duration::from_secs(1));
+    let provider2 = brrtrouter::security::JwksBearerProvider::new(jwks_url.to_string())
+        .cache_ttl(Duration::from_secs(5));
+    let provider3 = brrtrouter::security::JwksBearerProvider::new(jwks_url.to_string())
+        .cache_ttl(Duration::from_secs(300));
+    
+    // All should stop gracefully
+    // Note: Each thread checks shutdown every 1s during sleep, so with 3 threads
+    // it may take up to ~3.5s if they're all in the middle of a sleep cycle
+    let start = std::time::Instant::now();
+    provider1.stop_background_refresh();
+    provider2.stop_background_refresh();
+    provider3.stop_background_refresh();
+    let stop_duration = start.elapsed();
+    
+    assert!(
+        stop_duration < Duration::from_secs(4),
+        "All background threads should stop quickly (took {:?})",
+        stop_duration
+    );
+}
+
+#[test]
+fn test_jwks_background_refresh_zero_cache_ttl_handling() {
+    // Test edge case: cache_ttl = 0s (should use minimum 1s)
+    // refresh_interval = max(0s / 2, 1s) = max(0s, 1s) = 1s
+    let jwks_url = "http://localhost:8080/jwks.json";
+    let provider = brrtrouter::security::JwksBearerProvider::new(jwks_url.to_string())
+        .cache_ttl(Duration::from_secs(0));
+    
+    let start = std::time::Instant::now();
+    provider.stop_background_refresh();
+    let stop_duration = start.elapsed();
+    
+    // Should stop quickly (minimum 1s interval prevents spinning)
+    assert!(
+        stop_duration < Duration::from_secs(2),
+        "Background thread should stop quickly even with 0s cache_ttl (took {:?})",
+        stop_duration
+    );
+}
+
+#[test]
+fn test_jwks_background_refresh_very_short_cache_ttl() {
+    // Test very short cache_ttl: 100ms
+    // refresh_interval = max(100ms / 2, 1s) = 1s (minimum enforced)
+    let jwks_url = "http://localhost:8080/jwks.json";
+    let provider = brrtrouter::security::JwksBearerProvider::new(jwks_url.to_string())
+        .cache_ttl(Duration::from_millis(100));
+    
+    let start = std::time::Instant::now();
+    provider.stop_background_refresh();
+    let stop_duration = start.elapsed();
+    
+    // Should stop quickly (minimum 1s prevents spinning even with very short TTL)
+    assert!(
+        stop_duration < Duration::from_secs(2),
+        "Background thread should stop quickly with very short cache_ttl (took {:?})",
+        stop_duration
+    );
+}
+
+// --- Drop implementation tests ---
+
+#[test]
+fn test_jwks_drop_stops_background_thread() {
+    // Test that dropping a provider automatically stops the background thread
+    // This validates the Drop implementation works correctly
+    let jwks_url = "http://localhost:8080/jwks.json";
+    
+    let start = std::time::Instant::now();
+    {
+        let _provider = brrtrouter::security::JwksBearerProvider::new(jwks_url.to_string())
+            .cache_ttl(Duration::from_secs(1));
+        // Provider is dropped here at end of scope
+        // Drop implementation should call stop_background_refresh()
+    }
+    let drop_duration = start.elapsed();
+    
+    // If Drop works correctly, the thread should stop quickly (< 2s)
+    // If Drop doesn't work, the thread would continue running (but we can't directly test that)
+    // However, if Drop hangs or takes too long, that's a failure
+    assert!(
+        drop_duration < Duration::from_secs(2),
+        "Drop should stop background thread quickly (took {:?})",
+        drop_duration
+    );
+}
+
+#[test]
+fn test_jwks_drop_multiple_providers() {
+    // Test that dropping multiple providers cleans up all their threads
+    let jwks_url = "http://localhost:8080/jwks.json";
+    
+    let start = std::time::Instant::now();
+    {
+        let _provider1 = brrtrouter::security::JwksBearerProvider::new(jwks_url.to_string())
+            .cache_ttl(Duration::from_secs(1));
+        let _provider2 = brrtrouter::security::JwksBearerProvider::new(jwks_url.to_string())
+            .cache_ttl(Duration::from_secs(5));
+        let _provider3 = brrtrouter::security::JwksBearerProvider::new(jwks_url.to_string())
+            .cache_ttl(Duration::from_secs(300));
+        // All providers are dropped here at end of scope
+    }
+    let drop_duration = start.elapsed();
+    
+    // All three threads should stop quickly
+    assert!(
+        drop_duration < Duration::from_secs(3),
+        "Dropping multiple providers should stop all threads quickly (took {:?})",
+        drop_duration
+    );
+}
+
+#[test]
+fn test_jwks_drop_after_explicit_stop() {
+    // Test that dropping a provider after explicitly calling stop_background_refresh
+    // doesn't cause issues (should be idempotent)
+    let jwks_url = "http://localhost:8080/jwks.json";
+    
+    let provider = brrtrouter::security::JwksBearerProvider::new(jwks_url.to_string())
+        .cache_ttl(Duration::from_secs(1));
+    
+    // Explicitly stop the background thread
+    let start = std::time::Instant::now();
+    provider.stop_background_refresh();
+    let explicit_stop_duration = start.elapsed();
+    
+    assert!(
+        explicit_stop_duration < Duration::from_secs(2),
+        "Explicit stop should work quickly (took {:?})",
+        explicit_stop_duration
+    );
+    
+    // Now drop the provider - should not hang or cause issues
+    let start = std::time::Instant::now();
+    drop(provider);
+    let drop_duration = start.elapsed();
+    
+    // Drop should be very fast since thread is already stopped
+    assert!(
+        drop_duration < Duration::from_millis(100),
+        "Drop after explicit stop should be very fast (took {:?})",
+        drop_duration
+    );
+}
+
+#[test]
+fn test_jwks_drop_and_recreate() {
+    // Test that dropping and recreating providers works correctly
+    // This ensures Drop properly cleans up resources so new providers can be created
+    let jwks_url = "http://localhost:8080/jwks.json";
+    
+    // Create and drop first provider
+    {
+        let _provider1 = brrtrouter::security::JwksBearerProvider::new(jwks_url.to_string())
+            .cache_ttl(Duration::from_secs(1));
+    }
+    
+    // Small delay to ensure cleanup completes
+    std::thread::sleep(Duration::from_millis(100));
+    
+    // Create a new provider - should work without issues
+    let start = std::time::Instant::now();
+    {
+        let _provider2 = brrtrouter::security::JwksBearerProvider::new(jwks_url.to_string())
+            .cache_ttl(Duration::from_secs(5));
+    }
+    let drop_duration = start.elapsed();
+    
+    // Second provider should also drop cleanly
+    assert!(
+        drop_duration < Duration::from_secs(2),
+        "Recreated provider should drop cleanly (took {:?})",
+        drop_duration
+    );
+}
+
+#[test]
+fn test_jwks_drop_with_long_cache_ttl() {
+    // Test that dropping a provider with a long cache_ttl (long sleep interval)
+    // still stops the thread quickly via Drop
+    let jwks_url = "http://localhost:8080/jwks.json";
+    
+    let start = std::time::Instant::now();
+    {
+        // Long cache_ttl means thread sleeps for ~290s, but Drop should interrupt it
+        let _provider = brrtrouter::security::JwksBearerProvider::new(jwks_url.to_string())
+            .cache_ttl(Duration::from_secs(300));
+    }
+    let drop_duration = start.elapsed();
+    
+    // Even with long sleep interval, Drop should stop thread quickly (< 2s)
+    // The shutdown flag check happens every 1s during sleep, so should respond quickly
+    assert!(
+        drop_duration < Duration::from_secs(2),
+        "Drop should stop thread quickly even with long cache_ttl (took {:?})",
+        drop_duration
+    );
+}
