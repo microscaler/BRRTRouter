@@ -2279,7 +2279,7 @@ fn test_jwks_background_refresh_cache_ttl_update_during_sleep() {
     assert!(
         stop_duration < Duration::from_secs(2),
         "Background thread should respond quickly to cache_ttl changes during sleep (took {:?}). \
-         This verifies the thread checks cache_ttl_secs during sleep and wakes up early when it changes.",
+         This verifies the thread checks cache_ttl_millis during sleep and wakes up early when it changes.",
         stop_duration
     );
 }
@@ -2572,6 +2572,459 @@ fn test_jwks_background_refresh_zero_cache_ttl_handling() {
         "Background thread should stop quickly even with 0s cache_ttl (took {:?})",
         stop_duration
     );
+}
+
+#[test]
+fn test_jwks_sub_second_cache_ttl_precision() {
+    // Test that sub-second cache_ttl values preserve precision and don't cause constant refreshes
+    // This verifies the fix for the bug where Duration::from_millis(100) would be truncated
+    // to 0 seconds, causing every validation call to trigger a refresh.
+    //
+    // Before fix: Duration::from_millis(100).as_secs() = 0, causing constant refreshes
+    // After fix: Duration stored as milliseconds, preserving 100ms precision
+    use std::sync::atomic::{AtomicU32, Ordering};
+    
+    let request_count = Arc::new(AtomicU32::new(0));
+    let request_count_clone = request_count.clone();
+    
+    let secret = b"test-secret-key-32-bytes!!";
+    let k = base64url_no_pad(secret);
+    let jwks = json!({
+        "keys": [{
+            "kty": "oct",
+            "kid": "test-key",
+            "alg": "HS256",
+            "k": k
+        }]
+    });
+    
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let jwks_url = format!("http://{}:{}/jwks.json", addr.ip(), addr.port());
+    let jwks_body = jwks.to_string();
+    
+    // Spawn server that counts requests
+    std::thread::spawn(move || {
+        for _ in 0..10 {
+            match listener.accept() {
+                Ok((mut stream, _)) => {
+                    request_count_clone.fetch_add(1, Ordering::Relaxed);
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
+                        jwks_body.len(),
+                        jwks_body
+                    );
+                    let _ = stream.write_all(response.as_bytes());
+                }
+                Err(_) => break,
+            }
+        }
+    });
+    
+    // Create provider with sub-second cache_ttl (100ms)
+    // With the bug, this would cause constant refreshes on every validation
+    // With the fix, cache should be valid for 100ms and not refresh constantly
+    let provider = brrtrouter::security::JwksBearerProvider::new(jwks_url.clone())
+        .cache_ttl(Duration::from_millis(100));
+    
+    // Wait a moment for initial refresh
+    std::thread::sleep(Duration::from_millis(150));
+    
+    // Make multiple validation calls in quick succession
+    // If the bug existed, each call would see cache as expired (0s TTL)
+    // and spawn a refresh thread, causing many HTTP requests
+    let token = make_hs256_jwt(secret, "https://issuer.example", "audience", "test-key", 60);
+    let scheme = SecurityScheme::Http {
+        scheme: "bearer".to_string(),
+        bearer_format: None,
+        description: None,
+    };
+    
+    // Make 10 rapid validation calls
+    for _ in 0..10 {
+        let mut headers: HeaderVec = HeaderVec::new();
+        headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+        let req = SecurityRequest {
+            headers: &headers,
+            query: &ParamVec::new(),
+            cookies: &HeaderVec::new(),
+        };
+        
+        // Each call should use cached keys (not trigger refresh if cache is still valid)
+        let _ = provider.validate(&scheme, &[], &req);
+        
+        // Small delay to simulate rapid requests
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    
+    // Wait a bit more to ensure any background refreshes complete
+    std::thread::sleep(Duration::from_millis(200));
+    
+    // With the fix, we should have:
+    // - 1 initial refresh when provider is created
+    // - Possibly 1-2 more refreshes as cache expires (100ms TTL)
+    // - NOT 10+ refreshes (one per validation call)
+    let total_requests = request_count.load(Ordering::Relaxed);
+    
+    // Verify we didn't get excessive refreshes
+    // With 100ms TTL and 10 calls over ~50ms, cache should still be valid
+    // so we should have 1 initial refresh + maybe 1-2 more as cache expires
+    assert!(
+        total_requests <= 3,
+        "Sub-second cache_ttl should not cause constant refreshes. Got {} requests, expected <= 3",
+        total_requests
+    );
+    
+    // Clean up
+    provider.stop_background_refresh();
+}
+
+#[test]
+fn test_jwks_sub_second_cache_ttl_various_values() {
+    // Test various sub-second cache_ttl values to ensure precision is preserved
+    // This verifies the fix works for different millisecond values, not just 100ms
+    use std::sync::atomic::{AtomicU32, Ordering};
+    
+    let test_cases = vec![
+        (50, "50ms"),
+        (250, "250ms"),
+        (500, "500ms"),
+        (750, "750ms"),
+        (999, "999ms"),
+    ];
+    
+    for (millis, name) in test_cases {
+        let request_count = Arc::new(AtomicU32::new(0));
+        let request_count_clone = request_count.clone();
+        
+        let secret = b"test-secret-key-32-bytes!!";
+        let k = base64url_no_pad(secret);
+        let jwks = json!({
+            "keys": [{
+                "kty": "oct",
+                "kid": "test-key",
+                "alg": "HS256",
+                "k": k
+            }]
+        });
+        
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let jwks_url = format!("http://{}:{}/jwks.json", addr.ip(), addr.port());
+        let jwks_body = jwks.to_string();
+        
+        // Spawn server that counts requests
+        std::thread::spawn(move || {
+            for _ in 0..10 {
+                match listener.accept() {
+                    Ok((mut stream, _)) => {
+                        request_count_clone.fetch_add(1, Ordering::Relaxed);
+                        let response = format!(
+                            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
+                            jwks_body.len(),
+                            jwks_body
+                        );
+                        let _ = stream.write_all(response.as_bytes());
+                    }
+                    Err(_) => break,
+                }
+            }
+        });
+        
+        // Create provider with sub-second cache_ttl
+        let provider = brrtrouter::security::JwksBearerProvider::new(jwks_url.clone())
+            .cache_ttl(Duration::from_millis(millis));
+        
+        // Wait for initial refresh
+        std::thread::sleep(Duration::from_millis(millis + 50));
+        
+        // Make rapid validation calls - should not trigger constant refreshes
+        let token = make_hs256_jwt(secret, "https://issuer.example", "audience", "test-key", 60);
+        let scheme = SecurityScheme::Http {
+            scheme: "bearer".to_string(),
+            bearer_format: None,
+            description: None,
+        };
+        
+        // Make 5 rapid calls (should all use cached keys if cache is still valid)
+        for _ in 0..5 {
+            let mut headers: HeaderVec = HeaderVec::new();
+            headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+            let req = SecurityRequest {
+                headers: &headers,
+                query: &ParamVec::new(),
+                cookies: &HeaderVec::new(),
+            };
+            
+            let _ = provider.validate(&scheme, &[], &req);
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        
+        // Wait for any background refreshes
+        std::thread::sleep(Duration::from_millis(millis + 100));
+        
+        let total_requests = request_count.load(Ordering::Relaxed);
+        
+        // Should have 1 initial refresh + maybe 1-2 more as cache expires
+        // NOT 5+ refreshes (one per validation call)
+        assert!(
+            total_requests <= 3,
+            "Sub-second cache_ttl {} should not cause constant refreshes. Got {} requests, expected <= 3",
+            name,
+            total_requests
+        );
+        
+        provider.stop_background_refresh();
+    }
+}
+
+#[test]
+fn test_jwks_sub_second_cache_ttl_timing_accuracy() {
+    // Test that sub-second cache_ttl actually respects the timing
+    // This verifies the cache expires at the correct time, not immediately
+    use std::sync::atomic::{AtomicU32, Ordering};
+    
+    let request_count = Arc::new(AtomicU32::new(0));
+    let request_count_clone = request_count.clone();
+    
+    let secret = b"test-secret-key-32-bytes!!";
+    let k = base64url_no_pad(secret);
+    let jwks = json!({
+        "keys": [{
+            "kty": "oct",
+            "kid": "test-key",
+            "alg": "HS256",
+            "k": k
+        }]
+    });
+    
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let jwks_url = format!("http://{}:{}/jwks.json", addr.ip(), addr.port());
+    let jwks_body = jwks.to_string();
+    
+    // Spawn server that counts requests
+    std::thread::spawn(move || {
+        for _ in 0..10 {
+            match listener.accept() {
+                Ok((mut stream, _)) => {
+                    request_count_clone.fetch_add(1, Ordering::Relaxed);
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
+                        jwks_body.len(),
+                        jwks_body
+                    );
+                    let _ = stream.write_all(response.as_bytes());
+                }
+                Err(_) => break,
+            }
+        }
+    });
+    
+    // Create provider with 200ms cache_ttl
+    let provider = brrtrouter::security::JwksBearerProvider::new(jwks_url.clone())
+        .cache_ttl(Duration::from_millis(200));
+    
+    // Wait for initial refresh
+    std::thread::sleep(Duration::from_millis(250));
+    
+    let token = make_hs256_jwt(secret, "https://issuer.example", "audience", "test-key", 60);
+    let scheme = SecurityScheme::Http {
+        scheme: "bearer".to_string(),
+        bearer_format: None,
+        description: None,
+    };
+    
+    // Make validation calls before cache expires (should not trigger refresh)
+    for _ in 0..5 {
+        let mut headers: HeaderVec = HeaderVec::new();
+        headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+        let req = SecurityRequest {
+            headers: &headers,
+            query: &ParamVec::new(),
+            cookies: &HeaderVec::new(),
+        };
+        
+        let _ = provider.validate(&scheme, &[], &req);
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    
+    // At this point, we should have only 1 request (initial refresh)
+    // Cache should still be valid (200ms TTL, we've only waited ~250ms total)
+    let requests_before_expiry = request_count.load(Ordering::Relaxed);
+    assert!(
+        requests_before_expiry <= 2,
+        "Cache should still be valid before TTL expires. Got {} requests, expected <= 2",
+        requests_before_expiry
+    );
+    
+    // Now wait for cache to expire (200ms TTL + buffer)
+    std::thread::sleep(Duration::from_millis(300));
+    
+    // Make another validation call - should trigger refresh now that cache expired
+    let mut headers: HeaderVec = HeaderVec::new();
+    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    let req = SecurityRequest {
+        headers: &headers,
+        query: &ParamVec::new(),
+        cookies: &HeaderVec::new(),
+    };
+    let _ = provider.validate(&scheme, &[], &req);
+    
+    // Wait for refresh to complete
+    std::thread::sleep(Duration::from_millis(500));
+    
+    // Should have at least 2 requests now (initial + refresh after expiry)
+    let requests_after_expiry = request_count.load(Ordering::Relaxed);
+    assert!(
+        requests_after_expiry >= 2,
+        "Cache should trigger refresh after TTL expires. Got {} requests, expected >= 2",
+        requests_after_expiry
+    );
+    
+    provider.stop_background_refresh();
+}
+
+#[test]
+fn test_jwks_sub_second_cache_ttl_edge_cases() {
+    // Test edge cases: 0ms, 1ms to ensure they're handled correctly
+    let jwks_url = "http://localhost:8080/jwks.json";
+    
+    // Test 0ms - should use minimum 1s refresh interval
+    let provider0 = brrtrouter::security::JwksBearerProvider::new(jwks_url.to_string())
+        .cache_ttl(Duration::from_millis(0));
+    
+    let start = std::time::Instant::now();
+    provider0.stop_background_refresh();
+    let stop_duration = start.elapsed();
+    
+    assert!(
+        stop_duration < Duration::from_secs(2),
+        "0ms cache_ttl should use minimum refresh interval (took {:?})",
+        stop_duration
+    );
+    
+    // Test 1ms - should use minimum 1s refresh interval
+    let provider1 = brrtrouter::security::JwksBearerProvider::new(jwks_url.to_string())
+        .cache_ttl(Duration::from_millis(1));
+    
+    let start = std::time::Instant::now();
+    provider1.stop_background_refresh();
+    let stop_duration = start.elapsed();
+    
+    assert!(
+        stop_duration < Duration::from_secs(2),
+        "1ms cache_ttl should use minimum refresh interval (took {:?})",
+        stop_duration
+    );
+}
+
+#[test]
+fn test_jwks_sub_second_cache_ttl_no_thread_storm() {
+    // Test that sub-second cache_ttl doesn't cause thread storms under high concurrency
+    // This is the critical test - verifies the fix prevents the bug
+    use std::sync::atomic::{AtomicU32, Ordering};
+    
+    let request_count = Arc::new(AtomicU32::new(0));
+    let request_count_clone = request_count.clone();
+    
+    let secret = b"test-secret-key-32-bytes!!";
+    let k = base64url_no_pad(secret);
+    let jwks = json!({
+        "keys": [{
+            "kty": "oct",
+            "kid": "test-key",
+            "alg": "HS256",
+            "k": k
+        }]
+    });
+    
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let jwks_url = format!("http://{}:{}/jwks.json", addr.ip(), addr.port());
+    let jwks_body = jwks.to_string();
+    
+    // Spawn server that counts requests
+    std::thread::spawn(move || {
+        for _ in 0..100 {
+            match listener.accept() {
+                Ok((mut stream, _)) => {
+                    request_count_clone.fetch_add(1, Ordering::Relaxed);
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
+                        jwks_body.len(),
+                        jwks_body
+                    );
+                    let _ = stream.write_all(response.as_bytes());
+                }
+                Err(_) => break,
+            }
+        }
+    });
+    
+    // Create provider with sub-second cache_ttl (100ms)
+    // With the bug, this would cause a thread storm
+    let provider = Arc::new(
+        brrtrouter::security::JwksBearerProvider::new(jwks_url.clone())
+            .cache_ttl(Duration::from_millis(100))
+    );
+    
+    // Wait for initial refresh
+    std::thread::sleep(Duration::from_millis(150));
+    
+    let token = make_hs256_jwt(secret, "https://issuer.example", "audience", "test-key", 60);
+    let scheme = SecurityScheme::Http {
+        scheme: "bearer".to_string(),
+        bearer_format: None,
+        description: None,
+    };
+    
+    // Spawn 50 concurrent validation threads to simulate high load
+    // If the bug existed, each would see cache as expired (0s TTL) and spawn a refresh thread
+    let mut handles = Vec::new();
+    for _ in 0..50 {
+        let provider_clone = provider.clone();
+        let token_clone = token.clone();
+        let scheme_clone = scheme.clone();
+        
+        let handle = std::thread::spawn(move || {
+            let mut headers: HeaderVec = HeaderVec::new();
+            headers.push((Arc::from("authorization"), format!("Bearer {}", token_clone)));
+            let req = SecurityRequest {
+                headers: &headers,
+                query: &ParamVec::new(),
+                cookies: &HeaderVec::new(),
+            };
+            
+            // This should not trigger a refresh if cache is still valid
+            let _ = provider_clone.validate(&scheme_clone, &[], &req);
+        });
+        
+        handles.push(handle);
+    }
+    
+    // Wait for all threads to complete
+    for handle in handles {
+        let _ = handle.join();
+    }
+    
+    // Wait for any background refreshes to complete
+    std::thread::sleep(Duration::from_millis(500));
+    
+    let total_requests = request_count.load(Ordering::Relaxed);
+    
+    // With the fix, we should have:
+    // - 1 initial refresh
+    // - Possibly 1-2 more refreshes as cache expires
+    // - NOT 50+ refreshes (one per concurrent validation)
+    assert!(
+        total_requests <= 5,
+        "Sub-second cache_ttl should not cause thread storm. Got {} requests with 50 concurrent validations, expected <= 5",
+        total_requests
+    );
+    
+    // Clean up
+    provider.stop_background_refresh();
 }
 
 #[test]

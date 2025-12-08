@@ -32,8 +32,9 @@ pub struct JwksBearerProvider {
     pub(super) leeway_secs: u64,
     cache_ttl: Duration,
     // P1: Shared cache_ttl for background thread to read current value
-    // Stored as seconds (u64) in AtomicU64 for lock-free reads
-    cache_ttl_secs: Arc<std::sync::atomic::AtomicU64>,
+    // Stored as milliseconds (u64) in AtomicU64 for lock-free reads
+    // Using milliseconds preserves sub-second precision (e.g., 100ms TTL)
+    cache_ttl_millis: Arc<std::sync::atomic::AtomicU64>,
     // P1: Background refresh - use Arc<RwLock> for lock-free reads
     // kid -> DecodingKey
     cache: Arc<RwLock<(Instant, HashMap<String, jsonwebtoken::DecodingKey>)>>,
@@ -117,7 +118,7 @@ impl JwksBearerProvider {
         let refresh_in_progress = Arc::new(AtomicBool::new(false));
         let refresh_complete = Arc::new((Mutex::new(()), Condvar::new()));
         let shutdown = Arc::new(AtomicBool::new(false));
-        let cache_ttl_secs = Arc::new(std::sync::atomic::AtomicU64::new(300));
+        let cache_ttl_millis = Arc::new(std::sync::atomic::AtomicU64::new(300_000));
         
         let provider = Self {
             jwks_url: url_str,
@@ -125,7 +126,7 @@ impl JwksBearerProvider {
             aud: None,
             leeway_secs: 30,
             cache_ttl: Duration::from_secs(300),
-            cache_ttl_secs: cache_ttl_secs.clone(),
+            cache_ttl_millis: cache_ttl_millis.clone(),
             cache: cache.clone(),
             refresh_in_progress: refresh_in_progress.clone(),
             refresh_complete: refresh_complete.clone(),
@@ -148,6 +149,7 @@ impl JwksBearerProvider {
             refresh_complete,
             shutdown,
             background_handle,
+            cache_ttl_millis.clone(),
         );
         
         provider
@@ -181,10 +183,15 @@ impl JwksBearerProvider {
     ///
     /// Keys are cached to avoid repeated HTTP requests to the JWKS URL.
     /// This updates both the field and the background refresh thread's interval.
+    /// 
+    /// # Precision
+    /// 
+    /// Sub-second precision is preserved (e.g., `Duration::from_millis(100)` works correctly).
     pub fn cache_ttl(mut self, ttl: Duration) -> Self {
         self.cache_ttl = ttl;
         // Update atomic value so background thread picks up the new TTL
-        self.cache_ttl_secs.store(ttl.as_secs(), Ordering::Release);
+        // Store as milliseconds to preserve sub-second precision
+        self.cache_ttl_millis.store(ttl.as_millis() as u64, Ordering::Release);
         self
     }
 
@@ -346,9 +353,10 @@ impl JwksBearerProvider {
         refresh_complete: Arc<(Mutex<()>, Condvar)>,
         shutdown: Arc<AtomicBool>,
         handle_lock: Arc<RwLock<Option<JoinHandle<()>>>>,
+        cache_ttl_millis: Arc<std::sync::atomic::AtomicU64>,
     ) {
         let jwks_url = self.jwks_url.clone();
-        let cache_ttl_secs = self.cache_ttl_secs.clone();
+        let cache_ttl_millis = cache_ttl_millis.clone();
         
         let handle = thread::spawn(move || {
             loop {
@@ -359,7 +367,8 @@ impl JwksBearerProvider {
                 }
                 
                 // Read current cache_ttl from atomic (picks up changes from cache_ttl() builder)
-                let cache_ttl = Duration::from_secs(cache_ttl_secs.load(Ordering::Acquire));
+                // Convert from milliseconds to Duration, preserving sub-second precision
+                let cache_ttl = Duration::from_millis(cache_ttl_millis.load(Ordering::Acquire));
                 // Refresh interval: cache_ttl - 10s to stay ahead of expiration
                 // For cache_ttl <= 10s, use cache_ttl / 2 to avoid zero interval and CPU spinning
                 let refresh_interval = if cache_ttl <= Duration::from_secs(10) {
@@ -376,7 +385,7 @@ impl JwksBearerProvider {
                 // and recalculate refresh_interval with the new value
                 let sleep_duration = Duration::from_secs(1).min(refresh_interval);
                 let mut slept = Duration::ZERO;
-                let initial_cache_ttl_secs = cache_ttl_secs.load(Ordering::Acquire);
+                let initial_cache_ttl_millis = cache_ttl_millis.load(Ordering::Acquire);
                 let mut ttl_changed = false;
                 while slept < refresh_interval {
                     if shutdown.load(Ordering::Acquire) {
@@ -385,12 +394,12 @@ impl JwksBearerProvider {
                     }
                     // Check if cache_ttl has changed (cache_ttl() builder was called)
                     // If it has, break out of sleep loop early to recalculate refresh_interval
-                    let current_cache_ttl_secs = cache_ttl_secs.load(Ordering::Acquire);
-                    if current_cache_ttl_secs != initial_cache_ttl_secs {
+                    let current_cache_ttl_millis = cache_ttl_millis.load(Ordering::Acquire);
+                    if current_cache_ttl_millis != initial_cache_ttl_millis {
                         debug!(
-                            "JWKS cache_ttl changed from {}s to {}s, recalculating refresh interval",
-                            initial_cache_ttl_secs,
-                            current_cache_ttl_secs
+                            "JWKS cache_ttl changed from {}ms to {}ms, recalculating refresh interval",
+                            initial_cache_ttl_millis,
+                            current_cache_ttl_millis
                         );
                         ttl_changed = true;
                         break; // Break out of sleep loop to recalculate refresh_interval
@@ -591,7 +600,8 @@ impl JwksBearerProvider {
     /// to ensure concurrent threads don't fail validation due to empty cache.
     fn refresh_jwks_if_needed(&self) {
         // Read current cache_ttl from atomic (picks up changes from cache_ttl() builder)
-        let current_cache_ttl = Duration::from_secs(self.cache_ttl_secs.load(Ordering::Acquire));
+        // Convert from milliseconds to Duration, preserving sub-second precision
+        let current_cache_ttl = Duration::from_millis(self.cache_ttl_millis.load(Ordering::Acquire));
         // Check if refresh is needed (non-blocking read)
         let (needs_refresh, is_empty) = {
             if let Ok(guard) = self.cache.read() {
