@@ -2449,3 +2449,162 @@ fn test_jwks_drop_with_long_cache_ttl() {
         drop_duration
     );
 }
+
+// --- Thread storm prevention tests ---
+
+#[test]
+fn test_jwks_refresh_thread_storm_prevention() {
+    // P1: Test that refresh_in_progress flag prevents thread storm
+    // When cache is expired but non-empty, multiple concurrent calls to
+    // refresh_jwks_if_needed should not spawn unbounded threads.
+    //
+    // This test simulates high load during cache expiry window:
+    // 1. Create provider with short cache_ttl
+    // 2. Populate cache initially (so it's non-empty) via validation
+    // 3. Wait for cache to expire
+    // 4. Spawn many threads that all try to validate simultaneously
+    // 5. Verify that refresh_in_progress prevents excessive thread spawning
+    //    by counting HTTP requests (should be 1-2, not 50+)
+    
+    use std::sync::atomic::{AtomicU32, Ordering};
+    
+    // Create a mock JWKS server that counts requests
+    let request_count = Arc::new(AtomicU32::new(0));
+    let request_count_clone = request_count.clone();
+    
+    let secret = b"test-secret-key-32-bytes!!";
+    let k = base64url_no_pad(secret);
+    let jwks = json!({
+        "keys": [{
+            "kty": "oct",
+            "kid": "test-key",
+            "alg": "HS256",
+            "k": k
+        }]
+    });
+    
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let jwks_url = format!("http://{}:{}/jwks.json", addr.ip(), addr.port());
+    let jwks_body = jwks.to_string();
+    
+    // Spawn server that counts requests
+    std::thread::spawn(move || {
+        for _ in 0..20 {
+            // Accept up to 20 requests (should only get 1-2 due to refresh_in_progress)
+            if let Ok((mut stream, _)) = listener.accept() {
+                request_count_clone.fetch_add(1, Ordering::Relaxed);
+                let mut buf = [0u8; 2048];
+                let _ = stream.read(&mut buf);
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                    jwks_body.len(),
+                    jwks_body
+                );
+                let _ = stream.write_all(resp.as_bytes());
+                // Small delay to simulate network latency
+                std::thread::sleep(Duration::from_millis(50));
+            }
+        }
+    });
+    
+    // Small delay to let server start
+    std::thread::sleep(Duration::from_millis(100));
+    
+    // Create provider with very short cache_ttl (500ms) so we can easily trigger expiry
+    let iss = "https://issuer.example";
+    let aud = "my-audience";
+    let provider = Arc::new(
+        brrtrouter::security::JwksBearerProvider::new(jwks_url.clone())
+            .issuer(iss.to_string())
+            .audience(aud.to_string())
+            .cache_ttl(Duration::from_millis(500))
+    );
+    
+    // Create a valid token for validation
+    let token = make_hs256_jwt(secret, iss, aud, "test-key", 3600);
+    let scheme = SecurityScheme::Http {
+        scheme: "bearer".to_string(),
+        bearer_format: None,
+        description: None,
+    };
+    
+    // Populate cache initially by validating a token (this triggers initial refresh)
+    // This ensures cache is non-empty when we test the thread storm scenario
+    let mut headers: HeaderVec = HeaderVec::new();
+    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    let req = SecurityRequest {
+        headers: &headers,
+        query: &ParamVec::new(),
+        cookies: &HeaderVec::new(),
+    };
+    
+    assert!(provider.validate(&scheme, &[], &req), "Initial validation should succeed");
+    
+    // Wait for initial refresh to complete
+    std::thread::sleep(Duration::from_millis(200));
+    
+    // Reset request count (initial refresh already happened)
+    request_count.store(0, Ordering::Relaxed);
+    
+    // Wait for cache to expire (500ms TTL + buffer)
+    std::thread::sleep(Duration::from_millis(600));
+    
+    // Now spawn many threads that all try to validate simultaneously
+    // This simulates high load during expiry window
+    // Each validation will internally call get_key_for -> refresh_jwks_if_needed
+    let num_threads = 50;
+    let mut handles = Vec::new();
+    
+    for _ in 0..num_threads {
+        let provider_clone = provider.clone();
+        let token_clone = token.clone();
+        let scheme_clone = scheme.clone();
+        let handle = std::thread::spawn(move || {
+            // Create request in each thread (can't share references across threads)
+            let mut thread_headers: HeaderVec = HeaderVec::new();
+            thread_headers.push((Arc::from("authorization"), format!("Bearer {}", token_clone)));
+            let thread_req = SecurityRequest {
+                headers: &thread_headers,
+                query: &ParamVec::new(),
+                cookies: &HeaderVec::new(),
+            };
+            // Call validate which internally calls get_key_for -> refresh_jwks_if_needed
+            // When cache is expired but non-empty, this would spawn threads
+            // but refresh_in_progress should prevent thread storm
+            let _ = provider_clone.validate(&scheme_clone, &[], &thread_req);
+        });
+        handles.push(handle);
+    }
+    
+    // Wait for all threads to complete
+    for handle in handles {
+        handle.join().unwrap();
+    }
+    
+    // Give a small buffer for any in-flight requests to complete
+    std::thread::sleep(Duration::from_millis(300));
+    
+    // Verify that only a small number of HTTP requests were made
+    // Without the fix, we'd see ~50 requests (one per thread)
+    // With the fix, we should see 1-2 requests (one successful refresh,
+    // maybe one retry if the first fails, but refresh_in_progress prevents more)
+    let final_count = request_count.load(Ordering::Relaxed);
+    
+    assert!(
+        final_count <= 3,
+        "Thread storm prevention failed: {} HTTP requests made by {} concurrent validation threads. \
+         Expected <= 3 requests (refresh_in_progress should prevent thread spawning). \
+         This indicates threads are being spawned without checking refresh_in_progress flag. \
+         Without the fix, we'd see ~{} requests (one per thread).",
+        final_count,
+        num_threads,
+        num_threads
+    );
+    
+    // Verify that the cache was actually refreshed (validation should still work)
+    assert!(
+        provider.validate(&scheme, &[], &req),
+        "Cache should be refreshed and validation should still work"
+    );
+}

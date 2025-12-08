@@ -557,12 +557,23 @@ impl JwksBearerProvider {
             );
         } else {
             // Cache exists but expired - trigger refresh in background (non-blocking)
-            // If refresh fails, we'll use stale cache (graceful degradation)
+            // P1: Check if refresh is already in progress to avoid thread storm
+            // Under load during expiry window, multiple requests would spawn threads
+            // that immediately return (refresh_jwks_internal checks the flag and exits),
+            // causing unbounded thread creation and CPU/memory pressure
+            if self.refresh_in_progress.load(Ordering::Acquire) {
+                // Refresh already in progress, skip spawning thread
+                // The background refresh thread or another request thread is handling it
+                return;
+            }
+            
+            // Spawn a one-off refresh task (don't wait for it)
+            // refresh_jwks_internal will atomically check and set the flag to prevent
+            // concurrent refreshes, so at most one thread will do the actual work
             let cache = self.cache.clone();
             let jwks_url = self.jwks_url.clone();
             let refresh_in_progress = self.refresh_in_progress.clone();
             
-            // Spawn a one-off refresh task (don't wait for it)
             thread::spawn(move || {
                 Self::refresh_jwks_internal(&cache, &jwks_url, &refresh_in_progress);
             });
