@@ -49,7 +49,7 @@ impl RouteCorsConfig {
     
     /// Create a route CORS config with origins from config.yaml
     /// This is called during middleware initialization to merge config.yaml origins
-    pub(crate) fn with_origins(mut self, origins: &[&str]) -> Self {
+    pub fn with_origins(mut self, origins: &[&str]) -> Self {
         if origins.iter().any(|o| *o == "*") {
             self.origin_validation = OriginValidation::Wildcard;
         } else {

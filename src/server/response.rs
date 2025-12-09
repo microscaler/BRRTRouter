@@ -1,7 +1,6 @@
 use crate::dispatcher::HeaderVec;
 use may_minihttp::Response;
 use serde_json::Value;
-use std::sync::Arc;
 
 fn status_reason(status: u16) -> &'static str {
     match status {
