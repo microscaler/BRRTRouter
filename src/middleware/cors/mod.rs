@@ -179,9 +179,10 @@ impl CorsMiddleware {
         };
 
         // Validate: cannot use wildcard with credentials (CORS spec requirement)
-        // This panic is intentional: invalid configuration should fail fast at startup
-        #[allow(clippy::panic)] // Intentional: configuration validation must fail fast
+        // JSF Compliance: Panics only during initialization, never on hot path
+        // This method is only called during startup in templates/main.rs.txt
         if allow_credentials && origin_validation.is_wildcard() {
+            #[allow(clippy::panic)]
             panic!(
                 "CORS configuration error: Cannot use wildcard origin (*) with credentials. \
                 When allow_credentials is true, you must specify exact origins."
@@ -287,18 +288,20 @@ impl CorsMiddleware {
             .map(|p| Regex::new(p))
             .collect();
 
-        // This panic is intentional: invalid configuration should fail fast at startup
-        #[allow(clippy::panic)] // Intentional: configuration validation must fail fast
+        // JSF Compliance: Panics only during initialization, never on hot path
+        // This method is only called during startup in templates/main.rs.txt
         let patterns = patterns.unwrap_or_else(|e| {
+            #[allow(clippy::panic)]
             panic!("CORS configuration error: Invalid regex pattern: {}", e);
         });
 
         let origin_validation = OriginValidation::Regex(patterns);
 
         // Validate: cannot use wildcard with credentials
-        // This panic is intentional: invalid configuration should fail fast at startup
-        #[allow(clippy::panic)] // Intentional: configuration validation must fail fast
+        // JSF Compliance: Panics only during initialization, never on hot path
+        // This method is only called during startup in templates/main.rs.txt
         if allow_credentials && origin_validation.is_wildcard() {
+            #[allow(clippy::panic)]
             panic!(
                 "CORS configuration error: Cannot use wildcard patterns with credentials. \
                 When allow_credentials is true, you must use exact origins or specific regex patterns."

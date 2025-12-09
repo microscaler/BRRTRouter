@@ -80,11 +80,12 @@ impl JwksBearerProvider {
 
         // P4 Security: Validate JWKS URL requires HTTPS (except localhost for testing)
         // SECURITY FIX: Parse URL properly to prevent hostname prefix attacks (e.g., localhost.attacker.com)
-        // This panic is intentional: invalid configuration should fail fast at startup
-        #[allow(clippy::panic)] // Intentional: configuration validation must fail fast
+        // JSF Compliance: Panics only during initialization, never on hot path
+        // This method is only called during provider construction (startup)
         let parsed_url = match Url::parse(&url_str) {
             Ok(u) => u,
             Err(e) => {
+                #[allow(clippy::panic)]
                 panic!("JWKS URL is invalid: {}. Error: {}", url_str, e);
             }
         };
@@ -94,24 +95,24 @@ impl JwksBearerProvider {
             // HTTPS is always allowed
         } else if parsed_url.scheme() == "http" {
             // HTTP only allowed for exact localhost or 127.0.0.1 (not subdomains)
-            // This panic is intentional: invalid configuration should fail fast at startup
-            #[allow(clippy::panic)] // Intentional: configuration validation must fail fast
+            // JSF Compliance: Panics only during initialization, never on hot path
             let host = match parsed_url.host_str() {
                 Some(h) => h,
                 None => {
+                    #[allow(clippy::panic)]
                     panic!("JWKS URL must have a valid hostname. Got: {}", url_str);
                 }
             };
 
             // Only allow exact "localhost" or "127.0.0.1" - reject subdomains like "localhost.attacker.com"
-            // This panic is intentional: invalid configuration should fail fast at startup
-            #[allow(clippy::panic)] // Intentional: configuration validation must fail fast
+            // JSF Compliance: Panics only during initialization, never on hot path
             if host != "localhost" && host != "127.0.0.1" {
+                #[allow(clippy::panic)]
                 panic!("JWKS URL must use HTTPS for security (HTTP only allowed for localhost/127.0.0.1). Got: {}", url_str);
             }
         } else {
-            // This panic is intentional: invalid configuration should fail fast at startup
-            #[allow(clippy::panic)] // Intentional: configuration validation must fail fast
+            // JSF Compliance: Panics only during initialization, never on hot path
+            #[allow(clippy::panic)]
             panic!(
                 "JWKS URL must use HTTPS or HTTP (for localhost only). Got: {}",
                 url_str
@@ -225,9 +226,10 @@ impl JwksBearerProvider {
     ///
     /// * `size` - Maximum number of cached token claims
     pub fn claims_cache_size(mut self, size: usize) -> Self {
-        // This panic is intentional: invalid configuration should fail fast at startup
-        #[allow(clippy::panic)] // Intentional: configuration validation must fail fast
+        // JSF Compliance: Panics only during initialization, never on hot path
+        // This method is only called during provider construction (startup)
         if size == 0 {
+            #[allow(clippy::panic)]
             panic!("claims_cache_size must be > 0");
         }
         self.claims_cache_size = size;
