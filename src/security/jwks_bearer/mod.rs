@@ -80,6 +80,8 @@ impl JwksBearerProvider {
 
         // P4 Security: Validate JWKS URL requires HTTPS (except localhost for testing)
         // SECURITY FIX: Parse URL properly to prevent hostname prefix attacks (e.g., localhost.attacker.com)
+        // This panic is intentional: invalid configuration should fail fast at startup
+        #[allow(clippy::panic)] // Intentional: configuration validation must fail fast
         let parsed_url = match Url::parse(&url_str) {
             Ok(u) => u,
             Err(e) => {
@@ -92,6 +94,8 @@ impl JwksBearerProvider {
             // HTTPS is always allowed
         } else if parsed_url.scheme() == "http" {
             // HTTP only allowed for exact localhost or 127.0.0.1 (not subdomains)
+            // This panic is intentional: invalid configuration should fail fast at startup
+            #[allow(clippy::panic)] // Intentional: configuration validation must fail fast
             let host = match parsed_url.host_str() {
                 Some(h) => h,
                 None => {
@@ -100,10 +104,14 @@ impl JwksBearerProvider {
             };
 
             // Only allow exact "localhost" or "127.0.0.1" - reject subdomains like "localhost.attacker.com"
+            // This panic is intentional: invalid configuration should fail fast at startup
+            #[allow(clippy::panic)] // Intentional: configuration validation must fail fast
             if host != "localhost" && host != "127.0.0.1" {
                 panic!("JWKS URL must use HTTPS for security (HTTP only allowed for localhost/127.0.0.1). Got: {}", url_str);
             }
         } else {
+            // This panic is intentional: invalid configuration should fail fast at startup
+            #[allow(clippy::panic)] // Intentional: configuration validation must fail fast
             panic!(
                 "JWKS URL must use HTTPS or HTTP (for localhost only). Got: {}",
                 url_str
@@ -217,6 +225,8 @@ impl JwksBearerProvider {
     ///
     /// * `size` - Maximum number of cached token claims
     pub fn claims_cache_size(mut self, size: usize) -> Self {
+        // This panic is intentional: invalid configuration should fail fast at startup
+        #[allow(clippy::panic)] // Intentional: configuration validation must fail fast
         if size == 0 {
             panic!("claims_cache_size must be > 0");
         }

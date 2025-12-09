@@ -139,7 +139,15 @@ mod tests {
                     std::thread::sleep(Duration::from_millis(50));
                     continue;
                 }
+                // In test code, panicking on read errors is acceptable for test failure clarity
+                #[cfg(test)]
+                #[allow(clippy::panic)] // Test code: panicking on I/O errors is acceptable
                 Err(e) => panic!("read error: {:?}", e),
+                #[cfg(not(test))]
+                Err(e) => {
+                    // In production, this should return an error, but this function is only used in tests
+                    panic!("read error: {:?}", e);
+                }
             }
         }
         let header_end = header_end.unwrap_or(buf.len());
@@ -166,7 +174,15 @@ mod tests {
                         std::thread::sleep(Duration::from_millis(50));
                         continue;
                     }
-                    Err(e) => panic!("read error: {:?}", e),
+                    // In test code, panicking on read errors is acceptable for test failure clarity
+                #[cfg(test)]
+                #[allow(clippy::panic)] // Test code: panicking on I/O errors is acceptable
+                Err(e) => panic!("read error: {:?}", e),
+                #[cfg(not(test))]
+                Err(e) => {
+                    // In production, this should return an error, but this function is only used in tests
+                    panic!("read error: {:?}", e);
+                }
                 }
             }
         } else {
@@ -181,7 +197,15 @@ mod tests {
                     {
                         break;
                     }
-                    Err(e) => panic!("read error: {:?}", e),
+                    // In test code, panicking on read errors is acceptable for test failure clarity
+                #[cfg(test)]
+                #[allow(clippy::panic)] // Test code: panicking on I/O errors is acceptable
+                Err(e) => panic!("read error: {:?}", e),
+                #[cfg(not(test))]
+                Err(e) => {
+                    // In production, this should return an error, but this function is only used in tests
+                    panic!("read error: {:?}", e);
+                }
                 }
             }
         }
@@ -228,6 +252,8 @@ mod tests {
         drop(listener);
         let handle = HttpServer(HandlerService).start(addr).unwrap();
         let resp = send_request(&addr, "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n");
+        // SAFETY: may::CoroutineHandle::coroutine().cancel() is marked unsafe by the may runtime.
+        // Safe in tests: coroutine handle is valid, cancellation is for test cleanup
         unsafe { handle.coroutine().cancel() };
         let (status, info, body) = parse_parts(&resp);
         assert_eq!(status, 201);
@@ -243,6 +269,8 @@ mod tests {
         drop(listener);
         let handle = HttpServer(ErrorService).start(addr).unwrap();
         let resp = send_request(&addr, "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n");
+        // SAFETY: may::CoroutineHandle::coroutine().cancel() is marked unsafe by the may runtime.
+        // Safe in tests: coroutine handle is valid, cancellation is for test cleanup
         unsafe { handle.coroutine().cancel() };
         let (status, ct, body) = parse_parts(&resp);
         assert_eq!(status, 404);

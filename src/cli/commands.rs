@@ -218,6 +218,8 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
             let mut dispatcher = Dispatcher::new();
             for r in &routes {
                 let (tx, rx) = mpsc::channel();
+                // SAFETY: may::coroutine::spawn() is marked unsafe by the may runtime.
+                // Safe because: May runtime is initialized, handler is Send + 'static
                 unsafe {
                     coroutine::spawn(move || {
                         for req in rx.iter() {
@@ -245,6 +247,8 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
                     |disp, new_routes| {
                         for r in &new_routes {
                             let (tx, rx) = mpsc::channel();
+                            // SAFETY: may::coroutine::spawn() is marked unsafe by the may runtime.
+                            // Safe because: May runtime is initialized, handler is Send + 'static
                             unsafe {
                                 coroutine::spawn(move || {
                                     for req in rx.iter() {

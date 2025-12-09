@@ -121,6 +121,8 @@ impl CorsMiddlewareBuilder {
                 self.origin_validation = Some(OriginValidation::Regex(regexes));
             }
             Err(e) => {
+                // This panic is intentional: invalid configuration should fail fast at startup
+                #[allow(clippy::panic)] // Intentional: configuration validation must fail fast
                 panic!("CORS builder error: Invalid regex pattern: {}", e);
             }
         }

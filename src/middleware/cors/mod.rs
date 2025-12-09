@@ -179,6 +179,8 @@ impl CorsMiddleware {
         };
 
         // Validate: cannot use wildcard with credentials (CORS spec requirement)
+        // This panic is intentional: invalid configuration should fail fast at startup
+        #[allow(clippy::panic)] // Intentional: configuration validation must fail fast
         if allow_credentials && origin_validation.is_wildcard() {
             panic!(
                 "CORS configuration error: Cannot use wildcard origin (*) with credentials. \
@@ -285,6 +287,8 @@ impl CorsMiddleware {
             .map(|p| Regex::new(p))
             .collect();
 
+        // This panic is intentional: invalid configuration should fail fast at startup
+        #[allow(clippy::panic)] // Intentional: configuration validation must fail fast
         let patterns = patterns.unwrap_or_else(|e| {
             panic!("CORS configuration error: Invalid regex pattern: {}", e);
         });
@@ -292,6 +296,8 @@ impl CorsMiddleware {
         let origin_validation = OriginValidation::Regex(patterns);
 
         // Validate: cannot use wildcard with credentials
+        // This panic is intentional: invalid configuration should fail fast at startup
+        #[allow(clippy::panic)] // Intentional: configuration validation must fail fast
         if allow_credentials && origin_validation.is_wildcard() {
             panic!(
                 "CORS configuration error: Cannot use wildcard patterns with credentials. \

@@ -58,6 +58,8 @@ impl RouteCorsConfig {
     pub fn with_origins(mut self, origins: &[&str]) -> Self {
         if origins.contains(&"*") {
             // Check if credentials are enabled - this combination is invalid per CORS spec
+            // This panic is intentional: invalid configuration should fail fast at startup
+            #[allow(clippy::panic)] // Intentional: configuration validation must fail fast
             if self.allow_credentials {
                 panic!(
                     "CORS configuration error: Cannot use wildcard origin (*) with allowCredentials: true. \

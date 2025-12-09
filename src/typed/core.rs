@@ -236,6 +236,9 @@ where
                 error = %e,
                 "Critical: Failed to spawn typed handler coroutine - handler will be unavailable"
             );
+            // This panic is intentional: if we can't spawn the handler coroutine, the service cannot function.
+            // The handler will be unavailable, so panicking during initialization is appropriate.
+            #[allow(clippy::panic)] // Intentional: service cannot function without handler coroutines
             panic!(
                 "Failed to spawn typed handler coroutine: {}. Stack size: {} bytes. \
                 Consider increasing BRRTR_STACK_SIZE environment variable.",
@@ -427,6 +430,9 @@ where
                 error = %e,
                 "Critical: Failed to spawn typed handler coroutine - handler will be unavailable"
             );
+            // This panic is intentional: if we can't spawn the handler coroutine, the service cannot function.
+            // The handler will be unavailable, so panicking during initialization is appropriate.
+            #[allow(clippy::panic)] // Intentional: service cannot function without handler coroutines
             panic!(
                 "Failed to spawn typed handler coroutine for '{}': {}. Stack size: {} bytes. \
                 Consider increasing BRRTR_STACK_SIZE environment variable.",

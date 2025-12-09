@@ -767,6 +767,8 @@ mod tests {
     impl tracing::callsite::Callsite for TestCallsite {
         fn set_interest(&self, _interest: tracing::subscriber::Interest) {}
         fn metadata(&self) -> &tracing::Metadata<'_> {
+            // This is a test-only implementation - metadata() is never called in tests
+            #[allow(clippy::panic)] // Test-only code: this method is never called
             panic!("not used in tests")
         }
     }
