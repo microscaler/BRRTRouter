@@ -1,4 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![allow(clippy::unwrap_used, clippy::expect_used, unsafe_code)]
 
 //! Integration tests for the HTTP server and request processing pipeline
 //!
