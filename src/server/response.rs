@@ -146,7 +146,7 @@ mod tests {
         let headers = String::from_utf8_lossy(&buf[..header_end]);
         let content_length = headers
             .lines()
-            .find_map(|l| l.split_once(':').map(|(n, v)| (n, v)))
+            .find_map(|l| l.split_once(':'))
             .filter(|(n, _)| n.eq_ignore_ascii_case("content-length"))
             .and_then(|(_, v)| v.trim().parse::<usize>().ok());
         if let Some(clen) = content_length {

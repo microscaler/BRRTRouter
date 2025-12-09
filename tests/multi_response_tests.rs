@@ -1,6 +1,6 @@
 use brrtrouter::server::{HttpServer, ServerHandle};
 use brrtrouter::{
-    dispatcher::{Dispatcher, HandlerRequest, HandlerResponse, HeaderVec},
+    dispatcher::{Dispatcher, HandlerRequest, HandlerResponse},
     router::Router,
     server::AppService,
     spec::{ResponseSpec, RouteMeta},
@@ -63,7 +63,7 @@ impl MultiResponseTestServer {
             cors_config: None,
         };
 
-        let router = Arc::new(RwLock::new(Router::new(vec![route.clone()])));
+        let router = Arc::new(RwLock::new(Router::new(vec![route])));
         let mut dispatcher = Dispatcher::new();
         unsafe {
             dispatcher.register_handler("h", |_req: HandlerRequest| {

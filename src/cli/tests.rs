@@ -6,7 +6,7 @@ use clap::Parser;
 #[test]
 fn test_lint_command_exists() {
     // Test that the lint command can be parsed
-    let cli = Cli::try_parse_from(&["brrtrouter-gen", "lint", "--spec", "test.yaml"]).unwrap();
+    let cli = Cli::try_parse_from(["brrtrouter-gen", "lint", "--spec", "test.yaml"]).unwrap();
 
     match cli.command {
         Commands::Lint { spec, .. } => {
@@ -18,7 +18,7 @@ fn test_lint_command_exists() {
 
 #[test]
 fn test_lint_command_with_flags() {
-    let cli = Cli::try_parse_from(&[
+    let cli = Cli::try_parse_from([
         "brrtrouter-gen",
         "lint",
         "--spec",

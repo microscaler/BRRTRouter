@@ -106,7 +106,7 @@ pub mod http {
                     std::thread::sleep(Duration::from_millis(50));
                     continue;
                 }
-                Err(e) => panic!("read error: {:?}", e),
+                Err(e) => panic!("read error: {e:?}"),
             }
         }
 
@@ -114,7 +114,7 @@ pub mod http {
         let headers = String::from_utf8_lossy(&buf[..header_end]);
         let content_length = headers
             .lines()
-            .find_map(|l| l.split_once(':').map(|(n, v)| (n, v)))
+            .find_map(|l| l.split_once(':'))
             .filter(|(n, _)| n.eq_ignore_ascii_case("content-length"))
             .and_then(|(_, v)| v.trim().parse::<usize>().ok());
 
@@ -135,7 +135,7 @@ pub mod http {
                         std::thread::sleep(Duration::from_millis(50));
                         continue;
                     }
-                    Err(e) => panic!("read error: {:?}", e),
+                    Err(e) => panic!("read error: {e:?}"),
                 }
             }
         } else {
@@ -150,7 +150,7 @@ pub mod http {
                     {
                         break;
                     }
-                    Err(e) => panic!("read error: {:?}", e),
+                    Err(e) => panic!("read error: {e:?}"),
                 }
             }
         }
@@ -167,7 +167,7 @@ pub mod http {
         container_id: Option<&str>,
     ) -> Result<(), String> {
         let deadline = Instant::now() + timeout;
-        let request_line = format!("GET {} HTTP/1.1\r\nHost: localhost\r\n\r\n", path);
+        let request_line = format!("GET {path} HTTP/1.1\r\nHost: localhost\r\n\r\n");
         loop {
             if Instant::now() > deadline {
                 if let Some(id) = container_id {
@@ -176,8 +176,7 @@ pub mod http {
                         .status();
                 }
                 return Err(format!(
-                    "service did not become ready at {} within {:?}",
-                    path, timeout
+                    "service did not become ready at {path} within {timeout:?}"
                 ));
             }
             if let Ok(mut s) = TcpStream::connect(addr) {

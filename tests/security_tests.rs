@@ -194,9 +194,9 @@ paths:
     let path = temp_files::create_temp_yaml(SPEC);
     let (routes, schemes, _slug) = match load_spec_full(path.to_str().unwrap()) {
         Ok(result) => result,
-        Err(e) => panic!("Failed to load spec: {:?}", e),
+        Err(e) => panic!("Failed to load spec: {e:?}"),
     };
-    let router = Arc::new(RwLock::new(Router::new(routes.clone())));
+    let router = Arc::new(RwLock::new(Router::new(routes)));
     let mut dispatcher = Dispatcher::new();
     // SAFETY: Test context - handlers are simple closures for testing
     unsafe {
@@ -267,7 +267,7 @@ paths:
 "#;
     let path = temp_files::create_temp_yaml(SPEC);
     let (routes, schemes, _slug) = load_spec_full(path.to_str().unwrap()).unwrap();
-    let router = Arc::new(RwLock::new(Router::new(routes.clone())));
+    let router = Arc::new(RwLock::new(Router::new(routes)));
     let mut dispatcher = Dispatcher::new();
     // SAFETY: Test context - handlers are simple closures for testing
     unsafe {
@@ -342,7 +342,7 @@ paths:
 "#;
     let path = temp_files::create_temp_yaml(SPEC);
     let (routes, schemes, _slug) = load_spec_full(path.to_str().unwrap()).unwrap();
-    let router = Arc::new(RwLock::new(Router::new(routes.clone())));
+    let router = Arc::new(RwLock::new(Router::new(routes)));
     let mut dispatcher = Dispatcher::new();
     // SAFETY: Test context - handlers are simple closures for testing
     unsafe {
@@ -386,7 +386,7 @@ paths:
 fn make_token(scope: &str) -> String {
     use base64::{engine::general_purpose, Engine as _};
     let header = general_purpose::STANDARD.encode(r#"{"alg":"HS256","typ":"JWT"}"#);
-    let payload = general_purpose::STANDARD.encode(format!(r#"{{"scope":"{}"}}"#, scope));
+    let payload = general_purpose::STANDARD.encode(format!(r#"{{"scope":"{scope}"}}"#));
     format!("{}.{}.{}", header, payload, "sig")
 }
 
@@ -424,7 +424,7 @@ fn send_request(addr: &SocketAddr, req: &str) -> String {
                 std::thread::sleep(Duration::from_millis(50));
                 continue;
             }
-            Err(e) => panic!("read error: {:?}", e),
+            Err(e) => panic!("read error: {e:?}"),
         }
     }
 
@@ -432,7 +432,7 @@ fn send_request(addr: &SocketAddr, req: &str) -> String {
     let headers = String::from_utf8_lossy(&buf[..header_end]);
     let content_length = headers
         .lines()
-        .find_map(|l| l.split_once(':').map(|(n, v)| (n, v)))
+        .find_map(|l| l.split_once(':'))
         .filter(|(n, _)| n.eq_ignore_ascii_case("content-length"))
         .and_then(|(_, v)| v.trim().parse::<usize>().ok());
 
@@ -454,7 +454,7 @@ fn send_request(addr: &SocketAddr, req: &str) -> String {
                     std::thread::sleep(Duration::from_millis(50));
                     continue;
                 }
-                Err(e) => panic!("read error: {:?}", e),
+                Err(e) => panic!("read error: {e:?}"),
             }
         }
     } else {
@@ -470,7 +470,7 @@ fn send_request(addr: &SocketAddr, req: &str) -> String {
                 {
                     break;
                 }
-                Err(e) => panic!("read error: {:?}", e),
+                Err(e) => panic!("read error: {e:?}"),
             }
         }
     }
@@ -535,7 +535,7 @@ paths:
 "#;
     let path = temp_files::create_temp_yaml(SPEC);
     let (routes, schemes, _slug) = load_spec_full(path.to_str().unwrap()).unwrap();
-    let router = Arc::new(RwLock::new(Router::new(routes.clone())));
+    let router = Arc::new(RwLock::new(Router::new(routes)));
     let mut dispatcher = Dispatcher::new();
     // SAFETY: Test context - handlers are simple closures for testing
     unsafe {
@@ -651,7 +651,7 @@ paths:
 "#;
     let path = temp_files::create_temp_yaml(SPEC);
     let (routes, schemes, _slug) = load_spec_full(path.to_str().unwrap()).unwrap();
-    let router = Arc::new(RwLock::new(Router::new(routes.clone())));
+    let router = Arc::new(RwLock::new(Router::new(routes)));
     let mut dispatcher = Dispatcher::new();
     // SAFETY: Test context - handlers are simple closures for testing
     unsafe {
@@ -701,8 +701,7 @@ fn test_bearer_jwks_success() {
     let token = make_hs256_jwt(secret, iss, aud, "k1", 3600);
     let server = SecurityTestServer::from_jwks(&jwks_url, iss, aud);
     let req = format!(
-        "GET /header HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer {}\r\n\r\n",
-        token
+        "GET /header HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer {token}\r\n\r\n"
     );
     let resp = send_request(&server.addr(), &req);
     let status_ok = parse_status(&resp);
@@ -727,8 +726,7 @@ fn test_bearer_jwks_invalid_signature() {
     let token = make_hs256_jwt(b"wrong", iss, aud, "k1", 3600);
     let server = SecurityTestServer::from_jwks(&jwks_url, iss, aud);
     let req = format!(
-        "GET /header HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer {}\r\n\r\n",
-        token
+        "GET /header HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer {token}\r\n\r\n"
     );
     let resp = send_request(&server.addr(), &req);
     let status = parse_status(&resp);
@@ -790,7 +788,7 @@ paths:
 "#;
     let path = temp_files::create_temp_yaml(SPEC);
     let (routes, schemes, _slug) = load_spec_full(path.to_str().unwrap()).unwrap();
-    let router = Arc::new(RwLock::new(Router::new(routes.clone())));
+    let router = Arc::new(RwLock::new(Router::new(routes)));
     let mut dispatcher = Dispatcher::new();
     // SAFETY: Test context - handlers are simple closures for testing
     unsafe {
@@ -890,8 +888,7 @@ fn test_bearer_header_and_oauth_cookie() {
     // Valid bearer header
     let token = make_token("");
     let req = format!(
-        "GET /header HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer {}\r\n\r\n",
-        token
+        "GET /header HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer {token}\r\n\r\n"
     );
     let resp = send_request(&server.addr(), &req);
     let status_ok = parse_status(&resp);
@@ -900,8 +897,7 @@ fn test_bearer_header_and_oauth_cookie() {
     // OAuth2 cookie with required scope
     let token = make_token("read");
     let req = format!(
-        "GET /cookie HTTP/1.1\r\nHost: localhost\r\nCookie: auth={}\r\n\r\n",
-        token
+        "GET /cookie HTTP/1.1\r\nHost: localhost\r\nCookie: auth={token}\r\n\r\n"
     );
     let resp = send_request(&server.addr(), &req);
     let status_cookie = parse_status(&resp);
@@ -945,7 +941,7 @@ fn test_bearer_jwt_token_validation() {
     let token = make_token("");
     let mut headers: HeaderVec = HeaderVec::new();
     // JSF P2: HeaderVec now uses Arc<str> for keys
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -967,7 +963,7 @@ fn test_bearer_jwt_invalid_signature() {
     let token = make_token("");
     let mut headers: HeaderVec = HeaderVec::new();
     // JSF P2: HeaderVec now uses Arc<str> for keys
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -1039,11 +1035,11 @@ fn test_bearer_jwt_invalid_json() {
     use base64::{engine::general_purpose, Engine as _};
     let header = "header";
     let payload = general_purpose::STANDARD.encode(b"invalid json");
-    let token = format!("{}.{}.sig", header, payload);
+    let token = format!("{header}.{payload}.sig");
 
     let mut headers: HeaderVec = HeaderVec::new();
     // JSF P2: HeaderVec now uses Arc<str> for keys
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -1066,7 +1062,7 @@ fn test_bearer_jwt_scope_validation() {
     let token = make_token("read write");
     let mut headers: HeaderVec = HeaderVec::new();
     // JSF P2: HeaderVec now uses Arc<str> for keys
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -1120,7 +1116,7 @@ fn test_bearer_jwt_wrong_scheme() {
     let token = make_token("");
     let mut headers: HeaderVec = HeaderVec::new();
     // JSF P2: HeaderVec now uses Arc<str> for keys
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -1141,7 +1137,7 @@ fn test_oauth2_provider_validation() {
     let token = make_token("read");
     let mut headers: HeaderVec = HeaderVec::new();
     // JSF P2: HeaderVec now uses Arc<str> for keys
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -1184,7 +1180,7 @@ fn test_oauth2_provider_wrong_scheme() {
     let token = make_token("");
     let mut headers: HeaderVec = HeaderVec::new();
     // JSF P2: HeaderVec now uses Arc<str> for keys
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -1332,7 +1328,7 @@ fn test_case_insensitive_bearer_scheme() {
     let token = make_token("");
     let mut headers: HeaderVec = HeaderVec::new();
     // JSF P2: HeaderVec now uses Arc<str> for keys
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -1354,7 +1350,7 @@ fn test_empty_token_scopes() {
     let token = make_token(""); // Empty scope
     let mut headers: HeaderVec = HeaderVec::new();
     // JSF P2: HeaderVec now uses Arc<str> for keys
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -1395,7 +1391,7 @@ fn test_jwks_claims_cache_caching() {
         description: None,
     };
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -1441,7 +1437,7 @@ fn test_jwks_claims_cache_expiration_with_leeway() {
         description: None,
     };
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -1584,7 +1580,7 @@ fn test_jwks_cache_invalidation() {
         description: None,
     };
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -1682,7 +1678,7 @@ fn test_jwks_cache_invalidation_does_not_clear_other_tokens() {
 
     // Create requests for both tokens
     let mut headers1: HeaderVec = HeaderVec::new();
-    headers1.push((Arc::from("authorization"), format!("Bearer {}", token1)));
+    headers1.push((Arc::from("authorization"), format!("Bearer {token1}")));
     let req1 = SecurityRequest {
         headers: &headers1,
         query: &ParamVec::new(),
@@ -1690,7 +1686,7 @@ fn test_jwks_cache_invalidation_does_not_clear_other_tokens() {
     };
 
     let mut headers2: HeaderVec = HeaderVec::new();
-    headers2.push((Arc::from("authorization"), format!("Bearer {}", token2)));
+    headers2.push((Arc::from("authorization"), format!("Bearer {token2}")));
     let req2 = SecurityRequest {
         headers: &headers2,
         query: &ParamVec::new(),
@@ -1766,7 +1762,7 @@ fn test_jwks_extract_claims() {
     };
 
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -1898,7 +1894,7 @@ fn test_jwks_cache_eviction() {
 
     // Validate token1 - should cache
     let mut headers1: HeaderVec = HeaderVec::new();
-    headers1.push((Arc::from("authorization"), format!("Bearer {}", token1)));
+    headers1.push((Arc::from("authorization"), format!("Bearer {token1}")));
     let req1 = SecurityRequest {
         headers: &headers1,
         query: &ParamVec::new(),
@@ -1908,7 +1904,7 @@ fn test_jwks_cache_eviction() {
 
     // Validate token2 - should cache (now 2 entries)
     let mut headers2: HeaderVec = HeaderVec::new();
-    headers2.push((Arc::from("authorization"), format!("Bearer {}", token2)));
+    headers2.push((Arc::from("authorization"), format!("Bearer {token2}")));
     let req2 = SecurityRequest {
         headers: &headers2,
         query: &ParamVec::new(),
@@ -1918,7 +1914,7 @@ fn test_jwks_cache_eviction() {
 
     // Validate token3 - should evict token1 (LRU), cache token3
     let mut headers3: HeaderVec = HeaderVec::new();
-    headers3.push((Arc::from("authorization"), format!("Bearer {}", token3)));
+    headers3.push((Arc::from("authorization"), format!("Bearer {token3}")));
     let req3 = SecurityRequest {
         headers: &headers3,
         query: &ParamVec::new(),
@@ -2005,7 +2001,7 @@ fn test_jwks_cache_evictions_counter() {
     };
 
     let mut headers1: HeaderVec = HeaderVec::new();
-    headers1.push((Arc::from("authorization"), format!("Bearer {}", token1)));
+    headers1.push((Arc::from("authorization"), format!("Bearer {token1}")));
     let req1 = SecurityRequest {
         headers: &headers1,
         query: &ParamVec::new(),
@@ -2014,7 +2010,7 @@ fn test_jwks_cache_evictions_counter() {
     assert!(provider.validate(&scheme, &[], &req1));
 
     let mut headers2: HeaderVec = HeaderVec::new();
-    headers2.push((Arc::from("authorization"), format!("Bearer {}", token2)));
+    headers2.push((Arc::from("authorization"), format!("Bearer {token2}")));
     let req2 = SecurityRequest {
         headers: &headers2,
         query: &ParamVec::new(),
@@ -2047,7 +2043,7 @@ fn test_jwks_cache_evictions_counter() {
         jsonwebtoken::encode(&header, &claims, &EncodingKey::from_secret(secret)).unwrap()
     };
     let mut headers3: HeaderVec = HeaderVec::new();
-    headers3.push((Arc::from("authorization"), format!("Bearer {}", token3)));
+    headers3.push((Arc::from("authorization"), format!("Bearer {token3}")));
     let req3 = SecurityRequest {
         headers: &headers3,
         query: &ParamVec::new(),
@@ -2083,7 +2079,7 @@ fn test_jwks_cache_evictions_counter() {
         jsonwebtoken::encode(&header, &claims, &EncodingKey::from_secret(secret)).unwrap()
     };
     let mut headers4: HeaderVec = HeaderVec::new();
-    headers4.push((Arc::from("authorization"), format!("Bearer {}", token4)));
+    headers4.push((Arc::from("authorization"), format!("Bearer {token4}")));
     let req4 = SecurityRequest {
         headers: &headers4,
         query: &ParamVec::new(),
@@ -2132,8 +2128,7 @@ fn test_jwks_background_refresh_short_cache_ttl_1s() {
     // If it's sleeping properly, it should respond to shutdown quickly (< 2s)
     assert!(
         stop_duration < Duration::from_secs(2),
-        "Background thread should stop quickly, not spin (took {:?})",
-        stop_duration
+        "Background thread should stop quickly, not spin (took {stop_duration:?})"
     );
 }
 
@@ -2152,8 +2147,7 @@ fn test_jwks_background_refresh_short_cache_ttl_5s() {
     // Should stop quickly (thread should be sleeping, not spinning)
     assert!(
         stop_duration < Duration::from_secs(2),
-        "Background thread should stop quickly (took {:?})",
-        stop_duration
+        "Background thread should stop quickly (took {stop_duration:?})"
     );
 }
 
@@ -2173,8 +2167,7 @@ fn test_jwks_background_refresh_edge_case_10s() {
     // Should stop quickly
     assert!(
         stop_duration < Duration::from_secs(2),
-        "Background thread should stop quickly (took {:?})",
-        stop_duration
+        "Background thread should stop quickly (took {stop_duration:?})"
     );
 }
 
@@ -2194,8 +2187,7 @@ fn test_jwks_background_refresh_normal_cache_ttl_11s() {
     // Should stop quickly
     assert!(
         stop_duration < Duration::from_secs(2),
-        "Background thread should stop quickly (took {:?})",
-        stop_duration
+        "Background thread should stop quickly (took {stop_duration:?})"
     );
 }
 
@@ -2215,8 +2207,7 @@ fn test_jwks_background_refresh_normal_cache_ttl_300s() {
     // Should stop quickly (thread should be sleeping for 290s, so responds immediately to shutdown)
     assert!(
         stop_duration < Duration::from_secs(2),
-        "Background thread should stop quickly (took {:?})",
-        stop_duration
+        "Background thread should stop quickly (took {stop_duration:?})"
     );
 }
 
@@ -2238,8 +2229,7 @@ fn test_jwks_background_refresh_cache_ttl_update() {
     
     assert!(
         stop_duration < Duration::from_secs(2),
-        "Background thread should stop quickly after cache_ttl update (took {:?})",
-        stop_duration
+        "Background thread should stop quickly after cache_ttl update (took {stop_duration:?})"
     );
 }
 
@@ -2278,9 +2268,8 @@ fn test_jwks_background_refresh_cache_ttl_update_during_sleep() {
     // If the bug existed, the thread might not respond quickly if it wasn't checking
     assert!(
         stop_duration < Duration::from_secs(2),
-        "Background thread should respond quickly to cache_ttl changes during sleep (took {:?}). \
-         This verifies the thread checks cache_ttl_millis during sleep and wakes up early when it changes.",
-        stop_duration
+        "Background thread should respond quickly to cache_ttl changes during sleep (took {stop_duration:?}). \
+         This verifies the thread checks cache_ttl_millis during sleep and wakes up early when it changes."
     );
 }
 
@@ -2311,8 +2300,7 @@ fn test_jwks_background_refresh_cache_ttl_increase_during_sleep() {
     // Should stop quickly (< 2s) because the thread checks TTL every 1s during sleep
     assert!(
         stop_duration < Duration::from_secs(2),
-        "Background thread should respond quickly to cache_ttl increases during sleep (took {:?})",
-        stop_duration
+        "Background thread should respond quickly to cache_ttl increases during sleep (took {stop_duration:?})"
     );
 }
 
@@ -2345,8 +2333,7 @@ fn test_jwks_background_refresh_multiple_ttl_changes() {
     
     assert!(
         stop_duration < Duration::from_secs(2),
-        "Background thread should handle multiple rapid cache_ttl changes (took {:?})",
-        stop_duration
+        "Background thread should handle multiple rapid cache_ttl changes (took {stop_duration:?})"
     );
 }
 
@@ -2374,8 +2361,7 @@ fn test_jwks_background_refresh_ttl_change_to_minimum() {
     
     assert!(
         stop_duration < Duration::from_secs(2),
-        "Background thread should handle minimum cache_ttl correctly (took {:?})",
-        stop_duration
+        "Background thread should handle minimum cache_ttl correctly (took {stop_duration:?})"
     );
 }
 
@@ -2403,8 +2389,7 @@ fn test_jwks_background_refresh_ttl_change_to_very_short() {
     
     assert!(
         stop_duration < Duration::from_secs(2),
-        "Background thread should enforce minimum refresh interval for very short cache_ttl (took {:?})",
-        stop_duration
+        "Background thread should enforce minimum refresh interval for very short cache_ttl (took {stop_duration:?})"
     );
 }
 
@@ -2433,8 +2418,7 @@ fn test_jwks_background_refresh_ttl_change_to_very_long() {
     
     assert!(
         stop_duration < Duration::from_secs(2),
-        "Background thread should handle very long cache_ttl correctly (took {:?})",
-        stop_duration
+        "Background thread should handle very long cache_ttl correctly (took {stop_duration:?})"
     );
 }
 
@@ -2462,8 +2446,7 @@ fn test_jwks_background_refresh_ttl_change_at_edge_case_10s() {
     
     assert!(
         stop_duration < Duration::from_secs(2),
-        "Background thread should handle cache_ttl change at 10s boundary (took {:?})",
-        stop_duration
+        "Background thread should handle cache_ttl change at 10s boundary (took {stop_duration:?})"
     );
 }
 
@@ -2492,8 +2475,7 @@ fn test_jwks_background_refresh_ttl_change_after_wake() {
     
     assert!(
         stop_duration < Duration::from_secs(2),
-        "Background thread should pick up cache_ttl changes after wake (took {:?})",
-        stop_duration
+        "Background thread should pick up cache_ttl changes after wake (took {stop_duration:?})"
     );
 }
 
@@ -2521,8 +2503,7 @@ fn test_jwks_background_refresh_ttl_change_same_value() {
     
     assert!(
         stop_duration < Duration::from_secs(2),
-        "Background thread should handle same-value cache_ttl update (took {:?})",
-        stop_duration
+        "Background thread should handle same-value cache_ttl update (took {stop_duration:?})"
     );
 }
 
@@ -2549,8 +2530,7 @@ fn test_jwks_background_refresh_multiple_providers() {
     
     assert!(
         stop_duration < Duration::from_secs(4),
-        "All background threads should stop quickly (took {:?})",
-        stop_duration
+        "All background threads should stop quickly (took {stop_duration:?})"
     );
 }
 
@@ -2569,8 +2549,7 @@ fn test_jwks_background_refresh_zero_cache_ttl_handling() {
     // Should stop quickly (minimum 1s interval prevents spinning)
     assert!(
         stop_duration < Duration::from_secs(2),
-        "Background thread should stop quickly even with 0s cache_ttl (took {:?})",
-        stop_duration
+        "Background thread should stop quickly even with 0s cache_ttl (took {stop_duration:?})"
     );
 }
 
@@ -2624,7 +2603,7 @@ fn test_jwks_sub_second_cache_ttl_precision() {
     // Create provider with sub-second cache_ttl (100ms)
     // With the bug, this would cause constant refreshes on every validation
     // With the fix, cache should be valid for 100ms and not refresh constantly
-    let provider = brrtrouter::security::JwksBearerProvider::new(jwks_url.clone())
+    let provider = brrtrouter::security::JwksBearerProvider::new(jwks_url)
         .cache_ttl(Duration::from_millis(100));
     
     // Wait a moment for initial refresh
@@ -2643,7 +2622,7 @@ fn test_jwks_sub_second_cache_ttl_precision() {
     // Make 10 rapid validation calls
     for _ in 0..10 {
         let mut headers: HeaderVec = HeaderVec::new();
-        headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+        headers.push((Arc::from("authorization"), format!("Bearer {token}")));
         let req = SecurityRequest {
             headers: &headers,
             query: &ParamVec::new(),
@@ -2671,8 +2650,7 @@ fn test_jwks_sub_second_cache_ttl_precision() {
     // so we should have 1 initial refresh + maybe 1-2 more as cache expires
     assert!(
         total_requests <= 3,
-        "Sub-second cache_ttl should not cause constant refreshes. Got {} requests, expected <= 3",
-        total_requests
+        "Sub-second cache_ttl should not cause constant refreshes. Got {total_requests} requests, expected <= 3"
     );
     
     // Clean up
@@ -2749,7 +2727,7 @@ fn test_jwks_sub_second_cache_ttl_various_values() {
         // Make 5 rapid calls (should all use cached keys if cache is still valid)
         for _ in 0..5 {
             let mut headers: HeaderVec = HeaderVec::new();
-            headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+            headers.push((Arc::from("authorization"), format!("Bearer {token}")));
             let req = SecurityRequest {
                 headers: &headers,
                 query: &ParamVec::new(),
@@ -2769,9 +2747,7 @@ fn test_jwks_sub_second_cache_ttl_various_values() {
         // NOT 5+ refreshes (one per validation call)
         assert!(
             total_requests <= 3,
-            "Sub-second cache_ttl {} should not cause constant refreshes. Got {} requests, expected <= 3",
-            name,
-            total_requests
+            "Sub-second cache_ttl {name} should not cause constant refreshes. Got {total_requests} requests, expected <= 3"
         );
         
         provider.stop_background_refresh();
@@ -2822,7 +2798,7 @@ fn test_jwks_sub_second_cache_ttl_timing_accuracy() {
     });
     
     // Create provider with 200ms cache_ttl
-    let provider = brrtrouter::security::JwksBearerProvider::new(jwks_url.clone())
+    let provider = brrtrouter::security::JwksBearerProvider::new(jwks_url)
         .cache_ttl(Duration::from_millis(200));
     
     // Wait for initial refresh
@@ -2838,7 +2814,7 @@ fn test_jwks_sub_second_cache_ttl_timing_accuracy() {
     // Make validation calls before cache expires (should not trigger refresh)
     for _ in 0..5 {
         let mut headers: HeaderVec = HeaderVec::new();
-        headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+        headers.push((Arc::from("authorization"), format!("Bearer {token}")));
         let req = SecurityRequest {
             headers: &headers,
             query: &ParamVec::new(),
@@ -2854,8 +2830,7 @@ fn test_jwks_sub_second_cache_ttl_timing_accuracy() {
     let requests_before_expiry = request_count.load(Ordering::Relaxed);
     assert!(
         requests_before_expiry <= 2,
-        "Cache should still be valid before TTL expires. Got {} requests, expected <= 2",
-        requests_before_expiry
+        "Cache should still be valid before TTL expires. Got {requests_before_expiry} requests, expected <= 2"
     );
     
     // Now wait for cache to expire (200ms TTL + buffer)
@@ -2863,7 +2838,7 @@ fn test_jwks_sub_second_cache_ttl_timing_accuracy() {
     
     // Make another validation call - should trigger refresh now that cache expired
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -2878,8 +2853,7 @@ fn test_jwks_sub_second_cache_ttl_timing_accuracy() {
     let requests_after_expiry = request_count.load(Ordering::Relaxed);
     assert!(
         requests_after_expiry >= 2,
-        "Cache should trigger refresh after TTL expires. Got {} requests, expected >= 2",
-        requests_after_expiry
+        "Cache should trigger refresh after TTL expires. Got {requests_after_expiry} requests, expected >= 2"
     );
     
     provider.stop_background_refresh();
@@ -2900,8 +2874,7 @@ fn test_jwks_sub_second_cache_ttl_edge_cases() {
     
     assert!(
         stop_duration < Duration::from_secs(2),
-        "0ms cache_ttl should use minimum refresh interval (took {:?})",
-        stop_duration
+        "0ms cache_ttl should use minimum refresh interval (took {stop_duration:?})"
     );
     
     // Test 1ms - should use minimum 1s refresh interval
@@ -2914,8 +2887,7 @@ fn test_jwks_sub_second_cache_ttl_edge_cases() {
     
     assert!(
         stop_duration < Duration::from_secs(2),
-        "1ms cache_ttl should use minimum refresh interval (took {:?})",
-        stop_duration
+        "1ms cache_ttl should use minimum refresh interval (took {stop_duration:?})"
     );
 }
 
@@ -2965,7 +2937,7 @@ fn test_jwks_sub_second_cache_ttl_no_thread_storm() {
     // Create provider with sub-second cache_ttl (100ms)
     // With the bug, this would cause a thread storm
     let provider = Arc::new(
-        brrtrouter::security::JwksBearerProvider::new(jwks_url.clone())
+        brrtrouter::security::JwksBearerProvider::new(jwks_url)
             .cache_ttl(Duration::from_millis(100))
     );
     
@@ -2989,7 +2961,7 @@ fn test_jwks_sub_second_cache_ttl_no_thread_storm() {
         
         let handle = std::thread::spawn(move || {
             let mut headers: HeaderVec = HeaderVec::new();
-            headers.push((Arc::from("authorization"), format!("Bearer {}", token_clone)));
+            headers.push((Arc::from("authorization"), format!("Bearer {token_clone}")));
             let req = SecurityRequest {
                 headers: &headers,
                 query: &ParamVec::new(),
@@ -3019,8 +2991,7 @@ fn test_jwks_sub_second_cache_ttl_no_thread_storm() {
     // - NOT 50+ refreshes (one per concurrent validation)
     assert!(
         total_requests <= 5,
-        "Sub-second cache_ttl should not cause thread storm. Got {} requests with 50 concurrent validations, expected <= 5",
-        total_requests
+        "Sub-second cache_ttl should not cause thread storm. Got {total_requests} requests with 50 concurrent validations, expected <= 5"
     );
     
     // Clean up
@@ -3042,8 +3013,7 @@ fn test_jwks_background_refresh_very_short_cache_ttl() {
     // Should stop quickly (minimum 1s prevents spinning even with very short TTL)
     assert!(
         stop_duration < Duration::from_secs(2),
-        "Background thread should stop quickly with very short cache_ttl (took {:?})",
-        stop_duration
+        "Background thread should stop quickly with very short cache_ttl (took {stop_duration:?})"
     );
 }
 
@@ -3069,8 +3039,7 @@ fn test_jwks_drop_stops_background_thread() {
     // However, if Drop hangs or takes too long, that's a failure
     assert!(
         drop_duration < Duration::from_secs(2),
-        "Drop should stop background thread quickly (took {:?})",
-        drop_duration
+        "Drop should stop background thread quickly (took {drop_duration:?})"
     );
 }
 
@@ -3094,8 +3063,7 @@ fn test_jwks_drop_multiple_providers() {
     // All three threads should stop quickly
     assert!(
         drop_duration < Duration::from_secs(3),
-        "Dropping multiple providers should stop all threads quickly (took {:?})",
-        drop_duration
+        "Dropping multiple providers should stop all threads quickly (took {drop_duration:?})"
     );
 }
 
@@ -3115,8 +3083,7 @@ fn test_jwks_drop_after_explicit_stop() {
     
     assert!(
         explicit_stop_duration < Duration::from_secs(2),
-        "Explicit stop should work quickly (took {:?})",
-        explicit_stop_duration
+        "Explicit stop should work quickly (took {explicit_stop_duration:?})"
     );
     
     // Now drop the provider - should not hang or cause issues
@@ -3127,8 +3094,7 @@ fn test_jwks_drop_after_explicit_stop() {
     // Drop should be very fast since thread is already stopped
     assert!(
         drop_duration < Duration::from_millis(100),
-        "Drop after explicit stop should be very fast (took {:?})",
-        drop_duration
+        "Drop after explicit stop should be very fast (took {drop_duration:?})"
     );
 }
 
@@ -3158,8 +3124,7 @@ fn test_jwks_drop_and_recreate() {
     // Second provider should also drop cleanly
     assert!(
         drop_duration < Duration::from_secs(2),
-        "Recreated provider should drop cleanly (took {:?})",
-        drop_duration
+        "Recreated provider should drop cleanly (took {drop_duration:?})"
     );
 }
 
@@ -3181,8 +3146,7 @@ fn test_jwks_drop_with_long_cache_ttl() {
     // The shutdown flag check happens every 1s during sleep, so should respond quickly
     assert!(
         drop_duration < Duration::from_secs(2),
-        "Drop should stop thread quickly even with long cache_ttl (took {:?})",
-        drop_duration
+        "Drop should stop thread quickly even with long cache_ttl (took {drop_duration:?})"
     );
 }
 
@@ -3251,7 +3215,7 @@ fn test_jwks_refresh_thread_storm_prevention() {
     let iss = "https://issuer.example";
     let aud = "my-audience";
     let provider = Arc::new(
-        brrtrouter::security::JwksBearerProvider::new(jwks_url.clone())
+        brrtrouter::security::JwksBearerProvider::new(jwks_url)
             .issuer(iss.to_string())
             .audience(aud.to_string())
             .cache_ttl(Duration::from_millis(500))
@@ -3268,7 +3232,7 @@ fn test_jwks_refresh_thread_storm_prevention() {
     // Populate cache initially by validating a token (this triggers initial refresh)
     // This ensures cache is non-empty when we test the thread storm scenario
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -3299,7 +3263,7 @@ fn test_jwks_refresh_thread_storm_prevention() {
         let handle = std::thread::spawn(move || {
             // Create request in each thread (can't share references across threads)
             let mut thread_headers: HeaderVec = HeaderVec::new();
-            thread_headers.push((Arc::from("authorization"), format!("Bearer {}", token_clone)));
+            thread_headers.push((Arc::from("authorization"), format!("Bearer {token_clone}")));
             let thread_req = SecurityRequest {
                 headers: &thread_headers,
                 query: &ParamVec::new(),
@@ -3329,13 +3293,10 @@ fn test_jwks_refresh_thread_storm_prevention() {
     
     assert!(
         final_count <= 3,
-        "Thread storm prevention failed: {} HTTP requests made by {} concurrent validation threads. \
+        "Thread storm prevention failed: {final_count} HTTP requests made by {num_threads} concurrent validation threads. \
          Expected <= 3 requests (refresh_in_progress should prevent thread spawning). \
          This indicates threads are being spawned without checking refresh_in_progress flag. \
-         Without the fix, we'd see ~{} requests (one per thread).",
-        final_count,
-        num_threads,
-        num_threads
+         Without the fix, we'd see ~{num_threads} requests (one per thread)."
     );
     
     // Verify that the cache was actually refreshed (validation should still work)
@@ -3410,7 +3371,7 @@ fn test_jwks_refresh_atomic_claim_prevention() {
     let iss = "https://issuer.example";
     let aud = "my-audience";
     let provider = Arc::new(
-        brrtrouter::security::JwksBearerProvider::new(jwks_url.clone())
+        brrtrouter::security::JwksBearerProvider::new(jwks_url)
             .issuer(iss.to_string())
             .audience(aud.to_string())
             .cache_ttl(Duration::from_millis(100))
@@ -3426,7 +3387,7 @@ fn test_jwks_refresh_atomic_claim_prevention() {
     
     // Populate cache initially by validating a token (this triggers initial refresh)
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -3455,7 +3416,7 @@ fn test_jwks_refresh_atomic_claim_prevention() {
         let handle = std::thread::spawn(move || {
             // Create request in each thread (can't share references across threads)
             let mut thread_headers: HeaderVec = HeaderVec::new();
-            thread_headers.push((Arc::from("authorization"), format!("Bearer {}", token_clone)));
+            thread_headers.push((Arc::from("authorization"), format!("Bearer {token_clone}")));
             let thread_req = SecurityRequest {
                 headers: &thread_headers,
                 query: &ParamVec::new(),
@@ -3486,21 +3447,17 @@ fn test_jwks_refresh_atomic_claim_prevention() {
     
     assert!(
         final_count <= 3,
-        "Atomic claim prevention failed: {} HTTP requests made by {} concurrent threads. \
+        "Atomic claim prevention failed: {final_count} HTTP requests made by {num_threads} concurrent threads. \
          Expected <= 3 requests (atomic compare_exchange should prevent thread spawning). \
          This indicates the atomic claim mechanism is not working - multiple threads are \
          successfully claiming the refresh and spawning threads. Without the fix, we'd see \
-         ~{} requests (one per thread).",
-        final_count,
-        num_threads,
-        num_threads
+         ~{num_threads} requests (one per thread)."
     );
     
     // Verify that at least one request was made (proving refresh actually happened)
     assert!(
         final_count >= 1,
-        "Expected at least 1 HTTP request (refresh should have happened), but got {}",
-        final_count
+        "Expected at least 1 HTTP request (refresh should have happened), but got {final_count}"
     );
 }
 
@@ -3557,7 +3514,7 @@ fn test_jwks_condition_variable_wakeup_on_refresh_completion() {
     
     // Create provider with empty cache (will trigger blocking refresh)
     let provider = Arc::new(
-        brrtrouter::security::JwksBearerProvider::new(jwks_url.clone())
+        brrtrouter::security::JwksBearerProvider::new(jwks_url)
             .cache_ttl(Duration::from_secs(300))
     );
     
@@ -3596,7 +3553,7 @@ fn test_jwks_condition_variable_wakeup_on_refresh_completion() {
             
             // Create request
             let mut headers: HeaderVec = HeaderVec::new();
-            headers.push((Arc::from("authorization"), format!("Bearer {}", token_clone)));
+            headers.push((Arc::from("authorization"), format!("Bearer {token_clone}")));
             let req = SecurityRequest {
                 headers: &headers,
                 query: &ParamVec::new(),
@@ -3632,17 +3589,15 @@ fn test_jwks_condition_variable_wakeup_on_refresh_completion() {
     let max_wait_time = times.iter().map(|(_, t)| *t).max().unwrap();
     assert!(
         max_wait_time < Duration::from_millis(500),
-        "Threads should be woken quickly via condition variable (max wait: {:?}, expected < 500ms). \
-         If condition variable wasn't working, threads would wait for full 2s timeout.",
-        max_wait_time
+        "Threads should be woken quickly via condition variable (max wait: {max_wait_time:?}, expected < 500ms). \
+         If condition variable wasn't working, threads would wait for full 2s timeout."
     );
     
     // Verify only one HTTP request was made (only one thread did the refresh)
     let final_count = request_count.load(Ordering::Relaxed);
     assert!(
         final_count == 1,
-        "Only one HTTP request should be made (only one thread should do refresh), got {}",
-        final_count
+        "Only one HTTP request should be made (only one thread should do refresh), got {final_count}"
     );
     
     provider.stop_background_refresh();
@@ -3681,7 +3636,7 @@ fn test_jwks_condition_variable_wakeup_on_refresh_failure() {
     
     // Create provider with empty cache
     let provider = Arc::new(
-        brrtrouter::security::JwksBearerProvider::new(jwks_url.clone())
+        brrtrouter::security::JwksBearerProvider::new(jwks_url)
             .cache_ttl(Duration::from_secs(300))
     );
     
@@ -3714,7 +3669,7 @@ fn test_jwks_condition_variable_wakeup_on_refresh_failure() {
             let start = Instant::now();
             
             let mut headers: HeaderVec = HeaderVec::new();
-            headers.push((Arc::from("authorization"), format!("Bearer {}", token_clone)));
+            headers.push((Arc::from("authorization"), format!("Bearer {token_clone}")));
             let req = SecurityRequest {
                 headers: &headers,
                 query: &ParamVec::new(),
@@ -3745,16 +3700,14 @@ fn test_jwks_condition_variable_wakeup_on_refresh_failure() {
     let max_wait_time = times.iter().map(|(_, t)| *t).max().unwrap();
     assert!(
         max_wait_time < Duration::from_millis(500),
-        "Threads should be woken quickly even on refresh failure (max wait: {:?}, expected < 500ms)",
-        max_wait_time
+        "Threads should be woken quickly even on refresh failure (max wait: {max_wait_time:?}, expected < 500ms)"
     );
     
     // Verify refresh was attempted (HTTP request was made)
     let final_count = request_count.load(Ordering::Relaxed);
     assert!(
         final_count >= 1,
-        "At least one HTTP request should be made (refresh should be attempted), got {}",
-        final_count
+        "At least one HTTP request should be made (refresh should be attempted), got {final_count}"
     );
     
     provider.stop_background_refresh();
@@ -3801,7 +3754,7 @@ fn test_jwks_refresh_in_progress_flag_recovery() {
     std::thread::sleep(Duration::from_millis(50));
     
     let provider = Arc::new(
-        brrtrouter::security::JwksBearerProvider::new(jwks_url.clone())
+        brrtrouter::security::JwksBearerProvider::new(jwks_url)
             .cache_ttl(Duration::from_secs(300))
     );
     
@@ -3830,7 +3783,7 @@ fn test_jwks_refresh_in_progress_flag_recovery() {
     // The key test is that the system can handle multiple validations without hanging
     // We don't require all to succeed, just that they complete (don't hang)
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -3846,8 +3799,7 @@ fn test_jwks_refresh_in_progress_flag_recovery() {
     // Validation should complete quickly (< 1s) - if it hangs, elapsed would be much longer
     assert!(
         elapsed1 < Duration::from_secs(1),
-        "First validation should complete quickly (< 1s), not hang. Took {:?}. If refresh_in_progress flag was stuck, this would hang.",
-        elapsed1
+        "First validation should complete quickly (< 1s), not hang. Took {elapsed1:?}. If refresh_in_progress flag was stuck, this would hang."
     );
     
     // Second validation - should also complete quickly
@@ -3857,8 +3809,7 @@ fn test_jwks_refresh_in_progress_flag_recovery() {
     
     assert!(
         elapsed2 < Duration::from_secs(1),
-        "Second validation should complete quickly (< 1s), not hang. Took {:?}. This proves the flag is cleared and system can recover.",
-        elapsed2
+        "Second validation should complete quickly (< 1s), not hang. Took {elapsed2:?}. This proves the flag is cleared and system can recover."
     );
     
     // If we got here, the system successfully handled multiple validations without hanging
@@ -3917,7 +3868,7 @@ fn test_jwks_empty_cache_multiple_waiters_all_woken() {
     // Create provider and immediately stop background refresh to ensure cache stays empty
     // This allows us to test the empty cache condition variable waiting behavior
     let provider = Arc::new(
-        brrtrouter::security::JwksBearerProvider::new(jwks_url.clone())
+        brrtrouter::security::JwksBearerProvider::new(jwks_url)
             .cache_ttl(Duration::from_secs(300))
     );
     
@@ -3954,7 +3905,7 @@ fn test_jwks_empty_cache_multiple_waiters_all_woken() {
             barrier_clone.wait();
             
             let mut headers: HeaderVec = HeaderVec::new();
-            headers.push((Arc::from("authorization"), format!("Bearer {}", token_clone)));
+            headers.push((Arc::from("authorization"), format!("Bearer {token_clone}")));
             let req = SecurityRequest {
                 headers: &headers,
                 query: &ParamVec::new(),
@@ -3990,8 +3941,7 @@ fn test_jwks_empty_cache_multiple_waiters_all_woken() {
     
     assert_eq!(
         total_completed, num_threads as u32,
-        "All {} threads should have completed (woken by condition variable). Got {} successful, {} errors, {} total",
-        num_threads, final_completed, final_errors, total_completed
+        "All {num_threads} threads should have completed (woken by condition variable). Got {final_completed} successful, {final_errors} errors, {total_completed} total"
     );
     
     // Verify only one HTTP request was made (only one thread did the refresh)
@@ -3999,14 +3949,12 @@ fn test_jwks_empty_cache_multiple_waiters_all_woken() {
     let final_count = request_count.load(Ordering::Relaxed);
     assert!(
         final_count >= 1,
-        "At least one HTTP request should be made (refresh should have happened), got {}",
-        final_count
+        "At least one HTTP request should be made (refresh should have happened), got {final_count}"
     );
     assert!(
         final_count <= 2,
-        "Too many HTTP requests made (thread storm prevention may have failed), got {} (expected 1-2). \
-         This indicates multiple threads spawned refresh threads instead of waiting on condition variable.",
-        final_count
+        "Too many HTTP requests made (thread storm prevention may have failed), got {final_count} (expected 1-2). \
+         This indicates multiple threads spawned refresh threads instead of waiting on condition variable."
     );
     
     // The key test is that all threads completed (were woken by condition variable)
@@ -4052,7 +4000,7 @@ fn test_jwks_empty_cache_timeout_retry() {
     // Spawn server that delays first response (simulating slow network)
     // First request will take > 2s (condition variable timeout), subsequent requests will succeed
     let request_num = Arc::new(std::sync::Mutex::new(0));
-    let request_num_clone = request_num.clone();
+    let request_num_clone = request_num;
     std::thread::spawn(move || {
         for _ in 0..5 {
             if let Ok((mut stream, _)) = listener.accept() {
@@ -4087,7 +4035,7 @@ fn test_jwks_empty_cache_timeout_retry() {
     
     // Create provider with empty cache
     let provider = Arc::new(
-        brrtrouter::security::JwksBearerProvider::new(jwks_url.clone())
+        brrtrouter::security::JwksBearerProvider::new(jwks_url)
             .cache_ttl(Duration::from_secs(300))
     );
     
@@ -4105,19 +4053,19 @@ fn test_jwks_empty_cache_timeout_retry() {
     // Spawn two threads: one does refresh (slow), one waits and times out, then retries
     let barrier = Arc::new(Barrier::new(2));
     let barrier_clone1 = barrier.clone();
-    let barrier_clone2 = barrier.clone();
+    let barrier_clone2 = barrier;
     let provider_clone1 = provider.clone();
     let provider_clone2 = provider.clone();
     let token_clone1 = token.clone();
-    let token_clone2 = token.clone();
+    let token_clone2 = token;
     let scheme_clone1 = scheme.clone();
-    let scheme_clone2 = scheme.clone();
+    let scheme_clone2 = scheme;
     
     // Thread 1: Does the slow refresh
     let handle1 = std::thread::spawn(move || {
         barrier_clone1.wait();
         let mut headers: HeaderVec = HeaderVec::new();
-        headers.push((Arc::from("authorization"), format!("Bearer {}", token_clone1)));
+        headers.push((Arc::from("authorization"), format!("Bearer {token_clone1}")));
         let req = SecurityRequest {
             headers: &headers,
             query: &ParamVec::new(),
@@ -4132,7 +4080,7 @@ fn test_jwks_empty_cache_timeout_retry() {
         // Small delay to ensure thread 1 claims the refresh first
         std::thread::sleep(Duration::from_millis(10));
         let mut headers: HeaderVec = HeaderVec::new();
-        headers.push((Arc::from("authorization"), format!("Bearer {}", token_clone2)));
+        headers.push((Arc::from("authorization"), format!("Bearer {token_clone2}")));
         let req = SecurityRequest {
             headers: &headers,
             query: &ParamVec::new(),
@@ -4157,8 +4105,7 @@ fn test_jwks_empty_cache_timeout_retry() {
     // If thread 1's refresh completes < 2s, thread 2 will be woken by condition variable
     assert!(
         elapsed2 < Duration::from_secs(5),
-        "Thread 2 should complete within 5s (either via wake-up or timeout + retry), took {:?}",
-        elapsed2
+        "Thread 2 should complete within 5s (either via wake-up or timeout + retry), took {elapsed2:?}"
     );
     
     // Verify both threads completed (system didn't hang)
@@ -4166,8 +4113,7 @@ fn test_jwks_empty_cache_timeout_retry() {
     let final_count = request_count.load(Ordering::Relaxed);
     assert!(
         final_count >= 1,
-        "At least 1 HTTP request should be made, got {}",
-        final_count
+        "At least 1 HTTP request should be made, got {final_count}"
     );
     
     // The key test is that thread 2 completed without hanging
@@ -4209,7 +4155,7 @@ fn test_jwks_empty_cache_retry_after_failed_refresh() {
     
     // Spawn server that returns HTTP 500 error first (refresh fails), then valid response
     let request_num = Arc::new(std::sync::Mutex::new(0));
-    let request_num_clone = request_num.clone();
+    let request_num_clone = request_num;
     std::thread::spawn(move || {
         for _ in 0..5 {
             if let Ok((mut stream, _)) = listener.accept() {
@@ -4242,7 +4188,7 @@ fn test_jwks_empty_cache_retry_after_failed_refresh() {
     
     // Create provider with empty cache
     let provider = Arc::new(
-        brrtrouter::security::JwksBearerProvider::new(jwks_url.clone())
+        brrtrouter::security::JwksBearerProvider::new(jwks_url)
             .cache_ttl(Duration::from_secs(300))
     );
     
@@ -4259,7 +4205,7 @@ fn test_jwks_empty_cache_retry_after_failed_refresh() {
     
     // First validation - will trigger refresh that FAILS (HTTP 500), then retry should succeed
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -4278,8 +4224,7 @@ fn test_jwks_empty_cache_retry_after_failed_refresh() {
     let final_count = request_count.load(Ordering::Relaxed);
     assert!(
         final_count >= 2,
-        "At least 2 HTTP requests should be made (initial failure + retry success), got {}",
-        final_count
+        "At least 2 HTTP requests should be made (initial failure + retry success), got {final_count}"
     );
     
     // Wait a bit more to ensure retry completes and cache is populated
@@ -4344,7 +4289,7 @@ fn test_jwks_empty_cache_no_retry_on_successful_empty_response() {
     
     // Create provider with empty cache
     let provider = Arc::new(
-        brrtrouter::security::JwksBearerProvider::new(jwks_url.clone())
+        brrtrouter::security::JwksBearerProvider::new(jwks_url)
             .cache_ttl(Duration::from_secs(300))
     );
     
@@ -4362,7 +4307,7 @@ fn test_jwks_empty_cache_no_retry_on_successful_empty_response() {
     
     // First validation - will trigger refresh that succeeds but returns empty keys
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -4382,8 +4327,7 @@ fn test_jwks_empty_cache_no_retry_on_successful_empty_response() {
     assert!(
         final_count == 1,
         "Exactly 1 HTTP request should be made (refresh succeeded with empty keys, no retry). \
-         Got {} requests. If > 1, retry logic incorrectly triggered on successful empty response.",
-        final_count
+         Got {final_count} requests. If > 1, retry logic incorrectly triggered on successful empty response."
     );
     
     // Verify that validation fails (as expected with empty keys)
@@ -4446,7 +4390,7 @@ fn test_jwks_background_thread_refresh_interval() {
     // Background thread should refresh every (20s - 10s) = 10s
     let cache_ttl = Duration::from_secs(20);
     let provider = Arc::new(
-        brrtrouter::security::JwksBearerProvider::new(jwks_url.clone())
+        brrtrouter::security::JwksBearerProvider::new(jwks_url)
             .cache_ttl(cache_ttl)
     );
     
@@ -4466,9 +4410,8 @@ fn test_jwks_background_thread_refresh_interval() {
     let refresh_count = request_count.load(Ordering::Relaxed);
     assert!(
         refresh_count >= 1,
-        "Background thread should have refreshed at least once. Got {} requests, expected >= 1. \
-         Initial count was {}, so background refresh should have happened.",
-        refresh_count, initial_count
+        "Background thread should have refreshed at least once. Got {refresh_count} requests, expected >= 1. \
+         Initial count was {initial_count}, so background refresh should have happened."
     );
     
     // Verify refresh happened at approximately correct interval
@@ -4476,8 +4419,7 @@ fn test_jwks_background_thread_refresh_interval() {
     assert!(
         refresh_count <= 3,
         "Background thread should refresh approximately every 10s (cache_ttl - 10s). \
-         Got {} requests in 11s, expected 1-2 (allowing for timing variance).",
-        refresh_count
+         Got {refresh_count} requests in 11s, expected 1-2 (allowing for timing variance)."
     );
     
     provider.stop_background_refresh();
@@ -4536,7 +4478,7 @@ fn test_jwks_background_thread_starts_on_creation() {
     // So refresh happens every 1s
     let cache_ttl = Duration::from_secs(2);
     let provider = Arc::new(
-        brrtrouter::security::JwksBearerProvider::new(jwks_url.clone())
+        brrtrouter::security::JwksBearerProvider::new(jwks_url)
             .cache_ttl(cache_ttl)
     );
     
@@ -4551,9 +4493,8 @@ fn test_jwks_background_thread_starts_on_creation() {
     assert!(
         final_count >= 1,
         "Background thread should have started and made at least one refresh request. \
-         Got {} requests. This proves the thread started on provider creation. \
-         For 2s TTL, refresh interval is 1s (minimum), so 2.5s wait should trigger at least one refresh.",
-        final_count
+         Got {final_count} requests. This proves the thread started on provider creation. \
+         For 2s TTL, refresh interval is 1s (minimum), so 2.5s wait should trigger at least one refresh."
     );
     
     provider.stop_background_refresh();
@@ -4607,7 +4548,7 @@ fn test_jwks_background_thread_handles_shutdown_flag() {
     // Create provider with short cache_ttl (5s)
     let cache_ttl = Duration::from_secs(5);
     let provider = Arc::new(
-        brrtrouter::security::JwksBearerProvider::new(jwks_url.clone())
+        brrtrouter::security::JwksBearerProvider::new(jwks_url)
             .cache_ttl(cache_ttl)
     );
     
@@ -4625,8 +4566,7 @@ fn test_jwks_background_thread_handles_shutdown_flag() {
     // Verify shutdown completed quickly (thread should check flag and exit)
     assert!(
         stop_duration < Duration::from_secs(2),
-        "Background thread should exit quickly when shutdown flag is set (took {:?})",
-        stop_duration
+        "Background thread should exit quickly when shutdown flag is set (took {stop_duration:?})"
     );
     
     // Wait a bit longer to ensure thread has stopped
@@ -4638,9 +4578,7 @@ fn test_jwks_background_thread_handles_shutdown_flag() {
     assert!(
         count_after_shutdown == count_before_shutdown,
         "No additional requests should be made after shutdown. \
-         Before: {}, After: {}. This proves the thread stopped checking the shutdown flag.",
-        count_before_shutdown,
-        count_after_shutdown
+         Before: {count_before_shutdown}, After: {count_after_shutdown}. This proves the thread stopped checking the shutdown flag."
     );
 }
 
@@ -4694,7 +4632,7 @@ fn test_jwks_background_thread_ttl_change_detection() {
     // Create provider with long cache_ttl (60s)
     // Background thread should refresh every (60s - 10s) = 50s
     // But we'll change it to 2s, which should trigger early wake-up
-    let mut provider = brrtrouter::security::JwksBearerProvider::new(jwks_url.clone())
+    let mut provider = brrtrouter::security::JwksBearerProvider::new(jwks_url)
         .cache_ttl(Duration::from_secs(60));
     
     // Wait for background thread to start and make initial refresh
@@ -4718,17 +4656,15 @@ fn test_jwks_background_thread_ttl_change_detection() {
     assert!(
         count_after_ttl_change > count_before_ttl_change,
         "Background thread should have detected TTL change and refreshed. \
-         Before TTL change: {}, After TTL change: {}. \
-         This proves the thread woke up early and recalculated refresh interval.",
-        count_before_ttl_change,
-        count_after_ttl_change
+         Before TTL change: {count_before_ttl_change}, After TTL change: {count_after_ttl_change}. \
+         This proves the thread woke up early and recalculated refresh interval."
     );
     
     // Verify refresh happened quickly after TTL change (within 2s)
     // If TTL change wasn't detected, refresh would happen at old interval (50s)
     // The fact that we got a refresh within 2s proves early wake-up worked
     assert!(
-        count_after_ttl_change >= count_before_ttl_change + 1,
+        count_after_ttl_change > count_before_ttl_change,
         "At least one refresh should have happened after TTL change. \
          This verifies the thread detected the change and recalculated interval."
     );
@@ -4788,7 +4724,7 @@ fn test_jwks_thread_spawn_failure_recovery() {
     
     // Create provider with expired cache to trigger refresh
     let provider = Arc::new(
-        brrtrouter::security::JwksBearerProvider::new(jwks_url.clone())
+        brrtrouter::security::JwksBearerProvider::new(jwks_url)
             .cache_ttl(Duration::from_secs(1))
     );
     
@@ -4808,7 +4744,7 @@ fn test_jwks_thread_spawn_failure_recovery() {
     };
     
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -4829,8 +4765,7 @@ fn test_jwks_thread_spawn_failure_recovery() {
     let final_count = request_count.load(Ordering::Relaxed);
     assert!(
         final_count >= 1,
-        "At least one refresh should have been attempted. Got {} requests.",
-        final_count
+        "At least one refresh should have been attempted. Got {final_count} requests."
     );
     
     // Verify system is still functional (refresh_in_progress flag not stuck)
@@ -4855,8 +4790,7 @@ fn test_jwks_thread_spawn_failure_recovery() {
     let final_count = request_count.load(Ordering::Relaxed);
     assert!(
         final_count >= 1,
-        "At least one refresh should have been attempted. Got {} requests.",
-        final_count
+        "At least one refresh should have been attempted. Got {final_count} requests."
     );
     
     provider.stop_background_refresh();
@@ -4917,7 +4851,7 @@ fn test_jwks_thread_spawn_failure_doesnt_deadlock() {
     
     // Create provider with expired cache to trigger multiple refresh attempts
     let provider = Arc::new(
-        brrtrouter::security::JwksBearerProvider::new(jwks_url.clone())
+        brrtrouter::security::JwksBearerProvider::new(jwks_url)
             .cache_ttl(Duration::from_secs(1))
     );
     
@@ -4938,7 +4872,7 @@ fn test_jwks_thread_spawn_failure_doesnt_deadlock() {
     let barrier = Arc::new(Barrier::new(num_threads));
     let mut handles = Vec::new();
     let completed = Arc::new(AtomicU32::new(0));
-    let token_clone = token.clone();
+    let token_clone = token;
     
     for _ in 0..num_threads {
         let provider_clone = provider.clone();
@@ -4953,7 +4887,7 @@ fn test_jwks_thread_spawn_failure_doesnt_deadlock() {
             
             // Create headers for this thread
             let mut headers: HeaderVec = HeaderVec::new();
-            headers.push((Arc::from("authorization"), format!("Bearer {}", token_inner)));
+            headers.push((Arc::from("authorization"), format!("Bearer {token_inner}")));
             let req = SecurityRequest {
                 headers: &headers,
                 query: &ParamVec::new(),
@@ -4982,16 +4916,14 @@ fn test_jwks_thread_spawn_failure_doesnt_deadlock() {
     let final_completed = completed.load(Ordering::Relaxed);
     assert_eq!(
         final_completed, num_threads as u32,
-        "All {} threads should have completed (no deadlock). Got {} completed.",
-        num_threads, final_completed
+        "All {num_threads} threads should have completed (no deadlock). Got {final_completed} completed."
     );
     
     // Verify threads completed quickly (proves no deadlock)
     // If there were a deadlock, threads would hang indefinitely
     assert!(
         elapsed < Duration::from_secs(5),
-        "All threads should complete quickly (proves no deadlock). Took {:?}",
-        elapsed
+        "All threads should complete quickly (proves no deadlock). Took {elapsed:?}"
     );
     
     // Verify reasonable number of HTTP requests (atomic claim worked)
@@ -4999,8 +4931,7 @@ fn test_jwks_thread_spawn_failure_doesnt_deadlock() {
     let final_count = request_count.load(Ordering::Relaxed);
     assert!(
         final_count <= 5,
-        "Atomic claim should prevent thread storms. Got {} requests for {} threads (expected 1-5).",
-        final_count, num_threads
+        "Atomic claim should prevent thread storms. Got {final_count} requests for {num_threads} threads (expected 1-5)."
     );
     
     provider.stop_background_refresh();
@@ -5057,7 +4988,7 @@ fn test_jwks_spawn_failure_wakeup_timing() {
     
     // Create provider with empty cache
     let provider = Arc::new(
-        brrtrouter::security::JwksBearerProvider::new(jwks_url.clone())
+        brrtrouter::security::JwksBearerProvider::new(jwks_url)
             .cache_ttl(Duration::from_secs(300))
     );
     
@@ -5091,7 +5022,7 @@ fn test_jwks_spawn_failure_wakeup_timing() {
             let start = Instant::now();
             
             let mut headers: HeaderVec = HeaderVec::new();
-            headers.push((Arc::from("authorization"), format!("Bearer {}", token_clone)));
+            headers.push((Arc::from("authorization"), format!("Bearer {token_clone}")));
             let req = SecurityRequest {
                 headers: &headers,
                 query: &ParamVec::new(),
@@ -5116,7 +5047,7 @@ fn test_jwks_spawn_failure_wakeup_timing() {
     
     // Verify all threads were woken
     let times = wakeup_times.lock().unwrap();
-    assert_eq!(times.len(), num_threads, "All {} threads should have completed", num_threads);
+    assert_eq!(times.len(), num_threads, "All {num_threads} threads should have completed");
     
     // Verify threads were woken quickly (condition variable working)
     // Refresh takes ~50ms, so threads should complete within ~200ms
@@ -5124,18 +5055,16 @@ fn test_jwks_spawn_failure_wakeup_timing() {
     let max_wait_time = times.iter().map(|(_, t)| *t).max().unwrap();
     assert!(
         max_wait_time < Duration::from_millis(500),
-        "Threads should be woken quickly via condition variable (max wait: {:?}, expected < 500ms). \
+        "Threads should be woken quickly via condition variable (max wait: {max_wait_time:?}, expected < 500ms). \
          This proves condition variable notifies waiters promptly. \
-         If spawn were to fail, the error handler would also notify waiters immediately.",
-        max_wait_time
+         If spawn were to fail, the error handler would also notify waiters immediately."
     );
     
     // Verify only one HTTP request was made
     let final_count = request_count.load(Ordering::Relaxed);
     assert!(
         final_count == 1,
-        "Only one HTTP request should be made (atomic claim worked), got {}",
-        final_count
+        "Only one HTTP request should be made (atomic claim worked), got {final_count}"
     );
     
     provider.stop_background_refresh();
@@ -5193,7 +5122,7 @@ fn test_jwks_empty_cache_condition_variable_wait() {
     
     // Create provider with empty cache
     let provider = Arc::new(
-        brrtrouter::security::JwksBearerProvider::new(jwks_url.clone())
+        brrtrouter::security::JwksBearerProvider::new(jwks_url)
             .cache_ttl(Duration::from_secs(300))
     );
     
@@ -5217,7 +5146,7 @@ fn test_jwks_empty_cache_condition_variable_wait() {
     let provider_first = provider.clone();
     let handle_first = std::thread::spawn(move || {
         let mut headers: HeaderVec = HeaderVec::new();
-        headers.push((Arc::from("authorization"), format!("Bearer {}", token_first)));
+        headers.push((Arc::from("authorization"), format!("Bearer {token_first}")));
         let req = SecurityRequest {
             headers: &headers,
             query: &ParamVec::new(),
@@ -5248,7 +5177,7 @@ fn test_jwks_empty_cache_condition_variable_wait() {
             let start = Instant::now();
             
             let mut headers: HeaderVec = HeaderVec::new();
-            headers.push((Arc::from("authorization"), format!("Bearer {}", token_clone)));
+            headers.push((Arc::from("authorization"), format!("Bearer {token_clone}")));
             let req = SecurityRequest {
                 headers: &headers,
                 query: &ParamVec::new(),
@@ -5275,7 +5204,7 @@ fn test_jwks_empty_cache_condition_variable_wait() {
     
     // Verify all threads completed (were woken by condition variable)
     let times = wait_times.lock().unwrap();
-    assert_eq!(times.len(), num_threads, "All {} threads should have completed", num_threads);
+    assert_eq!(times.len(), num_threads, "All {num_threads} threads should have completed");
     
     // Verify threads that waited were woken when refresh completed
     // Refresh takes ~200ms, so waiting threads should complete around that time
@@ -5287,8 +5216,7 @@ fn test_jwks_empty_cache_condition_variable_wait() {
     // The fact that some threads wait and are woken proves condition variable is working
     assert!(
         max_wait >= Duration::from_millis(150),
-        "At least some threads should have waited for refresh to complete. Max wait: {:?}",
-        max_wait
+        "At least some threads should have waited for refresh to complete. Max wait: {max_wait:?}"
     );
     
     // Verify reasonable number of HTTP requests (atomic claim should prevent thread storm)
@@ -5297,11 +5225,10 @@ fn test_jwks_empty_cache_condition_variable_wait() {
     // In a test environment with tight timing or when run with other tests, multiple threads might see empty cache before atomic claim
     let final_count = request_count.load(Ordering::Relaxed);
     assert!(
-        final_count >= 1 && final_count <= 10,
+        (1..=10).contains(&final_count),
         "Should have 1-10 HTTP requests (atomic claim should prevent thread storm). \
-         Got {}. If much higher, atomic claim may not be working correctly. \
-         The key test is that threads wait on condition variable and are woken, which is verified above.",
-        final_count
+         Got {final_count}. If much higher, atomic claim may not be working correctly. \
+         The key test is that threads wait on condition variable and are woken, which is verified above."
     );
     
     provider.stop_background_refresh();
@@ -5362,7 +5289,7 @@ fn test_jwks_empty_cache_wakeup_on_completion() {
     
     // Create provider with empty cache
     let provider = Arc::new(
-        brrtrouter::security::JwksBearerProvider::new(jwks_url.clone())
+        brrtrouter::security::JwksBearerProvider::new(jwks_url)
             .cache_ttl(Duration::from_secs(300))
     );
     
@@ -5396,7 +5323,7 @@ fn test_jwks_empty_cache_wakeup_on_completion() {
             let start = Instant::now();
             
             let mut headers: HeaderVec = HeaderVec::new();
-            headers.push((Arc::from("authorization"), format!("Bearer {}", token_clone)));
+            headers.push((Arc::from("authorization"), format!("Bearer {token_clone}")));
             let req = SecurityRequest {
                 headers: &headers,
                 query: &ParamVec::new(),
@@ -5421,7 +5348,7 @@ fn test_jwks_empty_cache_wakeup_on_completion() {
     
     // Verify all threads were woken
     let times = wakeup_times.lock().unwrap();
-    assert_eq!(times.len(), num_threads, "All {} threads should have completed", num_threads);
+    assert_eq!(times.len(), num_threads, "All {num_threads} threads should have completed");
     
     // Verify threads were woken shortly after refresh completed
     // Refresh completes after ~100ms, threads should be woken within ~50ms of that
@@ -5433,8 +5360,7 @@ fn test_jwks_empty_cache_wakeup_on_completion() {
         // Threads should be woken within ~150ms of refresh start (100ms refresh + 50ms wake-up)
         assert!(
             avg_wakeup < Duration::from_millis(300),
-            "Threads should be woken promptly after refresh completes. Average wake-up time: {:?}",
-            avg_wakeup
+            "Threads should be woken promptly after refresh completes. Average wake-up time: {avg_wakeup:?}"
         );
     }
     
@@ -5442,8 +5368,7 @@ fn test_jwks_empty_cache_wakeup_on_completion() {
     let final_count = request_count.load(Ordering::Relaxed);
     assert!(
         final_count == 1,
-        "Only one HTTP request should be made (only one thread should do refresh), got {}",
-        final_count
+        "Only one HTTP request should be made (only one thread should do refresh), got {final_count}"
     );
     
     provider.stop_background_refresh();
@@ -5477,7 +5402,7 @@ fn test_jwks_empty_cache_retry_claim_race() {
     
     // Server returns invalid JSON first (refresh fails, cache stays empty), then valid JWKS
     let request_num = Arc::new(std::sync::Mutex::new(0));
-    let request_num_clone = request_num.clone();
+    let request_num_clone = request_num;
     std::thread::spawn(move || {
         for _ in 0..10 {
             if let Ok((mut stream, _)) = listener.accept() {
@@ -5510,7 +5435,7 @@ fn test_jwks_empty_cache_retry_claim_race() {
     
     // Create provider with empty cache
     let provider = Arc::new(
-        brrtrouter::security::JwksBearerProvider::new(jwks_url.clone())
+        brrtrouter::security::JwksBearerProvider::new(jwks_url)
             .cache_ttl(Duration::from_secs(300))
     );
     
@@ -5541,7 +5466,7 @@ fn test_jwks_empty_cache_retry_claim_race() {
             barrier_clone.wait();
             
             let mut headers: HeaderVec = HeaderVec::new();
-            headers.push((Arc::from("authorization"), format!("Bearer {}", token_clone)));
+            headers.push((Arc::from("authorization"), format!("Bearer {token_clone}")));
             let req = SecurityRequest {
                 headers: &headers,
                 query: &ParamVec::new(),
@@ -5569,8 +5494,7 @@ fn test_jwks_empty_cache_retry_claim_race() {
     assert!(
         final_count == 2,
         "Should have exactly 2 HTTP requests (initial failure + one retry). \
-         Got {}. This proves atomic claim prevented multiple retry attempts.",
-        final_count
+         Got {final_count}. This proves atomic claim prevented multiple retry attempts."
     );
     
     provider.stop_background_refresh();
@@ -5616,7 +5540,7 @@ fn test_jwks_empty_cache_timeout_still_empty_check() {
     // Server that returns 500 error on first request (refresh fails), then succeeds on retry
     // This ensures the refresh actually fails (not just slow), so retry happens
     let request_num = Arc::new(std::sync::Mutex::new(0));
-    let request_num_clone = request_num.clone();
+    let request_num_clone = request_num;
     std::thread::spawn(move || {
         for _ in 0..5 {
             if let Ok((mut stream, _)) = listener.accept() {
@@ -5650,7 +5574,7 @@ fn test_jwks_empty_cache_timeout_still_empty_check() {
     
     // Create provider with empty cache
     let provider = Arc::new(
-        brrtrouter::security::JwksBearerProvider::new(jwks_url.clone())
+        brrtrouter::security::JwksBearerProvider::new(jwks_url)
             .cache_ttl(Duration::from_secs(300))
     );
     
@@ -5668,7 +5592,7 @@ fn test_jwks_empty_cache_timeout_still_empty_check() {
     // Spawn two threads: one does refresh (fails due to timeout), one waits and times out, then retries
     let barrier = Arc::new(Barrier::new(2));
     let barrier_clone1 = barrier.clone();
-    let barrier_clone2 = barrier.clone();
+    let barrier_clone2 = barrier;
     let provider_clone1 = provider.clone();
     let provider_clone2 = provider.clone();
     let token_clone1 = token.clone();
@@ -5680,7 +5604,7 @@ fn test_jwks_empty_cache_timeout_still_empty_check() {
     let handle1 = std::thread::spawn(move || {
         barrier_clone1.wait();
         let mut headers: HeaderVec = HeaderVec::new();
-        headers.push((Arc::from("authorization"), format!("Bearer {}", token_clone1)));
+        headers.push((Arc::from("authorization"), format!("Bearer {token_clone1}")));
         let req = SecurityRequest {
             headers: &headers,
             query: &ParamVec::new(),
@@ -5694,7 +5618,7 @@ fn test_jwks_empty_cache_timeout_still_empty_check() {
         barrier_clone2.wait();
         std::thread::sleep(Duration::from_millis(10)); // Ensure thread 1 claims refresh first
         let mut headers: HeaderVec = HeaderVec::new();
-        headers.push((Arc::from("authorization"), format!("Bearer {}", token_clone2)));
+        headers.push((Arc::from("authorization"), format!("Bearer {token_clone2}")));
         let req = SecurityRequest {
             headers: &headers,
             query: &ParamVec::new(),
@@ -5718,13 +5642,12 @@ fn test_jwks_empty_cache_timeout_still_empty_check() {
     assert!(
         final_count >= 2,
         "Should have at least 2 HTTP requests (initial failed refresh + retry after timeout). \
-         Got {}. This proves the system checked cache emptiness after timeout and retried.",
-        final_count
+         Got {final_count}. This proves the system checked cache emptiness after timeout and retried."
     );
     
     // Verify cache was eventually populated (validation should succeed)
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -5770,7 +5693,7 @@ fn test_jwks_empty_cache_timeout_recovery() {
     // Server that returns 500 error on first request (refresh fails), then succeeds on retry
     // This ensures the refresh actually fails (not just slow), so retry happens
     let request_num = Arc::new(std::sync::Mutex::new(0));
-    let request_num_clone = request_num.clone();
+    let request_num_clone = request_num;
     std::thread::spawn(move || {
         for _ in 0..5 {
             if let Ok((mut stream, _)) = listener.accept() {
@@ -5804,7 +5727,7 @@ fn test_jwks_empty_cache_timeout_recovery() {
     
     // Create provider with empty cache
     let provider = Arc::new(
-        brrtrouter::security::JwksBearerProvider::new(jwks_url.clone())
+        brrtrouter::security::JwksBearerProvider::new(jwks_url)
             .cache_ttl(Duration::from_secs(300))
     );
     
@@ -5825,7 +5748,7 @@ fn test_jwks_empty_cache_timeout_recovery() {
     let scheme_clone1 = scheme.clone();
     let handle1 = std::thread::spawn(move || {
         let mut headers: HeaderVec = HeaderVec::new();
-        headers.push((Arc::from("authorization"), format!("Bearer {}", token_clone1)));
+        headers.push((Arc::from("authorization"), format!("Bearer {token_clone1}")));
         let req = SecurityRequest {
             headers: &headers,
             query: &ParamVec::new(),
@@ -5844,15 +5767,15 @@ fn test_jwks_empty_cache_timeout_recovery() {
     let scheme_clone2 = scheme.clone();
     let handle2 = std::thread::spawn(move || {
         let mut headers: HeaderVec = HeaderVec::new();
-        headers.push((Arc::from("authorization"), format!("Bearer {}", token_clone2)));
+        headers.push((Arc::from("authorization"), format!("Bearer {token_clone2}")));
         let req = SecurityRequest {
             headers: &headers,
             query: &ParamVec::new(),
             cookies: &HeaderVec::new(),
         };
         // This will wait for thread 1's refresh, timeout, check cache, retry, and eventually succeed
-        let result = provider_clone2.validate(&scheme_clone2, &[], &req);
-        result
+        
+        provider_clone2.validate(&scheme_clone2, &[], &req)
     });
     
     // Wait for both threads
@@ -5867,8 +5790,7 @@ fn test_jwks_empty_cache_timeout_recovery() {
     assert!(
         final_count >= 2,
         "Should have at least 2 HTTP requests (initial failed refresh + retry). \
-         Got {}. This proves the retry mechanism worked after refresh failed.",
-        final_count
+         Got {final_count}. This proves the retry mechanism worked after refresh failed."
     );
     
     // Wait a bit more and verify system recovered
@@ -5882,7 +5804,7 @@ fn test_jwks_empty_cache_timeout_recovery() {
     
     // Verify cache is populated (subsequent validations should succeed immediately)
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),

@@ -118,7 +118,7 @@ fn test_validator_cache_with_app_service() {
     let (routes, security_schemes, _slug) = load_spec_full(spec_path).expect("Failed to load spec");
 
     // Create service with cache enabled (default)
-    let router = Arc::new(RwLock::new(Router::new(routes.clone())));
+    let router = Arc::new(RwLock::new(Router::new(routes)));
     let dispatcher = Arc::new(RwLock::new(Dispatcher::new()));
     let service = AppService::new(
         router,
@@ -245,7 +245,7 @@ fn test_cache_thread_safety() {
             // All threads try to get/compile the same validator
             let validator =
                 cache_clone.get_or_compile("concurrent_handler", "request", None, &schema_clone);
-            assert!(validator.is_some(), "Thread {} failed to get validator", i);
+            assert!(validator.is_some(), "Thread {i} failed to get validator");
             validator.unwrap()
         });
         handles.push(handle);
@@ -260,8 +260,7 @@ fn test_cache_thread_safety() {
     for (i, validator) in validators.iter().enumerate().skip(1) {
         assert!(
             Arc::ptr_eq(first_ptr, validator),
-            "Thread {} got a different validator Arc",
-            i
+            "Thread {i} got a different validator Arc"
         );
     }
 

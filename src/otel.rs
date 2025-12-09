@@ -723,7 +723,7 @@ mod tests {
 
         // Should be close to 50 (allow some variance: 40-60)
         assert!(
-            sampled_count >= 40 && sampled_count <= 60,
+            (40..=60).contains(&sampled_count),
             "Expected ~50 samples, got {}",
             sampled_count
         );

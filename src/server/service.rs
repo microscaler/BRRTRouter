@@ -393,9 +393,9 @@ pub fn metrics_endpoint(
         "# HELP brrtrouter_active_requests Number of requests currently being processed\n",
     );
     body.push_str("# TYPE brrtrouter_active_requests gauge\n");
-    let _ = write!(
+    let _ = writeln!(
         body,
-        "brrtrouter_active_requests {}\n",
+        "brrtrouter_active_requests {}",
         metrics.active_requests()
     );
 
@@ -406,9 +406,9 @@ pub fn metrics_endpoint(
     body.push_str("# TYPE brrtrouter_requests_total counter\n");
     for ((path, status), count) in &status_stats {
         let escaped_path = escape_prometheus_label(path);
-        let _ = write!(
+        let _ = writeln!(
             body,
-            "brrtrouter_requests_total{{path=\"{escaped_path}\",status=\"{status}\"}} {count}\n",
+            "brrtrouter_requests_total{{path=\"{escaped_path}\",status=\"{status}\"}} {count}",
         );
     }
 
@@ -420,32 +420,32 @@ pub fn metrics_endpoint(
 
     // Emit histogram buckets
     for (i, &boundary) in bucket_boundaries.iter().enumerate() {
-        let _ = write!(
+        let _ = writeln!(
             body,
-            "brrtrouter_request_duration_seconds_bucket{{le=\"{boundary}\"}} {}\n",
+            "brrtrouter_request_duration_seconds_bucket{{le=\"{boundary}\"}} {}",
             buckets[i]
         );
     }
     // +Inf bucket (cumulative)
-    let _ = write!(
+    let _ = writeln!(
         body,
-        "brrtrouter_request_duration_seconds_bucket{{le=\"+Inf\"}} {}\n",
+        "brrtrouter_request_duration_seconds_bucket{{le=\"+Inf\"}} {}",
         buckets[bucket_boundaries.len()]
     );
     // Histogram sum and count
     let sum_secs = sum_ns as f64 / 1_000_000_000.0;
-    let _ = write!(
+    let _ = writeln!(
         body,
-        "brrtrouter_request_duration_seconds_sum {sum_secs:.6}\n"
+        "brrtrouter_request_duration_seconds_sum {sum_secs:.6}"
     );
-    let _ = write!(body, "brrtrouter_request_duration_seconds_count {count}\n");
+    let _ = writeln!(body, "brrtrouter_request_duration_seconds_count {count}");
 
     // Legacy metrics (backward compatible)
     body.push_str("# HELP brrtrouter_top_level_requests_total Total number of received requests\n");
     body.push_str("# TYPE brrtrouter_top_level_requests_total counter\n");
-    let _ = write!(
+    let _ = writeln!(
         body,
-        "brrtrouter_top_level_requests_total {}\n",
+        "brrtrouter_top_level_requests_total {}",
         metrics.top_level_request_count()
     );
 
@@ -453,49 +453,49 @@ pub fn metrics_endpoint(
         "# HELP brrtrouter_auth_failures_total Total number of authentication failures\n",
     );
     body.push_str("# TYPE brrtrouter_auth_failures_total counter\n");
-    let _ = write!(
+    let _ = writeln!(
         body,
-        "brrtrouter_auth_failures_total {}\n",
+        "brrtrouter_auth_failures_total {}",
         metrics.auth_failures()
     );
 
     // Connection metrics
     body.push_str("# HELP brrtrouter_connection_closes_total Total number of connection close events (client disconnects)\n");
     body.push_str("# TYPE brrtrouter_connection_closes_total counter\n");
-    let _ = write!(
+    let _ = writeln!(
         body,
-        "brrtrouter_connection_closes_total {}\n",
+        "brrtrouter_connection_closes_total {}",
         metrics.connection_closes()
     );
 
     body.push_str("# HELP brrtrouter_connection_errors_total Total number of connection errors (broken pipe, reset, etc.)\n");
     body.push_str("# TYPE brrtrouter_connection_errors_total counter\n");
-    let _ = write!(
+    let _ = writeln!(
         body,
-        "brrtrouter_connection_errors_total {}\n",
+        "brrtrouter_connection_errors_total {}",
         metrics.connection_errors()
     );
 
     body.push_str("# HELP brrtrouter_connection_health_ratio Ratio of successful requests to total connection events\n");
     body.push_str("# TYPE brrtrouter_connection_health_ratio gauge\n");
-    let _ = write!(
+    let _ = writeln!(
         body,
-        "brrtrouter_connection_health_ratio {:.4}\n",
+        "brrtrouter_connection_health_ratio {:.4}",
         metrics.connection_health_ratio()
     );
 
     body.push_str("# HELP brrtrouter_request_latency_seconds Average request latency in seconds\n");
     body.push_str("# TYPE brrtrouter_request_latency_seconds gauge\n");
     let avg = metrics.average_latency().as_secs_f64();
-    let _ = write!(body, "brrtrouter_request_latency_seconds {avg:.6}\n");
+    let _ = writeln!(body, "brrtrouter_request_latency_seconds {avg:.6}");
 
     body.push_str("# HELP brrtrouter_coroutine_stack_bytes Configured coroutine stack size\n");
     body.push_str("# TYPE brrtrouter_coroutine_stack_bytes gauge\n");
-    let _ = write!(body, "brrtrouter_coroutine_stack_bytes {stack_size}\n");
+    let _ = writeln!(body, "brrtrouter_coroutine_stack_bytes {stack_size}");
 
     body.push_str("# HELP brrtrouter_coroutine_stack_used_bytes Coroutine stack bytes used\n");
     body.push_str("# TYPE brrtrouter_coroutine_stack_used_bytes gauge\n");
-    let _ = write!(body, "brrtrouter_coroutine_stack_used_bytes {used_stack}\n",);
+    let _ = writeln!(body, "brrtrouter_coroutine_stack_used_bytes {used_stack}",);
 
     // Worker pool metrics (NEW - for backpressure monitoring)
     if let Some(disp) = dispatcher {
@@ -507,9 +507,9 @@ pub fn metrics_endpoint(
             body.push_str("# TYPE brrtrouter_worker_pool_queue_depth gauge\n");
             for (handler, (queue_depth, _, _, _)) in &worker_metrics {
                 let escaped_handler = escape_prometheus_label(handler);
-                let _ = write!(
+                let _ = writeln!(
                     body,
-                    "brrtrouter_worker_pool_queue_depth{{handler=\"{escaped_handler}\"}} {queue_depth}\n",
+                    "brrtrouter_worker_pool_queue_depth{{handler=\"{escaped_handler}\"}} {queue_depth}",
                 );
             }
 
@@ -517,9 +517,9 @@ pub fn metrics_endpoint(
             body.push_str("# TYPE brrtrouter_worker_pool_shed_total counter\n");
             for (handler, (_, shed_count, _, _)) in &worker_metrics {
                 let escaped_handler = escape_prometheus_label(handler);
-                let _ = write!(
+                let _ = writeln!(
                     body,
-                    "brrtrouter_worker_pool_shed_total{{handler=\"{escaped_handler}\"}} {shed_count}\n",
+                    "brrtrouter_worker_pool_shed_total{{handler=\"{escaped_handler}\"}} {shed_count}",
                 );
             }
 
@@ -527,9 +527,9 @@ pub fn metrics_endpoint(
             body.push_str("# TYPE brrtrouter_worker_pool_dispatched_total counter\n");
             for (handler, (_, _, dispatched, _)) in &worker_metrics {
                 let escaped_handler = escape_prometheus_label(handler);
-                let _ = write!(
+                let _ = writeln!(
                     body,
-                    "brrtrouter_worker_pool_dispatched_total{{handler=\"{escaped_handler}\"}} {dispatched}\n",
+                    "brrtrouter_worker_pool_dispatched_total{{handler=\"{escaped_handler}\"}} {dispatched}",
                 );
             }
 
@@ -537,9 +537,9 @@ pub fn metrics_endpoint(
             body.push_str("# TYPE brrtrouter_worker_pool_completed_total counter\n");
             for (handler, (_, _, _, completed)) in &worker_metrics {
                 let escaped_handler = escape_prometheus_label(handler);
-                let _ = write!(
+                let _ = writeln!(
                     body,
-                    "brrtrouter_worker_pool_completed_total{{handler=\"{escaped_handler}\"}} {completed}\n",
+                    "brrtrouter_worker_pool_completed_total{{handler=\"{escaped_handler}\"}} {completed}",
                 );
             }
         }
@@ -556,9 +556,9 @@ pub fn metrics_endpoint(
     body.push_str("# TYPE brrtrouter_path_requests_total counter\n");
     for (path, (count, _, _, _)) in &path_stats {
         let escaped_path = escaped_paths.get(path).unwrap();
-        let _ = write!(
+        let _ = writeln!(
             body,
-            "brrtrouter_path_requests_total{{path=\"{escaped_path}\"}} {count}\n",
+            "brrtrouter_path_requests_total{{path=\"{escaped_path}\"}} {count}",
         );
     }
 
@@ -567,9 +567,9 @@ pub fn metrics_endpoint(
     for (path, (_, avg_ns, _, _)) in &path_stats {
         let escaped_path = escaped_paths.get(path).unwrap();
         let avg_secs = (*avg_ns as f64) / 1_000_000_000.0;
-        let _ = write!(
+        let _ = writeln!(
             body,
-            "brrtrouter_path_latency_seconds_avg{{path=\"{escaped_path}\"}} {avg_secs:.6}\n",
+            "brrtrouter_path_latency_seconds_avg{{path=\"{escaped_path}\"}} {avg_secs:.6}",
         );
     }
 
@@ -578,9 +578,9 @@ pub fn metrics_endpoint(
     for (path, (_, _, min_ns, _)) in &path_stats {
         let escaped_path = escaped_paths.get(path).unwrap();
         let min_secs = (*min_ns as f64) / 1_000_000_000.0;
-        let _ = write!(
+        let _ = writeln!(
             body,
-            "brrtrouter_path_latency_seconds_min{{path=\"{escaped_path}\"}} {min_secs:.6}\n",
+            "brrtrouter_path_latency_seconds_min{{path=\"{escaped_path}\"}} {min_secs:.6}",
         );
     }
 
@@ -589,9 +589,9 @@ pub fn metrics_endpoint(
     for (path, (_, _, _, max_ns)) in &path_stats {
         let escaped_path = escaped_paths.get(path).unwrap();
         let max_secs = (*max_ns as f64) / 1_000_000_000.0;
-        let _ = write!(
+        let _ = writeln!(
             body,
-            "brrtrouter_path_latency_seconds_max{{path=\"{escaped_path}\"}} {max_secs:.6}\n",
+            "brrtrouter_path_latency_seconds_max{{path=\"{escaped_path}\"}} {max_secs:.6}",
         );
     }
 

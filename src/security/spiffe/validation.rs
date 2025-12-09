@@ -127,12 +127,11 @@ pub(super) fn validate_svid_impl(
 
     // JWT signature verification (if JWKS URL configured)
     // Done after basic validation to ensure we have valid SPIFFE ID first
-    if provider.jwks_url.is_some() {
-        if !verify_signature(token, provider) {
+    if provider.jwks_url.is_some()
+        && !verify_signature(token, provider) {
             warn!("SPIFFE SVID signature verification failed");
             return false;
         }
-    }
 
     debug!(
         "SPIFFE SVID validated successfully: spiffe_id={}, trust_domain={}",
@@ -202,14 +201,13 @@ pub(super) fn refresh_jwks_internal(
     refresh_complete: &Arc<(Mutex<()>, Condvar)>,
     already_claimed: bool,
 ) {
-    if !already_claimed {
-        if refresh_in_progress
+    if !already_claimed
+        && refresh_in_progress
             .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
             .is_err()
         {
             return; // Another thread is refreshing
         }
-    }
     
     let refresh_start = Instant::now();
     let client = match reqwest::blocking::Client::builder()

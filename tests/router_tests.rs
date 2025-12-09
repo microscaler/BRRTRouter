@@ -181,11 +181,10 @@ fn assert_route_match(router: &Router, method: Method, path: &str, expected_hand
             );
         }
         None => {
-            println!("❌ {} {} → no match", method, path);
+            println!("❌ {method} {path} → no match");
             assert_eq!(
                 expected_handler, "<none>",
-                "Expected route to match for {} {}",
-                method, path
+                "Expected route to match for {method} {path}"
             );
         }
     }

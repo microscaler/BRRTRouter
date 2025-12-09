@@ -15,13 +15,13 @@ use brrtrouter::spec::SecurityScheme;
 use brrtrouter::{dispatcher::HeaderVec, router::ParamVec};
 use serde_json::json;
 use std::io::{Read, Write};
-use std::net::{SocketAddr, TcpListener, TcpStream};
-use std::sync::{Arc, atomic::{AtomicU64, Ordering}};
+use std::net::TcpListener;
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 use bollard::Docker;
-use bollard::models::{ContainerCreateBody, HostConfig, PortBinding};
-use bollard::query_parameters::{CreateContainerOptionsBuilder, StartContainerOptions, RemoveContainerOptionsBuilder};
+use bollard::models::{HostConfig, PortBinding};
+use bollard::query_parameters::RemoveContainerOptionsBuilder;
 use futures::executor::block_on;
 
 /// Helper to create a SPIFFE JWT token for testing
@@ -64,7 +64,7 @@ fn make_spiffe_jwt(
     
     // Note: This is a test token without signature verification
     // In production, signature would be verified via JWKS
-    format!("{}.{}.signature", header_b64, payload_b64)
+    format!("{header_b64}.{payload_b64}.signature")
 }
 
 /// Helper to create a properly signed SPIFFE JWT using jsonwebtoken
@@ -128,7 +128,7 @@ fn make_expired_spiffe_jwt(spiffe_id: &str, audience: &str) -> String {
     let header_b64 = general_purpose::URL_SAFE_NO_PAD.encode(header.to_string().as_bytes());
     let payload_b64 = general_purpose::URL_SAFE_NO_PAD.encode(payload.to_string().as_bytes());
     
-    format!("{}.{}.signature", header_b64, payload_b64)
+    format!("{header_b64}.{payload_b64}.signature")
 }
 
 /// Helper to create a SPIFFE JWT with array audience
@@ -157,7 +157,7 @@ fn make_spiffe_jwt_array_aud(spiffe_id: &str, audiences: &[&str], exp_secs: i64)
     let header_b64 = general_purpose::URL_SAFE_NO_PAD.encode(header.to_string().as_bytes());
     let payload_b64 = general_purpose::URL_SAFE_NO_PAD.encode(payload.to_string().as_bytes());
     
-    format!("{}.{}.signature", header_b64, payload_b64)
+    format!("{header_b64}.{payload_b64}.signature")
 }
 
 /// Helper to base64url encode without padding
@@ -188,7 +188,7 @@ impl JwksMockServerContainer {
         // We'll use a custom nginx config to serve the JWKS JSON
         let port_key = "80/tcp".to_string();
         let bindings = std::collections::HashMap::from([(
-            port_key.clone(),
+            port_key,
             Some(vec![PortBinding {
                 host_ip: Some("127.0.0.1".into()),
                 host_port: Some("0".into()),
@@ -210,7 +210,7 @@ impl JwksMockServerContainer {
         let addr = listener.local_addr().unwrap();
         let url = format!("http://127.0.0.1:{}/jwks.json", addr.port());
         
-        let jwks_clone = jwks.clone();
+        let jwks_clone = jwks;
         thread::spawn(move || {
             for stream in listener.incoming() {
                 match stream {
@@ -267,7 +267,7 @@ fn start_mock_jwks_server(jwks: String) -> String {
     let addr = listener.local_addr().unwrap();
     let url = format!("http://127.0.0.1:{}/jwks.json", addr.port());
     
-    let jwks_clone = jwks.clone();
+    let jwks_clone = jwks;
     thread::spawn(move || {
         for stream in listener.incoming() {
             match stream {
@@ -328,7 +328,7 @@ fn test_spiffe_id_format_validation() {
     for spiffe_id in valid_ids {
         let token = make_spiffe_jwt(spiffe_id, "api.example.com", 3600, 0);
         let mut headers: HeaderVec = HeaderVec::new();
-        headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+        headers.push((Arc::from("authorization"), format!("Bearer {token}")));
         let req = SecurityRequest {
             headers: &headers,
             query: &ParamVec::new(),
@@ -338,8 +338,7 @@ fn test_spiffe_id_format_validation() {
         // Should pass validation (format is valid)
         assert!(
             provider.validate(&scheme, &[], &req),
-            "Valid SPIFFE ID '{}' should pass validation",
-            spiffe_id
+            "Valid SPIFFE ID '{spiffe_id}' should pass validation"
         );
     }
     
@@ -370,10 +369,10 @@ fn test_spiffe_id_format_validation() {
         
         let header_b64 = general_purpose::URL_SAFE_NO_PAD.encode(header.to_string().as_bytes());
         let payload_b64 = general_purpose::URL_SAFE_NO_PAD.encode(payload.to_string().as_bytes());
-        let token = format!("{}.{}.signature", header_b64, payload_b64);
+        let token = format!("{header_b64}.{payload_b64}.signature");
         
         let mut headers: HeaderVec = HeaderVec::new();
-        headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+        headers.push((Arc::from("authorization"), format!("Bearer {token}")));
         let req = SecurityRequest {
             headers: &headers,
             query: &ParamVec::new(),
@@ -383,8 +382,7 @@ fn test_spiffe_id_format_validation() {
         // Should fail validation (format is invalid)
         assert!(
             !provider.validate(&scheme, &[], &req),
-            "Invalid SPIFFE ID '{}' should fail validation",
-            spiffe_id
+            "Invalid SPIFFE ID '{spiffe_id}' should fail validation"
         );
     }
 }
@@ -413,7 +411,7 @@ fn test_extract_trust_domain() {
     for (spiffe_id, should_pass) in test_cases {
         let token = make_spiffe_jwt(spiffe_id, "api.example.com", 3600, 0);
         let mut headers: HeaderVec = HeaderVec::new();
-        headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+        headers.push((Arc::from("authorization"), format!("Bearer {token}")));
         let req = SecurityRequest {
             headers: &headers,
             query: &ParamVec::new(),
@@ -450,7 +448,7 @@ fn test_spiffe_validation_valid_svid() {
     );
     
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -475,7 +473,7 @@ fn test_spiffe_validation_missing_token() {
         description: None,
     };
     
-    let mut headers: HeaderVec = HeaderVec::new();
+    let headers: HeaderVec = HeaderVec::new();
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -518,10 +516,10 @@ fn test_spiffe_validation_invalid_spiffe_id() {
     
     let header_b64 = general_purpose::URL_SAFE_NO_PAD.encode(header.to_string().as_bytes());
     let payload_b64 = general_purpose::URL_SAFE_NO_PAD.encode(payload.to_string().as_bytes());
-    let token = format!("{}.{}.signature", header_b64, payload_b64);
+    let token = format!("{header_b64}.{payload_b64}.signature");
     
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -555,7 +553,7 @@ fn test_spiffe_validation_trust_domain_whitelist() {
     );
     
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -588,7 +586,7 @@ fn test_spiffe_validation_empty_trust_domains() {
     );
     
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -622,7 +620,7 @@ fn test_spiffe_validation_audience_string() {
     );
     
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -643,7 +641,7 @@ fn test_spiffe_validation_audience_string() {
     );
     
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -676,7 +674,7 @@ fn test_spiffe_validation_audience_array() {
     );
     
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -696,7 +694,7 @@ fn test_spiffe_validation_audience_array() {
     );
     
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -729,7 +727,7 @@ fn test_spiffe_validation_empty_audiences() {
     );
     
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -761,7 +759,7 @@ fn test_spiffe_validation_expired_token() {
     );
     
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -803,10 +801,10 @@ fn test_spiffe_validation_missing_sub_claim() {
     
     let header_b64 = general_purpose::URL_SAFE_NO_PAD.encode(header.to_string().as_bytes());
     let payload_b64 = general_purpose::URL_SAFE_NO_PAD.encode(payload.to_string().as_bytes());
-    let token = format!("{}.{}.signature", header_b64, payload_b64);
+    let token = format!("{header_b64}.{payload_b64}.signature");
     
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -845,10 +843,10 @@ fn test_spiffe_validation_missing_exp_claim() {
     
     let header_b64 = general_purpose::URL_SAFE_NO_PAD.encode(header.to_string().as_bytes());
     let payload_b64 = general_purpose::URL_SAFE_NO_PAD.encode(payload.to_string().as_bytes());
-    let token = format!("{}.{}.signature", header_b64, payload_b64);
+    let token = format!("{header_b64}.{payload_b64}.signature");
     
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -882,7 +880,7 @@ fn test_spiffe_validation_wrong_scheme() {
     );
     
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -908,7 +906,7 @@ fn test_spiffe_extract_spiffe_id() {
     );
     
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -943,7 +941,7 @@ fn test_spiffe_extract_claims() {
     );
     
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -993,7 +991,7 @@ fn test_spiffe_cookie_extraction() {
     
     // Token in cookie, not header
     let mut cookies: HeaderVec = HeaderVec::new();
-    cookies.push((Arc::from("spiffe_token"), token.clone()));
+    cookies.push((Arc::from("spiffe_token"), token));
     
     let req = SecurityRequest {
         headers: &HeaderVec::new(),
@@ -1049,10 +1047,10 @@ fn test_spiffe_leeway_configuration() {
     
     let header_b64 = general_purpose::URL_SAFE_NO_PAD.encode(header.to_string().as_bytes());
     let payload_b64 = general_purpose::URL_SAFE_NO_PAD.encode(payload.to_string().as_bytes());
-    let token = format!("{}.{}.signature", header_b64, payload_b64);
+    let token = format!("{header_b64}.{payload_b64}.signature");
     
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -1137,7 +1135,7 @@ fn test_spiffe_invalid_json_payload() {
     let invalid_json_b64 = general_purpose::URL_SAFE_NO_PAD.encode(b"not valid json");
     
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {}.{}.signature", header_b64, invalid_json_b64)));
+    headers.push((Arc::from("authorization"), format!("Bearer {header_b64}.{invalid_json_b64}.signature")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -1164,11 +1162,11 @@ fn test_spiffe_multiple_trust_domains() {
     
     // Test each trust domain
     for trust_domain in &["example.com", "enterprise.local", "prod.example.com"] {
-        let spiffe_id = format!("spiffe://{}/api/users", trust_domain);
+        let spiffe_id = format!("spiffe://{trust_domain}/api/users");
         let token = make_spiffe_jwt(&spiffe_id, "api.example.com", 3600, 0);
         
         let mut headers: HeaderVec = HeaderVec::new();
-        headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+        headers.push((Arc::from("authorization"), format!("Bearer {token}")));
         let req = SecurityRequest {
             headers: &headers,
             query: &ParamVec::new(),
@@ -1177,8 +1175,7 @@ fn test_spiffe_multiple_trust_domains() {
         
         assert!(
             provider.validate(&scheme, &[], &req),
-            "Trust domain '{}' should pass validation",
-            trust_domain
+            "Trust domain '{trust_domain}' should pass validation"
         );
     }
 }
@@ -1236,7 +1233,7 @@ fn test_spiffe_jwks_signature_verification() {
     // Trigger JWKS fetch by calling validate (which calls refresh_jwks_if_needed)
     // First validation will do blocking refresh if cache is empty
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -1286,7 +1283,7 @@ fn test_spiffe_jwks_invalid_signature() {
     thread::sleep(Duration::from_millis(200));
     
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -1325,7 +1322,7 @@ fn test_spiffe_jwks_missing_key_id() {
     };
     
     // Create token without kid in header
-    use base64::{engine::general_purpose, Engine as _};
+    
     use jsonwebtoken::{Algorithm, EncodingKey, Header};
     
     let header = Header {
@@ -1353,7 +1350,7 @@ fn test_spiffe_jwks_missing_key_id() {
     thread::sleep(Duration::from_millis(200));
     
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -1398,7 +1395,7 @@ fn test_spiffe_jwks_key_not_found() {
     thread::sleep(Duration::from_millis(200));
     
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -1433,7 +1430,7 @@ fn test_spiffe_jwks_without_jwks_url() {
     );
     
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -1496,7 +1493,7 @@ fn test_spiffe_jwks_cache_refresh() {
     let token1 = make_signed_spiffe_jwt(secret1, "spiffe://example.com/api/users", "api.example.com", "k1", 3600);
     
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token1)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token1}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -1514,7 +1511,7 @@ fn test_spiffe_jwks_cache_refresh() {
     
     // Token should still work (cache refresh should happen in background)
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token1)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token1}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -1625,7 +1622,7 @@ fn test_spiffe_get_key_for_no_jwks_configured() {
     );
     
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -1663,7 +1660,7 @@ fn test_spiffe_refresh_jwks_if_needed_no_jwks_configured() {
     );
     
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -1739,10 +1736,10 @@ fn test_spiffe_extract_token_prefers_header_over_cookie() {
     // Put valid token in header, also put it in cookie (both valid)
     // This tests that header is checked first
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {}", valid_token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {valid_token}")));
     
     let mut cookies: HeaderVec = HeaderVec::new();
-    cookies.push((Arc::from("spiffe_token"), valid_token.clone()));
+    cookies.push((Arc::from("spiffe_token"), valid_token));
     
     let req = SecurityRequest {
         headers: &headers,
@@ -1860,7 +1857,7 @@ fn test_spiffe_leeway_configuration_edge_cases() {
     );
     
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token1)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token1}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -1896,7 +1893,7 @@ fn test_spiffe_get_key_for_cache_read_error() {
     );
     
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -1933,7 +1930,7 @@ fn test_spiffe_refresh_jwks_if_needed_early_return() {
     );
     
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -1964,7 +1961,7 @@ fn test_spiffe_parse_jwt_claims_invalid_format() {
     let invalid_token = "header.payload";
     
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {}", invalid_token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {invalid_token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -1994,7 +1991,7 @@ fn test_spiffe_parse_jwt_claims_invalid_base64() {
     let invalid_token = "header.invalid-base64!.signature";
     
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {}", invalid_token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {invalid_token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
@@ -2025,10 +2022,10 @@ fn test_spiffe_parse_jwt_claims_invalid_json() {
     let header_b64 = general_purpose::URL_SAFE_NO_PAD.encode(b"header");
     let invalid_json_b64 = general_purpose::URL_SAFE_NO_PAD.encode(b"not valid json");
     
-    let invalid_token = format!("{}.{}.signature", header_b64, invalid_json_b64);
+    let invalid_token = format!("{header_b64}.{invalid_json_b64}.signature");
     
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {}", invalid_token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {invalid_token}")));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),

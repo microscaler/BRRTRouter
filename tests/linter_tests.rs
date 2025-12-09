@@ -27,8 +27,7 @@ fn test_bad_operation_id_casing() {
     assert_eq!(
         casing_errors.len(),
         2,
-        "Should find 2 operationId casing errors. Found: {:?}",
-        issues
+        "Should find 2 operationId casing errors. Found: {issues:?}"
     );
 
     // Verify the locations include path context
@@ -62,8 +61,7 @@ fn test_missing_operation_id() {
     assert_eq!(
         missing_op_id_errors.len(),
         2,
-        "Should find 2 missing operationId errors. Found: {:?}",
-        issues
+        "Should find 2 missing operationId errors. Found: {issues:?}"
     );
 
     // Verify locations include path context
@@ -93,8 +91,7 @@ fn test_missing_schema_ref() {
 
     assert!(
         missing_ref_errors.len() >= 2,
-        "Should find at least 2 missing schema reference errors. Found: {:?}",
-        issues
+        "Should find at least 2 missing schema reference errors. Found: {issues:?}"
     );
 
     // Verify one is for UserList in response
@@ -136,8 +133,7 @@ fn test_invalid_schema_format() {
 
     assert!(
         missing_type_warnings.len() >= 2,
-        "Should find at least 2 missing property type warnings. Found: {:?}",
-        issues
+        "Should find at least 2 missing property type warnings. Found: {issues:?}"
     );
 }
 

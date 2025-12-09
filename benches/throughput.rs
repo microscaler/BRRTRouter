@@ -118,8 +118,8 @@ fn bench_route_scalability(c: &mut Criterion) {
         for i in 0..*route_count {
             routes.push(RouteMeta {
                 method: Method::GET,
-                path_pattern: Arc::from(format!("/api/v1/resource{}/{{id}}", i).as_str()),
-                handler_name: Arc::from(format!("handler_{}", i).as_str()),
+                path_pattern: Arc::from(format!("/api/v1/resource{i}/{{id}}").as_str()),
+                handler_name: Arc::from(format!("handler_{i}").as_str()),
                 base_path: String::new(),
                 parameters: Vec::new(),
                 request_schema: None,
@@ -140,7 +140,7 @@ fn bench_route_scalability(c: &mut Criterion) {
 
         let router = Router::new(routes);
 
-        group.bench_function(format!("{}_routes", route_count), |b| {
+        group.bench_function(format!("{route_count}_routes"), |b| {
             // Test matching a route in the middle of the tree
             let test_path = format!("/api/v1/resource{}/123", route_count / 2);
             b.iter(|| {

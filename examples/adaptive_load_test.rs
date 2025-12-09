@@ -331,7 +331,7 @@ async fn get_system_metrics(
     let error_rate_query = urlencoding::encode(
         "100 * (sum(rate(brrtrouter_requests_total{status!~\"2..\"}[30s])) or vector(0)) / (sum(rate(brrtrouter_requests_total[30s])) or vector(1))"
     );
-    let error_rate_url = format!("{}/api/v1/query?query={}", prometheus_url, error_rate_query);
+    let error_rate_url = format!("{prometheus_url}/api/v1/query?query={error_rate_query}");
     let error_rate_resp = client.get(&error_rate_url).send().await?;
     let error_rate_json: serde_json::Value = error_rate_resp.json().await?;
     let error_rate_percent = error_rate_json["data"]["result"]
@@ -345,7 +345,7 @@ async fn get_system_metrics(
     let p99_query = urlencoding::encode(
         "histogram_quantile(0.99, rate(brrtrouter_request_duration_seconds_bucket[1m]))",
     );
-    let p99_url = format!("{}/api/v1/query?query={}", prometheus_url, p99_query);
+    let p99_url = format!("{prometheus_url}/api/v1/query?query={p99_query}");
     let p99_resp = client.get(&p99_url).send().await?;
     let p99_json: serde_json::Value = p99_resp.json().await?;
     let p99_latency_seconds = p99_json["data"]["result"]
@@ -357,7 +357,7 @@ async fn get_system_metrics(
 
     // Query 3: Active requests (peak over 1m window)
     let active_query = urlencoding::encode("max_over_time(brrtrouter_active_requests[1m])");
-    let active_url = format!("{}/api/v1/query?query={}", prometheus_url, active_query);
+    let active_url = format!("{prometheus_url}/api/v1/query?query={active_query}");
     let active_resp = client.get(&active_url).send().await?;
     let active_json: serde_json::Value = active_resp.json().await?;
     let active_requests = active_json["data"]["result"]
@@ -369,7 +369,7 @@ async fn get_system_metrics(
 
     // Query 4: Throughput (requests per second)
     let rps_query = urlencoding::encode("sum(rate(brrtrouter_requests_total[1m]))");
-    let rps_url = format!("{}/api/v1/query?query={}", prometheus_url, rps_query);
+    let rps_url = format!("{prometheus_url}/api/v1/query?query={rps_query}");
     let rps_resp = client.get(&rps_url).send().await?;
     let rps_json: serde_json::Value = rps_resp.json().await?;
     let requests_per_second = rps_json["data"]["result"]
@@ -447,8 +447,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     loop {
         println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
         println!(
-            "Cycle {} - Testing with {} concurrent users",
-            cycle, current_users
+            "Cycle {cycle} - Testing with {current_users} concurrent users"
         );
         println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
@@ -549,8 +548,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Transition to Prometheus health check
         println!("\n╭─────────────────────────────────────────────────────────────────────╮");
         println!(
-            "│ 🔍 Checking Prometheus Metrics - Cycle {}                           │",
-            cycle
+            "│ 🔍 Checking Prometheus Metrics - Cycle {cycle}                           │"
         );
         println!("╰─────────────────────────────────────────────────────────────────────╯");
         println!("⏳ Waiting 5 seconds for Prometheus to scrape metrics...\n");
@@ -588,11 +586,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     println!("╚══════════════════════════════════════════════════════════════════════════╝");
                     println!();
                     println!("Maximum Capacity Found:");
-                    println!("  Breaking Point: {} concurrent users", current_users);
-                    println!("  Last Healthy Load: {} users", last_healthy_users);
+                    println!("  Breaking Point: {current_users} concurrent users");
+                    println!("  Last Healthy Load: {last_healthy_users} users");
                     println!(
-                        "  Peak Throughput: {:.0} req/s (at {} users)",
-                        last_healthy_throughput, last_healthy_users
+                        "  Peak Throughput: {last_healthy_throughput:.0} req/s (at {last_healthy_users} users)"
                     );
                     println!(
                         "  Current Error Rate: {:.2}%",
@@ -634,7 +631,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     } else {
                         println!("\n⚠️  System functional but showing stress:");
                         for warning in &warnings {
-                            println!("   {}", warning);
+                            println!("   {warning}");
                         }
                         println!(
                             "   Error rate still acceptable ({:.2}%), continuing ramp-up",
@@ -648,7 +645,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             Err(e) => {
-                println!("\n⚠️  Warning: Could not query Prometheus: {}", e);
+                println!("\n⚠️  Warning: Could not query Prometheus: {e}");
                 println!("   Continuing test (assuming healthy)...");
                 println!(
                     "   Tip: Ensure Prometheus is accessible at {}",
@@ -672,14 +669,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
             println!();
             println!("Safety Limit Hit:");
-            println!("  Maximum Tested: {} users", current_users);
-            println!("  Peak Throughput: {:.0} req/s", last_healthy_throughput);
+            println!("  Maximum Tested: {current_users} users");
+            println!("  Peak Throughput: {last_healthy_throughput:.0} req/s");
             println!("  Error Rate: Still below threshold");
             println!();
             println!("Recommendation:");
             println!(
-                "  System can handle ≥ {} users without errors",
-                current_users
+                "  System can handle ≥ {current_users} users without errors"
             );
             println!("  Consider increasing MAX_USERS to find actual limit");
             println!("  Or tighten ERROR_RATE_THRESHOLD for stricter SLA");

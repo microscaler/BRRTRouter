@@ -64,14 +64,14 @@ fn run_http(url: &str) -> (bool, String, String) {
 fn curl_health_works() {
     let url = format!("{}/health", curl_harness::base_url());
     let (ok, _body, headers) = run_http(&url);
-    assert!(ok, "GET /health failed: headers=\n{}", headers);
+    assert!(ok, "GET /health failed: headers=\n{headers}");
 }
 
 #[test]
 fn curl_openapi_yaml_served() {
     let url = format!("{}/openapi.yaml", curl_harness::base_url());
     let (ok, body, headers) = run_http(&url);
-    assert!(ok, "GET /openapi.yaml failed: headers=\n{}", headers);
+    assert!(ok, "GET /openapi.yaml failed: headers=\n{headers}");
     assert!(body.contains("openapi: 3.1.0"));
 }
 
@@ -79,7 +79,7 @@ fn curl_openapi_yaml_served() {
 fn curl_docs_html_served() {
     let url = format!("{}/docs", curl_harness::base_url());
     let (ok, body, headers) = run_http(&url);
-    assert!(ok, "GET /docs failed: headers=\n{}", headers);
+    assert!(ok, "GET /docs failed: headers=\n{headers}");
     assert!(body.contains("SwaggerUIBundle"));
 }
 
@@ -94,7 +94,7 @@ fn curl_metrics_exposes_prometheus() {
     };
     let (ok, body, headers) =
         run_http_with(&format!("{}/metrics", curl_harness::base_url()), &opts);
-    assert!(ok, "GET /metrics failed: headers=\n{}", headers);
+    assert!(ok, "GET /metrics failed: headers=\n{headers}");
     assert!(body.contains("brrtrouter_requests_total"));
     assert!(body.contains("brrtrouter_top_level_requests_total"));
     assert!(body.contains("brrtrouter_auth_failures_total"));
@@ -108,8 +108,7 @@ fn curl_auth_api_key_unauthorized_then_authorized() {
     let (ok_no_key, _body_no_key, headers_no_key) = run_http(&url);
     assert!(
         !ok_no_key,
-        "GET /pets without key should fail: headers=\n{}",
-        headers_no_key
+        "GET /pets without key should fail: headers=\n{headers_no_key}"
     );
 
     // With API key should be 200
@@ -121,8 +120,7 @@ fn curl_auth_api_key_unauthorized_then_authorized() {
         run_http_with(&format!("{}/pets", curl_harness::base_url()), &opts);
     assert!(
         ok_with_key,
-        "GET /pets with key failed: headers=\n{}",
-        headers_with_key
+        "GET /pets with key failed: headers=\n{headers_with_key}"
     );
 }
 
@@ -132,7 +130,7 @@ fn curl_static_index_html_served() {
     // 1. Simple "It works!" HTML (default static_site/index.html)
     // 2. SolidJS Pet Store Dashboard (if sample-ui has been built)
     let (ok, body, headers) = run_http(&format!("{}/index.html", curl_harness::base_url()));
-    assert!(ok, "GET /index.html failed: headers=\n{}", headers);
+    assert!(ok, "GET /index.html failed: headers=\n{headers}");
 
     // Accept either the simple static HTML or the Pet Store Dashboard
     let is_simple_html = body.contains("It works!");

@@ -503,6 +503,4 @@ impl SecurityProvider for SpiffeProvider {
 }
 
 // Re-export validation module for testing
-#[cfg(test)]
-pub use validation::*;
 

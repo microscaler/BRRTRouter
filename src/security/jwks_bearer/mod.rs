@@ -149,7 +149,7 @@ impl JwksBearerProvider {
             refresh_complete,
             shutdown,
             background_handle,
-            cache_ttl_millis.clone(),
+            cache_ttl_millis,
         );
         
         provider
@@ -356,7 +356,7 @@ impl JwksBearerProvider {
         cache_ttl_millis: Arc<std::sync::atomic::AtomicU64>,
     ) {
         let jwks_url = self.jwks_url.clone();
-        let cache_ttl_millis = cache_ttl_millis.clone();
+        let cache_ttl_millis = cache_ttl_millis;
         
         let handle = thread::spawn(move || {
             loop {
@@ -467,15 +467,14 @@ impl JwksBearerProvider {
     ) {
         // P2: Debounce - check if another thread is already refreshing
         // If already_claimed is true, we've already set the flag, so skip the check
-        if !already_claimed {
-            if refresh_in_progress
+        if !already_claimed
+            && refresh_in_progress
                 .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
                 .is_err()
             {
                 // Another thread is refreshing, skip this cycle
                 return;
             }
-        }
         
         let refresh_start = Instant::now();
         let client = match reqwest::blocking::Client::builder()

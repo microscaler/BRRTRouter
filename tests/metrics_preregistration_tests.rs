@@ -88,7 +88,7 @@ fn test_metrics_middleware_auto_preregisters_paths() {
 
     // All should have zero counts initially (only pre-registered, not used)
     for (path, (count, _, _, _)) in stats.iter() {
-        assert_eq!(*count, 0, "Path {} should have zero count initially", path);
+        assert_eq!(*count, 0, "Path {path} should have zero count initially");
     }
 }
 

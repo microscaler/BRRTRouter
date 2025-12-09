@@ -430,7 +430,7 @@ fn test_dispatch_all_registry_handlers() {
                 Default::default(),
             )
             .expect("dispatch");
-        assert_eq!(resp.status, 200, "handler {}", name);
+        assert_eq!(resp.status, 200, "handler {name}");
         // TODO: fix this assertion once the handlers return correct responses
         // assert_eq!(resp.body, expected, "handler {}", name);
     }

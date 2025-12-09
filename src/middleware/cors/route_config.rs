@@ -56,7 +56,7 @@ impl RouteCorsConfig {
     /// This violates the CORS specification which forbids `Access-Control-Allow-Origin: *`
     /// with `Access-Control-Allow-Credentials: true`.
     pub fn with_origins(mut self, origins: &[&str]) -> Self {
-        if origins.iter().any(|o| *o == "*") {
+        if origins.contains(&"*") {
             // Check if credentials are enabled - this combination is invalid per CORS spec
             if self.allow_credentials {
                 panic!(

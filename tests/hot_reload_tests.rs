@@ -114,7 +114,7 @@ paths:
     let fixture = HotReloadTestFixture::new(SPEC_V1);
     let path = fixture.path();
     let (routes, _slug) = load_spec(path.to_str().unwrap()).unwrap();
-    let router = Arc::new(RwLock::new(Router::new(routes.clone())));
+    let router = Arc::new(RwLock::new(Router::new(routes)));
     let dispatcher = Arc::new(RwLock::new(Dispatcher::new()));
 
     let updates: Arc<Mutex<Vec<Vec<String>>>> = Arc::new(Mutex::new(Vec::new()));
@@ -123,9 +123,9 @@ paths:
     {
         // Scope the watcher to ensure it drops before file cleanup
         let watcher = watch_spec(
-            &path,
+            path,
             router,
-            dispatcher.clone(),
+            dispatcher,
             None, // No validator cache for this test
             move |disp, new_routes| {
                 for r in &new_routes {
@@ -176,8 +176,7 @@ paths:
     let ups = updates.lock().unwrap();
     assert!(
         ups.iter().any(|v| v.contains(&"foo_two".to_string())),
-        "Expected 'foo_two' in updates, got: {:?}",
-        ups
+        "Expected 'foo_two' in updates, got: {ups:?}"
     );
 
     // Fixture automatically cleaned up when it drops (RAII)!
@@ -254,7 +253,7 @@ paths:
     let fixture = HotReloadTestFixture::new(SPEC_V1);
     let path = fixture.path();
     let (routes, _slug) = load_spec(path.to_str().unwrap()).unwrap();
-    let router = Arc::new(RwLock::new(Router::new(routes.clone())));
+    let router = Arc::new(RwLock::new(Router::new(routes)));
     let dispatcher = Arc::new(RwLock::new(Dispatcher::new()));
 
     // Create validator cache and pre-populate it
@@ -277,9 +276,9 @@ paths:
     {
         // Scope the watcher to ensure it drops before file cleanup
         let watcher = watch_spec(
-            &path,
+            path,
             router,
-            dispatcher.clone(),
+            dispatcher,
             Some(cache_clone),
             move |disp, new_routes| {
                 for r in &new_routes {
@@ -334,8 +333,7 @@ paths:
     assert!(
         ups.iter()
             .any(|v| v.contains(&"test_handler_v2".to_string())),
-        "Expected 'test_handler_v2' in updates, got: {:?}",
-        ups
+        "Expected 'test_handler_v2' in updates, got: {ups:?}"
     );
 
     // Verify cache was cleared during hot reload
@@ -454,16 +452,16 @@ paths:
     }
 
     let cache_clone = cache.clone();
-    let router_clone = router.clone();
+    let router_clone = router;
     let updates: Arc<Mutex<Vec<Vec<String>>>> = Arc::new(Mutex::new(Vec::new()));
     let updates_clone = updates.clone();
 
     {
         // Scope the watcher to ensure it drops before file cleanup
         let watcher = watch_spec(
-            &path,
+            path,
             router_clone,
-            dispatcher.clone(),
+            dispatcher,
             Some(cache_clone),
             move |disp, new_routes| {
                 for r in &new_routes {
@@ -598,7 +596,7 @@ paths:
     let fixture = HotReloadTestFixture::new(SPEC_V1);
     let path = fixture.path();
     let (routes, _slug) = load_spec(path.to_str().unwrap()).unwrap();
-    let router = Arc::new(RwLock::new(Router::new(routes.clone())));
+    let router = Arc::new(RwLock::new(Router::new(routes)));
     let dispatcher = Arc::new(RwLock::new(Dispatcher::new()));
 
     let cache = ValidatorCache::new(true);
@@ -612,9 +610,9 @@ paths:
 
     {
         let watcher = watch_spec(
-            &path,
+            path,
             router,
-            dispatcher.clone(),
+            dispatcher,
             Some(cache_clone),
             move |disp, new_routes| {
                 for r in &new_routes {
