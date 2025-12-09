@@ -626,15 +626,21 @@ impl ContainerHarness {
             String::from_utf8_lossy(&output.stderr)
         );
         let container_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        eprintln!("Container started: {container_id}");
+
+        // CRITICAL: Give Docker a moment to set up networking before querying port
+        // Docker needs time to allocate the random port and set up iptables rules
+        // Without this delay, we can race the port mapping setup
+        thread::sleep(Duration::from_millis(200));
 
         // Query mapped port with retry - Docker needs a moment to set up network settings
         // Use `docker port` which is simpler and more reliable than `docker inspect` template
-        // Retry up to 15 times with exponential backoff (max ~10 seconds total)
+        // Retry up to 20 times with exponential backoff (max ~15 seconds total)
         let mut host_port = String::new();
         let mut retries = 0;
-        let max_retries = 15;
+        let max_retries = 20;
         loop {
-            // First check if container is still running
+            // First check if container is still running and hasn't exited
             let status_out = Command::new("docker")
                 .args(["inspect", "-f", "{{.State.Running}}", &container_id])
                 .output()
@@ -642,12 +648,46 @@ impl ContainerHarness {
 
             if !status_out.status.success() {
                 let stderr = String::from_utf8_lossy(&status_out.stderr);
+                // Get container logs for debugging
+                let logs_out = Command::new("docker")
+                    .args(["logs", "--tail", "50", &container_id])
+                    .output()
+                    .ok();
+                let logs = logs_out
+                    .as_ref()
+                    .map(|o| String::from_utf8_lossy(&o.stdout))
+                    .unwrap_or_else(|| "failed to get logs".into());
                 panic!(
-                    "Container {container_id} is not running or does not exist: {stderr}"
+                    "Container {container_id} is not running or does not exist: {stderr}\n\nContainer logs:\n{logs}"
                 );
             }
 
-            // Use `docker port` which is more reliable than inspect template
+            // Check if container exited (even if inspect succeeded, container might have crashed)
+            let exit_code_out = Command::new("docker")
+                .args(["inspect", "-f", "{{.State.ExitCode}}", &container_id])
+                .output()
+                .ok();
+            if let Some(exit_out) = exit_code_out {
+                if exit_out.status.success() {
+                    let exit_code_output = String::from_utf8_lossy(&exit_out.stdout);
+                    let exit_code_str = exit_code_output.trim();
+                    if exit_code_str != "0" && !exit_code_str.is_empty() {
+                        let logs_out = Command::new("docker")
+                            .args(["logs", "--tail", "100", &container_id])
+                            .output()
+                            .ok();
+                        let logs = logs_out
+                            .as_ref()
+                            .map(|o| String::from_utf8_lossy(&o.stdout))
+                            .unwrap_or_else(|| "failed to get logs".into());
+                        panic!(
+                            "Container {container_id} exited with code {exit_code_str}\n\nContainer logs:\n{logs}"
+                        );
+                    }
+                }
+            }
+
+            // Try `docker port` first (simpler and more reliable)
             let port_out = Command::new("docker")
                 .args(["port", &container_id, "8080/tcp"])
                 .output()
@@ -661,31 +701,82 @@ impl ContainerHarness {
                     let port_str = output[colon_pos + 1..].trim().to_string();
                     if !port_str.is_empty() && port_str.parse::<u16>().is_ok() {
                         host_port = port_str;
+                        eprintln!("Port mapping found: 127.0.0.1:{host_port}");
                         break;
+                    }
+                }
+            }
+
+            // Fallback: Try docker inspect if docker port fails
+            // This can sometimes work when docker port doesn't
+            if retries > 3 && host_port.is_empty() {
+                let inspect_out = Command::new("docker")
+                    .args([
+                        "inspect",
+                        "-f",
+                        "{{range .NetworkSettings.Ports}}{{range .}}{{.HostPort}}{{end}}{{end}}",
+                        &container_id,
+                    ])
+                    .output()
+                    .ok();
+                if let Some(inspect) = inspect_out {
+                    if inspect.status.success() {
+                        let port_str = String::from_utf8_lossy(&inspect.stdout).trim().to_string();
+                        if !port_str.is_empty() && port_str.parse::<u16>().is_ok() {
+                            host_port = port_str;
+                            eprintln!("Port mapping found via inspect: 127.0.0.1:{host_port}");
+                            break;
+                        }
                     }
                 }
             }
 
             retries += 1;
             if retries >= max_retries {
+                // Get comprehensive diagnostics before panicking
+                let logs_out = Command::new("docker")
+                    .args(["logs", "--tail", "100", &container_id])
+                    .output()
+                    .ok();
+                let logs = logs_out
+                    .as_ref()
+                    .map(|o| String::from_utf8_lossy(&o.stdout))
+                    .unwrap_or_else(|| "failed to get logs".into());
+                
+                let inspect_out = Command::new("docker")
+                    .args(["inspect", &container_id])
+                    .output()
+                    .ok();
+                let inspect = inspect_out
+                    .as_ref()
+                    .map(|o| String::from_utf8_lossy(&o.stdout))
+                    .unwrap_or_else(|| "failed to inspect container".into());
+
                 let stderr = String::from_utf8_lossy(&port_out.stderr);
                 let stdout = String::from_utf8_lossy(&port_out.stdout);
+                let error_msg = if port_out.status.code().is_some() {
+                    format!("exit code {:?}", port_out.status.code())
+                } else {
+                    "unknown error".to_string()
+                };
                 panic!(
-                    "docker port failed after {} retries: {}\nContainer ID: {}\nStdout: {}\nStderr: {}",
+                    "docker port failed after {} retries: {}\nContainer ID: {}\nStdout: {}\nStderr: {}\n\nContainer logs:\n{}\n\nContainer inspect:\n{}",
                     max_retries,
-                    if port_out.status.code().is_some() {
-                        format!("exit code {:?}", port_out.status.code())
-                    } else {
-                        "unknown error".to_string()
-                    },
+                    error_msg,
                     container_id,
                     stdout,
-                    stderr
+                    stderr,
+                    logs,
+                    inspect
                 );
             }
 
-            // Exponential backoff: 100ms, 200ms, 400ms, 800ms, 1.6s, 3.2s, etc.
-            let delay_ms = 100 * (1 << (retries - 1).min(6)); // Cap at 6.4s
+            // Exponential backoff: 200ms, 400ms, 800ms, 1.6s, 3.2s, 6.4s, etc.
+            // Start with 200ms instead of 100ms to give Docker more time
+            let delay_ms = 200 * (1 << (retries - 1).min(6)); // Cap at 6.4s
+            if retries % 5 == 0 {
+                eprintln!("Waiting for port mapping (attempt {retries}/{max_retries})...");
+            }
             thread::sleep(Duration::from_millis(delay_ms));
         }
         let base_url = format!("http://127.0.0.1:{host_port}");
