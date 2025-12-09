@@ -1,6 +1,7 @@
 use brrtrouter::security::{JwksBearerProvider, SecurityProvider, SecurityRequest};
 use brrtrouter::{dispatcher::HeaderVec, router::ParamVec, spec::SecurityScheme};
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use std::hint::black_box;
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
 use serde_json::json;
 use std::sync::Arc;
