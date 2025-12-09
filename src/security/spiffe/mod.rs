@@ -208,16 +208,18 @@ impl SpiffeProvider {
     ///
     /// JWKS URL must use HTTPS (validated in this method). HTTP URLs are rejected for security,
     /// except for localhost/127.0.0.1 for testing.
+    ///
+    /// JSF Compliance: Panics only during initialization, never on hot path
+    /// This method is only called during provider construction (startup)
+    #[allow(clippy::panic)]
     pub fn jwks_url(mut self, url: impl Into<String>) -> Self {
         let url_str = url.into();
         
         // Validate JWKS URL (same validation as JwksBearerProvider)
-        // JSF Compliance: Panics only during initialization, never on hot path
-        // This method is only called during provider construction (startup)
+        // This panic is intentional: invalid configuration should fail fast at startup
         let parsed_url = match Url::parse(&url_str) {
             Ok(u) => u,
             Err(e) => {
-                #[allow(clippy::panic)]
                 panic!("JWKS URL is invalid: {}. Error: {}", url_str, e);
             }
         };
@@ -227,23 +229,20 @@ impl SpiffeProvider {
             // HTTPS is always allowed
         } else if parsed_url.scheme() == "http" {
             // HTTP only allowed for exact localhost or 127.0.0.1
-            // JSF Compliance: Panics only during initialization, never on hot path
+            // This panic is intentional: invalid configuration should fail fast at startup
             let host = match parsed_url.host_str() {
                 Some(h) => h,
                 None => {
-                    #[allow(clippy::panic)]
                     panic!("JWKS URL must have a valid hostname. Got: {}", url_str);
                 }
             };
             
-            // JSF Compliance: Panics only during initialization, never on hot path
+            // This panic is intentional: invalid configuration should fail fast at startup
             if host != "localhost" && host != "127.0.0.1" {
-                #[allow(clippy::panic)]
                 panic!("JWKS URL must use HTTPS for security (HTTP only allowed for localhost/127.0.0.1). Got: {}", url_str);
             }
         } else {
-            // JSF Compliance: Panics only during initialization, never on hot path
-            #[allow(clippy::panic)]
+            // This panic is intentional: invalid configuration should fail fast at startup
             panic!(
                 "JWKS URL must use HTTPS or HTTP (for localhost only). Got: {}",
                 url_str
