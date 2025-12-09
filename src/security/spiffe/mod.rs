@@ -50,7 +50,13 @@ use crate::security::{SecurityProvider, SecurityRequest};
 use crate::spec::SecurityScheme;
 use serde_json::Value;
 use std::collections::HashSet;
+use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::{RwLock, Mutex, Condvar};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
+use url::Url;
+use tracing::debug;
 
 /// SPIFFE security provider for JWT SVID validation.
 ///
@@ -63,13 +69,14 @@ use std::sync::Arc;
 /// - **Trust Domains**: Whitelist of allowed trust domains (e.g., `["example.com"]`)
 /// - **Audiences**: Required audiences that must be present in SVID (e.g., `["api.example.com"]`)
 /// - **Leeway**: Clock skew tolerance in seconds (default: 60)
+/// - **JWKS URL**: Optional URL for signature verification (if not provided, signature verification is skipped)
 ///
 /// # Security
 ///
 /// - ✅ SPIFFE ID format validation
 /// - ✅ Trust domain whitelist enforcement
 /// - ✅ Audience validation
-/// - ✅ JWT signature verification (via JWKS or configured keys)
+/// - ✅ JWT signature verification (via JWKS if configured)
 /// - ✅ Expiration checking with leeway
 ///
 /// # Example
@@ -80,6 +87,7 @@ use std::sync::Arc;
 /// let provider = SpiffeProvider::new()
 ///     .trust_domains(&["example.com", "enterprise.local"])
 ///     .audiences(&["api.example.com"])
+///     .jwks_url("https://spiffe.example.com/.well-known/jwks.json")
 ///     .leeway(60);
 /// ```
 pub struct SpiffeProvider {
@@ -89,10 +97,19 @@ pub struct SpiffeProvider {
     audiences: Arc<HashSet<String>>,
     /// Clock skew tolerance in seconds
     leeway_secs: u64,
-    /// Optional JWKS URL for signature verification (if not provided, uses configured public key)
+    /// Optional JWKS URL for signature verification
     jwks_url: Option<String>,
     /// Optional cookie name for token extraction
     cookie_name: Option<String>,
+    /// JWKS cache: (timestamp, kid -> DecodingKey)
+    /// Only used if jwks_url is Some
+    jwks_cache: Option<Arc<RwLock<(Instant, HashMap<String, jsonwebtoken::DecodingKey>)>>>,
+    /// JWKS cache TTL
+    jwks_cache_ttl: Duration,
+    /// Debounce flag for JWKS refresh
+    jwks_refresh_in_progress: Option<Arc<AtomicBool>>,
+    /// Condition variable for JWKS refresh completion
+    jwks_refresh_complete: Option<Arc<(Mutex<()>, Condvar)>>,
 }
 
 impl SpiffeProvider {
@@ -114,6 +131,10 @@ impl SpiffeProvider {
             leeway_secs: 60,
             jwks_url: None,
             cookie_name: None,
+            jwks_cache: None,
+            jwks_cache_ttl: Duration::from_secs(3600),
+            jwks_refresh_in_progress: None,
+            jwks_refresh_complete: None,
         }
     }
 
@@ -177,15 +198,211 @@ impl SpiffeProvider {
     /// Configure JWKS URL for signature verification.
     ///
     /// If provided, JWT signatures will be verified using keys from this JWKS endpoint.
-    /// If not provided, signature verification must be handled externally (e.g., via
-    /// a separate JWT provider middleware).
+    /// If not provided, signature verification is skipped (claims-only validation).
     ///
     /// # Arguments
     ///
     /// * `url` - JWKS URL (e.g., `"https://spiffe.example.com/.well-known/jwks.json"`)
+    ///
+    /// # Security
+    ///
+    /// JWKS URL must use HTTPS (validated in this method). HTTP URLs are rejected for security,
+    /// except for localhost/127.0.0.1 for testing.
     pub fn jwks_url(mut self, url: impl Into<String>) -> Self {
-        self.jwks_url = Some(url.into());
+        let url_str = url.into();
+        
+        // Validate JWKS URL (same validation as JwksBearerProvider)
+        let parsed_url = match Url::parse(&url_str) {
+            Ok(u) => u,
+            Err(e) => {
+                panic!("JWKS URL is invalid: {}. Error: {}", url_str, e);
+            }
+        };
+        
+        // Allow HTTPS for all hosts
+        if parsed_url.scheme() == "https" {
+            // HTTPS is always allowed
+        } else if parsed_url.scheme() == "http" {
+            // HTTP only allowed for exact localhost or 127.0.0.1
+            let host = match parsed_url.host_str() {
+                Some(h) => h,
+                None => {
+                    panic!("JWKS URL must have a valid hostname. Got: {}", url_str);
+                }
+            };
+            
+            if host != "localhost" && host != "127.0.0.1" {
+                panic!("JWKS URL must use HTTPS for security (HTTP only allowed for localhost/127.0.0.1). Got: {}", url_str);
+            }
+        } else {
+            panic!(
+                "JWKS URL must use HTTPS or HTTP (for localhost only). Got: {}",
+                url_str
+            );
+        }
+        
+        // Initialize JWKS infrastructure
+        let cache = Arc::new(RwLock::new((
+            Instant::now() - Duration::from_secs(1000), // Start expired to trigger initial fetch
+            HashMap::new(),
+        )));
+        let refresh_in_progress = Arc::new(AtomicBool::new(false));
+        let refresh_complete = Arc::new((Mutex::new(()), Condvar::new()));
+        
+        self.jwks_url = Some(url_str);
+        self.jwks_cache = Some(cache);
+        self.jwks_refresh_in_progress = Some(refresh_in_progress);
+        self.jwks_refresh_complete = Some(refresh_complete);
+        
         self
+    }
+    
+    /// Configure JWKS cache TTL.
+    ///
+    /// Default is 3600 seconds (1 hour). Keys are automatically refreshed when cache expires.
+    ///
+    /// # Arguments
+    ///
+    /// * `ttl` - Cache TTL in seconds
+    pub fn jwks_cache_ttl(mut self, ttl_secs: u64) -> Self {
+        self.jwks_cache_ttl = Duration::from_secs(ttl_secs);
+        self
+    }
+    
+    /// Get decoding key for a given key ID (kid).
+    ///
+    /// This is used internally for signature verification.
+    /// Returns None if key not found or JWKS not configured.
+    ///
+    /// If cache is empty, triggers blocking refresh and waits for completion.
+    pub(super) fn get_key_for(&self, kid: &str) -> Option<jsonwebtoken::DecodingKey> {
+        let (cache, refresh_complete) = match (
+            &self.jwks_cache,
+            &self.jwks_refresh_complete,
+        ) {
+            (Some(c), Some(rc)) => (c, rc),
+            _ => return None, // JWKS not configured
+        };
+        
+        // Check if cache is empty - if so, we need to wait for refresh
+        let is_empty = {
+            if let Ok(guard) = cache.read() {
+                guard.1.is_empty()
+            } else {
+                return None;
+            }
+        };
+        
+        // Trigger refresh if needed
+        self.refresh_jwks_if_needed();
+        
+        // If cache was empty, wait for refresh to complete
+        if is_empty {
+            let (lock, cvar) = &**refresh_complete;
+            let guard = lock.lock().unwrap();
+            let _ = cvar.wait_timeout(guard, Duration::from_secs(5));
+        }
+        
+        // Read from cache
+        if let Ok(guard) = cache.read() {
+            guard.1.get(kid).cloned()
+        } else {
+            None
+        }
+    }
+    
+    /// Refresh JWKS if cache is expired or empty.
+    ///
+    /// If cache is empty, does a blocking initial refresh to ensure first validation succeeds.
+    /// Otherwise, triggers refresh in background thread.
+    fn refresh_jwks_if_needed(&self) {
+        let (cache, refresh_in_progress, refresh_complete, jwks_url) = match (
+            &self.jwks_cache,
+            &self.jwks_refresh_in_progress,
+            &self.jwks_refresh_complete,
+            &self.jwks_url,
+        ) {
+            (Some(c), Some(r), Some(rc), Some(url)) => (c, r, rc, url),
+            _ => return, // JWKS not configured
+        };
+        
+        // Check if refresh is needed
+        let (needs_refresh, is_empty) = {
+            if let Ok(guard) = cache.read() {
+                (guard.0.elapsed() >= self.jwks_cache_ttl || guard.1.is_empty(), guard.1.is_empty())
+            } else {
+                return;
+            }
+        };
+        
+        if !needs_refresh {
+            return;
+        }
+        
+        // If cache is empty, do blocking refresh to ensure first validation succeeds
+        if is_empty {
+            // Try to claim refresh
+            if refresh_in_progress
+                .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+                .is_ok()
+            {
+                // We won the race - do blocking initial refresh
+                validation::refresh_jwks_internal(
+                    cache,
+                    jwks_url,
+                    refresh_in_progress,
+                    refresh_complete,
+                    true, // Already claimed
+                );
+                return;
+            } else {
+                // Another thread is refreshing - wait for it
+                let (lock, cvar) = &**refresh_complete;
+                let guard = lock.lock().unwrap();
+                let _ = cvar.wait_timeout(guard, Duration::from_secs(5));
+                return;
+            }
+        }
+        
+        // Cache not empty but expired - trigger background refresh
+        if refresh_in_progress
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .is_err()
+        {
+            // Another thread is refreshing
+            return;
+        }
+        
+        // Spawn thread to refresh JWKS
+        let cache_clone = Arc::clone(cache);
+        let refresh_in_progress_clone = Arc::clone(refresh_in_progress);
+        let refresh_complete_clone = Arc::clone(refresh_complete);
+        let jwks_url_clone = jwks_url.clone();
+        
+        // Clone for error handler
+        let refresh_in_progress_err = Arc::clone(refresh_in_progress);
+        let refresh_complete_err = Arc::clone(refresh_complete);
+        
+        // Use thread::Builder to handle spawn failures
+        let _ = std::thread::Builder::new()
+            .name("spiffe-jwks-refresh".to_string())
+            .spawn(move || {
+                validation::refresh_jwks_internal(
+                    &cache_clone,
+                    &jwks_url_clone,
+                    &refresh_in_progress_clone,
+                    &refresh_complete_clone,
+                    true, // Already claimed
+                );
+            })
+            .map_err(move |e| {
+                // Clear flag on spawn failure
+                refresh_in_progress_err.store(false, Ordering::Release);
+                let (lock, cvar) = &*refresh_complete_err;
+                let _guard = lock.lock().unwrap();
+                cvar.notify_all();
+                debug!("Failed to spawn SPIFFE JWKS refresh thread: {}", e);
+            });
     }
 
     /// Configure cookie name for token extraction.
