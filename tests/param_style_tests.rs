@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use brrtrouter::server::decode_param_value;
 use brrtrouter::spec::ParameterStyle;
 use serde_json::json;

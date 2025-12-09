@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 //! Integration tests for the OpenAPI linter
 //!
 //! These tests verify that the linter correctly identifies issues in sample

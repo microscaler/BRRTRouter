@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use brrtrouter::dispatcher::Dispatcher;
 use brrtrouter::router::Router;
 use brrtrouter::server::AppService;

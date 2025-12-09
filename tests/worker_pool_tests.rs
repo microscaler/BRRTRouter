@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use brrtrouter::{
     dispatcher::{Dispatcher, HandlerRequest, HandlerResponse, HeaderVec},
     ids::RequestId,

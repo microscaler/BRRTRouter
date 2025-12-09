@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 //! Comprehensive tests for SPIFFE security provider
 //!
 //! Tests SPIFFE JWT SVID validation including:

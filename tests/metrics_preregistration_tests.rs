@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 //! Integration tests for automatic metrics path pre-registration
 //!
 //! These tests verify that when MetricsMiddleware is set on AppService,

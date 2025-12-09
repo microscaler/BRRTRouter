@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use brrtrouter::generator::FieldDef;
 use brrtrouter::generator::{
     write_controller, write_handler, write_main_rs, write_registry_rs, RegistryEntry,

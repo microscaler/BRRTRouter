@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use brrtrouter::dispatcher::{HandlerRequest, HandlerResponse, HeaderVec};
 use brrtrouter::ids::RequestId;
 use brrtrouter::middleware::{AuthMiddleware, CorsMiddleware, Middleware};

@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 //! Unit tests for CLI commands
 
 use crate::cli::{Cli, Commands};

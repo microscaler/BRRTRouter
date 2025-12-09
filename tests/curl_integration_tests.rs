@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use reqwest::blocking::{Client, Response};
 use reqwest::Method;
 use std::time::Duration;

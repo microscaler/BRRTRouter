@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 //! Tests for hot reload and live spec watching
 //!
 //! # Test Coverage

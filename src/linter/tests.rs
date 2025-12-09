@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 //! Unit tests for the OpenAPI linter
 
 use crate::linter::{lint_spec, LintSeverity};

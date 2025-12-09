@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use std::net::SocketAddr;
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};

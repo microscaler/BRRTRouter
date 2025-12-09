@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use anyhow::anyhow;
 use brrtrouter::typed::TypedHandlerFor;
 use brrtrouter::{

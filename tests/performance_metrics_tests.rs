@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 //! Tests for performance metrics collection
 //!
 //! These tests validate the metrics structures and calculations used in the

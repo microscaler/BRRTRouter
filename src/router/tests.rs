@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use super::Router;
 use crate::spec::RouteMeta;
 use http::Method;

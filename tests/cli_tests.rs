@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 //! Command-line interface integration tests
 //!
 //! # Test Coverage

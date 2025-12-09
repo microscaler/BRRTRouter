@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use brrtrouter::spec::{
     extract_parameters, extract_request_schema, extract_response_schema_and_example,
     extract_security_schemes, resolve_schema_ref, ParameterLocation,

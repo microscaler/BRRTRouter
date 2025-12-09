@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use brrtrouter::{dispatcher::Dispatcher, load_spec, router::Router};
 use http::Method;
 use pet_store::registry;

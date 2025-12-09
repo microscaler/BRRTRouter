@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 //! Integration tests for the HTTP server and request processing pipeline
 //!
 //! # Test Coverage
