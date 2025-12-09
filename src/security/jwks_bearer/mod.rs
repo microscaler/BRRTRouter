@@ -225,11 +225,13 @@ impl JwksBearerProvider {
     /// # Arguments
     ///
     /// * `size` - Maximum number of cached token claims
+    ///
+    /// JSF Compliance: Panics only during initialization, never on hot path
+    /// This method is only called during provider construction (startup)
+    #[allow(clippy::panic)]
     pub fn claims_cache_size(mut self, size: usize) -> Self {
-        // JSF Compliance: Panics only during initialization, never on hot path
-        // This method is only called during provider construction (startup)
+        // This panic is intentional: invalid configuration should fail fast at startup
         if size == 0 {
-            #[allow(clippy::panic)]
             panic!("claims_cache_size must be > 0");
         }
         self.claims_cache_size = size;

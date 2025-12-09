@@ -114,6 +114,9 @@ impl CorsMiddlewareBuilder {
     ///     .build()
     ///     .unwrap();
     /// ```
+    // JSF Compliance: Panics only during initialization, never on hot path
+    // This method is only called during startup in templates/main.rs.txt
+    #[allow(clippy::panic)]
     pub fn allowed_origins_regex(mut self, patterns: &[&str]) -> Self {
         let compiled: Result<Vec<Regex>, _> = patterns.iter().map(|p| Regex::new(p)).collect();
         match compiled {
@@ -121,10 +124,7 @@ impl CorsMiddlewareBuilder {
                 self.origin_validation = Some(OriginValidation::Regex(regexes));
             }
             Err(e) => {
-                // JSF Compliance: Panics only during initialization, never on hot path
                 // This panic is intentional: invalid configuration should fail fast at startup
-                // This method is only called during startup in templates/main.rs.txt
-                #[allow(clippy::panic)]
                 panic!("CORS builder error: Invalid regex pattern: {}", e);
             }
         }

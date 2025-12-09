@@ -163,6 +163,10 @@ impl CorsMiddleware {
     ///     Some(3600),  // cache preflight for 1 hour
     /// );
     /// ```
+    ///
+    /// JSF Compliance: Panics only during initialization, never on hot path
+    /// This method is only called during startup in templates/main.rs.txt
+    #[allow(clippy::panic)]
     pub fn new(
         allowed_origins: Vec<String>,
         allowed_headers: Vec<String>,
@@ -179,10 +183,8 @@ impl CorsMiddleware {
         };
 
         // Validate: cannot use wildcard with credentials (CORS spec requirement)
-        // JSF Compliance: Panics only during initialization, never on hot path
-        // This method is only called during startup in templates/main.rs.txt
+        // This panic is intentional: invalid configuration should fail fast at startup
         if allow_credentials && origin_validation.is_wildcard() {
-            #[allow(clippy::panic)]
             panic!(
                 "CORS configuration error: Cannot use wildcard origin (*) with credentials. \
                 When allow_credentials is true, you must specify exact origins."
@@ -274,6 +276,10 @@ impl CorsMiddleware {
     ///     None,
     /// );
     /// ```
+    ///
+    /// JSF Compliance: Panics only during initialization, never on hot path
+    /// This method is only called during startup in templates/main.rs.txt
+    #[allow(clippy::panic)]
     pub fn with_regex_patterns(
         origin_patterns: Vec<String>,
         allowed_headers: Vec<String>,
@@ -288,20 +294,16 @@ impl CorsMiddleware {
             .map(|p| Regex::new(p))
             .collect();
 
-        // JSF Compliance: Panics only during initialization, never on hot path
-        // This method is only called during startup in templates/main.rs.txt
+        // This panic is intentional: invalid configuration should fail fast at startup
         let patterns = patterns.unwrap_or_else(|e| {
-            #[allow(clippy::panic)]
             panic!("CORS configuration error: Invalid regex pattern: {}", e);
         });
 
         let origin_validation = OriginValidation::Regex(patterns);
 
         // Validate: cannot use wildcard with credentials
-        // JSF Compliance: Panics only during initialization, never on hot path
-        // This method is only called during startup in templates/main.rs.txt
+        // This panic is intentional: invalid configuration should fail fast at startup
         if allow_credentials && origin_validation.is_wildcard() {
-            #[allow(clippy::panic)]
             panic!(
                 "CORS configuration error: Cannot use wildcard patterns with credentials. \
                 When allow_credentials is true, you must use exact origins or specific regex patterns."

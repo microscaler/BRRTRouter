@@ -55,13 +55,14 @@ impl RouteCorsConfig {
     /// Panics if `allow_credentials` is `true` and `origins` contains `"*"`.
     /// This violates the CORS specification which forbids `Access-Control-Allow-Origin: *`
     /// with `Access-Control-Allow-Credentials: true`.
+    ///
+    /// JSF Compliance: Panics only during initialization, never on hot path
+    /// This method is only called during startup in templates/main.rs.txt
+    #[allow(clippy::panic)]
     pub fn with_origins(mut self, origins: &[&str]) -> Self {
         if origins.contains(&"*") {
             // Check if credentials are enabled - this combination is invalid per CORS spec
-            // JSF Compliance: Panics only during initialization, never on hot path
-            // This method is only called during startup in templates/main.rs.txt
             if self.allow_credentials {
-                #[allow(clippy::panic)]
                 panic!(
                     "CORS configuration error: Cannot use wildcard origin (*) with allowCredentials: true. \
                     Route '{}' has allowCredentials enabled but global CORS config has wildcard origins. \
