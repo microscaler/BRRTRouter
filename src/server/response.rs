@@ -87,6 +87,7 @@ mod tests {
     use may_minihttp::{HttpServer, HttpService, Request, Response};
     use std::io::{Read, Write};
     use std::net::{TcpListener, TcpStream};
+    use std::sync::Arc;
     use std::time::Duration;
 
     #[derive(Clone)]
