@@ -628,17 +628,14 @@ impl ContainerHarness {
         let container_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
         eprintln!("Container started: {container_id}");
 
-        // CRITICAL: Give Docker a moment to set up networking before querying port
-        // Docker needs time to allocate the random port and set up iptables rules
-        // Without this delay, we can race the port mapping setup
-        thread::sleep(Duration::from_millis(200));
-
-        // Query mapped port with retry - Docker needs a moment to set up network settings
+        // Query mapped port with polling - Docker needs a moment to set up network settings
+        // We poll immediately and continuously until the port mapping is available
+        // This adapts to different environments (local, CI, slow machines) without fixed delays
         // Use `docker port` which is simpler and more reliable than `docker inspect` template
-        // Retry up to 20 times with exponential backoff (max ~15 seconds total)
+        // Retry up to 30 times with exponential backoff (max ~20 seconds total)
         let mut host_port = String::new();
         let mut retries = 0;
-        let max_retries = 20;
+        let max_retries = 30;
         loop {
             // First check if container is still running and hasn't exited
             let status_out = Command::new("docker")
@@ -771,11 +768,16 @@ impl ContainerHarness {
                 );
             }
 
-            // Exponential backoff: 200ms, 400ms, 800ms, 1.6s, 3.2s, 6.4s, etc.
-            // Start with 200ms instead of 100ms to give Docker more time
-            let delay_ms = 200 * (1 << (retries - 1).min(6)); // Cap at 6.4s
-            if retries % 5 == 0 {
-                eprintln!("Waiting for port mapping (attempt {retries}/{max_retries})...");
+            // Exponential backoff with initial quick polling: 50ms, 100ms, 200ms, 400ms, 800ms, 1.6s, 3.2s, 6.4s
+            // Start with quick polling (50ms) to detect fast setups, then back off for slower environments
+            // This adapts to both fast local environments and slower CI/GitHub Actions
+            let delay_ms = if retries == 0 {
+                50 // First retry: quick check for fast environments
+            } else {
+                100 * (1 << (retries - 1).min(6)) // Then exponential backoff, cap at 6.4s
+            };
+            if retries % 5 == 0 || retries <= 3 {
+                eprintln!("Polling for port mapping (attempt {retries}/{max_retries}, delay {delay_ms}ms)...");
             }
             thread::sleep(Duration::from_millis(delay_ms));
         }
