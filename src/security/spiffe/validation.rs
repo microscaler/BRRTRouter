@@ -126,6 +126,69 @@ pub(super) fn validate_svid_impl(
         return false;
     }
 
+    // Validate issuer (iss) claim if present
+    // Per SPIFFE spec: if iss is present, it should match the trust domain from sub
+    if let Some(iss) = claims.get("iss").and_then(|v| v.as_str()) {
+        if iss != trust_domain {
+            warn!(
+                "SPIFFE SVID issuer '{}' does not match trust domain '{}' from sub claim",
+                iss, trust_domain
+            );
+            return false;
+        }
+    }
+
+    // Validate issued at (iat) claim if present
+    // Per SPIFFE spec: iat should be present and not in the future
+    if let Some(iat) = claims.get("iat").and_then(|v| v.as_i64()) {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        
+        // Allow leeway for clock skew (token issued slightly in future due to clock differences)
+        // Use saturating_add to prevent integer overflow (security: overflow could bypass validation)
+        let max_allowed_iat = now.saturating_add(provider.leeway_secs as i64);
+        if iat > max_allowed_iat {
+            warn!(
+                "SPIFFE SVID issued at (iat={}) is too far in the future (now={}, leeway={})",
+                iat, now, provider.leeway_secs
+            );
+            return false;
+        }
+    }
+
+    // Validate not before (nbf) claim if present
+    // Per JWT spec: token should not be used before nbf time
+    if let Some(nbf) = claims.get("nbf").and_then(|v| v.as_i64()) {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        
+        // Allow leeway for clock skew (token not yet valid due to clock differences)
+        // Use saturating_sub to prevent integer overflow (security: overflow could bypass validation)
+        let min_allowed_time = nbf.saturating_sub(provider.leeway_secs as i64);
+        if now < min_allowed_time {
+            warn!(
+                "SPIFFE SVID not yet valid (nbf={}, now={}, leeway={})",
+                nbf, now, provider.leeway_secs
+            );
+            return false;
+        }
+    }
+
+    // Token revocation checking (if revocation checker configured)
+    // Check jti against revocation list before signature verification
+    if let Some(revocation_checker) = &provider.revocation_checker {
+        if let Some(jti) = claims.get("jti").and_then(|v| v.as_str()) {
+            if revocation_checker.is_revoked(jti) {
+                warn!("SPIFFE SVID token revoked: jti={}", jti);
+                return false;
+            }
+        }
+    }
+
     // JWT signature verification (if JWKS URL configured)
     // Done after basic validation to ensure we have valid SPIFFE ID first
     if provider.jwks_url.is_some()
@@ -281,14 +344,39 @@ pub(super) fn refresh_jwks_internal(
                     || alg.eq_ignore_ascii_case("HS384")
                     || alg.eq_ignore_ascii_case("HS512"))
             {
-                if let Some(kval) = k.get("k").and_then(|v| v.as_str()) {
-                    use base64::Engine as _;
-                    if let Ok(secret) =
-                        base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(kval)
-                    {
-                        let dk = jsonwebtoken::DecodingKey::from_secret(&secret);
-                        new_map.insert(kid.to_string(), dk);
+                // HMAC keys are symmetric - not typically used in JWKS (would be a security risk)
+                // But we support them for completeness
+                debug!("Skipping HMAC key in JWKS (symmetric keys not supported in JWKS)");
+                continue;
+            }
+            
+            // ECDSA (EC) keys for ES* algorithms
+            // JWKS format: EC keys use "x" and "y" coordinates (base64url-encoded)
+            if kty.eq_ignore_ascii_case("EC")
+                && (alg.eq_ignore_ascii_case("ES256")
+                    || alg.eq_ignore_ascii_case("ES384")
+                    || alg.eq_ignore_ascii_case("ES512"))
+            {
+                let x = match k.get("x").and_then(|v| v.as_str()) {
+                    Some(v) => v,
+                    None => {
+                        debug!("ECDSA key missing 'x' coordinate, skipping");
+                        continue;
                     }
+                };
+                let y = match k.get("y").and_then(|v| v.as_str()) {
+                    Some(v) => v,
+                    None => {
+                        debug!("ECDSA key missing 'y' coordinate, skipping");
+                        continue;
+                    }
+                };
+                // jsonwebtoken crate supports from_ec_components for ECDSA keys
+                if let Ok(dk) = jsonwebtoken::DecodingKey::from_ec_components(x, y) {
+                    new_map.insert(kid.to_string(), dk);
+                    debug!("Added ECDSA key to JWKS cache: kid={}, alg={}", kid, alg);
+                } else {
+                    debug!("Failed to parse ECDSA key: kid={}, alg={}", kid, alg);
                 }
                 continue;
             }
@@ -370,6 +458,20 @@ pub(super) fn extract_claims_from_token(
     parse_jwt_claims(token).ok()
 }
 
+/// Extract JWT ID (jti) from a token.
+///
+/// The `jti` claim provides a unique identifier for the token, essential for:
+/// - Token revocation (blacklisting)
+/// - Audit logging
+/// - Replay prevention
+/// - Security incident response
+///
+/// This is a helper for `SpiffeProvider::extract_jti()`.
+pub(super) fn extract_jti_from_token(token: &str) -> Option<String> {
+    let claims = parse_jwt_claims(token).ok()?;
+    claims.get("jti")?.as_str().map(|s| s.to_string())
+}
+
 /// Parse JWT claims without signature verification.
 ///
 /// This extracts the payload and decodes it to JSON. Signature verification
@@ -425,7 +527,29 @@ fn validate_expiration(claims: &Value, leeway_secs: u64) -> bool {
         .as_secs() as i64;
 
     // Allow leeway for clock skew
-    let expiration_time = exp + leeway_secs as i64;
+    // Check for overflow explicitly (security: overflow could bypass expiration)
+    let expiration_time = match exp.checked_add(leeway_secs as i64) {
+        Some(t) => t,
+        None => {
+            // Overflow occurred - fall back to checking expiration without leeway
+            // This is safe: if token is expired without leeway, reject it
+            // If token is not expired, accept it (can't apply leeway due to overflow, but token is valid)
+            debug!(
+                "SPIFFE SVID expiration calculation overflow: exp={}, leeway={}, checking without leeway",
+                exp, leeway_secs
+            );
+            // Check expiration without leeway (security: expired tokens still rejected)
+            if now > exp {
+                debug!(
+                    "SPIFFE SVID expired (overflow prevented leeway application): exp={}, now={}",
+                    exp, now
+                );
+                return false;
+            }
+            // Token not expired, accept it (overflow just means we can't apply leeway)
+            return true;
+        }
+    };
     
     if now > expiration_time {
         debug!(

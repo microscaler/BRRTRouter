@@ -3140,3 +3140,109 @@ fn test_spiffe_exp_claim_float() {
         "exp claim as float should fail validation (must be integer)"
     );
 }
+
+#[test]
+fn test_spiffe_token_revocation() {
+    // Test token revocation checking for microservice-to-microservice identity
+    use brrtrouter::security::{SpiffeProvider, InMemoryRevocationChecker};
+    
+    let revocation_checker = InMemoryRevocationChecker::new();
+    let provider = SpiffeProvider::new()
+        .trust_domains(&["example.com"])
+        .audiences(&["api.example.com"])
+        .revocation_checker(revocation_checker.clone());
+    
+    let scheme = SecurityScheme::Http {
+        scheme: "bearer".to_string(),
+        bearer_format: None,
+        description: None,
+    };
+    
+    use base64::{engine::general_purpose, Engine as _};
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    
+    // Create token with jti
+    let header = json!({"alg": "HS256", "typ": "JWT"});
+    let payload = json!({
+        "sub": "spiffe://example.com/service/api",
+        "aud": "api.example.com",
+        "exp": now + 3600,
+        "iat": now,
+        "jti": "token-12345"
+    });
+    
+    let header_b64 = general_purpose::URL_SAFE_NO_PAD.encode(header.to_string().as_bytes());
+    let payload_b64 = general_purpose::URL_SAFE_NO_PAD.encode(payload.to_string().as_bytes());
+    let token = format!("{header_b64}.{payload_b64}.signature");
+    
+    let mut headers: HeaderVec = HeaderVec::new();
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
+    let req = SecurityRequest {
+        headers: &headers,
+        query: &ParamVec::new(),
+        cookies: &HeaderVec::new(),
+    };
+    
+    // Token should pass before revocation
+    assert!(
+        provider.validate(&scheme, &[], &req),
+        "Token should pass before revocation"
+    );
+    
+    // Revoke the token
+    revocation_checker.revoke("token-12345");
+    
+    // Token should fail after revocation
+    assert!(
+        !provider.validate(&scheme, &[], &req),
+        "Token should fail after revocation"
+    );
+    
+    // Unrevoke the token
+    revocation_checker.unrevoke("token-12345");
+    
+    // Token should pass again after unrevocation
+    assert!(
+        provider.validate(&scheme, &[], &req),
+        "Token should pass after unrevocation"
+    );
+}
+
+#[test]
+fn test_spiffe_token_revocation_no_jti() {
+    // Token without jti should pass even if revocation checker is configured
+    // (revocation checking is only done if jti is present)
+    use brrtrouter::security::{SpiffeProvider, InMemoryRevocationChecker};
+    
+    let revocation_checker = InMemoryRevocationChecker::new();
+    let provider = SpiffeProvider::new()
+        .trust_domains(&["example.com"])
+        .audiences(&["api.example.com"])
+        .revocation_checker(revocation_checker);
+    
+    let scheme = SecurityScheme::Http {
+        scheme: "bearer".to_string(),
+        bearer_format: None,
+        description: None,
+    };
+    
+    // Token without jti
+    let token = make_spiffe_jwt("spiffe://example.com/path", "api.example.com", 3600, 0);
+    
+    let mut headers: HeaderVec = HeaderVec::new();
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
+    let req = SecurityRequest {
+        headers: &headers,
+        query: &ParamVec::new(),
+        cookies: &HeaderVec::new(),
+    };
+    
+    // Should pass (no jti to check)
+    assert!(
+        provider.validate(&scheme, &[], &req),
+        "Token without jti should pass even with revocation checker configured"
+    );
+}

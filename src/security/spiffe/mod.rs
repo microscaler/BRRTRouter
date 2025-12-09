@@ -45,6 +45,7 @@
 //! and integrated with Active Directory for seamless single sign-on.
 
 mod validation;
+mod revocation;
 
 use crate::security::{SecurityProvider, SecurityRequest};
 use crate::spec::SecurityScheme;
@@ -57,6 +58,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use url::Url;
 use tracing::debug;
+
+pub use revocation::{RevocationChecker, InMemoryRevocationChecker, NoOpRevocationChecker};
 
 /// SPIFFE security provider for JWT SVID validation.
 ///
@@ -110,6 +113,8 @@ pub struct SpiffeProvider {
     jwks_refresh_in_progress: Option<Arc<AtomicBool>>,
     /// Condition variable for JWKS refresh completion
     jwks_refresh_complete: Option<Arc<(Mutex<()>, Condvar)>>,
+    /// Optional revocation checker for token revocation
+    revocation_checker: Option<Arc<dyn RevocationChecker>>,
 }
 
 impl SpiffeProvider {
@@ -135,6 +140,7 @@ impl SpiffeProvider {
             jwks_cache_ttl: Duration::from_secs(3600),
             jwks_refresh_in_progress: None,
             jwks_refresh_complete: None,
+            revocation_checker: None,
         }
     }
 
@@ -426,6 +432,33 @@ impl SpiffeProvider {
         self
     }
 
+    /// Configure revocation checker for token revocation.
+    ///
+    /// When provided, the provider will check if a token's JWT ID (jti) has been
+    /// revoked before accepting it. This is critical for enterprise security,
+    /// allowing immediate revocation of compromised tokens.
+    ///
+    /// # Arguments
+    ///
+    /// * `checker` - Implementation of `RevocationChecker` trait
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use brrtrouter::security::spiffe::{SpiffeProvider, InMemoryRevocationChecker};
+    ///
+    /// let checker = InMemoryRevocationChecker::new();
+    /// checker.revoke("compromised-token-id");
+    ///
+    /// let provider = SpiffeProvider::new()
+    ///     .trust_domains(&["example.com"])
+    ///     .revocation_checker(checker);
+    /// ```
+    pub fn revocation_checker(mut self, checker: impl RevocationChecker + 'static) -> Self {
+        self.revocation_checker = Some(Arc::new(checker));
+        self
+    }
+
     /// Extract SPIFFE ID from a validated request.
     ///
     /// This method extracts the SPIFFE ID from the `sub` claim of a validated SVID.
@@ -444,14 +477,84 @@ impl SpiffeProvider {
         validation::extract_spiffe_id_from_token(token, self)
     }
 
+    /// Extract JWT ID (jti) from a validated request.
+    ///
+    /// The `jti` claim provides a unique identifier for the token, which is essential for:
+    /// - **Token revocation**: Blacklist specific tokens without waiting for expiration
+    /// - **Audit logging**: Track which tokens were used for which operations
+    /// - **Replay prevention**: Detect and reject reused tokens
+    /// - **Security incident response**: Quickly revoke compromised tokens
+    ///
+    /// This is particularly valuable in microservice-to-microservice identity scenarios
+    /// where fine-grained revocation and audit trails are required (e.g., Pricewhisperer).
+    ///
+    /// # Arguments
+    ///
+    /// * `req` - The security request context
+    ///
+    /// # Returns
+    ///
+    /// * `Some(jti)` - The JWT ID claim value (as string)
+    /// * `None` - Token missing, invalid, or `jti` claim not present
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use brrtrouter::security::SpiffeProvider;
+    ///
+    /// let provider = SpiffeProvider::new()
+    ///     .trust_domains(&["example.com"])
+    ///     .audiences(&["api.example.com"]);
+    ///
+    /// // After validation, extract jti for revocation checking
+    /// if let Some(jti) = provider.extract_jti(&req) {
+    ///     // Check revocation list
+    ///     if is_revoked(jti) {
+    ///         return Err("Token revoked");
+    ///     }
+    ///     // Log for audit trail
+    ///     audit_log("token_used", jti);
+    /// }
+    /// ```
+    pub fn extract_jti(&self, req: &SecurityRequest) -> Option<String> {
+        let token = self.extract_token(req)?;
+        validation::extract_jti_from_token(token)
+    }
+
     fn extract_token<'a>(&self, req: &'a SecurityRequest) -> Option<&'a str> {
         if let Some(name) = &self.cookie_name {
             if let Some(t) = req.get_cookie(name) {
                 return Some(t);
             }
         }
+        // RFC 6750: Bearer token must be exactly "Bearer " (single space) followed by token
+        // Reject double spaces, tabs, newlines, trailing whitespace, etc.
+        // Note: "Bearer" prefix is case-sensitive per RFC 6750 Section 2.1
         req.get_header("authorization")
-            .and_then(|h| h.strip_prefix("Bearer "))
+            .and_then(|h| {
+                // Check for exact "Bearer " prefix (case-sensitive)
+                if h.len() < 7 {
+                    return None; // Too short to be "Bearer "
+                }
+                if !h.starts_with("Bearer ") {
+                    return None;
+                }
+                // Ensure it's exactly "Bearer " (single space), not "Bearer  " (double space)
+                // Check that character at index 6 is a space
+                if h.as_bytes().get(6) != Some(&b' ') {
+                    return None;
+                }
+                // If there's a character at index 7, it must not be whitespace
+                if let Some(&b' ') = h.as_bytes().get(7) {
+                    return None; // Double space - reject
+                }
+                let token = &h[7..];
+                // Reject if token has leading or trailing whitespace
+                if token.starts_with(char::is_whitespace) || token.ends_with(char::is_whitespace) {
+                    return None;
+                }
+                Some(token)
+            })
     }
 }
 
@@ -494,6 +597,7 @@ impl SecurityProvider for SpiffeProvider {
     /// - `exp` - Expiration timestamp
     /// - `iat` - Issued at timestamp
     /// - `iss` - Issuer (if present)
+    /// - `jti` - JWT ID (if present) - useful for revocation and audit logging
     ///
     /// # Arguments
     ///
