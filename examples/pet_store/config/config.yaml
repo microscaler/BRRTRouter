@@ -57,30 +57,21 @@ http:
 cors:
   # CORS configuration - origins are environment-specific and should be in config.yaml
   # Route-specific CORS settings (methods, headers, credentials) can be defined in OpenAPI x-cors extension
-  #
-  # IMPORTANT: When allow_credentials is true, you CANNOT use wildcard origin (*).
-  # You must specify exact origins. This is required for:
-  # - Authorization headers (Bearer tokens, OAuth2 tokens)
-  # - Cookies (session cookies, CSRF tokens)
-  # - SAML/OAuth2/Social auth flows that send tokens cross-origin
   origins:
-    - "http://localhost:3000"      # Local development frontend
-    - "http://localhost:5173"      # Vite dev server
-    - "https://petstore.example.com"  # Production frontend
+    # - "https://example.com"
+    # - "https://api.example.com"
+    # Use "*" to allow all origins (insecure, not recommended for production)
+    # - "*"
   # Global CORS settings (can be overridden per-route via OpenAPI x-cors)
   allowed_headers:
     - "Content-Type"
-    - "Authorization"              # Required for Bearer tokens, OAuth2 tokens
-    - "X-API-Key"
+    - "Authorization"
   allowed_methods:
     - "GET"
     - "POST"
     - "PUT"
     - "DELETE"
     - "OPTIONS"
-  allow_credentials: true  # Required for Authorization headers and cookies
-                           # Enables: Bearer JWT, OAuth2 tokens, SAML tokens, session cookies
-  expose_headers:
-    - "X-Total-Count"
-    - "X-Page-Number"
-  max_age: 3600  # Cache preflight requests for 1 hour
+  allow_credentials: false
+  expose_headers: []
+  max_age: null  # Preflight cache duration in seconds (null = no caching)

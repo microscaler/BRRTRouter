@@ -2,7 +2,7 @@ use brrtrouter::{
     dispatcher::{Dispatcher, HandlerRequest, HandlerResponse, HeaderVec},
     load_spec,
     middleware::Middleware,
-    middleware::{AuthMiddleware, CorsMiddleware, MetricsMiddleware},
+    middleware::{AuthMiddleware, CorsMiddleware, MetricsMiddleware, RouteCorsConfig},
     router::{ParamVec, Router},
 };
 use http::Method;
@@ -893,4 +893,14 @@ fn test_cors_permissive_for_development() {
     mw.after(&req, &mut resp, Duration::from_millis(0));
     // Permissive should allow all origins
     assert_eq!(resp.get_header("access-control-allow-origin"), Some("*"));
+}
+
+#[test]
+#[should_panic(expected = "Cannot use wildcard origin")]
+fn test_cors_route_wildcard_with_credentials_panic() {
+    // P1: Test that route config with allowCredentials: true cannot use wildcard origins
+    let mut route_config = RouteCorsConfig::default();
+    route_config.allow_credentials = true;
+    // This should panic because wildcard + credentials is invalid per CORS spec
+    let _ = route_config.with_origins(&["*"]);
 }

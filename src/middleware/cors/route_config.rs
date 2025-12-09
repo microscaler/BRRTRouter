@@ -49,8 +49,24 @@ impl RouteCorsConfig {
     
     /// Create a route CORS config with origins from config.yaml
     /// This is called during middleware initialization to merge config.yaml origins
+    ///
+    /// # Panics
+    ///
+    /// Panics if `allow_credentials` is `true` and `origins` contains `"*"`.
+    /// This violates the CORS specification which forbids `Access-Control-Allow-Origin: *`
+    /// with `Access-Control-Allow-Credentials: true`.
     pub fn with_origins(mut self, origins: &[&str]) -> Self {
         if origins.iter().any(|o| *o == "*") {
+            // Check if credentials are enabled - this combination is invalid per CORS spec
+            if self.allow_credentials {
+                panic!(
+                    "CORS configuration error: Cannot use wildcard origin (*) with allowCredentials: true. \
+                    Route '{}' has allowCredentials enabled but global CORS config has wildcard origins. \
+                    When credentials are enabled, you must specify exact origins in config.yaml.",
+                    // Note: We don't have handler_name here, but the panic message is still helpful
+                    "route"
+                );
+            }
             self.origin_validation = OriginValidation::Wildcard;
         } else {
             let origins_vec: Vec<String> = origins.iter().map(|s| s.to_string()).collect();

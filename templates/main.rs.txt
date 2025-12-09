@@ -267,6 +267,8 @@ fn main() -> io::Result<()> {
                 let mut merged_configs = std::collections::HashMap::new();
                 for (handler_name, route_config) in route_configs {
                     // Set origin validation from config.yaml (not from OpenAPI)
+                    // This will panic if route has allowCredentials: true and global origins contain "*"
+                    // (invalid CORS combination per spec)
                     let merged_config = if !origins.is_empty() {
                         route_config.with_origins(&origins)
                     } else {
