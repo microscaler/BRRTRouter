@@ -906,3 +906,100 @@ fn test_cors_route_wildcard_with_credentials_panic() {
     // This should panic because wildcard + credentials is invalid per CORS spec
     let _ = route_config.with_origins(&["*"]);
 }
+
+#[test]
+fn test_cors_same_origin_port_comparison() {
+    // Test that is_same_origin correctly compares ports
+    // This fixes the bug where different ports were treated as same-origin
+    let mw = CorsMiddleware::permissive();
+
+    // Test 1: Same hostname, different ports - should be cross-origin (CORS headers added)
+    // Host: localhost (default port 80), Origin: http://localhost:8080
+    let mut headers1 = HeaderVec::new();
+    headers1.push((Arc::from("host"), "localhost".to_string()));
+    headers1.push((Arc::from("origin"), "http://localhost:8080".to_string()));
+    let req1 = create_test_request(Method::GET, "/api/data", headers1);
+    let mut resp1 = create_test_response(200);
+    mw.after(&req1, &mut resp1, Duration::from_millis(0));
+    // Should have CORS headers because ports differ (80 vs 8080)
+    assert_eq!(
+        resp1.get_header("access-control-allow-origin"),
+        Some("*"),
+        "Different ports should be treated as cross-origin"
+    );
+
+    // Test 2: Same hostname, same port (explicit) - should be same-origin (no CORS headers)
+    // Host: localhost:80, Origin: http://localhost:80
+    let mut headers2 = HeaderVec::new();
+    headers2.push((Arc::from("host"), "localhost:80".to_string()));
+    headers2.push((Arc::from("origin"), "http://localhost:80".to_string()));
+    let req2 = create_test_request(Method::GET, "/api/data", headers2);
+    let mut resp2 = create_test_response(200);
+    mw.after(&req2, &mut resp2, Duration::from_millis(0));
+    // Should NOT have CORS headers because same origin (hostname + port match)
+    assert_eq!(
+        resp2.get_header("access-control-allow-origin"),
+        None,
+        "Same hostname and port should be treated as same-origin"
+    );
+
+    // Test 3: Same hostname, default port (implicit) - should be same-origin (no CORS headers)
+    // Host: localhost (default 80), Origin: http://localhost (default 80)
+    let mut headers3 = HeaderVec::new();
+    headers3.push((Arc::from("host"), "localhost".to_string()));
+    headers3.push((Arc::from("origin"), "http://localhost".to_string()));
+    let req3 = create_test_request(Method::GET, "/api/data", headers3);
+    let mut resp3 = create_test_response(200);
+    mw.after(&req3, &mut resp3, Duration::from_millis(0));
+    // Should NOT have CORS headers because same origin (both use default port 80)
+    assert_eq!(
+        resp3.get_header("access-control-allow-origin"),
+        None,
+        "Same hostname with implicit default ports should be treated as same-origin"
+    );
+
+    // Test 4: Same hostname, default port (implicit in Host, explicit in Origin) - should be same-origin
+    // Host: localhost (default 80), Origin: http://localhost:80
+    let mut headers4 = HeaderVec::new();
+    headers4.push((Arc::from("host"), "localhost".to_string()));
+    headers4.push((Arc::from("origin"), "http://localhost:80".to_string()));
+    let req4 = create_test_request(Method::GET, "/api/data", headers4);
+    let mut resp4 = create_test_response(200);
+    mw.after(&req4, &mut resp4, Duration::from_millis(0));
+    // Should NOT have CORS headers because both resolve to port 80
+    assert_eq!(
+        resp4.get_header("access-control-allow-origin"),
+        None,
+        "Same hostname with default port (implicit vs explicit) should be treated as same-origin"
+    );
+
+    // Test 5: HTTPS with default port 443
+    // Host: example.com (default 443), Origin: https://example.com (default 443)
+    let mut headers5 = HeaderVec::new();
+    headers5.push((Arc::from("host"), "example.com".to_string()));
+    headers5.push((Arc::from("origin"), "https://example.com".to_string()));
+    let req5 = create_test_request(Method::GET, "/api/data", headers5);
+    let mut resp5 = create_test_response(200);
+    mw.after(&req5, &mut resp5, Duration::from_millis(0));
+    // Should NOT have CORS headers because same origin (both use default port 443)
+    assert_eq!(
+        resp5.get_header("access-control-allow-origin"),
+        None,
+        "HTTPS with default port 443 should be treated as same-origin"
+    );
+
+    // Test 6: HTTPS with different ports - should be cross-origin
+    // Host: example.com:443 (default), Origin: https://example.com:8443
+    let mut headers6 = HeaderVec::new();
+    headers6.push((Arc::from("host"), "example.com".to_string()));
+    headers6.push((Arc::from("origin"), "https://example.com:8443".to_string()));
+    let req6 = create_test_request(Method::GET, "/api/data", headers6);
+    let mut resp6 = create_test_response(200);
+    mw.after(&req6, &mut resp6, Duration::from_millis(0));
+    // Should have CORS headers because ports differ (443 vs 8443)
+    assert_eq!(
+        resp6.get_header("access-control-allow-origin"),
+        Some("*"),
+        "Different HTTPS ports should be treated as cross-origin"
+    );
+}

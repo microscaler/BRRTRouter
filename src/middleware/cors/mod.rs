@@ -470,25 +470,66 @@ impl CorsMiddleware {
     ///
     /// * `true` - Request is same-origin (skip CORS headers)
     /// * `false` - Request is cross-origin (add CORS headers)
+    ///
+    /// # Port Handling
+    ///
+    /// This function properly handles port comparison:
+    /// - Default ports: 80 for http, 443 for https
+    /// - Host header without port uses default port based on Origin scheme
+    /// - Both hostname and port must match for same-origin
     fn is_same_origin(&self, req: &HandlerRequest, origin: &str) -> bool {
         // Extract server origin from Host header
-        let host = match req.get_header("host") {
+        let host_header = match req.get_header("host") {
             Some(h) => h,
             None => return false, // No Host header, assume cross-origin
         };
 
-        // Parse origin to extract scheme and host:port
-        // Origin format: scheme://host:port
+        // Parse origin to extract scheme, hostname, and port
+        // Origin format: scheme://hostname:port or scheme://hostname
         let origin_parts: Vec<&str> = origin.split("://").collect();
         if origin_parts.len() != 2 {
             return false; // Invalid origin format
         }
 
-        let origin_host_port = origin_parts[1];
-        let origin_host = origin_parts[1].split(':').next().unwrap_or(origin_host_port);
+        let origin_scheme = origin_parts[0];
+        let origin_authority = origin_parts[1];
 
-        // Compare host (case-insensitive per RFC)
-        host.eq_ignore_ascii_case(origin_host) || host.eq_ignore_ascii_case(origin_host_port)
+        // Determine default port based on scheme
+        let default_port = match origin_scheme {
+            "https" => 443,
+            "http" => 80,
+            _ => return false, // Unknown scheme
+        };
+
+        // Extract hostname and port from origin
+        let (origin_hostname, origin_port) = if let Some(colon_pos) = origin_authority.find(':') {
+            let hostname = &origin_authority[..colon_pos];
+            let port_str = &origin_authority[colon_pos + 1..];
+            let port = port_str.parse::<u16>().unwrap_or(0);
+            (hostname, Some(port))
+        } else {
+            (origin_authority, None)
+        };
+
+        // Normalize origin port: use default if not specified
+        let origin_port_normalized = origin_port.unwrap_or(default_port);
+
+        // Parse Host header: hostname:port or hostname
+        let (host_hostname, host_port) = if let Some(colon_pos) = host_header.find(':') {
+            let hostname = &host_header[..colon_pos];
+            let port_str = &host_header[colon_pos + 1..];
+            let port = port_str.parse::<u16>().unwrap_or(0);
+            (hostname, Some(port))
+        } else {
+            (host_header, None)
+        };
+
+        // Normalize host port: use default based on origin scheme if not specified
+        let host_port_normalized = host_port.unwrap_or(default_port);
+
+        // Compare both hostname (case-insensitive per RFC) and port
+        host_hostname.eq_ignore_ascii_case(origin_hostname)
+            && host_port_normalized == origin_port_normalized
     }
 
     /// Validate a preflight request
