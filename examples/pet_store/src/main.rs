@@ -36,6 +36,7 @@ struct AppConfig {
     port: Option<u16>, // Server port (preferred over PORT env var)
     security: Option<SecurityConfig>,
     http: Option<HttpConfig>,
+    cors: Option<CorsConfig>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
@@ -102,6 +103,18 @@ struct HttpConfig {
     max_requests: Option<u64>,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+struct CorsConfig {
+    // Allowed origins (environment-specific, should be in config.yaml)
+    origins: Option<Vec<String>>,
+    // Global CORS settings (can be overridden per-route via OpenAPI x-cors)
+    allowed_headers: Option<Vec<String>>,
+    allowed_methods: Option<Vec<String>>,
+    allow_credentials: Option<bool>,
+    expose_headers: Option<Vec<String>>,
+    max_age: Option<u32>, // Preflight cache duration in seconds
+}
+
 #[derive(Parser)]
 struct Args {
     #[arg(short, long, default_value = "./doc/openapi.yaml")]
@@ -147,52 +160,8 @@ fn main() -> io::Result<()> {
         let key_len = k.len();
         println!("[info] test-api-key provided ({key_len} chars)");
     }
-    let (routes, schemes, _slug) = brrtrouter::spec::load_spec_full(spec_path.to_str().unwrap())
-        .expect("failed to load OpenAPI spec");
-    let _router = Router::new(routes.clone());
-    // Create router and dispatcher
-    let mut dispatcher = Dispatcher::new();
-
-    // Create dispatcher and middleware
-    let metrics = std::sync::Arc::new(MetricsMiddleware::new());
-    dispatcher.add_middleware(metrics.clone());
-
-    // Create memory tracking middleware
-    let memory = std::sync::Arc::new(brrtrouter::middleware::MemoryMiddleware::new());
-
-    // Start background memory monitoring thread
-    brrtrouter::middleware::memory::start_memory_monitor(memory.clone());
-    unsafe {
-        registry::register_from_spec(&mut dispatcher, &routes);
-    }
-
-    // Start the HTTP server on port 8080, binding to 127.0.0.1 if BRRTR_LOCAL is
-    // set for local testing.
-    // This returns a coroutine JoinHandle; we join on it to keep the server running
-    let router = std::sync::Arc::new(std::sync::RwLock::new(Router::new(routes.clone())));
-    // Dump initial route table
-    router.read().unwrap().dump_routes();
-    let dispatcher = std::sync::Arc::new(std::sync::RwLock::new(dispatcher));
-    let mut service = AppService::new(
-        router,
-        dispatcher,
-        schemes,
-        spec_path.clone(),
-        args.static_dir.clone(),
-        Some(args.doc_dir.clone()),
-    );
-
-    // Pre-compile all JSON schemas at startup for optimal performance
-    let compiled_count = service.precompile_schemas(&routes);
-    println!(
-        "[startup] precompiled {} JSON schema validators",
-        compiled_count
-    );
-
-    service.set_metrics_middleware(metrics);
-    service.set_memory_middleware(memory);
-
-    // Load application config (YAML). If the file exists but is invalid, fail fast with a clear error.
+    // Load application config (YAML) FIRST - required for CORS initialization
+    // If the file exists but is invalid, fail fast with a clear error.
     // Only a missing file results in defaulting.
     let app_config: AppConfig = match fs::read_to_string(&args.config) {
         Ok(s) => match serde_yaml::from_str::<AppConfig>(&s) {
@@ -225,6 +194,138 @@ fn main() -> io::Result<()> {
             )));
         }
     };
+
+    let (routes, schemes, _slug) = brrtrouter::spec::load_spec_full(spec_path.to_str().unwrap())
+        .expect("failed to load OpenAPI spec");
+    let _router = Router::new(routes.clone());
+    // Create router and dispatcher
+    let mut dispatcher = Dispatcher::new();
+
+    // Create dispatcher and middleware
+    let metrics = std::sync::Arc::new(MetricsMiddleware::new());
+    dispatcher.add_middleware(metrics.clone());
+
+    // Create memory tracking middleware
+    let memory = std::sync::Arc::new(brrtrouter::middleware::MemoryMiddleware::new());
+
+    // Start background memory monitoring thread
+    brrtrouter::middleware::memory::start_memory_monitor(memory.clone());
+
+    // Initialize CORS middleware from config.yaml at STARTUP (JSF requirement)
+    // All CORS configuration is processed once at initialization time, no runtime parsing
+    // Origins come from config.yaml (environment-specific), route-specific settings from OpenAPI x-cors
+    let cors_middleware = {
+        use brrtrouter::middleware::{build_route_cors_map, CorsMiddlewareBuilder};
+        use http::Method;
+
+        // Extract origins from config.yaml (processed once at startup)
+        let cors_cfg = app_config.cors.as_ref();
+        let origins = cors_cfg
+            .and_then(|c| c.origins.as_ref())
+            .map(|o| o.iter().map(|s| s.as_str()).collect::<Vec<_>>())
+            .unwrap_or_default();
+
+        // Build global CORS middleware from config.yaml (startup-time only)
+        let mut builder = CorsMiddlewareBuilder::new();
+        if !origins.is_empty() {
+            builder = builder.allowed_origins(&origins);
+        }
+
+        // Apply global CORS settings from config.yaml (startup-time only)
+        if let Some(cfg) = cors_cfg {
+            if let Some(headers) = cfg.allowed_headers.as_ref() {
+                let header_strs: Vec<&str> = headers.iter().map(|s| s.as_str()).collect();
+                builder = builder.allowed_headers(&header_strs);
+            }
+            if let Some(methods) = cfg.allowed_methods.as_ref() {
+                let method_vec: Vec<Method> = methods
+                    .iter()
+                    .filter_map(|m| m.parse::<Method>().ok())
+                    .collect();
+                if !method_vec.is_empty() {
+                    builder = builder.allowed_methods(&method_vec);
+                }
+            }
+            if let Some(creds) = cfg.allow_credentials {
+                builder = builder.allow_credentials(creds);
+            }
+            if let Some(expose) = cfg.expose_headers.as_ref() {
+                let expose_strs: Vec<&str> = expose.iter().map(|s| s.as_str()).collect();
+                builder = builder.expose_headers(&expose_strs);
+            }
+            if let Some(age) = cfg.max_age {
+                builder = builder.max_age(age);
+            }
+        }
+
+        // Build global CORS middleware and merge with route-specific configs from OpenAPI
+        // All processing happens at startup - no runtime allocations in hot path
+        match builder.build() {
+            Ok(global_cors) => {
+                // Extract route-specific CORS configs from OpenAPI (startup-time only)
+                let route_configs = build_route_cors_map(&routes);
+                // Merge origins from config.yaml into route-specific configs (startup-time only)
+                let mut merged_configs = std::collections::HashMap::new();
+                for (handler_name, route_config) in route_configs {
+                    // Set origin validation from config.yaml (not from OpenAPI)
+                    let merged_config = if !origins.is_empty() {
+                        route_config.with_origins(&origins)
+                    } else {
+                        route_config
+                    };
+                    merged_configs.insert(handler_name, merged_config);
+                }
+                // Create CORS middleware with all configs pre-processed at startup
+                Some(std::sync::Arc::new(
+                    brrtrouter::middleware::CorsMiddleware::with_route_configs(
+                        global_cors,
+                        merged_configs,
+                    ),
+                ))
+            }
+            Err(e) => {
+                eprintln!("[cors][error] Failed to build CORS middleware: {:?}", e);
+                None
+            }
+        }
+    };
+
+    // Register CORS middleware (all config processed at startup, no runtime work)
+    if let Some(ref cors) = cors_middleware {
+        dispatcher.add_middleware(cors.clone());
+    }
+    unsafe {
+        registry::register_from_spec(&mut dispatcher, &routes);
+    }
+
+    // Start the HTTP server on port 8080, binding to 127.0.0.1 if BRRTR_LOCAL is
+    // set for local testing.
+    // This returns a coroutine JoinHandle; we join on it to keep the server running
+    let router = std::sync::Arc::new(std::sync::RwLock::new(Router::new(routes.clone())));
+    // Dump initial route table
+    router.read().unwrap().dump_routes();
+    let dispatcher = std::sync::Arc::new(std::sync::RwLock::new(dispatcher));
+    let mut service = AppService::new(
+        router,
+        dispatcher,
+        schemes,
+        spec_path.clone(),
+        args.static_dir.clone(),
+        Some(args.doc_dir.clone()),
+    );
+
+    // Pre-compile all JSON schemas at startup for optimal performance
+    let compiled_count = service.precompile_schemas(&routes);
+    println!(
+        "[startup] precompiled {} JSON schema validators",
+        compiled_count
+    );
+
+    service.set_metrics_middleware(metrics);
+    service.set_memory_middleware(memory);
+
+    // Note: app_config was loaded earlier (before CORS initialization) to comply with JSF requirements
+    // All configuration processing happens at startup time, not in the hot path
     // Log startup context to console
     let spec_display = spec_path.display();
     let doc_display = args.doc_dir.display();
