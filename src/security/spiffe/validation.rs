@@ -21,11 +21,12 @@ use super::SpiffeProvider;
 
 /// SPIFFE ID format regex: `spiffe://trust-domain/path`
 /// Trust domain: alphanumeric, dots, hyphens, underscores
-/// Path: any characters except control characters
+/// Path: required, must start with `/` (root path `/` is valid)
+/// Per SPIFFE specification, the path component is mandatory
 use once_cell::sync::Lazy;
 
 static SPIFFE_ID_REGEX: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^spiffe://([a-zA-Z0-9._-]+)(/.*)?$")
+    Regex::new(r"^spiffe://([a-zA-Z0-9._-]+)/.*$")
         .expect("SPIFFE ID regex should be valid")
 });
 
@@ -443,12 +444,19 @@ mod tests {
 
     #[test]
     fn test_spiffe_id_validation() {
+        // Valid SPIFFE IDs (with required path component)
         assert!(is_valid_spiffe_id("spiffe://example.com/api/users"));
         assert!(is_valid_spiffe_id("spiffe://enterprise.local/windows/service"));
         assert!(is_valid_spiffe_id("spiffe://prod.example.com/frontend/web"));
+        assert!(is_valid_spiffe_id("spiffe://example.com/")); // Root path is valid
+        assert!(is_valid_spiffe_id("spiffe://example.com/path"));
+        
+        // Invalid SPIFFE IDs
         assert!(!is_valid_spiffe_id("invalid"));
         assert!(!is_valid_spiffe_id("http://example.com"));
         assert!(!is_valid_spiffe_id("spiffe://"));
+        // Path component is required per SPIFFE specification
+        assert!(!is_valid_spiffe_id("spiffe://example.com"));
     }
 
     #[test]
