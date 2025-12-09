@@ -4,6 +4,22 @@ use std::collections::HashMap;
 use super::OriginValidation;
 use crate::spec::RouteMeta;
 
+/// Route-specific CORS policy extracted from OpenAPI `x-cors` extension
+///
+/// Determines how CORS should be handled for a specific route:
+/// - `Inherit`: Use global CORS configuration (default)
+/// - `Disabled`: Disable CORS for this route (no CORS headers)
+/// - `Custom`: Use route-specific CORS configuration
+#[derive(Debug, Clone)]
+pub enum RouteCorsPolicy {
+    /// Use global CORS configuration
+    Inherit,
+    /// Disable CORS for this route (no CORS headers will be added)
+    Disabled,
+    /// Use route-specific CORS configuration
+    Custom(RouteCorsConfig),
+}
+
 /// Route-specific CORS configuration extracted from OpenAPI `x-cors` extension
 ///
 /// This configuration can override the global CORS middleware settings
@@ -80,12 +96,13 @@ impl RouteCorsConfig {
     }
 }
 
-/// Extract CORS configuration from OpenAPI `x-cors` extension
+/// Extract CORS policy from OpenAPI `x-cors` extension
 ///
-/// Supports both object and string formats:
-/// - Object: `x-cors: { origins: ["https://example.com"], credentials: true }`
-/// - String: `x-cors: "inherit"` (uses global config)
-/// - Boolean: `x-cors: false` (disables CORS for this route)
+/// Supports multiple formats:
+/// - Object: `x-cors: { allowedHeaders: [...], allowCredentials: true }` → `Custom(config)`
+/// - String: `x-cors: "inherit"` → `Inherit` (uses global config)
+/// - Boolean: `x-cors: false` → `Disabled` (no CORS headers)
+/// - Missing/None: → `Inherit` (uses global config)
 ///
 /// # Arguments
 ///
@@ -93,19 +110,23 @@ impl RouteCorsConfig {
 ///
 /// # Returns
 ///
-/// * `Some(RouteCorsConfig)` - If `x-cors` extension is present and valid
-/// * `None` - If extension is not present or is `false`/`"inherit"`
-pub fn extract_route_cors_config(operation: &Operation) -> Option<RouteCorsConfig> {
-    let cors_ext = operation.extensions.get("x-cors")?;
+/// * `RouteCorsPolicy::Inherit` - If extension is not present or is `"inherit"` (use global config)
+/// * `RouteCorsPolicy::Disabled` - If extension is `false` (disable CORS for this route)
+/// * `RouteCorsPolicy::Custom(config)` - If extension is an object (use route-specific config)
+pub fn extract_route_cors_config(operation: &Operation) -> RouteCorsPolicy {
+    let cors_ext = match operation.extensions.get("x-cors") {
+        Some(ext) => ext,
+        None => return RouteCorsPolicy::Inherit, // No extension = inherit global config
+    };
 
     // Handle boolean false - disable CORS for this route
     if let Some(false) = cors_ext.as_bool() {
-        return None;
+        return RouteCorsPolicy::Disabled;
     }
 
     // Handle string "inherit" - use global config
     if let Some("inherit") = cors_ext.as_str() {
-        return None;
+        return RouteCorsPolicy::Inherit;
     }
 
     // Handle object configuration
@@ -162,20 +183,23 @@ pub fn extract_route_cors_config(operation: &Operation) -> Option<RouteCorsConfi
         // Note: Origin validation is not set here - origins come from config.yaml
         // and will be merged during middleware initialization. We only extract other settings.
 
-        return Some(config);
+        return RouteCorsPolicy::Custom(config);
     }
 
-    None
+    // Default to inherit if extension is present but not recognized
+    RouteCorsPolicy::Inherit
 }
 
-/// Build a map of route-specific CORS configurations from route metadata
+/// Build a map of route-specific CORS policies from route metadata
 ///
 /// Creates a lookup map keyed by handler name for efficient route-specific
-/// CORS handling. Routes with `cors_config` set will use route-specific
-/// settings, others will fall back to global CORS middleware.
+/// CORS handling. Routes with `cors_policy` set will use their specific policy:
+/// - `Inherit`: Falls back to global CORS middleware
+/// - `Disabled`: No CORS headers will be added
+/// - `Custom(config)`: Uses route-specific CORS configuration
 ///
 /// **JSF Compliance**: This function is called ONCE at startup/initialization time.
-/// All route-specific CORS configs are extracted and pre-processed before the
+/// All route-specific CORS policies are extracted and pre-processed before the
 /// service starts handling requests. The resulting HashMap is used for O(1) lookups
 /// in the hot path with no runtime parsing or allocation.
 ///
@@ -185,13 +209,19 @@ pub fn extract_route_cors_config(operation: &Operation) -> Option<RouteCorsConfi
 ///
 /// # Returns
 ///
-/// A HashMap mapping handler names to their route-specific CORS configs
-pub fn build_route_cors_map(routes: &[RouteMeta]) -> HashMap<String, RouteCorsConfig> {
+/// A HashMap mapping handler names to their route-specific CORS policies
+pub fn build_route_cors_map(routes: &[RouteMeta]) -> HashMap<String, RouteCorsPolicy> {
     let mut map = HashMap::new();
     
     for route in routes {
-        if let Some(cors_config) = &route.cors_config {
-            map.insert(route.handler_name.to_string(), cors_config.clone());
+        // Only store non-Inherit policies (Inherit is the default, no need to store it)
+        match &route.cors_policy {
+            RouteCorsPolicy::Inherit => {
+                // Skip - inherit is the default behavior
+            }
+            policy => {
+                map.insert(route.handler_name.to_string(), policy.clone());
+            }
         }
     }
     

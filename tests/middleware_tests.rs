@@ -4,7 +4,7 @@ use brrtrouter::{
     dispatcher::{Dispatcher, HandlerRequest, HandlerResponse, HeaderVec},
     load_spec,
     middleware::Middleware,
-    middleware::{AuthMiddleware, CorsMiddleware, MetricsMiddleware, RouteCorsConfig},
+    middleware::{AuthMiddleware, CorsMiddleware, MetricsMiddleware, RouteCorsConfig, RouteCorsPolicy},
     router::{ParamVec, Router},
 };
 use http::Method;
@@ -914,7 +914,10 @@ fn test_cors_same_origin_port_comparison() {
     let mw = CorsMiddleware::permissive();
 
     // Test 1: Same hostname, different ports - should be cross-origin (CORS headers added)
-    // Host: localhost (default port 80), Origin: http://localhost:8080
+    // BUG FIX: Host: localhost (no port, server on default port 80), Origin: http://localhost:8080
+    // These are different origins per browser same-origin policy (ports differ: 80 vs 8080)
+    // The bug was that is_same_origin() would normalize Host to port 80 and compare,
+    // but it should detect that Origin has explicit non-default port and treat as different
     let mut headers1 = HeaderVec::new();
     headers1.push((Arc::from("host"), "localhost".to_string()));
     headers1.push((Arc::from("origin"), "http://localhost:8080".to_string()));
@@ -922,10 +925,11 @@ fn test_cors_same_origin_port_comparison() {
     let mut resp1 = create_test_response(200);
     mw.after(&req1, &mut resp1, Duration::from_millis(0));
     // Should have CORS headers because ports differ (80 vs 8080)
+    // This is the critical bug fix: explicit port 8080 != implicit default port 80
     assert_eq!(
         resp1.get_header("access-control-allow-origin"),
         Some("*"),
-        "Different ports should be treated as cross-origin"
+        "BUG FIX: Host with no port (default 80) vs Origin with explicit port 8080 should be cross-origin"
     );
 
     // Test 2: Same hostname, same port (explicit) - should be same-origin (no CORS headers)
@@ -1001,5 +1005,421 @@ fn test_cors_same_origin_port_comparison() {
         resp6.get_header("access-control-allow-origin"),
         Some("*"),
         "Different HTTPS ports should be treated as cross-origin"
+    );
+}
+
+#[test]
+fn test_cors_x_cors_false_disables_cors() {
+    // Test that x-cors: false actually disables CORS (no CORS headers)
+    use brrtrouter::middleware::CorsMiddlewareBuilder;
+    use std::collections::HashMap;
+
+    // Create global CORS middleware with permissive settings
+    let global_cors = CorsMiddlewareBuilder::new()
+        .allowed_origins(&["*"])
+        .allowed_headers(&["Content-Type", "Authorization"])
+        .allowed_methods(&[Method::GET, Method::POST])
+        .build()
+        .unwrap();
+
+    // Build route policies map
+    let mut route_policies = HashMap::new();
+    route_policies.insert(
+        "internal_handler".to_string(),
+        RouteCorsPolicy::Disabled,
+    );
+
+    // Create CORS middleware with route-specific disabled policy
+    let cors = CorsMiddleware::with_route_policies(global_cors, route_policies);
+
+    // Test OPTIONS request (preflight) - should return 200 without CORS headers
+    let mut headers = HeaderVec::new();
+    headers.push((Arc::from("origin"), "https://evil.com".to_string()));
+    headers.push((
+        Arc::from("access-control-request-method"),
+        "GET".to_string(),
+    ));
+    let req = HandlerRequest {
+        request_id: brrtrouter::ids::RequestId::new(),
+        method: Method::OPTIONS,
+        path: "/api/internal".to_string(),
+        handler_name: "internal_handler".into(),
+        path_params: ParamVec::new(),
+        query_params: ParamVec::new(),
+        headers,
+        cookies: HeaderVec::new(),
+        body: None,
+        jwt_claims: None,
+        reply_tx: mpsc::channel::<HandlerResponse>().0,
+    };
+
+    let resp = cors.before(&req).expect("Should return response for OPTIONS");
+    assert_eq!(resp.status, 200, "OPTIONS should return 200 even when CORS is disabled");
+    // Critical: No CORS headers should be present
+    assert_eq!(
+        resp.get_header("access-control-allow-origin"),
+        None,
+        "x-cors: false should prevent CORS headers in preflight response"
+    );
+    assert_eq!(
+        resp.get_header("access-control-allow-methods"),
+        None,
+        "x-cors: false should prevent CORS headers in preflight response"
+    );
+
+    // Test GET request - should not add CORS headers in after()
+    let mut headers2 = HeaderVec::new();
+    headers2.push((Arc::from("origin"), "https://evil.com".to_string()));
+    let req2 = HandlerRequest {
+        request_id: brrtrouter::ids::RequestId::new(),
+        method: Method::GET,
+        path: "/api/internal".to_string(),
+        handler_name: "internal_handler".into(),
+        path_params: ParamVec::new(),
+        query_params: ParamVec::new(),
+        headers: headers2,
+        cookies: HeaderVec::new(),
+        body: None,
+        jwt_claims: None,
+        reply_tx: mpsc::channel::<HandlerResponse>().0,
+    };
+
+    // before() should not short-circuit (CORS disabled, so no validation)
+    assert!(
+        cors.before(&req2).is_none(),
+        "before() should not short-circuit when CORS is disabled"
+    );
+
+    // after() should not add CORS headers
+    let mut resp2 = HandlerResponse::new(200, HeaderVec::new(), serde_json::Value::Null);
+    cors.after(&req2, &mut resp2, Duration::from_millis(0));
+    assert_eq!(
+        resp2.get_header("access-control-allow-origin"),
+        None,
+        "x-cors: false should prevent CORS headers in response"
+    );
+    assert_eq!(
+        resp2.get_header("access-control-allow-methods"),
+        None,
+        "x-cors: false should prevent CORS headers in response"
+    );
+}
+
+#[test]
+fn test_cors_x_cors_inherit_uses_global_config() {
+    // Test that x-cors: "inherit" uses global CORS config
+    use brrtrouter::middleware::CorsMiddlewareBuilder;
+    use std::collections::HashMap;
+
+    // Create global CORS middleware with specific origin
+    let global_cors = CorsMiddlewareBuilder::new()
+        .allowed_origins(&["https://example.com"])
+        .allowed_headers(&["Content-Type", "Authorization"])
+        .allowed_methods(&[Method::GET, Method::POST])
+        .allow_credentials(true)
+        .build()
+        .unwrap();
+
+    // Build route policies map (Inherit policies are not stored, so map is empty)
+    let route_policies = HashMap::new();
+
+    // Create CORS middleware (Inherit is default, so no route-specific policy needed)
+    let cors = CorsMiddleware::with_route_policies(global_cors, route_policies);
+
+    // Test OPTIONS request with valid origin - should return 200 with CORS headers
+    let mut headers = HeaderVec::new();
+    headers.push((Arc::from("origin"), "https://example.com".to_string()));
+    headers.push((
+        Arc::from("access-control-request-method"),
+        "GET".to_string(),
+    ));
+    let req = HandlerRequest {
+        request_id: brrtrouter::ids::RequestId::new(),
+        method: Method::OPTIONS,
+        path: "/api/public".to_string(),
+        handler_name: "public_handler".into(),
+        path_params: ParamVec::new(),
+        query_params: ParamVec::new(),
+        headers,
+        cookies: HeaderVec::new(),
+        body: None,
+        jwt_claims: None,
+        reply_tx: mpsc::channel::<HandlerResponse>().0,
+    };
+
+    let resp = cors.before(&req).expect("Should return response for OPTIONS");
+    assert_eq!(resp.status, 200, "OPTIONS should return 200 for valid preflight");
+    // Should have CORS headers from global config
+    assert_eq!(
+        resp.get_header("access-control-allow-origin"),
+        Some("https://example.com"),
+        "x-cors: 'inherit' should use global CORS config"
+    );
+    assert_eq!(
+        resp.get_header("access-control-allow-credentials"),
+        Some("true"),
+        "x-cors: 'inherit' should use global credentials setting"
+    );
+
+    // Test GET request - should add CORS headers
+    let mut headers2 = HeaderVec::new();
+    headers2.push((Arc::from("origin"), "https://example.com".to_string()));
+    let req2 = HandlerRequest {
+        request_id: brrtrouter::ids::RequestId::new(),
+        method: Method::GET,
+        path: "/api/public".to_string(),
+        handler_name: "public_handler".into(),
+        path_params: ParamVec::new(),
+        query_params: ParamVec::new(),
+        headers: headers2,
+        cookies: HeaderVec::new(),
+        body: None,
+        jwt_claims: None,
+        reply_tx: mpsc::channel::<HandlerResponse>().0,
+    };
+
+    let mut resp2 = HandlerResponse::new(200, HeaderVec::new(), serde_json::Value::Null);
+    cors.after(&req2, &mut resp2, Duration::from_millis(0));
+    assert_eq!(
+        resp2.get_header("access-control-allow-origin"),
+        Some("https://example.com"),
+        "x-cors: 'inherit' should use global CORS config in response"
+    );
+    assert_eq!(
+        resp2.get_header("access-control-allow-credentials"),
+        Some("true"),
+        "x-cors: 'inherit' should use global credentials setting in response"
+    );
+}
+
+#[test]
+fn test_cors_x_cors_false_vs_inherit_distinction() {
+    // Critical test: Verify that x-cors: false and x-cors: "inherit" behave differently
+    use brrtrouter::middleware::CorsMiddlewareBuilder;
+    use std::collections::HashMap;
+
+    // Create two routes: one with Disabled, one with Inherit
+    let mut disabled_policies = HashMap::new();
+    disabled_policies.insert("disabled_handler".to_string(), RouteCorsPolicy::Disabled);
+
+    let inherit_policies = HashMap::new();
+    // Inherit is default, so empty map means inherit
+
+    // Create separate global CORS instances for each test
+    let global_cors_disabled = CorsMiddlewareBuilder::new()
+        .allowed_origins(&["*"])
+        .allowed_headers(&["Content-Type"])
+        .allowed_methods(&[Method::GET])
+        .build()
+        .unwrap();
+    
+    let global_cors_inherit = CorsMiddlewareBuilder::new()
+        .allowed_origins(&["*"])
+        .allowed_headers(&["Content-Type"])
+        .allowed_methods(&[Method::GET])
+        .build()
+        .unwrap();
+
+    let cors_disabled = CorsMiddleware::with_route_policies(global_cors_disabled, disabled_policies);
+    let cors_inherit = CorsMiddleware::with_route_policies(global_cors_inherit, inherit_policies);
+
+    // Test with same origin header
+    let mut headers = HeaderVec::new();
+    headers.push((Arc::from("origin"), "https://example.com".to_string()));
+
+    // Test disabled route - should NOT have CORS headers
+    let req_disabled = HandlerRequest {
+        request_id: brrtrouter::ids::RequestId::new(),
+        method: Method::GET,
+        path: "/api/disabled".to_string(),
+        handler_name: "disabled_handler".into(),
+        path_params: ParamVec::new(),
+        query_params: ParamVec::new(),
+        headers: headers.clone(),
+        cookies: HeaderVec::new(),
+        body: None,
+        jwt_claims: None,
+        reply_tx: mpsc::channel::<HandlerResponse>().0,
+    };
+
+    let mut resp_disabled = HandlerResponse::new(200, HeaderVec::new(), serde_json::Value::Null);
+    cors_disabled.after(&req_disabled, &mut resp_disabled, Duration::from_millis(0));
+    assert_eq!(
+        resp_disabled.get_header("access-control-allow-origin"),
+        None,
+        "x-cors: false should NOT add CORS headers"
+    );
+
+    // Test inherit route - SHOULD have CORS headers
+    let req_inherit = HandlerRequest {
+        request_id: brrtrouter::ids::RequestId::new(),
+        method: Method::GET,
+        path: "/api/inherit".to_string(),
+        handler_name: "inherit_handler".into(), // Different handler, so uses global config
+        path_params: ParamVec::new(),
+        query_params: ParamVec::new(),
+        headers,
+        cookies: HeaderVec::new(),
+        body: None,
+        jwt_claims: None,
+        reply_tx: mpsc::channel::<HandlerResponse>().0,
+    };
+
+    let mut resp_inherit = HandlerResponse::new(200, HeaderVec::new(), serde_json::Value::Null);
+    cors_inherit.after(&req_inherit, &mut resp_inherit, Duration::from_millis(0));
+    assert_eq!(
+        resp_inherit.get_header("access-control-allow-origin"),
+        Some("*"),
+        "x-cors: 'inherit' SHOULD add CORS headers from global config"
+    );
+
+    // This is the critical distinction: disabled has NO headers, inherit HAS headers
+    assert_ne!(
+        resp_disabled.get_header("access-control-allow-origin"),
+        resp_inherit.get_header("access-control-allow-origin"),
+        "x-cors: false and x-cors: 'inherit' must behave differently"
+    );
+}
+
+#[test]
+fn test_extract_route_cors_config_false_vs_inherit() {
+    // Test the extraction function directly
+    use brrtrouter::middleware::extract_route_cors_config;
+    use oas3::spec::Operation;
+    use serde_json::json;
+
+    // Test x-cors: false
+    let mut op_false = Operation::default();
+    op_false.extensions.insert(
+        "x-cors".to_string(),
+        json!(false),
+    );
+    let policy_false = extract_route_cors_config(&op_false);
+    assert!(
+        matches!(policy_false, RouteCorsPolicy::Disabled),
+        "x-cors: false should return RouteCorsPolicy::Disabled"
+    );
+
+    // Test x-cors: "inherit"
+    let mut op_inherit = Operation::default();
+    op_inherit.extensions.insert(
+        "x-cors".to_string(),
+        json!("inherit"),
+    );
+    let policy_inherit = extract_route_cors_config(&op_inherit);
+    assert!(
+        matches!(policy_inherit, RouteCorsPolicy::Inherit),
+        "x-cors: 'inherit' should return RouteCorsPolicy::Inherit"
+    );
+
+    // Test missing x-cors (should default to Inherit)
+    let op_missing = Operation::default();
+    let policy_missing = extract_route_cors_config(&op_missing);
+    assert!(
+        matches!(policy_missing, RouteCorsPolicy::Inherit),
+        "Missing x-cors should default to RouteCorsPolicy::Inherit"
+    );
+
+    // Verify they are different
+    assert_ne!(
+        format!("{:?}", policy_false),
+        format!("{:?}", policy_inherit),
+        "x-cors: false and x-cors: 'inherit' must return different policies"
+    );
+}
+
+#[test]
+fn test_cors_same_origin_port_bug_fix() {
+    // BUG FIX TEST: Verify that is_same_origin correctly handles port differences
+    // when Host header has no port (default) and Origin has explicit non-default port
+    use brrtrouter::middleware::CorsMiddleware;
+
+    let mw = CorsMiddleware::permissive();
+
+    // Test case from bug report:
+    // Host: localhost (server on port 80, but Host header doesn't specify port)
+    // Origin: http://localhost:8080 (explicit port 8080)
+    // These are DIFFERENT origins per browser same-origin policy
+    // Old bug: Would incorrectly treat as same-origin, skipping CORS headers
+    // Fixed: Correctly detects different ports, adds CORS headers
+    let mut headers = HeaderVec::new();
+    headers.push((Arc::from("host"), "localhost".to_string()));
+    headers.push((Arc::from("origin"), "http://localhost:8080".to_string()));
+    let req = create_test_request(Method::GET, "/api/data", headers);
+    
+    // Verify is_same_origin returns false (different origins)
+    // We can't call is_same_origin directly (it's private), so we test via after()
+    let mut resp = create_test_response(200);
+    mw.after(&req, &mut resp, Duration::from_millis(0));
+    
+    // Should have CORS headers because ports differ (implicit 80 vs explicit 8080)
+    assert_eq!(
+        resp.get_header("access-control-allow-origin"),
+        Some("*"),
+        "BUG FIX: Host 'localhost' (port 80) vs Origin 'http://localhost:8080' should be cross-origin"
+    );
+
+    // Additional test: Host with explicit default port vs Origin with no port
+    // Host: localhost:80, Origin: http://localhost
+    // These should be same-origin (both port 80)
+    let mut headers2 = HeaderVec::new();
+    headers2.push((Arc::from("host"), "localhost:80".to_string()));
+    headers2.push((Arc::from("origin"), "http://localhost".to_string()));
+    let req2 = create_test_request(Method::GET, "/api/data", headers2);
+    let mut resp2 = create_test_response(200);
+    mw.after(&req2, &mut resp2, Duration::from_millis(0));
+    // Should NOT have CORS headers (same origin: both port 80)
+    assert_eq!(
+        resp2.get_header("access-control-allow-origin"),
+        None,
+        "Host 'localhost:80' vs Origin 'http://localhost' should be same-origin (both port 80)"
+    );
+
+    // Test: Host with explicit non-default port vs Origin with no port
+    // Host: localhost:8080, Origin: http://localhost
+    // These should be different origins (8080 vs 80)
+    let mut headers3 = HeaderVec::new();
+    headers3.push((Arc::from("host"), "localhost:8080".to_string()));
+    headers3.push((Arc::from("origin"), "http://localhost".to_string()));
+    let req3 = create_test_request(Method::GET, "/api/data", headers3);
+    let mut resp3 = create_test_response(200);
+    mw.after(&req3, &mut resp3, Duration::from_millis(0));
+    // Should have CORS headers (different origins: 8080 vs 80)
+    assert_eq!(
+        resp3.get_header("access-control-allow-origin"),
+        Some("*"),
+        "Host 'localhost:8080' vs Origin 'http://localhost' should be cross-origin (8080 vs 80)"
+    );
+
+    // Test: Both have explicit ports, different values
+    // Host: localhost:3000, Origin: http://localhost:8080
+    // These should be different origins
+    let mut headers4 = HeaderVec::new();
+    headers4.push((Arc::from("host"), "localhost:3000".to_string()));
+    headers4.push((Arc::from("origin"), "http://localhost:8080".to_string()));
+    let req4 = create_test_request(Method::GET, "/api/data", headers4);
+    let mut resp4 = create_test_response(200);
+    mw.after(&req4, &mut resp4, Duration::from_millis(0));
+    // Should have CORS headers (different ports: 3000 vs 8080)
+    assert_eq!(
+        resp4.get_header("access-control-allow-origin"),
+        Some("*"),
+        "Host 'localhost:3000' vs Origin 'http://localhost:8080' should be cross-origin"
+    );
+
+    // Test: Both have explicit ports, same values
+    // Host: localhost:8080, Origin: http://localhost:8080
+    // These should be same-origin
+    let mut headers5 = HeaderVec::new();
+    headers5.push((Arc::from("host"), "localhost:8080".to_string()));
+    headers5.push((Arc::from("origin"), "http://localhost:8080".to_string()));
+    let req5 = create_test_request(Method::GET, "/api/data", headers5);
+    let mut resp5 = create_test_response(200);
+    mw.after(&req5, &mut resp5, Duration::from_millis(0));
+    // Should NOT have CORS headers (same origin: both port 8080)
+    assert_eq!(
+        resp5.get_header("access-control-allow-origin"),
+        None,
+        "Host 'localhost:8080' vs Origin 'http://localhost:8080' should be same-origin"
     );
 }

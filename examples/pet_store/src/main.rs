@@ -258,28 +258,35 @@ fn main() -> io::Result<()> {
             }
         }
 
-        // Build global CORS middleware and merge with route-specific configs from OpenAPI
+        // Build global CORS middleware and merge with route-specific policies from OpenAPI
         // All processing happens at startup - no runtime allocations in hot path
         match builder.build() {
             Ok(global_cors) => {
-                // Extract route-specific CORS configs from OpenAPI (startup-time only)
-                let route_configs = build_route_cors_map(&routes);
+                // Extract route-specific CORS policies from OpenAPI (startup-time only)
+                let route_policies = build_route_cors_map(&routes);
                 // Merge origins from config.yaml into route-specific configs (startup-time only)
-                let mut merged_configs = std::collections::HashMap::new();
-                for (handler_name, route_config) in route_configs {
-                    // Set origin validation from config.yaml (not from OpenAPI)
-                    let merged_config = if !origins.is_empty() {
-                        route_config.with_origins(&origins)
-                    } else {
-                        route_config
+                let mut merged_policies = std::collections::HashMap::new();
+                for (handler_name, policy) in route_policies {
+                    // Only merge origins for Custom policies (Inherit and Disabled don't need origins)
+                    let merged_policy = match policy {
+                        brrtrouter::middleware::RouteCorsPolicy::Custom(route_config) => {
+                            // Set origin validation from config.yaml (not from OpenAPI)
+                            let merged_config = if !origins.is_empty() {
+                                route_config.with_origins(&origins)
+                            } else {
+                                route_config
+                            };
+                            brrtrouter::middleware::RouteCorsPolicy::Custom(merged_config)
+                        }
+                        other => other, // Inherit or Disabled - no changes needed
                     };
-                    merged_configs.insert(handler_name, merged_config);
+                    merged_policies.insert(handler_name, merged_policy);
                 }
-                // Create CORS middleware with all configs pre-processed at startup
+                // Create CORS middleware with all policies pre-processed at startup
                 Some(std::sync::Arc::new(
-                    brrtrouter::middleware::CorsMiddleware::with_route_configs(
+                    brrtrouter::middleware::CorsMiddleware::with_route_policies(
                         global_cors,
-                        merged_configs,
+                        merged_policies,
                     ),
                 ))
             }

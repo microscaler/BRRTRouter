@@ -370,8 +370,8 @@ impl CorsMiddlewareBuilder {
     ) -> Result<CorsMiddleware, CorsConfigError> {
         use super::build_route_cors_map;
         let global_cors = self.build()?;
-        let route_configs = build_route_cors_map(routes);
-        Ok(CorsMiddleware::with_route_configs(global_cors, route_configs))
+        let route_policies = build_route_cors_map(routes);
+        Ok(CorsMiddleware::with_route_policies(global_cors, route_policies))
     }
 }
 

@@ -5,7 +5,7 @@ mod route_config;
 pub use builder::CorsMiddlewareBuilder;
 pub use error::CorsConfigError;
 pub use route_config::{
-    build_route_cors_map, extract_route_cors_config, RouteCorsConfig,
+    build_route_cors_map, extract_route_cors_config, RouteCorsConfig, RouteCorsPolicy,
 };
 
 use std::sync::Arc;
@@ -122,9 +122,12 @@ pub struct CorsMiddleware {
     pub(crate) allow_credentials: bool,
     pub(crate) expose_headers: Vec<String>,
     pub(crate) max_age: Option<u32>,
-    /// Route-specific CORS configurations keyed by handler name
-    /// If a route has an `x-cors` extension in OpenAPI, it overrides global settings
-    pub(crate) route_configs: std::collections::HashMap<String, RouteCorsConfig>,
+    /// Route-specific CORS policies keyed by handler name
+    /// If a route has an `x-cors` extension in OpenAPI, it determines CORS behavior:
+    /// - `Inherit`: Use global CORS configuration (not stored, default behavior)
+    /// - `Disabled`: Disable CORS for this route (no CORS headers)
+    /// - `Custom(config)`: Use route-specific CORS configuration
+    pub(crate) route_policies: std::collections::HashMap<String, RouteCorsPolicy>,
 }
 
 impl CorsMiddleware {
@@ -198,40 +201,40 @@ impl CorsMiddleware {
             allow_credentials,
             expose_headers,
             max_age,
-            route_configs: std::collections::HashMap::new(),
+            route_policies: std::collections::HashMap::new(),
         }
     }
 
-    /// Create a route-aware CORS middleware with OpenAPI route configurations
+    /// Create a route-aware CORS middleware with OpenAPI route policies
     ///
-    /// This constructor allows you to provide route-specific CORS configurations
+    /// This constructor allows you to provide route-specific CORS policies
     /// extracted from OpenAPI `x-cors` extensions. Routes with `x-cors` will
-    /// use their specific config, others will use the global config.
+    /// use their specific policy, others will use the global config.
     ///
     /// # Arguments
     ///
     /// * `global_config` - Global CORS configuration (used as fallback)
-    /// * `route_configs` - Map of handler names to route-specific CORS configs
+    /// * `route_policies` - Map of handler names to route-specific CORS policies
     ///
     /// # Example
     ///
     /// ```rust,ignore
-    /// use brrtrouter::middleware::{CorsMiddleware, RouteCorsConfig};
+    /// use brrtrouter::middleware::{CorsMiddleware, RouteCorsPolicy};
     /// use brrtrouter::spec::load_spec;
     /// use std::collections::HashMap;
     ///
     /// let (routes, _) = load_spec("openapi.yaml")?;
-    /// let route_configs = build_route_cors_map(&routes);
+    /// let route_policies = build_route_cors_map(&routes);
     ///
     /// let global_cors = CorsMiddlewareBuilder::new()
     ///     .allowed_origins(&["https://example.com"])
     ///     .build()?;
     ///
-    /// let cors = CorsMiddleware::with_route_configs(global_cors, route_configs);
+    /// let cors = CorsMiddleware::with_route_policies(global_cors, route_policies);
     /// ```
-    pub fn with_route_configs(
+    pub fn with_route_policies(
         global_config: CorsMiddleware,
-        route_configs: std::collections::HashMap<String, RouteCorsConfig>,
+        route_policies: std::collections::HashMap<String, RouteCorsPolicy>,
     ) -> Self {
         Self {
             origin_validation: global_config.origin_validation,
@@ -240,7 +243,7 @@ impl CorsMiddleware {
             allow_credentials: global_config.allow_credentials,
             expose_headers: global_config.expose_headers,
             max_age: global_config.max_age,
-            route_configs,
+            route_policies,
         }
     }
 
@@ -317,7 +320,7 @@ impl CorsMiddleware {
             allow_credentials,
             expose_headers,
             max_age,
-            route_configs: std::collections::HashMap::new(),
+            route_policies: std::collections::HashMap::new(),
         }
     }
 
@@ -369,11 +372,11 @@ impl CorsMiddleware {
             allow_credentials,
             expose_headers,
             max_age,
-            route_configs: std::collections::HashMap::new(),
+            route_policies: std::collections::HashMap::new(),
         }
     }
 
-    /// Get route-specific CORS config for a handler, or return global config
+    /// Get route-specific CORS policy for a handler
     ///
     /// # Arguments
     ///
@@ -381,9 +384,12 @@ impl CorsMiddleware {
     ///
     /// # Returns
     ///
-    /// Route-specific config if found, otherwise uses global config
-    fn get_route_config(&self, handler_name: &str) -> Option<&RouteCorsConfig> {
-        self.route_configs.get(handler_name)
+    /// Route-specific policy if found, otherwise `Inherit` (use global config)
+    fn get_route_policy(&self, handler_name: &str) -> RouteCorsPolicy {
+        self.route_policies
+            .get(handler_name)
+            .cloned()
+            .unwrap_or(RouteCorsPolicy::Inherit)
     }
 
     /// Create a new CORS middleware with legacy configuration (backward compatibility)
@@ -435,13 +441,23 @@ impl CorsMiddleware {
     /// # Returns
     ///
     /// * `Some(origin)` - If origin is allowed (returns the origin string to use in headers)
-    /// * `None` - If origin is not allowed
+    /// * `None` - If origin is not allowed or CORS is disabled for this route
     fn validate_origin(&self, origin: &str, handler_name: &str) -> Option<String> {
-        // Check for route-specific config first
-        let validation = if let Some(route_config) = self.get_route_config(handler_name) {
-            &route_config.origin_validation
-        } else {
-            &self.origin_validation
+        // Check route-specific policy first
+        let policy = self.get_route_policy(handler_name);
+        let validation = match policy {
+            RouteCorsPolicy::Disabled => {
+                // CORS is disabled for this route - return None to prevent CORS headers
+                return None;
+            }
+            RouteCorsPolicy::Inherit => {
+                // Use global config
+                &self.origin_validation
+            }
+            RouteCorsPolicy::Custom(ref route_config) => {
+                // Use route-specific config (use ref to avoid move)
+                &route_config.origin_validation
+            }
         };
 
         if validation.is_allowed(origin) {
@@ -511,9 +527,6 @@ impl CorsMiddleware {
             (origin_authority, None)
         };
 
-        // Normalize origin port: use default if not specified
-        let origin_port_normalized = origin_port.unwrap_or(default_port);
-
         // Parse Host header: hostname:port or hostname
         let (host_hostname, host_port) = if let Some(colon_pos) = host_header.find(':') {
             let hostname = &host_header[..colon_pos];
@@ -524,12 +537,37 @@ impl CorsMiddleware {
             (host_header, None)
         };
 
-        // Normalize host port: use default based on origin scheme if not specified
-        let host_port_normalized = host_port.unwrap_or(default_port);
+        // Compare hostnames first (case-insensitive per RFC)
+        if !host_hostname.eq_ignore_ascii_case(origin_hostname) {
+            return false; // Different hostnames = different origins
+        }
 
-        // Compare both hostname (case-insensitive per RFC) and port
-        host_hostname.eq_ignore_ascii_case(origin_hostname)
-            && host_port_normalized == origin_port_normalized
+        // Compare ports with proper handling of explicit vs implicit ports
+        // Per browser same-origin policy: ports must match exactly
+        // - If Origin has explicit port and Host has no port: only match if Origin port is default
+        // - If Origin has no port and Host has no port: match (both use default)
+        // - If Origin has no port and Host has explicit port: only match if Host port is default
+        // - If both have ports: compare directly
+        match (origin_port, host_port) {
+            (Some(origin_p), Some(host_p)) => {
+                // Both have explicit ports - must match exactly
+                origin_p == host_p
+            }
+            (Some(origin_p), None) => {
+                // Origin has explicit port, Host has no port
+                // Only match if Origin port is the default port
+                origin_p == default_port
+            }
+            (None, Some(host_p)) => {
+                // Origin has no port, Host has explicit port
+                // Only match if Host port is the default port
+                host_p == default_port
+            }
+            (None, None) => {
+                // Neither has explicit port - both use default, so they match
+                true
+            }
+        }
     }
 
     /// Validate a preflight request
@@ -547,22 +585,32 @@ impl CorsMiddleware {
     /// * `Some(response)` - Valid preflight request with CORS headers
     /// * `None` - Invalid preflight request (should return 403)
     fn handle_preflight(&self, req: &HandlerRequest, origin: &str) -> Option<HandlerResponse> {
-        // Get route-specific config if available
+        // Get route-specific policy first
+        let policy = self.get_route_policy(&req.handler_name);
         let (allowed_methods, allowed_headers, allow_credentials, max_age) =
-            if let Some(route_config) = self.get_route_config(&req.handler_name) {
-                (
-                    &route_config.allowed_methods,
-                    &route_config.allowed_headers,
-                    route_config.allow_credentials,
-                    route_config.max_age,
-                )
-            } else {
-                (
-                    &self.allowed_methods,
-                    &self.allowed_headers,
-                    self.allow_credentials,
-                    self.max_age,
-                )
+            match policy {
+                RouteCorsPolicy::Disabled => {
+                    // CORS is disabled - return None to prevent CORS headers
+                    return None;
+                }
+                RouteCorsPolicy::Inherit => {
+                    // Use global config
+                    (
+                        &self.allowed_methods,
+                        &self.allowed_headers,
+                        self.allow_credentials,
+                        self.max_age,
+                    )
+                }
+                RouteCorsPolicy::Custom(ref route_config) => {
+                    // Use route-specific config (use ref to avoid move)
+                    (
+                        &route_config.allowed_methods,
+                        &route_config.allowed_headers,
+                        route_config.allow_credentials,
+                        route_config.max_age,
+                    )
+                }
             };
         // Extract requested method
         let requested_method = req.get_header("access-control-request-method")?;
@@ -689,7 +737,7 @@ impl CorsMiddleware {
             allow_credentials: false, // Cannot be true with wildcard
             expose_headers: vec![],
             max_age: None,
-            route_configs: std::collections::HashMap::new(),
+            route_policies: std::collections::HashMap::new(),
         }
     }
 }
@@ -739,7 +787,7 @@ impl Default for CorsMiddleware {
             allow_credentials: false,
             expose_headers: vec![],
             max_age: None,
-            route_configs: std::collections::HashMap::new(),
+            route_policies: std::collections::HashMap::new(),
         }
     }
 }
@@ -760,6 +808,16 @@ impl Middleware for CorsMiddleware {
     /// - `Some(response)` - For OPTIONS requests (preflight with CORS headers or 403)
     /// - `None` - For all other requests (proceed to handler)
     fn before(&self, req: &HandlerRequest) -> Option<HandlerResponse> {
+        // Check if CORS is disabled for this route
+        if matches!(self.get_route_policy(&req.handler_name), RouteCorsPolicy::Disabled) {
+            // CORS is disabled - for OPTIONS requests, return 200 OK without CORS headers
+            if req.method == Method::OPTIONS {
+                return Some(HandlerResponse::new(200, HeaderVec::new(), Value::Null));
+            }
+            // For non-OPTIONS requests, proceed normally (no CORS headers will be added in after())
+            return None;
+        }
+
         // Handle preflight (OPTIONS) requests
         if req.method == Method::OPTIONS {
             // Extract and validate Origin header
@@ -841,9 +899,20 @@ impl Middleware for CorsMiddleware {
             return;
         }
 
+        // Get route-specific policy first
+        let policy = self.get_route_policy(&req.handler_name);
+        
+        // Check if CORS is disabled for this route
+        if matches!(policy, RouteCorsPolicy::Disabled) {
+            debug!("CORS: disabled for route '{}', skipping CORS headers", req.handler_name);
+            return;
+        }
+
         // Get route-specific config if available
+        // Extract config separately to avoid borrowing from temporary
         let (allowed_methods, allowed_headers, allow_credentials, expose_headers) =
-            if let Some(route_config) = self.get_route_config(&req.handler_name) {
+            if let RouteCorsPolicy::Custom(ref route_config) = policy {
+                // Use route-specific config
                 (
                     &route_config.allowed_methods,
                     &route_config.allowed_headers,
@@ -851,6 +920,7 @@ impl Middleware for CorsMiddleware {
                     &route_config.expose_headers,
                 )
             } else {
+                // Use global config (Inherit case)
                 (
                     &self.allowed_methods,
                     &self.allowed_headers,

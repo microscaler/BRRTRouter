@@ -62,7 +62,7 @@ impl MultiResponseTestServer {
             sse: false,
             estimated_request_body_bytes: None,
             x_brrtrouter_stack_size: None,
-            cors_config: None,
+            cors_policy: brrtrouter::middleware::RouteCorsPolicy::Inherit,
         };
 
         let router = Arc::new(RwLock::new(Router::new(vec![route])));

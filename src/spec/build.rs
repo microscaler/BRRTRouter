@@ -593,8 +593,8 @@ pub fn build_routes(spec: &OpenApiV3Spec, slug: &str) -> anyhow::Result<Vec<Rout
                 // Extract vendor extension for stack size override
                 let x_brrtrouter_stack_size = extract_stack_size_override(operation);
 
-                // Extract route-specific CORS configuration from x-cors extension
-                let cors_config = crate::middleware::extract_route_cors_config(operation);
+                // Extract route-specific CORS policy from x-cors extension
+                let cors_policy = crate::middleware::extract_route_cors_config(operation);
 
                 routes.push(RouteMeta {
                     method,
@@ -615,7 +615,7 @@ pub fn build_routes(spec: &OpenApiV3Spec, slug: &str) -> anyhow::Result<Vec<Rout
                     sse: extract_sse_flag(operation),
                     estimated_request_body_bytes,
                     x_brrtrouter_stack_size,
-                    cors_config,
+                    cors_policy,
                 });
             }
         }

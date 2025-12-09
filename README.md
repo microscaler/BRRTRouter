@@ -350,10 +350,13 @@ Build the fastest, most predictable OpenAPI-native router in Rust — capable of
 - **🌐 RFC-Compliant CORS Implementation**: Complete CORS middleware rewrite achieving full RFC 6454 compliance
   - Origin validation, preflight handling, credentials support, exposed headers, preflight caching
   - Route-specific CORS configuration via OpenAPI `x-cors` extension
+    - `x-cors: false` - Disables CORS for route (no CORS headers, prevents cross-origin access)
+    - `x-cors: "inherit"` - Uses global CORS config from `config.yaml`
+    - `x-cors: { ... }` - Route-specific CORS configuration (merged with global origins)
   - Environment-specific origins from `config.yaml` (not in OpenAPI spec)
   - Advanced features: regex pattern matching, custom validation functions
   - JSF-compliant: all configuration processed at startup, zero runtime parsing
-  - **26 CORS-specific tests** (all passing), feature parity with Rocket-RS
+  - **26+ CORS-specific tests** (all passing), feature parity with Rocket-RS
   - **Production-ready** with comprehensive security posture
 
 - **✅ Parallel Test Execution**: Fixed Docker container conflicts for nextest parallel execution (219 tests pass)
