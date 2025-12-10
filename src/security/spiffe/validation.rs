@@ -91,7 +91,15 @@ pub(super) fn validate_svid_impl(
     };
 
     // Validate trust domain against whitelist
-    if !provider.trust_domains.is_empty() && !provider.trust_domains.contains(&trust_domain) {
+    // Security: Fail-secure - reject if trust domains not configured
+    if provider.trust_domains.is_empty() {
+        warn!(
+            "SPIFFE SVID validation failed: trust domains not configured (rejecting for security)"
+        );
+        return false;
+    }
+    
+    if !provider.trust_domains.contains(&trust_domain) {
         warn!(
             "SPIFFE SVID trust domain '{}' not in whitelist",
             trust_domain
@@ -100,24 +108,30 @@ pub(super) fn validate_svid_impl(
     }
 
     // Validate audience
-    if !provider.audiences.is_empty() {
-        let aud_claim = claims.get("aud");
-        let has_valid_audience = match aud_claim {
-            Some(Value::String(aud)) => provider.audiences.contains(aud),
-            Some(Value::Array(arr)) => arr
-                .iter()
-                .filter_map(|v| v.as_str())
-                .any(|aud| provider.audiences.contains(aud)),
-            _ => false,
-        };
+    // Security: Fail-secure - reject if audiences not configured
+    if provider.audiences.is_empty() {
+        warn!(
+            "SPIFFE SVID validation failed: audiences not configured (rejecting for security)"
+        );
+        return false;
+    }
+    
+    let aud_claim = claims.get("aud");
+    let has_valid_audience = match aud_claim {
+        Some(Value::String(aud)) => provider.audiences.contains(aud),
+        Some(Value::Array(arr)) => arr
+            .iter()
+            .filter_map(|v| v.as_str())
+            .any(|aud| provider.audiences.contains(aud)),
+        _ => false,
+    };
 
-        if !has_valid_audience {
-            warn!(
-                "SPIFFE SVID missing required audience. Required: {:?}, Got: {:?}",
-                provider.audiences, aud_claim
-            );
-            return false;
-        }
+    if !has_valid_audience {
+        warn!(
+            "SPIFFE SVID missing required audience. Required: {:?}, Got: {:?}",
+            provider.audiences, aud_claim
+        );
+        return false;
     }
 
     // Validate expiration
@@ -437,12 +451,15 @@ pub(super) fn extract_spiffe_id_from_token(
         return None;
     }
     
-    // Validate trust domain if configured
-    if !provider.trust_domains.is_empty() {
-        let trust_domain = extract_trust_domain(&spiffe_id)?;
-        if !provider.trust_domains.contains(&trust_domain) {
-            return None;
-        }
+    // Validate trust domain against whitelist
+    // Security: Fail-secure - reject if trust domains not configured
+    if provider.trust_domains.is_empty() {
+        return None; // Trust domains must be configured
+    }
+    
+    let trust_domain = extract_trust_domain(&spiffe_id)?;
+    if !provider.trust_domains.contains(&trust_domain) {
+        return None;
     }
     
     Some(spiffe_id)

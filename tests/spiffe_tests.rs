@@ -311,7 +311,8 @@ fn test_spiffe_id_format_validation() {
     // Test SPIFFE ID format validation through provider validation
     // Valid SPIFFE IDs should pass validation
     let provider = SpiffeProvider::new()
-        .trust_domains(&["example.com", "enterprise.local", "prod.example.com"]);
+        .trust_domains(&["example.com", "enterprise.local", "prod.example.com"])
+        .audiences(&["api.example.com"]);
     
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
@@ -572,7 +573,7 @@ fn test_spiffe_validation_trust_domain_whitelist() {
 
 #[test]
 fn test_spiffe_validation_empty_trust_domains() {
-    // Empty trust domains means all domains are allowed
+    // Security: Empty trust domains should reject validation (fail-secure)
     let provider = SpiffeProvider::new()
         .audiences(&["api.example.com"]);
     
@@ -598,8 +599,8 @@ fn test_spiffe_validation_empty_trust_domains() {
     };
     
     assert!(
-        provider.validate(&scheme, &[], &req),
-        "Empty trust domains should allow any domain"
+        !provider.validate(&scheme, &[], &req),
+        "Empty trust domains should reject validation (fail-secure behavior)"
     );
 }
 
@@ -713,7 +714,7 @@ fn test_spiffe_validation_audience_array() {
 
 #[test]
 fn test_spiffe_validation_empty_audiences() {
-    // Empty audiences means no audience validation
+    // Security: Empty audiences should reject validation (fail-secure)
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"]);
     
@@ -739,8 +740,8 @@ fn test_spiffe_validation_empty_audiences() {
     };
     
     assert!(
-        provider.validate(&scheme, &[], &req),
-        "Empty audiences should allow any audience"
+        !provider.validate(&scheme, &[], &req),
+        "Empty audiences should reject validation (fail-secure behavior)"
     );
 }
 
@@ -2086,7 +2087,8 @@ fn test_spiffe_id_trust_domain_leading_trailing_dots() {
 fn test_spiffe_id_path_special_characters() {
     // Paths with special characters should be valid (SPIFFE spec allows any characters except control chars)
     let provider = SpiffeProvider::new()
-        .trust_domains(&["example.com"]);
+        .trust_domains(&["example.com"])
+        .audiences(&["api.example.com"]);
     
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
@@ -2124,7 +2126,8 @@ fn test_spiffe_id_path_special_characters() {
 fn test_spiffe_trust_domain_case_sensitivity() {
     // Trust domain matching should be case-sensitive
     let provider = SpiffeProvider::new()
-        .trust_domains(&["Example.com"]); // Capital E
+        .trust_domains(&["Example.com"]) // Capital E
+        .audiences(&["api.example.com"]);
     
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
@@ -2650,7 +2653,8 @@ fn test_spiffe_id_very_long_trust_domain() {
 fn test_spiffe_id_very_long_path() {
     // Very long paths should be handled gracefully (not cause DoS)
     let provider = SpiffeProvider::new()
-        .trust_domains(&["example.com"]);
+        .trust_domains(&["example.com"])
+        .audiences(&["api.example.com"]);
     
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
@@ -3005,7 +3009,8 @@ fn test_spiffe_trust_domain_exact_match_required() {
     // Trust domain matching must be exact - no subdomain matching
     // This is critical for security - prevents domain confusion attacks
     let provider = SpiffeProvider::new()
-        .trust_domains(&["example.com", "sub.example.com"]);
+        .trust_domains(&["example.com", "sub.example.com"])
+        .audiences(&["api.example.com"]);
     
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),

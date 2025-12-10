@@ -52,7 +52,49 @@ We welcome contributions that improve:
 - 100k route matches/sec
 - ≤8ms latency (excluding handler execution)
 
-## 🚀 Quick Start (5 Minutes)
+## 🏃 Quick Start
+
+**Goal: Running in <5 minutes**
+
+### Option 1: Tilt + kind (Recommended) ⭐
+
+```bash
+# Prerequisites: Docker, kind, kubectl, tilt
+# See docs/LOCAL_DEVELOPMENT.md for installation
+
+# 1. Clone and setup (30 seconds)
+git clone https://github.com/microscaler/BRRTRouter.git
+cd BRRTRouter
+
+# 2. Start development environment (2 minutes)
+just dev-up
+
+# 3. Access your services
+open http://localhost:8080           # 🎨 Interactive Dashboard
+open http://localhost:8080/docs      # 📖 Swagger UI
+open http://localhost:3000           # 📊 Grafana (admin/admin)
+```
+
+**That's it!** You now have a running API with full observability stack.
+
+### Option 2: Simple cargo run
+
+For quick testing without Kubernetes:
+
+```bash
+git clone https://github.com/microscaler/BRRTRouter.git
+cd BRRTRouter
+
+# Start the Pet Store example
+just start-petstore
+
+# Test the API
+curl -H "X-API-Key: test123" http://localhost:8080/pets
+curl http://localhost:8080/health
+
+# Visit the Interactive Demo Dashboard
+open http://localhost:8080/
+```
 
 ### Prerequisites
 
@@ -69,35 +111,60 @@ chmod +x ./kind && sudo mv ./kind /usr/local/bin/
 curl -fsSL https://github.com/tilt-dev/tilt/releases/latest/download/tilt.$(uname -s)-$(uname -m).tar.gz | tar -xzv tilt && sudo mv tilt /usr/local/bin/
 ```
 
-### Setup Development Environment
-
-```bash
-# 1. Clone and enter the repository
-git clone https://github.com/microscaler/BRRTRouter.git
-cd BRRTRouter
-
-# 2. Create kind cluster (one-time setup)
-./scripts/dev-setup.sh
-
-# 3. Start Tilt with full observability stack
-tilt up
-
-# 4. Verify everything works (in another terminal)
-curl http://localhost:9090/health
-curl -H "X-API-Key: test123" http://localhost:9090/pets
-```
-
-**🎉 You're ready to contribute!**
+See [docs/LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md) for full installation details.
 
 ### Development Cycle
 
 1. **Edit code** in `src/` or `examples/pet_store/src/`
 2. **Tilt auto-rebuilds** and syncs changes (~1-2 seconds!)
-3. **Test immediately**: `curl` or visit http://localhost:9090/docs
+3. **Test immediately**: `curl` or visit http://localhost:8080/docs
 4. **View logs**: `kubectl logs -f -n brrtrouter-dev deployment/petstore`
 5. **Check metrics**: http://localhost:3000 (Grafana: admin/admin)
 
-See [docs/LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md) for full details.
+## 📸 See It In Action
+
+### 🎨 Interactive Dashboard Demo (SolidJS UI)
+
+**Dashboard showcasing all BRRTRouter capabilities:**
+
+![Dashboard Screenshot](docs/images/petstore.png)
+
+**Features:**
+- 🐾 **Live Data Display** - Real-time pets/users with auto-refresh and modal views
+- 📡 **SSE Streaming** - Real-time server-sent events with visual connection indicator
+- 🔍 **API Explorer** - All 25+ endpoints with color-coded HTTP methods
+- 🧪 **API Testing Suite** - Test any endpoint with parameter forms, body editors, and response viewer
+- 🔒 **Authentication UI** - API Key + Bearer Token configuration with visual status
+- 🎯 **Professional Design** - SolidJS + Vite + Tailwind CSS with gradient themes
+
+**Access:** `http://localhost:8080/` after running `just dev-up` or `just start-petstore`
+
+## 📊 Observability Stack
+
+**Full monitoring with Tilt + kind:**
+
+![Tilt Screenshot](docs/images/tilt.png)
+
+- **Metrics**: Prometheus for request rates, latency, errors
+- **Logs**: Loki + Promtail for centralized logging with LogQL
+- **Traces**: Jaeger + OTEL Collector for distributed tracing
+- **Unified UI**: Grafana with all datasources pre-configured
+
+### Service URLs (when Tilt is running)
+
+| Service | URL | Purpose |
+|---------|-----|---------|
+| **🎨 Interactive Dashboard** | http://localhost:8080/ | **START HERE** - SolidJS UI with live data, SSE, API testing |
+| **Pet Store API** | http://localhost:8080 | Main API (standard HTTP port) |
+| **Swagger UI** | http://localhost:8080/docs | OpenAPI documentation |
+| **Health Check** | http://localhost:8080/health | Readiness probe |
+| **Metrics** | http://localhost:8080/metrics | Prometheus metrics |
+| **Grafana** | http://localhost:3000 | Dashboards (admin/admin) |
+| **Prometheus** | http://localhost:9090 | Metrics database |
+| **Jaeger** | http://localhost:16686 | Distributed tracing |
+| **PostgreSQL** | localhost:5432 | Database (user: brrtrouter, db: brrtrouter, pass: dev_password) |
+| **Redis** | localhost:6379 | Cache/session store |
+| **Tilt Web UI** | http://localhost:10351 | Dev dashboard (press 'space' in terminal) |
 
 ## 📋 Before Submitting a Pull Request
 

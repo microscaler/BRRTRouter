@@ -148,6 +148,8 @@ impl SpiffeProvider {
     ///
     /// Trust domains are extracted from SPIFFE IDs (format: `spiffe://trust-domain/path`).
     /// Only SVIDs with trust domains in this whitelist will be accepted.
+    /// **Security**: If empty, validation will fail (fail-secure behavior).
+    /// Trust domains must be configured for validation to succeed.
     ///
     /// # Arguments
     ///
@@ -169,7 +171,8 @@ impl SpiffeProvider {
     /// Configure required audiences.
     ///
     /// The SVID's `aud` claim must contain at least one of these audiences.
-    /// If empty, audience validation is skipped.
+    /// **Security**: If empty, validation will fail (fail-secure behavior).
+    /// Audiences must be configured for validation to succeed.
     ///
     /// # Arguments
     ///

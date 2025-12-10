@@ -85,80 +85,19 @@ This marks a **monumental milestone** - BRRTRouter has successfully transitioned
 
 ## 🏃 Quick Start
 
+See [CONTRIBUTING.md](CONTRIBUTING.md#-quick-start) for complete setup instructions, including:
+- Tilt + kind setup (recommended)
+- Simple cargo run option
+- Prerequisites and installation
+- Observability stack overview
+
 **Goal: Running in <5 minutes**
-
-### Option 1: Tilt + kind (Recommended) ⭐
-
-```bash
-# Prerequisites: Docker, kind, kubectl, tilt
-# See docs/LOCAL_DEVELOPMENT.md for installation
-
-# 1. Clone and setup (30 seconds)
-git clone https://github.com/microscaler/BRRTRouter.git
-cd BRRTRouter
-
-# 2. Start development environment (2 minutes)
-just dev-up
-
-# 3. Access your services
-open http://localhost:8080           # 🎨 Interactive Dashboard
-open http://localhost:8080/docs      # 📖 Swagger UI
-open http://localhost:3000           # 📊 Grafana (admin/admin)
-```
-
-**That's it!** You now have a running API with full observability stack.
-
-### Option 2: Simple cargo run
-
-For quick testing without Kubernetes:
-
-```bash
-git clone https://github.com/microscaler/BRRTRouter.git
-cd BRRTRouter
-
-# Start the Pet Store example
-just start-petstore
-
-# Test the API
-curl -H "X-API-Key: test123" http://localhost:8080/pets
-curl http://localhost:8080/health
-
-# Visit the Interactive Demo Dashboard
-open http://localhost:8080/
-```
 
 ---
 
 ## 📸 See It In Action
 
-### 🎨 Interactive Dashboard Demo (SolidJS UI)
-
-**Demdashboard showcasing all BRRTRouter capabilities:**
-
-![Dashboard Screenshot](docs/images/petstore.png)
-
-**Features:**
-- 🐾 **Live Data Display** - Real-time pets/users with auto-refresh and modal views
-- 📡 **SSE Streaming** - Real-time server-sent events with visual connection indicator
-- 🔍 **API Explorer** - All 25+ endpoints with color-coded HTTP methods
-- 🧪 **API Testing Suite** - Test any endpoint with parameter forms, body editors, and response viewer
-- 🔒 **Authentication UI** - API Key + Bearer Token configuration with visual status
-- 🎯 **Professional Design** - SolidJS + Vite + Tailwind CSS with gradient themes
-
-**Access:** `http://localhost:8080/` after running `just dev-up` or `just start-petstore`
-
----
-
-### 📊 Observability Stack
-
-**Full monitoring with Tilt + kind:**
-
-![Tilt Screenshot](docs/images/tilt.png)
-
-- **Metrics**: Prometheus for request rates, latency, errors
-- **Logs**: Loki + Promtail for centralized logging with LogQL
-- **Traces**: Jaeger + OTEL Collector for distributed tracing
-- **Unified UI**: Grafana with all datasources pre-configured
+See [CONTRIBUTING.md](CONTRIBUTING.md#-see-it-in-action) for the interactive dashboard demo and observability stack overview.
 
 ---
 
@@ -238,7 +177,7 @@ See [docs/PERFORMANCE.md](docs/PERFORMANCE.md) for complete benchmarks, load tes
   - Validated real-world production use cases beyond examples
   - Multi-crate support demonstrates tool maturity and flexibility
   - One step closer to beta release
-  - Many thanks to the **PriceWhisperer.ai** startup team for trusting BRRTRouter with their mission critical systems. Their testing and recommendations to adopt JSF have been transformational!
+  - Many thanks to the **PriceWhisperer.ai** startup team for trusting BRRTRouter with their mission-critical systems. Their testing and recommendations to adopt JSF have been transformational!
 
 - **🎨 Sample SolidJS Dashboard**: Complete interactive UI showcasing all BRRTRouter capabilities
   - Live data display with auto-refresh and modal views
