@@ -18,6 +18,8 @@ The breaking point came when we realized we were spending more time maintaining 
 
 That's when we started building BRRTRouter: an OpenAPI-first HTTP router that generates complete services from your API specification. No more manual route definitions. No more contract drift. No more documentation rot.
 
+**If you're new to Rust microservice development**, BRRTRouter is especially valuable. It removes the complexity of async/await, eliminates boilerplate, and provides built-in best practices (security, observability, validation) so you can focus on learning Rust and building features, not framework internals.
+
 But here's the thing—we didn't get it right the first time. In fact, we got a lot of things spectacularly wrong. This is the story of how we built BRRTRouter, the mistakes we made along the way, and how adopting fighter jet coding standards (yes, really) transformed our router from a performance disaster into something that can handle close to 100k requests per second with zero failures.
 
 ---
@@ -151,6 +153,22 @@ When you generate a service from an OpenAPI spec, you get:
 The iteration cycle is **1-2 seconds**. Change your OpenAPI spec, hot reload picks it up, and you're testing immediately. No recompilation. No server restart. Just pure speed.
 
 This is what fast-paced development looks like when you remove the friction.
+
+### Why BRRTRouter is Perfect for Rust Beginners
+
+If you're new to Rust microservice development, BRRTRouter removes many of the traditional learning curve barriers:
+
+- **No async/await complexity**: Write synchronous code; coroutines handle concurrency
+- **Less boilerplate**: Routing, validation, serialization, middleware—all generated
+- **Compile-time safety**: Generated types catch errors before runtime
+- **Built-in best practices**: Security, observability, validation included out of the box
+- **Faster learning**: Consistent patterns across all services
+- **Real documentation**: OpenAPI spec is always accurate and up-to-date
+- **Fail fast**: Validation provides immediate, clear feedback
+
+**The Bottom Line**: BRRTRouter lets you focus on **learning Rust and building features**, not learning web framework internals, async/await complexity, or boilerplate patterns.
+
+> **📚 New to Rust microservices?** Check out our [Beginner's Guide to BRRTRouter](./docs/wip/BRRTRouter_BEGINNER_GUIDE.md) for a deep dive into how BRRTRouter makes Rust microservice development accessible to beginners.
 
 ---
 

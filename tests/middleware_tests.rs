@@ -629,6 +629,37 @@ fn test_cors_builder_wildcard_with_credentials_error() {
 }
 
 #[test]
+fn test_cors_builder_empty_origins_with_credentials_error() {
+    use brrtrouter::middleware::{CorsConfigError, CorsMiddlewareBuilder};
+    use http::Method;
+
+    // Test case 1: No origins specified, credentials enabled
+    let result = CorsMiddlewareBuilder::new()
+        .allowed_methods(&[Method::GET])
+        .allow_credentials(true)
+        .build();
+
+    assert!(result.is_err());
+    match result {
+        Err(CorsConfigError::EmptyOriginsWithCredentials) => {}
+        _ => panic!("Expected EmptyOriginsWithCredentials error"),
+    }
+
+    // Test case 2: Explicitly empty origins list, credentials enabled
+    let result = CorsMiddlewareBuilder::new()
+        .allowed_origins(&[])
+        .allowed_methods(&[Method::GET])
+        .allow_credentials(true)
+        .build();
+
+    assert!(result.is_err());
+    match result {
+        Err(CorsConfigError::EmptyOriginsWithCredentials) => {}
+        _ => panic!("Expected EmptyOriginsWithCredentials error"),
+    }
+}
+
+#[test]
 fn test_cors_builder_expose_headers() {
     use brrtrouter::middleware::CorsMiddlewareBuilder;
     use http::Method;

@@ -248,9 +248,17 @@ BRRTRouter has 31 test modules organized by functionality:
 
 ## Test Execution
 
-### Run All Tests
+### Running Tests
+
 ```bash
-cargo test
+# Standard cargo test
+just test
+
+# Fast parallel execution with nextest (recommended). Note that the first time this runs, it downloads some large docker containers 
+# for build purposes and may show as a slow running test. This should improve on subsequent test runs.
+just nt
+
+# All 219 tests pass reliably with parallel execution ✅
 ```
 
 ### Run Specific Module
@@ -267,6 +275,61 @@ cargo test -- --nocapture
 ```bash
 cargo test -- --ignored
 ```
+
+## Code Coverage
+
+```bash
+just coverage  # Generates HTML coverage report
+# Must maintain ≥80% coverage
+```
+
+## Load Testing with Goose
+
+BRRTRouter includes comprehensive load testing using [Goose](https://book.goose.rs/), which tests **ALL OpenAPI endpoints** (unlike wrk):
+
+```bash
+# Quick 30-second load test
+cargo run --release --example api_load_test -- \
+  --host http://localhost:8080 \
+  -u10 -r2 -t30s \
+  --header "X-API-Key: test123"
+
+# Full load test with HTML report
+cargo run --release --example api_load_test -- \
+  --host http://localhost:8080 \
+  -u20 -r5 -t2m \
+  --no-reset-metrics \
+  --header "X-API-Key: test123" \
+  --report-file goose-report.html
+```
+
+**What Goose tests that wrk doesn't:**
+- ✅ Authenticated endpoints (`GET /pets`, `/users` with API keys)
+- ✅ All routes from OpenAPI spec (not just `/health`)
+- ✅ Static files (`/openapi.yaml`, `/docs`, CSS, JS)
+- ✅ Memory leak detection (sustained 2+ minute tests)
+- ✅ Per-endpoint metrics with automatic failure detection
+
+**CI Integration:**
+Every PR runs a 2-minute Goose load test that tests 20 concurrent users across all endpoints and uploads ASCII metrics, HTML, and JSON reports.
+
+See [docs/GOOSE_LOAD_TESTING.md](GOOSE_LOAD_TESTING.md) for complete guide.
+
+## Running Benchmarks
+
+```bash
+just bench  # Executes cargo bench with Criterion
+```
+
+Recent profiling with `flamegraph` highlighted regex capture and `HashMap` allocations as hotspots. Preallocating buffers in `Router::route` and `path_to_regex` trimmed roughly 5% off benchmark times.
+
+## Generating Flamegraphs
+
+```bash
+just flamegraph  # Produces flamegraph.svg in target/flamegraphs/
+```
+
+See [docs/flamegraph.md](flamegraph.md) for tips on reading the output.
 
 ## Coverage
 

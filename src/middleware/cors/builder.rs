@@ -273,6 +273,10 @@ impl CorsMiddlewareBuilder {
     /// is `true` and wildcard origin (`*`) is configured. This violates the
     /// CORS specification.
     ///
+    /// Returns `CorsConfigError::EmptyOriginsWithCredentials` if `allow_credentials`
+    /// is `true` and no origins are specified (or an empty origins list is provided).
+    /// When credentials are enabled, at least one origin must be specified.
+    ///
     /// # Example
     ///
     /// ```rust,ignore
@@ -291,6 +295,16 @@ impl CorsMiddlewareBuilder {
         // Validate: cannot use wildcard with credentials
         if self.allow_credentials && origin_validation.is_wildcard() {
             return Err(CorsConfigError::WildcardWithCredentials);
+        }
+
+        // Validate: cannot use credentials with empty origins list
+        if self.allow_credentials {
+            match &origin_validation {
+                OriginValidation::Exact(origins) if origins.is_empty() => {
+                    return Err(CorsConfigError::EmptyOriginsWithCredentials);
+                }
+                _ => {}
+            }
         }
 
         // Extract origins for legacy API compatibility

@@ -212,106 +212,15 @@ open http://localhost:8080/
 
 ## 📊 Performance Benchmarks
 
-### Current: ~81k req/s (December 2025)
+**Current: ~81k req/s** with full OpenAPI validation, authentication, and JSON handling — competitive with Go's net/http.
 
-After JSF AV Rules implementation with stack-allocated collections:
+**Key highlights:**
+- **10,000 concurrent users** handled with 0% failures
+- **JSF AV Rules** implementation doubled throughput from ~40k to ~81k req/s
+- **16KB stack size** optimal (4x safety margin, 480 MB saved vs 64KB)
+- **Zero allocations** in hot path (SmallVec for params/headers)
 
-| Stack / "hello-world" benchmark          | Test rig(s)*                               | Req/s (steady-state) | Comments                                |
-| ---------------------------------------- | ------------------------------------------ | -------------------- | --------------------------------------- |
-| Node 18 / Express                        | Same class HW                              | 8–15 k               | Single threaded; many small allocations |
-| Python / FastAPI (uvicorn)               | Same                                       | 6–10 k               | Async IO but Python overhead dominates  |
-| **Rust / BRRTRouter (JSF)**              | M-class laptop – 20 users / Goose          | **≈ 81 k**           | Includes full request and response validation & Telemetry which are absent as standard in competitors       |
-| Go / net-http                            | Same                                       | 70–90 k              | Go scheduler, GC in play                |
-| Rust / Axum (tokio)                      | Same                                       | 120–180 k            | Native threads, zero-copy write         |
-| Rust / Actix-web                         | Same                                       | 180–250 k            | Pre-allocated workers, slab alloc       |
-| Nginx (static)                           | Same                                       | 450–550 k            | C, epoll, no JSON work                  |
-
-*Community figures taken from TechEmpower round-20-equivalent and recent blog posts; all on laptop-grade CPUs (Apple M-series or 8-core x86).
-
-### JSF Optimization Results
-
-The JSF AV Rules implementation doubled throughput from ~40k to ~81k req/s:
-
-| Optimization | Before | After | Impact |
-|--------------|--------|-------|--------|
-| Parameter storage | `HashMap` | `SmallVec<[T; 8]>` | -50% alloc overhead |
-| Header storage | `HashMap` | `SmallVec<[T; 16]>` | -40% alloc overhead |
-| Route matching | O(routes × segments) | O(segments) radix | Predictable latency |
-| Error handling | Mixed panic/Result | Result-only | Zero crash paths |
-
-### Adaptive Load Test Results (December 2025)
-
-Ramp testing from 2,000→4,500 users (64KB stack, before optimization):
-
-| Users | Requests | Throughput | p50 | p75 | p99 | Failures |
-|-------|----------|-----------|-----|-----|-----|----------|
-| 2,000 | 3.15M | 67k req/s | 22ms | 34ms | 63ms | 0% |
-| 2,500 | 3.31M | 65k req/s | 29ms | 44ms | 74ms | 0% |
-| 3,000 | 3.39M | 62k req/s | 31ms | 56ms | 110ms | 0% |
-| 3,500 | 3.90M | 65k req/s | 31ms | 66ms | 110ms | 0% |
-| 4,000 | 3.95M | 62k req/s | 34ms | 80ms | 130ms | 0% |
-| 4,500 | 4.11M | 60k req/s | 35ms | 92ms | 160ms | 0% |
-
-**Key findings:**
-- **Stable maximum: 10,000 concurrent users** with 0% failures (16KB stack)
-- **Consistent ~60k req/s throughput** across all load levels
-- **Breaking point: ~10,500 users** where timeouts begin
-- **Linear memory scaling** (~100 bytes per connection with 16KB stacks)
-- **p99 latency** under 200ms at 4,500 users, ~2s at 10,000 users
-
-### Interpretation
-
-* **81k req/s** with full OpenAPI validation, authentication, and JSON handling is now competitive with Go's net/http.
-* **4,500+ concurrent users** handled without degradation — exceeds typical production requirements by 10-100x.
-* The remaining gap to Axum/Actix is primarily the coroutine model (`may`) vs native async/thread-per-core.
-* All 19 endpoints tested under load with **zero failures** — the JSF allocation discipline works.
-
-### Stress Testing Results (December 2025)
-
-Aggressive load testing found the system limits (all latencies in milliseconds):
-
-| Concurrent Users | Throughput | Failures | p50 | p75 | p98 | p99 | Verdict |
-|------------------|-----------|----------|-----|-----|-----|-----|---------|
-| 4,500 | 60k req/s | 0% | 35 | 92 | 160 | 170 | ✅ Comfortable |
-| **10,000** | **60k req/s** | **0%** | **110** | **220** | **1000** | **2000** | ✅ **Stable max** |
-| 10,500 | 40k req/s | 0.06% | 100 | 170 | 700 | 900 | ⚠️ Marginal |
-| 12,000 | 39k req/s | 0.35% | 98 | 140 | 700 | 1000 | ⚠️ Degraded |
-| 15,000 | 4k req/s | 33% | - | - | - | - | ❌ Broken |
-| 20,000 | 0.3k req/s | 90% | - | - | - | - | ❌ Collapsed |
-
-**Production recommendation**: Target **8,000 concurrent users** (80% of stable max) for headroom.
-
-### Stack Size Optimization (December 2025)
-
-Empirical testing at 4,000 concurrent users found the optimal coroutine stack size (latencies in ms):
-
-| Stack Size | Throughput | p50 | p75 | p98 | p99 | Max | Status |
-|------------|-----------|-----|-----|-----|-----|-----|--------|
-| 64 KB (old) | 67k req/s | 22 | 34 | 63 | 74 | 400 | ❌ Wasteful |
-| 32 KB | 67k req/s | 22 | 34 | 63 | 74 | 400 | ⚠️ Works |
-| **16 KB (new)** | **68k req/s** | **29** | **74** | **110** | **120** | **210** | ✅ **Optimal** |
-| 8 KB | 59k req/s | 33 | 79 | 150 | 160 | 430 | ⚠️ Degraded |
-
-**Key findings:**
-- Actual stack usage: ~3.5 KB per coroutine (measured via telemetry)
-- 16 KB provides **4x safety margin** while minimizing memory
-- Memory savings: 10,000 users × (64KB - 16KB) = **480 MB saved**
-- Best latency characteristics at 16KB boundary (lowest max latency)
-
-### Previous Bottlenecks (Now Resolved)
-
-| Factor                                                                                | Status |
-| ------------------------------------------------------------------------------------- | ------ |
-| `HashMap` allocations on every request for params/headers                             | ✅ Fixed with SmallVec |
-| Linear route scanning                                                                 | ✅ Fixed with radix tree |
-| Default coroutine **stack size** = 64 KB → now 16KB (4x actual usage)                 | ✅ Fixed |
-| No **connection pooling / keep-alive tuning** yet.                                    | 🚧 Planned |
-
-### 🔭 Performance Vision
-
-Build the fastest, most predictable OpenAPI-native router in Rust — capable of **millions of requests per second**, entirely spec-driven, and friendly to coroutine runtimes.
-
-> **Goal: 100K route matches/sec on a quad-core**, with sub-millisecond latency (excluding handler execution cost).
+See [docs/PERFORMANCE.md](docs/PERFORMANCE.md) for complete benchmarks, load test results, and optimization details.
 
 
 ---
@@ -381,110 +290,29 @@ Build the fastest, most predictable OpenAPI-native router in Rust — capable of
 
 ---
 
-## 🛡️ JSF AV Rules Compliance (December 2025)
+## 🛡️ JSF AV Rules Compliance
 
 BRRTRouter implements coding standards inspired by the [**Joint Strike Fighter Air Vehicle C++ Coding Standards**](https://www.stroustrup.com/JSF-AV-rules.pdf) (JSF AV Rules) — the same rigorous standards used in the F-35 fighter jet's flight-critical software.
 
-### Why JSF Rules Matter
+**Key principles:**
+- **Zero allocations** in hot path (SmallVec for params/headers)
+- **O(k) radix tree** routing for predictable latency
+- **Result-based** error handling (no panics in dispatch)
+- **Stack-allocated** collections (JSF Rule 206)
 
-The JSF AV Rules were developed by Lockheed Martin for safety-critical avionics software where **predictable performance** and **zero runtime failures** are mandatory. While BRRTRouter isn't flying aircraft, these principles translate directly to high-performance HTTP routing:
+**Results:** 81,407 req/s with 0% failures, 1ms p50/p99 latency.
 
-| JSF Principle | BRRTRouter Implementation | Benefit |
-|---------------|---------------------------|---------|
-| **No heap after init** (Rule 206) | `SmallVec<[T; N]>` for path/query/header params | Zero allocations in hot path |
-| **Bounded complexity** (Rule 1-3) | Radix tree with O(k) lookup | Predictable latency |
-| **No panics** (Rule 208) | `Result`-based error handling | No crash paths in dispatch |
-| **Explicit types** (Rule 209) | `ParamVec`, `HeaderVec` newtypes | Type-safe, self-documenting |
-| **No recursion** (Rule 119) | Iterative path matching | Bounded stack depth |
-
-### What We Implemented
-
-**Stack-Allocated Collections (JSF Rule 206)**
-```rust
-// Hot path uses SmallVec - stack allocated, no heap
-pub type ParamVec = SmallVec<[(String, String); MAX_INLINE_PARAMS]>;
-pub type HeaderVec = SmallVec<[(String, String); MAX_INLINE_HEADERS]>;
-```
-
-**Clippy Configuration for Safety**
-```toml
-# clippy.toml - JSF-inspired thresholds
-cognitive-complexity-threshold = 30
-stack-size-threshold = 512000
-too-many-arguments-threshold = 8
-```
-
-**Crate-Level Lint Configuration**
-```rust
-// Documented intentional patterns, not suppressed warnings
-#![allow(clippy::expect_used)]  // Startup only
-#![allow(clippy::panic)]        // Config errors only
-#![allow(clippy::result_large_err)]  // HandlerResponse needed
-```
-
-### Performance Validation
-
-The JSF-compliant hot path was validated with Goose load testing:
-
-| Metric | Target | Result |
-|--------|--------|--------|
-| **Throughput** | 10-20k req/s | 81,407 req/s |
-| **Failure Rate** | < 0.1% | 0% |
-| **p50 Latency** | < 5ms | 1ms |
-| **p99 Latency** | < 10ms | 1ms |
-| **p99.99 Latency** | < 50ms | 5ms |
-
-All 19 petstore sample API endpoints tested with 20 concurrent users over 60 seconds — **zero failures, zero panics**.
-
-### Key Files
-
-| File | Purpose |
-|------|---------|
-| [`clippy.toml`](clippy.toml) | JSF-inspired Clippy configuration |
-| [`src/router/radix.rs`](src/router/radix.rs) | O(k) radix tree routing |
-| [`src/router/core.rs`](src/router/core.rs) | Stack-allocated `ParamVec` |
-| [`src/dispatcher/core.rs`](src/dispatcher/core.rs) | Stack-allocated `HeaderVec` |
-| [`docs/JSF/JSF_WRITEUP.md`](docs/JSF/JSF_WRITEUP.md) | Full JSF analysis and design |
-
-### Why This Matters
-
-1. **Predictable Performance**: No GC pauses, no allocation jitter, no surprise latency spikes
-2. **Auditability**: Clear separation of "startup allocations OK" vs "hot path must be zero-alloc"
-3. **Real-Time Ready**: Foundation for embedded/RTOS deployments where determinism is required
-4. **Developer Confidence**: If it compiles with these lints, it won't crash in production
-
-> *"JSF is basically 'a safe subset of an unsafe language.' Rust already bakes in a lot of what they're trying to enforce, but there are some very useful patterns we can steal — especially around bounded complexity, allocation discipline, and generic/OO design."*
+See [docs/JSF_COMPLIANCE.md](docs/JSF_COMPLIANCE.md) for complete implementation details and validation results.
 
 ---
 
 ## 🛠️ Development
 
-### Prerequisites
-- Rust 1.75+ • Docker • kind • kubectl • Tilt
-
-### Common Tasks
-```bash
-just dev-up           # Start development environment (kind + Tilt)
-just test             # Run test suite
-just nt               # Fast parallel tests with nextest (recommended)
-just curls            # Test all API endpoints
-just coverage         # Run tests with coverage (≥80% required)
-just bench            # Run performance benchmarks
-just docs             # Generate and open documentation
-just build-ui         # Build SolidJS dashboard (auto-run by Tilt)
-just dev-down         # Stop everything
-```
-
-### Development Workflow
-
-1. **Edit code** in `src/` or `examples/pet_store/src/`
-2. **Tilt auto-rebuilds** and syncs (~1-2s)
-3. **Test immediately** with dashboard, curl, or Swagger UI
-4. **View logs**: `kubectl logs -f -n brrtrouter-dev deployment/petstore`
-5. **Check metrics**: http://localhost:3000 (Grafana)
-6. **Trace requests**: http://localhost:16686 (Jaeger)
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed development guide.
+See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for complete development guide, including:
+- Prerequisites and setup
+- Common tasks and workflows
+- Service URLs and environment variables
+- Working with generated code
 
 ---
 
@@ -518,7 +346,8 @@ BRRTRouter reads `BRRTR_STACK_SIZE` to determine the stack size for coroutines. 
 
 ### Getting Started
 - [🚀 Local Development](docs/LOCAL_DEVELOPMENT.md) - **START HERE** for Tilt + kind setup
-- [🧪 Running Tests](docs/TEST_DOCUMENTATION.md) - Complete test suite overview
+- [🛠️ Development Guide](docs/DEVELOPMENT.md) - Development workflow and common tasks
+- [🧪 Testing](docs/TEST_DOCUMENTATION.md) - Complete test suite overview
 - [🦆 Load Testing](docs/GOOSE_LOAD_TESTING.md) - Goose load testing guide
 
 ### Core Concepts  
@@ -527,10 +356,17 @@ BRRTRouter reads `BRRTR_STACK_SIZE` to determine the stack size for coroutines. 
 - [🔐 Security & Authentication](docs/SecurityAuthentication.md) - OpenAPI-driven security with multiple auth providers
 - [📡 Server-Sent Events](#-server-sent-events) - SSE implementation guide
 
+### Performance
+- [📊 Performance Benchmarks](docs/PERFORMANCE.md) - Performance results, benchmarks, and optimization
+- [🛡️ JSF Compliance](docs/JSF_COMPLIANCE.md) - JSF AV Rules implementation and validation
+
 ### Operations
 - [🏗️ Tilt Implementation](docs/TILT_IMPLEMENTATION.md) - Architecture of the dev environment
 - [📁 K8s Directory Structure](docs/K8S_DIRECTORY_STRUCTURE.md) - Organized Kubernetes manifests
 - [💾 Backup & Recovery](docs/VELERO_BACKUPS.md) - Velero backup system
+
+### Contributing
+- [🤝 Contributing Guide](CONTRIBUTING.md) - How to contribute to BRRTRouter
 
 ### Advanced
 - [🔥 Flamegraphs](docs/flamegraph.md) - Performance profiling guide
@@ -549,74 +385,13 @@ cargo doc --open
 
 ## 🧪 Testing
 
-### Running Tests
+**219 tests** covering all HTTP verbs, paths, routing, validation, security, and middleware.
 
-```bash
-# Standard cargo test
-just test
-
-# Fast parallel execution with nextest (recommended). Note that the first time this runs, it downloads some large docker containers 
-# for build purposes and may show as a slow running test. This should improve on subsequent test runs.
-
-just nt
-
-# All 219 tests pass reliably with parallel execution ✅
-```
-
-### Code Coverage
-
-```bash
-just coverage  # Generates HTML coverage report
-# Must maintain ≥80% coverage
-```
-
-### Load Testing with Goose
-
-BRRTRouter includes comprehensive load testing using [Goose](https://book.goose.rs/), which tests **ALL OpenAPI endpoints** (unlike wrk):
-
-```bash
-# Quick 30-second load test
-cargo run --release --example api_load_test -- \
-  --host http://localhost:8080 \
-  -u10 -r2 -t30s \
-  --header "X-API-Key: test123"
-
-# Full load test with HTML report
-cargo run --release --example api_load_test -- \
-  --host http://localhost:8080 \
-  -u20 -r5 -t2m \
-  --no-reset-metrics \
-  --header "X-API-Key: test123" \
-  --report-file goose-report.html
-```
-
-**What Goose tests that wrk doesn't:**
-- ✅ Authenticated endpoints (`GET /pets`, `/users` with API keys)
-- ✅ All routes from OpenAPI spec (not just `/health`)
-- ✅ Static files (`/openapi.yaml`, `/docs`, CSS, JS)
-- ✅ Memory leak detection (sustained 2+ minute tests)
-- ✅ Per-endpoint metrics with automatic failure detection
-
-**CI Integration:**
-Every PR runs a 2-minute Goose load test that tests 20 concurrent users across all endpoints and uploads ASCII metrics, HTML, and JSON reports.
-
-See [docs/GOOSE_LOAD_TESTING.md](docs/GOOSE_LOAD_TESTING.md) for complete guide.
-
-### Running Benchmarks
-
-```bash
-just bench  # Executes cargo bench with Criterion
-```
-
-Recent profiling with `flamegraph` highlighted regex capture and `HashMap` allocations as hotspots. Preallocating buffers in `Router::route` and `path_to_regex` trimmed roughly 5% off benchmark times.
-
-### Generating Flamegraphs
-
-```bash
-just flamegraph  # Produces flamegraph.svg in target/flamegraphs/
-```
-
-See [docs/flamegraph.md](docs/flamegraph.md) for tips on reading the output.
+See [docs/TEST_DOCUMENTATION.md](docs/TEST_DOCUMENTATION.md) for complete testing guide, including:
+- Running tests (standard and parallel with nextest)
+- Code coverage (≥80% required)
+- Load testing with Goose
+- Benchmarks and flamegraphs
 
 ---
 
@@ -624,53 +399,11 @@ See [docs/flamegraph.md](docs/flamegraph.md) for tips on reading the output.
 
 We welcome contributions from developers at all levels!
 
-### Getting Started as a Contributor
-
-1. **🚀 Set up your development environment** (5 minutes):
-   ```bash
-   git clone https://github.com/microscaler/BRRTRouter.git
-   cd BRRTRouter
-   just dev-up  # Creates cluster + starts everything
-   ```
-
-2. **✅ Verify everything works**:
-   ```bash
-   curl http://localhost:8080/health
-   curl -H "X-API-Key: test123" http://localhost:8080/pets
-   ```
-
-3. **📖 Read the contribution guide**: [CONTRIBUTING.md](CONTRIBUTING.md)
-
-4. **🔍 Pick an issue**: Look for [`good first issue`](https://github.com/microscaler/BRRTRouter/labels/good%20first%20issue) labels
-
-5. **🧪 Run tests before committing**:
-   ```bash
-   just nt        # Fast parallel tests with nextest
-   cargo fmt      # Format code
-   ```
-
-### Areas for Contribution
-
-We welcome contributions that improve:
-- 🧵 Typed handler deserialization
-- ✨ Auto-generation of `impl From<HandlerRequest>` for `TypedHandlerRequest<T>` based on schema
-- 🚧 Dynamic dispatcher route registration
-- 🚧 Hot reload
-- 🚧 Header parsing and extraction
-- 🚧 Cookie parsing and extraction
-- 🚧 WebSocket support
-- 🚧 Server-side events
-- 🚧 SPIFFE support if we have enterprise interest for windows users single signon
-- 🧪 Test coverage and spec validation
-- 🧠 Coroutine handler ergonomics
-- 📊 Benchmarks for match throughput (goal: 100k matches/sec)
-- 🔐 Middleware hooks (metrics, tracing, auth, **RFC-compliant CORS with route-specific configuration**)
-- 💥 Reusable SDK packaging and publishing to crates.io
-
-**Benchmark goal:**
-- Raspberry Pi 5
-- 100k route matches/sec
-- ≤8ms latency (excluding handler execution)
+See [CONTRIBUTING.md](CONTRIBUTING.md) for:
+- Getting started as a contributor
+- Areas for contribution
+- Code standards and documentation requirements
+- Development workflow
 
 ---
 

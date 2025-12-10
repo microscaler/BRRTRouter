@@ -4,6 +4,54 @@ Thank you for your interest in contributing to **BRRTRouter**! 🎉
 
 This guide will help you get started quickly with our local development environment.
 
+## Getting Started as a Contributor
+
+1. **🚀 Set up your development environment** (5 minutes):
+   ```bash
+   git clone https://github.com/microscaler/BRRTRouter.git
+   cd BRRTRouter
+   just dev-up  # Creates cluster + starts everything
+   ```
+
+2. **✅ Verify everything works**:
+   ```bash
+   curl http://localhost:8080/health
+   curl -H "X-API-Key: test123" http://localhost:8080/pets
+   ```
+
+3. **📖 Read the contribution guide**: [CONTRIBUTING.md](CONTRIBUTING.md)
+
+4. **🔍 Pick an issue**: Look for [`good first issue`](https://github.com/microscaler/BRRTRouter/labels/good%20first%20issue) labels
+
+5. **🧪 Run tests before committing**:
+   ```bash
+   just nt        # Fast parallel tests with nextest
+   cargo fmt      # Format code
+   ```
+
+## Areas for Contribution
+
+We welcome contributions that improve:
+- 🧵 Typed handler deserialization
+- ✨ Auto-generation of `impl From<HandlerRequest>` for `TypedHandlerRequest<T>` based on schema
+- 🚧 Dynamic dispatcher route registration
+- 🚧 Hot reload
+- 🚧 Header parsing and extraction
+- 🚧 Cookie parsing and extraction
+- 🚧 WebSocket support
+- 🚧 Server-side events
+- 🚧 SPIFFE support if we have enterprise interest for windows users single signon
+- 🧪 Test coverage and spec validation
+- 🧠 Coroutine handler ergonomics
+- 📊 Benchmarks for match throughput (goal: 100k matches/sec)
+- 🔐 Middleware hooks (metrics, tracing, auth, **RFC-compliant CORS with route-specific configuration**)
+- 💥 Reusable SDK packaging and publishing to crates.io
+
+**Benchmark goal:**
+- Raspberry Pi 5
+- 100k route matches/sec
+- ≤8ms latency (excluding handler execution)
+
 ## 🚀 Quick Start (5 Minutes)
 
 ### Prerequisites

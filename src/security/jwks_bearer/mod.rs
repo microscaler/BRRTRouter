@@ -372,6 +372,19 @@ impl JwksBearerProvider {
         let cache_ttl_millis = cache_ttl_millis;
         
         let handle = thread::spawn(move || {
+            // Do immediate refresh on startup to populate cache
+            // This ensures the cache is ready before the first validation request
+            // Only do this if shutdown hasn't been signaled (allows tests to stop refresh before it starts)
+            if !shutdown.load(Ordering::Acquire) {
+                Self::refresh_jwks_internal(
+                    &cache,
+                    &jwks_url,
+                    &refresh_in_progress,
+                    &refresh_complete,
+                    false, // Background thread claims the refresh itself
+                );
+            }
+            
             loop {
                 // Check shutdown flag
                 if shutdown.load(Ordering::Acquire) {
@@ -423,9 +436,18 @@ impl JwksBearerProvider {
                     slept += sleep_duration;
                 }
                 
-                // Only refresh if we completed the full sleep interval (TTL didn't change)
-                // If TTL changed, skip refresh and continue to next loop iteration to recalculate
-                if !ttl_changed {
+                // Refresh if we completed the full sleep interval OR if TTL changed
+                // When TTL changes, refresh immediately to pick up the new refresh schedule
+                if ttl_changed {
+                    // TTL changed - refresh immediately and recalculate interval on next iteration
+                    Self::refresh_jwks_internal(
+                        &cache,
+                        &jwks_url,
+                        &refresh_in_progress,
+                        &refresh_complete,
+                        false, // Background thread claims the refresh itself
+                    );
+                } else {
                     // After sleeping for refresh_interval, always refresh proactively
                     // The refresh_interval is calculated to wake up before expiration,
                     // so we should refresh now to keep the cache fresh.
@@ -438,8 +460,7 @@ impl JwksBearerProvider {
                         false, // Background thread claims the refresh itself
                     );
                 }
-                // If ttl_changed is true, we continue to the next loop iteration
-                // which will recalculate refresh_interval based on the new cache_ttl value
+                // Continue to next loop iteration to recalculate refresh_interval
             }
         });
         
