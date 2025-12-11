@@ -68,23 +68,30 @@ impl RouteCorsConfig {
     ///
     /// # Panics
     ///
-    /// Panics if `allow_credentials` is `true` and `origins` contains `"*"`.
-    /// This violates the CORS specification which forbids `Access-Control-Allow-Origin: *`
-    /// with `Access-Control-Allow-Credentials: true`.
+    /// Panics if `allow_credentials` is `true` and:
+    /// - `origins` contains `"*"` (wildcard with credentials is invalid per CORS spec)
+    /// - `origins` is empty (empty origins with credentials is invalid - no origins can be validated)
     ///
     /// JSF Compliance: Panics only during initialization, never on hot path
     /// This method is only called during startup in templates/main.rs.txt
     #[allow(clippy::panic)]
     pub fn with_origins(mut self, origins: &[&str]) -> Self {
+        // BUG FIX: Validate empty origins with credentials (same validation as CorsMiddlewareBuilder)
+        if self.allow_credentials && origins.is_empty() {
+            panic!(
+                "CORS configuration error: Cannot use empty origins with allowCredentials: true. \
+                Route has allowCredentials enabled but config.yaml has no origins configured. \
+                When credentials are enabled, you must specify at least one origin in config.yaml."
+            );
+        }
+        
         if origins.contains(&"*") {
             // Check if credentials are enabled - this combination is invalid per CORS spec
             if self.allow_credentials {
                 panic!(
                     "CORS configuration error: Cannot use wildcard origin (*) with allowCredentials: true. \
-                    Route '{}' has allowCredentials enabled but global CORS config has wildcard origins. \
-                    When credentials are enabled, you must specify exact origins in config.yaml.",
-                    // Note: We don't have handler_name here, but the panic message is still helpful
-                    "route"
+                    Route has allowCredentials enabled but global CORS config has wildcard origins. \
+                    When credentials are enabled, you must specify exact origins in config.yaml."
                 );
             }
             self.origin_validation = OriginValidation::Wildcard;

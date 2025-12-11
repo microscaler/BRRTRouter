@@ -271,11 +271,12 @@ fn main() -> io::Result<()> {
                     let merged_policy = match policy {
                         brrtrouter::middleware::RouteCorsPolicy::Custom(route_config) => {
                             // Set origin validation from config.yaml (not from OpenAPI)
-                            let merged_config = if !origins.is_empty() {
-                                route_config.with_origins(&origins)
-                            } else {
-                                route_config
-                            };
+                            // BUG FIX: Always call with_origins() to ensure validation runs
+                            // This will panic if route has allowCredentials: true and:
+                            // - Global origins contain "*" (invalid CORS combination per spec)
+                            // - Global origins is empty (empty origins with credentials is invalid)
+                            // The with_origins() method now validates both cases
+                            let merged_config = route_config.with_origins(&origins);
                             brrtrouter::middleware::RouteCorsPolicy::Custom(merged_config)
                         }
                         other => other, // Inherit or Disabled - no changes needed

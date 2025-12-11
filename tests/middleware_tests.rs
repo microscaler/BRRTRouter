@@ -679,6 +679,45 @@ fn test_cors_builder_wildcard_with_credentials_error() {
 }
 
 #[test]
+fn test_route_cors_config_empty_origins_with_credentials_panic() {
+    // BUG FIX TEST: RouteCorsConfig::with_origins should panic when credentials enabled with empty origins
+    // This matches the validation in CorsMiddlewareBuilder::build()
+    use brrtrouter::middleware::RouteCorsConfig;
+    
+    let mut route_config = RouteCorsConfig::default();
+    route_config.allow_credentials = true;
+    
+    // Should panic when called with empty origins and credentials enabled
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        route_config.with_origins(&[]);
+    }));
+    
+    assert!(
+        result.is_err(),
+        "RouteCorsConfig::with_origins should panic when credentials enabled with empty origins"
+    );
+}
+
+#[test]
+fn test_route_cors_config_empty_origins_without_credentials_ok() {
+    // Test that empty origins without credentials is allowed
+    use brrtrouter::middleware::RouteCorsConfig;
+    
+    let mut route_config = RouteCorsConfig::default();
+    route_config.allow_credentials = false;
+    
+    // Should not panic when credentials are disabled
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        route_config.with_origins(&[]);
+    }));
+    
+    assert!(
+        result.is_ok(),
+        "RouteCorsConfig::with_origins should allow empty origins when credentials are disabled"
+    );
+}
+
+#[test]
 fn test_cors_builder_empty_origins_with_credentials_error() {
     use brrtrouter::middleware::{CorsConfigError, CorsMiddlewareBuilder};
     use http::Method;
