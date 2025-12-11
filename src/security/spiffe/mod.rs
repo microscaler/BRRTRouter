@@ -61,18 +61,74 @@ use tracing::debug;
 
 pub use revocation::{RevocationChecker, InMemoryRevocationChecker, NoOpRevocationChecker};
 
+/// Configuration error for SPIFFE provider
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SpiffeConfigError {
+    /// JWKS URL is required for signature verification
+    JwksUrlRequired,
+    /// At least one trust domain must be configured
+    TrustDomainsRequired,
+    /// At least one audience must be configured
+    AudiencesRequired,
+}
+
+impl std::fmt::Display for SpiffeConfigError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SpiffeConfigError::JwksUrlRequired => {
+                write!(
+                    f,
+                    "SPIFFE validation requires JWKS URL for signature verification. Configure with `.jwks_url()`"
+                )
+            }
+            SpiffeConfigError::TrustDomainsRequired => {
+                write!(
+                    f,
+                    "At least one trust domain must be configured. Configure with `.trust_domains()`"
+                )
+            }
+            SpiffeConfigError::AudiencesRequired => {
+                write!(
+                    f,
+                    "At least one audience must be configured. Configure with `.audiences()`"
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for SpiffeConfigError {}
+
 /// SPIFFE security provider for JWT SVID validation.
 ///
 /// Validates SPIFFE JWT SVIDs (SPIFFE Verifiable Identity Documents) and extracts
 /// SPIFFE IDs for authorization decisions. Supports trust domain validation and
 /// audience checking for enterprise security.
 ///
-/// # Configuration
+/// # Configuration Requirements
 ///
-/// - **Trust Domains**: Whitelist of allowed trust domains (e.g., `["example.com"]`)
-/// - **Audiences**: Required audiences that must be present in SVID (e.g., `["api.example.com"]`)
-/// - **Leeway**: Clock skew tolerance in seconds (default: 60)
-/// - **JWKS URL**: Optional URL for signature verification (if not provided, signature verification is skipped)
+/// **MANDATORY**:
+/// - `trust_domains()` - At least one trust domain must be configured
+/// - `audiences()` - At least one audience must be configured
+/// - `jwks_url()` - JWKS URL is **REQUIRED** for signature verification
+///
+/// **OPTIONAL**:
+/// - `leeway()` - Clock skew tolerance in seconds (default: 60)
+/// - `cookie_name()` - Cookie name for token extraction
+/// - `revocation_checker()` - Token revocation checker
+///
+/// Use `.build()` to validate configuration at startup:
+///
+/// ```rust
+/// use brrtrouter::security::SpiffeProvider;
+///
+/// let provider = SpiffeProvider::new()
+///     .trust_domains(&["example.com"])
+///     .audiences(&["api.example.com"])
+///     .jwks_url("https://spiffe.example.com/.well-known/jwks.json")
+///     .build()
+///     .expect("Invalid SPIFFE configuration");
+/// ```
 ///
 /// # Security
 ///
@@ -104,9 +160,10 @@ pub struct SpiffeProvider {
     jwks_url: Option<String>,
     /// Optional cookie name for token extraction
     cookie_name: Option<String>,
-    /// JWKS cache: (timestamp, kid -> DecodingKey)
+    /// JWKS cache: (timestamp, kid -> (DecodingKey, Algorithm))
     /// Only used if jwks_url is Some
-    jwks_cache: Option<Arc<RwLock<(Instant, HashMap<String, jsonwebtoken::DecodingKey>)>>>,
+    /// Stores both the decoding key and its algorithm for algorithm mismatch validation
+    jwks_cache: Option<Arc<RwLock<(Instant, HashMap<String, (jsonwebtoken::DecodingKey, jsonwebtoken::Algorithm)>)>>>,
     /// JWKS cache TTL
     jwks_cache_ttl: Duration,
     /// Debounce flag for JWKS refresh
@@ -206,8 +263,9 @@ impl SpiffeProvider {
 
     /// Configure JWKS URL for signature verification.
     ///
-    /// If provided, JWT signatures will be verified using keys from this JWKS endpoint.
-    /// If not provided, signature verification is skipped (claims-only validation).
+    /// **REQUIRED for security**: JWT signatures will be verified using keys from this JWKS endpoint.
+    /// Without signature verification, attackers can forge tokens with arbitrary claims.
+    /// Validation will fail if JWKS URL is not configured (fail-secure behavior).
     ///
     /// # Arguments
     ///
@@ -286,13 +344,13 @@ impl SpiffeProvider {
         self
     }
     
-    /// Get decoding key for a given key ID (kid).
+    /// Get decoding key and algorithm for a given key ID (kid).
     ///
     /// This is used internally for signature verification.
     /// Returns None if key not found or JWKS not configured.
     ///
     /// If cache is empty, triggers blocking refresh and waits for completion.
-    pub(super) fn get_key_for(&self, kid: &str) -> Option<jsonwebtoken::DecodingKey> {
+    pub(super) fn get_key_for(&self, kid: &str) -> Option<(jsonwebtoken::DecodingKey, jsonwebtoken::Algorithm)> {
         let (cache, refresh_complete) = match (
             &self.jwks_cache,
             &self.jwks_refresh_complete,
@@ -326,6 +384,13 @@ impl SpiffeProvider {
         } else {
             None
         }
+    }
+    
+    /// Get decoding key only (for backward compatibility with existing code)
+    /// This method is deprecated - use get_key_for() instead to get both key and algorithm
+    #[allow(dead_code)]
+    pub(super) fn get_key_only(&self, kid: &str) -> Option<jsonwebtoken::DecodingKey> {
+        self.get_key_for(kid).map(|(key, _)| key)
     }
     
     /// Refresh JWKS if cache is expired or empty.
@@ -448,18 +513,59 @@ impl SpiffeProvider {
     /// # Example
     ///
     /// ```rust
-    /// use brrtrouter::security::spiffe::{SpiffeProvider, InMemoryRevocationChecker};
+    /// use brrtrouter::security::{SpiffeProvider, InMemoryRevocationChecker};
     ///
     /// let checker = InMemoryRevocationChecker::new();
     /// checker.revoke("compromised-token-id");
     ///
     /// let provider = SpiffeProvider::new()
     ///     .trust_domains(&["example.com"])
-    ///     .revocation_checker(checker);
+    ///     .audiences(&["api.example.com"])
+    ///     .jwks_url("https://spiffe.example.com/.well-known/jwks.json")
+    ///     .revocation_checker(checker)
+    ///     .build()
+    ///     .expect("Invalid SPIFFE configuration");
     /// ```
     pub fn revocation_checker(mut self, checker: impl RevocationChecker + 'static) -> Self {
         self.revocation_checker = Some(Arc::new(checker));
         self
+    }
+
+    /// Validate configuration and build the provider.
+    ///
+    /// This method validates that all required configuration is present:
+    /// - JWKS URL (required for signature verification)
+    /// - Trust domains (at least one)
+    /// - Audiences (at least one)
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(Self)` - Configuration is valid
+    /// - `Err(SpiffeConfigError)` - Missing required configuration
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use brrtrouter::security::SpiffeProvider;
+    ///
+    /// let provider = SpiffeProvider::new()
+    ///     .trust_domains(&["example.com"])
+    ///     .audiences(&["api.example.com"])
+    ///     .jwks_url("https://spiffe.example.com/.well-known/jwks.json")
+    ///     .build()
+    ///     .expect("Invalid SPIFFE configuration");
+    /// ```
+    pub fn build(self) -> Result<Self, SpiffeConfigError> {
+        if self.jwks_url.is_none() {
+            return Err(SpiffeConfigError::JwksUrlRequired);
+        }
+        if self.trust_domains.is_empty() {
+            return Err(SpiffeConfigError::TrustDomainsRequired);
+        }
+        if self.audiences.is_empty() {
+            return Err(SpiffeConfigError::AudiencesRequired);
+        }
+        Ok(self)
     }
 
     /// Extract SPIFFE ID from a validated request.
@@ -502,21 +608,30 @@ impl SpiffeProvider {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use brrtrouter::security::SpiffeProvider;
+    /// use brrtrouter::security::SecurityRequest;
     ///
     /// let provider = SpiffeProvider::new()
     ///     .trust_domains(&["example.com"])
-    ///     .audiences(&["api.example.com"]);
+    ///     .audiences(&["api.example.com"])
+    ///     .jwks_url("https://spiffe.example.com/.well-known/jwks.json")
+    ///     .build()
+    ///     .expect("Invalid SPIFFE configuration");
     ///
     /// // After validation, extract jti for revocation checking
+    /// # let req = SecurityRequest {
+    /// #     headers: &brrtrouter::dispatcher::HeaderVec::new(),
+    /// #     query: &brrtrouter::router::ParamVec::new(),
+    /// #     cookies: &brrtrouter::dispatcher::HeaderVec::new(),
+    /// # };
     /// if let Some(jti) = provider.extract_jti(&req) {
     ///     // Check revocation list
-    ///     if is_revoked(jti) {
-    ///         return Err("Token revoked");
-    ///     }
+    ///     // if is_revoked(jti) {
+    ///     //     return Err("Token revoked");
+    ///     // }
     ///     // Log for audit trail
-    ///     audit_log("token_used", jti);
+    ///     // audit_log("token_used", jti);
     /// }
     /// ```
     pub fn extract_jti(&self, req: &SecurityRequest) -> Option<String> {
@@ -572,7 +687,7 @@ impl SecurityProvider for SpiffeProvider {
     ///
     /// Performs full validation including:
     /// 1. Token extraction from header or cookie
-    /// 2. JWT signature verification (if JWKS URL configured)
+    /// 2. JWT signature verification (REQUIRED - JWKS URL must be configured)
     /// 3. SPIFFE ID format validation (`sub` claim)
     /// 4. Trust domain whitelist check
     /// 5. Audience validation

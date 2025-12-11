@@ -42,5 +42,5 @@ spec:
               cpu: "1000m"     # Increased from 1000m (1.5 cores for better performance)
             limits:
               memory: "4Gi"    # Increased from 2Gi (balanced: leaves room for other services)
-              cpu: "2000m"    # Keep at 2 cores (all available)
+              cpu: "3000m"    # Keep at 2 cores (all available)
 

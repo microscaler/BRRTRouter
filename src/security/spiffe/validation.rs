@@ -203,13 +203,22 @@ pub(super) fn validate_svid_impl(
         }
     }
 
-    // JWT signature verification (if JWKS URL configured)
+    // JWT signature verification is REQUIRED for security
+    // Without signature verification, attackers can forge tokens with arbitrary claims
+    // Security: Fail-secure - reject if JWKS URL not configured
+    if provider.jwks_url.is_none() {
+        warn!(
+            "SPIFFE SVID validation failed: JWKS URL not configured. Signature verification is required for security. Configure with `.jwks_url()`"
+        );
+        return false;
+    }
+
+    // Verify signature using JWKS
     // Done after basic validation to ensure we have valid SPIFFE ID first
-    if provider.jwks_url.is_some()
-        && !verify_signature(token, provider) {
-            warn!("SPIFFE SVID signature verification failed");
-            return false;
-        }
+    if !verify_signature(token, provider) {
+        warn!("SPIFFE SVID signature verification failed");
+        return false;
+    }
 
     debug!(
         "SPIFFE SVID validated successfully: spiffe_id={}, trust_domain={}",
@@ -240,20 +249,32 @@ fn verify_signature(token: &str, provider: &SpiffeProvider) -> bool {
         }
     };
     
-    // Get decoding key from JWKS cache
-    let decoding_key = match provider.get_key_for(&kid) {
-        Some(k) => k,
+    // Get decoding key and algorithm from JWKS cache
+    let (decoding_key, jwks_alg) = match provider.get_key_for(&kid) {
+        Some((k, alg)) => (k, alg),
         None => {
             debug!("Key '{}' not found in JWKS cache", kid);
             return false;
         }
     };
     
+    // Security: Validate that token algorithm matches JWKS key algorithm
+    // This prevents algorithm confusion attacks where an attacker uses a different algorithm
+    // than the one specified in the JWKS key
+    if header.alg != jwks_alg {
+        warn!(
+            "SPIFFE SVID algorithm mismatch: token uses {:?}, but JWKS key '{}' specifies {:?}. This prevents algorithm confusion attacks.",
+            header.alg, kid, jwks_alg
+        );
+        return false;
+    }
+    
     // Verify signature using jsonwebtoken
     // We only decode to verify signature, we don't need the claims (already parsed)
-    // Disable expiration check since we already validated it above
+    // Disable expiration and audience checks since we already validated them above
     let mut validation = jsonwebtoken::Validation::new(header.alg);
     validation.validate_exp = false; // Already validated above
+    validation.validate_aud = false; // Already validated above (SPIFFE audience validation)
     // Signature validation is enabled by default in jsonwebtoken
     
     match jsonwebtoken::decode::<serde_json::Value>(token, &decoding_key, &validation) {
@@ -273,7 +294,7 @@ fn verify_signature(token: &str, provider: &SpiffeProvider) -> bool {
 /// This is a simplified version of JwksBearerProvider's refresh logic,
 /// adapted for SPIFFE provider.
 pub(super) fn refresh_jwks_internal(
-    cache: &Arc<RwLock<(Instant, HashMap<String, jsonwebtoken::DecodingKey>)>>,
+    cache: &Arc<RwLock<(Instant, HashMap<String, (jsonwebtoken::DecodingKey, jsonwebtoken::Algorithm)>)>>,
     jwks_url: &str,
     refresh_in_progress: &Arc<AtomicBool>,
     refresh_complete: &Arc<(Mutex<()>, Condvar)>,
@@ -345,7 +366,7 @@ pub(super) fn refresh_jwks_internal(
         }
     };
     
-    let mut new_map: HashMap<String, jsonwebtoken::DecodingKey> = HashMap::new();
+    let mut new_map: HashMap<String, (jsonwebtoken::DecodingKey, jsonwebtoken::Algorithm)> = HashMap::new();
     if let Some(keys) = parsed.get("keys").and_then(|v| v.as_array()) {
         for k in keys {
             let kid = k.get("kid").and_then(|v| v.as_str()).unwrap_or("");
@@ -353,23 +374,53 @@ pub(super) fn refresh_jwks_internal(
             let alg = k.get("alg").and_then(|v| v.as_str()).unwrap_or("");
             
             // HMAC (oct) keys for HS* algorithms
+            // Note: HMAC keys are symmetric and not typically used in production JWKS (security risk)
+            // However, we support them for testing purposes
             if kty.eq_ignore_ascii_case("oct")
                 && (alg.eq_ignore_ascii_case("HS256")
                     || alg.eq_ignore_ascii_case("HS384")
                     || alg.eq_ignore_ascii_case("HS512"))
             {
-                // HMAC keys are symmetric - not typically used in JWKS (would be a security risk)
-                // But we support them for completeness
-                debug!("Skipping HMAC key in JWKS (symmetric keys not supported in JWKS)");
+                let k = match k.get("k").and_then(|v| v.as_str()) {
+                    Some(v) => v,
+                    None => {
+                        debug!("HMAC key missing 'k' parameter, skipping");
+                        continue;
+                    }
+                };
+                // Decode base64url-encoded key
+                use base64::Engine as _;
+                let key_bytes = match base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(k) {
+                    Ok(b) => b,
+                    Err(e) => {
+                        debug!("Failed to decode HMAC key 'k' parameter: {:?}", e);
+                        continue;
+                    }
+                };
+                // Create decoding key from secret bytes
+                let dk = jsonwebtoken::DecodingKey::from_secret(&key_bytes);
+                // Parse algorithm from JWKS key
+                let jwks_algorithm = if alg.eq_ignore_ascii_case("HS256") {
+                    jsonwebtoken::Algorithm::HS256
+                } else if alg.eq_ignore_ascii_case("HS384") {
+                    jsonwebtoken::Algorithm::HS384
+                } else if alg.eq_ignore_ascii_case("HS512") {
+                    jsonwebtoken::Algorithm::HS512
+                } else {
+                    debug!("Unsupported HMAC algorithm in JWKS: {}, skipping", alg);
+                    continue;
+                };
+                new_map.insert(kid.to_string(), (dk, jwks_algorithm));
+                debug!("Added HMAC key to JWKS cache: kid={}, alg={}", kid, alg);
                 continue;
             }
             
             // ECDSA (EC) keys for ES* algorithms
             // JWKS format: EC keys use "x" and "y" coordinates (base64url-encoded)
+            // Note: jsonwebtoken only supports ES256 and ES384, not ES512
             if kty.eq_ignore_ascii_case("EC")
                 && (alg.eq_ignore_ascii_case("ES256")
-                    || alg.eq_ignore_ascii_case("ES384")
-                    || alg.eq_ignore_ascii_case("ES512"))
+                    || alg.eq_ignore_ascii_case("ES384"))
             {
                 let x = match k.get("x").and_then(|v| v.as_str()) {
                     Some(v) => v,
@@ -385,9 +436,19 @@ pub(super) fn refresh_jwks_internal(
                         continue;
                     }
                 };
+                // Parse algorithm from JWKS key
+                // Note: jsonwebtoken only supports ES256 and ES384, not ES512
+                let jwks_algorithm = if alg.eq_ignore_ascii_case("ES256") {
+                    jsonwebtoken::Algorithm::ES256
+                } else if alg.eq_ignore_ascii_case("ES384") {
+                    jsonwebtoken::Algorithm::ES384
+                } else {
+                    debug!("Unsupported ECDSA algorithm in JWKS: {} (only ES256 and ES384 are supported), skipping", alg);
+                    continue;
+                };
                 // jsonwebtoken crate supports from_ec_components for ECDSA keys
                 if let Ok(dk) = jsonwebtoken::DecodingKey::from_ec_components(x, y) {
-                    new_map.insert(kid.to_string(), dk);
+                    new_map.insert(kid.to_string(), (dk, jwks_algorithm));
                     debug!("Added ECDSA key to JWKS cache: kid={}, alg={}", kid, alg);
                 } else {
                     debug!("Failed to parse ECDSA key: kid={}, alg={}", kid, alg);
@@ -401,6 +462,17 @@ pub(super) fn refresh_jwks_internal(
                     || alg.eq_ignore_ascii_case("RS384")
                     || alg.eq_ignore_ascii_case("RS512"))
             {
+                // Parse algorithm from JWKS key
+                let jwks_algorithm = if alg.eq_ignore_ascii_case("RS256") {
+                    jsonwebtoken::Algorithm::RS256
+                } else if alg.eq_ignore_ascii_case("RS384") {
+                    jsonwebtoken::Algorithm::RS384
+                } else if alg.eq_ignore_ascii_case("RS512") {
+                    jsonwebtoken::Algorithm::RS512
+                } else {
+                    debug!("Unsupported RSA algorithm in JWKS: {}, skipping", alg);
+                    continue;
+                };
                 let n = match k.get("n").and_then(|v| v.as_str()) {
                     Some(v) => v,
                     None => continue,
@@ -410,7 +482,7 @@ pub(super) fn refresh_jwks_internal(
                     None => continue,
                 };
                 if let Ok(dk) = jsonwebtoken::DecodingKey::from_rsa_components(n, e) {
-                    new_map.insert(kid.to_string(), dk);
+                    new_map.insert(kid.to_string(), (dk, jwks_algorithm));
                 }
                 continue;
             }
