@@ -667,6 +667,10 @@ impl SpiffeProvider {
                     return None; // Double space - reject
                 }
                 let token = &h[7..];
+                // Reject empty tokens (security: prevent authentication bypass)
+                if token.is_empty() {
+                    return None;
+                }
                 // Reject if token has leading or trailing whitespace
                 if token.starts_with(char::is_whitespace) || token.ends_with(char::is_whitespace) {
                     return None;

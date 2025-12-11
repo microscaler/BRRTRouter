@@ -518,21 +518,59 @@ impl CorsMiddleware {
         };
 
         // Extract hostname and port from origin
-        let (origin_hostname, origin_port) = if let Some(colon_pos) = origin_authority.find(':') {
+        // Handle IPv6 addresses: [::1]:8080 format
+        let (origin_hostname, origin_port) = if origin_authority.starts_with('[') {
+            // IPv6 address: look for ]: as port delimiter
+            if let Some(close_bracket) = origin_authority.find(']') {
+                let hostname = &origin_authority[..=close_bracket];
+                if let Some(port_start) = origin_authority[close_bracket + 1..].find(':') {
+                    let port_str = &origin_authority[close_bracket + 1 + port_start + 1..];
+                    // Parse port, treating parse failures as distinct from valid port 0
+                    let port = port_str.parse::<u16>().ok();
+                    (hostname, port)
+                } else {
+                    (hostname, None)
+                }
+            } else {
+                // Malformed IPv6 (no closing bracket) - treat as invalid
+                return false;
+            }
+        } else if let Some(colon_pos) = origin_authority.find(':') {
+            // IPv4 or hostname:port format
             let hostname = &origin_authority[..colon_pos];
             let port_str = &origin_authority[colon_pos + 1..];
-            let port = port_str.parse::<u16>().unwrap_or(0);
-            (hostname, Some(port))
+            // Parse port, treating parse failures as distinct from valid port 0
+            let port = port_str.parse::<u16>().ok();
+            (hostname, port)
         } else {
             (origin_authority, None)
         };
 
         // Parse Host header: hostname:port or hostname
-        let (host_hostname, host_port) = if let Some(colon_pos) = host_header.find(':') {
+        // Handle IPv6 addresses: [::1]:8080 format
+        let (host_hostname, host_port) = if host_header.starts_with('[') {
+            // IPv6 address: look for ]: as port delimiter
+            if let Some(close_bracket) = host_header.find(']') {
+                let hostname = &host_header[..=close_bracket];
+                if let Some(port_start) = host_header[close_bracket + 1..].find(':') {
+                    let port_str = &host_header[close_bracket + 1 + port_start + 1..];
+                    // Parse port, treating parse failures as distinct from valid port 0
+                    let port = port_str.parse::<u16>().ok();
+                    (hostname, port)
+                } else {
+                    (hostname, None)
+                }
+            } else {
+                // Malformed IPv6 (no closing bracket) - treat as invalid
+                return false;
+            }
+        } else if let Some(colon_pos) = host_header.find(':') {
+            // IPv4 or hostname:port format
             let hostname = &host_header[..colon_pos];
             let port_str = &host_header[colon_pos + 1..];
-            let port = port_str.parse::<u16>().unwrap_or(0);
-            (hostname, Some(port))
+            // Parse port, treating parse failures as distinct from valid port 0
+            let port = port_str.parse::<u16>().ok();
+            (hostname, port)
         } else {
             (host_header, None)
         };
@@ -613,6 +651,9 @@ impl CorsMiddleware {
                 }
             };
         // Extract requested method
+        // BUG FIX: Missing Access-Control-Request-Method means it's not a preflight request
+        // Return None to indicate "not a preflight" (not "invalid preflight")
+        // The caller should treat None as "proceed normally" for regular OPTIONS requests
         let requested_method = req.get_header("access-control-request-method")?;
         let requested_method = match requested_method.parse::<Method>() {
             Ok(m) => m,
@@ -844,11 +885,16 @@ impl Middleware for CorsMiddleware {
             };
 
             // Handle preflight validation
+            // BUG FIX: Distinguish between "not a preflight" (None) and "invalid preflight" (Some(403))
+            // Per CORS spec: Missing Access-Control-Request-Method means it's a regular OPTIONS request,
+            // not a preflight. Regular OPTIONS requests should proceed to handler or return 200/204.
             match self.handle_preflight(req, &validated_origin) {
-                Some(response) => Some(response),
+                Some(response) => Some(response), // Valid preflight response
                 None => {
-                    // Invalid preflight request (method or headers not allowed)
-                    Some(HandlerResponse::new(403, HeaderVec::new(), Value::Null))
+                    // None means "not a preflight request" (missing Access-Control-Request-Method)
+                    // This is a regular OPTIONS request - don't short-circuit, let it proceed
+                    // The handler can return 200/204 or handle it as needed
+                    None
                 }
             }
         } else {

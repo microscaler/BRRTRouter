@@ -273,6 +273,56 @@ fn test_cors_non_preflight_request() {
 }
 
 #[test]
+fn test_cors_options_without_preflight_header() {
+    // BUG FIX TEST: OPTIONS request without Access-Control-Request-Method should not return 403
+    // Per CORS spec: Missing Access-Control-Request-Method means it's a regular OPTIONS request,
+    // not a preflight. Regular OPTIONS requests should proceed to handler or return 200/204.
+    let mw = CorsMiddleware::permissive();
+
+    // Test 1: OPTIONS with Origin but no Access-Control-Request-Method (regular OPTIONS, not preflight)
+    let mut headers1 = HeaderVec::new();
+    headers1.push((Arc::from("origin"), "https://example.com".to_string()));
+    // Note: No access-control-request-method header
+    let req1 = create_test_request(Method::OPTIONS, "/api/data", headers1);
+    let result1 = mw.before(&req1);
+    
+    // Should return None (proceed to handler) - not 403
+    // This is the bug fix: regular OPTIONS requests should not be rejected
+    assert!(
+        result1.is_none(),
+        "BUG FIX: OPTIONS without preflight header should proceed to handler, not return 403"
+    );
+    
+    // Test 2: OPTIONS with Origin and Access-Control-Request-Method (preflight)
+    let mut headers2 = HeaderVec::new();
+    headers2.push((Arc::from("origin"), "https://example.com".to_string()));
+    headers2.push((Arc::from("access-control-request-method"), "GET".to_string()));
+    let req2 = create_test_request(Method::OPTIONS, "/api/data", headers2);
+    let result2 = mw.before(&req2);
+    
+    // Should return preflight response (200 with CORS headers)
+    assert!(
+        result2.is_some(),
+        "OPTIONS with preflight header should return preflight response"
+    );
+    let resp2 = result2.unwrap();
+    assert_eq!(resp2.status, 200);
+    assert_eq!(resp2.get_header("access-control-allow-origin"), Some("*"));
+    
+    // Test 3: OPTIONS without Origin (not a CORS request)
+    // When there's no Origin header, it's not a CORS request
+    // The code returns 200 OK without CORS headers (correct behavior)
+    let req3 = create_test_request(Method::OPTIONS, "/api/data", HeaderVec::new());
+    let result3 = mw.before(&req3);
+    
+    // Should return 200 OK without CORS headers (not a CORS request)
+    assert!(result3.is_some(), "OPTIONS without Origin should return 200 OK");
+    let resp3 = result3.unwrap();
+    assert_eq!(resp3.status, 200);
+    assert_eq!(resp3.get_header("access-control-allow-origin"), None, "No CORS headers for non-CORS request");
+}
+
+#[test]
 fn test_cors_multiple_origins() {
     let mw = CorsMiddleware::new_legacy(
         vec![
@@ -1357,6 +1407,138 @@ fn test_extract_route_cors_config_false_vs_inherit() {
         format!("{:?}", policy_inherit),
         "x-cors: false and x-cors: 'inherit' must return different policies"
     );
+}
+
+#[test]
+fn test_cors_ipv6_address_parsing() {
+    // BUG FIX TEST: Verify IPv6 addresses are parsed correctly
+    // IPv6 addresses like [::1]:8080 should be handled correctly
+    // The bug was that find(':') would find the first colon inside ::1, not the port delimiter
+    let cors = CorsMiddleware::permissive();
+    
+    // Test 1: IPv6 same-origin request
+    let req1 = create_test_request(
+        Method::GET,
+        "/test",
+        smallvec![
+            (Arc::from("origin"), "http://[::1]:8080".to_string()),
+            (Arc::from("host"), "[::1]:8080".to_string()),
+        ],
+    );
+    let mut resp1 = create_test_response(200);
+    cors.after(&req1, &mut resp1, Duration::from_millis(0));
+    // Same origin - no CORS headers should be added
+    assert_eq!(resp1.get_header("access-control-allow-origin"), None);
+    
+    // Test 2: IPv6 cross-origin request (different ports)
+    let req2 = create_test_request(
+        Method::GET,
+        "/test",
+        smallvec![
+            (Arc::from("origin"), "http://[::1]:8080".to_string()),
+            (Arc::from("host"), "[::1]:9090".to_string()),
+        ],
+    );
+    let mut resp2 = create_test_response(200);
+    cors.after(&req2, &mut resp2, Duration::from_millis(0));
+    // Different ports - CORS headers should be added
+    assert_eq!(resp2.get_header("access-control-allow-origin"), Some("*"));
+    
+    // Test 3: IPv6 without port (default port)
+    let req3 = create_test_request(
+        Method::GET,
+        "/test",
+        smallvec![
+            (Arc::from("origin"), "http://[::1]".to_string()),
+            (Arc::from("host"), "[::1]".to_string()),
+        ],
+    );
+    let mut resp3 = create_test_response(200);
+    cors.after(&req3, &mut resp3, Duration::from_millis(0));
+    // Same origin (both use default port 80) - no CORS headers
+    assert_eq!(resp3.get_header("access-control-allow-origin"), None);
+    
+    // Test 4: Malformed IPv6 (no closing bracket) - should be treated as invalid
+    let req4 = create_test_request(
+        Method::GET,
+        "/test",
+        smallvec![
+            (Arc::from("origin"), "http://[::1:8080".to_string()),
+            (Arc::from("host"), "[::1]:8080".to_string()),
+        ],
+    );
+    let mut resp4 = create_test_response(200);
+    cors.after(&req4, &mut resp4, Duration::from_millis(0));
+    // Malformed origin - should be treated as cross-origin (CORS headers added)
+    assert_eq!(resp4.get_header("access-control-allow-origin"), Some("*"));
+}
+
+#[test]
+fn test_cors_malformed_port_parsing() {
+    // BUG FIX TEST: Verify malformed ports are treated correctly
+    // The bug was that unwrap_or(0) would convert parse failures to Some(0)
+    // Now using .ok() to treat parse failures as None (default port)
+    // This means malformed ports use default port, which is correct behavior
+    let cors = CorsMiddleware::permissive();
+    
+    // Test 1: Malformed port in Origin (e.g., "abc") becomes None (default port 80)
+    // Valid port 0 in Host is Some(0) (explicit port 0)
+    // These are different: default port 80 vs explicit port 0
+    let req1 = create_test_request(
+        Method::GET,
+        "/test",
+        smallvec![
+            (Arc::from("origin"), "http://example.com:abc".to_string()),
+            (Arc::from("host"), "example.com:0".to_string()),
+        ],
+    );
+    let mut resp1 = create_test_response(200);
+    cors.after(&req1, &mut resp1, Duration::from_millis(0));
+    // Malformed port (default 80) vs valid port 0 - different ports, CORS headers added
+    assert_eq!(resp1.get_header("access-control-allow-origin"), Some("*"));
+    
+    // Test 2: Two different malformed ports both become None (default port)
+    // Both use default port 80, so they match (same origin)
+    let req2 = create_test_request(
+        Method::GET,
+        "/test",
+        smallvec![
+            (Arc::from("origin"), "http://example.com:abc".to_string()),
+            (Arc::from("host"), "example.com:xyz".to_string()),
+        ],
+    );
+    let mut resp2 = create_test_response(200);
+    cors.after(&req2, &mut resp2, Duration::from_millis(0));
+    // Both malformed ports use default port 80 - same origin, no CORS headers
+    assert_eq!(resp2.get_header("access-control-allow-origin"), None);
+    
+    // Test 3: Valid port 0 should match valid port 0
+    let req3 = create_test_request(
+        Method::GET,
+        "/test",
+        smallvec![
+            (Arc::from("origin"), "http://example.com:0".to_string()),
+            (Arc::from("host"), "example.com:0".to_string()),
+        ],
+    );
+    let mut resp3 = create_test_response(200);
+    cors.after(&req3, &mut resp3, Duration::from_millis(0));
+    // Valid port 0 matches valid port 0 - no CORS headers
+    assert_eq!(resp3.get_header("access-control-allow-origin"), None);
+    
+    // Test 4: Malformed port (default 80) vs no port (default 80) - should match
+    let req4 = create_test_request(
+        Method::GET,
+        "/test",
+        smallvec![
+            (Arc::from("origin"), "http://example.com:abc".to_string()),
+            (Arc::from("host"), "example.com".to_string()),
+        ],
+    );
+    let mut resp4 = create_test_response(200);
+    cors.after(&req4, &mut resp4, Duration::from_millis(0));
+    // Both use default port 80 - same origin, no CORS headers
+    assert_eq!(resp4.get_header("access-control-allow-origin"), None);
 }
 
 #[test]

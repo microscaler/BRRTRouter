@@ -275,6 +275,19 @@ fn main() -> io::Result<()> {
                             let merged_config = if !origins.is_empty() {
                                 route_config.with_origins(&origins)
                             } else {
+                                // BUG FIX: Validate that route with allowCredentials: true doesn't have empty origins
+                                // When config.yaml has no origins, route-specific configs with credentials enabled
+                                // will have empty origin_validation, which is invalid
+                                if route_config.allow_credentials {
+                                    eprintln!(
+                                        "[cors][warning] Route '{}' has allowCredentials: true but config.yaml has no origins configured. \
+                                        This creates an invalid CORS configuration (empty origins with credentials). \
+                                        Either configure origins in config.yaml or disable credentials for this route.",
+                                        handler_name
+                                    );
+                                    // Note: We don't panic here to avoid breaking startup, but this is a configuration error
+                                    // The route will still work but CORS validation will fail for all origins
+                                }
                                 route_config
                             };
                             brrtrouter::middleware::RouteCorsPolicy::Custom(merged_config)

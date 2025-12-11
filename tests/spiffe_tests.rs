@@ -4047,7 +4047,9 @@ fn test_spiffe_empty_bearer_token() {
         description: None,
     };
     
-    // Empty token after "Bearer "
+    // Empty token after "Bearer " - SECURITY BUG FIX: This should be rejected
+    // Bug: When Authorization header is exactly "Bearer " (7 chars, no token),
+    // the token extraction would return Some("") which could allow authentication bypass
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), "Bearer ".to_string()));
     let req = SecurityRequest {
@@ -4056,10 +4058,15 @@ fn test_spiffe_empty_bearer_token() {
         cookies: &HeaderVec::new(),
     };
     
+    // Validation should fail for empty token (security requirement)
     assert!(
         !provider.validate(&scheme, &[], &req),
-        "Empty Bearer token should fail validation"
+        "Empty Bearer token should fail validation - prevents authentication bypass"
     );
+    
+    // Edge case: Test that extract_token (internal) rejects empty tokens
+    // This is tested indirectly through validation, but we verify the behavior
+    // by checking that validation fails when token is empty
     
     // Just "Bearer" without space
     let mut headers: HeaderVec = HeaderVec::new();
