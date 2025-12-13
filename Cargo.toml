@@ -65,12 +65,13 @@ tokio = { version = "1.45.1", features = ["rt-multi-thread", "macros"] }
 
 # Production JWT/JWKS validation and HTTP fetch (for external providers like PropelAuth)
 jsonwebtoken = { version = "10", features = ["rust_crypto"] }  # rust_crypto enables RSA/EC algorithms
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "blocking"] }
+reqwest = { version = "0.12.25", default-features = false, features = ["json", "rustls-tls", "blocking"] }
 urlencoding = "2.1"
 ulid = "1.1"
 sha2 = "0.10"
 dashmap = "6.1"  # Lock-free concurrent HashMap for metrics
 lru = "0.16"  # LRU cache for JWT claims to prevent memory leaks
+once_cell = "1"  # Lazy static initialization for SPIFFE ID regex
 
 
 
@@ -86,10 +87,10 @@ tar = "0.4"
 walkdir = "2"
 futures-util = "0.3"
 futures = "0.3"
-once_cell = "1"
 goose = "0.18.1"  # Load testing framework for static sites and APIs
 parking_lot = "0.12"  # For RwLock in test utilities
 libc = "0.2"  # For signal handling in tests (SIGINT cleanup)
+tiny_http = "0.12.0"  # Lightweight HTTP server for mock JWKS endpoints in tests
 
 [[bin]]
 name = "brrtrouter-gen"

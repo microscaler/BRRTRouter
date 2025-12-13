@@ -249,6 +249,12 @@ pub struct RouteMeta {
     pub estimated_request_body_bytes: Option<usize>,
     /// Vendor extension override for stack size (x-brrtrouter-stack-size)
     pub x_brrtrouter_stack_size: Option<usize>,
+    /// Route-specific CORS policy from OpenAPI `x-cors` extension
+    /// Determines how CORS should be handled for this route:
+    /// - `Inherit`: Use global CORS configuration (default)
+    /// - `Disabled`: Disable CORS for this route (no CORS headers)
+    /// - `Custom(config)`: Use route-specific CORS configuration
+    pub cors_policy: crate::middleware::RouteCorsPolicy,
 }
 
 impl RouteMeta {

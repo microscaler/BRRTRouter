@@ -1,5 +1,6 @@
 # CI settings patch for automated testing
 # Minimal logging, no backtraces, optimized for performance testing
+# Increased resources for GitHub Actions (4 cores, 16GB RAM available)
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -32,4 +33,14 @@ spec:
             # Info level (not debug)
             - name: BRRTR_LOG_LEVEL
               value: "info"
+          resources:
+            # Increased resources for GitHub Actions CI environment
+            # GitHub Actions provides: 4 cores, 16GB RAM
+            # We use more memory to prevent OOM kills during load tests
+            requests:
+              memory: "2Gi"    # Increased from 1Gi (was too low for load tests)
+              cpu: "1000m"     # Increased from 1000m (1.5 cores for better performance)
+            limits:
+              memory: "4Gi"    # Increased from 2Gi (balanced: leaves room for other services)
+              cpu: "3000m"    # Keep at 2 cores (all available)
 

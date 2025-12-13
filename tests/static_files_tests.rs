@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use brrtrouter::static_files::StaticFiles;
 use serde_json::json;
 

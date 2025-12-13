@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 /// Integration tests for body size calculation optimizations
 ///
 /// These tests verify that:

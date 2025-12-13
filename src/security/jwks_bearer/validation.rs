@@ -261,7 +261,7 @@ fn validate_token_internal(
                         debug!("JWT validation succeeded: cache hit, key verified, scopes valid");
                         return Ok(true);
                     } else {
-                        let required: Vec<String> = scopes.iter().cloned().collect();
+                        let required: Vec<String> = scopes.to_vec();
                         let got: Vec<String> = token_scopes
                             .split_whitespace()
                             .map(|s| s.to_string())
@@ -379,8 +379,8 @@ fn validate_token_internal(
 
                     // Insert/update the cache entry
                     cache_guard.put(
-                        token_key.clone(),
-                        (exp_timestamp_with_leeway, claims.clone(), kid.clone()),
+                        token_key,
+                        (exp_timestamp_with_leeway, claims.clone(), kid),
                     );
 
                     // Track eviction only if we inserted a new key when cache was at capacity
@@ -402,7 +402,7 @@ fn validate_token_internal(
         debug!("JWT validation succeeded: token valid, scopes present");
         Ok(true)
     } else {
-        let required: Vec<String> = scopes.iter().cloned().collect();
+        let required: Vec<String> = scopes.to_vec();
         let got: Vec<String> = token_scopes
             .split_whitespace()
             .map(|s| s.to_string())
@@ -422,10 +422,7 @@ pub(super) fn extract_claims_impl(
         _ => return None,
     }
 
-    let token = match provider.extract_token(req) {
-        Some(t) => t,
-        None => return None,
-    };
+    let token = provider.extract_token(req)?;
 
     // Parse header to get kid for cache key
     let header = match jsonwebtoken::decode_header(token) {
@@ -433,10 +430,7 @@ pub(super) fn extract_claims_impl(
         Err(_) => return None,
     };
 
-    let kid = match header.kid {
-        Some(k) => k,
-        None => return None,
-    };
+    let kid = header.kid?;
 
     // Check cache first
     // SECURITY: On cache hit, verify key still exists in JWKS before using cached claims
@@ -505,10 +499,7 @@ pub(super) fn extract_claims_impl(
     }
 
     // Cache miss - decode token (same logic as validate, but we return claims)
-    let key = match provider.get_key_for(&kid) {
-        Some(k) => k,
-        None => return None,
-    };
+    let key = provider.get_key_for(&kid)?;
 
     // P3: Simplified algorithm selection using whitelist
     if !SUPPORTED_ALGORITHMS.contains(&header.alg) {

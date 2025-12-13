@@ -723,7 +723,7 @@ mod tests {
 
         // Should be close to 50 (allow some variance: 40-60)
         assert!(
-            sampled_count >= 40 && sampled_count <= 60,
+            (40..=60).contains(&sampled_count),
             "Expected ~50 samples, got {}",
             sampled_count
         );
@@ -767,6 +767,8 @@ mod tests {
     impl tracing::callsite::Callsite for TestCallsite {
         fn set_interest(&self, _interest: tracing::subscriber::Interest) {}
         fn metadata(&self) -> &tracing::Metadata<'_> {
+            // This is a test-only implementation - metadata() is never called in tests
+            #[allow(clippy::panic)] // Test-only code: this method is never called
             panic!("not used in tests")
         }
     }

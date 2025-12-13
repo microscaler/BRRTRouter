@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use brrtrouter::generator::{format_project, generate_project_from_spec};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;

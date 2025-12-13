@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 //! Integration tests for automatic metrics path pre-registration
 //!
 //! These tests verify that when MetricsMiddleware is set on AppService,
@@ -32,6 +34,7 @@ fn create_route_meta(method: Method, path: &str, handler: &str) -> RouteMeta {
         sse: false,
         estimated_request_body_bytes: None,
         x_brrtrouter_stack_size: None,
+            cors_policy: brrtrouter::middleware::RouteCorsPolicy::Inherit,
     }
 }
 
@@ -87,7 +90,7 @@ fn test_metrics_middleware_auto_preregisters_paths() {
 
     // All should have zero counts initially (only pre-registered, not used)
     for (path, (count, _, _, _)) in stats.iter() {
-        assert_eq!(*count, 0, "Path {} should have zero count initially", path);
+        assert_eq!(*count, 0, "Path {path} should have zero count initially");
     }
 }
 

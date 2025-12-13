@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use bollard::models::{ContainerCreateBody, HostConfig, PortBinding};
 use bollard::query_parameters::{
     BuildImageOptionsBuilder, CreateContainerOptionsBuilder, RemoveContainerOptionsBuilder,
@@ -175,7 +177,7 @@ fn test_petstore_container_health() {
         .and_then(|mut v| v.pop())
         .and_then(|b| b.host_port);
     let mapped_port = mapped.unwrap().parse::<u16>().unwrap();
-    let addr: SocketAddr = format!("127.0.0.1:{}", mapped_port).parse().unwrap();
+    let addr: SocketAddr = format!("127.0.0.1:{mapped_port}").parse().unwrap();
 
     let mut final_status = 0;
     if wait_for_http_200(&addr, "/health", Duration::from_secs(30), None).is_ok() {

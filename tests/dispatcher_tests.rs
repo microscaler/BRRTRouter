@@ -29,6 +29,8 @@
 //! - Panic test is ignored: May coroutines don't play well with catch_unwind in test context
 //! - This is a framework limitation, not a production issue
 
+#![allow(clippy::unwrap_used, clippy::expect_used, unsafe_code)]
+
 use brrtrouter::{
     dispatcher::{Dispatcher, HandlerRequest, HeaderVec},
     load_spec,
@@ -430,7 +432,7 @@ fn test_dispatch_all_registry_handlers() {
                 Default::default(),
             )
             .expect("dispatch");
-        assert_eq!(resp.status, 200, "handler {}", name);
+        assert_eq!(resp.status, 200, "handler {name}");
         // TODO: fix this assertion once the handlers return correct responses
         // assert_eq!(resp.body, expected, "handler {}", name);
     }

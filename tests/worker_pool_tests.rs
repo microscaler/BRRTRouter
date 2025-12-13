@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used, unsafe_code)]
+
 use brrtrouter::{
     dispatcher::{Dispatcher, HandlerRequest, HandlerResponse, HeaderVec},
     ids::RequestId,
@@ -219,8 +221,7 @@ fn test_worker_pool_block_mode() {
     // Most requests should succeed in block mode (some might timeout under high load)
     assert!(
         success_count > 15,
-        "Expected most requests to succeed in block mode, but only {} succeeded",
-        success_count
+        "Expected most requests to succeed in block mode, but only {success_count} succeeded"
     );
 }
 
@@ -286,15 +287,13 @@ fn test_worker_pool_metrics() {
     // Check that we dispatched some requests
     assert!(
         *dispatched >= 5,
-        "Expected at least 5 dispatched, got {}",
-        dispatched
+        "Expected at least 5 dispatched, got {dispatched}"
     );
 
     // Queue should be draining or empty
     assert!(
         *queue_depth <= 5,
-        "Queue depth should be reasonable, got {}",
-        queue_depth
+        "Queue depth should be reasonable, got {queue_depth}"
     );
 }
 

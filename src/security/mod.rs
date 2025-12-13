@@ -59,6 +59,89 @@
 //!     .cookie_name("auth_token");
 //! ```
 //!
+//! ### JWKS Bearer Provider
+//!
+//! The [`JwksBearerProvider`] validates JWTs using JSON Web Key Sets (JWKS).
+//! This is a **standalone provider** for JWKS-based JWT validation (no SPIFFE required).
+//! Use this for standard JWT validation with external identity providers (Auth0, Okta, etc.).
+//!
+//! ```rust
+//! use brrtrouter::security::JwksBearerProvider;
+//!
+//! let provider = JwksBearerProvider::new("https://auth.example.com/.well-known/jwks.json")
+//!     .issuer("https://auth.example.com")
+//!     .audience("my-api");
+//! ```
+//!
+//! ### SPIFFE Provider
+//!
+//! The [`SpiffeProvider`] validates SPIFFE JWT SVIDs (SPIFFE Verifiable Identity Documents).
+//! **Requires JWKS URL** for signature verification. Use this for SPIFFE-based service identity.
+//!
+//! ```rust
+//! use brrtrouter::security::SpiffeProvider;
+//!
+//! let provider = SpiffeProvider::new()
+//!     .trust_domains(&["example.com"])
+//!     .audiences(&["api.example.com"])
+//!     .jwks_url("https://spiffe.example.com/.well-known/jwks.json"); // REQUIRED
+//! ```
+//!
+//! **Note**: `JwksBearerProvider` and `SpiffeProvider` are independent:
+//! - Use `JwksBearerProvider` for standard JWKS-based JWT validation (no SPIFFE)
+//! - Use `SpiffeProvider` for SPIFFE SVID validation (requires JWKS for signature verification)
+//!
+//! ## System Dependencies
+//!
+//! The security systems work together with CORS middleware:
+//!
+//! ```text
+//! CORS Middleware (Always Required)
+//!         |
+//!         | (handles preflight, adds headers)
+//!         v
+//! Request Processing
+//!         |
+//!         +------------------+
+//!         |                  |
+//!         v                  v
+//! JWKS Bearer Provider   SPIFFE Provider
+//! (standalone)           (requires JWKS)
+//!         |                  |
+//!         |                  | (uses JWKS for signature verification)
+//!         |                  |
+//!         +------------------+
+//!                  |
+//!                  v
+//!           Security Validation
+//! ```
+//!
+//! **Dependency Rules**:
+//! 1. **CORS** → No dependencies (always required, even if relaxed)
+//! 2. **JWKS** → No dependencies (can be used independently)
+//! 3. **SPIFFE** → Requires JWKS (enforced at runtime and via `.build()`)
+//!
+//! ## Test Setup Requirements
+//!
+//! ### For JWKS-Only Tests
+//! - `JwksBearerProvider` with JWKS URL
+//! - Mock JWKS server (for tests)
+//! - Signed JWT tokens
+//!
+//! ### For SPIFFE Tests
+//! - `SpiffeProvider` with:
+//!   - Trust domains configured
+//!   - Audiences configured
+//!   - **JWKS URL configured** (mandatory)
+//! - Mock JWKS server (for tests)
+//! - Signed SPIFFE JWT SVIDs
+//!
+//! ### For Integration Tests
+//! - CORS middleware (always)
+//! - Security provider (JWKS or SPIFFE)
+//! - Mock JWKS server (if using JWKS/SPIFFE)
+//! - Signed tokens
+//!
 //! ### OAuth2 Provider
 //!
 //! The [`OAuth2Provider`] validates OAuth2 tokens with scope checking:
@@ -289,9 +372,11 @@ pub use bearer_jwt::BearerJwtProvider;
 pub use jwks_bearer::JwksBearerProvider;
 pub use oauth2::OAuth2Provider;
 pub use remote_api_key::RemoteApiKeyProvider;
+pub use spiffe::{SpiffeProvider, SpiffeConfigError, InMemoryRevocationChecker, NoOpRevocationChecker, RevocationChecker};
 
 // Provider modules
 mod bearer_jwt;
 mod jwks_bearer;
 mod oauth2;
 mod remote_api_key;
+mod spiffe;

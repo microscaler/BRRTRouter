@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used, unsafe_code)]
+
 use std::net::SocketAddr;
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -89,7 +91,7 @@ fn register_signal_handlers() {
                 }
             }
             Err(e) => {
-                eprintln!("⚠ Could not prune images: {}", e);
+                eprintln!("⚠ Could not prune images: {e}");
             }
         }
 
@@ -138,16 +140,16 @@ fn register_signal_handlers() {
                                 }
                             }
                             Err(e) => {
-                                eprintln!("  ⚠ Failed to remove {}: {}", image_id, e);
+                                eprintln!("  ⚠ Failed to remove {image_id}: {e}");
                             }
                         }
                     }
 
                     if removed_count > 0 {
-                        eprintln!("✓ Removed {} <none> image(s)", removed_count);
+                        eprintln!("✓ Removed {removed_count} <none> image(s)");
                     }
                     if skipped_count > 0 {
-                        eprintln!("✓ Skipped {} in-use image(s) (safe)", skipped_count);
+                        eprintln!("✓ Skipped {skipped_count} in-use image(s) (safe)");
                     }
                 }
             }
@@ -158,7 +160,7 @@ fn register_signal_handlers() {
             Err(e) => {
                 // Shell command not available or other error
                 // This is fine, Step 1 (prune) already did the main work
-                eprintln!("  ℹ️  Manual image cleanup unavailable: {}", e);
+                eprintln!("  ℹ️  Manual image cleanup unavailable: {e}");
                 eprintln!("     (docker prune in Step 1 already cleaned up most images)");
             }
         }
@@ -217,7 +219,7 @@ pub fn ensure_image_ready() {
         // Only ONE thread will execute this block
         let start = Instant::now();
         let thread_id = thread::current().id();
-        eprintln!("\n=== Docker Image Setup (Thread {:?}) ===", thread_id);
+        eprintln!("\n=== Docker Image Setup (Thread {thread_id:?}) ===");
 
         // Ensure Docker is available
         eprintln!("[1/2] Checking Docker availability...");
@@ -365,9 +367,9 @@ pub fn ensure_image_ready() {
         eprintln!("[3/5] Verifying binary...");
         let binary_path = "target/x86_64-unknown-linux-musl/release/pet_store";
         if !std::path::Path::new(binary_path).exists() {
-            return Err(format!("Binary not found at {}", binary_path));
+            return Err(format!("Binary not found at {binary_path}"));
         }
-        eprintln!("      ✓ Binary found at {}", binary_path);
+        eprintln!("      ✓ Binary found at {binary_path}");
 
         // STEP 4: Copy to staging area (CRITICAL - same as Tilt workflow!)
         // =================================================================
@@ -432,10 +434,10 @@ pub fn ensure_image_ready() {
             return Err("Docker build failed".to_string());
         }
         eprintln!("      ✓ Image ready");
-        eprintln!("");
+        eprintln!();
         eprintln!("=== Setup Complete in {:.2}s ===", start.elapsed().as_secs_f64());
         eprintln!("    ✨ Testing CURRENT code (just compiled)");
-        eprintln!("");
+        eprintln!();
         Ok(())
     });
 
@@ -447,8 +449,7 @@ pub fn ensure_image_ready() {
     // If we get here, another thread might have done the setup - let them know
     let thread_id = thread::current().id();
     eprintln!(
-        "[Thread {:?}] Image setup complete, proceeding with test...",
-        thread_id
+        "[Thread {thread_id:?}] Image setup complete, proceeding with test..."
     );
 }
 
@@ -485,7 +486,7 @@ fn container_name() -> String {
 /// manually if needed. Safe to call even if no container exists.
 pub fn cleanup_orphaned_containers() {
     let name = container_name();
-    eprintln!("Cleaning up container: {}", name);
+    eprintln!("Cleaning up container: {name}");
 
     // Force kill and remove in one command (most aggressive)
     let kill_output = Command::new("docker").args(["rm", "-f", &name]).output();
@@ -493,18 +494,18 @@ pub fn cleanup_orphaned_containers() {
     match kill_output {
         Ok(output) => {
             if output.status.success() {
-                eprintln!("✓ Removed container: {}", name);
+                eprintln!("✓ Removed container: {name}");
             } else {
                 let stderr = String::from_utf8_lossy(&output.stderr);
                 if stderr.contains("No such container") {
                     eprintln!("✓ No orphaned container found");
                 } else {
-                    eprintln!("⚠ Failed to remove container: {}", stderr);
+                    eprintln!("⚠ Failed to remove container: {stderr}");
                 }
             }
         }
         Err(e) => {
-            eprintln!("⚠ Docker command failed: {}", e);
+            eprintln!("⚠ Docker command failed: {e}");
         }
     }
 
@@ -513,7 +514,7 @@ pub fn cleanup_orphaned_containers() {
     for attempt in 1..=30 {
         // Increased from 20 to 30 attempts
         let check = Command::new("docker")
-            .args(["ps", "-a", "--filter", &format!("name=^/{}$", name), "-q"])
+            .args(["ps", "-a", "--filter", &format!("name=^/{name}$"), "-q"])
             .output();
 
         if let Ok(output) = check {
@@ -521,8 +522,7 @@ pub fn cleanup_orphaned_containers() {
             if container_id.is_empty() {
                 if attempt > 1 {
                     eprintln!(
-                        "✓ Container name '{}' is released (took {} attempts)",
-                        name, attempt
+                        "✓ Container name '{name}' is released (took {attempt} attempts)"
                     );
                 }
                 return;
@@ -531,11 +531,10 @@ pub fn cleanup_orphaned_containers() {
 
         if attempt == 30 {
             eprintln!(
-                "❌ ERROR: Container name '{}' still in use after 30 attempts!",
-                name
+                "❌ ERROR: Container name '{name}' still in use after 30 attempts!"
             );
             eprintln!("   This will cause 'name already in use' errors");
-            eprintln!("   Try: docker rm -f {}", name);
+            eprintln!("   Try: docker rm -f {name}");
         }
 
         thread::sleep(Duration::from_millis(100)); // Increased from 50ms to 100ms
@@ -608,7 +607,7 @@ impl ContainerHarness {
         // Run container detached with random host port for 8080
         // Use unique container name per process to allow parallel test execution
         let container_name = container_name();
-        eprintln!("Starting container: {}", container_name);
+        eprintln!("Starting container: {container_name}");
         let output = Command::new("docker")
             .args([
                 "run",
@@ -627,15 +626,18 @@ impl ContainerHarness {
             String::from_utf8_lossy(&output.stderr)
         );
         let container_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        eprintln!("Container started: {container_id}");
 
-        // Query mapped port with retry - Docker needs a moment to set up network settings
+        // Query mapped port with polling - Docker needs a moment to set up network settings
+        // We poll immediately and continuously until the port mapping is available
+        // This adapts to different environments (local, CI, slow machines) without fixed delays
         // Use `docker port` which is simpler and more reliable than `docker inspect` template
-        // Retry up to 15 times with exponential backoff (max ~10 seconds total)
+        // Retry up to 30 times with exponential backoff (max ~20 seconds total)
         let mut host_port = String::new();
         let mut retries = 0;
-        let max_retries = 15;
+        let max_retries = 30;
         loop {
-            // First check if container is still running
+            // First check if container is still running and hasn't exited
             let status_out = Command::new("docker")
                 .args(["inspect", "-f", "{{.State.Running}}", &container_id])
                 .output()
@@ -643,13 +645,46 @@ impl ContainerHarness {
 
             if !status_out.status.success() {
                 let stderr = String::from_utf8_lossy(&status_out.stderr);
+                // Get container logs for debugging
+                let logs_out = Command::new("docker")
+                    .args(["logs", "--tail", "50", &container_id])
+                    .output()
+                    .ok();
+                let logs = logs_out
+                    .as_ref()
+                    .map(|o| String::from_utf8_lossy(&o.stdout))
+                    .unwrap_or_else(|| "failed to get logs".into());
                 panic!(
-                    "Container {} is not running or does not exist: {}",
-                    container_id, stderr
+                    "Container {container_id} is not running or does not exist: {stderr}\n\nContainer logs:\n{logs}"
                 );
             }
 
-            // Use `docker port` which is more reliable than inspect template
+            // Check if container exited (even if inspect succeeded, container might have crashed)
+            let exit_code_out = Command::new("docker")
+                .args(["inspect", "-f", "{{.State.ExitCode}}", &container_id])
+                .output()
+                .ok();
+            if let Some(exit_out) = exit_code_out {
+                if exit_out.status.success() {
+                    let exit_code_output = String::from_utf8_lossy(&exit_out.stdout);
+                    let exit_code_str = exit_code_output.trim();
+                    if exit_code_str != "0" && !exit_code_str.is_empty() {
+                        let logs_out = Command::new("docker")
+                            .args(["logs", "--tail", "100", &container_id])
+                            .output()
+                            .ok();
+                        let logs = logs_out
+                            .as_ref()
+                            .map(|o| String::from_utf8_lossy(&o.stdout))
+                            .unwrap_or_else(|| "failed to get logs".into());
+                        panic!(
+                            "Container {container_id} exited with code {exit_code_str}\n\nContainer logs:\n{logs}"
+                        );
+                    }
+                }
+            }
+
+            // Try `docker port` first (simpler and more reliable)
             let port_out = Command::new("docker")
                 .args(["port", &container_id, "8080/tcp"])
                 .output()
@@ -663,37 +698,93 @@ impl ContainerHarness {
                     let port_str = output[colon_pos + 1..].trim().to_string();
                     if !port_str.is_empty() && port_str.parse::<u16>().is_ok() {
                         host_port = port_str;
+                        eprintln!("Port mapping found: 127.0.0.1:{host_port}");
                         break;
+                    }
+                }
+            }
+
+            // Fallback: Try docker inspect if docker port fails
+            // This can sometimes work when docker port doesn't
+            if retries > 3 && host_port.is_empty() {
+                let inspect_out = Command::new("docker")
+                    .args([
+                        "inspect",
+                        "-f",
+                        "{{range .NetworkSettings.Ports}}{{range .}}{{.HostPort}}{{end}}{{end}}",
+                        &container_id,
+                    ])
+                    .output()
+                    .ok();
+                if let Some(inspect) = inspect_out {
+                    if inspect.status.success() {
+                        let port_str = String::from_utf8_lossy(&inspect.stdout).trim().to_string();
+                        if !port_str.is_empty() && port_str.parse::<u16>().is_ok() {
+                            host_port = port_str;
+                            eprintln!("Port mapping found via inspect: 127.0.0.1:{host_port}");
+                            break;
+                        }
                     }
                 }
             }
 
             retries += 1;
             if retries >= max_retries {
+                // Get comprehensive diagnostics before panicking
+                let logs_out = Command::new("docker")
+                    .args(["logs", "--tail", "100", &container_id])
+                    .output()
+                    .ok();
+                let logs = logs_out
+                    .as_ref()
+                    .map(|o| String::from_utf8_lossy(&o.stdout))
+                    .unwrap_or_else(|| "failed to get logs".into());
+                
+                let inspect_out = Command::new("docker")
+                    .args(["inspect", &container_id])
+                    .output()
+                    .ok();
+                let inspect = inspect_out
+                    .as_ref()
+                    .map(|o| String::from_utf8_lossy(&o.stdout))
+                    .unwrap_or_else(|| "failed to inspect container".into());
+
                 let stderr = String::from_utf8_lossy(&port_out.stderr);
                 let stdout = String::from_utf8_lossy(&port_out.stdout);
+                let error_msg = if port_out.status.code().is_some() {
+                    format!("exit code {:?}", port_out.status.code())
+                } else {
+                    "unknown error".to_string()
+                };
                 panic!(
-                    "docker port failed after {} retries: {}\nContainer ID: {}\nStdout: {}\nStderr: {}",
+                    "docker port failed after {} retries: {}\nContainer ID: {}\nStdout: {}\nStderr: {}\n\nContainer logs:\n{}\n\nContainer inspect:\n{}",
                     max_retries,
-                    if port_out.status.code().is_some() {
-                        format!("exit code {:?}", port_out.status.code())
-                    } else {
-                        "unknown error".to_string()
-                    },
+                    error_msg,
                     container_id,
                     stdout,
-                    stderr
+                    stderr,
+                    logs,
+                    inspect
                 );
             }
 
-            // Exponential backoff: 100ms, 200ms, 400ms, 800ms, 1.6s, 3.2s, etc.
-            let delay_ms = 100 * (1 << (retries - 1).min(6)); // Cap at 6.4s
+            // Exponential backoff with initial quick polling: 50ms, 100ms, 200ms, 400ms, 800ms, 1.6s, 3.2s, 6.4s
+            // Start with quick polling (50ms) to detect fast setups, then back off for slower environments
+            // This adapts to both fast local environments and slower CI/GitHub Actions
+            let delay_ms = if retries == 0 {
+                50 // First retry: quick check for fast environments
+            } else {
+                100 * (1 << (retries - 1).min(6)) // Then exponential backoff, cap at 6.4s
+            };
+            if retries % 5 == 0 || retries <= 3 {
+                eprintln!("Polling for port mapping (attempt {retries}/{max_retries}, delay {delay_ms}ms)...");
+            }
             thread::sleep(Duration::from_millis(delay_ms));
         }
-        let base_url = format!("http://127.0.0.1:{}", host_port);
+        let base_url = format!("http://127.0.0.1:{host_port}");
 
         // Wait for readiness using shared helper
-        let addr: SocketAddr = format!("127.0.0.1:{}", host_port).parse().unwrap();
+        let addr: SocketAddr = format!("127.0.0.1:{host_port}").parse().unwrap();
         wait_for_http_200(
             &addr,
             "/health",

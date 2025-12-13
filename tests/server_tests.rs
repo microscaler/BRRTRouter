@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used, unsafe_code)]
+
 //! Integration tests for the HTTP server and request processing pipeline
 //!
 //! # Test Coverage
@@ -210,6 +212,7 @@ impl CustomServerTestFixture {
             sse: false,
             estimated_request_body_bytes: None,
             x_brrtrouter_stack_size: None,
+            cors_policy: brrtrouter::middleware::RouteCorsPolicy::Inherit,
         };
 
         let router = Arc::new(RwLock::new(Router::new(vec![route])));

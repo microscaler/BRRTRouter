@@ -75,11 +75,16 @@ impl JwksBearerProvider {
     /// # Security
     ///
     /// JWKS URL must use HTTPS (validated in `new()`). HTTP URLs are rejected for security.
+    ///
+    /// JSF Compliance: Panics only during initialization, never on hot path
+    /// This method is only called during provider construction (startup)
+    #[allow(clippy::panic)]
     pub fn new(jwks_url: impl Into<String>) -> Self {
         let url_str = jwks_url.into();
 
         // P4 Security: Validate JWKS URL requires HTTPS (except localhost for testing)
         // SECURITY FIX: Parse URL properly to prevent hostname prefix attacks (e.g., localhost.attacker.com)
+        // This panic is intentional: invalid configuration should fail fast at startup
         let parsed_url = match Url::parse(&url_str) {
             Ok(u) => u,
             Err(e) => {
@@ -92,6 +97,7 @@ impl JwksBearerProvider {
             // HTTPS is always allowed
         } else if parsed_url.scheme() == "http" {
             // HTTP only allowed for exact localhost or 127.0.0.1 (not subdomains)
+            // This panic is intentional: invalid configuration should fail fast at startup
             let host = match parsed_url.host_str() {
                 Some(h) => h,
                 None => {
@@ -100,10 +106,12 @@ impl JwksBearerProvider {
             };
 
             // Only allow exact "localhost" or "127.0.0.1" - reject subdomains like "localhost.attacker.com"
+            // This panic is intentional: invalid configuration should fail fast at startup
             if host != "localhost" && host != "127.0.0.1" {
                 panic!("JWKS URL must use HTTPS for security (HTTP only allowed for localhost/127.0.0.1). Got: {}", url_str);
             }
         } else {
+            // This panic is intentional: invalid configuration should fail fast at startup
             panic!(
                 "JWKS URL must use HTTPS or HTTP (for localhost only). Got: {}",
                 url_str
@@ -149,7 +157,7 @@ impl JwksBearerProvider {
             refresh_complete,
             shutdown,
             background_handle,
-            cache_ttl_millis.clone(),
+            cache_ttl_millis,
         );
         
         provider
@@ -216,7 +224,12 @@ impl JwksBearerProvider {
     /// # Arguments
     ///
     /// * `size` - Maximum number of cached token claims
+    ///
+    /// JSF Compliance: Panics only during initialization, never on hot path
+    /// This method is only called during provider construction (startup)
+    #[allow(clippy::panic)]
     pub fn claims_cache_size(mut self, size: usize) -> Self {
+        // This panic is intentional: invalid configuration should fail fast at startup
         if size == 0 {
             panic!("claims_cache_size must be > 0");
         }
@@ -356,9 +369,22 @@ impl JwksBearerProvider {
         cache_ttl_millis: Arc<std::sync::atomic::AtomicU64>,
     ) {
         let jwks_url = self.jwks_url.clone();
-        let cache_ttl_millis = cache_ttl_millis.clone();
+        let cache_ttl_millis = cache_ttl_millis;
         
         let handle = thread::spawn(move || {
+            // Do immediate refresh on startup to populate cache
+            // This ensures the cache is ready before the first validation request
+            // Only do this if shutdown hasn't been signaled (allows tests to stop refresh before it starts)
+            if !shutdown.load(Ordering::Acquire) {
+                Self::refresh_jwks_internal(
+                    &cache,
+                    &jwks_url,
+                    &refresh_in_progress,
+                    &refresh_complete,
+                    false, // Background thread claims the refresh itself
+                );
+            }
+            
             loop {
                 // Check shutdown flag
                 if shutdown.load(Ordering::Acquire) {
@@ -410,9 +436,18 @@ impl JwksBearerProvider {
                     slept += sleep_duration;
                 }
                 
-                // Only refresh if we completed the full sleep interval (TTL didn't change)
-                // If TTL changed, skip refresh and continue to next loop iteration to recalculate
-                if !ttl_changed {
+                // Refresh if we completed the full sleep interval OR if TTL changed
+                // When TTL changes, refresh immediately to pick up the new refresh schedule
+                if ttl_changed {
+                    // TTL changed - refresh immediately and recalculate interval on next iteration
+                    Self::refresh_jwks_internal(
+                        &cache,
+                        &jwks_url,
+                        &refresh_in_progress,
+                        &refresh_complete,
+                        false, // Background thread claims the refresh itself
+                    );
+                } else {
                     // After sleeping for refresh_interval, always refresh proactively
                     // The refresh_interval is calculated to wake up before expiration,
                     // so we should refresh now to keep the cache fresh.
@@ -425,8 +460,7 @@ impl JwksBearerProvider {
                         false, // Background thread claims the refresh itself
                     );
                 }
-                // If ttl_changed is true, we continue to the next loop iteration
-                // which will recalculate refresh_interval based on the new cache_ttl value
+                // Continue to next loop iteration to recalculate refresh_interval
             }
         });
         
@@ -467,15 +501,14 @@ impl JwksBearerProvider {
     ) {
         // P2: Debounce - check if another thread is already refreshing
         // If already_claimed is true, we've already set the flag, so skip the check
-        if !already_claimed {
-            if refresh_in_progress
+        if !already_claimed
+            && refresh_in_progress
                 .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
                 .is_err()
             {
                 // Another thread is refreshing, skip this cycle
                 return;
             }
-        }
         
         let refresh_start = Instant::now();
         let client = match reqwest::blocking::Client::builder()

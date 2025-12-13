@@ -226,6 +226,9 @@ where
 
     // Handle coroutine spawn failures - this is a critical error that prevents handler operation
     // JSF Rule 115: Document panic conditions clearly
+    // JSF Compliance: Panics only during initialization, never on hot path
+    // This occurs during handler registration (startup), not during request handling.
+    #[allow(clippy::panic)]
     match spawn_result {
         Ok(_) => tx,
         Err(e) => {
@@ -236,6 +239,8 @@ where
                 error = %e,
                 "Critical: Failed to spawn typed handler coroutine - handler will be unavailable"
             );
+            // This panic is intentional: if we can't spawn the handler coroutine, the service cannot function.
+            // The handler will be unavailable, so panicking during initialization is appropriate.
             panic!(
                 "Failed to spawn typed handler coroutine: {}. Stack size: {} bytes. \
                 Consider increasing BRRTR_STACK_SIZE environment variable.",
@@ -417,6 +422,9 @@ where
 
     // Handle coroutine spawn failures - this is a critical error that prevents handler operation
     // JSF Rule 115: Document panic conditions clearly
+    // JSF Compliance: Panics only during initialization, never on hot path
+    // This occurs during handler registration (startup), not during request handling.
+    #[allow(clippy::panic)]
     match spawn_result {
         Ok(_) => tx,
         Err(e) => {
@@ -427,6 +435,8 @@ where
                 error = %e,
                 "Critical: Failed to spawn typed handler coroutine - handler will be unavailable"
             );
+            // This panic is intentional: if we can't spawn the handler coroutine, the service cannot function.
+            // The handler will be unavailable, so panicking during initialization is appropriate.
             panic!(
                 "Failed to spawn typed handler coroutine for '{}': {}. Stack size: {} bytes. \
                 Consider increasing BRRTR_STACK_SIZE environment variable.",

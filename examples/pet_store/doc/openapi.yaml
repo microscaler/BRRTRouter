@@ -17,6 +17,13 @@ paths:
     get:
       summary: List pets
       operationId: list_pets
+      x-cors:
+        # Public endpoint - allow credentials and expose pagination headers
+        allowCredentials: true
+        exposeHeaders:
+          - "X-Total-Count"
+          - "X-Page-Number"
+        maxAge: 3600
       parameters:
         - $ref: '#/components/parameters/LimitParam'
         - $ref: '#/components/parameters/OffsetParam'
@@ -56,6 +63,13 @@ paths:
     post:
       summary: Add a pet
       operationId: add_pet
+      x-cors:
+        # Create endpoint - allow credentials for authenticated requests
+        allowCredentials: true
+        allowedMethods:
+          - "POST"
+          - "OPTIONS"
+        maxAge: 1800
       requestBody:
         required: true
         content:
@@ -91,6 +105,11 @@ paths:
     get:
       summary: Get a specific pet
       operationId: get_pet
+      x-cors:
+        # Public read endpoint - expose headers for client-side pagination
+        exposeHeaders:
+          - "X-Pet-ID"
+        maxAge: 3600
       parameters:
         - name: id
           in: path
@@ -125,6 +144,17 @@ paths:
     get:
       summary: List users
       operationId: list_users
+      x-cors:
+        # User list endpoint - requires credentials, expose pagination headers
+        allowCredentials: true
+        exposeHeaders:
+          - "X-Total-Count"
+          - "X-Page-Number"
+        allowedHeaders:
+          - "Content-Type"
+          - "Authorization"
+          - "X-API-Key"
+        maxAge: 1800
       parameters:
         - $ref: '#/components/parameters/LimitParam'
         - $ref: '#/components/parameters/OffsetParam'
@@ -334,6 +364,17 @@ paths:
     get:
       summary: Admin settings
       operationId: admin_settings
+      x-cors:
+        # Admin endpoint - very restrictive CORS
+        allowCredentials: true
+        allowedMethods:
+          - "GET"
+          - "OPTIONS"
+        allowedHeaders:
+          - "Authorization"
+          - "X-API-Key"
+          - "X-Admin-Token"
+        maxAge: 300  # Short cache for admin endpoints
       responses:
         "200":
           description: OK
@@ -421,6 +462,16 @@ paths:
     get:
       summary: Example event stream
       operationId: stream_events
+      x-cors:
+        # SSE endpoint - needs special headers for EventSource
+        allowCredentials: true
+        exposeHeaders:
+          - "Content-Type"
+          - "Cache-Control"
+        allowedHeaders:
+          - "Authorization"
+          - "X-API-Key"
+        maxAge: 0  # Don't cache preflight for SSE
       x-sse: true
       responses:
         "200":
@@ -609,6 +660,16 @@ paths:
     get:
       summary: Protected endpoint
       operationId: secure_endpoint
+      x-cors:
+        # Secure endpoint - strict CORS, credentials required
+        allowCredentials: true
+        allowedMethods:
+          - "GET"
+          - "OPTIONS"
+        allowedHeaders:
+          - "Authorization"
+          - "X-API-Key"
+        maxAge: 600  # Short cache for security-sensitive endpoint
       security:
         - BearerAuth: []
         - OAuth2: [read]

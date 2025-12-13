@@ -1,7 +1,7 @@
 use brrtrouter::security::{JwksBearerProvider, SecurityProvider, SecurityRequest};
 use brrtrouter::{dispatcher::HeaderVec, router::ParamVec, spec::SecurityScheme};
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
-use http::Method;
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use std::hint::black_box;
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
 use serde_json::json;
 use std::sync::Arc;
@@ -48,7 +48,7 @@ struct MockJwksServer {
 impl MockJwksServer {
     fn new(jwks: String) -> Self {
         use std::io::{Read, Write};
-        use std::net::{TcpListener, TcpStream};
+        use std::net::TcpListener;
         use std::thread;
 
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -56,18 +56,16 @@ impl MockJwksServer {
         let jwks_clone = jwks.clone();
 
         thread::spawn(move || {
-            for stream in listener.incoming() {
-                if let Ok(mut stream) = stream {
-                    let mut buffer = [0; 1024];
-                    let _ = stream.read(&mut buffer);
-                    let response = format!(
-                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
-                        jwks_clone.len(),
-                        jwks_clone
-                    );
-                    let _ = stream.write_all(response.as_bytes());
-                    let _ = stream.flush();
-                }
+            for mut stream in listener.incoming().flatten() {
+                let mut buffer = [0; 1024];
+                let _ = stream.read(&mut buffer);
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                    jwks_clone.len(),
+                    jwks_clone
+                );
+                let _ = stream.write_all(response.as_bytes());
+                let _ = stream.flush();
             }
         });
 
@@ -96,7 +94,7 @@ fn create_request<'a>(
     cookies: &'a HeaderVec,
 ) -> SecurityRequest<'a> {
     headers.clear();
-    headers.push((Arc::from("authorization"), format!("Bearer {}", token)));
+    headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     SecurityRequest {
         headers,
         query,
@@ -222,7 +220,7 @@ fn bench_cache_eviction(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("jwt_cache_eviction");
     for cache_size in [10, 100, 1000].iter() {
-        let provider = JwksBearerProvider::new(&server.url())
+        let provider = JwksBearerProvider::new(server.url())
             .issuer("https://issuer.example".to_string())
             .audience("my-audience".to_string())
             .claims_cache_size(*cache_size);

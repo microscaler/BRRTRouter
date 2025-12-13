@@ -65,7 +65,7 @@ impl Drop for TestTracing {
 
 impl TestTracing {
     /// Initialize tracing with in-memory span collection
-    pub fn init() -> Self {
+    #[must_use] pub fn init() -> Self {
         let spans = Arc::new(RwLock::new(Vec::new()));
         let processor = InMemorySpanProcessor::new(spans.clone());
 
@@ -92,12 +92,12 @@ impl TestTracing {
     }
 
     /// Get all collected spans (returns a clone)
-    pub fn spans(&self) -> Vec<SpanData> {
+    #[must_use] pub fn spans(&self) -> Vec<SpanData> {
         self.spans.read().clone()
     }
 
     /// Get spans matching a specific name
-    pub fn spans_named(&self, name: &str) -> Vec<SpanData> {
+    #[must_use] pub fn spans_named(&self, name: &str) -> Vec<SpanData> {
         self.spans
             .read()
             .iter()
@@ -144,8 +144,7 @@ impl TestTracing {
                 let spans = self.spans.read();
                 let span_names: Vec<&str> = spans.iter().map(|s| s.name.as_ref()).collect();
                 panic!(
-                    "Span '{}' not found after {:?}. Available spans: {:?}",
-                    name, timeout, span_names
+                    "Span '{name}' not found after {timeout:?}. Available spans: {span_names:?}"
                 );
             }
 
@@ -164,7 +163,7 @@ impl TestTracing {
     }
 
     /// Get count of collected spans
-    pub fn span_count(&self) -> usize {
+    #[must_use] pub fn span_count(&self) -> usize {
         self.spans.read().len()
     }
 }

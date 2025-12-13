@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used, unsafe_code)]
+
 use anyhow::anyhow;
 use brrtrouter::typed::TypedHandlerFor;
 use brrtrouter::{
@@ -48,8 +50,8 @@ fn test_from_handler_non_string_params() {
         method: Method::GET,
         path: "/items/42".to_string(),
         handler_name: "test".to_string(),
-        path_params: path_params.clone(),
-        query_params: query_params.clone(),
+        path_params: path_params,
+        query_params: query_params,
         headers: HeaderVec::new(),
         cookies: HeaderVec::new(),
         body: None,
@@ -164,7 +166,7 @@ fn test_spawn_typed_success_and_error() {
         path: "/sum".into(),
         handler_name: "sum".into(),
         path_params: ParamVec::new(),
-        query_params: q.clone(),
+        query_params: q,
         headers: HeaderVec::new(),
         cookies: HeaderVec::new(),
         body: None,

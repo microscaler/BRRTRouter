@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use brrtrouter::{load_spec, spec::ParameterLocation};
 use http::Method;
 use oas3::OpenApiV3Spec;

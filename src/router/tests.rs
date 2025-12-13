@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use super::Router;
 use crate::spec::RouteMeta;
 use http::Method;
@@ -26,6 +28,7 @@ fn create_route_meta(method: Method, path: &str, handler: &str) -> RouteMeta {
         sse: false,
         estimated_request_body_bytes: None,
         x_brrtrouter_stack_size: None,
+            cors_policy: crate::middleware::RouteCorsPolicy::Inherit,
     }
 }
 

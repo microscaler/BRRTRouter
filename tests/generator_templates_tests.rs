@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use brrtrouter::generator::FieldDef;
 use brrtrouter::generator::{
     write_controller, write_handler, write_main_rs, write_registry_rs, RegistryEntry,
@@ -97,6 +99,7 @@ fn test_template_writers() {
         sse: false,
         estimated_request_body_bytes: None,
         x_brrtrouter_stack_size: None,
+            cors_policy: brrtrouter::middleware::RouteCorsPolicy::Inherit,
     };
     write_main_rs(&src_dir, "tester", vec![route]).unwrap();
 

@@ -1,7 +1,6 @@
 use crate::dispatcher::HeaderVec;
 use may_minihttp::Response;
 use serde_json::Value;
-use std::sync::Arc;
 
 fn status_reason(status: u16) -> &'static str {
     match status {
@@ -88,6 +87,7 @@ mod tests {
     use may_minihttp::{HttpServer, HttpService, Request, Response};
     use std::io::{Read, Write};
     use std::net::{TcpListener, TcpStream};
+    use std::sync::Arc;
     use std::time::Duration;
 
     #[derive(Clone)]
@@ -139,14 +139,22 @@ mod tests {
                     std::thread::sleep(Duration::from_millis(50));
                     continue;
                 }
+                // In test code, panicking on read errors is acceptable for test failure clarity
+                #[cfg(test)]
+                #[allow(clippy::panic)] // Test code: panicking on I/O errors is acceptable
                 Err(e) => panic!("read error: {:?}", e),
+                #[cfg(not(test))]
+                Err(e) => {
+                    // In production, this should return an error, but this function is only used in tests
+                    panic!("read error: {:?}", e);
+                }
             }
         }
         let header_end = header_end.unwrap_or(buf.len());
         let headers = String::from_utf8_lossy(&buf[..header_end]);
         let content_length = headers
             .lines()
-            .find_map(|l| l.split_once(':').map(|(n, v)| (n, v)))
+            .find_map(|l| l.split_once(':'))
             .filter(|(n, _)| n.eq_ignore_ascii_case("content-length"))
             .and_then(|(_, v)| v.trim().parse::<usize>().ok());
         if let Some(clen) = content_length {
@@ -166,7 +174,15 @@ mod tests {
                         std::thread::sleep(Duration::from_millis(50));
                         continue;
                     }
-                    Err(e) => panic!("read error: {:?}", e),
+                    // In test code, panicking on read errors is acceptable for test failure clarity
+                #[cfg(test)]
+                #[allow(clippy::panic)] // Test code: panicking on I/O errors is acceptable
+                Err(e) => panic!("read error: {:?}", e),
+                #[cfg(not(test))]
+                Err(e) => {
+                    // In production, this should return an error, but this function is only used in tests
+                    panic!("read error: {:?}", e);
+                }
                 }
             }
         } else {
@@ -181,7 +197,15 @@ mod tests {
                     {
                         break;
                     }
-                    Err(e) => panic!("read error: {:?}", e),
+                    // In test code, panicking on read errors is acceptable for test failure clarity
+                #[cfg(test)]
+                #[allow(clippy::panic)] // Test code: panicking on I/O errors is acceptable
+                Err(e) => panic!("read error: {:?}", e),
+                #[cfg(not(test))]
+                Err(e) => {
+                    // In production, this should return an error, but this function is only used in tests
+                    panic!("read error: {:?}", e);
+                }
                 }
             }
         }
@@ -228,6 +252,8 @@ mod tests {
         drop(listener);
         let handle = HttpServer(HandlerService).start(addr).unwrap();
         let resp = send_request(&addr, "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n");
+        // SAFETY: may::CoroutineHandle::coroutine().cancel() is marked unsafe by the may runtime.
+        // Safe in tests: coroutine handle is valid, cancellation is for test cleanup
         unsafe { handle.coroutine().cancel() };
         let (status, info, body) = parse_parts(&resp);
         assert_eq!(status, 201);
@@ -243,6 +269,8 @@ mod tests {
         drop(listener);
         let handle = HttpServer(ErrorService).start(addr).unwrap();
         let resp = send_request(&addr, "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n");
+        // SAFETY: may::CoroutineHandle::coroutine().cancel() is marked unsafe by the may runtime.
+        // Safe in tests: coroutine handle is valid, cancellation is for test cleanup
         unsafe { handle.coroutine().cancel() };
         let (status, ct, body) = parse_parts(&resp);
         assert_eq!(status, 404);

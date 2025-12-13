@@ -383,6 +383,12 @@ impl Dispatcher {
             })
             .unwrap_or(0x10000); // 64KB default instead of 16KB
 
+        // SAFETY: may::coroutine::Builder::spawn() is marked unsafe by the may runtime.
+        // The unsafety comes from the coroutine runtime's requirements, not from this function's logic.
+        // We ensure safety by:
+        // - Only calling this during initialization when the May runtime is properly set up
+        // - The handler function is Send + 'static, ensuring no dangling references
+        // - Error handling is done via the reply channel, not panics
         let spawn_result = unsafe {
             coroutine::Builder::new()
                 .stack_size(stack_size)

@@ -48,6 +48,11 @@ impl ServerHandle {
     /// Cancels the server coroutine and waits for it to finish.
     /// Consumes the handle, preventing further operations.
     pub fn stop(self) {
+        // SAFETY: may::CoroutineHandle::coroutine().cancel() is marked unsafe by the may runtime.
+        // This is safe because:
+        // - We're in Drop, so the server is shutting down
+        // - The coroutine handle is valid (we're holding it)
+        // - Cancellation is the intended behavior during shutdown
         unsafe {
             self.handle.coroutine().cancel();
         }

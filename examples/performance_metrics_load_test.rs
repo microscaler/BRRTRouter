@@ -623,7 +623,7 @@ async fn main() -> Result<(), GooseError> {
 
     // Save metrics to file
     if let Err(e) = save_metrics_to_file() {
-        eprintln!("Failed to save metrics to file: {}", e);
+        eprintln!("Failed to save metrics to file: {e}");
     }
 
     Ok(())
@@ -692,7 +692,7 @@ fn print_metrics_summary() {
     println!("\n💾 Memory & GC Metrics:");
     println!(
         "  ├─ Average Memory: {:.2} MB",
-        summary.avg_memory_bytes as f64 / 1_048_576.0
+        summary.avg_memory_bytes / 1_048_576.0
     );
     println!(
         "  ├─ Max Memory: {:.2} MB",
@@ -749,10 +749,10 @@ fn save_metrics_to_file() -> Result<(), Box<dyn std::error::Error>> {
         .duration_since(std::time::UNIX_EPOCH)?
         .as_secs();
 
-    let filename = format!("metrics-{}.json", timestamp);
+    let filename = format!("metrics-{timestamp}.json");
     let json = serde_json::to_string_pretty(&summary)?;
     std::fs::write(&filename, json)?;
 
-    println!("📄 Detailed metrics saved to: {}", filename);
+    println!("📄 Detailed metrics saved to: {filename}");
     Ok(())
 }

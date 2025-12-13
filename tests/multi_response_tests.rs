@@ -1,6 +1,8 @@
+#![allow(clippy::unwrap_used, clippy::expect_used, unsafe_code)]
+
 use brrtrouter::server::{HttpServer, ServerHandle};
 use brrtrouter::{
-    dispatcher::{Dispatcher, HandlerRequest, HandlerResponse, HeaderVec},
+    dispatcher::{Dispatcher, HandlerRequest, HandlerResponse},
     router::Router,
     server::AppService,
     spec::{ResponseSpec, RouteMeta},
@@ -60,9 +62,10 @@ impl MultiResponseTestServer {
             sse: false,
             estimated_request_body_bytes: None,
             x_brrtrouter_stack_size: None,
+            cors_policy: brrtrouter::middleware::RouteCorsPolicy::Inherit,
         };
 
-        let router = Arc::new(RwLock::new(Router::new(vec![route.clone()])));
+        let router = Arc::new(RwLock::new(Router::new(vec![route])));
         let mut dispatcher = Dispatcher::new();
         unsafe {
             dispatcher.register_handler("h", |_req: HandlerRequest| {
