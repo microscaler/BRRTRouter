@@ -65,7 +65,7 @@ tokio = { version = "1.45.1", features = ["rt-multi-thread", "macros"] }
 
 # Production JWT/JWKS validation and HTTP fetch (for external providers like PropelAuth)
 jsonwebtoken = { version = "10", features = ["rust_crypto"] }  # rust_crypto enables RSA/EC algorithms
-reqwest = { version = "0.12.26", default-features = false, features = ["json", "rustls-tls", "blocking"] }
+reqwest = { version = "0.12.28", default-features = false, features = ["json", "rustls-tls", "blocking"] }
 urlencoding = "2.1"
 ulid = "1.1"
 sha2 = "0.10"
@@ -80,7 +80,7 @@ pet_store = { path = "./examples/pet_store" }
 criterion = "0.8"
 # Using our own OTLP test utilities compatible with opentelemetry 0.31
 flamegraph = "0.6"
-tempfile = "3.8"
+tempfile = "3.24"
 bollard = { version = "0.19", features = ["ssl", "chrono"] }
 bytes = "1"  # For bollard body_full()
 tar = "0.4"
