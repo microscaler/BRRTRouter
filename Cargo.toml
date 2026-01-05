@@ -38,7 +38,7 @@ may_minihttp = { git = "https://github.com/microscaler/may_minihttp.git", branch
 regex = "1.11.1"
 smallvec = { version = "1.13", features = ["serde"] }  # Stack-allocated vectors for hot path (JSF: no heap in dispatch)
 url = "2.5.4"
-clap = { version = "4.5.38", features = ["cargo", "env", "derive"] }
+clap = { version = "4.5.54", features = ["cargo", "env", "derive"] }
 askama = { version = "0.15.1", features = ["full"] }
 notify = "8"
 memory-stats = "1.1"  # For cross-platform memory monitoring
@@ -61,7 +61,7 @@ tracing-appender = "0.2"
 # gRPC dependencies for OTLP (compatible with opentelemetry 0.31)
 tonic = "0.14"
 prost = "0.14"
-tokio = { version = "1.45.1", features = ["rt-multi-thread", "macros"] }
+tokio = { version = "1.49.0", features = ["rt-multi-thread", "macros"] }
 
 # Production JWT/JWKS validation and HTTP fetch (for external providers like PropelAuth)
 jsonwebtoken = { version = "10", features = ["rust_crypto"] }  # rust_crypto enables RSA/EC algorithms
