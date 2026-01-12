@@ -81,7 +81,7 @@ criterion = "0.8"
 # Using our own OTLP test utilities compatible with opentelemetry 0.31
 flamegraph = "0.6"
 tempfile = "3.24"
-bollard = { version = "0.19", features = ["ssl", "chrono"] }
+bollard = { version = "0.20", features = ["ssl", "chrono"] }
 bytes = "1"  # For bollard body_full()
 tar = "0.4"
 walkdir = "2"
