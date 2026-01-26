@@ -446,9 +446,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     loop {
         println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        println!(
-            "Cycle {cycle} - Testing with {current_users} concurrent users"
-        );
+        println!("Cycle {cycle} - Testing with {current_users} concurrent users");
         println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
         // Run Goose attack for this cycle
@@ -547,9 +545,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Transition to Prometheus health check
         println!("\n╭─────────────────────────────────────────────────────────────────────╮");
-        println!(
-            "│ 🔍 Checking Prometheus Metrics - Cycle {cycle}                           │"
-        );
+        println!("│ 🔍 Checking Prometheus Metrics - Cycle {cycle}                           │");
         println!("╰─────────────────────────────────────────────────────────────────────╯");
         println!("⏳ Waiting 5 seconds for Prometheus to scrape metrics...\n");
         tokio::time::sleep(Duration::from_secs(5)).await;
@@ -674,9 +670,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("  Error Rate: Still below threshold");
             println!();
             println!("Recommendation:");
-            println!(
-                "  System can handle ≥ {current_users} users without errors"
-            );
+            println!("  System can handle ≥ {current_users} users without errors");
             println!("  Consider increasing MAX_USERS to find actual limit");
             println!("  Or tighten ERROR_RATE_THRESHOLD for stricter SLA");
             break;

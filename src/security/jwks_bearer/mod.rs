@@ -127,7 +127,7 @@ impl JwksBearerProvider {
         let refresh_complete = Arc::new((Mutex::new(()), Condvar::new()));
         let shutdown = Arc::new(AtomicBool::new(false));
         let cache_ttl_millis = Arc::new(std::sync::atomic::AtomicU64::new(300_000));
-        
+
         let provider = Self {
             jwks_url: url_str,
             iss: None,
@@ -149,7 +149,7 @@ impl JwksBearerProvider {
             background_handle: Some(background_handle.clone()),
             shutdown: shutdown.clone(),
         };
-        
+
         // Start background refresh task
         provider.start_background_refresh_internal(
             cache,
@@ -159,7 +159,7 @@ impl JwksBearerProvider {
             background_handle,
             cache_ttl_millis,
         );
-        
+
         provider
     }
 
@@ -191,15 +191,16 @@ impl JwksBearerProvider {
     ///
     /// Keys are cached to avoid repeated HTTP requests to the JWKS URL.
     /// This updates both the field and the background refresh thread's interval.
-    /// 
+    ///
     /// # Precision
-    /// 
+    ///
     /// Sub-second precision is preserved (e.g., `Duration::from_millis(100)` works correctly).
     pub fn cache_ttl(mut self, ttl: Duration) -> Self {
         self.cache_ttl = ttl;
         // Update atomic value so background thread picks up the new TTL
         // Store as milliseconds to preserve sub-second precision
-        self.cache_ttl_millis.store(ttl.as_millis() as u64, Ordering::Release);
+        self.cache_ttl_millis
+            .store(ttl.as_millis() as u64, Ordering::Release);
         self
     }
 
@@ -370,7 +371,7 @@ impl JwksBearerProvider {
     ) {
         let jwks_url = self.jwks_url.clone();
         let cache_ttl_millis = cache_ttl_millis;
-        
+
         let handle = thread::spawn(move || {
             // Do immediate refresh on startup to populate cache
             // This ensures the cache is ready before the first validation request
@@ -384,14 +385,14 @@ impl JwksBearerProvider {
                     false, // Background thread claims the refresh itself
                 );
             }
-            
+
             loop {
                 // Check shutdown flag
                 if shutdown.load(Ordering::Acquire) {
                     debug!("JWKS background refresh thread shutting down");
                     break;
                 }
-                
+
                 // Read current cache_ttl from atomic ONCE to ensure consistency
                 // This value is used for both refresh_interval calculation and change detection
                 // Reading twice could cause inconsistency if TTL changes between reads
@@ -408,7 +409,7 @@ impl JwksBearerProvider {
                 };
                 // Ensure minimum refresh interval of 1 second to prevent CPU spinning
                 let refresh_interval = refresh_interval.max(Duration::from_secs(1));
-                
+
                 // Sleep until next refresh time (with periodic shutdown and cache_ttl change checks)
                 // If cache_ttl is updated via cache_ttl() builder, we need to wake up early
                 // and recalculate refresh_interval with the new value
@@ -435,7 +436,7 @@ impl JwksBearerProvider {
                     thread::sleep(sleep_duration);
                     slept += sleep_duration;
                 }
-                
+
                 // Refresh if we completed the full sleep interval OR if TTL changed
                 // When TTL changes, refresh immediately to pick up the new refresh schedule
                 if ttl_changed {
@@ -463,19 +464,19 @@ impl JwksBearerProvider {
                 // Continue to next loop iteration to recalculate refresh_interval
             }
         });
-        
+
         if let Ok(mut guard) = handle_lock.write() {
             *guard = Some(handle);
         }
     }
-    
+
     /// Stop the background refresh task
     ///
     /// This should be called during cleanup/shutdown to gracefully stop the background thread.
     pub fn stop_background_refresh(&self) {
         // Signal shutdown
         self.shutdown.store(true, Ordering::Release);
-        
+
         // Wait for thread to finish
         if let Some(handle_lock) = &self.background_handle {
             if let Ok(mut guard) = handle_lock.write() {
@@ -486,9 +487,9 @@ impl JwksBearerProvider {
             }
         }
     }
-    
+
     /// Internal method to refresh JWKS (can be called from background thread or on-demand)
-    /// 
+    ///
     /// # Arguments
     /// * `already_claimed` - If true, the caller has already atomically claimed the refresh
     ///   (set refresh_in_progress to true). If false, this method will atomically claim it.
@@ -505,11 +506,11 @@ impl JwksBearerProvider {
             && refresh_in_progress
                 .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
                 .is_err()
-            {
-                // Another thread is refreshing, skip this cycle
-                return;
-            }
-        
+        {
+            // Another thread is refreshing, skip this cycle
+            return;
+        }
+
         let refresh_start = Instant::now();
         let client = match reqwest::blocking::Client::builder()
             .timeout(Duration::from_millis(200))
@@ -525,7 +526,7 @@ impl JwksBearerProvider {
                 return;
             }
         };
-        
+
         let mut body_opt: Option<String> = None;
         for _ in 0..2 {
             if let Ok(r) = client.get(jwks_url).send() {
@@ -535,7 +536,7 @@ impl JwksBearerProvider {
                 }
             }
         }
-        
+
         let body = match body_opt {
             Some(b) => b,
             None => {
@@ -547,7 +548,7 @@ impl JwksBearerProvider {
                 return;
             }
         };
-        
+
         let parsed: serde_json::Value = match serde_json::from_str(&body) {
             Ok(v) => v,
             Err(_) => {
@@ -559,14 +560,14 @@ impl JwksBearerProvider {
                 return;
             }
         };
-        
+
         let mut new_map: HashMap<String, jsonwebtoken::DecodingKey> = HashMap::new();
         if let Some(keys) = parsed.get("keys").and_then(|v| v.as_array()) {
             for k in keys {
                 let kid = k.get("kid").and_then(|v| v.as_str()).unwrap_or("");
                 let kty = k.get("kty").and_then(|v| v.as_str()).unwrap_or("");
                 let alg = k.get("alg").and_then(|v| v.as_str()).unwrap_or("");
-                
+
                 // HMAC (oct) keys for HS* algorithms
                 if kty.eq_ignore_ascii_case("oct")
                     && (alg.eq_ignore_ascii_case("HS256")
@@ -583,7 +584,7 @@ impl JwksBearerProvider {
                     }
                     continue;
                 }
-                
+
                 // RSA public keys for RS* algorithms
                 if kty.eq_ignore_ascii_case("RSA")
                     && (alg.eq_ignore_ascii_case("RS256")
@@ -605,52 +606,56 @@ impl JwksBearerProvider {
                 }
             }
         }
-        
+
         let key_count = new_map.len();
         let refresh_duration = refresh_start.elapsed();
-        
+
         if let Ok(mut guard) = cache.write() {
             *guard = (Instant::now(), new_map);
         }
-        
+
         refresh_in_progress.store(false, Ordering::Release);
-        
+
         // Notify all waiting threads that refresh has completed
         // This wakes them immediately instead of waiting for their next poll
         let (lock, cvar) = &**refresh_complete;
         let _guard = lock.lock().unwrap();
         cvar.notify_all();
-        
+
         debug!(
             "JWKS refresh completed in {:?} (keys: {})",
             refresh_duration, key_count
         );
     }
-    
+
     /// P1: Non-blocking refresh check - triggers refresh if needed but doesn't wait
     /// Uses stale cache if refresh fails (graceful degradation)
-    /// 
+    ///
     /// If cache is empty, does a blocking initial refresh to ensure first validation succeeds.
     /// When cache is empty and another thread is refreshing, waits with exponential backoff
     /// to ensure concurrent threads don't fail validation due to empty cache.
     fn refresh_jwks_if_needed(&self) {
         // Read current cache_ttl from atomic (picks up changes from cache_ttl() builder)
         // Convert from milliseconds to Duration, preserving sub-second precision
-        let current_cache_ttl = Duration::from_millis(self.cache_ttl_millis.load(Ordering::Acquire));
+        let current_cache_ttl =
+            Duration::from_millis(self.cache_ttl_millis.load(Ordering::Acquire));
         // Check if refresh is needed (non-blocking read)
         let (needs_refresh, is_empty) = {
             if let Ok(guard) = self.cache.read() {
-                (guard.0.elapsed() >= current_cache_ttl || guard.1.is_empty(), guard.1.is_empty())
+                (
+                    guard.0.elapsed() >= current_cache_ttl || guard.1.is_empty(),
+                    guard.1.is_empty(),
+                )
             } else {
                 // Lock poisoned, skip refresh
                 return;
             }
         };
-        
+
         if !needs_refresh {
             return;
         }
-        
+
         // If cache is empty, do a blocking initial refresh to ensure first validation succeeds
         // After that, background refresh will keep it updated
         if is_empty {
@@ -663,7 +668,7 @@ impl JwksBearerProvider {
                     return;
                 }
             };
-            
+
             // Try to claim the refresh - if we win, do blocking refresh
             // If we lose, another thread is refreshing - wait for it with exponential backoff
             if self
@@ -679,7 +684,7 @@ impl JwksBearerProvider {
                     &self.refresh_complete,
                     true, // We already claimed the flag
                 );
-                
+
                 // Check if refresh succeeded by comparing timestamps
                 // If timestamp unchanged, refresh failed - retry
                 let cache_timestamp_after = {
@@ -690,7 +695,7 @@ impl JwksBearerProvider {
                         return;
                     }
                 };
-                
+
                 // Only retry if timestamp unchanged (refresh failed) AND cache still empty
                 if cache_timestamp_after == cache_timestamp_before {
                     let still_empty = {
@@ -701,7 +706,7 @@ impl JwksBearerProvider {
                             return;
                         }
                     };
-                    
+
                     if still_empty {
                         // Refresh failed - retry once
                         if self
@@ -722,7 +727,7 @@ impl JwksBearerProvider {
             } else {
                 // Another thread is refreshing - wait for it to complete using condition variable
                 // This is more efficient than polling - threads are woken immediately when refresh completes
-                
+
                 // Record cache timestamp BEFORE waiting to detect if refresh succeeded
                 let cache_timestamp_before = {
                     if let Ok(guard) = self.cache.read() {
@@ -732,22 +737,18 @@ impl JwksBearerProvider {
                         return;
                     }
                 };
-                
+
                 let timeout = Duration::from_secs(2); // Allow 2s for refresh (400ms max + buffer for network issues)
                 let (lock, cvar) = &*self.refresh_complete;
                 let guard = lock.lock().unwrap();
-                
+
                 // Wait for refresh to complete, with timeout
                 // The condvar will wake us immediately when refresh_in_progress becomes false
-                let wait_result = cvar.wait_timeout_while(
-                    guard,
-                    timeout,
-                    |_| {
-                        // Continue waiting while refresh is in progress
-                        self.refresh_in_progress.load(Ordering::Acquire)
-                    },
-                );
-                
+                let wait_result = cvar.wait_timeout_while(guard, timeout, |_| {
+                    // Continue waiting while refresh is in progress
+                    self.refresh_in_progress.load(Ordering::Acquire)
+                });
+
                 let (wait_guard, wait_timeout_result) = match wait_result {
                     Ok(result) => result,
                     Err(_) => {
@@ -755,11 +756,13 @@ impl JwksBearerProvider {
                         return;
                     }
                 };
-                
+
                 drop(wait_guard);
-                
+
                 // Check if we timed out or if refresh completed
-                if wait_timeout_result.timed_out() && self.refresh_in_progress.load(Ordering::Acquire) {
+                if wait_timeout_result.timed_out()
+                    && self.refresh_in_progress.load(Ordering::Acquire)
+                {
                     // Timeout - refresh may have failed, check if cache timestamp was updated
                     // If timestamp unchanged, refresh failed and we should retry
                     let cache_timestamp_after = {
@@ -770,7 +773,7 @@ impl JwksBearerProvider {
                             return;
                         }
                     };
-                    
+
                     // If timestamp didn't change, refresh failed (cache not updated)
                     // Only retry if cache is still empty AND timestamp unchanged
                     if cache_timestamp_after == cache_timestamp_before {
@@ -782,7 +785,7 @@ impl JwksBearerProvider {
                                 return;
                             }
                         };
-                        
+
                         if still_empty {
                             // Cache timestamp unchanged and still empty - refresh failed, retry
                             if self
@@ -804,7 +807,7 @@ impl JwksBearerProvider {
                     // If timestamp changed, refresh succeeded (even if empty keys) - return
                     return;
                 }
-                
+
                 // Refresh completed (flag cleared) - check if refresh succeeded by comparing timestamps
                 // If timestamp changed, refresh succeeded (even if empty keys) - don't retry
                 // If timestamp unchanged, refresh failed - retry
@@ -816,7 +819,7 @@ impl JwksBearerProvider {
                         return;
                     }
                 };
-                
+
                 // Only retry if timestamp unchanged (refresh failed) AND cache still empty
                 if cache_timestamp_after == cache_timestamp_before {
                     let still_empty = {
@@ -827,7 +830,7 @@ impl JwksBearerProvider {
                             return;
                         }
                     };
-                    
+
                     if still_empty {
                         // Cache timestamp unchanged and still empty - refresh failed, retry
                         if self
@@ -868,7 +871,7 @@ impl JwksBearerProvider {
                 // For expired cache, we can use stale data (graceful degradation)
                 return;
             }
-            
+
             // We successfully claimed the refresh - spawn thread to do the actual work
             // Note: refresh_jwks_internal will clear the flag when done, so we don't need to
             // handle that here. If refresh_jwks_internal fails, it also clears the flag.
@@ -879,16 +882,21 @@ impl JwksBearerProvider {
             let refresh_complete_thread = self.refresh_complete.clone();
             let refresh_in_progress_error = self.refresh_in_progress.clone();
             let refresh_complete_error = self.refresh_complete.clone();
-            
+
             // CRITICAL: If thread::spawn panics (e.g., resource exhaustion), we must clear
             // the refresh_in_progress flag to prevent permanent deadlock. The spawned thread
             // is responsible for clearing it, but if spawning fails, that never happens.
-            match thread::Builder::new()
-                .spawn(move || {
-                    // We've already atomically claimed the refresh (set flag to true above),
-                    // so pass already_claimed=true to skip the flag check in refresh_jwks_internal
-                    Self::refresh_jwks_internal(&cache, &jwks_url, &refresh_in_progress_thread, &refresh_complete_thread, true);
-                }) {
+            match thread::Builder::new().spawn(move || {
+                // We've already atomically claimed the refresh (set flag to true above),
+                // so pass already_claimed=true to skip the flag check in refresh_jwks_internal
+                Self::refresh_jwks_internal(
+                    &cache,
+                    &jwks_url,
+                    &refresh_in_progress_thread,
+                    &refresh_complete_thread,
+                    true,
+                );
+            }) {
                 Ok(_) => {
                     // Thread spawned successfully - it will clear the flag when done
                 }
@@ -912,7 +920,7 @@ impl JwksBearerProvider {
     pub(super) fn get_key_for(&self, kid: &str) -> Option<jsonwebtoken::DecodingKey> {
         // Trigger refresh if needed (non-blocking)
         self.refresh_jwks_if_needed();
-        
+
         // Lock-free read (RwLock allows concurrent reads)
         if let Ok(guard) = self.cache.read() {
             guard.1.get(kid).cloned()

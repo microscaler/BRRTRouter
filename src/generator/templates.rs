@@ -70,6 +70,8 @@ pub struct RouteDisplay {
 pub struct CargoTomlTemplateData {
     /// Project name
     pub name: String,
+    /// Version for [package].version
+    pub version: String,
     /// Whether to use workspace dependencies (true) or direct path dependencies (false)
     pub use_workspace_deps: bool,
     /// Relative path to BRRTRouter (only used when use_workspace_deps is false)
@@ -105,6 +107,11 @@ pub struct OpenapiIndexTemplate;
 #[derive(Template)]
 #[template(path = "static.index.html", escape = "none")]
 pub struct StaticIndexTemplate;
+
+/// Template for generating lib.rs (library entry point)
+#[derive(Template)]
+#[template(path = "lib.rs.txt", escape = "none")]
+pub struct LibRsTemplate;
 
 /// Template data for generating mod.rs module declarations
 #[derive(Template)]
@@ -428,6 +435,31 @@ pub fn write_registry_rs(dir: &Path, entries: &[RegistryEntry]) -> anyhow::Resul
     Ok(())
 }
 
+/// Write the lib.rs file
+///
+/// Generates the library entry point that re-exports the registry module.
+/// This allows the generated crate to be used as a library dependency in tests.
+///
+/// # Arguments
+///
+/// * `dir` - Output directory (typically `src/`)
+/// * `force` - Overwrite existing file
+///
+/// # Errors
+///
+/// Returns an error if template rendering or file writing fails
+pub fn write_lib_rs(dir: &Path, force: bool) -> anyhow::Result<()> {
+    let path = dir.join("lib.rs");
+    if path.exists() && !force {
+        println!("⚠️  Skipping existing lib.rs file: {path:?}");
+        return Ok(());
+    }
+    let rendered = LibRsTemplate.render()?;
+    fs::write(path.clone(), rendered)?;
+    println!("✅ Generated lib.rs → {path:?}");
+    Ok(())
+}
+
 /// Write the types.rs file with type definitions (internal helper)
 ///
 /// Generates a `types.rs` file containing all Rust struct definitions extracted
@@ -471,23 +503,77 @@ pub(crate) fn write_types_rs(
 pub(crate) fn write_cargo_toml(base: &Path, slug: &str) -> anyhow::Result<()> {
     // Detect if we're in a workspace and if workspace has brrtrouter dependencies
     let use_workspace_deps = detect_workspace_with_brrtrouter_deps(base);
-    write_cargo_toml_with_options(base, slug, use_workspace_deps, None)
+    write_cargo_toml_with_options(base, slug, use_workspace_deps, None, None)
 }
 
 /// Detect if output directory is in a workspace that has brrtrouter in workspace.dependencies
-fn detect_workspace_with_brrtrouter_deps(output_dir: &Path) -> bool {
+///
+/// This function handles two scenarios:
+/// 1. Workspaces WITH workspace.dependencies (e.g., RERP microservices workspace)
+///    - Has [workspace], workspace.dependencies, and brrtrouter in workspace.dependencies
+///    - Returns true → generated Cargo.toml uses `brrtrouter = { workspace = true }`
+/// 2. Workspaces WITHOUT workspace.dependencies (e.g., BRRTRouter workspace)
+///    - Has [workspace] but no workspace.dependencies section
+///    - Returns false → generated Cargo.toml uses `brrtrouter = { path = "../.." }`
+///
+/// The detection is precise: it requires ALL of:
+/// - [workspace] section exists
+/// - [workspace.dependencies] section exists
+/// - "brrtrouter" appears in the workspace.dependencies section
+pub(crate) fn detect_workspace_with_brrtrouter_deps(output_dir: &Path) -> bool {
     let mut current = output_dir;
     loop {
         let cargo_toml = current.join("Cargo.toml");
         if cargo_toml.exists() {
             if let Ok(contents) = std::fs::read_to_string(&cargo_toml) {
-                // Check if it's a workspace AND has brrtrouter in workspace.dependencies
-                if contents.contains("[workspace]")
-                    && contents.contains("brrtrouter")
-                    && contents.contains("workspace.dependencies")
-                {
-                    return true;
+                // Must have [workspace] section
+                if !contents.contains("[workspace]") {
+                    match current.parent() {
+                        Some(parent) => {
+                            current = parent;
+                            continue;
+                        }
+                        None => break,
+                    }
                 }
+
+                // If we found [workspace] but no [workspace.dependencies], this workspace
+                // doesn't support workspace dependencies. Return false immediately because
+                // [workspace] defines the workspace boundary - we shouldn't search parent
+                // directories which might be a different workspace entirely.
+                if !contents.contains("[workspace.dependencies]") {
+                    return false;
+                }
+
+                // Check if brrtrouter is defined in workspace.dependencies
+                // Look for pattern: brrtrouter = { ... } within [workspace.dependencies]
+                let lines: Vec<&str> = contents.lines().collect();
+                let mut in_workspace_deps = false;
+                for line in lines {
+                    let trimmed = line.trim();
+                    if trimmed == "[workspace.dependencies]" {
+                        in_workspace_deps = true;
+                        continue;
+                    }
+                    if trimmed.starts_with('[') && in_workspace_deps {
+                        // Left [workspace.dependencies] section
+                        break;
+                    }
+                    if in_workspace_deps {
+                        // Check if this line defines brrtrouter (exactly, not brrtrouter_macros, etc.)
+                        // Match pattern: brrtrouter\s*= (brrtrouter followed by optional whitespace and =)
+                        if trimmed.starts_with("brrtrouter") {
+                            let after_brrtrouter = &trimmed[10..]; // "brrtrouter" is 10 characters
+                            if after_brrtrouter.trim_start().starts_with('=') {
+                                return true;
+                            }
+                        }
+                    }
+                }
+                // If we found [workspace] with [workspace.dependencies] but brrtrouter is not in it,
+                // return false immediately. We've found the workspace boundary and shouldn't search
+                // parent directories which might be a different workspace entirely.
+                return false;
             }
         }
         match current.parent() {
@@ -506,16 +592,14 @@ fn detect_workspace_with_brrtrouter_deps(output_dir: &Path) -> bool {
 /// * `slug` - Project name slug
 /// * `use_workspace_deps` - If true, use workspace dependencies; if false, calculate relative paths
 /// * `brrtrouter_root` - Optional path to BRRTRouter root (for calculating relative paths)
+/// * `version` - Optional version string (defaults to "0.1.0" if None)
 pub(crate) fn write_cargo_toml_with_options(
     base: &Path,
     slug: &str,
     use_workspace_deps: bool,
     brrtrouter_root: Option<&Path>,
+    version: Option<String>,
 ) -> anyhow::Result<()> {
-    eprintln!(
-        "DEBUG: use_workspace_deps={}, base={:?}, brrtrouter_root={:?}",
-        use_workspace_deps, base, brrtrouter_root
-    );
     let (brrtrouter_path, brrtrouter_macros_path) = if use_workspace_deps {
         (String::new(), String::new())
     } else {
@@ -552,7 +636,6 @@ pub(crate) fn write_cargo_toml_with_options(
 
         // Calculate relative path from base to brrtrouter_base
         // Ensure both paths are absolute for reliable calculation
-        let brrtrouter_base_clone = brrtrouter_base.clone(); // Clone for debug output
         let base_abs = if base.is_absolute() {
             base.to_path_buf()
         } else {
@@ -615,17 +698,13 @@ pub(crate) fn write_cargo_toml_with_options(
         let macros_path = rel_path.join("brrtrouter_macros");
         let macros_path_str = macros_path.to_string_lossy().to_string();
 
-        // Debug: log the calculated paths
-        eprintln!(
-            "DEBUG: base={:?}, brrtrouter_base={:?}, rel_path={:?}, rel_path_str={:?}",
-            base, &brrtrouter_base_clone, rel_path, rel_path_str
-        );
-
         (rel_path_str, macros_path_str)
     };
 
+    let version_str = version.unwrap_or_else(|| "0.1.0".to_string());
     let rendered = CargoTomlTemplateData {
         name: slug.to_string(),
+        version: version_str,
         use_workspace_deps,
         brrtrouter_path,
         brrtrouter_macros_path,

@@ -12,19 +12,19 @@
 //! - Integration with SecurityProvider trait
 
 use base64::Engine;
+use bollard::models::{HostConfig, PortBinding};
+use bollard::query_parameters::RemoveContainerOptionsBuilder;
+use bollard::Docker;
 use brrtrouter::security::{SecurityProvider, SecurityRequest, SpiffeProvider};
 use brrtrouter::spec::SecurityScheme;
 use brrtrouter::{dispatcher::HeaderVec, router::ParamVec};
+use futures::executor::block_on;
 use serde_json::json;
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
-use bollard::Docker;
-use bollard::models::{HostConfig, PortBinding};
-use bollard::query_parameters::RemoveContainerOptionsBuilder;
-use futures::executor::block_on;
 
 /// Helper to create a SPIFFE JWT token for testing
 ///
@@ -33,37 +33,32 @@ use futures::executor::block_on;
 /// - `aud`: Audience (required)
 /// - `exp`: Expiration timestamp
 /// - `iat`: Issued at timestamp
-fn make_spiffe_jwt(
-    spiffe_id: &str,
-    audience: &str,
-    exp_secs: i64,
-    iat_secs: i64,
-) -> String {
+fn make_spiffe_jwt(spiffe_id: &str, audience: &str, exp_secs: i64, iat_secs: i64) -> String {
     use base64::{engine::general_purpose, Engine as _};
-    
+
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs() as i64;
-    
+
     let exp = now + exp_secs;
     let iat = now + iat_secs;
-    
+
     let header = json!({
         "alg": "HS256",
         "typ": "JWT"
     });
-    
+
     let payload = json!({
         "sub": spiffe_id,
         "aud": audience,
         "exp": exp,
         "iat": iat
     });
-    
+
     let header_b64 = general_purpose::URL_SAFE_NO_PAD.encode(header.to_string().as_bytes());
     let payload_b64 = general_purpose::URL_SAFE_NO_PAD.encode(payload.to_string().as_bytes());
-    
+
     // Note: This creates an unsigned token with a fake signature
     // In production, tokens MUST be signed and verified via JWKS
     // This helper is used for testing validation failure scenarios
@@ -80,25 +75,25 @@ fn make_signed_spiffe_jwt(
 ) -> String {
     use jsonwebtoken::{Algorithm, EncodingKey, Header};
     use serde_json::json;
-    
+
     let header = Header {
         kid: Some(kid.to_string()),
         alg: Algorithm::HS256,
         ..Default::default()
     };
-    
+
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs() as i64;
-    
+
     let claims = json!({
         "sub": spiffe_id,
         "aud": audience,
         "exp": now + exp_secs,
         "iat": now
     });
-    
+
     let encoding_key = EncodingKey::from_secret(secret);
     jsonwebtoken::encode(&header, &claims, &encoding_key).unwrap()
 }
@@ -106,60 +101,60 @@ fn make_signed_spiffe_jwt(
 /// Helper to create an expired SPIFFE JWT token
 fn make_expired_spiffe_jwt(spiffe_id: &str, audience: &str) -> String {
     use base64::{engine::general_purpose, Engine as _};
-    
+
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs() as i64;
-    
+
     // Expired 1 hour ago
     let exp = now - 3600;
     let iat = now - 7200; // Issued 2 hours ago
-    
+
     let header = json!({
         "alg": "HS256",
         "typ": "JWT"
     });
-    
+
     let payload = json!({
         "sub": spiffe_id,
         "aud": audience,
         "exp": exp,
         "iat": iat
     });
-    
+
     let header_b64 = general_purpose::URL_SAFE_NO_PAD.encode(header.to_string().as_bytes());
     let payload_b64 = general_purpose::URL_SAFE_NO_PAD.encode(payload.to_string().as_bytes());
-    
+
     format!("{header_b64}.{payload_b64}.signature")
 }
 
 /// Helper to create a SPIFFE JWT with array audience
 fn make_spiffe_jwt_array_aud(spiffe_id: &str, audiences: &[&str], exp_secs: i64) -> String {
     use base64::{engine::general_purpose, Engine as _};
-    
+
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs() as i64;
-    
+
     let exp = now + exp_secs;
-    
+
     let header = json!({
         "alg": "HS256",
         "typ": "JWT"
     });
-    
+
     let payload = json!({
         "sub": spiffe_id,
         "aud": audiences,
         "exp": exp,
         "iat": now
     });
-    
+
     let header_b64 = general_purpose::URL_SAFE_NO_PAD.encode(header.to_string().as_bytes());
     let payload_b64 = general_purpose::URL_SAFE_NO_PAD.encode(payload.to_string().as_bytes());
-    
+
     format!("{header_b64}.{payload_b64}.signature")
 }
 
@@ -186,7 +181,7 @@ impl JwksMockServerContainer {
                 return Self::fallback_in_process(jwks_json);
             }
         };
-        
+
         // Create a simple HTTP server container using nginx:alpine
         // We'll use a custom nginx config to serve the JWKS JSON
         let port_key = "80/tcp".to_string();
@@ -201,18 +196,18 @@ impl JwksMockServerContainer {
             port_bindings: Some(bindings),
             ..Default::default()
         };
-        
+
         // For now, use in-process fallback since Docker setup is complex
         // TODO: Implement full Docker-based mock server
         Self::fallback_in_process(jwks_json)
     }
-    
+
     /// Fallback to in-process server when Docker is not available
     fn fallback_in_process(jwks: String) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
         let url = format!("http://127.0.0.1:{}/jwks.json", addr.port());
-        
+
         let jwks_clone = jwks;
         thread::spawn(move || {
             for stream in listener.incoming() {
@@ -233,19 +228,18 @@ impl JwksMockServerContainer {
                 }
             }
         });
-        
+
         thread::sleep(Duration::from_millis(150));
-        
+
         // Return a dummy container struct (Docker not actually used in fallback)
         Self {
-            docker: Docker::connect_with_local_defaults().unwrap_or_else(|_| {
-                panic!("Docker connection failed and fallback also failed")
-            }),
+            docker: Docker::connect_with_local_defaults()
+                .unwrap_or_else(|_| panic!("Docker connection failed and fallback also failed")),
             container_id: "fallback".to_string(),
             url,
         }
     }
-    
+
     fn url(&self) -> &str {
         &self.url
     }
@@ -269,7 +263,7 @@ fn start_mock_jwks_server(jwks: String) -> String {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     let url = format!("http://127.0.0.1:{}/jwks.json", addr.port());
-    
+
     let jwks_clone = jwks;
     thread::spawn(move || {
         for stream in listener.incoming() {
@@ -290,7 +284,7 @@ fn start_mock_jwks_server(jwks: String) -> String {
             }
         }
     });
-    
+
     thread::sleep(Duration::from_millis(150));
     url
 }
@@ -311,21 +305,17 @@ fn create_provider_with_mock_jwks(
     })
     .to_string();
     let jwks_url = start_mock_jwks_server(jwks);
-    
+
     let provider = SpiffeProvider::new()
         .trust_domains(trust_domains)
         .audiences(audiences)
         .jwks_url(&jwks_url);
-    
+
     (provider, jwks_url)
 }
 
 /// Helper to create a signed SPIFFE JWT token using the test secret
-fn make_signed_spiffe_jwt_for_test(
-    spiffe_id: &str,
-    audience: &str,
-    exp_secs: i64,
-) -> String {
+fn make_signed_spiffe_jwt_for_test(spiffe_id: &str, audience: &str, exp_secs: i64) -> String {
     let secret = b"test-secret-key-for-spiffe-validation";
     make_signed_spiffe_jwt(secret, spiffe_id, audience, "test-kid", exp_secs)
 }
@@ -339,25 +329,25 @@ fn make_signed_spiffe_jwt_array_aud_for_test(
     let secret = b"test-secret-key-for-spiffe-validation";
     use jsonwebtoken::{Algorithm, EncodingKey, Header};
     use serde_json::json;
-    
+
     let header = Header {
         kid: Some("test-kid".to_string()),
         alg: Algorithm::HS256,
         ..Default::default()
     };
-    
+
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs() as i64;
-    
+
     let claims = json!({
         "sub": spiffe_id,
         "aud": audiences,
         "exp": now + exp_secs,
         "iat": now
     });
-    
+
     let encoding_key = EncodingKey::from_secret(secret);
     jsonwebtoken::encode(&header, &claims, &encoding_key).unwrap()
 }
@@ -366,7 +356,7 @@ fn make_signed_spiffe_jwt_array_aud_for_test(
 fn test_spiffe_provider_creation() {
     let _provider = SpiffeProvider::new();
     assert!(true); // Basic creation test
-    
+
     let _provider_with_config = SpiffeProvider::new()
         .trust_domains(&["example.com", "enterprise.local"])
         .audiences(&["api.example.com"])
@@ -382,13 +372,13 @@ fn test_spiffe_id_format_validation() {
         &["example.com", "enterprise.local", "prod.example.com"],
         &["api.example.com"],
     );
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     // Valid SPIFFE IDs (path component is required per SPIFFE specification)
     let valid_ids = vec![
         "spiffe://example.com/api/users",
@@ -396,7 +386,7 @@ fn test_spiffe_id_format_validation() {
         "spiffe://prod.example.com/frontend/web",
         "spiffe://example.com/",
     ];
-    
+
     for spiffe_id in valid_ids {
         // Use signed token for valid IDs (signature verification is required)
         let token = make_signed_spiffe_jwt_for_test(spiffe_id, "api.example.com", 3600);
@@ -407,14 +397,14 @@ fn test_spiffe_id_format_validation() {
             query: &ParamVec::new(),
             cookies: &HeaderVec::new(),
         };
-        
+
         // Should pass validation (format is valid and signature is verified)
         assert!(
             provider.validate(&scheme, &[], &req),
             "Valid SPIFFE ID '{spiffe_id}' should pass validation"
         );
     }
-    
+
     // Invalid SPIFFE IDs should fail validation
     let invalid_ids = vec![
         "invalid",
@@ -424,7 +414,7 @@ fn test_spiffe_id_format_validation() {
         // Path component is required per SPIFFE specification
         "spiffe://example.com",
     ];
-    
+
     for spiffe_id in invalid_ids {
         // Create token with invalid SPIFFE ID
         use base64::{engine::general_purpose, Engine as _};
@@ -441,11 +431,11 @@ fn test_spiffe_id_format_validation() {
                 .unwrap()
                 .as_secs() as i64
         });
-        
+
         let header_b64 = general_purpose::URL_SAFE_NO_PAD.encode(header.to_string().as_bytes());
         let payload_b64 = general_purpose::URL_SAFE_NO_PAD.encode(payload.to_string().as_bytes());
         let token = format!("{header_b64}.{payload_b64}.signature");
-        
+
         let mut headers: HeaderVec = HeaderVec::new();
         headers.push((Arc::from("authorization"), format!("Bearer {token}")));
         let req = SecurityRequest {
@@ -453,7 +443,7 @@ fn test_spiffe_id_format_validation() {
             query: &ParamVec::new(),
             cookies: &HeaderVec::new(),
         };
-        
+
         // Should fail validation (format is invalid)
         assert!(
             !provider.validate(&scheme, &[], &req),
@@ -474,13 +464,17 @@ fn test_extract_trust_domain() {
     })
     .to_string();
     let jwks_url = start_mock_jwks_server(jwks);
-    
+
     // Wait for JWKS server to be ready
     use std::io::{Read, Write};
     use std::net::TcpStream;
     let test_url = jwks_url.strip_prefix("http://").unwrap();
     let parts: Vec<&str> = test_url.split(':').collect();
-    let test_addr = format!("{}:{}", parts[0], parts[1].strip_suffix("/jwks.json").unwrap());
+    let test_addr = format!(
+        "{}:{}",
+        parts[0],
+        parts[1].strip_suffix("/jwks.json").unwrap()
+    );
     for _ in 0..10 {
         if let Ok(mut stream) = TcpStream::connect(&test_addr) {
             let req = "GET /jwks.json HTTP/1.1\r\nHost: localhost\r\n\r\n";
@@ -493,19 +487,19 @@ fn test_extract_trust_domain() {
         }
         thread::sleep(Duration::from_millis(50));
     }
-    
+
     // Create provider with JWKS URL
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com", "enterprise.local", "prod.example.com"])
         .audiences(&["api.example.com"])
         .jwks_url(&jwks_url);
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     // Test trust domain extraction by validating tokens with different domains
     // First validation will trigger blocking JWKS fetch if cache is empty
     // Valid trust domains should pass (use signed tokens)
@@ -514,7 +508,7 @@ fn test_extract_trust_domain() {
         ("spiffe://enterprise.local/windows/service", "k1"),
         ("spiffe://prod.example.com/frontend", "k1"),
     ];
-    
+
     for (spiffe_id, kid) in valid_cases {
         // Use signed token for valid trust domains (matching the JWKS kid)
         let token = make_signed_spiffe_jwt(secret, spiffe_id, "api.example.com", kid, 3600);
@@ -525,7 +519,7 @@ fn test_extract_trust_domain() {
             query: &ParamVec::new(),
             cookies: &HeaderVec::new(),
         };
-        
+
         let result = provider.validate(&scheme, &[], &req);
         assert!(
             result,
@@ -533,7 +527,7 @@ fn test_extract_trust_domain() {
             spiffe_id
         );
     }
-    
+
     // Invalid trust domain should fail (unsigned token will fail signature verification)
     let invalid_spiffe_id = "spiffe://untrusted.com/api/users";
     let token = make_spiffe_jwt(invalid_spiffe_id, "api.example.com", 3600, 0);
@@ -544,7 +538,7 @@ fn test_extract_trust_domain() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     let result = provider.validate(&scheme, &[], &req);
     assert!(
         !result,
@@ -555,25 +549,20 @@ fn test_extract_trust_domain() {
 
 #[test]
 fn test_spiffe_validation_valid_svid() {
-    let (provider, _jwks_url) = create_provider_with_mock_jwks(
-        &["example.com"],
-        &["api.example.com"],
-    );
-    
+    let (provider, _jwks_url) =
+        create_provider_with_mock_jwks(&["example.com"], &["api.example.com"]);
+
     thread::sleep(Duration::from_millis(200));
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
-    let token = make_signed_spiffe_jwt_for_test(
-        "spiffe://example.com/api/users",
-        "api.example.com",
-        3600,
-    );
-    
+
+    let token =
+        make_signed_spiffe_jwt_for_test("spiffe://example.com/api/users", "api.example.com", 3600);
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -581,7 +570,7 @@ fn test_spiffe_validation_valid_svid() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     assert!(
         provider.validate(&scheme, &[], &req),
         "Valid SPIFFE SVID should pass validation"
@@ -593,20 +582,20 @@ fn test_spiffe_validation_missing_token() {
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"]);
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     let headers: HeaderVec = HeaderVec::new();
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     assert!(
         !provider.validate(&scheme, &[], &req),
         "Missing token should fail validation"
@@ -618,13 +607,13 @@ fn test_spiffe_validation_invalid_spiffe_id() {
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"]);
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     // Token with invalid SPIFFE ID format
     use base64::{engine::general_purpose, Engine as _};
     let header = json!({"alg": "HS256", "typ": "JWT"});
@@ -640,11 +629,11 @@ fn test_spiffe_validation_invalid_spiffe_id() {
             .unwrap()
             .as_secs() as i64
     });
-    
+
     let header_b64 = general_purpose::URL_SAFE_NO_PAD.encode(header.to_string().as_bytes());
     let payload_b64 = general_purpose::URL_SAFE_NO_PAD.encode(payload.to_string().as_bytes());
     let token = format!("{header_b64}.{payload_b64}.signature");
-    
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -652,7 +641,7 @@ fn test_spiffe_validation_invalid_spiffe_id() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     assert!(
         !provider.validate(&scheme, &[], &req),
         "Invalid SPIFFE ID format should fail validation"
@@ -664,13 +653,13 @@ fn test_spiffe_validation_trust_domain_whitelist() {
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"]);
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     // Token with untrusted domain
     let token = make_spiffe_jwt(
         "spiffe://untrusted.com/api/users",
@@ -678,7 +667,7 @@ fn test_spiffe_validation_trust_domain_whitelist() {
         3600,
         0,
     );
-    
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -686,7 +675,7 @@ fn test_spiffe_validation_trust_domain_whitelist() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     assert!(
         !provider.validate(&scheme, &[], &req),
         "Untrusted domain should fail validation"
@@ -696,22 +685,21 @@ fn test_spiffe_validation_trust_domain_whitelist() {
 #[test]
 fn test_spiffe_validation_empty_trust_domains() {
     // Security: Empty trust domains should reject validation (fail-secure)
-    let provider = SpiffeProvider::new()
-        .audiences(&["api.example.com"]);
-    
+    let provider = SpiffeProvider::new().audiences(&["api.example.com"]);
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     let token = make_spiffe_jwt(
         "spiffe://any-domain.com/api/users",
         "api.example.com",
         3600,
         0,
     );
-    
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -719,7 +707,7 @@ fn test_spiffe_validation_empty_trust_domains() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     assert!(
         !provider.validate(&scheme, &[], &req),
         "Empty trust domains should reject validation (fail-secure behavior)"
@@ -728,26 +716,21 @@ fn test_spiffe_validation_empty_trust_domains() {
 
 #[test]
 fn test_spiffe_validation_audience_string() {
-    let (provider, _jwks_url) = create_provider_with_mock_jwks(
-        &["example.com"],
-        &["api.example.com", "brrtrouter"],
-    );
-    
+    let (provider, _jwks_url) =
+        create_provider_with_mock_jwks(&["example.com"], &["api.example.com", "brrtrouter"]);
+
     thread::sleep(Duration::from_millis(200));
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     // Valid audience
-    let token = make_signed_spiffe_jwt_for_test(
-        "spiffe://example.com/api/users",
-        "api.example.com",
-        3600,
-    );
-    
+    let token =
+        make_signed_spiffe_jwt_for_test("spiffe://example.com/api/users", "api.example.com", 3600);
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -755,19 +738,16 @@ fn test_spiffe_validation_audience_string() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     assert!(
         provider.validate(&scheme, &[], &req),
         "Valid audience should pass validation"
     );
-    
+
     // Invalid audience
-    let token = make_signed_spiffe_jwt_for_test(
-        "spiffe://example.com/api/users",
-        "wrong-audience",
-        3600,
-    );
-    
+    let token =
+        make_signed_spiffe_jwt_for_test("spiffe://example.com/api/users", "wrong-audience", 3600);
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -775,7 +755,7 @@ fn test_spiffe_validation_audience_string() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     assert!(
         !provider.validate(&scheme, &[], &req),
         "Invalid audience should fail validation"
@@ -784,26 +764,24 @@ fn test_spiffe_validation_audience_string() {
 
 #[test]
 fn test_spiffe_validation_audience_array() {
-    let (provider, _jwks_url) = create_provider_with_mock_jwks(
-        &["example.com"],
-        &["api.example.com", "brrtrouter"],
-    );
-    
+    let (provider, _jwks_url) =
+        create_provider_with_mock_jwks(&["example.com"], &["api.example.com", "brrtrouter"]);
+
     thread::sleep(Duration::from_millis(200));
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     // Token with array audience containing valid audience
     let token = make_signed_spiffe_jwt_array_aud_for_test(
         "spiffe://example.com/api/users",
         &["api.example.com", "other-audience"],
         3600,
     );
-    
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -811,19 +789,19 @@ fn test_spiffe_validation_audience_array() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     assert!(
         provider.validate(&scheme, &[], &req),
         "Array audience with valid entry should pass validation"
     );
-    
+
     // Token with array audience containing no valid audience
     let token = make_signed_spiffe_jwt_array_aud_for_test(
         "spiffe://example.com/api/users",
         &["wrong-audience", "another-wrong"],
         3600,
     );
-    
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -831,7 +809,7 @@ fn test_spiffe_validation_audience_array() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     assert!(
         !provider.validate(&scheme, &[], &req),
         "Array audience with no valid entry should fail validation"
@@ -841,22 +819,16 @@ fn test_spiffe_validation_audience_array() {
 #[test]
 fn test_spiffe_validation_empty_audiences() {
     // Security: Empty audiences should reject validation (fail-secure)
-    let provider = SpiffeProvider::new()
-        .trust_domains(&["example.com"]);
-    
+    let provider = SpiffeProvider::new().trust_domains(&["example.com"]);
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
-    let token = make_spiffe_jwt(
-        "spiffe://example.com/api/users",
-        "any-audience",
-        3600,
-        0,
-    );
-    
+
+    let token = make_spiffe_jwt("spiffe://example.com/api/users", "any-audience", 3600, 0);
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -864,7 +836,7 @@ fn test_spiffe_validation_empty_audiences() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     assert!(
         !provider.validate(&scheme, &[], &req),
         "Empty audiences should reject validation (fail-secure behavior)"
@@ -877,18 +849,15 @@ fn test_spiffe_validation_expired_token() {
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"])
         .leeway(60); // 60 seconds leeway
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
-    let token = make_expired_spiffe_jwt(
-        "spiffe://example.com/api/users",
-        "api.example.com",
-    );
-    
+
+    let token = make_expired_spiffe_jwt("spiffe://example.com/api/users", "api.example.com");
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -896,7 +865,7 @@ fn test_spiffe_validation_expired_token() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     assert!(
         !provider.validate(&scheme, &[], &req),
         "Expired token should fail validation"
@@ -908,13 +877,13 @@ fn test_spiffe_validation_missing_sub_claim() {
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"]);
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     // Token without 'sub' claim
     use base64::{engine::general_purpose, Engine as _};
     let header = json!({"alg": "HS256", "typ": "JWT"});
@@ -929,11 +898,11 @@ fn test_spiffe_validation_missing_sub_claim() {
             .unwrap()
             .as_secs() as i64
     });
-    
+
     let header_b64 = general_purpose::URL_SAFE_NO_PAD.encode(header.to_string().as_bytes());
     let payload_b64 = general_purpose::URL_SAFE_NO_PAD.encode(payload.to_string().as_bytes());
     let token = format!("{header_b64}.{payload_b64}.signature");
-    
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -941,7 +910,7 @@ fn test_spiffe_validation_missing_sub_claim() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     assert!(
         !provider.validate(&scheme, &[], &req),
         "Missing 'sub' claim should fail validation"
@@ -953,13 +922,13 @@ fn test_spiffe_validation_missing_exp_claim() {
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"]);
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     // Token without 'exp' claim
     use base64::{engine::general_purpose, Engine as _};
     let header = json!({"alg": "HS256", "typ": "JWT"});
@@ -971,11 +940,11 @@ fn test_spiffe_validation_missing_exp_claim() {
             .unwrap()
             .as_secs() as i64
     });
-    
+
     let header_b64 = general_purpose::URL_SAFE_NO_PAD.encode(header.to_string().as_bytes());
     let payload_b64 = general_purpose::URL_SAFE_NO_PAD.encode(payload.to_string().as_bytes());
     let token = format!("{header_b64}.{payload_b64}.signature");
-    
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -983,7 +952,7 @@ fn test_spiffe_validation_missing_exp_claim() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     assert!(
         !provider.validate(&scheme, &[], &req),
         "Missing 'exp' claim should fail validation"
@@ -995,21 +964,16 @@ fn test_spiffe_validation_wrong_scheme() {
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"]);
-    
+
     // Wrong scheme (not HTTP Bearer)
     let scheme = SecurityScheme::ApiKey {
         name: "X-API-Key".to_string(),
         location: "header".to_string(),
         description: None,
     };
-    
-    let token = make_spiffe_jwt(
-        "spiffe://example.com/api/users",
-        "api.example.com",
-        3600,
-        0,
-    );
-    
+
+    let token = make_spiffe_jwt("spiffe://example.com/api/users", "api.example.com", 3600, 0);
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -1017,7 +981,7 @@ fn test_spiffe_validation_wrong_scheme() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     assert!(
         !provider.validate(&scheme, &[], &req),
         "Wrong security scheme should fail validation"
@@ -1026,16 +990,10 @@ fn test_spiffe_validation_wrong_scheme() {
 
 #[test]
 fn test_spiffe_extract_spiffe_id() {
-    let provider = SpiffeProvider::new()
-        .trust_domains(&["example.com"]);
-    
-    let token = make_spiffe_jwt(
-        "spiffe://example.com/api/users",
-        "api.example.com",
-        3600,
-        0,
-    );
-    
+    let provider = SpiffeProvider::new().trust_domains(&["example.com"]);
+
+    let token = make_spiffe_jwt("spiffe://example.com/api/users", "api.example.com", 3600, 0);
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -1043,7 +1001,7 @@ fn test_spiffe_extract_spiffe_id() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     let spiffe_id = provider.extract_spiffe_id(&req);
     assert_eq!(
         spiffe_id,
@@ -1057,20 +1015,15 @@ fn test_spiffe_extract_claims() {
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"]);
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
-    let token = make_spiffe_jwt(
-        "spiffe://example.com/api/users",
-        "api.example.com",
-        3600,
-        0,
-    );
-    
+
+    let token = make_spiffe_jwt("spiffe://example.com/api/users", "api.example.com", 3600, 0);
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -1078,13 +1031,10 @@ fn test_spiffe_extract_claims() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     let claims = provider.extract_claims(&scheme, &req);
-    assert!(
-        claims.is_some(),
-        "Should extract claims from valid token"
-    );
-    
+    assert!(claims.is_some(), "Should extract claims from valid token");
+
     let claims = claims.unwrap();
     assert_eq!(
         claims.get("sub").and_then(|v| v.as_str()),
@@ -1096,8 +1046,14 @@ fn test_spiffe_extract_claims() {
         Some("api.example.com"),
         "Claims should contain audience"
     );
-    assert!(claims.get("exp").is_some(), "Claims should contain expiration");
-    assert!(claims.get("iat").is_some(), "Claims should contain issued at");
+    assert!(
+        claims.get("exp").is_some(),
+        "Claims should contain expiration"
+    );
+    assert!(
+        claims.get("iat").is_some(),
+        "Claims should contain issued at"
+    );
 }
 
 #[test]
@@ -1111,13 +1067,17 @@ fn test_spiffe_cookie_extraction() {
     })
     .to_string();
     let jwks_url = start_mock_jwks_server(jwks);
-    
+
     // Wait for JWKS server to be ready
     use std::io::{Read, Write};
     use std::net::TcpStream;
     let test_url = jwks_url.strip_prefix("http://").unwrap();
     let parts: Vec<&str> = test_url.split(':').collect();
-    let test_addr = format!("{}:{}", parts[0], parts[1].strip_suffix("/jwks.json").unwrap());
+    let test_addr = format!(
+        "{}:{}",
+        parts[0],
+        parts[1].strip_suffix("/jwks.json").unwrap()
+    );
     for _ in 0..10 {
         if let Ok(mut stream) = TcpStream::connect(&test_addr) {
             let req = "GET /jwks.json HTTP/1.1\r\nHost: localhost\r\n\r\n";
@@ -1130,42 +1090,39 @@ fn test_spiffe_cookie_extraction() {
         }
         thread::sleep(Duration::from_millis(50));
     }
-    
+
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"])
         .jwks_url(&jwks_url)
         .cookie_name("spiffe_token");
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     // Use signed token (signature verification is required)
-    let token = make_signed_spiffe_jwt_for_test(
-        "spiffe://example.com/api/users",
-        "api.example.com",
-        3600,
-    );
-    
+    let token =
+        make_signed_spiffe_jwt_for_test("spiffe://example.com/api/users", "api.example.com", 3600);
+
     // Token in cookie, not header
     let mut cookies: HeaderVec = HeaderVec::new();
     cookies.push((Arc::from("spiffe_token"), token));
-    
+
     let req = SecurityRequest {
         headers: &HeaderVec::new(),
         query: &ParamVec::new(),
         cookies: &cookies,
     };
-    
+
     // First validation will trigger blocking JWKS fetch if cache is empty
     assert!(
         provider.validate(&scheme, &[], &req),
         "Should extract token from cookie when configured"
     );
-    
+
     // Verify SPIFFE ID extraction from cookie
     let spiffe_id = provider.extract_spiffe_id(&req);
     assert_eq!(
@@ -1187,47 +1144,47 @@ fn test_spiffe_leeway_configuration() {
     })
     .to_string();
     let jwks_url = start_mock_jwks_server(jwks);
-    
+
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"])
         .leeway(3600) // 1 hour leeway
         .jwks_url(&jwks_url);
-    
+
     thread::sleep(Duration::from_millis(200));
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     // Token expired 30 minutes ago (within leeway)
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs() as i64;
-    
+
     let exp = now - 1800; // 30 minutes ago
     let iat = now - 3600; // 1 hour ago
-    
+
     use jsonwebtoken::{Algorithm, EncodingKey, Header};
     let header = Header {
         kid: Some("test-kid".to_string()),
         alg: Algorithm::HS256,
         ..Default::default()
     };
-    
+
     let claims = json!({
         "sub": "spiffe://example.com/api/users",
         "aud": "api.example.com",
         "exp": exp,
         "iat": iat
     });
-    
+
     let encoding_key = EncodingKey::from_secret(secret);
     let token = jsonwebtoken::encode(&header, &claims, &encoding_key).unwrap();
-    
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -1235,7 +1192,7 @@ fn test_spiffe_leeway_configuration() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     assert!(
         provider.validate(&scheme, &[], &req),
         "Token expired within leeway should pass validation"
@@ -1247,22 +1204,25 @@ fn test_spiffe_malformed_jwt() {
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"]);
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     // Malformed JWT (not 3 parts)
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), "Bearer invalid.token".to_string()));
+    headers.push((
+        Arc::from("authorization"),
+        "Bearer invalid.token".to_string(),
+    ));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     assert!(
         !provider.validate(&scheme, &[], &req),
         "Malformed JWT should fail validation"
@@ -1274,22 +1234,25 @@ fn test_spiffe_invalid_base64_payload() {
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"]);
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     // Invalid base64 in payload
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), "Bearer header.invalid-base64!.signature".to_string()));
+    headers.push((
+        Arc::from("authorization"),
+        "Bearer header.invalid-base64!.signature".to_string(),
+    ));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     assert!(
         !provider.validate(&scheme, &[], &req),
         "Invalid base64 payload should fail validation"
@@ -1301,26 +1264,29 @@ fn test_spiffe_invalid_json_payload() {
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"]);
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     // Valid base64 but invalid JSON
     use base64::{engine::general_purpose, Engine as _};
     let header_b64 = general_purpose::URL_SAFE_NO_PAD.encode(b"header");
     let invalid_json_b64 = general_purpose::URL_SAFE_NO_PAD.encode(b"not valid json");
-    
+
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {header_b64}.{invalid_json_b64}.signature")));
+    headers.push((
+        Arc::from("authorization"),
+        format!("Bearer {header_b64}.{invalid_json_b64}.signature"),
+    ));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     assert!(
         !provider.validate(&scheme, &[], &req),
         "Invalid JSON payload should fail validation"
@@ -1333,20 +1299,20 @@ fn test_spiffe_multiple_trust_domains() {
         &["example.com", "enterprise.local", "prod.example.com"],
         &["api.example.com"],
     );
-    
+
     thread::sleep(Duration::from_millis(200));
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     // Test each trust domain
     for trust_domain in &["example.com", "enterprise.local", "prod.example.com"] {
         let spiffe_id = format!("spiffe://{trust_domain}/api/users");
         let token = make_signed_spiffe_jwt_for_test(&spiffe_id, "api.example.com", 3600);
-        
+
         let mut headers: HeaderVec = HeaderVec::new();
         headers.push((Arc::from("authorization"), format!("Bearer {token}")));
         let req = SecurityRequest {
@@ -1354,7 +1320,7 @@ fn test_spiffe_multiple_trust_domains() {
             query: &ParamVec::new(),
             cookies: &HeaderVec::new(),
         };
-        
+
         assert!(
             provider.validate(&scheme, &[], &req),
             "Trust domain '{trust_domain}' should pass validation"
@@ -1377,28 +1343,38 @@ fn test_spiffe_jwks_signature_verification() {
     })
     .to_string();
     let jwks_url = start_mock_jwks_server(jwks);
-    
+
     // Create provider with JWKS
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"])
         .jwks_url(&jwks_url);
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     // Create properly signed token
-    let token = make_signed_spiffe_jwt(secret, "spiffe://example.com/api/users", "api.example.com", "k1", 3600);
-    
+    let token = make_signed_spiffe_jwt(
+        secret,
+        "spiffe://example.com/api/users",
+        "api.example.com",
+        "k1",
+        3600,
+    );
+
     // Verify server is ready by making a test request
     use std::io::{Read, Write};
     use std::net::TcpStream;
     let test_url = jwks_url.strip_prefix("http://").unwrap();
     let parts: Vec<&str> = test_url.split(':').collect();
-    let test_addr = format!("{}:{}", parts[0], parts[1].strip_suffix("/jwks.json").unwrap());
+    let test_addr = format!(
+        "{}:{}",
+        parts[0],
+        parts[1].strip_suffix("/jwks.json").unwrap()
+    );
     for _ in 0..10 {
         if let Ok(mut stream) = TcpStream::connect(&test_addr) {
             let req = "GET /jwks.json HTTP/1.1\r\nHost: localhost\r\n\r\n";
@@ -1411,7 +1387,7 @@ fn test_spiffe_jwks_signature_verification() {
         }
         thread::sleep(Duration::from_millis(50));
     }
-    
+
     // Trigger JWKS fetch by calling validate (which calls refresh_jwks_if_needed)
     // First validation will do blocking refresh if cache is empty
     let mut headers: HeaderVec = HeaderVec::new();
@@ -1421,11 +1397,11 @@ fn test_spiffe_jwks_signature_verification() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     // First validation should trigger blocking JWKS fetch and succeed
     // The refresh_jwks_if_needed() method does blocking refresh when cache is empty
     let result = provider.validate(&scheme, &[], &req);
-    
+
     assert!(
         result,
         "Valid signed SPIFFE SVID should pass validation with JWKS. This verifies JWKS fetch and signature verification work correctly."
@@ -1445,25 +1421,31 @@ fn test_spiffe_jwks_invalid_signature() {
     })
     .to_string();
     let jwks_url = start_mock_jwks_server(jwks);
-    
+
     // Create provider with JWKS
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"])
         .jwks_url(&jwks_url);
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     // Create token signed with wrong secret
-    let token = make_signed_spiffe_jwt(wrong_secret, "spiffe://example.com/api/users", "api.example.com", "k1", 3600);
-    
+    let token = make_signed_spiffe_jwt(
+        wrong_secret,
+        "spiffe://example.com/api/users",
+        "api.example.com",
+        "k1",
+        3600,
+    );
+
     // Wait for JWKS to be fetched
     thread::sleep(Duration::from_millis(200));
-    
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -1471,7 +1453,7 @@ fn test_spiffe_jwks_invalid_signature() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     assert!(
         !provider.validate(&scheme, &[], &req),
         "Invalid signature should fail validation"
@@ -1490,47 +1472,47 @@ fn test_spiffe_jwks_missing_key_id() {
     })
     .to_string();
     let jwks_url = start_mock_jwks_server(jwks);
-    
+
     // Create provider with JWKS
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"])
         .jwks_url(&jwks_url);
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     // Create token without kid in header
-    
+
     use jsonwebtoken::{Algorithm, EncodingKey, Header};
-    
+
     let header = Header {
         kid: None, // Missing kid
         alg: Algorithm::HS256,
         ..Default::default()
     };
-    
+
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs() as i64;
-    
+
     let claims = json!({
         "sub": "spiffe://example.com/api/users",
         "aud": "api.example.com",
         "exp": now + 3600,
         "iat": now
     });
-    
+
     let encoding_key = EncodingKey::from_secret(secret);
     let token = jsonwebtoken::encode(&header, &claims, &encoding_key).unwrap();
-    
+
     // Wait for JWKS to be fetched
     thread::sleep(Duration::from_millis(200));
-    
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -1538,7 +1520,7 @@ fn test_spiffe_jwks_missing_key_id() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     assert!(
         !provider.validate(&scheme, &[], &req),
         "Token without kid should fail validation when JWKS is configured"
@@ -1557,25 +1539,31 @@ fn test_spiffe_jwks_key_not_found() {
     })
     .to_string();
     let jwks_url = start_mock_jwks_server(jwks);
-    
+
     // Create provider with JWKS
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"])
         .jwks_url(&jwks_url);
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     // Create token with kid that doesn't exist in JWKS
-    let token = make_signed_spiffe_jwt(secret, "spiffe://example.com/api/users", "api.example.com", "k2", 3600);
-    
+    let token = make_signed_spiffe_jwt(
+        secret,
+        "spiffe://example.com/api/users",
+        "api.example.com",
+        "k2",
+        3600,
+    );
+
     // Wait for JWKS to be fetched
     thread::sleep(Duration::from_millis(200));
-    
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -1583,7 +1571,7 @@ fn test_spiffe_jwks_key_not_found() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     assert!(
         !provider.validate(&scheme, &[], &req),
         "Token with kid not in JWKS should fail validation"
@@ -1602,20 +1590,20 @@ fn test_spiffe_jwks_algorithm_mismatch() {
     })
     .to_string();
     let jwks_url = start_mock_jwks_server(jwks);
-    
+
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"])
         .jwks_url(&jwks_url);
-    
+
     thread::sleep(Duration::from_millis(200));
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     // Create token signed with HS384 but JWKS has HS256
     use jsonwebtoken::{Algorithm, EncodingKey, Header};
     let header = Header {
@@ -1623,22 +1611,22 @@ fn test_spiffe_jwks_algorithm_mismatch() {
         alg: Algorithm::HS384, // Different algorithm
         ..Default::default()
     };
-    
+
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs() as i64;
-    
+
     let claims = json!({
         "sub": "spiffe://example.com/api/users",
         "aud": "api.example.com",
         "exp": now + 3600,
         "iat": now
     });
-    
+
     let encoding_key = EncodingKey::from_secret(secret);
     let token = jsonwebtoken::encode(&header, &claims, &encoding_key).unwrap();
-    
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -1646,7 +1634,7 @@ fn test_spiffe_jwks_algorithm_mismatch() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     assert!(
         !provider.validate(&scheme, &[], &req),
         "Token with algorithm mismatch should fail validation"
@@ -1658,26 +1646,23 @@ fn test_spiffe_jwks_malformed_json() {
     // JWKS server returns malformed JSON
     let jwks = "not valid json {";
     let jwks_url = start_mock_jwks_server(jwks.to_string());
-    
+
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"])
         .jwks_url(&jwks_url);
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
-    let token = make_signed_spiffe_jwt_for_test(
-        "spiffe://example.com/api/users",
-        "api.example.com",
-        3600,
-    );
-    
+
+    let token =
+        make_signed_spiffe_jwt_for_test("spiffe://example.com/api/users", "api.example.com", 3600);
+
     thread::sleep(Duration::from_millis(200));
-    
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -1685,7 +1670,7 @@ fn test_spiffe_jwks_malformed_json() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     // Should fail because JWKS can't be parsed
     assert!(
         !provider.validate(&scheme, &[], &req),
@@ -1701,26 +1686,23 @@ fn test_spiffe_jwks_empty_keys_array() {
     })
     .to_string();
     let jwks_url = start_mock_jwks_server(jwks);
-    
+
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"])
         .jwks_url(&jwks_url);
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
-    let token = make_signed_spiffe_jwt_for_test(
-        "spiffe://example.com/api/users",
-        "api.example.com",
-        3600,
-    );
-    
+
+    let token =
+        make_signed_spiffe_jwt_for_test("spiffe://example.com/api/users", "api.example.com", 3600);
+
     thread::sleep(Duration::from_millis(200));
-    
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -1728,7 +1710,7 @@ fn test_spiffe_jwks_empty_keys_array() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     // Should fail because no keys available for verification
     assert!(
         !provider.validate(&scheme, &[], &req),
@@ -1744,26 +1726,23 @@ fn test_spiffe_jwks_missing_keys_field() {
     })
     .to_string();
     let jwks_url = start_mock_jwks_server(jwks);
-    
+
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"])
         .jwks_url(&jwks_url);
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
-    let token = make_signed_spiffe_jwt_for_test(
-        "spiffe://example.com/api/users",
-        "api.example.com",
-        3600,
-    );
-    
+
+    let token =
+        make_signed_spiffe_jwt_for_test("spiffe://example.com/api/users", "api.example.com", 3600);
+
     thread::sleep(Duration::from_millis(200));
-    
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -1771,7 +1750,7 @@ fn test_spiffe_jwks_missing_keys_field() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     // Should fail because no keys field
     assert!(
         !provider.validate(&scheme, &[], &req),
@@ -1789,26 +1768,23 @@ fn test_spiffe_jwks_invalid_key_base64() {
     })
     .to_string();
     let jwks_url = start_mock_jwks_server(jwks);
-    
+
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"])
         .jwks_url(&jwks_url);
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
-    let token = make_signed_spiffe_jwt_for_test(
-        "spiffe://example.com/api/users",
-        "api.example.com",
-        3600,
-    );
-    
+
+    let token =
+        make_signed_spiffe_jwt_for_test("spiffe://example.com/api/users", "api.example.com", 3600);
+
     thread::sleep(Duration::from_millis(200));
-    
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -1816,7 +1792,7 @@ fn test_spiffe_jwks_invalid_key_base64() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     // Should fail because key can't be decoded
     assert!(
         !provider.validate(&scheme, &[], &req),
@@ -1839,23 +1815,29 @@ fn test_spiffe_jwks_multiple_keys_wrong_kid() {
     })
     .to_string();
     let jwks_url = start_mock_jwks_server(jwks);
-    
+
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"])
         .jwks_url(&jwks_url);
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     // Token signed with secret1 but claims kid is k2 (wrong key for kid)
-    let token = make_signed_spiffe_jwt(secret1, "spiffe://example.com/api/users", "api.example.com", "k2", 3600);
-    
+    let token = make_signed_spiffe_jwt(
+        secret1,
+        "spiffe://example.com/api/users",
+        "api.example.com",
+        "k2",
+        3600,
+    );
+
     thread::sleep(Duration::from_millis(200));
-    
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -1863,7 +1845,7 @@ fn test_spiffe_jwks_multiple_keys_wrong_kid() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     // Should fail because signature doesn't match the key for kid k2
     assert!(
         !provider.validate(&scheme, &[], &req),
@@ -1884,21 +1866,27 @@ fn test_spiffe_jwks_token_tampered_claims() {
     })
     .to_string();
     let jwks_url = start_mock_jwks_server(jwks);
-    
+
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"])
         .jwks_url(&jwks_url);
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     // Create valid token
-    let valid_token = make_signed_spiffe_jwt(secret, "spiffe://example.com/api/users", "api.example.com", "k1", 3600);
-    
+    let valid_token = make_signed_spiffe_jwt(
+        secret,
+        "spiffe://example.com/api/users",
+        "api.example.com",
+        "k1",
+        3600,
+    );
+
     // Tamper with the token by modifying the payload (base64 decode, modify, re-encode)
     let parts: Vec<&str> = valid_token.split('.').collect();
     if parts.len() == 3 {
@@ -1906,25 +1894,29 @@ fn test_spiffe_jwks_token_tampered_claims() {
         let mut payload_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
             .decode(parts[1])
             .unwrap();
-        
+
         // Modify the payload to change the SPIFFE ID
         let mut payload: serde_json::Value = serde_json::from_slice(&payload_bytes).unwrap();
         payload["sub"] = json!("spiffe://attacker.com/api/users");
         payload_bytes = serde_json::to_vec(&payload).unwrap();
-        
-        let tampered_payload = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&payload_bytes);
+
+        let tampered_payload =
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&payload_bytes);
         let tampered_token = format!("{}.{}.{}", parts[0], tampered_payload, parts[2]);
-        
+
         thread::sleep(Duration::from_millis(200));
-        
+
         let mut headers: HeaderVec = HeaderVec::new();
-        headers.push((Arc::from("authorization"), format!("Bearer {tampered_token}")));
+        headers.push((
+            Arc::from("authorization"),
+            format!("Bearer {tampered_token}"),
+        ));
         let req = SecurityRequest {
             headers: &headers,
             query: &ParamVec::new(),
             cookies: &HeaderVec::new(),
         };
-        
+
         // Should fail because signature no longer matches tampered payload
         assert!(
             !provider.validate(&scheme, &[], &req),
@@ -1939,21 +1931,16 @@ fn test_spiffe_jwks_without_jwks_url() {
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"]);
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     // Unsigned token (would be accepted without signature verification, but that's insecure)
-    let token = make_spiffe_jwt(
-        "spiffe://example.com/api/users",
-        "api.example.com",
-        3600,
-        0,
-    );
-    
+    let token = make_spiffe_jwt("spiffe://example.com/api/users", "api.example.com", 3600, 0);
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -1961,7 +1948,7 @@ fn test_spiffe_jwks_without_jwks_url() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     // Security fix: Validation should FAIL when JWKS URL is not configured
     // This prevents attackers from forging tokens with arbitrary claims
     assert!(
@@ -1983,26 +1970,30 @@ fn test_spiffe_jwks_cache_refresh() {
     })
     .to_string();
     let jwks_url = start_mock_jwks_server(jwks1);
-    
+
     // Create provider with short cache TTL
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"])
         .jwks_url(&jwks_url)
         .jwks_cache_ttl(1); // 1 second TTL
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     // Verify server is ready
     use std::io::{Read, Write};
     use std::net::TcpStream;
     let test_url = jwks_url.strip_prefix("http://").unwrap();
     let parts: Vec<&str> = test_url.split(':').collect();
-    let test_addr = format!("{}:{}", parts[0], parts[1].strip_suffix("/jwks.json").unwrap());
+    let test_addr = format!(
+        "{}:{}",
+        parts[0],
+        parts[1].strip_suffix("/jwks.json").unwrap()
+    );
     for _ in 0..10 {
         if let Ok(mut stream) = TcpStream::connect(&test_addr) {
             let req = "GET /jwks.json HTTP/1.1\r\nHost: localhost\r\n\r\n";
@@ -2015,10 +2006,16 @@ fn test_spiffe_jwks_cache_refresh() {
         }
         thread::sleep(Duration::from_millis(50));
     }
-    
+
     // Create token with first key
-    let token1 = make_signed_spiffe_jwt(secret1, "spiffe://example.com/api/users", "api.example.com", "k1", 3600);
-    
+    let token1 = make_signed_spiffe_jwt(
+        secret1,
+        "spiffe://example.com/api/users",
+        "api.example.com",
+        "k1",
+        3600,
+    );
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token1}")));
     let req = SecurityRequest {
@@ -2026,16 +2023,16 @@ fn test_spiffe_jwks_cache_refresh() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     // First validation will trigger blocking JWKS fetch
     assert!(
         provider.validate(&scheme, &[], &req),
         "First token should pass validation (triggers blocking JWKS fetch)"
     );
-    
+
     // Wait for cache to expire
     thread::sleep(Duration::from_secs(2));
-    
+
     // Token should still work (cache refresh should happen in background)
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token1}")));
@@ -2044,10 +2041,10 @@ fn test_spiffe_jwks_cache_refresh() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     // Give background refresh time to complete
     thread::sleep(Duration::from_millis(300));
-    
+
     assert!(
         provider.validate(&scheme, &[], &req),
         "Token should still work after cache refresh"
@@ -2074,7 +2071,7 @@ fn test_spiffe_jwks_url_http_localhost_allowed() {
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"])
         .jwks_url("http://localhost:8080/.well-known/jwks.json");
-    
+
     // Should not panic - test passes if we get here
 }
 
@@ -2086,7 +2083,7 @@ fn test_spiffe_jwks_url_http_127_0_0_1_allowed() {
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"])
         .jwks_url("http://127.0.0.1:8080/.well-known/jwks.json");
-    
+
     // Should not panic - test passes if we get here
 }
 
@@ -2098,7 +2095,7 @@ fn test_spiffe_jwks_url_https_allowed() {
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"])
         .jwks_url("https://spiffe.example.com/.well-known/jwks.json");
-    
+
     // Should not panic - test passes if we get here
 }
 
@@ -2121,7 +2118,7 @@ fn test_spiffe_jwks_cache_ttl_configuration() {
         .audiences(&["api.example.com"])
         .jwks_url("http://localhost:8080/.well-known/jwks.json")
         .jwks_cache_ttl(60); // 60 seconds
-    
+
     // Should not panic - test passes if we get here
 }
 
@@ -2131,7 +2128,7 @@ fn test_spiffe_get_key_for_no_jwks_configured() {
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"]);
-    
+
     // get_key_for is pub(super), so we test via validate with JWKS-required token
     // This indirectly tests that get_key_for returns None and validation fails
     let scheme = SecurityScheme::Http {
@@ -2139,15 +2136,10 @@ fn test_spiffe_get_key_for_no_jwks_configured() {
         bearer_format: None,
         description: None,
     };
-    
+
     // Create a token that would require JWKS (but provider doesn't have JWKS)
-    let token = make_spiffe_jwt(
-        "spiffe://example.com/api/users",
-        "api.example.com",
-        3600,
-        0,
-    );
-    
+    let token = make_spiffe_jwt("spiffe://example.com/api/users", "api.example.com", 3600, 0);
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -2155,7 +2147,7 @@ fn test_spiffe_get_key_for_no_jwks_configured() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     // Security fix: Validation should FAIL when JWKS is not configured
     // Signature verification is required to prevent token forgery attacks
     assert!(
@@ -2174,21 +2166,16 @@ fn test_spiffe_refresh_jwks_if_needed_no_jwks_configured() {
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"]);
     // Note: No JWKS URL configured - this should cause validation to fail
-    
+
     // Should not panic or hang
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
-    let token = make_spiffe_jwt(
-        "spiffe://example.com/api/users",
-        "api.example.com",
-        3600,
-        0,
-    );
-    
+
+    let token = make_spiffe_jwt("spiffe://example.com/api/users", "api.example.com", 3600, 0);
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -2196,11 +2183,20 @@ fn test_spiffe_refresh_jwks_if_needed_no_jwks_configured() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     // Multiple validations should fail without JWKS (signature verification required)
-    assert!(!provider.validate(&scheme, &[], &req), "Validation should fail when JWKS URL is not configured");
-    assert!(!provider.validate(&scheme, &[], &req), "Validation should fail when JWKS URL is not configured");
-    assert!(!provider.validate(&scheme, &[], &req), "Validation should fail when JWKS URL is not configured");
+    assert!(
+        !provider.validate(&scheme, &[], &req),
+        "Validation should fail when JWKS URL is not configured"
+    );
+    assert!(
+        !provider.validate(&scheme, &[], &req),
+        "Validation should fail when JWKS URL is not configured"
+    );
+    assert!(
+        !provider.validate(&scheme, &[], &req),
+        "Validation should fail when JWKS URL is not configured"
+    );
 }
 
 #[test]
@@ -2215,37 +2211,34 @@ fn test_spiffe_extract_token_from_cookie() {
     })
     .to_string();
     let jwks_url = start_mock_jwks_server(jwks);
-    
+
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"])
         .cookie_name("spiffe_token")
         .jwks_url(&jwks_url);
-    
+
     thread::sleep(Duration::from_millis(200));
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
-    let token = make_signed_spiffe_jwt_for_test(
-        "spiffe://example.com/api/users",
-        "api.example.com",
-        3600,
-    );
-    
+
+    let token =
+        make_signed_spiffe_jwt_for_test("spiffe://example.com/api/users", "api.example.com", 3600);
+
     // Put token in cookie instead of Authorization header
     let mut cookies: HeaderVec = HeaderVec::new();
     cookies.push((Arc::from("spiffe_token"), token));
-    
+
     let req = SecurityRequest {
         headers: &HeaderVec::new(),
         query: &ParamVec::new(),
         cookies: &cookies,
     };
-    
+
     assert!(
         provider.validate(&scheme, &[], &req),
         "Token should be extractable from cookie"
@@ -2266,41 +2259,38 @@ fn test_spiffe_extract_token_prefers_header_over_cookie() {
     })
     .to_string();
     let jwks_url = start_mock_jwks_server(jwks);
-    
+
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"])
         .cookie_name("spiffe_token")
         .jwks_url(&jwks_url);
-    
+
     thread::sleep(Duration::from_millis(200));
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
-    let valid_token = make_signed_spiffe_jwt_for_test(
-        "spiffe://example.com/api/users",
-        "api.example.com",
-        3600,
-    );
-    
+
+    let valid_token =
+        make_signed_spiffe_jwt_for_test("spiffe://example.com/api/users", "api.example.com", 3600);
+
     // Put valid token in header, also put it in cookie (both valid)
     // This tests that header is checked first
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {valid_token}")));
-    
+
     let mut cookies: HeaderVec = HeaderVec::new();
     cookies.push((Arc::from("spiffe_token"), valid_token));
-    
+
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
         cookies: &cookies,
     };
-    
+
     // Should use header token and succeed
     assert!(
         provider.validate(&scheme, &[], &req),
@@ -2320,37 +2310,34 @@ fn test_spiffe_extract_token_cookie_fallback() {
     })
     .to_string();
     let jwks_url = start_mock_jwks_server(jwks);
-    
+
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"])
         .cookie_name("spiffe_token")
         .jwks_url(&jwks_url);
-    
+
     thread::sleep(Duration::from_millis(200));
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
-    let token = make_signed_spiffe_jwt_for_test(
-        "spiffe://example.com/api/users",
-        "api.example.com",
-        3600,
-    );
-    
+
+    let token =
+        make_signed_spiffe_jwt_for_test("spiffe://example.com/api/users", "api.example.com", 3600);
+
     // Put token in cookie only (no header)
     let mut cookies: HeaderVec = HeaderVec::new();
     cookies.push((Arc::from("spiffe_token"), token));
-    
+
     let req = SecurityRequest {
         headers: &HeaderVec::new(),
         query: &ParamVec::new(),
         cookies: &cookies,
     };
-    
+
     assert!(
         provider.validate(&scheme, &[], &req),
         "Token should be extractable from cookie when header is missing"
@@ -2364,30 +2351,25 @@ fn test_spiffe_extract_token_no_cookie_name() {
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"]);
     // No cookie_name set
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
-    let token = make_spiffe_jwt(
-        "spiffe://example.com/api/users",
-        "api.example.com",
-        3600,
-        0,
-    );
-    
+
+    let token = make_spiffe_jwt("spiffe://example.com/api/users", "api.example.com", 3600, 0);
+
     // Put token in cookie only (no header, no cookie_name configured)
     let mut cookies: HeaderVec = HeaderVec::new();
     cookies.push((Arc::from("spiffe_token"), token));
-    
+
     let req = SecurityRequest {
         headers: &HeaderVec::new(),
         query: &ParamVec::new(),
         cookies: &cookies,
     };
-    
+
     // Should fail because no header and cookie_name not configured
     assert!(
         !provider.validate(&scheme, &[], &req),
@@ -2407,34 +2389,31 @@ fn test_spiffe_leeway_configuration_edge_cases() {
     })
     .to_string();
     let jwks_url = start_mock_jwks_server(jwks);
-    
+
     let provider1 = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"])
         .leeway(0) // No leeway
         .jwks_url(&jwks_url);
-    
+
     let provider2 = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"])
         .leeway(300) // 5 minutes leeway
         .jwks_url(&jwks_url);
-    
+
     thread::sleep(Duration::from_millis(200));
-    
+
     // Both should be valid configurations
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
-    let token1 = make_signed_spiffe_jwt_for_test(
-        "spiffe://example.com/api/users",
-        "api.example.com",
-        3600,
-    );
-    
+
+    let token1 =
+        make_signed_spiffe_jwt_for_test("spiffe://example.com/api/users", "api.example.com", 3600);
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token1}")));
     let req = SecurityRequest {
@@ -2442,7 +2421,7 @@ fn test_spiffe_leeway_configuration_edge_cases() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     // Both providers should validate the same token
     assert!(provider1.validate(&scheme, &[], &req));
     assert!(provider2.validate(&scheme, &[], &req));
@@ -2457,20 +2436,15 @@ fn test_spiffe_get_key_for_cache_read_error() {
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"])
         .jwks_url("http://localhost:9999/.well-known/jwks.json"); // Invalid port (no server)
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
-    let token = make_spiffe_jwt(
-        "spiffe://example.com/api/users",
-        "api.example.com",
-        3600,
-        0,
-    );
-    
+
+    let token = make_spiffe_jwt("spiffe://example.com/api/users", "api.example.com", 3600, 0);
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -2478,7 +2452,7 @@ fn test_spiffe_get_key_for_cache_read_error() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     // Should fail gracefully (JWKS fetch will fail, but shouldn't panic)
     // Since JWKS is configured, signature verification will fail
     assert!(
@@ -2491,25 +2465,20 @@ fn test_spiffe_get_key_for_cache_read_error() {
 fn test_spiffe_refresh_jwks_if_needed_early_return() {
     // Test that refresh_jwks_if_needed returns early when cache is not expired
     // This is tested indirectly by creating a provider and validating multiple times
-    let (provider, _jwks_url) = create_provider_with_mock_jwks(
-        &["example.com"],
-        &["api.example.com"],
-    );
-    
+    let (provider, _jwks_url) =
+        create_provider_with_mock_jwks(&["example.com"], &["api.example.com"]);
+
     thread::sleep(Duration::from_millis(200));
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
-    let token = make_signed_spiffe_jwt_for_test(
-        "spiffe://example.com/api/users",
-        "api.example.com",
-        3600,
-    );
-    
+
+    let token =
+        make_signed_spiffe_jwt_for_test("spiffe://example.com/api/users", "api.example.com", 3600);
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -2517,7 +2486,7 @@ fn test_spiffe_refresh_jwks_if_needed_early_return() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     // Multiple validations should work (refresh_jwks_if_needed should return early)
     assert!(provider.validate(&scheme, &[], &req));
     assert!(provider.validate(&scheme, &[], &req));
@@ -2531,24 +2500,27 @@ fn test_spiffe_parse_jwt_claims_invalid_format() {
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"]);
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     // Invalid JWT format (only 2 parts instead of 3)
     let invalid_token = "header.payload";
-    
+
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {invalid_token}")));
+    headers.push((
+        Arc::from("authorization"),
+        format!("Bearer {invalid_token}"),
+    ));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     assert!(
         !provider.validate(&scheme, &[], &req),
         "Invalid JWT format should fail validation"
@@ -2561,24 +2533,27 @@ fn test_spiffe_parse_jwt_claims_invalid_base64() {
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"]);
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     // Invalid base64 in payload
     let invalid_token = "header.invalid-base64!.signature";
-    
+
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {invalid_token}")));
+    headers.push((
+        Arc::from("authorization"),
+        format!("Bearer {invalid_token}"),
+    ));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     assert!(
         !provider.validate(&scheme, &[], &req),
         "Invalid base64 payload should fail validation"
@@ -2591,28 +2566,31 @@ fn test_spiffe_parse_jwt_claims_invalid_json() {
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"]);
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     // Valid base64 but invalid JSON
     use base64::{engine::general_purpose, Engine as _};
     let header_b64 = general_purpose::URL_SAFE_NO_PAD.encode(b"header");
     let invalid_json_b64 = general_purpose::URL_SAFE_NO_PAD.encode(b"not valid json");
-    
+
     let invalid_token = format!("{header_b64}.{invalid_json_b64}.signature");
-    
+
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {invalid_token}")));
+    headers.push((
+        Arc::from("authorization"),
+        format!("Bearer {invalid_token}"),
+    ));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     assert!(
         !provider.validate(&scheme, &[], &req),
         "Invalid JSON payload should fail validation"
@@ -2626,21 +2604,20 @@ fn test_spiffe_parse_jwt_claims_invalid_json() {
 #[test]
 fn test_spiffe_id_trust_domain_leading_trailing_dots() {
     // Trust domains with leading/trailing dots should be invalid
-    let provider = SpiffeProvider::new()
-        .trust_domains(&["example.com"]);
-    
+    let provider = SpiffeProvider::new().trust_domains(&["example.com"]);
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     let invalid_ids = vec![
         "spiffe://.example.com/path",
         "spiffe://example.com./path",
         "spiffe://.example.com./path",
     ];
-    
+
     for spiffe_id in invalid_ids {
         let token = make_spiffe_jwt(spiffe_id, "api.example.com", 3600, 0);
         let mut headers: HeaderVec = HeaderVec::new();
@@ -2650,7 +2627,7 @@ fn test_spiffe_id_trust_domain_leading_trailing_dots() {
             query: &ParamVec::new(),
             cookies: &HeaderVec::new(),
         };
-        
+
         // Should fail validation (invalid trust domain format)
         assert!(
             !provider.validate(&scheme, &[], &req),
@@ -2671,20 +2648,20 @@ fn test_spiffe_id_path_special_characters() {
     })
     .to_string();
     let jwks_url = start_mock_jwks_server(jwks);
-    
+
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"])
         .jwks_url(&jwks_url);
-    
+
     thread::sleep(Duration::from_millis(200));
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     let valid_paths = vec![
         "spiffe://example.com/path-with-hyphens",
         "spiffe://example.com/path_with_underscores",
@@ -2692,7 +2669,7 @@ fn test_spiffe_id_path_special_characters() {
         "spiffe://example.com/path/with/multiple/slashes",
         "spiffe://example.com/path//with//double//slashes", // Multiple slashes
     ];
-    
+
     for spiffe_id in valid_paths {
         let token = make_signed_spiffe_jwt_for_test(spiffe_id, "api.example.com", 3600);
         let mut headers: HeaderVec = HeaderVec::new();
@@ -2702,7 +2679,7 @@ fn test_spiffe_id_path_special_characters() {
             query: &ParamVec::new(),
             cookies: &HeaderVec::new(),
         };
-        
+
         // Should pass validation (paths can contain special characters)
         assert!(
             provider.validate(&scheme, &[], &req),
@@ -2723,22 +2700,23 @@ fn test_spiffe_trust_domain_case_sensitivity() {
     })
     .to_string();
     let jwks_url = start_mock_jwks_server(jwks);
-    
+
     let provider = SpiffeProvider::new()
         .trust_domains(&["Example.com"]) // Capital E
         .audiences(&["api.example.com"])
         .jwks_url(&jwks_url);
-    
+
     thread::sleep(Duration::from_millis(200));
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     // Lowercase trust domain should fail
-    let token = make_signed_spiffe_jwt_for_test("spiffe://example.com/path", "api.example.com", 3600);
+    let token =
+        make_signed_spiffe_jwt_for_test("spiffe://example.com/path", "api.example.com", 3600);
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -2746,14 +2724,15 @@ fn test_spiffe_trust_domain_case_sensitivity() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     assert!(
         !provider.validate(&scheme, &[], &req),
         "Trust domain matching should be case-sensitive"
     );
-    
+
     // Exact match should pass
-    let token2 = make_signed_spiffe_jwt_for_test("spiffe://Example.com/path", "api.example.com", 3600);
+    let token2 =
+        make_signed_spiffe_jwt_for_test("spiffe://Example.com/path", "api.example.com", 3600);
     let mut headers2: HeaderVec = HeaderVec::new();
     headers2.push((Arc::from("authorization"), format!("Bearer {token2}")));
     let req2 = SecurityRequest {
@@ -2761,7 +2740,7 @@ fn test_spiffe_trust_domain_case_sensitivity() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     assert!(
         provider.validate(&scheme, &[], &req2),
         "Exact case match should pass"
@@ -2771,15 +2750,14 @@ fn test_spiffe_trust_domain_case_sensitivity() {
 #[test]
 fn test_spiffe_trust_domain_subdomain_confusion() {
     // Subdomain should not match parent domain
-    let provider = SpiffeProvider::new()
-        .trust_domains(&["example.com"]);
-    
+    let provider = SpiffeProvider::new().trust_domains(&["example.com"]);
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     // Subdomain should fail
     let token = make_spiffe_jwt("spiffe://sub.example.com/path", "api.example.com", 3600, 0);
     let mut headers: HeaderVec = HeaderVec::new();
@@ -2789,7 +2767,7 @@ fn test_spiffe_trust_domain_subdomain_confusion() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     assert!(
         !provider.validate(&scheme, &[], &req),
         "Subdomain should not match parent domain"
@@ -2802,19 +2780,19 @@ fn test_spiffe_audience_empty_array() {
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"]);
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     use base64::{engine::general_purpose, Engine as _};
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs() as i64;
-    
+
     let header = json!({"alg": "HS256", "typ": "JWT"});
     let payload = json!({
         "sub": "spiffe://example.com/path",
@@ -2822,11 +2800,11 @@ fn test_spiffe_audience_empty_array() {
         "exp": now + 3600,
         "iat": now
     });
-    
+
     let header_b64 = general_purpose::URL_SAFE_NO_PAD.encode(header.to_string().as_bytes());
     let payload_b64 = general_purpose::URL_SAFE_NO_PAD.encode(payload.to_string().as_bytes());
     let token = format!("{header_b64}.{payload_b64}.signature");
-    
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -2834,7 +2812,7 @@ fn test_spiffe_audience_empty_array() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     assert!(
         !provider.validate(&scheme, &[], &req),
         "Empty audience array should fail validation"
@@ -2854,24 +2832,30 @@ fn test_spiffe_audience_array_with_non_strings() {
     })
     .to_string();
     let jwks_url = start_mock_jwks_server(jwks);
-    
+
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"])
         .jwks_url(&jwks_url);
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     // Wait for JWKS to be fetched
     thread::sleep(Duration::from_millis(200));
-    
+
     // Create signed token with array audience containing mixed types
-    let token = make_signed_spiffe_jwt(secret, "spiffe://example.com/path", "api.example.com", "k1", 3600);
-    
+    let token = make_signed_spiffe_jwt(
+        secret,
+        "spiffe://example.com/path",
+        "api.example.com",
+        "k1",
+        3600,
+    );
+
     // Manually modify the token to have array audience with mixed types
     // We need to decode, modify payload, and re-sign
     use jsonwebtoken::{Algorithm, EncodingKey, Header};
@@ -2880,22 +2864,22 @@ fn test_spiffe_audience_array_with_non_strings() {
         alg: Algorithm::HS256,
         ..Default::default()
     };
-    
+
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs() as i64;
-    
+
     let claims = json!({
         "sub": "spiffe://example.com/path",
         "aud": ["api.example.com", 123, true, null], // Mixed types
         "exp": now + 3600,
         "iat": now
     });
-    
+
     let encoding_key = EncodingKey::from_secret(secret);
     let token = jsonwebtoken::encode(&header, &claims, &encoding_key).unwrap();
-    
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -2903,13 +2887,13 @@ fn test_spiffe_audience_array_with_non_strings() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     // Should pass because "api.example.com" is in the array
     assert!(
         provider.validate(&scheme, &[], &req),
         "Array with valid string audience should pass (non-strings ignored)"
     );
-    
+
     // Array with only non-strings should fail
     let claims2 = json!({
         "sub": "spiffe://example.com/path",
@@ -2917,9 +2901,9 @@ fn test_spiffe_audience_array_with_non_strings() {
         "exp": now + 3600,
         "iat": now
     });
-    
+
     let token2 = jsonwebtoken::encode(&header, &claims2, &encoding_key).unwrap();
-    
+
     let mut headers2: HeaderVec = HeaderVec::new();
     headers2.push((Arc::from("authorization"), format!("Bearer {token2}")));
     let req2 = SecurityRequest {
@@ -2927,7 +2911,7 @@ fn test_spiffe_audience_array_with_non_strings() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     assert!(
         !provider.validate(&scheme, &[], &req2),
         "Array with only non-string audiences should fail"
@@ -2946,32 +2930,32 @@ fn test_spiffe_audience_as_object() {
     })
     .to_string();
     let jwks_url = start_mock_jwks_server(jwks);
-    
+
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"])
         .jwks_url(&jwks_url);
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     thread::sleep(Duration::from_millis(200));
-    
+
     use jsonwebtoken::{Algorithm, EncodingKey, Header};
     let header = Header {
         kid: Some("k1".to_string()),
         alg: Algorithm::HS256,
         ..Default::default()
     };
-    
+
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs() as i64;
-    
+
     // Audience as object (invalid format)
     let claims = json!({
         "sub": "spiffe://example.com/path",
@@ -2979,10 +2963,10 @@ fn test_spiffe_audience_as_object() {
         "exp": now + 3600,
         "iat": now
     });
-    
+
     let encoding_key = EncodingKey::from_secret(secret);
     let token = jsonwebtoken::encode(&header, &claims, &encoding_key).unwrap();
-    
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -2990,7 +2974,7 @@ fn test_spiffe_audience_as_object() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     // Should fail because audience is not string or array
     assert!(
         !provider.validate(&scheme, &[], &req),
@@ -3010,32 +2994,32 @@ fn test_spiffe_audience_as_number() {
     })
     .to_string();
     let jwks_url = start_mock_jwks_server(jwks);
-    
+
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"])
         .jwks_url(&jwks_url);
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     thread::sleep(Duration::from_millis(200));
-    
+
     use jsonwebtoken::{Algorithm, EncodingKey, Header};
     let header = Header {
         kid: Some("k1".to_string()),
         alg: Algorithm::HS256,
         ..Default::default()
     };
-    
+
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs() as i64;
-    
+
     // Audience as number (invalid format)
     let claims = json!({
         "sub": "spiffe://example.com/path",
@@ -3043,10 +3027,10 @@ fn test_spiffe_audience_as_number() {
         "exp": now + 3600,
         "iat": now
     });
-    
+
     let encoding_key = EncodingKey::from_secret(secret);
     let token = jsonwebtoken::encode(&header, &claims, &encoding_key).unwrap();
-    
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -3054,7 +3038,7 @@ fn test_spiffe_audience_as_number() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     // Should fail because audience is not string or array
     assert!(
         !provider.validate(&scheme, &[], &req),
@@ -3074,32 +3058,32 @@ fn test_spiffe_audience_as_boolean() {
     })
     .to_string();
     let jwks_url = start_mock_jwks_server(jwks);
-    
+
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"])
         .jwks_url(&jwks_url);
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     thread::sleep(Duration::from_millis(200));
-    
+
     use jsonwebtoken::{Algorithm, EncodingKey, Header};
     let header = Header {
         kid: Some("k1".to_string()),
         alg: Algorithm::HS256,
         ..Default::default()
     };
-    
+
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs() as i64;
-    
+
     // Audience as boolean (invalid format)
     let claims = json!({
         "sub": "spiffe://example.com/path",
@@ -3107,10 +3091,10 @@ fn test_spiffe_audience_as_boolean() {
         "exp": now + 3600,
         "iat": now
     });
-    
+
     let encoding_key = EncodingKey::from_secret(secret);
     let token = jsonwebtoken::encode(&header, &claims, &encoding_key).unwrap();
-    
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -3118,7 +3102,7 @@ fn test_spiffe_audience_as_boolean() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     // Should fail because audience is not string or array
     assert!(
         !provider.validate(&scheme, &[], &req),
@@ -3138,32 +3122,32 @@ fn test_spiffe_audience_as_null() {
     })
     .to_string();
     let jwks_url = start_mock_jwks_server(jwks);
-    
+
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"])
         .jwks_url(&jwks_url);
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     thread::sleep(Duration::from_millis(200));
-    
+
     use jsonwebtoken::{Algorithm, EncodingKey, Header};
     let header = Header {
         kid: Some("k1".to_string()),
         alg: Algorithm::HS256,
         ..Default::default()
     };
-    
+
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs() as i64;
-    
+
     // Audience as null (invalid format)
     let claims = json!({
         "sub": "spiffe://example.com/path",
@@ -3171,10 +3155,10 @@ fn test_spiffe_audience_as_null() {
         "exp": now + 3600,
         "iat": now
     });
-    
+
     let encoding_key = EncodingKey::from_secret(secret);
     let token = jsonwebtoken::encode(&header, &claims, &encoding_key).unwrap();
-    
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -3182,7 +3166,7 @@ fn test_spiffe_audience_as_null() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     // Should fail because audience is not string or array
     assert!(
         !provider.validate(&scheme, &[], &req),
@@ -3203,32 +3187,32 @@ fn test_spiffe_audience_missing_with_valid_signature() {
     })
     .to_string();
     let jwks_url = start_mock_jwks_server(jwks);
-    
+
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"])
         .jwks_url(&jwks_url);
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     thread::sleep(Duration::from_millis(200));
-    
+
     use jsonwebtoken::{Algorithm, EncodingKey, Header};
     let header = Header {
         kid: Some("k1".to_string()),
         alg: Algorithm::HS256,
         ..Default::default()
     };
-    
+
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs() as i64;
-    
+
     // Token with valid signature but missing audience claim
     let claims = json!({
         "sub": "spiffe://example.com/path",
@@ -3236,10 +3220,10 @@ fn test_spiffe_audience_missing_with_valid_signature() {
         "exp": now + 3600,
         "iat": now
     });
-    
+
     let encoding_key = EncodingKey::from_secret(secret);
     let token = jsonwebtoken::encode(&header, &claims, &encoding_key).unwrap();
-    
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -3247,7 +3231,7 @@ fn test_spiffe_audience_missing_with_valid_signature() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     // Should fail because audience is missing (our validation catches this before signature verification)
     assert!(
         !provider.validate(&scheme, &[], &req),
@@ -3269,32 +3253,32 @@ fn test_spiffe_signature_verification_with_disabled_audience_validation() {
     })
     .to_string();
     let jwks_url = start_mock_jwks_server(jwks);
-    
+
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"])
         .jwks_url(&jwks_url);
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     thread::sleep(Duration::from_millis(200));
-    
+
     use jsonwebtoken::{Algorithm, EncodingKey, Header};
     let header = Header {
         kid: Some("k1".to_string()),
         alg: Algorithm::HS256,
         ..Default::default()
     };
-    
+
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs() as i64;
-    
+
     // Token with valid signature but wrong audience (would pass jsonwebtoken if we didn't disable aud validation)
     // But our validation should catch it first
     let claims = json!({
@@ -3303,10 +3287,10 @@ fn test_spiffe_signature_verification_with_disabled_audience_validation() {
         "exp": now + 3600,
         "iat": now
     });
-    
+
     let encoding_key = EncodingKey::from_secret(secret);
     let token = jsonwebtoken::encode(&header, &claims, &encoding_key).unwrap();
-    
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -3314,7 +3298,7 @@ fn test_spiffe_signature_verification_with_disabled_audience_validation() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     // Should fail because audience doesn't match (our validation catches this before signature verification)
     // This ensures disabling jsonwebtoken's audience validation doesn't create a security hole
     assert!(
@@ -3329,19 +3313,19 @@ fn test_spiffe_sub_claim_non_string() {
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"]);
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     use base64::{engine::general_purpose, Engine as _};
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs() as i64;
-    
+
     // sub as number
     let header = json!({"alg": "HS256", "typ": "JWT"});
     let payload = json!({
@@ -3350,11 +3334,11 @@ fn test_spiffe_sub_claim_non_string() {
         "exp": now + 3600,
         "iat": now
     });
-    
+
     let header_b64 = general_purpose::URL_SAFE_NO_PAD.encode(header.to_string().as_bytes());
     let payload_b64 = general_purpose::URL_SAFE_NO_PAD.encode(payload.to_string().as_bytes());
     let token = format!("{header_b64}.{payload_b64}.signature");
-    
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -3362,7 +3346,7 @@ fn test_spiffe_sub_claim_non_string() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     assert!(
         !provider.validate(&scheme, &[], &req),
         "sub claim must be a string"
@@ -3375,19 +3359,19 @@ fn test_spiffe_exp_claim_non_numeric() {
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"]);
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     use base64::{engine::general_purpose, Engine as _};
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs() as i64;
-    
+
     // exp as string
     let header = json!({"alg": "HS256", "typ": "JWT"});
     let payload = json!({
@@ -3396,11 +3380,11 @@ fn test_spiffe_exp_claim_non_numeric() {
         "exp": "3600", // String, not number
         "iat": now
     });
-    
+
     let header_b64 = general_purpose::URL_SAFE_NO_PAD.encode(header.to_string().as_bytes());
     let payload_b64 = general_purpose::URL_SAFE_NO_PAD.encode(payload.to_string().as_bytes());
     let token = format!("{header_b64}.{payload_b64}.signature");
-    
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -3408,7 +3392,7 @@ fn test_spiffe_exp_claim_non_numeric() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     assert!(
         !provider.validate(&scheme, &[], &req),
         "exp claim must be numeric"
@@ -3422,13 +3406,13 @@ fn test_spiffe_exp_claim_negative() {
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"])
         .leeway(0); // No leeway
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     use base64::{engine::general_purpose, Engine as _};
     let header = json!({"alg": "HS256", "typ": "JWT"});
     let payload = json!({
@@ -3437,11 +3421,11 @@ fn test_spiffe_exp_claim_negative() {
         "exp": -1, // Negative expiration
         "iat": -3600
     });
-    
+
     let header_b64 = general_purpose::URL_SAFE_NO_PAD.encode(header.to_string().as_bytes());
     let payload_b64 = general_purpose::URL_SAFE_NO_PAD.encode(payload.to_string().as_bytes());
     let token = format!("{header_b64}.{payload_b64}.signature");
-    
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -3449,7 +3433,7 @@ fn test_spiffe_exp_claim_negative() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     assert!(
         !provider.validate(&scheme, &[], &req),
         "Negative exp claim should be rejected"
@@ -3468,26 +3452,26 @@ fn test_spiffe_exp_boundary_exact() {
     })
     .to_string();
     let jwks_url = start_mock_jwks_server(jwks);
-    
+
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"])
         .leeway(60) // 60 seconds leeway
         .jwks_url(&jwks_url);
-    
+
     thread::sleep(Duration::from_millis(200));
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs() as i64;
-    
+
     // Token expiring exactly now (should pass with leeway)
     use jsonwebtoken::{Algorithm, EncodingKey, Header};
     let header = Header {
@@ -3495,17 +3479,17 @@ fn test_spiffe_exp_boundary_exact() {
         alg: Algorithm::HS256,
         ..Default::default()
     };
-    
+
     let claims = json!({
         "sub": "spiffe://example.com/path",
         "aud": "api.example.com",
         "exp": now, // Exactly now
         "iat": now - 3600
     });
-    
+
     let encoding_key = EncodingKey::from_secret(secret);
     let token = jsonwebtoken::encode(&header, &claims, &encoding_key).unwrap();
-    
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -3513,7 +3497,7 @@ fn test_spiffe_exp_boundary_exact() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     // Should pass because now <= exp + leeway (now <= now + 60)
     assert!(
         provider.validate(&scheme, &[], &req),
@@ -3533,26 +3517,26 @@ fn test_spiffe_exp_boundary_leeway() {
     })
     .to_string();
     let jwks_url = start_mock_jwks_server(jwks);
-    
+
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"])
         .leeway(60) // 60 seconds leeway
         .jwks_url(&jwks_url);
-    
+
     thread::sleep(Duration::from_millis(200));
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs() as i64;
-    
+
     // Token expired exactly leeway seconds ago (should pass)
     use jsonwebtoken::{Algorithm, EncodingKey, Header};
     let header = Header {
@@ -3560,17 +3544,17 @@ fn test_spiffe_exp_boundary_leeway() {
         alg: Algorithm::HS256,
         ..Default::default()
     };
-    
+
     let claims = json!({
         "sub": "spiffe://example.com/path",
         "aud": "api.example.com",
         "exp": now - 60, // Expired exactly leeway seconds ago
         "iat": now - 3660
     });
-    
+
     let encoding_key = EncodingKey::from_secret(secret);
     let token = jsonwebtoken::encode(&header, &claims, &encoding_key).unwrap();
-    
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -3578,13 +3562,13 @@ fn test_spiffe_exp_boundary_leeway() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     // Should pass because now <= exp + leeway (now <= (now - 60) + 60 = now)
     assert!(
         provider.validate(&scheme, &[], &req),
         "Token expiring exactly at leeway boundary should pass"
     );
-    
+
     // Token expired one second beyond leeway (should fail)
     let claims2 = json!({
         "sub": "spiffe://example.com/path",
@@ -3592,10 +3576,10 @@ fn test_spiffe_exp_boundary_leeway() {
         "exp": now - 61, // Expired one second beyond leeway
         "iat": now - 3661
     });
-    
+
     let encoding_key2 = EncodingKey::from_secret(secret);
     let token2 = jsonwebtoken::encode(&header, &claims2, &encoding_key2).unwrap();
-    
+
     let mut headers2: HeaderVec = HeaderVec::new();
     headers2.push((Arc::from("authorization"), format!("Bearer {token2}")));
     let req2 = SecurityRequest {
@@ -3603,7 +3587,7 @@ fn test_spiffe_exp_boundary_leeway() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     assert!(
         !provider.validate(&scheme, &[], &req2),
         "Token expired beyond leeway should fail"
@@ -3616,19 +3600,19 @@ fn test_spiffe_sub_empty_string() {
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"]);
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     use base64::{engine::general_purpose, Engine as _};
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs() as i64;
-    
+
     let header = json!({"alg": "HS256", "typ": "JWT"});
     let payload = json!({
         "sub": "", // Empty string
@@ -3636,11 +3620,11 @@ fn test_spiffe_sub_empty_string() {
         "exp": now + 3600,
         "iat": now
     });
-    
+
     let header_b64 = general_purpose::URL_SAFE_NO_PAD.encode(header.to_string().as_bytes());
     let payload_b64 = general_purpose::URL_SAFE_NO_PAD.encode(payload.to_string().as_bytes());
     let token = format!("{header_b64}.{payload_b64}.signature");
-    
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -3648,7 +3632,7 @@ fn test_spiffe_sub_empty_string() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     assert!(
         !provider.validate(&scheme, &[], &req),
         "Empty string sub claim should fail validation"
@@ -3663,19 +3647,18 @@ fn test_spiffe_sub_empty_string() {
 fn test_spiffe_id_very_long_trust_domain() {
     // Very long trust domains should be rejected to prevent DoS attacks
     // SPIFFE spec doesn't specify a max length, but we should test reasonable limits
-    let provider = SpiffeProvider::new()
-        .trust_domains(&["example.com"]);
-    
+    let provider = SpiffeProvider::new().trust_domains(&["example.com"]);
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     // Create a very long trust domain (1000+ characters)
     let long_domain = "a".repeat(1000);
     let spiffe_id = format!("spiffe://{long_domain}/path");
-    
+
     // This should fail because the regex won't match such a long domain
     // (though the regex itself doesn't have a length limit, very long strings
     // could cause performance issues)
@@ -3687,7 +3670,7 @@ fn test_spiffe_id_very_long_trust_domain() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     // Very long trust domain should fail validation (not in whitelist)
     // Even if regex matches, trust domain check will fail
     assert!(
@@ -3708,24 +3691,24 @@ fn test_spiffe_id_very_long_path() {
     })
     .to_string();
     let jwks_url = start_mock_jwks_server(jwks);
-    
+
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"])
         .jwks_url(&jwks_url);
-    
+
     thread::sleep(Duration::from_millis(200));
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     // Create a very long path (10KB+)
     let long_path = "/".to_string() + &"a".repeat(10000);
     let spiffe_id = format!("spiffe://example.com{long_path}");
-    
+
     let token = make_signed_spiffe_jwt_for_test(&spiffe_id, "api.example.com", 3600);
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
@@ -3734,7 +3717,7 @@ fn test_spiffe_id_very_long_path() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     // Very long path should still pass validation (SPIFFE spec allows any path)
     // This tests that we don't have arbitrary length limits that break valid IDs
     assert!(
@@ -3747,22 +3730,21 @@ fn test_spiffe_id_very_long_path() {
 fn test_spiffe_trust_domain_consecutive_dots() {
     // Trust domains with consecutive dots should be invalid
     // This tests regex edge cases and prevents confusion attacks
-    let provider = SpiffeProvider::new()
-        .trust_domains(&["example.com"]);
-    
+    let provider = SpiffeProvider::new().trust_domains(&["example.com"]);
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     let invalid_ids = vec![
-        "spiffe://example..com/path",      // Consecutive dots
-        "spiffe://example...com/path",     // Triple dots
-        "spiffe://.example.com/path",      // Leading dot
-        "spiffe://example.com./path",      // Trailing dot
+        "spiffe://example..com/path",  // Consecutive dots
+        "spiffe://example...com/path", // Triple dots
+        "spiffe://.example.com/path",  // Leading dot
+        "spiffe://example.com./path",  // Trailing dot
     ];
-    
+
     for spiffe_id in invalid_ids {
         let token = make_spiffe_jwt(spiffe_id, "api.example.com", 3600, 0);
         let mut headers: HeaderVec = HeaderVec::new();
@@ -3772,7 +3754,7 @@ fn test_spiffe_trust_domain_consecutive_dots() {
             query: &ParamVec::new(),
             cookies: &HeaderVec::new(),
         };
-        
+
         // Should fail validation (invalid trust domain format or not in whitelist)
         assert!(
             !provider.validate(&scheme, &[], &req),
@@ -3789,19 +3771,19 @@ fn test_spiffe_leeway_integer_overflow() {
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"])
         .leeway(i64::MAX as u64); // Maximum leeway (will cause overflow)
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     use base64::{engine::general_purpose, Engine as _};
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs() as i64;
-    
+
     // Token with exp near i64::MAX
     let exp = i64::MAX - 1000;
     let header = json!({"alg": "HS256", "typ": "JWT"});
@@ -3811,11 +3793,11 @@ fn test_spiffe_leeway_integer_overflow() {
         "exp": exp,
         "iat": now
     });
-    
+
     let header_b64 = general_purpose::URL_SAFE_NO_PAD.encode(header.to_string().as_bytes());
     let payload_b64 = general_purpose::URL_SAFE_NO_PAD.encode(payload.to_string().as_bytes());
     let token = format!("{header_b64}.{payload_b64}.signature");
-    
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -3823,7 +3805,7 @@ fn test_spiffe_leeway_integer_overflow() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     // Should handle overflow gracefully (either reject or use saturating arithmetic)
     // Current implementation: exp + leeway_secs as i64 could overflow
     // This test documents current behavior - overflow would make token always valid
@@ -3841,29 +3823,28 @@ fn test_spiffe_leeway_integer_overflow() {
 fn test_spiffe_authorization_header_case_insensitive() {
     // HTTP headers are case-insensitive per RFC 7230
     // SecurityRequest::get_header() uses eq_ignore_ascii_case, so this should work
-    let (provider, _jwks_url) = create_provider_with_mock_jwks(
-        &["example.com"],
-        &["api.example.com"],
-    );
-    
+    let (provider, _jwks_url) =
+        create_provider_with_mock_jwks(&["example.com"], &["api.example.com"]);
+
     thread::sleep(Duration::from_millis(200));
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
-    let token = make_signed_spiffe_jwt_for_test("spiffe://example.com/path", "api.example.com", 3600);
-    
+
+    let token =
+        make_signed_spiffe_jwt_for_test("spiffe://example.com/path", "api.example.com", 3600);
+
     // Test different header name casings (HTTP standard requires case-insensitive)
     let header_casings = vec![
         "authorization",
-        "Authorization", 
+        "Authorization",
         "AUTHORIZATION",
         "AuThOrIzAtIoN", // Mixed case
     ];
-    
+
     for header_name in header_casings {
         let mut headers: HeaderVec = HeaderVec::new();
         headers.push((Arc::from(header_name), format!("Bearer {token}")));
@@ -3872,7 +3853,7 @@ fn test_spiffe_authorization_header_case_insensitive() {
             query: &ParamVec::new(),
             cookies: &HeaderVec::new(),
         };
-        
+
         // Should work with any casing (SecurityRequest::get_header is case-insensitive)
         assert!(
             provider.validate(&scheme, &[], &req),
@@ -3885,31 +3866,30 @@ fn test_spiffe_authorization_header_case_insensitive() {
 fn test_spiffe_bearer_token_whitespace_handling() {
     // Bearer tokens should handle whitespace correctly
     // RFC 6750: Bearer token is the string after "Bearer " (single space)
-    let (provider, _jwks_url) = create_provider_with_mock_jwks(
-        &["example.com"],
-        &["api.example.com"],
-    );
-    
+    let (provider, _jwks_url) =
+        create_provider_with_mock_jwks(&["example.com"], &["api.example.com"]);
+
     thread::sleep(Duration::from_millis(200));
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
-    let token = make_signed_spiffe_jwt_for_test("spiffe://example.com/path", "api.example.com", 3600);
-    
+
+    let token =
+        make_signed_spiffe_jwt_for_test("spiffe://example.com/path", "api.example.com", 3600);
+
     // Test various whitespace scenarios
     let test_cases = vec![
-        ("Bearer {token}", true),  // Normal case
+        ("Bearer {token}", true),   // Normal case
         ("Bearer  {token}", false), // Double space (should fail - strip_prefix requires exact match)
         ("Bearer\t{token}", false), // Tab instead of space
         ("Bearer\n{token}", false), // Newline instead of space
         ("Bearer {token} ", false), // Trailing space in header value
         (" bearer {token}", false), // Leading space
     ];
-    
+
     for (header_value_template, should_pass) in test_cases {
         let header_value = header_value_template.replace("{token}", &token);
         let header_value_for_assert = header_value.clone();
@@ -3920,10 +3900,11 @@ fn test_spiffe_bearer_token_whitespace_handling() {
             query: &ParamVec::new(),
             cookies: &HeaderVec::new(),
         };
-        
+
         let result = provider.validate(&scheme, &[], &req);
         assert_eq!(
-            result, should_pass,
+            result,
+            should_pass,
             "Bearer token whitespace handling: '{}' should {}",
             header_value_for_assert,
             if should_pass { "pass" } else { "fail" }
@@ -3937,48 +3918,53 @@ fn test_spiffe_multiple_authorization_headers() {
     // HTTP spec: Multiple headers with same name should be treated as comma-separated
     // But many implementations use "first wins" or "last wins"
     // SecurityRequest::get_header uses find() which returns first match
-    let (provider, _jwks_url) = create_provider_with_mock_jwks(
-        &["example.com"],
-        &["api.example.com"],
-    );
-    
+    let (provider, _jwks_url) =
+        create_provider_with_mock_jwks(&["example.com"], &["api.example.com"]);
+
     thread::sleep(Duration::from_millis(200));
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
-    let valid_token = make_signed_spiffe_jwt_for_test("spiffe://example.com/path", "api.example.com", 3600);
+
+    let valid_token =
+        make_signed_spiffe_jwt_for_test("spiffe://example.com/path", "api.example.com", 3600);
     let invalid_token = "invalid.token.signature";
-    
+
     // Test with multiple headers - first should win (SecurityRequest::get_header uses find())
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {valid_token}")));
-    headers.push((Arc::from("authorization"), format!("Bearer {invalid_token}")));
+    headers.push((
+        Arc::from("authorization"),
+        format!("Bearer {invalid_token}"),
+    ));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     // Should use first header (valid token)
     assert!(
         provider.validate(&scheme, &[], &req),
         "Multiple Authorization headers should use first match"
     );
-    
+
     // Test with invalid first, valid second
     let mut headers2: HeaderVec = HeaderVec::new();
-    headers2.push((Arc::from("authorization"), format!("Bearer {invalid_token}")));
+    headers2.push((
+        Arc::from("authorization"),
+        format!("Bearer {invalid_token}"),
+    ));
     headers2.push((Arc::from("authorization"), format!("Bearer {valid_token}")));
     let req2 = SecurityRequest {
         headers: &headers2,
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     // Should use first header (invalid token) - fails validation
     assert!(
         !provider.validate(&scheme, &[], &req2),
@@ -3990,29 +3976,28 @@ fn test_spiffe_multiple_authorization_headers() {
 fn test_spiffe_bearer_prefix_case_sensitivity() {
     // "Bearer" prefix should be case-sensitive per RFC 6750
     // But some implementations are lenient - we should test both
-    let (provider, _jwks_url) = create_provider_with_mock_jwks(
-        &["example.com"],
-        &["api.example.com"],
-    );
-    
+    let (provider, _jwks_url) =
+        create_provider_with_mock_jwks(&["example.com"], &["api.example.com"]);
+
     thread::sleep(Duration::from_millis(200));
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
-    let token = make_signed_spiffe_jwt_for_test("spiffe://example.com/path", "api.example.com", 3600);
-    
+
+    let token =
+        make_signed_spiffe_jwt_for_test("spiffe://example.com/path", "api.example.com", 3600);
+
     // Test different Bearer prefix casings
     let test_cases = vec![
-        ("Bearer {token}", true),   // Correct (RFC 6750)
-        ("bearer {token}", false),  // Lowercase (should fail - strip_prefix is case-sensitive)
-        ("BEARER {token}", false),  // Uppercase (should fail)
-        ("BeArEr {token}", false),  // Mixed case (should fail)
+        ("Bearer {token}", true),  // Correct (RFC 6750)
+        ("bearer {token}", false), // Lowercase (should fail - strip_prefix is case-sensitive)
+        ("BEARER {token}", false), // Uppercase (should fail)
+        ("BeArEr {token}", false), // Mixed case (should fail)
     ];
-    
+
     for (header_value_template, should_pass) in test_cases {
         let header_value = header_value_template.replace("{token}", &token);
         let header_value_for_assert = header_value.clone();
@@ -4023,10 +4008,11 @@ fn test_spiffe_bearer_prefix_case_sensitivity() {
             query: &ParamVec::new(),
             cookies: &HeaderVec::new(),
         };
-        
+
         let result = provider.validate(&scheme, &[], &req);
         assert_eq!(
-            result, should_pass,
+            result,
+            should_pass,
             "Bearer prefix case sensitivity: '{}' should {}",
             header_value_for_assert,
             if should_pass { "pass" } else { "fail" }
@@ -4040,13 +4026,13 @@ fn test_spiffe_empty_bearer_token() {
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"]);
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     // Empty token after "Bearer " - SECURITY BUG FIX: This should be rejected
     // Bug: When Authorization header is exactly "Bearer " (7 chars, no token),
     // the token extraction would return Some("") which could allow authentication bypass
@@ -4057,17 +4043,17 @@ fn test_spiffe_empty_bearer_token() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     // Validation should fail for empty token (security requirement)
     assert!(
         !provider.validate(&scheme, &[], &req),
         "Empty Bearer token should fail validation - prevents authentication bypass"
     );
-    
+
     // Edge case: Test that extract_token (internal) rejects empty tokens
     // This is tested indirectly through validation, but we verify the behavior
     // by checking that validation fails when token is empty
-    
+
     // Just "Bearer" without space
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), "Bearer".to_string()));
@@ -4076,7 +4062,7 @@ fn test_spiffe_empty_bearer_token() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     assert!(
         !provider.validate(&scheme, &[], &req),
         "Bearer without token should fail validation"
@@ -4087,25 +4073,20 @@ fn test_spiffe_empty_bearer_token() {
 fn test_spiffe_trust_domain_exact_match_required() {
     // Trust domain matching must be exact - no subdomain matching
     // This is critical for security - prevents domain confusion attacks
-    let (provider, _jwks_url) = create_provider_with_mock_jwks(
-        &["example.com", "sub.example.com"],
-        &["api.example.com"],
-    );
-    
+    let (provider, _jwks_url) =
+        create_provider_with_mock_jwks(&["example.com", "sub.example.com"], &["api.example.com"]);
+
     thread::sleep(Duration::from_millis(200));
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     // Test exact matches
-    let exact_matches = vec![
-        "spiffe://example.com/path",
-        "spiffe://sub.example.com/path",
-    ];
-    
+    let exact_matches = vec!["spiffe://example.com/path", "spiffe://sub.example.com/path"];
+
     for spiffe_id in exact_matches {
         let token = make_signed_spiffe_jwt_for_test(spiffe_id, "api.example.com", 3600);
         let mut headers: HeaderVec = HeaderVec::new();
@@ -4115,20 +4096,20 @@ fn test_spiffe_trust_domain_exact_match_required() {
             query: &ParamVec::new(),
             cookies: &HeaderVec::new(),
         };
-        
+
         assert!(
             provider.validate(&scheme, &[], &req),
             "Exact trust domain match should pass: {spiffe_id}"
         );
     }
-    
+
     // Test that similar domains don't match
     let non_matches = vec![
-        "spiffe://www.example.com/path",      // Different subdomain
+        "spiffe://www.example.com/path",     // Different subdomain
         "spiffe://example.com.example/path", // Similar but different
         "spiffe://example-com/path",         // Hyphen instead of dot
     ];
-    
+
     for spiffe_id in non_matches {
         let token = make_spiffe_jwt(spiffe_id, "api.example.com", 3600, 0);
         let mut headers: HeaderVec = HeaderVec::new();
@@ -4138,7 +4119,7 @@ fn test_spiffe_trust_domain_exact_match_required() {
             query: &ParamVec::new(),
             cookies: &HeaderVec::new(),
         };
-        
+
         assert!(
             !provider.validate(&scheme, &[], &req),
             "Non-matching trust domain should fail: {spiffe_id}"
@@ -4153,27 +4134,30 @@ fn test_spiffe_jwt_extra_parts() {
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"]);
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     // Valid token
     let valid_token = make_spiffe_jwt("spiffe://example.com/path", "api.example.com", 3600, 0);
-    
+
     // Create token with extra parts
     let invalid_token = format!("{valid_token}.extra.part");
-    
+
     let mut headers: HeaderVec = HeaderVec::new();
-    headers.push((Arc::from("authorization"), format!("Bearer {invalid_token}")));
+    headers.push((
+        Arc::from("authorization"),
+        format!("Bearer {invalid_token}"),
+    ));
     let req = SecurityRequest {
         headers: &headers,
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     assert!(
         !provider.validate(&scheme, &[], &req),
         "JWT with more than 3 parts should fail validation"
@@ -4187,19 +4171,19 @@ fn test_spiffe_exp_claim_float() {
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"]);
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     use base64::{engine::general_purpose, Engine as _};
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs() as i64;
-    
+
     // exp as float (JSON allows this, but JWT spec requires integer)
     let header = json!({"alg": "HS256", "typ": "JWT"});
     let payload = json!({
@@ -4208,11 +4192,11 @@ fn test_spiffe_exp_claim_float() {
         "exp": now as f64 + 3600.5, // Float instead of integer
         "iat": now
     });
-    
+
     let header_b64 = general_purpose::URL_SAFE_NO_PAD.encode(header.to_string().as_bytes());
     let payload_b64 = general_purpose::URL_SAFE_NO_PAD.encode(payload.to_string().as_bytes());
     let token = format!("{header_b64}.{payload_b64}.signature");
-    
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -4220,7 +4204,7 @@ fn test_spiffe_exp_claim_float() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     // Should fail because as_i64() on float returns None
     assert!(
         !provider.validate(&scheme, &[], &req),
@@ -4231,8 +4215,8 @@ fn test_spiffe_exp_claim_float() {
 #[test]
 fn test_spiffe_token_revocation() {
     // Test token revocation checking for microservice-to-microservice identity
-    use brrtrouter::security::{SpiffeProvider, InMemoryRevocationChecker};
-    
+    use brrtrouter::security::{InMemoryRevocationChecker, SpiffeProvider};
+
     let secret = b"test-secret-key-for-spiffe-validation";
     let k = base64url_no_pad(secret);
     let jwks = serde_json::json!({
@@ -4242,27 +4226,27 @@ fn test_spiffe_token_revocation() {
     })
     .to_string();
     let jwks_url = start_mock_jwks_server(jwks);
-    
+
     let revocation_checker = InMemoryRevocationChecker::new();
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"])
         .revocation_checker(revocation_checker.clone())
         .jwks_url(&jwks_url);
-    
+
     thread::sleep(Duration::from_millis(200));
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs() as i64;
-    
+
     // Create token with jti
     use jsonwebtoken::{Algorithm, EncodingKey, Header};
     let header = Header {
@@ -4270,7 +4254,7 @@ fn test_spiffe_token_revocation() {
         alg: Algorithm::HS256,
         ..Default::default()
     };
-    
+
     let claims = json!({
         "sub": "spiffe://example.com/service/api",
         "aud": "api.example.com",
@@ -4278,10 +4262,10 @@ fn test_spiffe_token_revocation() {
         "iat": now,
         "jti": "token-12345"
     });
-    
+
     let encoding_key = EncodingKey::from_secret(secret);
     let token = jsonwebtoken::encode(&header, &claims, &encoding_key).unwrap();
-    
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -4289,25 +4273,25 @@ fn test_spiffe_token_revocation() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     // Token should pass before revocation
     assert!(
         provider.validate(&scheme, &[], &req),
         "Token should pass before revocation"
     );
-    
+
     // Revoke the token
     revocation_checker.revoke("token-12345");
-    
+
     // Token should fail after revocation
     assert!(
         !provider.validate(&scheme, &[], &req),
         "Token should fail after revocation"
     );
-    
+
     // Unrevoke the token
     revocation_checker.unrevoke("token-12345");
-    
+
     // Token should pass again after unrevocation
     assert!(
         provider.validate(&scheme, &[], &req),
@@ -4319,31 +4303,30 @@ fn test_spiffe_token_revocation() {
 fn test_spiffe_token_revocation_no_jti() {
     // Token without jti should pass even if revocation checker is configured
     // (revocation checking is only done if jti is present)
-    use brrtrouter::security::{SpiffeProvider, InMemoryRevocationChecker};
-    
-    let (provider, _jwks_url) = create_provider_with_mock_jwks(
-        &["example.com"],
-        &["api.example.com"],
-    );
-    
+    use brrtrouter::security::{InMemoryRevocationChecker, SpiffeProvider};
+
+    let (provider, _jwks_url) =
+        create_provider_with_mock_jwks(&["example.com"], &["api.example.com"]);
+
     let revocation_checker = InMemoryRevocationChecker::new();
     let provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"])
         .revocation_checker(revocation_checker)
         .jwks_url(&_jwks_url);
-    
+
     thread::sleep(Duration::from_millis(200));
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
         description: None,
     };
-    
+
     // Token without jti
-    let token = make_signed_spiffe_jwt_for_test("spiffe://example.com/path", "api.example.com", 3600);
-    
+    let token =
+        make_signed_spiffe_jwt_for_test("spiffe://example.com/path", "api.example.com", 3600);
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -4351,7 +4334,7 @@ fn test_spiffe_token_revocation_no_jti() {
         query: &ParamVec::new(),
         cookies: &HeaderVec::new(),
     };
-    
+
     // Should pass (no jti to check)
     assert!(
         provider.validate(&scheme, &[], &req),

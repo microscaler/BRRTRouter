@@ -54,4 +54,3 @@ impl fmt::Display for CorsConfigError {
 }
 
 impl std::error::Error for CorsConfigError {}
-

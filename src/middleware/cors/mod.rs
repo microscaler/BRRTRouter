@@ -88,11 +88,10 @@ impl std::fmt::Debug for OriginValidation {
         match self {
             OriginValidation::Exact(origins) => f.debug_tuple("Exact").field(origins).finish(),
             OriginValidation::Wildcard => write!(f, "Wildcard"),
-            OriginValidation::Regex(patterns) => {
-                f.debug_tuple("Regex")
-                    .field(&patterns.iter().map(|re| re.as_str()).collect::<Vec<_>>())
-                    .finish()
-            }
+            OriginValidation::Regex(patterns) => f
+                .debug_tuple("Regex")
+                .field(&patterns.iter().map(|re| re.as_str()).collect::<Vec<_>>())
+                .finish(),
             OriginValidation::Custom(_) => write!(f, "Custom(<function>)"),
         }
     }
@@ -292,10 +291,8 @@ impl CorsMiddleware {
         max_age: Option<u32>,
     ) -> Self {
         // Compile regex patterns
-        let patterns: Result<Vec<Regex>, _> = origin_patterns
-            .iter()
-            .map(|p| Regex::new(p))
-            .collect();
+        let patterns: Result<Vec<Regex>, _> =
+            origin_patterns.iter().map(|p| Regex::new(p)).collect();
 
         // This panic is intentional: invalid configuration should fail fast at startup
         let patterns = patterns.unwrap_or_else(|e| {
@@ -417,9 +414,9 @@ impl CorsMiddleware {
             allowed_origins,
             allowed_headers,
             allowed_methods,
-            false, // no credentials by default
+            false,  // no credentials by default
             vec![], // no exposed headers
-            None, // no preflight caching
+            None,   // no preflight caching
         )
     }
 
@@ -625,31 +622,30 @@ impl CorsMiddleware {
     fn handle_preflight(&self, req: &HandlerRequest, origin: &str) -> Option<HandlerResponse> {
         // Get route-specific policy first
         let policy = self.get_route_policy(&req.handler_name);
-        let (allowed_methods, allowed_headers, allow_credentials, max_age) =
-            match policy {
-                RouteCorsPolicy::Disabled => {
-                    // CORS is disabled - return None to prevent CORS headers
-                    return None;
-                }
-                RouteCorsPolicy::Inherit => {
-                    // Use global config
-                    (
-                        &self.allowed_methods,
-                        &self.allowed_headers,
-                        self.allow_credentials,
-                        self.max_age,
-                    )
-                }
-                RouteCorsPolicy::Custom(ref route_config) => {
-                    // Use route-specific config (use ref to avoid move)
-                    (
-                        &route_config.allowed_methods,
-                        &route_config.allowed_headers,
-                        route_config.allow_credentials,
-                        route_config.max_age,
-                    )
-                }
-            };
+        let (allowed_methods, allowed_headers, allow_credentials, max_age) = match policy {
+            RouteCorsPolicy::Disabled => {
+                // CORS is disabled - return None to prevent CORS headers
+                return None;
+            }
+            RouteCorsPolicy::Inherit => {
+                // Use global config
+                (
+                    &self.allowed_methods,
+                    &self.allowed_headers,
+                    self.allow_credentials,
+                    self.max_age,
+                )
+            }
+            RouteCorsPolicy::Custom(ref route_config) => {
+                // Use route-specific config (use ref to avoid move)
+                (
+                    &route_config.allowed_methods,
+                    &route_config.allowed_headers,
+                    route_config.allow_credentials,
+                    route_config.max_age,
+                )
+            }
+        };
         // Extract requested method
         // BUG FIX: Missing Access-Control-Request-Method means it's not a preflight request
         // Return None to indicate "not a preflight" (not "invalid preflight")
@@ -658,7 +654,10 @@ impl CorsMiddleware {
         let requested_method = match requested_method.parse::<Method>() {
             Ok(m) => m,
             Err(_) => {
-                warn!("CORS preflight: invalid Access-Control-Request-Method: {}", requested_method);
+                warn!(
+                    "CORS preflight: invalid Access-Control-Request-Method: {}",
+                    requested_method
+                );
                 return None;
             }
         };
@@ -675,10 +674,8 @@ impl CorsMiddleware {
         // Extract and validate requested headers
         let requested_headers = req.get_header("access-control-request-headers");
         if let Some(headers_str) = requested_headers {
-            let requested_headers_list: Vec<&str> = headers_str
-                .split(',')
-                .map(|h| h.trim())
-                .collect();
+            let requested_headers_list: Vec<&str> =
+                headers_str.split(',').map(|h| h.trim()).collect();
 
             // Check if all requested headers are allowed
             // If allowed_headers contains "*", allow all
@@ -689,10 +686,7 @@ impl CorsMiddleware {
                         .iter()
                         .any(|h| h.eq_ignore_ascii_case(header))
                     {
-                        warn!(
-                            "CORS preflight: header '{}' not in allowed headers",
-                            header
-                        );
+                        warn!("CORS preflight: header '{}' not in allowed headers", header);
                         return None;
                     }
                 }
@@ -735,10 +729,7 @@ impl CorsMiddleware {
         }
 
         // Add Vary: Origin header for dynamic origin validation
-        headers.push((
-            std::sync::Arc::from("vary"),
-            "Origin".to_string(),
-        ));
+        headers.push((std::sync::Arc::from("vary"), "Origin".to_string()));
 
         Some(HandlerResponse::new(200, headers, Value::Null))
     }
@@ -850,7 +841,10 @@ impl Middleware for CorsMiddleware {
     /// - `None` - For all other requests (proceed to handler)
     fn before(&self, req: &HandlerRequest) -> Option<HandlerResponse> {
         // Check if CORS is disabled for this route
-        if matches!(self.get_route_policy(&req.handler_name), RouteCorsPolicy::Disabled) {
+        if matches!(
+            self.get_route_policy(&req.handler_name),
+            RouteCorsPolicy::Disabled
+        ) {
             // CORS is disabled - for OPTIONS requests, return 200 OK without CORS headers
             if req.method == Method::OPTIONS {
                 return Some(HandlerResponse::new(200, HeaderVec::new(), Value::Null));
@@ -947,10 +941,13 @@ impl Middleware for CorsMiddleware {
 
         // Get route-specific policy first
         let policy = self.get_route_policy(&req.handler_name);
-        
+
         // Check if CORS is disabled for this route
         if matches!(policy, RouteCorsPolicy::Disabled) {
-            debug!("CORS: disabled for route '{}', skipping CORS headers", req.handler_name);
+            debug!(
+                "CORS: disabled for route '{}', skipping CORS headers",
+                req.handler_name
+            );
             return;
         }
 
@@ -980,7 +977,10 @@ impl Middleware for CorsMiddleware {
             Some(o) => o,
             None => {
                 // Invalid origin - should have been caught in before(), but log and skip
-                warn!("CORS: invalid origin '{}' in after() - should have been caught in before()", origin);
+                warn!(
+                    "CORS: invalid origin '{}' in after() - should have been caught in before()",
+                    origin
+                );
                 return;
             }
         };
@@ -1015,4 +1015,3 @@ impl Middleware for CorsMiddleware {
         res.set_header("vary", "Origin".to_string());
     }
 }
-

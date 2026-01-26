@@ -49,6 +49,11 @@ pub enum Commands {
         /// Limit regeneration to specific parts (comma-separated or repeated)
         #[arg(long, value_enum, num_args = 1.., value_delimiter = ',')]
         only: Option<Vec<OnlyPart>>,
+
+        /// Version for generated Cargo.toml [package].version
+        /// If not provided, defaults to "0.1.0"
+        #[arg(long, default_value = "0.1.0")]
+        version: String,
     },
     /// Generate implementation stubs in impl crate
     ///
@@ -147,6 +152,7 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
             force,
             dry_run,
             only,
+            version,
         } => {
             let spec_path = spec
                 .to_str()
@@ -159,13 +165,12 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
                 *force,
                 *dry_run,
                 &scope,
+                Some(version.clone()),
             )
             .expect("failed to generate example project");
-            // Format the newly generated project
+            // Format the newly generated project (single implementation: generator owns fmt)
             if !*dry_run {
-                if let Err(e) = crate::generator::format_project(&project_dir) {
-                    eprintln!("cargo fmt failed: {e}");
-                }
+                crate::generator::format_project(&project_dir)?;
             }
             Ok(())
         }
@@ -181,6 +186,8 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
                 path.as_deref(),
                 *force,
             )?;
+            // Format generated stubs using the same implementation as generate
+            crate::generator::format_project(output.as_path())?;
             Ok(())
         }
         Commands::Lint {

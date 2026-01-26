@@ -112,7 +112,8 @@ stack_usage = []
 [workspace]
 members = [
     "brrtrouter_macros",
-    "examples/pet_store"
+    "examples/pet_store",
+    "brrtrouter-validator-python"
 ]
 
 [profile.release]

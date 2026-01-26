@@ -448,9 +448,7 @@ pub fn ensure_image_ready() {
 
     // If we get here, another thread might have done the setup - let them know
     let thread_id = thread::current().id();
-    eprintln!(
-        "[Thread {thread_id:?}] Image setup complete, proceeding with test..."
-    );
+    eprintln!("[Thread {thread_id:?}] Image setup complete, proceeding with test...");
 }
 
 /// Get the base URL for the shared test container
@@ -521,18 +519,14 @@ pub fn cleanup_orphaned_containers() {
             let container_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if container_id.is_empty() {
                 if attempt > 1 {
-                    eprintln!(
-                        "✓ Container name '{name}' is released (took {attempt} attempts)"
-                    );
+                    eprintln!("✓ Container name '{name}' is released (took {attempt} attempts)");
                 }
                 return;
             }
         }
 
         if attempt == 30 {
-            eprintln!(
-                "❌ ERROR: Container name '{name}' still in use after 30 attempts!"
-            );
+            eprintln!("❌ ERROR: Container name '{name}' still in use after 30 attempts!");
             eprintln!("   This will cause 'name already in use' errors");
             eprintln!("   Try: docker rm -f {name}");
         }
@@ -739,7 +733,7 @@ impl ContainerHarness {
                     .as_ref()
                     .map(|o| String::from_utf8_lossy(&o.stdout))
                     .unwrap_or_else(|| "failed to get logs".into());
-                
+
                 let inspect_out = Command::new("docker")
                     .args(["inspect", &container_id])
                     .output()

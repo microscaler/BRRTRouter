@@ -3,6 +3,12 @@
 use brrtrouter::{load_spec, spec::ParameterLocation};
 use http::Method;
 use oas3::OpenApiV3Spec;
+use std::fs::OpenOptions;
+use std::io::Write;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+static TEMP_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 const YAML_SPEC: &str = r#"openapi: 3.1.0
 info:
@@ -50,33 +56,42 @@ paths:
                     name: 'Widget'
 "#;
 
+fn write_temp_spec(prefix: &str, ext: &str, contents: &[u8]) -> PathBuf {
+    let pid = std::process::id();
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+
+    for _ in 0..10 {
+        let counter = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let filename = format!("{prefix}_{pid}_{counter}_{nanos}.{ext}");
+        let path = std::env::temp_dir().join(filename);
+        let open_result = OpenOptions::new().write(true).create_new(true).open(&path);
+
+        match open_result {
+            Ok(mut file) => {
+                file.write_all(contents).unwrap();
+                return path;
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(err) => panic!("failed to create temp spec file: {err}"),
+        }
+    }
+
+    panic!("failed to create a unique temp spec file");
+}
+
 #[test]
 fn test_load_spec_yaml_and_json() {
-    // Create manual temp files (NamedTempFile doesn't work reliably in nextest)
-    let yaml_path = std::env::temp_dir().join(format!(
-        "spec_test_yaml_{}_{}.yaml",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
-    std::fs::write(&yaml_path, YAML_SPEC.as_bytes()).unwrap();
+    let yaml_path = write_temp_spec("spec_test_yaml", "yaml", YAML_SPEC.as_bytes());
 
     let (routes_yaml, slug_yaml) = load_spec(yaml_path.to_str().unwrap()).unwrap();
 
     // JSON spec
     let spec: OpenApiV3Spec = serde_yaml::from_str(YAML_SPEC).unwrap();
     let json_str = serde_json::to_string(&spec).unwrap();
-    let json_path = std::env::temp_dir().join(format!(
-        "spec_test_json_{}_{}.json",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
-    std::fs::write(&json_path, json_str.as_bytes()).unwrap();
+    let json_path = write_temp_spec("spec_test_json", "json", json_str.as_bytes());
 
     let (routes_json, slug_json) = load_spec(json_path.to_str().unwrap()).unwrap();
 
@@ -145,16 +160,7 @@ paths:
 fn test_missing_operation_id_exits() {
     use std::process::Command;
 
-    // Create manual temp file (NamedTempFile doesn't work reliably in nextest)
-    let temp_path = std::env::temp_dir().join(format!(
-        "spec_test_bad_{}_{}.yaml",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
-    std::fs::write(&temp_path, YAML_NO_OPID.as_bytes()).unwrap();
+    let temp_path = write_temp_spec("spec_test_bad", "yaml", YAML_NO_OPID.as_bytes());
 
     let exe = env!("CARGO_BIN_EXE_spec_helper");
     let output = Command::new(exe)
@@ -172,16 +178,11 @@ fn test_missing_operation_id_exits() {
 fn test_unsupported_method_ignored() {
     use std::process::Command;
 
-    // Create manual temp file (NamedTempFile doesn't work reliably in nextest)
-    let temp_path = std::env::temp_dir().join(format!(
-        "spec_test_unsup_{}_{}.yaml",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
-    std::fs::write(&temp_path, YAML_UNSUPPORTED_METHOD.as_bytes()).unwrap();
+    let temp_path = write_temp_spec(
+        "spec_test_unsup",
+        "yaml",
+        YAML_UNSUPPORTED_METHOD.as_bytes(),
+    );
 
     let exe = env!("CARGO_BIN_EXE_spec_helper");
     let output = Command::new(exe)
@@ -222,16 +223,7 @@ fn test_sse_flag_extracted() {
 
 #[test]
 fn test_sse_spec_loading() {
-    // Create manual temp file (NamedTempFile doesn't work reliably in nextest)
-    let temp_path = std::env::temp_dir().join(format!(
-        "spec_test_sse_{}_{}.yaml",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
-    std::fs::write(&temp_path, YAML_SSE.as_bytes()).unwrap();
+    let temp_path = write_temp_spec("spec_test_sse", "yaml", YAML_SSE.as_bytes());
 
     // Load spec from the temp file
     let (routes, _schemes, _slug) =
