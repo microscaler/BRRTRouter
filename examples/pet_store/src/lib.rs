@@ -18,3 +18,6 @@ pub mod handlers;
 /// all handlers with the dispatcher. It is used by both the main binary
 /// and by integration tests.
 pub mod registry;
+
+/// Re-export brrtrouter crate for convenience
+pub extern crate brrtrouter;
