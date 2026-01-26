@@ -11,7 +11,7 @@ name = "brrtrouter_validator"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = { version = "0.22", features = ["extension-module"] }
+pyo3 = { version = "0.24", features = ["extension-module"] }
 brrtrouter = { path = ".." }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
