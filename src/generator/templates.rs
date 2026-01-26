@@ -477,7 +477,7 @@ pub(crate) fn write_cargo_toml(base: &Path, slug: &str) -> anyhow::Result<()> {
 }
 
 /// Detect if output directory is in a workspace that has brrtrouter in workspace.dependencies
-fn detect_workspace_with_brrtrouter_deps(output_dir: &Path) -> bool {
+pub(crate) fn detect_workspace_with_brrtrouter_deps(output_dir: &Path) -> bool {
     let mut current = output_dir;
     loop {
         let cargo_toml = current.join("Cargo.toml");
