@@ -443,12 +443,17 @@ pub fn write_registry_rs(dir: &Path, entries: &[RegistryEntry]) -> anyhow::Resul
 /// # Arguments
 ///
 /// * `dir` - Output directory (typically `src/`)
+/// * `force` - Overwrite existing file
 ///
 /// # Errors
 ///
 /// Returns an error if template rendering or file writing fails
-pub fn write_lib_rs(dir: &Path) -> anyhow::Result<()> {
+pub fn write_lib_rs(dir: &Path, force: bool) -> anyhow::Result<()> {
     let path = dir.join("lib.rs");
+    if path.exists() && !force {
+        println!("⚠️  Skipping existing lib.rs file: {path:?}");
+        return Ok(());
+    }
     let rendered = LibRsTemplate.render()?;
     fs::write(path.clone(), rendered)?;
     println!("✅ Generated lib.rs → {path:?}");

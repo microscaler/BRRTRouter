@@ -487,7 +487,7 @@ pub fn generate_project_with_options(
                 created.push(format!("lib: {lib_path:?}"));
             }
         } else {
-            write_lib_rs(&src_dir)?;
+            write_lib_rs(&src_dir, force)?;
             if lib_existed && force {
                 updated.push(format!("lib: {lib_path:?}"));
             } else if !lib_existed {
