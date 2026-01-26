@@ -592,10 +592,6 @@ pub(crate) fn write_cargo_toml_with_options(
     brrtrouter_root: Option<&Path>,
     version: Option<String>,
 ) -> anyhow::Result<()> {
-    eprintln!(
-        "DEBUG: use_workspace_deps={}, base={:?}, brrtrouter_root={:?}",
-        use_workspace_deps, base, brrtrouter_root
-    );
     let (brrtrouter_path, brrtrouter_macros_path) = if use_workspace_deps {
         (String::new(), String::new())
     } else {
@@ -632,7 +628,6 @@ pub(crate) fn write_cargo_toml_with_options(
 
         // Calculate relative path from base to brrtrouter_base
         // Ensure both paths are absolute for reliable calculation
-        let brrtrouter_base_clone = brrtrouter_base.clone(); // Clone for debug output
         let base_abs = if base.is_absolute() {
             base.to_path_buf()
         } else {
@@ -694,12 +689,6 @@ pub(crate) fn write_cargo_toml_with_options(
         let rel_path_str = rel_path.to_string_lossy().to_string();
         let macros_path = rel_path.join("brrtrouter_macros");
         let macros_path_str = macros_path.to_string_lossy().to_string();
-
-        // Debug: log the calculated paths
-        eprintln!(
-            "DEBUG: base={:?}, brrtrouter_base={:?}, rel_path={:?}, rel_path_str={:?}",
-            base, &brrtrouter_base_clone, rel_path, rel_path_str
-        );
 
         (rel_path_str, macros_path_str)
     };
