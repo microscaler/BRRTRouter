@@ -13,7 +13,7 @@ use crate::generator::schema::{
 };
 use crate::generator::stack_size::compute_stack_size;
 use crate::generator::templates::{
-    write_controller, write_handler, write_main_rs_with_options, write_mod_rs,
+    write_controller, write_handler, write_lib_rs, write_main_rs_with_options, write_mod_rs,
     write_openapi_index, write_registry_rs, write_static_index, write_types_rs, RegistryEntry,
 };
 
@@ -473,6 +473,31 @@ pub fn generate_project_with_options(
         }
     } else {
         println!("🔎 Dry-run/only: skipping registry.rs generation");
+    }
+    if scope.registry {
+        // Generate lib.rs to make the crate usable as a library (for tests)
+        let lib_path = src_dir.join("lib.rs");
+        let lib_existed = lib_path.exists();
+        if dry_run {
+            if lib_existed && !force {
+                skipped.push(format!("lib: skip existing → {lib_path:?}"));
+            } else if lib_existed && force {
+                updated.push(format!("lib: {lib_path:?}"));
+            } else {
+                created.push(format!("lib: {lib_path:?}"));
+            }
+        } else {
+            write_lib_rs(&src_dir)?;
+            if lib_existed && force {
+                updated.push(format!("lib: {lib_path:?}"));
+            } else if !lib_existed {
+                created.push(format!("lib: {lib_path:?}"));
+            } else {
+                skipped.push(format!("lib: skip existing → {lib_path:?}"));
+            }
+        }
+    } else {
+        println!("🔎 Dry-run/only: skipping lib.rs generation");
     }
     write_mod_rs(
         &handler_dir,

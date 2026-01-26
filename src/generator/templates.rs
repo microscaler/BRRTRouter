@@ -108,6 +108,11 @@ pub struct OpenapiIndexTemplate;
 #[template(path = "static.index.html", escape = "none")]
 pub struct StaticIndexTemplate;
 
+/// Template for generating lib.rs (library entry point)
+#[derive(Template)]
+#[template(path = "lib.rs.txt", escape = "none")]
+pub struct LibRsTemplate;
+
 /// Template data for generating mod.rs module declarations
 #[derive(Template)]
 #[template(path = "mod.rs.txt")]
