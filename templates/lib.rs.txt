@@ -2,6 +2,16 @@
 // ⚠️ DO NOT MODIFY - Changes will be overwritten on next generation
 // ⚠️ To modify API behavior, edit the OpenAPI spec and regenerate
 
+/// Controllers module
+///
+/// Controllers handle request routing and dispatch to handlers.
+pub mod controllers;
+
+/// Handlers module
+///
+/// Handlers contain the business logic for each API endpoint.
+pub mod handlers;
+
 /// Handler registry module
 ///
 /// This module provides the `register_from_spec` function that registers
