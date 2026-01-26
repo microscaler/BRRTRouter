@@ -537,15 +537,12 @@ pub(crate) fn detect_workspace_with_brrtrouter_deps(output_dir: &Path) -> bool {
                     }
                 }
                 
-                // Must have [workspace.dependencies] section (not just [workspace])
+                // If we found [workspace] but no [workspace.dependencies], this workspace
+                // doesn't support workspace dependencies. Return false immediately because
+                // [workspace] defines the workspace boundary - we shouldn't search parent
+                // directories which might be a different workspace entirely.
                 if !contents.contains("[workspace.dependencies]") {
-                    match current.parent() {
-                        Some(parent) => {
-                            current = parent;
-                            continue;
-                        }
-                        None => break,
-                    }
+                    return false;
                 }
                 
                 // Check if brrtrouter is defined in workspace.dependencies
