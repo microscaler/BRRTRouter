@@ -393,65 +393,65 @@ impl Dispatcher {
             coroutine::Builder::new()
                 .stack_size(stack_size)
                 .spawn(move || {
-                // H1: Handler coroutine start
-                debug!(
-                    handler_name = %handler_name_for_logging,
-                    stack_size = stack_size,
-                    "Handler coroutine start"
-                );
-
-                for req in rx.iter() {
-                    // Extract what we need for error handling
-                    let reply_tx = req.reply_tx.clone();
-                    let handler_name = req.handler_name.clone();
-                    let request_id = req.request_id;
-
-                    // H2: Handler execution start
-                    info!(
-                        request_id = %request_id,
-                        handler_name = %handler_name,
-                        path_params = ?req.path_params,
-                        query_params = ?req.query_params,
-                        "Handler execution start"
+                    // H1: Handler coroutine start
+                    debug!(
+                        handler_name = %handler_name_for_logging,
+                        stack_size = stack_size,
+                        "Handler coroutine start"
                     );
 
-                    let execution_start = Instant::now();
+                    for req in rx.iter() {
+                        // Extract what we need for error handling
+                        let reply_tx = req.reply_tx.clone();
+                        let handler_name = req.handler_name.clone();
+                        let request_id = req.request_id;
 
-                    if let Err(panic) =
-                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                            handler_fn(req);
-                        }))
-                    {
-                        // H3: Handler panic caught - CRITICAL ERROR
-                        let panic_message = format!("{panic:?}");
-                        let backtrace = std::backtrace::Backtrace::capture();
-
-                        error!(
-                            request_id = %request_id,
-                            handler_name = %handler_name,
-                            panic_message = %panic_message,
-                            backtrace = %backtrace,
-                            "Handler panicked - CRITICAL"
-                        );
-
-                        // Send an error response if the handler panicked
-                        let error_response = HandlerResponse::error(
-                            500,
-                            &format!("Handler panicked: {}", panic_message),
-                        );
-                        let _ = reply_tx.send(error_response);
-                    } else {
-                        // H4: Handler execution complete
-                        let execution_time_ms = execution_start.elapsed().as_millis() as u64;
+                        // H2: Handler execution start
                         info!(
                             request_id = %request_id,
                             handler_name = %handler_name,
-                            execution_time_ms = execution_time_ms,
-                            "Handler execution complete"
+                            path_params = ?req.path_params,
+                            query_params = ?req.query_params,
+                            "Handler execution start"
                         );
+
+                        let execution_start = Instant::now();
+
+                        if let Err(panic) =
+                            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                handler_fn(req);
+                            }))
+                        {
+                            // H3: Handler panic caught - CRITICAL ERROR
+                            let panic_message = format!("{panic:?}");
+                            let backtrace = std::backtrace::Backtrace::capture();
+
+                            error!(
+                                request_id = %request_id,
+                                handler_name = %handler_name,
+                                panic_message = %panic_message,
+                                backtrace = %backtrace,
+                                "Handler panicked - CRITICAL"
+                            );
+
+                            // Send an error response if the handler panicked
+                            let error_response = HandlerResponse::error(
+                                500,
+                                &format!("Handler panicked: {}", panic_message),
+                            );
+                            let _ = reply_tx.send(error_response);
+                        } else {
+                            // H4: Handler execution complete
+                            let execution_time_ms = execution_start.elapsed().as_millis() as u64;
+                            info!(
+                                request_id = %request_id,
+                                handler_name = %handler_name,
+                                execution_time_ms = execution_time_ms,
+                                "Handler execution complete"
+                            );
+                        }
                     }
-                }
-            })
+                })
         };
 
         // Handle coroutine spawn failures gracefully

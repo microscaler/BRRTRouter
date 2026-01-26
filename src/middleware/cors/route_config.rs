@@ -24,7 +24,7 @@ pub enum RouteCorsPolicy {
 ///
 /// This configuration can override the global CORS middleware settings
 /// for specific routes defined in the OpenAPI specification.
-/// 
+///
 /// **Note**: Origins are NOT included here - they come from config.yaml
 /// and are merged during middleware initialization.
 #[derive(Debug, Clone)]
@@ -62,7 +62,7 @@ impl RouteCorsConfig {
             max_age: None,
         }
     }
-    
+
     /// Create a route CORS config with origins from config.yaml
     /// This is called during middleware initialization to merge config.yaml origins
     ///
@@ -84,7 +84,7 @@ impl RouteCorsConfig {
                 When credentials are enabled, you must specify at least one origin in config.yaml."
             );
         }
-        
+
         if origins.contains(&"*") {
             // Check if credentials are enabled - this combination is invalid per CORS spec
             if self.allow_credentials {
@@ -159,10 +159,7 @@ pub fn extract_route_cors_config(operation: &Operation) -> RouteCorsPolicy {
             if let Some(methods_array) = methods_val.as_array() {
                 config.allowed_methods = methods_array
                     .iter()
-                    .filter_map(|v| {
-                        v.as_str()
-                            .and_then(|s| s.parse::<http::Method>().ok())
-                    })
+                    .filter_map(|v| v.as_str().and_then(|s| s.parse::<http::Method>().ok()))
                     .collect();
             }
         }
@@ -219,7 +216,7 @@ pub fn extract_route_cors_config(operation: &Operation) -> RouteCorsPolicy {
 /// A HashMap mapping handler names to their route-specific CORS policies
 pub fn build_route_cors_map(routes: &[RouteMeta]) -> HashMap<String, RouteCorsPolicy> {
     let mut map = HashMap::new();
-    
+
     for route in routes {
         // Only store non-Inherit policies (Inherit is the default, no need to store it)
         match &route.cors_policy {
@@ -231,7 +228,6 @@ pub fn build_route_cors_map(routes: &[RouteMeta]) -> HashMap<String, RouteCorsPo
             }
         }
     }
-    
+
     map
 }
-

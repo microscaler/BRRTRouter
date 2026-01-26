@@ -141,7 +141,8 @@ mod tests {
                 }
                 // In test code, panicking on read errors is acceptable for test failure clarity
                 #[cfg(test)]
-                #[allow(clippy::panic)] // Test code: panicking on I/O errors is acceptable
+                #[allow(clippy::panic)]
+                // Test code: panicking on I/O errors is acceptable
                 Err(e) => panic!("read error: {:?}", e),
                 #[cfg(not(test))]
                 Err(e) => {
@@ -175,14 +176,15 @@ mod tests {
                         continue;
                     }
                     // In test code, panicking on read errors is acceptable for test failure clarity
-                #[cfg(test)]
-                #[allow(clippy::panic)] // Test code: panicking on I/O errors is acceptable
-                Err(e) => panic!("read error: {:?}", e),
-                #[cfg(not(test))]
-                Err(e) => {
-                    // In production, this should return an error, but this function is only used in tests
-                    panic!("read error: {:?}", e);
-                }
+                    #[cfg(test)]
+                    #[allow(clippy::panic)]
+                    // Test code: panicking on I/O errors is acceptable
+                    Err(e) => panic!("read error: {:?}", e),
+                    #[cfg(not(test))]
+                    Err(e) => {
+                        // In production, this should return an error, but this function is only used in tests
+                        panic!("read error: {:?}", e);
+                    }
                 }
             }
         } else {
@@ -198,14 +200,15 @@ mod tests {
                         break;
                     }
                     // In test code, panicking on read errors is acceptable for test failure clarity
-                #[cfg(test)]
-                #[allow(clippy::panic)] // Test code: panicking on I/O errors is acceptable
-                Err(e) => panic!("read error: {:?}", e),
-                #[cfg(not(test))]
-                Err(e) => {
-                    // In production, this should return an error, but this function is only used in tests
-                    panic!("read error: {:?}", e);
-                }
+                    #[cfg(test)]
+                    #[allow(clippy::panic)]
+                    // Test code: panicking on I/O errors is acceptable
+                    Err(e) => panic!("read error: {:?}", e),
+                    #[cfg(not(test))]
+                    Err(e) => {
+                        // In production, this should return an error, but this function is only used in tests
+                        panic!("read error: {:?}", e);
+                    }
                 }
             }
         }

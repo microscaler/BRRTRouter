@@ -40,7 +40,7 @@ fn start_mock_jwks_server(jwks: String) -> String {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     let url = format!("http://127.0.0.1:{}/jwks.json", addr.port());
-    
+
     let jwks_clone = jwks;
     thread::spawn(move || {
         for stream in listener.incoming() {
@@ -61,7 +61,7 @@ fn start_mock_jwks_server(jwks: String) -> String {
             }
         }
     });
-    
+
     thread::sleep(Duration::from_millis(150));
     url
 }
@@ -76,25 +76,25 @@ fn make_signed_jwt_for_jwks(
 ) -> String {
     use jsonwebtoken::{Algorithm, EncodingKey, Header};
     use serde_json::json;
-    
+
     let header = Header {
         kid: Some(kid.to_string()),
         alg: Algorithm::HS256,
         ..Default::default()
     };
-    
+
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs() as i64;
-    
+
     let claims = json!({
         "iss": issuer,
         "aud": audience,
         "exp": now + exp_secs,
         "iat": now
     });
-    
+
     let encoding_key = EncodingKey::from_secret(secret);
     jsonwebtoken::encode(&header, &claims, &encoding_key).unwrap()
 }
@@ -109,25 +109,25 @@ fn make_signed_spiffe_jwt(
 ) -> String {
     use jsonwebtoken::{Algorithm, EncodingKey, Header};
     use serde_json::json;
-    
+
     let header = Header {
         kid: Some(kid.to_string()),
         alg: Algorithm::HS256,
         ..Default::default()
     };
-    
+
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs() as i64;
-    
+
     let claims = json!({
         "sub": spiffe_id,
         "aud": audience,
         "exp": now + exp_secs,
         "iat": now
     });
-    
+
     let encoding_key = EncodingKey::from_secret(secret);
     jsonwebtoken::encode(&header, &claims, &encoding_key).unwrap()
 }
@@ -154,22 +154,25 @@ fn test_cors_with_jwks_bearer_provider_preflight() {
     })
     .to_string();
     let jwks_url = start_mock_jwks_server(jwks);
-    
+
     // JWKS provider created but not used in this test (only testing CORS preflight)
     let _jwks_provider = JwksBearerProvider::new(&jwks_url)
         .issuer("https://auth.example.com")
         .audience("my-api");
-    
+
     // Wait for initial JWKS fetch
     thread::sleep(Duration::from_millis(200));
-    
+
     let cors = CorsMiddleware::permissive();
-    
+
     // Test: Preflight OPTIONS request should be handled by CORS
     let (tx, _rx) = mpsc::channel::<HandlerResponse>();
     let headers: HeaderVec = smallvec![
         (Arc::from("origin"), "https://example.com".to_string()),
-        (Arc::from("access-control-request-method"), "POST".to_string()),
+        (
+            Arc::from("access-control-request-method"),
+            "POST".to_string()
+        ),
     ];
     let req = HandlerRequest {
         request_id: RequestId::new(),
@@ -184,16 +187,16 @@ fn test_cors_with_jwks_bearer_provider_preflight() {
         jwt_claims: None,
         reply_tx: tx,
     };
-    
+
     // CORS should handle preflight before security validation
     let response = cors.before(&req);
-    assert!(response.is_some(), "CORS should handle preflight OPTIONS request");
+    assert!(
+        response.is_some(),
+        "CORS should handle preflight OPTIONS request"
+    );
     let resp = response.unwrap();
     assert_eq!(resp.status, 200);
-    assert_eq!(
-        resp.get_header("access-control-allow-origin"),
-        Some("*")
-    );
+    assert_eq!(resp.get_header("access-control-allow-origin"), Some("*"));
 }
 
 #[test]
@@ -208,16 +211,16 @@ fn test_cors_with_jwks_bearer_provider_authenticated_request() {
     })
     .to_string();
     let jwks_url = start_mock_jwks_server(jwks);
-    
+
     let jwks_provider = JwksBearerProvider::new(&jwks_url)
         .issuer("https://auth.example.com")
         .audience("my-api");
-    
+
     // Wait for initial JWKS fetch
     thread::sleep(Duration::from_millis(200));
-    
+
     let cors = CorsMiddleware::permissive();
-    
+
     // Create a valid JWT token
     let token = make_signed_jwt_for_jwks(
         secret,
@@ -226,7 +229,7 @@ fn test_cors_with_jwks_bearer_provider_authenticated_request() {
         "test-kid",
         3600,
     );
-    
+
     // Test: Authenticated request should have CORS headers added
     let (tx, _rx) = mpsc::channel::<HandlerResponse>();
     let headers: HeaderVec = smallvec![
@@ -246,10 +249,10 @@ fn test_cors_with_jwks_bearer_provider_authenticated_request() {
         jwt_claims: None,
         reply_tx: tx,
     };
-    
+
     // CORS should not block the request (it's not a preflight)
     assert!(cors.before(&req).is_none());
-    
+
     // Verify JWKS provider validates the token
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
@@ -261,17 +264,14 @@ fn test_cors_with_jwks_bearer_provider_authenticated_request() {
         query: &req.query_params,
         cookies: &req.cookies,
     };
-    
+
     let result = jwks_provider.validate(&scheme, &[], &security_req);
     assert!(result, "JWKS provider should validate the token");
-    
+
     // CORS should add headers to response
     let mut resp = HandlerResponse::new(200, HeaderVec::new(), json!({}));
     cors.after(&req, &mut resp, Duration::from_millis(0));
-    assert_eq!(
-        resp.get_header("access-control-allow-origin"),
-        Some("*")
-    );
+    assert_eq!(resp.get_header("access-control-allow-origin"), Some("*"));
 }
 
 #[test]
@@ -286,15 +286,15 @@ fn test_cors_invalid_origin_before_jwks_validation() {
     })
     .to_string();
     let jwks_url = start_mock_jwks_server(jwks);
-    
+
     // JWKS provider created but not used in this test (only testing CORS origin rejection)
     let _jwks_provider = JwksBearerProvider::new(&jwks_url)
         .issuer("https://auth.example.com")
         .audience("my-api");
-    
+
     // Wait for initial JWKS fetch
     thread::sleep(Duration::from_millis(200));
-    
+
     // CORS with specific origin (not wildcard)
     let cors = CorsMiddleware::new(
         vec!["https://allowed.example.com".to_string()],
@@ -304,7 +304,7 @@ fn test_cors_invalid_origin_before_jwks_validation() {
         vec![],
         None,
     );
-    
+
     // Create a valid JWT token
     let token = make_signed_jwt_for_jwks(
         secret,
@@ -313,7 +313,7 @@ fn test_cors_invalid_origin_before_jwks_validation() {
         "test-kid",
         3600,
     );
-    
+
     // Test: Invalid origin should be rejected by CORS before JWKS validation
     let (tx, _rx) = mpsc::channel::<HandlerResponse>();
     let headers: HeaderVec = smallvec![
@@ -333,7 +333,7 @@ fn test_cors_invalid_origin_before_jwks_validation() {
         jwt_claims: None,
         reply_tx: tx,
     };
-    
+
     // CORS should reject invalid origin
     let response = cors.before(&req);
     assert!(response.is_some(), "CORS should reject invalid origin");
@@ -357,22 +357,25 @@ fn test_cors_with_spiffe_provider_preflight() {
     })
     .to_string();
     let jwks_url = start_mock_jwks_server(jwks);
-    
+
     let _spiffe_provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"])
         .jwks_url(&jwks_url);
-    
+
     // Wait for initial JWKS fetch
     thread::sleep(Duration::from_millis(200));
-    
+
     let cors = CorsMiddleware::permissive();
-    
+
     // Test: Preflight OPTIONS request should be handled by CORS
     let (tx, _rx) = mpsc::channel::<HandlerResponse>();
     let headers: HeaderVec = smallvec![
         (Arc::from("origin"), "https://example.com".to_string()),
-        (Arc::from("access-control-request-method"), "POST".to_string()),
+        (
+            Arc::from("access-control-request-method"),
+            "POST".to_string()
+        ),
     ];
     let req = HandlerRequest {
         request_id: RequestId::new(),
@@ -387,16 +390,16 @@ fn test_cors_with_spiffe_provider_preflight() {
         jwt_claims: None,
         reply_tx: tx,
     };
-    
+
     // CORS should handle preflight before security validation
     let response = cors.before(&req);
-    assert!(response.is_some(), "CORS should handle preflight OPTIONS request");
+    assert!(
+        response.is_some(),
+        "CORS should handle preflight OPTIONS request"
+    );
     let resp = response.unwrap();
     assert_eq!(resp.status, 200);
-    assert_eq!(
-        resp.get_header("access-control-allow-origin"),
-        Some("*")
-    );
+    assert_eq!(resp.get_header("access-control-allow-origin"), Some("*"));
 }
 
 #[test]
@@ -411,17 +414,17 @@ fn test_cors_with_spiffe_provider_authenticated_request() {
     })
     .to_string();
     let jwks_url = start_mock_jwks_server(jwks);
-    
+
     let spiffe_provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"])
         .jwks_url(&jwks_url);
-    
+
     // Wait for initial JWKS fetch
     thread::sleep(Duration::from_millis(200));
-    
+
     let cors = CorsMiddleware::permissive();
-    
+
     // Create a valid SPIFFE JWT token
     let token = make_signed_spiffe_jwt(
         secret,
@@ -430,7 +433,7 @@ fn test_cors_with_spiffe_provider_authenticated_request() {
         "test-kid",
         3600,
     );
-    
+
     // Test: Authenticated request should have CORS headers added
     let (tx, _rx) = mpsc::channel::<HandlerResponse>();
     let headers: HeaderVec = smallvec![
@@ -450,10 +453,10 @@ fn test_cors_with_spiffe_provider_authenticated_request() {
         jwt_claims: None,
         reply_tx: tx,
     };
-    
+
     // CORS should not block the request (it's not a preflight)
     assert!(cors.before(&req).is_none());
-    
+
     // Verify SPIFFE provider validates the token
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
@@ -465,17 +468,14 @@ fn test_cors_with_spiffe_provider_authenticated_request() {
         query: &req.query_params,
         cookies: &req.cookies,
     };
-    
+
     let result = spiffe_provider.validate(&scheme, &[], &security_req);
     assert!(result, "SPIFFE provider should validate the token");
-    
+
     // CORS should add headers to response
     let mut resp = HandlerResponse::new(200, HeaderVec::new(), json!({}));
     cors.after(&req, &mut resp, Duration::from_millis(0));
-    assert_eq!(
-        resp.get_header("access-control-allow-origin"),
-        Some("*")
-    );
+    assert_eq!(resp.get_header("access-control-allow-origin"), Some("*"));
 }
 
 #[test]
@@ -490,15 +490,15 @@ fn test_cors_invalid_origin_before_spiffe_validation() {
     })
     .to_string();
     let jwks_url = start_mock_jwks_server(jwks);
-    
+
     let _spiffe_provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"])
         .jwks_url(&jwks_url);
-    
+
     // Wait for initial JWKS fetch
     thread::sleep(Duration::from_millis(200));
-    
+
     // CORS with specific origin (not wildcard)
     let cors = CorsMiddleware::new(
         vec!["https://allowed.example.com".to_string()],
@@ -508,7 +508,7 @@ fn test_cors_invalid_origin_before_spiffe_validation() {
         vec![],
         None,
     );
-    
+
     // Create a valid SPIFFE JWT token
     let token = make_signed_spiffe_jwt(
         secret,
@@ -517,7 +517,7 @@ fn test_cors_invalid_origin_before_spiffe_validation() {
         "test-kid",
         3600,
     );
-    
+
     // Test: Invalid origin should be rejected by CORS before SPIFFE validation
     let (tx, _rx) = mpsc::channel::<HandlerResponse>();
     let headers: HeaderVec = smallvec![
@@ -537,7 +537,7 @@ fn test_cors_invalid_origin_before_spiffe_validation() {
         jwt_claims: None,
         reply_tx: tx,
     };
-    
+
     // CORS should reject invalid origin
     let response = cors.before(&req);
     assert!(response.is_some(), "CORS should reject invalid origin");
@@ -561,14 +561,14 @@ fn test_jwks_independent_usage() {
     })
     .to_string();
     let jwks_url = start_mock_jwks_server(jwks);
-    
+
     let jwks_provider = JwksBearerProvider::new(&jwks_url)
         .issuer("https://auth.example.com")
         .audience("my-api");
-    
+
     // Wait for initial JWKS fetch
     thread::sleep(Duration::from_millis(200));
-    
+
     // Create a non-SPIFFE JWT token (standard OAuth2 token)
     let token = make_signed_jwt_for_jwks(
         secret,
@@ -577,12 +577,10 @@ fn test_jwks_independent_usage() {
         "test-kid",
         3600,
     );
-    
+
     // Test: JWKS provider should validate non-SPIFFE tokens
     let (tx, _rx) = mpsc::channel::<HandlerResponse>();
-    let headers: HeaderVec = smallvec![
-        (Arc::from("authorization"), format!("Bearer {}", token)),
-    ];
+    let headers: HeaderVec = smallvec![(Arc::from("authorization"), format!("Bearer {}", token)),];
     let req = HandlerRequest {
         request_id: RequestId::new(),
         method: Method::GET,
@@ -596,7 +594,7 @@ fn test_jwks_independent_usage() {
         jwt_claims: None,
         reply_tx: tx,
     };
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
@@ -607,16 +605,19 @@ fn test_jwks_independent_usage() {
         query: &req.query_params,
         cookies: &req.cookies,
     };
-    
+
     let result = jwks_provider.validate(&scheme, &[], &security_req);
-    assert!(result, "JWKS provider should validate non-SPIFFE tokens independently");
+    assert!(
+        result,
+        "JWKS provider should validate non-SPIFFE tokens independently"
+    );
 }
 
 #[test]
 fn test_jwks_no_spiffe_dependency() {
     // Test: Verify JWKS provider has no SPIFFE code
     // This is a compile-time check - if this compiles, JWKS is independent
-    
+
     let secret = b"test-secret-key-for-jwks";
     let k = base64url_no_pad(secret);
     let jwks = json!({
@@ -626,12 +627,12 @@ fn test_jwks_no_spiffe_dependency() {
     })
     .to_string();
     let jwks_url = start_mock_jwks_server(jwks);
-    
+
     // JWKS provider can be created and used without any SPIFFE imports
     let _jwks_provider = JwksBearerProvider::new(&jwks_url)
         .issuer("https://auth.example.com")
         .audience("my-api");
-    
+
     // If we get here, JWKS is independent (no compile errors)
     assert!(true);
 }
@@ -647,11 +648,12 @@ fn test_spiffe_requires_jwks_url() {
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"]);
     // Note: No jwks_url() call - this should cause validation to fail
-    
+
     let (tx, _rx) = mpsc::channel::<HandlerResponse>();
-    let headers: HeaderVec = smallvec![
-        (Arc::from("authorization"), "Bearer invalid-token".to_string()),
-    ];
+    let headers: HeaderVec = smallvec![(
+        Arc::from("authorization"),
+        "Bearer invalid-token".to_string()
+    ),];
     let req = HandlerRequest {
         request_id: RequestId::new(),
         method: Method::GET,
@@ -665,7 +667,7 @@ fn test_spiffe_requires_jwks_url() {
         jwt_claims: None,
         reply_tx: tx,
     };
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
@@ -676,7 +678,7 @@ fn test_spiffe_requires_jwks_url() {
         query: &req.query_params,
         cookies: &req.cookies,
     };
-    
+
     // SPIFFE validation should fail without JWKS URL (fail-secure)
     let result = spiffe_provider.validate(&scheme, &[], &security_req);
     assert!(!result, "SPIFFE validation should fail without JWKS URL");
@@ -694,15 +696,15 @@ fn test_spiffe_succeeds_with_jwks_url() {
     })
     .to_string();
     let jwks_url = start_mock_jwks_server(jwks);
-    
+
     let spiffe_provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"])
         .jwks_url(&jwks_url);
-    
+
     // Wait for initial JWKS fetch
     thread::sleep(Duration::from_millis(200));
-    
+
     // Create a valid SPIFFE JWT token
     let token = make_signed_spiffe_jwt(
         secret,
@@ -711,11 +713,9 @@ fn test_spiffe_succeeds_with_jwks_url() {
         "test-kid",
         3600,
     );
-    
+
     let (tx, _rx) = mpsc::channel::<HandlerResponse>();
-    let headers: HeaderVec = smallvec![
-        (Arc::from("authorization"), format!("Bearer {}", token)),
-    ];
+    let headers: HeaderVec = smallvec![(Arc::from("authorization"), format!("Bearer {}", token)),];
     let req = HandlerRequest {
         request_id: RequestId::new(),
         method: Method::GET,
@@ -729,7 +729,7 @@ fn test_spiffe_succeeds_with_jwks_url() {
         jwt_claims: None,
         reply_tx: tx,
     };
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
@@ -740,10 +740,13 @@ fn test_spiffe_succeeds_with_jwks_url() {
         query: &req.query_params,
         cookies: &req.cookies,
     };
-    
+
     // SPIFFE validation should succeed with JWKS URL
     let result = spiffe_provider.validate(&scheme, &[], &security_req);
-    assert!(result, "SPIFFE validation should succeed with JWKS URL configured");
+    assert!(
+        result,
+        "SPIFFE validation should succeed with JWKS URL configured"
+    );
 }
 
 #[test]
@@ -751,7 +754,7 @@ fn test_spiffe_algorithm_mismatch_validation() {
     // Test: SPIFFE should validate algorithm mismatch (security requirement)
     let secret = b"test-secret-key-for-spiffe";
     let k = base64url_no_pad(secret);
-    
+
     // JWKS has HS256 key
     let jwks = json!({
         "keys": [
@@ -760,44 +763,42 @@ fn test_spiffe_algorithm_mismatch_validation() {
     })
     .to_string();
     let jwks_url = start_mock_jwks_server(jwks);
-    
+
     let spiffe_provider = SpiffeProvider::new()
         .trust_domains(&["example.com"])
         .audiences(&["api.example.com"])
         .jwks_url(&jwks_url);
-    
+
     // Wait for initial JWKS fetch
     thread::sleep(Duration::from_millis(200));
-    
+
     // Create a token with HS384 algorithm (mismatch)
     use jsonwebtoken::{Algorithm, EncodingKey, Header};
     use serde_json::json;
-    
+
     let header = Header {
         kid: Some("test-kid".to_string()),
         alg: Algorithm::HS384, // Different algorithm
         ..Default::default()
     };
-    
+
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs() as i64;
-    
+
     let claims = json!({
         "sub": "spiffe://example.com/api/users",
         "aud": "api.example.com",
         "exp": now + 3600,
         "iat": now
     });
-    
+
     let encoding_key = EncodingKey::from_secret(secret);
     let token = jsonwebtoken::encode(&header, &claims, &encoding_key).unwrap();
-    
+
     let (tx, _rx) = mpsc::channel::<HandlerResponse>();
-    let headers: HeaderVec = smallvec![
-        (Arc::from("authorization"), format!("Bearer {}", token)),
-    ];
+    let headers: HeaderVec = smallvec![(Arc::from("authorization"), format!("Bearer {}", token)),];
     let req = HandlerRequest {
         request_id: RequestId::new(),
         method: Method::GET,
@@ -811,7 +812,7 @@ fn test_spiffe_algorithm_mismatch_validation() {
         jwt_claims: None,
         reply_tx: tx,
     };
-    
+
     let scheme = SecurityScheme::Http {
         scheme: "bearer".to_string(),
         bearer_format: None,
@@ -822,7 +823,7 @@ fn test_spiffe_algorithm_mismatch_validation() {
         query: &req.query_params,
         cookies: &req.cookies,
     };
-    
+
     // SPIFFE should reject algorithm mismatch
     let result = spiffe_provider.validate(&scheme, &[], &security_req);
     assert!(!result, "SPIFFE should reject algorithm mismatch");

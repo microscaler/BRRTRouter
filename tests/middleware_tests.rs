@@ -4,7 +4,9 @@ use brrtrouter::{
     dispatcher::{Dispatcher, HandlerRequest, HandlerResponse, HeaderVec},
     load_spec,
     middleware::Middleware,
-    middleware::{AuthMiddleware, CorsMiddleware, MetricsMiddleware, RouteCorsConfig, RouteCorsPolicy},
+    middleware::{
+        AuthMiddleware, CorsMiddleware, MetricsMiddleware, RouteCorsConfig, RouteCorsPolicy,
+    },
     router::{ParamVec, Router},
 };
 use http::Method;
@@ -243,10 +245,16 @@ fn test_cors_preflight_response() {
     // Create preflight request with Origin and requested method/headers
     let mut headers = HeaderVec::new();
     headers.push((Arc::from("origin"), "https://example.com".to_string()));
-    headers.push((Arc::from("access-control-request-method"), "GET".to_string()));
-    headers.push((Arc::from("access-control-request-headers"), "Content-Type".to_string()));
+    headers.push((
+        Arc::from("access-control-request-method"),
+        "GET".to_string(),
+    ));
+    headers.push((
+        Arc::from("access-control-request-headers"),
+        "Content-Type".to_string(),
+    ));
     let req = create_test_request(Method::OPTIONS, "/", headers);
-    
+
     let resp = mw.before(&req).expect("should return response");
     assert_eq!(resp.status, 200); // Preflight returns 200 with CORS headers
     assert_eq!(resp.get_header("access-control-allow-origin"), Some("*"));
@@ -285,21 +293,24 @@ fn test_cors_options_without_preflight_header() {
     // Note: No access-control-request-method header
     let req1 = create_test_request(Method::OPTIONS, "/api/data", headers1);
     let result1 = mw.before(&req1);
-    
+
     // Should return None (proceed to handler) - not 403
     // This is the bug fix: regular OPTIONS requests should not be rejected
     assert!(
         result1.is_none(),
         "BUG FIX: OPTIONS without preflight header should proceed to handler, not return 403"
     );
-    
+
     // Test 2: OPTIONS with Origin and Access-Control-Request-Method (preflight)
     let mut headers2 = HeaderVec::new();
     headers2.push((Arc::from("origin"), "https://example.com".to_string()));
-    headers2.push((Arc::from("access-control-request-method"), "GET".to_string()));
+    headers2.push((
+        Arc::from("access-control-request-method"),
+        "GET".to_string(),
+    ));
     let req2 = create_test_request(Method::OPTIONS, "/api/data", headers2);
     let result2 = mw.before(&req2);
-    
+
     // Should return preflight response (200 with CORS headers)
     assert!(
         result2.is_some(),
@@ -308,18 +319,25 @@ fn test_cors_options_without_preflight_header() {
     let resp2 = result2.unwrap();
     assert_eq!(resp2.status, 200);
     assert_eq!(resp2.get_header("access-control-allow-origin"), Some("*"));
-    
+
     // Test 3: OPTIONS without Origin (not a CORS request)
     // When there's no Origin header, it's not a CORS request
     // The code returns 200 OK without CORS headers (correct behavior)
     let req3 = create_test_request(Method::OPTIONS, "/api/data", HeaderVec::new());
     let result3 = mw.before(&req3);
-    
+
     // Should return 200 OK without CORS headers (not a CORS request)
-    assert!(result3.is_some(), "OPTIONS without Origin should return 200 OK");
+    assert!(
+        result3.is_some(),
+        "OPTIONS without Origin should return 200 OK"
+    );
     let resp3 = result3.unwrap();
     assert_eq!(resp3.status, 200);
-    assert_eq!(resp3.get_header("access-control-allow-origin"), None, "No CORS headers for non-CORS request");
+    assert_eq!(
+        resp3.get_header("access-control-allow-origin"),
+        None,
+        "No CORS headers for non-CORS request"
+    );
 }
 
 #[test]
@@ -636,7 +654,10 @@ fn test_cors_builder_basic() {
     let mut resp = create_test_response(200);
 
     cors.after(&req, &mut resp, Duration::from_millis(0));
-    assert_eq!(resp.get_header("access-control-allow-origin"), Some("https://example.com"));
+    assert_eq!(
+        resp.get_header("access-control-allow-origin"),
+        Some("https://example.com")
+    );
 }
 
 #[test]
@@ -657,7 +678,10 @@ fn test_cors_builder_with_credentials() {
     let mut resp = create_test_response(200);
 
     cors.after(&req, &mut resp, Duration::from_millis(0));
-    assert_eq!(resp.get_header("access-control-allow-credentials"), Some("true"));
+    assert_eq!(
+        resp.get_header("access-control-allow-credentials"),
+        Some("true")
+    );
 }
 
 #[test]
@@ -683,15 +707,15 @@ fn test_route_cors_config_empty_origins_with_credentials_panic() {
     // BUG FIX TEST: RouteCorsConfig::with_origins should panic when credentials enabled with empty origins
     // This matches the validation in CorsMiddlewareBuilder::build()
     use brrtrouter::middleware::RouteCorsConfig;
-    
+
     let mut route_config = RouteCorsConfig::default();
     route_config.allow_credentials = true;
-    
+
     // Should panic when called with empty origins and credentials enabled
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         route_config.with_origins(&[]);
     }));
-    
+
     assert!(
         result.is_err(),
         "RouteCorsConfig::with_origins should panic when credentials enabled with empty origins"
@@ -702,15 +726,15 @@ fn test_route_cors_config_empty_origins_with_credentials_panic() {
 fn test_route_cors_config_empty_origins_without_credentials_ok() {
     // Test that empty origins without credentials is allowed
     use brrtrouter::middleware::RouteCorsConfig;
-    
+
     let mut route_config = RouteCorsConfig::default();
     route_config.allow_credentials = false;
-    
+
     // Should not panic when credentials are disabled
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         route_config.with_origins(&[]);
     }));
-    
+
     assert!(
         result.is_ok(),
         "RouteCorsConfig::with_origins should allow empty origins when credentials are disabled"
@@ -786,7 +810,10 @@ fn test_cors_builder_max_age() {
 
     let mut headers = HeaderVec::new();
     headers.push((Arc::from("origin"), "https://example.com".to_string()));
-    headers.push((Arc::from("access-control-request-method"), "GET".to_string()));
+    headers.push((
+        Arc::from("access-control-request-method"),
+        "GET".to_string(),
+    ));
     let req = create_test_request(Method::OPTIONS, "/", headers);
 
     let resp = cors.before(&req).expect("Should return preflight response");
@@ -825,7 +852,10 @@ fn test_cors_regex_pattern_matching() {
     let req_no_match = create_test_request(Method::GET, "/", headers_no_match);
     let mut resp_no_match = create_test_response(200);
     cors.after(&req_no_match, &mut resp_no_match, Duration::from_millis(0));
-    assert_eq!(resp_no_match.get_header("access-control-allow-origin"), None);
+    assert_eq!(
+        resp_no_match.get_header("access-control-allow-origin"),
+        None
+    );
 }
 
 #[test]
@@ -834,7 +864,10 @@ fn test_cors_builder_regex_patterns() {
     use http::Method;
 
     let cors = CorsMiddlewareBuilder::new()
-        .allowed_origins_regex(&[r"^https://.*\.example\.com$", r"^https://api\.example\.org$"])
+        .allowed_origins_regex(&[
+            r"^https://.*\.example\.com$",
+            r"^https://api\.example\.org$",
+        ])
         .allowed_methods(&[Method::GET])
         .build()
         .expect("Valid CORS configuration");
@@ -883,7 +916,10 @@ fn test_cors_custom_validator() {
     let req_no_match = create_test_request(Method::GET, "/", headers_no_match);
     let mut resp_no_match = create_test_response(200);
     cors.after(&req_no_match, &mut resp_no_match, Duration::from_millis(0));
-    assert_eq!(resp_no_match.get_header("access-control-allow-origin"), None);
+    assert_eq!(
+        resp_no_match.get_header("access-control-allow-origin"),
+        None
+    );
 }
 
 #[test]
@@ -892,7 +928,9 @@ fn test_cors_builder_custom_validator() {
     use http::Method;
 
     let cors = CorsMiddlewareBuilder::new()
-        .allowed_origins_custom(|origin| origin.contains("example") && origin.starts_with("https://"))
+        .allowed_origins_custom(|origin| {
+            origin.contains("example") && origin.starts_with("https://")
+        })
         .allowed_methods(&[Method::GET])
         .build()
         .expect("Valid CORS configuration");
@@ -915,9 +953,9 @@ fn test_cors_credentials_support() {
         vec!["https://example.com".into()],
         vec!["Content-Type".into()],
         vec![Method::GET, Method::POST],
-        true, // allow credentials
+        true,   // allow credentials
         vec![], // no exposed headers
-        None, // no max age
+        None,   // no max age
     );
 
     let mut headers = HeaderVec::new();
@@ -926,8 +964,14 @@ fn test_cors_credentials_support() {
     let mut resp = create_test_response(200);
 
     mw.after(&req, &mut resp, Duration::from_millis(0));
-    assert_eq!(resp.get_header("access-control-allow-credentials"), Some("true"));
-    assert_eq!(resp.get_header("access-control-allow-origin"), Some("https://example.com"));
+    assert_eq!(
+        resp.get_header("access-control-allow-credentials"),
+        Some("true")
+    );
+    assert_eq!(
+        resp.get_header("access-control-allow-origin"),
+        Some("https://example.com")
+    );
 }
 
 #[test]
@@ -980,12 +1024,18 @@ fn test_cors_preflight_max_age() {
 
     let mut headers = HeaderVec::new();
     headers.push((Arc::from("origin"), "https://example.com".to_string()));
-    headers.push((Arc::from("access-control-request-method"), "GET".to_string()));
+    headers.push((
+        Arc::from("access-control-request-method"),
+        "GET".to_string(),
+    ));
     let req = create_test_request(Method::OPTIONS, "/", headers);
 
     let resp = mw.before(&req).expect("should return preflight response");
     assert_eq!(resp.get_header("access-control-max-age"), Some("3600"));
-    assert_eq!(resp.get_header("access-control-allow-origin"), Some("https://example.com"));
+    assert_eq!(
+        resp.get_header("access-control-allow-origin"),
+        Some("https://example.com")
+    );
 }
 
 #[test]
@@ -1144,10 +1194,7 @@ fn test_cors_x_cors_false_disables_cors() {
 
     // Build route policies map
     let mut route_policies = HashMap::new();
-    route_policies.insert(
-        "internal_handler".to_string(),
-        RouteCorsPolicy::Disabled,
-    );
+    route_policies.insert("internal_handler".to_string(), RouteCorsPolicy::Disabled);
 
     // Create CORS middleware with route-specific disabled policy
     let cors = CorsMiddleware::with_route_policies(global_cors, route_policies);
@@ -1173,8 +1220,13 @@ fn test_cors_x_cors_false_disables_cors() {
         reply_tx: mpsc::channel::<HandlerResponse>().0,
     };
 
-    let resp = cors.before(&req).expect("Should return response for OPTIONS");
-    assert_eq!(resp.status, 200, "OPTIONS should return 200 even when CORS is disabled");
+    let resp = cors
+        .before(&req)
+        .expect("Should return response for OPTIONS");
+    assert_eq!(
+        resp.status, 200,
+        "OPTIONS should return 200 even when CORS is disabled"
+    );
     // Critical: No CORS headers should be present
     assert_eq!(
         resp.get_header("access-control-allow-origin"),
@@ -1267,8 +1319,13 @@ fn test_cors_x_cors_inherit_uses_global_config() {
         reply_tx: mpsc::channel::<HandlerResponse>().0,
     };
 
-    let resp = cors.before(&req).expect("Should return response for OPTIONS");
-    assert_eq!(resp.status, 200, "OPTIONS should return 200 for valid preflight");
+    let resp = cors
+        .before(&req)
+        .expect("Should return response for OPTIONS");
+    assert_eq!(
+        resp.status, 200,
+        "OPTIONS should return 200 for valid preflight"
+    );
     // Should have CORS headers from global config
     assert_eq!(
         resp.get_header("access-control-allow-origin"),
@@ -1332,7 +1389,7 @@ fn test_cors_x_cors_false_vs_inherit_distinction() {
         .allowed_methods(&[Method::GET])
         .build()
         .unwrap();
-    
+
     let global_cors_inherit = CorsMiddlewareBuilder::new()
         .allowed_origins(&["*"])
         .allowed_headers(&["Content-Type"])
@@ -1340,7 +1397,8 @@ fn test_cors_x_cors_false_vs_inherit_distinction() {
         .build()
         .unwrap();
 
-    let cors_disabled = CorsMiddleware::with_route_policies(global_cors_disabled, disabled_policies);
+    let cors_disabled =
+        CorsMiddleware::with_route_policies(global_cors_disabled, disabled_policies);
     let cors_inherit = CorsMiddleware::with_route_policies(global_cors_inherit, inherit_policies);
 
     // Test with same origin header
@@ -1410,10 +1468,9 @@ fn test_extract_route_cors_config_false_vs_inherit() {
 
     // Test x-cors: false
     let mut op_false = Operation::default();
-    op_false.extensions.insert(
-        "x-cors".to_string(),
-        json!(false),
-    );
+    op_false
+        .extensions
+        .insert("x-cors".to_string(), json!(false));
     let policy_false = extract_route_cors_config(&op_false);
     assert!(
         matches!(policy_false, RouteCorsPolicy::Disabled),
@@ -1422,10 +1479,9 @@ fn test_extract_route_cors_config_false_vs_inherit() {
 
     // Test x-cors: "inherit"
     let mut op_inherit = Operation::default();
-    op_inherit.extensions.insert(
-        "x-cors".to_string(),
-        json!("inherit"),
-    );
+    op_inherit
+        .extensions
+        .insert("x-cors".to_string(), json!("inherit"));
     let policy_inherit = extract_route_cors_config(&op_inherit);
     assert!(
         matches!(policy_inherit, RouteCorsPolicy::Inherit),
@@ -1454,7 +1510,7 @@ fn test_cors_ipv6_address_parsing() {
     // IPv6 addresses like [::1]:8080 should be handled correctly
     // The bug was that find(':') would find the first colon inside ::1, not the port delimiter
     let cors = CorsMiddleware::permissive();
-    
+
     // Test 1: IPv6 same-origin request
     let req1 = create_test_request(
         Method::GET,
@@ -1468,7 +1524,7 @@ fn test_cors_ipv6_address_parsing() {
     cors.after(&req1, &mut resp1, Duration::from_millis(0));
     // Same origin - no CORS headers should be added
     assert_eq!(resp1.get_header("access-control-allow-origin"), None);
-    
+
     // Test 2: IPv6 cross-origin request (different ports)
     let req2 = create_test_request(
         Method::GET,
@@ -1482,7 +1538,7 @@ fn test_cors_ipv6_address_parsing() {
     cors.after(&req2, &mut resp2, Duration::from_millis(0));
     // Different ports - CORS headers should be added
     assert_eq!(resp2.get_header("access-control-allow-origin"), Some("*"));
-    
+
     // Test 3: IPv6 without port (default port)
     let req3 = create_test_request(
         Method::GET,
@@ -1496,7 +1552,7 @@ fn test_cors_ipv6_address_parsing() {
     cors.after(&req3, &mut resp3, Duration::from_millis(0));
     // Same origin (both use default port 80) - no CORS headers
     assert_eq!(resp3.get_header("access-control-allow-origin"), None);
-    
+
     // Test 4: Malformed IPv6 (no closing bracket) - should be treated as invalid
     let req4 = create_test_request(
         Method::GET,
@@ -1519,7 +1575,7 @@ fn test_cors_malformed_port_parsing() {
     // Now using .ok() to treat parse failures as None (default port)
     // This means malformed ports use default port, which is correct behavior
     let cors = CorsMiddleware::permissive();
-    
+
     // Test 1: Malformed port in Origin (e.g., "abc") becomes None (default port 80)
     // Valid port 0 in Host is Some(0) (explicit port 0)
     // These are different: default port 80 vs explicit port 0
@@ -1535,7 +1591,7 @@ fn test_cors_malformed_port_parsing() {
     cors.after(&req1, &mut resp1, Duration::from_millis(0));
     // Malformed port (default 80) vs valid port 0 - different ports, CORS headers added
     assert_eq!(resp1.get_header("access-control-allow-origin"), Some("*"));
-    
+
     // Test 2: Two different malformed ports both become None (default port)
     // Both use default port 80, so they match (same origin)
     let req2 = create_test_request(
@@ -1550,7 +1606,7 @@ fn test_cors_malformed_port_parsing() {
     cors.after(&req2, &mut resp2, Duration::from_millis(0));
     // Both malformed ports use default port 80 - same origin, no CORS headers
     assert_eq!(resp2.get_header("access-control-allow-origin"), None);
-    
+
     // Test 3: Valid port 0 should match valid port 0
     let req3 = create_test_request(
         Method::GET,
@@ -1564,7 +1620,7 @@ fn test_cors_malformed_port_parsing() {
     cors.after(&req3, &mut resp3, Duration::from_millis(0));
     // Valid port 0 matches valid port 0 - no CORS headers
     assert_eq!(resp3.get_header("access-control-allow-origin"), None);
-    
+
     // Test 4: Malformed port (default 80) vs no port (default 80) - should match
     let req4 = create_test_request(
         Method::GET,
@@ -1598,12 +1654,12 @@ fn test_cors_same_origin_port_bug_fix() {
     headers.push((Arc::from("host"), "localhost".to_string()));
     headers.push((Arc::from("origin"), "http://localhost:8080".to_string()));
     let req = create_test_request(Method::GET, "/api/data", headers);
-    
+
     // Verify is_same_origin returns false (different origins)
     // We can't call is_same_origin directly (it's private), so we test via after()
     let mut resp = create_test_response(200);
     mw.after(&req, &mut resp, Duration::from_millis(0));
-    
+
     // Should have CORS headers because ports differ (implicit 80 vs explicit 8080)
     assert_eq!(
         resp.get_header("access-control-allow-origin"),

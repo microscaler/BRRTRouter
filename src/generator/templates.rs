@@ -70,6 +70,8 @@ pub struct RouteDisplay {
 pub struct CargoTomlTemplateData {
     /// Project name
     pub name: String,
+    /// Version for [package].version
+    pub version: String,
     /// Whether to use workspace dependencies (true) or direct path dependencies (false)
     pub use_workspace_deps: bool,
     /// Relative path to BRRTRouter (only used when use_workspace_deps is false)
@@ -471,7 +473,7 @@ pub(crate) fn write_types_rs(
 pub(crate) fn write_cargo_toml(base: &Path, slug: &str) -> anyhow::Result<()> {
     // Detect if we're in a workspace and if workspace has brrtrouter dependencies
     let use_workspace_deps = detect_workspace_with_brrtrouter_deps(base);
-    write_cargo_toml_with_options(base, slug, use_workspace_deps, None)
+    write_cargo_toml_with_options(base, slug, use_workspace_deps, None, None)
 }
 
 /// Detect if output directory is in a workspace that has brrtrouter in workspace.dependencies
@@ -506,11 +508,13 @@ fn detect_workspace_with_brrtrouter_deps(output_dir: &Path) -> bool {
 /// * `slug` - Project name slug
 /// * `use_workspace_deps` - If true, use workspace dependencies; if false, calculate relative paths
 /// * `brrtrouter_root` - Optional path to BRRTRouter root (for calculating relative paths)
+/// * `version` - Optional version string (defaults to "0.1.0" if None)
 pub(crate) fn write_cargo_toml_with_options(
     base: &Path,
     slug: &str,
     use_workspace_deps: bool,
     brrtrouter_root: Option<&Path>,
+    version: Option<String>,
 ) -> anyhow::Result<()> {
     eprintln!(
         "DEBUG: use_workspace_deps={}, base={:?}, brrtrouter_root={:?}",
@@ -624,8 +628,10 @@ pub(crate) fn write_cargo_toml_with_options(
         (rel_path_str, macros_path_str)
     };
 
+    let version_str = version.unwrap_or_else(|| "0.1.0".to_string());
     let rendered = CargoTomlTemplateData {
         name: slug.to_string(),
+        version: version_str,
         use_workspace_deps,
         brrtrouter_path,
         brrtrouter_macros_path,

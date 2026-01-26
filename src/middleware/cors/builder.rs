@@ -288,9 +288,9 @@ impl CorsMiddlewareBuilder {
     /// ```
     pub fn build(self) -> Result<CorsMiddleware, CorsConfigError> {
         // Default to empty origins if none specified
-        let origin_validation = self.origin_validation.unwrap_or_else(|| {
-            OriginValidation::Exact(vec![])
-        });
+        let origin_validation = self
+            .origin_validation
+            .unwrap_or_else(|| OriginValidation::Exact(vec![]));
 
         // Validate: cannot use wildcard with credentials
         if self.allow_credentials && origin_validation.is_wildcard() {
@@ -318,10 +318,8 @@ impl CorsMiddlewareBuilder {
         // Use appropriate constructor based on validation type
         let cors = match origin_validation {
             OriginValidation::Regex(patterns) => {
-                let pattern_strings: Vec<String> = patterns
-                    .iter()
-                    .map(|re| re.as_str().to_string())
-                    .collect();
+                let pattern_strings: Vec<String> =
+                    patterns.iter().map(|re| re.as_str().to_string()).collect();
                 CorsMiddleware::with_regex_patterns(
                     pattern_strings,
                     self.allowed_headers,
@@ -331,16 +329,14 @@ impl CorsMiddlewareBuilder {
                     self.max_age,
                 )
             }
-            OriginValidation::Custom(validator) => {
-                CorsMiddleware::with_custom_validator(
-                    move |origin| validator(origin),
-                    self.allowed_headers,
-                    self.allowed_methods,
-                    self.allow_credentials,
-                    self.expose_headers,
-                    self.max_age,
-                )
-            }
+            OriginValidation::Custom(validator) => CorsMiddleware::with_custom_validator(
+                move |origin| validator(origin),
+                self.allowed_headers,
+                self.allowed_methods,
+                self.allow_credentials,
+                self.expose_headers,
+                self.max_age,
+            ),
             _ => CorsMiddleware::new(
                 allowed_origins,
                 self.allowed_headers,
@@ -385,7 +381,10 @@ impl CorsMiddlewareBuilder {
         use super::build_route_cors_map;
         let global_cors = self.build()?;
         let route_policies = build_route_cors_map(routes);
-        Ok(CorsMiddleware::with_route_policies(global_cors, route_policies))
+        Ok(CorsMiddleware::with_route_policies(
+            global_cors,
+            route_policies,
+        ))
     }
 }
 
@@ -394,4 +393,3 @@ impl Default for CorsMiddlewareBuilder {
         Self::new()
     }
 }
-

@@ -143,7 +143,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md#-see-it-in-action) for the interactive das
 | **RFC-compliant CORS middleware**                | ✅      | Full CORS implementation with origin validation, preflight handling, credentials support, exposed headers, preflight caching; route-specific config via OpenAPI `x-cors`; origins from `config.yaml`; regex patterns and custom validators; JSF-compliant startup processing |
 | **Extend fake otel collector across all tests**  | 🚧     | Fake OpenTelemetry collector is used in just tests, but not all tests utilize it.                                                                                                                                                               |
 | **handler coroutine stack size**                 | 🚧     | Coroutine stack size is set via `BRRTR_STACK_SIZE` env var, but not dynamically adjustable or measured.                                                                                                                                         |
-| **Deep dive into OpenAPI spec**                  | 🚧     | OpenAPI spec parsing is basic; does not handle all features like `callbacks` and other functions, produce GAP analysis in order to completely support OpenAPI 3.1.0 spec.                                                                       |
+| **Deep dive into OpenAPI spec**                  | 🚧     | OpenAPI spec parsing is basic; does not handle all features like `callbacks` and other functions. See [OPENAPI_3.1.0_COMPLIANCE_GAP.md](OPENAPI_3.1.0_COMPLIANCE_GAP.md) for the gap analysis and path to full OpenAPI 3.1.0 support.                                                                       |
 | **WebSocket support**                            | 🚧     | Not implemented. Only SSE is available via `x-sse` flag.                                                                                                                                                                                        |
 | **Documentation & packaging**                    | 🚧     | README and roadmap exist; crate not yet prepared for crates.io publication.                                                                                                                                                                     |
 
@@ -293,6 +293,7 @@ BRRTRouter reads `BRRTR_STACK_SIZE` to determine the stack size for coroutines. 
 - [🏗️ Architecture](docs/ARCHITECTURE.md) - System design with Mermaid diagrams
 - [🔄 Request Lifecycle & Code Generation](docs/RequestLifecycle.md) - End-to-end request flow from OpenAPI to response
 - [🔐 Security & Authentication](docs/SecurityAuthentication.md) - OpenAPI-driven security with multiple auth providers
+- [📋 OpenAPI 3.1.0 Compliance Gap](OPENAPI_3.1.0_COMPLIANCE_GAP.md) - Outstanding work for full OpenAPI 3.1.0 support
 - [📡 Server-Sent Events](#-server-sent-events) - SSE implementation guide
 
 ### Performance

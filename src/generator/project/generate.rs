@@ -13,7 +13,7 @@ use crate::generator::schema::{
 };
 use crate::generator::stack_size::compute_stack_size;
 use crate::generator::templates::{
-    write_cargo_toml, write_controller, write_handler, write_main_rs_with_options, write_mod_rs,
+    write_controller, write_handler, write_main_rs_with_options, write_mod_rs,
     write_openapi_index, write_registry_rs, write_static_index, write_types_rs, RegistryEntry,
 };
 
@@ -99,7 +99,7 @@ impl GenerationScope {
 ///
 /// Returns an error if spec loading, code generation, or file I/O fails.
 pub fn generate_project_from_spec(spec_path: &Path, force: bool) -> anyhow::Result<PathBuf> {
-    generate_project_with_options(spec_path, None, force, false, &GenerationScope::all())
+    generate_project_with_options(spec_path, None, force, false, &GenerationScope::all(), None)
 }
 
 /// Generate a Rust project with fine-grained control over what gets generated
@@ -128,6 +128,7 @@ pub fn generate_project_with_options(
     force: bool,
     dry_run: bool,
     scope: &GenerationScope,
+    version: Option<String>,
 ) -> anyhow::Result<PathBuf> {
     let mut created: Vec<String> = Vec::new();
     let mut updated: Vec<String> = Vec::new();
@@ -351,7 +352,14 @@ pub fn generate_project_with_options(
                 created.push(format!("main: {main_path:?}"));
             }
         } else {
-            write_cargo_toml(&base_dir, &slug)?;
+            let use_workspace_deps = detect_workspace_context(&base_dir);
+            crate::generator::templates::write_cargo_toml_with_options(
+                &base_dir,
+                &slug,
+                use_workspace_deps,
+                None,
+                version.clone(),
+            )?;
             // Detect if we're in a workspace context (e.g., microservices/crates/...)
             // by checking if there's a Cargo.toml with [workspace] in a parent directory
             let use_crate_prefix = detect_workspace_context(&base_dir);

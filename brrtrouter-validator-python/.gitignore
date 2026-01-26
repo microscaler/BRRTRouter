@@ -1,0 +1,21 @@
+# Python build artifacts
+*.pyc
+__pycache__/
+*.so
+*.dylib
+*.dll
+*.pyd
+*.egg-info/
+dist/
+build/
+target/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

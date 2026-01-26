@@ -1,0 +1,26 @@
+[package]
+name = "brrtrouter-validator-python"
+version = "0.1.0"
+edition = "2021"
+description = "Python bindings for BRRTRouter OpenAPI validation"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/microscaler/BRRTRouter"
+
+[lib]
+name = "brrtrouter_validator"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.22", features = ["extension-module"] }
+brrtrouter = { path = ".." }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+anyhow = "1.0"
+oas3 = { version = "0.20", features = ["yaml-spec"] }
+serde_yaml = "0.9.33"
+
+[dev-dependencies]
+tempfile = "3"
+
+[build-dependencies]
+pyo3-build-config = "0.22"

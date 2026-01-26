@@ -65,7 +65,8 @@ impl Drop for TestTracing {
 
 impl TestTracing {
     /// Initialize tracing with in-memory span collection
-    #[must_use] pub fn init() -> Self {
+    #[must_use]
+    pub fn init() -> Self {
         let spans = Arc::new(RwLock::new(Vec::new()));
         let processor = InMemorySpanProcessor::new(spans.clone());
 
@@ -92,12 +93,14 @@ impl TestTracing {
     }
 
     /// Get all collected spans (returns a clone)
-    #[must_use] pub fn spans(&self) -> Vec<SpanData> {
+    #[must_use]
+    pub fn spans(&self) -> Vec<SpanData> {
         self.spans.read().clone()
     }
 
     /// Get spans matching a specific name
-    #[must_use] pub fn spans_named(&self, name: &str) -> Vec<SpanData> {
+    #[must_use]
+    pub fn spans_named(&self, name: &str) -> Vec<SpanData> {
         self.spans
             .read()
             .iter()
@@ -163,7 +166,8 @@ impl TestTracing {
     }
 
     /// Get count of collected spans
-    #[must_use] pub fn span_count(&self) -> usize {
+    #[must_use]
+    pub fn span_count(&self) -> usize {
         self.spans.read().len()
     }
 }

@@ -22,7 +22,7 @@ pub fn handle(req: TypedHandlerRequest<Request>) -> Response {
     // Example: Access request data
     {% for field in request_fields -%}
     // let {{ field.name }} = req.inner.{{ field.name }};
-    {% endfor %}
+    {%- endfor %}
     // 
     // Example: Database query, validation, etc.
     // let result = your_service.process(&req.inner)?;
@@ -42,7 +42,7 @@ pub fn handle(req: TypedHandlerRequest<Request>) -> Response {
     Response {
         {% for field in response_fields -%}
         {{ field.name }}: {% if field.optional %}None{% else %}{{ field.value }}{% endif %},  // TODO: Set from your business logic
-        {% endfor %}
+        {%- endfor %}
     }
     {% endif %}
 }

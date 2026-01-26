@@ -35,9 +35,15 @@ pub(super) enum ValidationError {
     /// Token has expired
     ExpiredToken { exp: i64, now: i64 },
     /// Token issuer doesn't match expected value
-    InvalidIssuer { expected: Option<String>, got: Option<String> },
+    InvalidIssuer {
+        expected: Option<String>,
+        got: Option<String>,
+    },
     /// Token audience doesn't match expected value
-    InvalidAudience { expected: Option<String>, got: Option<String> },
+    InvalidAudience {
+        expected: Option<String>,
+        got: Option<String>,
+    },
     /// Token is missing a required claim
     MissingRequiredClaim { claim: String },
     /// Token uses an unsupported algorithm
@@ -46,7 +52,10 @@ pub(super) enum ValidationError {
     #[allow(dead_code)] // Reserved for future use when JWKS fetch errors are tracked
     JwksFetchError { url: String, error: String },
     /// Token is missing required scopes
-    InsufficientScopes { required: Vec<String>, got: Vec<String> },
+    InsufficientScopes {
+        required: Vec<String>,
+        got: Vec<String>,
+    },
     /// Security scheme doesn't match (not HTTP Bearer)
     InvalidSecurityScheme { scheme: String },
 }
@@ -85,13 +94,19 @@ impl ValidationError {
                 warn!("JWT validation failed: missing 'kid' (key ID) in token header");
             }
             ValidationError::MissingKey { kid } => {
-                warn!("JWT validation failed: key not found for kid '{}' in JWKS", kid);
+                warn!(
+                    "JWT validation failed: key not found for kid '{}' in JWKS",
+                    kid
+                );
             }
             ValidationError::InvalidSignature => {
                 warn!("JWT validation failed: invalid signature");
             }
             ValidationError::ExpiredToken { exp, now } => {
-                warn!("JWT validation failed: token expired (exp: {}, now: {})", exp, now);
+                warn!(
+                    "JWT validation failed: token expired (exp: {}, now: {})",
+                    exp, now
+                );
             }
             ValidationError::InvalidIssuer { expected, got } => {
                 warn!(
@@ -112,7 +127,10 @@ impl ValidationError {
                 warn!("JWT validation failed: unsupported algorithm '{}'", alg);
             }
             ValidationError::JwksFetchError { url, error } => {
-                warn!("JWT validation failed: JWKS fetch error for {} - {}", url, error);
+                warn!(
+                    "JWT validation failed: JWKS fetch error for {} - {}",
+                    url, error
+                );
             }
             ValidationError::InsufficientScopes { required, got } => {
                 warn!(
@@ -121,7 +139,10 @@ impl ValidationError {
                 );
             }
             ValidationError::InvalidSecurityScheme { scheme } => {
-                debug!("JWT validation failed: invalid security scheme '{}'", scheme);
+                debug!(
+                    "JWT validation failed: invalid security scheme '{}'",
+                    scheme
+                );
             }
         }
     }
@@ -378,10 +399,7 @@ fn validate_token_internal(
                     let will_evict = !key_exists && cache_at_capacity;
 
                     // Insert/update the cache entry
-                    cache_guard.put(
-                        token_key,
-                        (exp_timestamp_with_leeway, claims.clone(), kid),
-                    );
+                    cache_guard.put(token_key, (exp_timestamp_with_leeway, claims.clone(), kid));
 
                     // Track eviction only if we inserted a new key when cache was at capacity
                     if will_evict {

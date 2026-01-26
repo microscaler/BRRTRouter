@@ -91,4 +91,3 @@ impl RevocationChecker for NoOpRevocationChecker {
         false
     }
 }
-

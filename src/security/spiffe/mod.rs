@@ -44,22 +44,22 @@
 //! For Windows enterprise environments, SPIFFE IDs can be mapped to Windows user accounts
 //! and integrated with Active Directory for seamless single sign-on.
 
-mod validation;
 mod revocation;
+mod validation;
 
 use crate::security::{SecurityProvider, SecurityRequest};
 use crate::spec::SecurityScheme;
 use serde_json::Value;
-use std::collections::HashSet;
 use std::collections::HashMap;
-use std::sync::Arc;
-use std::sync::{RwLock, Mutex, Condvar};
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::sync::{Condvar, Mutex, RwLock};
 use std::time::{Duration, Instant};
-use url::Url;
 use tracing::debug;
+use url::Url;
 
-pub use revocation::{RevocationChecker, InMemoryRevocationChecker, NoOpRevocationChecker};
+pub use revocation::{InMemoryRevocationChecker, NoOpRevocationChecker, RevocationChecker};
 
 /// Configuration error for SPIFFE provider
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -163,7 +163,14 @@ pub struct SpiffeProvider {
     /// JWKS cache: (timestamp, kid -> (DecodingKey, Algorithm))
     /// Only used if jwks_url is Some
     /// Stores both the decoding key and its algorithm for algorithm mismatch validation
-    jwks_cache: Option<Arc<RwLock<(Instant, HashMap<String, (jsonwebtoken::DecodingKey, jsonwebtoken::Algorithm)>)>>>,
+    jwks_cache: Option<
+        Arc<
+            RwLock<(
+                Instant,
+                HashMap<String, (jsonwebtoken::DecodingKey, jsonwebtoken::Algorithm)>,
+            )>,
+        >,
+    >,
     /// JWKS cache TTL
     jwks_cache_ttl: Duration,
     /// Debounce flag for JWKS refresh
@@ -281,7 +288,7 @@ impl SpiffeProvider {
     #[allow(clippy::panic)]
     pub fn jwks_url(mut self, url: impl Into<String>) -> Self {
         let url_str = url.into();
-        
+
         // Validate JWKS URL (same validation as JwksBearerProvider)
         // This panic is intentional: invalid configuration should fail fast at startup
         let parsed_url = match Url::parse(&url_str) {
@@ -290,7 +297,7 @@ impl SpiffeProvider {
                 panic!("JWKS URL is invalid: {}. Error: {}", url_str, e);
             }
         };
-        
+
         // Allow HTTPS for all hosts
         if parsed_url.scheme() == "https" {
             // HTTPS is always allowed
@@ -303,7 +310,7 @@ impl SpiffeProvider {
                     panic!("JWKS URL must have a valid hostname. Got: {}", url_str);
                 }
             };
-            
+
             // This panic is intentional: invalid configuration should fail fast at startup
             if host != "localhost" && host != "127.0.0.1" {
                 panic!("JWKS URL must use HTTPS for security (HTTP only allowed for localhost/127.0.0.1). Got: {}", url_str);
@@ -315,7 +322,7 @@ impl SpiffeProvider {
                 url_str
             );
         }
-        
+
         // Initialize JWKS infrastructure
         let cache = Arc::new(RwLock::new((
             Instant::now() - Duration::from_secs(1000), // Start expired to trigger initial fetch
@@ -323,15 +330,15 @@ impl SpiffeProvider {
         )));
         let refresh_in_progress = Arc::new(AtomicBool::new(false));
         let refresh_complete = Arc::new((Mutex::new(()), Condvar::new()));
-        
+
         self.jwks_url = Some(url_str);
         self.jwks_cache = Some(cache);
         self.jwks_refresh_in_progress = Some(refresh_in_progress);
         self.jwks_refresh_complete = Some(refresh_complete);
-        
+
         self
     }
-    
+
     /// Configure JWKS cache TTL.
     ///
     /// Default is 3600 seconds (1 hour). Keys are automatically refreshed when cache expires.
@@ -343,22 +350,22 @@ impl SpiffeProvider {
         self.jwks_cache_ttl = Duration::from_secs(ttl_secs);
         self
     }
-    
+
     /// Get decoding key and algorithm for a given key ID (kid).
     ///
     /// This is used internally for signature verification.
     /// Returns None if key not found or JWKS not configured.
     ///
     /// If cache is empty, triggers blocking refresh and waits for completion.
-    pub(super) fn get_key_for(&self, kid: &str) -> Option<(jsonwebtoken::DecodingKey, jsonwebtoken::Algorithm)> {
-        let (cache, refresh_complete) = match (
-            &self.jwks_cache,
-            &self.jwks_refresh_complete,
-        ) {
+    pub(super) fn get_key_for(
+        &self,
+        kid: &str,
+    ) -> Option<(jsonwebtoken::DecodingKey, jsonwebtoken::Algorithm)> {
+        let (cache, refresh_complete) = match (&self.jwks_cache, &self.jwks_refresh_complete) {
             (Some(c), Some(rc)) => (c, rc),
             _ => return None, // JWKS not configured
         };
-        
+
         // Check if cache is empty - if so, we need to wait for refresh
         let is_empty = {
             if let Ok(guard) = cache.read() {
@@ -367,17 +374,17 @@ impl SpiffeProvider {
                 return None;
             }
         };
-        
+
         // Trigger refresh if needed
         self.refresh_jwks_if_needed();
-        
+
         // If cache was empty, wait for refresh to complete
         if is_empty {
             let (lock, cvar) = &**refresh_complete;
             let guard = lock.lock().unwrap();
             let _ = cvar.wait_timeout(guard, Duration::from_secs(5));
         }
-        
+
         // Read from cache
         if let Ok(guard) = cache.read() {
             guard.1.get(kid).cloned()
@@ -385,14 +392,14 @@ impl SpiffeProvider {
             None
         }
     }
-    
+
     /// Get decoding key only (for backward compatibility with existing code)
     /// This method is deprecated - use get_key_for() instead to get both key and algorithm
     #[allow(dead_code)]
     pub(super) fn get_key_only(&self, kid: &str) -> Option<jsonwebtoken::DecodingKey> {
         self.get_key_for(kid).map(|(key, _)| key)
     }
-    
+
     /// Refresh JWKS if cache is expired or empty.
     ///
     /// If cache is empty, does a blocking initial refresh to ensure first validation succeeds.
@@ -407,20 +414,23 @@ impl SpiffeProvider {
             (Some(c), Some(r), Some(rc), Some(url)) => (c, r, rc, url),
             _ => return, // JWKS not configured
         };
-        
+
         // Check if refresh is needed
         let (needs_refresh, is_empty) = {
             if let Ok(guard) = cache.read() {
-                (guard.0.elapsed() >= self.jwks_cache_ttl || guard.1.is_empty(), guard.1.is_empty())
+                (
+                    guard.0.elapsed() >= self.jwks_cache_ttl || guard.1.is_empty(),
+                    guard.1.is_empty(),
+                )
             } else {
                 return;
             }
         };
-        
+
         if !needs_refresh {
             return;
         }
-        
+
         // If cache is empty, do blocking refresh to ensure first validation succeeds
         if is_empty {
             // Try to claim refresh
@@ -445,7 +455,7 @@ impl SpiffeProvider {
                 return;
             }
         }
-        
+
         // Cache not empty but expired - trigger background refresh
         if refresh_in_progress
             .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
@@ -454,17 +464,17 @@ impl SpiffeProvider {
             // Another thread is refreshing
             return;
         }
-        
+
         // Spawn thread to refresh JWKS
         let cache_clone = Arc::clone(cache);
         let refresh_in_progress_clone = Arc::clone(refresh_in_progress);
         let refresh_complete_clone = Arc::clone(refresh_complete);
         let jwks_url_clone = jwks_url.clone();
-        
+
         // Clone for error handler
         let refresh_in_progress_err = Arc::clone(refresh_in_progress);
         let refresh_complete_err = Arc::clone(refresh_complete);
-        
+
         // Use thread::Builder to handle spawn failures
         let _ = std::thread::Builder::new()
             .name("spiffe-jwks-refresh".to_string())
@@ -648,35 +658,34 @@ impl SpiffeProvider {
         // RFC 6750: Bearer token must be exactly "Bearer " (single space) followed by token
         // Reject double spaces, tabs, newlines, trailing whitespace, etc.
         // Note: "Bearer" prefix is case-sensitive per RFC 6750 Section 2.1
-        req.get_header("authorization")
-            .and_then(|h| {
-                // Check for exact "Bearer " prefix (case-sensitive)
-                if h.len() < 7 {
-                    return None; // Too short to be "Bearer "
-                }
-                if !h.starts_with("Bearer ") {
-                    return None;
-                }
-                // Ensure it's exactly "Bearer " (single space), not "Bearer  " (double space)
-                // Check that character at index 6 is a space
-                if h.as_bytes().get(6) != Some(&b' ') {
-                    return None;
-                }
-                // If there's a character at index 7, it must not be whitespace
-                if let Some(&b' ') = h.as_bytes().get(7) {
-                    return None; // Double space - reject
-                }
-                let token = &h[7..];
-                // Reject empty tokens (security: prevent authentication bypass)
-                if token.is_empty() {
-                    return None;
-                }
-                // Reject if token has leading or trailing whitespace
-                if token.starts_with(char::is_whitespace) || token.ends_with(char::is_whitespace) {
-                    return None;
-                }
-                Some(token)
-            })
+        req.get_header("authorization").and_then(|h| {
+            // Check for exact "Bearer " prefix (case-sensitive)
+            if h.len() < 7 {
+                return None; // Too short to be "Bearer "
+            }
+            if !h.starts_with("Bearer ") {
+                return None;
+            }
+            // Ensure it's exactly "Bearer " (single space), not "Bearer  " (double space)
+            // Check that character at index 6 is a space
+            if h.as_bytes().get(6) != Some(&b' ') {
+                return None;
+            }
+            // If there's a character at index 7, it must not be whitespace
+            if let Some(&b' ') = h.as_bytes().get(7) {
+                return None; // Double space - reject
+            }
+            let token = &h[7..];
+            // Reject empty tokens (security: prevent authentication bypass)
+            if token.is_empty() {
+                return None;
+            }
+            // Reject if token has leading or trailing whitespace
+            if token.starts_with(char::is_whitespace) || token.ends_with(char::is_whitespace) {
+                return None;
+            }
+            Some(token)
+        })
     }
 }
 
@@ -737,4 +746,3 @@ impl SecurityProvider for SpiffeProvider {
 }
 
 // Re-export validation module for testing
-

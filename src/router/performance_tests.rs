@@ -30,7 +30,7 @@ fn create_route_meta(method: Method, path: &str, handler: &str) -> RouteMeta {
         sse: false,
         estimated_request_body_bytes: None,
         x_brrtrouter_stack_size: None,
-            cors_policy: crate::middleware::RouteCorsPolicy::Inherit,
+        cors_policy: crate::middleware::RouteCorsPolicy::Inherit,
     }
 }
 
@@ -65,7 +65,7 @@ fn test_router_performance_with_many_routes() {
     } else {
         50 // Release builds: strict threshold matching benchmarks
     };
-    
+
     assert!(
         duration.as_millis() < threshold_ms,
         "Router performance degraded: {}ms for 1000 lookups with 500 routes (threshold: {}ms, build: {})",
