@@ -28,7 +28,8 @@ impl VersionTestFixture {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let dir = std::env::temp_dir().join(format!("version_test_{}_{}", std::process::id(), nanos));
+        let dir =
+            std::env::temp_dir().join(format!("version_test_{}_{}", std::process::id(), nanos));
         fs::create_dir_all(&dir).unwrap();
         Self { dir }
     }
@@ -80,7 +81,10 @@ fn read_version_from_cargo_toml(cargo_toml: &Path) -> String {
             }
         }
     }
-    panic!("Could not find version in Cargo.toml. Content:\n{}", content);
+    panic!(
+        "Could not find version in Cargo.toml. Content:\n{}",
+        content
+    );
 }
 
 #[test]
@@ -95,7 +99,7 @@ fn test_version_default_behavior() {
     let project = generate_project_with_options(
         &spec_path,
         Some(dir),
-        true, // force
+        true,  // force
         false, // dry_run
         &GenerationScope::all(),
         None, // version - should default to "0.1.0"
@@ -116,13 +120,7 @@ fn test_version_standard_semver() {
         .join("examples")
         .join("openapi.yaml");
 
-    let test_cases = vec![
-        "0.1.0",
-        "1.0.0",
-        "2.3.4",
-        "10.20.30",
-        "999.999.999",
-    ];
+    let test_cases = vec!["0.1.0", "1.0.0", "2.3.4", "10.20.30", "999.999.999"];
 
     for version in test_cases {
         let test_dir = dir.join(format!("test_{}", version.replace('.', "_")));
@@ -152,12 +150,7 @@ fn test_version_rc_prerelease() {
         .join("examples")
         .join("openapi.yaml");
 
-    let test_cases = vec![
-        "0.1.0-rc.1",
-        "1.0.0-rc.2",
-        "2.3.4-rc.10",
-        "0.1.2-rc.999",
-    ];
+    let test_cases = vec!["0.1.0-rc.1", "1.0.0-rc.2", "2.3.4-rc.10", "0.1.2-rc.999"];
 
     for version in test_cases {
         let test_dir = dir.join(format!("test_{}", version.replace(['.', '-'], "_")));
@@ -175,7 +168,11 @@ fn test_version_rc_prerelease() {
 
         let cargo_toml = project.join("Cargo.toml");
         let actual_version = read_version_from_cargo_toml(&cargo_toml);
-        assert_eq!(actual_version, version, "Failed for RC version: {}", version);
+        assert_eq!(
+            actual_version, version,
+            "Failed for RC version: {}",
+            version
+        );
     }
 }
 
@@ -188,11 +185,7 @@ fn test_version_with_build_metadata() {
         .join("openapi.yaml");
 
     // Cargo.toml supports build metadata (after +)
-    let test_cases = vec![
-        "0.1.0+build.1",
-        "1.0.0+20230101",
-        "2.3.4+sha.abc123",
-    ];
+    let test_cases = vec!["0.1.0+build.1", "1.0.0+20230101", "2.3.4+sha.abc123"];
 
     for version in test_cases {
         let test_dir = dir.join(format!("test_{}", version.replace(['.', '+', '-'], "_")));
@@ -210,7 +203,11 @@ fn test_version_with_build_metadata() {
 
         let cargo_toml = project.join("Cargo.toml");
         let actual_version = read_version_from_cargo_toml(&cargo_toml);
-        assert_eq!(actual_version, version, "Failed for build metadata version: {}", version);
+        assert_eq!(
+            actual_version, version,
+            "Failed for build metadata version: {}",
+            version
+        );
     }
 }
 
@@ -222,10 +219,7 @@ fn test_version_rc_with_build_metadata() {
         .join("examples")
         .join("openapi.yaml");
 
-    let test_cases = vec![
-        "0.1.0-rc.1+build.1",
-        "1.0.0-rc.2+20230101",
-    ];
+    let test_cases = vec!["0.1.0-rc.1+build.1", "1.0.0-rc.2+20230101"];
 
     for version in test_cases {
         let test_dir = dir.join(format!("test_{}", version.replace(['.', '+', '-'], "_")));
@@ -243,7 +237,11 @@ fn test_version_rc_with_build_metadata() {
 
         let cargo_toml = project.join("Cargo.toml");
         let actual_version = read_version_from_cargo_toml(&cargo_toml);
-        assert_eq!(actual_version, version, "Failed for RC with build metadata: {}", version);
+        assert_eq!(
+            actual_version, version,
+            "Failed for RC with build metadata: {}",
+            version
+        );
     }
 }
 
@@ -270,16 +268,25 @@ fn test_version_empty_string() {
     assert!(cargo_toml.exists(), "Cargo.toml should be generated");
     let content = fs::read_to_string(&cargo_toml).unwrap();
     // Verify version line exists (empty string is a valid, if unusual, version)
-    assert!(content.contains("version ="), "Cargo.toml should contain version field");
+    assert!(
+        content.contains("version ="),
+        "Cargo.toml should contain version field"
+    );
     // For empty string edge case, verify it was written (exact handling may vary)
     // Try to read version, but if it fails, just verify the field exists
     if let Ok(version) = std::panic::catch_unwind(|| read_version_from_cargo_toml(&cargo_toml)) {
         // If we can read it, it should be empty or default
-        assert!(version.is_empty() || version == "0.1.0", 
-                "Empty version should be empty or default, got: '{}'", version);
+        assert!(
+            version.is_empty() || version == "0.1.0",
+            "Empty version should be empty or default, got: '{}'",
+            version
+        );
     } else {
         // If reading fails, at least verify the version field exists in the file
-        assert!(content.contains("version ="), "Version field should exist even for empty version");
+        assert!(
+            content.contains("version ="),
+            "Version field should exist even for empty version"
+        );
     }
 }
 
@@ -312,12 +319,17 @@ fn test_version_whitespace_only() {
         let cargo_toml = project.join("Cargo.toml");
         assert!(cargo_toml.exists(), "Cargo.toml should be generated");
         let content = fs::read_to_string(&cargo_toml).unwrap();
-        assert!(content.contains("version ="), "Cargo.toml should contain version field");
+        assert!(
+            content.contains("version ="),
+            "Cargo.toml should contain version field"
+        );
         // Whitespace versions are edge cases - verify it was written (exact match may vary)
         let actual_version = read_version_from_cargo_toml(&cargo_toml);
         // Askama/TOML may preserve or normalize whitespace
-        assert!(!actual_version.is_empty() || version.trim().is_empty(), 
-                "Whitespace version should be written (may be normalized)");
+        assert!(
+            !actual_version.is_empty() || version.trim().is_empty(),
+            "Whitespace version should be written (may be normalized)"
+        );
     }
 }
 
@@ -330,12 +342,7 @@ fn test_version_special_characters() {
         .join("openapi.yaml");
 
     // Test versions with special characters (should be written as-is, even if invalid semver)
-    let test_cases = vec![
-        "0.1.0-alpha",
-        "0.1.0-beta.1",
-        "0.1.0-SNAPSHOT",
-        "0.1.0-dev",
-    ];
+    let test_cases = vec!["0.1.0-alpha", "0.1.0-beta.1", "0.1.0-SNAPSHOT", "0.1.0-dev"];
 
     for version in test_cases {
         let test_dir = dir.join(format!("test_{}", version.replace(['.', '-'], "_")));
@@ -353,7 +360,11 @@ fn test_version_special_characters() {
 
         let cargo_toml = project.join("Cargo.toml");
         let actual_version = read_version_from_cargo_toml(&cargo_toml);
-        assert_eq!(actual_version, version, "Failed for special character version: {}", version);
+        assert_eq!(
+            actual_version, version,
+            "Failed for special character version: {}",
+            version
+        );
     }
 }
 
@@ -368,8 +379,8 @@ fn test_version_unicode_characters() {
     // Unicode characters edge case - should not crash (invalid semver but should be written)
     // Note: Some unicode may be normalized or handled differently
     let test_cases = vec![
-        "0.1.0-alpha",  // Standard ASCII first
-        "0.1.0-test",   // Another ASCII test
+        "0.1.0-alpha", // Standard ASCII first
+        "0.1.0-test",  // Another ASCII test
     ];
 
     for version in test_cases {
@@ -391,7 +402,7 @@ fn test_version_unicode_characters() {
         let actual_version = read_version_from_cargo_toml(&cargo_toml);
         assert_eq!(actual_version, version, "Failed for version: {}", version);
     }
-    
+
     // Test actual unicode (may be normalized, so we just verify it doesn't crash)
     let unicode_version = "0.1.0-测试";
     let unicode_dir = dir.join("test_unicode_real");
@@ -406,9 +417,15 @@ fn test_version_unicode_characters() {
     )
     .unwrap();
     let cargo_toml = project.join("Cargo.toml");
-    assert!(cargo_toml.exists(), "Cargo.toml should be generated with unicode");
+    assert!(
+        cargo_toml.exists(),
+        "Cargo.toml should be generated with unicode"
+    );
     let content = fs::read_to_string(&cargo_toml).unwrap();
-    assert!(content.contains("version ="), "Should contain version field");
+    assert!(
+        content.contains("version ="),
+        "Should contain version field"
+    );
 }
 
 #[test]
@@ -433,7 +450,10 @@ fn test_version_very_long_string() {
 
     let cargo_toml = project.join("Cargo.toml");
     let version = read_version_from_cargo_toml(&cargo_toml);
-    assert_eq!(version, long_version, "Very long version should be preserved");
+    assert_eq!(
+        version, long_version,
+        "Very long version should be preserved"
+    );
 }
 
 #[test]
@@ -459,7 +479,10 @@ fn test_version_with_quotes() {
     let cargo_toml = project.join("Cargo.toml");
     let content = fs::read_to_string(&cargo_toml).unwrap();
     // TOML should properly escape quotes
-    assert!(content.contains("version ="), "Cargo.toml should contain version");
+    assert!(
+        content.contains("version ="),
+        "Cargo.toml should contain version"
+    );
     // The version should be in the file (Askama will handle escaping)
     let version = read_version_from_cargo_toml(&cargo_toml);
     // Verify the version is preserved (quotes in version strings are edge cases)
@@ -475,11 +498,7 @@ fn test_version_multiple_dashes() {
         .join("openapi.yaml");
 
     // Version with multiple dashes (edge case)
-    let test_cases = vec![
-        "0.1.0-alpha-beta",
-        "0.1.0-rc-1",
-        "0.1.0-dev-test",
-    ];
+    let test_cases = vec!["0.1.0-alpha-beta", "0.1.0-rc-1", "0.1.0-dev-test"];
 
     for version in test_cases {
         let test_dir = dir.join(format!("test_{}", version.replace(['.', '-'], "_")));
@@ -497,7 +516,11 @@ fn test_version_multiple_dashes() {
 
         let cargo_toml = project.join("Cargo.toml");
         let actual_version = read_version_from_cargo_toml(&cargo_toml);
-        assert_eq!(actual_version, version, "Failed for multiple dashes version: {}", version);
+        assert_eq!(
+            actual_version, version,
+            "Failed for multiple dashes version: {}",
+            version
+        );
     }
 }
 
@@ -510,11 +533,7 @@ fn test_version_leading_zeros() {
         .join("openapi.yaml");
 
     // Versions with leading zeros (edge case - invalid semver but should be written)
-    let test_cases = vec![
-        "00.1.0",
-        "0.01.0",
-        "0.1.00",
-    ];
+    let test_cases = vec!["00.1.0", "0.01.0", "0.1.00"];
 
     for version in test_cases {
         let test_dir = dir.join(format!("test_{}", version.replace('.', "_")));
@@ -532,7 +551,11 @@ fn test_version_leading_zeros() {
 
         let cargo_toml = project.join("Cargo.toml");
         let actual_version = read_version_from_cargo_toml(&cargo_toml);
-        assert_eq!(actual_version, version, "Failed for leading zeros version: {}", version);
+        assert_eq!(
+            actual_version, version,
+            "Failed for leading zeros version: {}",
+            version
+        );
     }
 }
 
@@ -566,7 +589,11 @@ fn test_version_very_large_numbers() {
 
         let cargo_toml = project.join("Cargo.toml");
         let actual_version = read_version_from_cargo_toml(&cargo_toml);
-        assert_eq!(actual_version, version, "Failed for large number version: {}", version);
+        assert_eq!(
+            actual_version, version,
+            "Failed for large number version: {}",
+            version
+        );
     }
 }
 
@@ -603,7 +630,10 @@ fn test_version_preserved_in_cargo_toml_structure() {
             break; // Left [package] section
         } else if in_package && line.trim().starts_with("version =") {
             found_version = true;
-            assert!(line.contains(version), "Version line should contain the version");
+            assert!(
+                line.contains(version),
+                "Version line should contain the version"
+            );
         }
     }
     assert!(found_version, "Version should be in [package] section");
@@ -622,7 +652,7 @@ fn test_version_cli_integration() {
     // Test CLI integration with --version flag
     let exe = env!("CARGO_BIN_EXE_brrtrouter-gen");
     let test_version = "1.2.3-rc.4";
-    
+
     let status = Command::new(exe)
         .current_dir(dir)
         .arg("generate")
@@ -637,7 +667,7 @@ fn test_version_cli_integration() {
         .expect("run cli");
 
     assert!(status.success(), "CLI should succeed with --version flag");
-    
+
     let cargo_toml = dir.join("cli_test").join("Cargo.toml");
     assert!(cargo_toml.exists(), "Cargo.toml should be generated");
     let version = read_version_from_cargo_toml(&cargo_toml);

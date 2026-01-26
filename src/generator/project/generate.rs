@@ -354,7 +354,8 @@ pub fn generate_project_with_options(
         } else {
             // Use the more specific detection that checks for workspace.dependencies
             // This prevents using workspace deps when the workspace doesn't support them
-            let use_workspace_deps = crate::generator::templates::detect_workspace_with_brrtrouter_deps(&base_dir);
+            let use_workspace_deps =
+                crate::generator::templates::detect_workspace_with_brrtrouter_deps(&base_dir);
             crate::generator::templates::write_cargo_toml_with_options(
                 &base_dir,
                 &slug,

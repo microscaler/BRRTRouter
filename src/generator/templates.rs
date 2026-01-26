@@ -536,7 +536,7 @@ pub(crate) fn detect_workspace_with_brrtrouter_deps(output_dir: &Path) -> bool {
                         None => break,
                     }
                 }
-                
+
                 // If we found [workspace] but no [workspace.dependencies], this workspace
                 // doesn't support workspace dependencies. Return false immediately because
                 // [workspace] defines the workspace boundary - we shouldn't search parent
@@ -544,7 +544,7 @@ pub(crate) fn detect_workspace_with_brrtrouter_deps(output_dir: &Path) -> bool {
                 if !contents.contains("[workspace.dependencies]") {
                     return false;
                 }
-                
+
                 // Check if brrtrouter is defined in workspace.dependencies
                 // Look for pattern: brrtrouter = { ... } within [workspace.dependencies]
                 let lines: Vec<&str> = contents.lines().collect();
@@ -560,9 +560,13 @@ pub(crate) fn detect_workspace_with_brrtrouter_deps(output_dir: &Path) -> bool {
                         break;
                     }
                     if in_workspace_deps {
-                        // Check if this line defines brrtrouter
-                        if trimmed.starts_with("brrtrouter") && trimmed.contains('=') {
-                            return true;
+                        // Check if this line defines brrtrouter (exactly, not brrtrouter_macros, etc.)
+                        // Match pattern: brrtrouter\s*= (brrtrouter followed by optional whitespace and =)
+                        if trimmed.starts_with("brrtrouter") {
+                            let after_brrtrouter = &trimmed[10..]; // "brrtrouter" is 10 characters
+                            if after_brrtrouter.trim_start().starts_with('=') {
+                                return true;
+                            }
                         }
                     }
                 }
