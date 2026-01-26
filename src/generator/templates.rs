@@ -435,6 +435,26 @@ pub fn write_registry_rs(dir: &Path, entries: &[RegistryEntry]) -> anyhow::Resul
     Ok(())
 }
 
+/// Write the lib.rs file
+///
+/// Generates the library entry point that re-exports the registry module.
+/// This allows the generated crate to be used as a library dependency in tests.
+///
+/// # Arguments
+///
+/// * `dir` - Output directory (typically `src/`)
+///
+/// # Errors
+///
+/// Returns an error if template rendering or file writing fails
+pub fn write_lib_rs(dir: &Path) -> anyhow::Result<()> {
+    let path = dir.join("lib.rs");
+    let rendered = LibRsTemplate.render()?;
+    fs::write(path.clone(), rendered)?;
+    println!("✅ Generated lib.rs → {path:?}");
+    Ok(())
+}
+
 /// Write the types.rs file with type definitions (internal helper)
 ///
 /// Generates a `types.rs` file containing all Rust struct definitions extracted
