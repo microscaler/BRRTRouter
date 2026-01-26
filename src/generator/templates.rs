@@ -477,18 +477,67 @@ pub(crate) fn write_cargo_toml(base: &Path, slug: &str) -> anyhow::Result<()> {
 }
 
 /// Detect if output directory is in a workspace that has brrtrouter in workspace.dependencies
+///
+/// This function handles two scenarios:
+/// 1. Workspaces WITH workspace.dependencies (e.g., RERP microservices workspace)
+///    - Has [workspace], workspace.dependencies, and brrtrouter in workspace.dependencies
+///    - Returns true → generated Cargo.toml uses `brrtrouter = { workspace = true }`
+/// 2. Workspaces WITHOUT workspace.dependencies (e.g., BRRTRouter workspace)
+///    - Has [workspace] but no workspace.dependencies section
+///    - Returns false → generated Cargo.toml uses `brrtrouter = { path = "../.." }`
+///
+/// The detection is precise: it requires ALL of:
+/// - [workspace] section exists
+/// - [workspace.dependencies] section exists
+/// - "brrtrouter" appears in the workspace.dependencies section
 pub(crate) fn detect_workspace_with_brrtrouter_deps(output_dir: &Path) -> bool {
     let mut current = output_dir;
     loop {
         let cargo_toml = current.join("Cargo.toml");
         if cargo_toml.exists() {
             if let Ok(contents) = std::fs::read_to_string(&cargo_toml) {
-                // Check if it's a workspace AND has brrtrouter in workspace.dependencies
-                if contents.contains("[workspace]")
-                    && contents.contains("brrtrouter")
-                    && contents.contains("workspace.dependencies")
-                {
-                    return true;
+                // Must have [workspace] section
+                if !contents.contains("[workspace]") {
+                    match current.parent() {
+                        Some(parent) => {
+                            current = parent;
+                            continue;
+                        }
+                        None => break,
+                    }
+                }
+                
+                // Must have [workspace.dependencies] section (not just [workspace])
+                if !contents.contains("[workspace.dependencies]") {
+                    match current.parent() {
+                        Some(parent) => {
+                            current = parent;
+                            continue;
+                        }
+                        None => break,
+                    }
+                }
+                
+                // Check if brrtrouter is defined in workspace.dependencies
+                // Look for pattern: brrtrouter = { ... } within [workspace.dependencies]
+                let lines: Vec<&str> = contents.lines().collect();
+                let mut in_workspace_deps = false;
+                for line in lines {
+                    let trimmed = line.trim();
+                    if trimmed == "[workspace.dependencies]" {
+                        in_workspace_deps = true;
+                        continue;
+                    }
+                    if trimmed.starts_with('[') && in_workspace_deps {
+                        // Left [workspace.dependencies] section
+                        break;
+                    }
+                    if in_workspace_deps {
+                        // Check if this line defines brrtrouter
+                        if trimmed.starts_with("brrtrouter") && trimmed.contains('=') {
+                            return true;
+                        }
+                    }
                 }
             }
         }
