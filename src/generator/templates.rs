@@ -566,6 +566,10 @@ pub(crate) fn detect_workspace_with_brrtrouter_deps(output_dir: &Path) -> bool {
                         }
                     }
                 }
+                // If we found [workspace] with [workspace.dependencies] but brrtrouter is not in it,
+                // return false immediately. We've found the workspace boundary and shouldn't search
+                // parent directories which might be a different workspace entirely.
+                return false;
             }
         }
         match current.parent() {
