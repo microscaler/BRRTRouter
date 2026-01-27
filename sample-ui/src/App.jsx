@@ -858,17 +858,22 @@ function App() {
                         <span>Payment Test (format: money)</span>
                       </h4>
                       <p class="text-sm text-gray-600 mb-4">
-                        Test a payment with amount: <strong>3.14</strong> (to verify clippy fix - $3.14 USD = 314 cents)
+                        Test money types with amount: <strong>3.14</strong> (to verify clippy fix - $3.14 USD = 314 cents)
                       </p>
                       
                       <div class="bg-white rounded-lg p-4 mb-4">
+                        <p class="text-xs text-gray-600 mb-2 font-semibold">Example Request (format: money in OpenAPI):</p>
                         <pre class="text-xs text-gray-700 font-mono overflow-auto">{JSON.stringify({
-                          amount: 3.14,
+                          name: "Test Item",
+                          price: 3.14,  // format: money → rusty_money::Money
                           currency_code: "USD",
-                          applied_amount: 3.14,
-                          tax_rate: 0.08,
-                          discount_percentage: 0.10
+                          applied_amount: 3.14,  // format: money
+                          tax_rate: 0.08,  // format: decimal → rust_decimal::Decimal
+                          discount_percentage: 0.10  // format: decimal
                         }, null, 2)}</pre>
+                        <p class="text-xs text-gray-500 mt-2 italic">
+                          Note: The actual API endpoint may not include all these fields. This demonstrates the OpenAPI schema format.
+                        </p>
                       </div>
 
                       <button 
@@ -882,14 +887,14 @@ function App() {
                           setMoneyTestResult(null);
                           
                           try {
-                            // Try to create a payment via POST /items (if available) or simulate
+                            // Generate a UUID for the item ID
+                            const itemId = crypto.randomUUID();
                             const paymentData = {
-                              name: "Test Payment Item",
-                              price: 3.14,
-                              currency_code: "USD"
+                              name: "Test Payment Item"
                             };
                             
-                            const response = await fetch(`${API_BASE}/items`, {
+                            // Use POST /items/{id} endpoint (requires ID in path)
+                            const response = await fetch(`${API_BASE}/items/${itemId}`, {
                               method: 'POST',
                               headers: {
                                 'X-API-Key': API_KEY,
@@ -905,9 +910,11 @@ function App() {
                               status: response.status,
                               data: data,
                               message: response.ok 
-                                ? `✅ Success! Payment created with amount: ${paymentData.price} ${paymentData.currency_code}`
+                                ? `✅ Success! Item created/updated. Note: Money types (format: money) are handled by BRRTRouter's code generation.`
                                 : `❌ Error: ${response.status} ${response.statusText}`,
-                              testType: "Payment (format: money)"
+                              testType: "Payment (format: money)",
+                              requestData: paymentData,
+                              endpoint: `/items/${itemId}`
                             });
                           } catch (error) {
                             setMoneyTestResult({
@@ -950,13 +957,14 @@ function App() {
                                 setMoneyTestResult(null);
                                 
                                 try {
+                                  // Generate a UUID for the item ID
+                                  const itemId = crypto.randomUUID();
                                   const itemData = {
-                                    name: `Test Item (${currency})`,
-                                    price: 3.14,
-                                    currency_code: currency
+                                    name: `Test Item (${currency})`
                                   };
                                   
-                                  const response = await fetch(`${API_BASE}/items`, {
+                                  // Use POST /items/{id} endpoint (requires ID in path)
+                                  const response = await fetch(`${API_BASE}/items/${itemId}`, {
                                     method: 'POST',
                                     headers: {
                                       'X-API-Key': API_KEY,
@@ -972,9 +980,11 @@ function App() {
                                     status: response.status,
                                     data: data,
                                     message: response.ok 
-                                      ? `✅ ${currency} test successful! Amount: 3.14 ${currency}`
+                                      ? `✅ ${currency} test successful! Note: Money types (format: money) with amount 3.14 ${currency} would be handled by BRRTRouter's code generation.`
                                       : `❌ ${currency} test failed: ${response.status}`,
-                                    testType: `Currency: ${currency}`
+                                    testType: `Currency: ${currency}`,
+                                    requestData: { ...itemData, price: 3.14, currency_code: currency },
+                                    endpoint: `/items/${itemId}`
                                   });
                                 } catch (error) {
                                   setMoneyTestResult({
@@ -1021,6 +1031,20 @@ function App() {
                             </p>
                           )}
                         </div>
+
+                        <Show when={moneyTestResult().requestData}>
+                          <div class="mb-4">
+                            <h5 class="font-semibold text-gray-700 text-sm mb-2">Request Data (Example):</h5>
+                            <div class="bg-blue-50 rounded p-3 max-h-48 overflow-auto border border-blue-200">
+                              <pre class="text-xs text-gray-700 font-mono">{JSON.stringify(moneyTestResult().requestData, null, 2)}</pre>
+                            </div>
+                            {moneyTestResult().endpoint && (
+                              <p class="text-xs text-gray-600 mt-2">
+                                Endpoint: <code class="bg-gray-100 px-1 rounded">{moneyTestResult().endpoint}</code>
+                              </p>
+                            )}
+                          </div>
+                        </Show>
 
                         <Show when={moneyTestResult().data}>
                           <div>
