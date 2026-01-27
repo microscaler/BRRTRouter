@@ -614,6 +614,216 @@ fn test_extract_fields_complex_nested() {
 }
 
 #[test]
+fn test_schema_to_type_money_format() {
+    // Test that format: money maps to rusty_money::Money
+    let schema = json!({
+        "type": "number",
+        "format": "money"
+    });
+    let result = schema_to_type(&schema);
+    assert_eq!(result, "rusty_money::Money", "format: money should map to rusty_money::Money");
+}
+
+#[test]
+fn test_schema_to_type_decimal_format() {
+    // Test that format: decimal maps to rust_decimal::Decimal
+    let schema = json!({
+        "type": "number",
+        "format": "decimal"
+    });
+    let result = schema_to_type(&schema);
+    assert_eq!(result, "rust_decimal::Decimal", "format: decimal should map to rust_decimal::Decimal");
+}
+
+#[test]
+fn test_schema_to_type_number_no_format() {
+    // Test that number without format maps to f64
+    let schema = json!({
+        "type": "number"
+    });
+    let result = schema_to_type(&schema);
+    assert_eq!(result, "f64", "number without format should map to f64");
+}
+
+#[test]
+fn test_schema_to_type_money_array() {
+    // Test array of money values
+    let schema = json!({
+        "type": "array",
+        "items": {
+            "type": "number",
+            "format": "money"
+        }
+    });
+    let result = schema_to_type(&schema);
+    assert_eq!(result, "Vec<rusty_money::Money>", "array of money should map to Vec<rusty_money::Money>");
+}
+
+#[test]
+fn test_schema_to_type_decimal_array() {
+    // Test array of decimal values
+    let schema = json!({
+        "type": "array",
+        "items": {
+            "type": "number",
+            "format": "decimal"
+        }
+    });
+    let result = schema_to_type(&schema);
+    assert_eq!(result, "Vec<rust_decimal::Decimal>", "array of decimal should map to Vec<rust_decimal::Decimal>");
+}
+
+#[test]
+fn test_extract_fields_with_money_usd() {
+    // Test extracting fields with money type (USD)
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "amount": {
+                "type": "number",
+                "format": "money"
+            },
+            "currency": {
+                "type": "string"
+            }
+        },
+        "required": ["amount"]
+    });
+
+    let fields = extract_fields(&schema);
+    assert_eq!(fields.len(), 2);
+
+    let amount_field = fields.iter().find(|f| f.name == "amount").unwrap();
+    assert_eq!(amount_field.ty, "rusty_money::Money", "amount field should be rusty_money::Money");
+    assert!(!amount_field.optional, "amount should be required");
+    // Verify dummy value uses $3.14 (314 cents)
+    assert!(
+        amount_field.value.contains("314"),
+        "Money dummy value should use 314 cents ($3.14)"
+    );
+    assert!(
+        amount_field.value.contains("rusty_money::iso::USD"),
+        "Money dummy value should use USD currency"
+    );
+}
+
+#[test]
+fn test_extract_fields_with_money_314_value() {
+    // Test that money fields use $3.14 (314 cents) as dummy value
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "applied_amount": {
+                "type": "number",
+                "format": "money"
+            }
+        }
+    });
+
+    let fields = extract_fields(&schema);
+    let amount_field = fields.iter().find(|f| f.name == "applied_amount").unwrap();
+    
+    // Verify the dummy value contains $3.14 (314 cents)
+    // Field is optional (not in required array), so may be wrapped in Some()
+    assert!(
+        amount_field.value.contains("rusty_money::Money::from_minor(314, rusty_money::iso::USD)"),
+        "Money field should use $3.14 (314 cents) as dummy value, got: {}",
+        amount_field.value
+    );
+}
+
+#[test]
+fn test_extract_fields_with_decimal() {
+    // Test extracting fields with decimal type
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "rate": {
+                "type": "number",
+                "format": "decimal"
+            }
+        }
+    });
+
+    let fields = extract_fields(&schema);
+    let rate_field = fields.iter().find(|f| f.name == "rate").unwrap();
+    assert_eq!(rate_field.ty, "rust_decimal::Decimal", "decimal format should map to rust_decimal::Decimal");
+    assert!(
+        rate_field.value.contains("rust_decimal::Decimal::new"),
+        "Decimal field should use Decimal::new for dummy value"
+    );
+}
+
+#[test]
+fn test_extract_fields_mixed_number_types() {
+    // Test schema with mixed number types: f64, Decimal, and Money
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "mathematical_value": {
+                "type": "number"
+            },
+            "general_decimal": {
+                "type": "number",
+                "format": "decimal"
+            },
+            "financial_amount": {
+                "type": "number",
+                "format": "money"
+            }
+        }
+    });
+
+    let fields = extract_fields(&schema);
+    assert_eq!(fields.len(), 3);
+
+    let math_field = fields.iter().find(|f| f.name == "mathematical_value").unwrap();
+    assert_eq!(math_field.ty, "f64", "number without format should be f64");
+    // Field is optional (not in required array), so value is wrapped in Some()
+    assert!(
+        math_field.value == "3.14" || math_field.value == "Some(3.14)",
+        "f64 should use 3.14 (clippy warning acceptable), got: {}",
+        math_field.value
+    );
+
+    let decimal_field = fields.iter().find(|f| f.name == "general_decimal").unwrap();
+    assert_eq!(decimal_field.ty, "rust_decimal::Decimal", "format: decimal should be Decimal");
+
+    let money_field = fields.iter().find(|f| f.name == "financial_amount").unwrap();
+    assert_eq!(money_field.ty, "rusty_money::Money", "format: money should be Money");
+    assert!(
+        money_field.value.contains("314"),
+        "Money should use 314 cents ($3.14)"
+    );
+}
+
+#[test]
+fn test_extract_fields_money_optional() {
+    // Test optional money field
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "optional_amount": {
+                "type": "number",
+                "format": "money"
+            }
+        }
+    });
+
+    let fields = extract_fields(&schema);
+    let amount_field = fields.iter().find(|f| f.name == "optional_amount").unwrap();
+    assert!(amount_field.optional, "Field not in required array should be optional");
+    assert!(
+        amount_field.value.starts_with("Some("),
+        "Optional money field should be wrapped in Some()"
+    );
+    assert!(
+        amount_field.value.contains("314"),
+        "Optional money should still use $3.14 (314 cents)"
+    );
+}
+
+#[test]
 fn test_detect_workspace_with_brrtrouter_deps_found() {
     use super::templates::detect_workspace_with_brrtrouter_deps;
     use std::fs;

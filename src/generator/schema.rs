@@ -639,7 +639,17 @@ pub fn extract_fields(schema: &Value) -> Vec<FieldDef> {
                 match prop.get("type").and_then(|t| t.as_str()) {
                     Some("string") => "String".to_string(),
                     Some("integer") => "i32".to_string(),
-                    Some("number") => "f64".to_string(),
+                    Some("number") => {
+                        // Format-based type differentiation for number types
+                        // number (no format) → f64 (mathematical numbers)
+                        // number format:decimal → rust_decimal::Decimal (general decimals)
+                        // number format:money → rusty_money::Money (financial amounts)
+                        match prop.get("format").and_then(|f| f.as_str()) {
+                            Some("money") => "rusty_money::Money".to_string(),
+                            Some("decimal") => "rust_decimal::Decimal".to_string(),
+                            _ => "f64".to_string(), // Default to f64 for mathematical numbers
+                        }
+                    }
                     Some("boolean") => "bool".to_string(),
                     Some("array") => {
                         if let Some(items) = prop.get("items") {
@@ -713,7 +723,17 @@ pub fn schema_to_type(schema: &Value) -> String {
     match schema.get("type").and_then(|t| t.as_str()) {
         Some("string") => "String".to_string(),
         Some("integer") => "i32".to_string(),
-        Some("number") => "f64".to_string(),
+        Some("number") => {
+            // Format-based type differentiation for number types
+            // number (no format) → f64 (mathematical numbers)
+            // number format:decimal → rust_decimal::Decimal (general decimals)
+            // number format:money → rusty_money::Money (financial amounts)
+            match schema.get("format").and_then(|f| f.as_str()) {
+                Some("money") => "rusty_money::Money".to_string(),
+                Some("decimal") => "rust_decimal::Decimal".to_string(),
+                _ => "f64".to_string(), // Default to f64 for mathematical numbers
+            }
+        }
         Some("boolean") => "bool".to_string(),
         Some("array") => {
             if let Some(items) = schema.get("items") {
@@ -721,7 +741,14 @@ pub fn schema_to_type(schema: &Value) -> String {
                     let inner = match item_ty {
                         "string" => "String".to_string(),
                         "integer" => "i32".to_string(),
-                        "number" => "f64".to_string(),
+                        "number" => {
+                            // Check format for array items too
+                            match items.get("format").and_then(|f| f.as_str()) {
+                                Some("money") => "rusty_money::Money".to_string(),
+                                Some("decimal") => "rust_decimal::Decimal".to_string(),
+                                _ => "f64".to_string(),
+                            }
+                        }
                         "boolean" => "bool".to_string(),
                         _ => schema_to_type(items),
                     };

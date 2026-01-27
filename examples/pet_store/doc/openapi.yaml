@@ -771,11 +771,57 @@ components:
       properties:
         id: { type: string }
         name: { type: string }
+        price:
+          type: number
+          format: money
+          description: Item price in currency
+        currency_code:
+          type: string
+          description: ISO 4217 currency code (e.g., USD, EUR, GBP, JPY)
+          example: USD
 
     CreateItemRequest:
       type: object
       properties:
         name: { type: string }
+        price:
+          type: number
+          format: money
+          description: Item price in currency
+        currency_code:
+          type: string
+          description: ISO 4217 currency code
+          example: USD
+
+    Payment:
+      type: object
+      required: [amount, currency_code]
+      properties:
+        amount:
+          type: number
+          format: money
+          description: Payment amount (e.g., 3.14 for $3.14)
+          example: 3.14
+        currency_code:
+          type: string
+          description: ISO 4217 currency code
+          enum: [USD, EUR, GBP, JPY, CAD, AUD]
+          example: USD
+        applied_amount:
+          type: number
+          format: money
+          description: Amount applied to invoice (e.g., 3.14 for $3.14)
+          example: 3.14
+        tax_rate:
+          type: number
+          format: decimal
+          description: Tax rate as decimal (e.g., 0.08 for 8%)
+          example: 0.08
+        discount_percentage:
+          type: number
+          format: decimal
+          description: Discount percentage as decimal
+          example: 0.10
 
     ProblemDetails:
       type: object
