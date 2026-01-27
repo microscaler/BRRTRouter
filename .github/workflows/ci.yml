@@ -219,15 +219,21 @@ jobs:
           mkdir -p build_artifacts
           cp target/x86_64-unknown-linux-musl/release/pet_store build_artifacts/
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup Yarn
+        run: npm install -g yarn
+
       - name: Build sample UI (if exists)
         run: |
           if [ -d "sample-ui" ]; then
             cd sample-ui
-            if command -v yarn &> /dev/null && [ -f "package.json" ]; then
-              echo "Building sample UI with yarn..."
-              yarn install
-              yarn build:petstore || true
-            fi
+            echo "Building sample UI with yarn..."
+            yarn install --frozen-lockfile
+            yarn build:petstore || true
           fi
 
       - name: Run Tilt CI

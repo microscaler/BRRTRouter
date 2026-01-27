@@ -40,9 +40,9 @@
 - `just flamegraph` - Generate flamegraphs.
 
 ### UI (sample dashboard)
-- `npm install` (in `sample-ui/`)
-- `npm run dev` (in `sample-ui/`) - Dev server.
-- `npm run build:petstore` (in `sample-ui/`) - Build into `examples/pet_store/static_site`.
+- `yarn install` (in `sample-ui/`)
+- `yarn dev` (in `sample-ui/`) - Dev server.
+- `yarn build:petstore` (in `sample-ui/`) - Build into `examples/pet_store/static_site`.
 
 ## Code Style and Conventions
 
