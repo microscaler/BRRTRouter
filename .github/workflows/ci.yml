@@ -219,13 +219,12 @@ jobs:
           mkdir -p build_artifacts
           cp target/x86_64-unknown-linux-musl/release/pet_store build_artifacts/
 
-      - name: Setup Node.js
+      - name: Setup Node.js and Yarn
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-
-      - name: Setup Yarn
-        run: npm install -g yarn
+          cache: 'yarn'
+          cache-dependency-path: 'sample-ui/yarn.lock'
 
       - name: Build sample UI (if exists)
         run: |
