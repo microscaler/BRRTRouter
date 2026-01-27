@@ -270,8 +270,33 @@ pub fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
         }
         // Numbers need type-aware conversion
         Value::Number(n) => {
+            // Check if field type is Decimal (for money/decimal formats)
+            if field.ty.contains("rust_decimal::Decimal") || field.ty.contains("Decimal") {
+                // Convert number to Decimal::new(mantissa, scale)
+                // For example: 123.45 → Decimal::new(12345, 2)
+                if let Some(f) = n.as_f64() {
+                    // Parse as string to preserve precision, then convert to Decimal
+                    let s = n.to_string();
+                    if s.contains('.') {
+                        let parts: Vec<&str> = s.split('.').collect();
+                        let integer = parts[0].parse::<i64>().unwrap_or(0);
+                        let decimal = parts.get(1).unwrap_or(&"0");
+                        let scale = decimal.len() as u32;
+                        let mantissa = format!("{}{}", integer, decimal).parse::<i64>().unwrap_or(0);
+                        format!("rust_decimal::Decimal::new({}, {})", mantissa, scale)
+                    } else {
+                        // Integer: 123 → Decimal::new(123, 0)
+                        let mantissa = n.as_i64().unwrap_or(0);
+                        format!("rust_decimal::Decimal::new({}, 0)", mantissa)
+                    }
+                } else {
+                    // Fallback for other number types
+                    let mantissa = n.as_i64().unwrap_or(0);
+                    format!("rust_decimal::Decimal::new({}, 0)", mantissa)
+                }
+            }
             // If field type is f64 but number is integer, add .0 to make it a float literal
-            if field.ty == "f64" || field.ty == "Option<f64>" {
+            else if field.ty == "f64" || field.ty == "Option<f64>" {
                 if let Some(i) = n.as_i64() {
                     format!("{}.0", i)
                 } else if let Some(u) = n.as_u64() {
@@ -314,9 +339,25 @@ pub fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
                     }
                     // Numbers need type-aware conversion in arrays
                     Value::Number(n) => {
-                        // If array element type is f64 but number is integer, add .0
+                        // Check if array element type is Decimal
                         if let Some(inner_ty) = inner_ty_opt {
-                            if inner_ty == "f64" {
+                            if inner_ty.contains("rust_decimal::Decimal") || inner_ty.contains("Decimal") {
+                                // Convert number to Decimal::new(mantissa, scale)
+                                let s = n.to_string();
+                                if s.contains('.') {
+                                    let parts: Vec<&str> = s.split('.').collect();
+                                    let integer = parts[0].parse::<i64>().unwrap_or(0);
+                                    let decimal = parts.get(1).unwrap_or(&"0");
+                                    let scale = decimal.len() as u32;
+                                    let mantissa = format!("{}{}", integer, decimal).parse::<i64>().unwrap_or(0);
+                                    format!("rust_decimal::Decimal::new({}, {})", mantissa, scale)
+                                } else {
+                                    let mantissa = n.as_i64().unwrap_or(0);
+                                    format!("rust_decimal::Decimal::new({}, 0)", mantissa)
+                                }
+                            }
+                            // If array element type is f64 but number is integer, add .0
+                            else if inner_ty == "f64" {
                                 if let Some(i) = n.as_i64() {
                                     format!("{}.0", i)
                                 } else if let Some(u) = n.as_u64() {
