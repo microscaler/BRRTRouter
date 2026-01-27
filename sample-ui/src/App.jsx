@@ -841,12 +841,15 @@ function App() {
                   
                   <div class="mb-6 p-4 bg-green-50 rounded-lg">
                     <p class="text-sm text-gray-700 mb-2">
-                      <strong>Testing Money Types:</strong> This section tests BRRTRouter's format-based type detection for financial amounts.
+                      <strong>Money Type Format Demonstration:</strong> This section demonstrates BRRTRouter's format-based type detection for financial amounts.
                     </p>
-                    <p class="text-sm text-gray-600">
-                      • <code>format: money</code> → <code>rusty_money::Money</code> (e.g., $3.14 USD)<br/>
+                    <p class="text-sm text-gray-600 mb-2">
+                      • <code>format: money</code> → <code>rusty_money::Money</code> (e.g., $3.14 USD = 314 cents)<br/>
                       • <code>format: decimal</code> → <code>rust_decimal::Decimal</code> (e.g., 0.08 for 8% tax rate)<br/>
                       • <code>number</code> (no format) → <code>f64</code> (mathematical numbers)
+                    </p>
+                    <p class="text-xs text-gray-500 italic">
+                      Note: The petstore example API doesn't include money endpoints. This demonstrates the OpenAPI format and how BRRTRouter generates Rust code from it.
                     </p>
                   </div>
 
@@ -877,59 +880,41 @@ function App() {
                       </div>
 
                       <button 
-                        class={`w-full px-4 py-3 rounded-lg font-medium transition ${
-                          moneyTestLoading() 
-                            ? 'bg-gray-400 text-white cursor-not-allowed' 
-                            : 'bg-green-600 text-white hover:bg-green-700 cursor-pointer'
-                        }`}
-                        onClick={async () => {
-                          setMoneyTestLoading(true);
-                          setMoneyTestResult(null);
+                        class="w-full px-4 py-3 rounded-lg font-medium transition bg-green-600 text-white hover:bg-green-700 cursor-pointer"
+                        onClick={() => {
+                          // Demonstrate money format without calling API
+                          // The petstore API doesn't have money endpoints, so we show the format
+                          const exampleRequest = {
+                            name: "Test Payment Item",
+                            amount: 3.14,
+                            currency_code: "USD",
+                            applied_amount: 3.14,
+                            tax_rate: 0.08,
+                            discount_percentage: 0.10
+                          };
                           
-                          try {
-                            // Generate a UUID for the item ID
-                            const itemId = crypto.randomUUID();
-                            const paymentData = {
-                              name: "Test Payment Item"
-                            };
-                            
-                            // Use POST /items/{id} endpoint (requires ID in path)
-                            const response = await fetch(`${API_BASE}/items/${itemId}`, {
-                              method: 'POST',
-                              headers: {
-                                'X-API-Key': API_KEY,
-                                'Content-Type': 'application/json'
-                              },
-                              body: JSON.stringify(paymentData)
-                            });
-                            
-                            const data = await response.json();
-                            
-                            setMoneyTestResult({
-                              success: response.ok,
-                              status: response.status,
-                              data: data,
-                              message: response.ok 
-                                ? `✅ Success! Item created/updated. Note: Money types (format: money) are handled by BRRTRouter's code generation.`
-                                : `❌ Error: ${response.status} ${response.statusText}`,
-                              testType: "Payment (format: money)",
-                              requestData: paymentData,
-                              endpoint: `/items/${itemId}`
-                            });
-                          } catch (error) {
-                            setMoneyTestResult({
-                              success: false,
-                              error: error.message,
-                              message: `❌ Request failed: ${error.message}`,
-                              testType: "Payment (format: money)"
-                            });
-                          } finally {
-                            setMoneyTestLoading(false);
-                          }
+                          const exampleResponse = {
+                            id: "payment-123",
+                            amount: 3.14,
+                            currency_code: "USD",
+                            applied_amount: 3.14,
+                            tax_rate: 0.08,
+                            discount_percentage: 0.10,
+                            status: "processed"
+                          };
+                          
+                          setMoneyTestResult({
+                            success: true,
+                            status: 200,
+                            data: exampleResponse,
+                            message: `✅ Money Format Demonstration: This shows how format: money (3.14) is handled by BRRTRouter's code generation. The value 3.14 is converted to 314 cents (from_minor) to avoid clippy warnings.`,
+                            testType: "Payment (format: money) - Format Demonstration",
+                            requestData: exampleRequest,
+                            endpoint: "POST /payments (example endpoint)"
+                          });
                         }}
-                        disabled={moneyTestLoading()}
                       >
-                        {moneyTestLoading() ? '⏳ Testing...' : '🚀 Test Payment (3.14 USD)'}
+                        💡 Demonstrate Money Format (3.14 USD)
                       </button>
                     </div>
 
@@ -952,54 +937,34 @@ function App() {
                             </div>
                             <button 
                               class="w-full px-3 py-2 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition text-sm font-medium"
-                              onClick={async () => {
-                                setMoneyTestLoading(true);
-                                setMoneyTestResult(null);
+                              onClick={() => {
+                                // Demonstrate currency format without calling API
+                                const exampleRequest = {
+                                  name: `Test Item (${currency})`,
+                                  price: 3.14,
+                                  currency_code: currency
+                                };
                                 
-                                try {
-                                  // Generate a UUID for the item ID
-                                  const itemId = crypto.randomUUID();
-                                  const itemData = {
-                                    name: `Test Item (${currency})`
-                                  };
-                                  
-                                  // Use POST /items/{id} endpoint (requires ID in path)
-                                  const response = await fetch(`${API_BASE}/items/${itemId}`, {
-                                    method: 'POST',
-                                    headers: {
-                                      'X-API-Key': API_KEY,
-                                      'Content-Type': 'application/json'
-                                    },
-                                    body: JSON.stringify(itemData)
-                                  });
-                                  
-                                  const data = await response.json();
-                                  
-                                  setMoneyTestResult({
-                                    success: response.ok,
-                                    status: response.status,
-                                    data: data,
-                                    message: response.ok 
-                                      ? `✅ ${currency} test successful! Note: Money types (format: money) with amount 3.14 ${currency} would be handled by BRRTRouter's code generation.`
-                                      : `❌ ${currency} test failed: ${response.status}`,
-                                    testType: `Currency: ${currency}`,
-                                    requestData: { ...itemData, price: 3.14, currency_code: currency },
-                                    endpoint: `/items/${itemId}`
-                                  });
-                                } catch (error) {
-                                  setMoneyTestResult({
-                                    success: false,
-                                    error: error.message,
-                                    message: `❌ ${currency} test error: ${error.message}`,
-                                    testType: `Currency: ${currency}`
-                                  });
-                                } finally {
-                                  setMoneyTestLoading(false);
-                                }
+                                const exampleResponse = {
+                                  id: `item-${currency.toLowerCase()}-123`,
+                                  name: `Test Item (${currency})`,
+                                  price: 3.14,
+                                  currency_code: currency,
+                                  status: "created"
+                                };
+                                
+                                setMoneyTestResult({
+                                  success: true,
+                                  status: 200,
+                                  data: exampleResponse,
+                                  message: `✅ ${currency} Format Demonstration: Amount 3.14 ${currency} would be converted to 314 minor units (from_minor) in Rust code. This avoids clippy warnings while maintaining precision.`,
+                                  testType: `Currency: ${currency} - Format Demonstration`,
+                                  requestData: exampleRequest,
+                                  endpoint: `POST /items (example endpoint)`
+                                });
                               }}
-                              disabled={moneyTestLoading()}
                             >
-                              Test {currency}
+                              Demonstrate {currency}
                             </button>
                           </div>
                         ))}
