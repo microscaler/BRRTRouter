@@ -12,7 +12,7 @@ default:
 # Build the SolidJS sample UI and output to pet_store static_site
 build-ui:
 	@echo "[BUILD] Building SolidJS UI..."
-	cd sample-ui && npm install && npm run build:petstore
+	cd sample-ui && yarn install && yarn build:petstore
 	@echo "[OK] UI built to examples/pet_store/static_site"
 
 # Build Docker image for curl integration tests (cross-compiles for Linux)

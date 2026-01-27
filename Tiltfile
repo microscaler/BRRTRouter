@@ -26,7 +26,7 @@ pet_build_cmd = 'scripts/host-aware-build.sh pet'
 # Builds the rich dashboard UI and outputs to examples/pet_store/static_site
 local_resource(
     'build-sample-ui',
-    'cd sample-ui && npm install && npm run build:petstore',
+    'cd sample-ui && yarn install --frozen-lockfile && yarn build:petstore',
     deps=[
         'sample-ui/src/',
         'sample-ui/index.html',
