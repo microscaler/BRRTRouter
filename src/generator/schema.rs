@@ -645,7 +645,9 @@ pub fn extract_fields(schema: &Value) -> Vec<FieldDef> {
                         // number format:decimal → rust_decimal::Decimal (general decimals)
                         // number format:money → rusty_money::Money (financial amounts)
                         match prop.get("format").and_then(|f| f.as_str()) {
-                            Some("money") => "rusty_money::Money".to_string(),
+                            // For API serialization, use Decimal for money (Money has lifetime parameter incompatible with owned Deserialize)
+                            // Money types should be used in entities, converted from Decimal in business logic
+                            Some("money") => "rust_decimal::Decimal".to_string(),
                             Some("decimal") => "rust_decimal::Decimal".to_string(),
                             _ => "f64".to_string(), // Default to f64 for mathematical numbers
                         }
@@ -729,7 +731,9 @@ pub fn schema_to_type(schema: &Value) -> String {
             // number format:decimal → rust_decimal::Decimal (general decimals)
             // number format:money → rusty_money::Money (financial amounts)
             match schema.get("format").and_then(|f| f.as_str()) {
-                Some("money") => "rusty_money::Money".to_string(),
+                // For API serialization, use Decimal for money (Money has lifetime parameter incompatible with owned Deserialize)
+                // Money types should be used in entities, converted from Decimal in business logic
+                Some("money") => "rust_decimal::Decimal".to_string(),
                 Some("decimal") => "rust_decimal::Decimal".to_string(),
                 _ => "f64".to_string(), // Default to f64 for mathematical numbers
             }
@@ -744,7 +748,8 @@ pub fn schema_to_type(schema: &Value) -> String {
                         "number" => {
                             // Check format for array items too
                             match items.get("format").and_then(|f| f.as_str()) {
-                                Some("money") => "rusty_money::Money".to_string(),
+                                // For API serialization, use Decimal for money (Money has lifetime parameter incompatible with owned Deserialize)
+                                Some("money") => "rust_decimal::Decimal".to_string(),
                                 Some("decimal") => "rust_decimal::Decimal".to_string(),
                                 _ => "f64".to_string(),
                             }

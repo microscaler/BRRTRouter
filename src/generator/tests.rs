@@ -621,7 +621,10 @@ fn test_schema_to_type_money_format() {
         "format": "money"
     });
     let result = schema_to_type(&schema);
-    assert_eq!(result, "rusty_money::Money", "format: money should map to rusty_money::Money");
+    assert_eq!(
+        result, "rusty_money::Money",
+        "format: money should map to rusty_money::Money"
+    );
 }
 
 #[test]
@@ -632,7 +635,10 @@ fn test_schema_to_type_decimal_format() {
         "format": "decimal"
     });
     let result = schema_to_type(&schema);
-    assert_eq!(result, "rust_decimal::Decimal", "format: decimal should map to rust_decimal::Decimal");
+    assert_eq!(
+        result, "rust_decimal::Decimal",
+        "format: decimal should map to rust_decimal::Decimal"
+    );
 }
 
 #[test]
@@ -656,7 +662,10 @@ fn test_schema_to_type_money_array() {
         }
     });
     let result = schema_to_type(&schema);
-    assert_eq!(result, "Vec<rusty_money::Money>", "array of money should map to Vec<rusty_money::Money>");
+    assert_eq!(
+        result, "Vec<rusty_money::Money>",
+        "array of money should map to Vec<rusty_money::Money>"
+    );
 }
 
 #[test]
@@ -670,7 +679,10 @@ fn test_schema_to_type_decimal_array() {
         }
     });
     let result = schema_to_type(&schema);
-    assert_eq!(result, "Vec<rust_decimal::Decimal>", "array of decimal should map to Vec<rust_decimal::Decimal>");
+    assert_eq!(
+        result, "Vec<rust_decimal::Decimal>",
+        "array of decimal should map to Vec<rust_decimal::Decimal>"
+    );
 }
 
 #[test]
@@ -694,7 +706,10 @@ fn test_extract_fields_with_money_usd() {
     assert_eq!(fields.len(), 2);
 
     let amount_field = fields.iter().find(|f| f.name == "amount").unwrap();
-    assert_eq!(amount_field.ty, "rusty_money::Money", "amount field should be rusty_money::Money");
+    assert_eq!(
+        amount_field.ty, "rusty_money::Money",
+        "amount field should be rusty_money::Money"
+    );
     assert!(!amount_field.optional, "amount should be required");
     // Verify dummy value uses $3.14 (314 cents)
     assert!(
@@ -722,11 +737,13 @@ fn test_extract_fields_with_money_314_value() {
 
     let fields = extract_fields(&schema);
     let amount_field = fields.iter().find(|f| f.name == "applied_amount").unwrap();
-    
+
     // Verify the dummy value contains $3.14 (314 cents)
     // Field is optional (not in required array), so may be wrapped in Some()
     assert!(
-        amount_field.value.contains("rusty_money::Money::from_minor(314, rusty_money::iso::USD)"),
+        amount_field
+            .value
+            .contains("rusty_money::Money::from_minor(314, rusty_money::iso::USD)"),
         "Money field should use $3.14 (314 cents) as dummy value, got: {}",
         amount_field.value
     );
@@ -747,7 +764,10 @@ fn test_extract_fields_with_decimal() {
 
     let fields = extract_fields(&schema);
     let rate_field = fields.iter().find(|f| f.name == "rate").unwrap();
-    assert_eq!(rate_field.ty, "rust_decimal::Decimal", "decimal format should map to rust_decimal::Decimal");
+    assert_eq!(
+        rate_field.ty, "rust_decimal::Decimal",
+        "decimal format should map to rust_decimal::Decimal"
+    );
     assert!(
         rate_field.value.contains("rust_decimal::Decimal::new"),
         "Decimal field should use Decimal::new for dummy value"
@@ -777,7 +797,10 @@ fn test_extract_fields_mixed_number_types() {
     let fields = extract_fields(&schema);
     assert_eq!(fields.len(), 3);
 
-    let math_field = fields.iter().find(|f| f.name == "mathematical_value").unwrap();
+    let math_field = fields
+        .iter()
+        .find(|f| f.name == "mathematical_value")
+        .unwrap();
     assert_eq!(math_field.ty, "f64", "number without format should be f64");
     // Field is optional (not in required array), so value is wrapped in Some()
     assert!(
@@ -787,10 +810,19 @@ fn test_extract_fields_mixed_number_types() {
     );
 
     let decimal_field = fields.iter().find(|f| f.name == "general_decimal").unwrap();
-    assert_eq!(decimal_field.ty, "rust_decimal::Decimal", "format: decimal should be Decimal");
+    assert_eq!(
+        decimal_field.ty, "rust_decimal::Decimal",
+        "format: decimal should be Decimal"
+    );
 
-    let money_field = fields.iter().find(|f| f.name == "financial_amount").unwrap();
-    assert_eq!(money_field.ty, "rusty_money::Money", "format: money should be Money");
+    let money_field = fields
+        .iter()
+        .find(|f| f.name == "financial_amount")
+        .unwrap();
+    assert_eq!(
+        money_field.ty, "rusty_money::Money",
+        "format: money should be Money"
+    );
     assert!(
         money_field.value.contains("314"),
         "Money should use 314 cents ($3.14)"
@@ -812,7 +844,10 @@ fn test_extract_fields_money_optional() {
 
     let fields = extract_fields(&schema);
     let amount_field = fields.iter().find(|f| f.name == "optional_amount").unwrap();
-    assert!(amount_field.optional, "Field not in required array should be optional");
+    assert!(
+        amount_field.optional,
+        "Field not in required array should be optional"
+    );
     assert!(
         amount_field.value.starts_with("Some("),
         "Optional money field should be wrapped in Some()"
