@@ -25,6 +25,9 @@ function App() {
   const [showBearerModal, setShowBearerModal] = createSignal(false);
   const [bearerToken, setBearerToken] = createSignal(MOCK_BEARER_TOKEN);
   const [useBearerToken, setUseBearerToken] = createSignal(false);
+  const [showMoneyTester, setShowMoneyTester] = createSignal(false);
+  const [moneyTestResult, setMoneyTestResult] = createSignal(null);
+  const [moneyTestLoading, setMoneyTestLoading] = createSignal(false);
 
   const loadData = async () => {
     console.log('Loading data from:', API_BASE);
@@ -199,6 +202,13 @@ function App() {
           filename: "test.txt",
           content: "Hello World"
         }, null, 2);
+      } else if (path.includes('/items') || path.includes('/payment')) {
+        // Money/currency examples
+        exampleBody = JSON.stringify({
+          name: "Test Item",
+          price: 3.14,
+          currency_code: "USD"
+        }, null, 2);
       }
       
       setRequestBody(exampleBody);
@@ -313,12 +323,18 @@ function App() {
             🐾 BRRTRouter Pet Store
           </h1>
           <p class="text-gray-600 text-lg">Live Dashboard - SolidJS + Vite + Tailwind CSS</p>
-          <div class="mt-4 flex justify-center gap-4">
+          <div class="mt-4 flex justify-center gap-4 flex-wrap">
             <button 
               class="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition shadow-md"
               onClick={() => setShowApiExplorer(true)}
             >
               📖 API Explorer ({getApiPaths().length} endpoints)
+            </button>
+            <button 
+              class="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition shadow-md"
+              onClick={() => setShowMoneyTester(true)}
+            >
+              💰 Money/Currency Tester
             </button>
             <a 
               href="/docs" 
@@ -799,6 +815,253 @@ function App() {
                       Cancel
                     </button>
                   </div>
+                </div>
+              </div>
+            </Show>
+
+            {/* Money/Currency Tester Modal */}
+            <Show when={showMoneyTester()}>
+              <div 
+                class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4"
+                onClick={() => setShowMoneyTester(false)}
+              >
+                <div class="bg-white rounded-2xl p-8 max-w-4xl w-full max-h-[90vh] overflow-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                  <div class="flex justify-between items-center mb-6">
+                    <h3 class="text-3xl font-bold text-green-600 flex items-center gap-2">
+                      <span>💰</span>
+                      <span>Money/Currency Type Tester</span>
+                    </h3>
+                    <button 
+                      class="text-gray-500 hover:text-gray-700 text-2xl"
+                      onClick={() => setShowMoneyTester(false)}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  
+                  <div class="mb-6 p-4 bg-green-50 rounded-lg">
+                    <p class="text-sm text-gray-700 mb-2">
+                      <strong>Testing Money Types:</strong> This section tests BRRTRouter's format-based type detection for financial amounts.
+                    </p>
+                    <p class="text-sm text-gray-600">
+                      • <code>format: money</code> → <code>rusty_money::Money</code> (e.g., $3.14 USD)<br/>
+                      • <code>format: decimal</code> → <code>rust_decimal::Decimal</code> (e.g., 0.08 for 8% tax rate)<br/>
+                      • <code>number</code> (no format) → <code>f64</code> (mathematical numbers)
+                    </p>
+                  </div>
+
+                  <div class="space-y-6">
+                    {/* Payment Test */}
+                    <div class="border-2 border-green-200 rounded-lg p-6 bg-gradient-to-br from-green-50 to-emerald-50">
+                      <h4 class="text-xl font-bold text-green-700 mb-4 flex items-center gap-2">
+                        <span>💳</span>
+                        <span>Payment Test (format: money)</span>
+                      </h4>
+                      <p class="text-sm text-gray-600 mb-4">
+                        Test a payment with amount: <strong>3.14</strong> (to verify clippy fix - $3.14 USD = 314 cents)
+                      </p>
+                      
+                      <div class="bg-white rounded-lg p-4 mb-4">
+                        <pre class="text-xs text-gray-700 font-mono overflow-auto">{JSON.stringify({
+                          amount: 3.14,
+                          currency_code: "USD",
+                          applied_amount: 3.14,
+                          tax_rate: 0.08,
+                          discount_percentage: 0.10
+                        }, null, 2)}</pre>
+                      </div>
+
+                      <button 
+                        class={`w-full px-4 py-3 rounded-lg font-medium transition ${
+                          moneyTestLoading() 
+                            ? 'bg-gray-400 text-white cursor-not-allowed' 
+                            : 'bg-green-600 text-white hover:bg-green-700 cursor-pointer'
+                        }`}
+                        onClick={async () => {
+                          setMoneyTestLoading(true);
+                          setMoneyTestResult(null);
+                          
+                          try {
+                            // Try to create a payment via POST /items (if available) or simulate
+                            const paymentData = {
+                              name: "Test Payment Item",
+                              price: 3.14,
+                              currency_code: "USD"
+                            };
+                            
+                            const response = await fetch(`${API_BASE}/items`, {
+                              method: 'POST',
+                              headers: {
+                                'X-API-Key': API_KEY,
+                                'Content-Type': 'application/json'
+                              },
+                              body: JSON.stringify(paymentData)
+                            });
+                            
+                            const data = await response.json();
+                            
+                            setMoneyTestResult({
+                              success: response.ok,
+                              status: response.status,
+                              data: data,
+                              message: response.ok 
+                                ? `✅ Success! Payment created with amount: ${paymentData.price} ${paymentData.currency_code}`
+                                : `❌ Error: ${response.status} ${response.statusText}`,
+                              testType: "Payment (format: money)"
+                            });
+                          } catch (error) {
+                            setMoneyTestResult({
+                              success: false,
+                              error: error.message,
+                              message: `❌ Request failed: ${error.message}`,
+                              testType: "Payment (format: money)"
+                            });
+                          } finally {
+                            setMoneyTestLoading(false);
+                          }
+                        }}
+                        disabled={moneyTestLoading()}
+                      >
+                        {moneyTestLoading() ? '⏳ Testing...' : '🚀 Test Payment (3.14 USD)'}
+                      </button>
+                    </div>
+
+                    {/* Currency Examples */}
+                    <div class="border-2 border-blue-200 rounded-lg p-6 bg-gradient-to-br from-blue-50 to-cyan-50">
+                      <h4 class="text-xl font-bold text-blue-700 mb-4 flex items-center gap-2">
+                        <span>🌍</span>
+                        <span>Multi-Currency Examples</span>
+                      </h4>
+                      <p class="text-sm text-gray-600 mb-4">
+                        Test different currencies with the same amount (3.14):
+                      </p>
+                      
+                      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {['USD', 'EUR', 'GBP', 'JPY'].map(currency => (
+                          <div class="bg-white rounded-lg p-4 border border-blue-200">
+                            <div class="flex items-center justify-between mb-2">
+                              <span class="font-semibold text-gray-700">{currency}</span>
+                              <span class="text-sm text-gray-500">3.14 {currency}</span>
+                            </div>
+                            <button 
+                              class="w-full px-3 py-2 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition text-sm font-medium"
+                              onClick={async () => {
+                                setMoneyTestLoading(true);
+                                setMoneyTestResult(null);
+                                
+                                try {
+                                  const itemData = {
+                                    name: `Test Item (${currency})`,
+                                    price: 3.14,
+                                    currency_code: currency
+                                  };
+                                  
+                                  const response = await fetch(`${API_BASE}/items`, {
+                                    method: 'POST',
+                                    headers: {
+                                      'X-API-Key': API_KEY,
+                                      'Content-Type': 'application/json'
+                                    },
+                                    body: JSON.stringify(itemData)
+                                  });
+                                  
+                                  const data = await response.json();
+                                  
+                                  setMoneyTestResult({
+                                    success: response.ok,
+                                    status: response.status,
+                                    data: data,
+                                    message: response.ok 
+                                      ? `✅ ${currency} test successful! Amount: 3.14 ${currency}`
+                                      : `❌ ${currency} test failed: ${response.status}`,
+                                    testType: `Currency: ${currency}`
+                                  });
+                                } catch (error) {
+                                  setMoneyTestResult({
+                                    success: false,
+                                    error: error.message,
+                                    message: `❌ ${currency} test error: ${error.message}`,
+                                    testType: `Currency: ${currency}`
+                                  });
+                                } finally {
+                                  setMoneyTestLoading(false);
+                                }
+                              }}
+                              disabled={moneyTestLoading()}
+                            >
+                              Test {currency}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Test Results */}
+                    <Show when={moneyTestResult()}>
+                      <div class="border-2 border-indigo-200 rounded-lg p-6 bg-gradient-to-br from-indigo-50 to-purple-50">
+                        <h4 class="text-xl font-bold text-indigo-700 mb-4 flex items-center gap-2">
+                          <span>📊</span>
+                          <span>Test Results</span>
+                        </h4>
+                        
+                        <div class={`p-4 rounded-lg mb-4 ${
+                          moneyTestResult().success ? 'bg-green-100 border border-green-300' : 'bg-red-100 border border-red-300'
+                        }`}>
+                          <p class={`font-semibold ${
+                            moneyTestResult().success ? 'text-green-800' : 'text-red-800'
+                          }`}>
+                            {moneyTestResult().message}
+                          </p>
+                          <p class="text-sm text-gray-600 mt-2">
+                            Test Type: <strong>{moneyTestResult().testType}</strong>
+                          </p>
+                          {moneyTestResult().status && (
+                            <p class="text-sm text-gray-600">
+                              Status: <strong>{moneyTestResult().status}</strong>
+                            </p>
+                          )}
+                        </div>
+
+                        <Show when={moneyTestResult().data}>
+                          <div>
+                            <h5 class="font-semibold text-gray-700 text-sm mb-2">Response Data:</h5>
+                            <div class="bg-white rounded p-3 max-h-64 overflow-auto border border-gray-200">
+                              <pre class="text-xs text-gray-700 font-mono">{JSON.stringify(moneyTestResult().data, null, 2)}</pre>
+                            </div>
+                          </div>
+                        </Show>
+
+                        <Show when={moneyTestResult().error}>
+                          <div class="bg-red-50 rounded p-3 border border-red-200">
+                            <p class="text-sm text-red-700">
+                              <strong>Error:</strong> {moneyTestResult().error}
+                            </p>
+                          </div>
+                        </Show>
+                      </div>
+                    </Show>
+
+                    {/* Info Section */}
+                    <div class="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                      <h5 class="font-semibold text-gray-700 mb-2">ℹ️ About Money Types</h5>
+                      <ul class="text-sm text-gray-600 space-y-1 list-disc list-inside">
+                        <li><code>format: money</code> generates <code>rusty_money::Money</code> with currency support</li>
+                        <li>Amount <strong>3.14</strong> is stored as <strong>314 cents</strong> (from_minor) to avoid clippy warnings</li>
+                        <li><code>format: decimal</code> generates <code>rust_decimal::Decimal</code> for precise decimal math</li>
+                        <li>Regular <code>number</code> (no format) uses <code>f64</code> for mathematical calculations</li>
+                      </ul>
+                    </div>
+                  </div>
+
+                  <button 
+                    class="mt-6 w-full bg-green-600 text-white py-3 px-4 rounded-lg hover:bg-green-700 transition font-medium"
+                    onClick={() => {
+                      setShowMoneyTester(false);
+                      setMoneyTestResult(null);
+                    }}
+                  >
+                    Close Money Tester
+                  </button>
                 </div>
               </div>
             </Show>
