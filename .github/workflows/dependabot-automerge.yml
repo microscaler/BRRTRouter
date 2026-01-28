@@ -1,15 +1,24 @@
 # Automatically merge Dependabot PRs for minor/patch updates
 # Only merges after CI passes
+#
+# This workflow:
+# - Triggers on PR open/update and status check completion
+# - Auto-merges minor/patch updates after CI passes
+# - Comments on major updates requiring manual review
 
 name: Dependabot Auto-Merge
 
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+  check_suite:
+    types: [completed]
+  status: {}
 
 permissions:
   contents: write
   pull-requests: write
+  checks: read
 
 jobs:
   dependabot-automerge:
@@ -22,13 +31,39 @@ jobs:
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
 
-      - name: Auto-merge minor and patch updates
+      - name: Check PR mergeability status
         if: |
           steps.metadata.outputs.update-type == 'version-update:semver-minor' ||
           steps.metadata.outputs.update-type == 'version-update:semver-patch'
+        id: check-status
         run: |
-          echo "Auto-merging ${{ steps.metadata.outputs.dependency-names }} (${{ steps.metadata.outputs.update-type }})"
-          gh pr merge --auto --squash "$PR_URL"
+          # Get PR mergeability status
+          MERGEABLE=$(gh pr view "$PR_NUMBER" --json mergeable --jq '.mergeable // false')
+          MERGEABLE_STATE=$(gh pr view "$PR_NUMBER" --json mergeableState --jq '.mergeableState // "unknown"')
+          
+          echo "mergeable=$MERGEABLE" >> $GITHUB_OUTPUT
+          echo "mergeable_state=$MERGEABLE_STATE" >> $GITHUB_OUTPUT
+          
+          # Only proceed if PR is mergeable and all checks have passed
+          if [ "$MERGEABLE" = "true" ] && [ "$MERGEABLE_STATE" = "clean" ]; then
+            echo "ready_to_merge=true" >> $GITHUB_OUTPUT
+            echo "✅ PR is ready to merge"
+          else
+            echo "ready_to_merge=false" >> $GITHUB_OUTPUT
+            echo "⏳ PR not ready: mergeable=$MERGEABLE, state=$MERGEABLE_STATE (will retry on next status update)"
+          fi
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Auto-merge minor and patch updates
+        if: |
+          (steps.metadata.outputs.update-type == 'version-update:semver-minor' ||
+           steps.metadata.outputs.update-type == 'version-update:semver-patch') &&
+          steps.check-status.outputs.ready_to_merge == 'true'
+        run: |
+          echo "🚀 Auto-merging ${{ steps.metadata.outputs.dependency-names }} (${{ steps.metadata.outputs.update-type }})"
+          gh pr merge "$PR_URL" --squash --auto
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -36,7 +71,7 @@ jobs:
       - name: Comment on major updates
         if: steps.metadata.outputs.update-type == 'version-update:semver-major'
         run: |
-          echo "Major update detected for ${{ steps.metadata.outputs.dependency-names }} - requires manual review"
+          echo "⚠️ Major update detected for ${{ steps.metadata.outputs.dependency-names }} - requires manual review"
           gh pr comment "$PR_URL" --body "⚠️ **Major version update** - requires manual review before merging.
 
           This PR updates **${{ steps.metadata.outputs.dependency-names }}** to a new major version.
