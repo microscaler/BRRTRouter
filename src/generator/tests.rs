@@ -615,15 +615,15 @@ fn test_extract_fields_complex_nested() {
 
 #[test]
 fn test_schema_to_type_money_format() {
-    // Test that format: money maps to rusty_money::Money
+    // Test that format: money maps to rust_decimal::Decimal (Money lifetime incompatible with serde)
     let schema = json!({
         "type": "number",
         "format": "money"
     });
     let result = schema_to_type(&schema);
     assert_eq!(
-        result, "rusty_money::Money",
-        "format: money should map to rusty_money::Money"
+        result, "rust_decimal::Decimal",
+        "format: money should map to rust_decimal::Decimal"
     );
 }
 
@@ -653,7 +653,7 @@ fn test_schema_to_type_number_no_format() {
 
 #[test]
 fn test_schema_to_type_money_array() {
-    // Test array of money values
+    // Test array of money values (money format maps to Decimal in API layer)
     let schema = json!({
         "type": "array",
         "items": {
@@ -663,8 +663,8 @@ fn test_schema_to_type_money_array() {
     });
     let result = schema_to_type(&schema);
     assert_eq!(
-        result, "Vec<rusty_money::Money>",
-        "array of money should map to Vec<rusty_money::Money>"
+        result, "Vec<rust_decimal::Decimal>",
+        "array of money should map to Vec<rust_decimal::Decimal>"
     );
 }
 
@@ -687,7 +687,7 @@ fn test_schema_to_type_decimal_array() {
 
 #[test]
 fn test_extract_fields_with_money_usd() {
-    // Test extracting fields with money type (USD)
+    // Test extracting fields with money type (API uses Decimal for money; Money has lifetime issues with serde)
     let schema = json!({
         "type": "object",
         "properties": {
@@ -707,24 +707,19 @@ fn test_extract_fields_with_money_usd() {
 
     let amount_field = fields.iter().find(|f| f.name == "amount").unwrap();
     assert_eq!(
-        amount_field.ty, "rusty_money::Money",
-        "amount field should be rusty_money::Money"
+        amount_field.ty, "rust_decimal::Decimal",
+        "amount field should be rust_decimal::Decimal"
     );
     assert!(!amount_field.optional, "amount should be required");
-    // Verify dummy value uses $3.14 (314 cents)
     assert!(
-        amount_field.value.contains("314"),
-        "Money dummy value should use 314 cents ($3.14)"
-    );
-    assert!(
-        amount_field.value.contains("rusty_money::iso::USD"),
-        "Money dummy value should use USD currency"
+        amount_field.value.contains("rust_decimal::Decimal::new"),
+        "Money (Decimal) dummy value should use Decimal::new"
     );
 }
 
 #[test]
 fn test_extract_fields_with_money_314_value() {
-    // Test that money fields use $3.14 (314 cents) as dummy value
+    // Test that money fields (Decimal) use Decimal::new as dummy value
     let schema = json!({
         "type": "object",
         "properties": {
@@ -738,13 +733,11 @@ fn test_extract_fields_with_money_314_value() {
     let fields = extract_fields(&schema);
     let amount_field = fields.iter().find(|f| f.name == "applied_amount").unwrap();
 
-    // Verify the dummy value contains $3.14 (314 cents)
+    // Money format maps to rust_decimal::Decimal; dummy uses Decimal::new(mantissa, scale)
     // Field is optional (not in required array), so may be wrapped in Some()
     assert!(
-        amount_field
-            .value
-            .contains("rusty_money::Money::from_minor(314, rusty_money::iso::USD)"),
-        "Money field should use $3.14 (314 cents) as dummy value, got: {}",
+        amount_field.value.contains("rust_decimal::Decimal::new"),
+        "Money (Decimal) field should use Decimal::new as dummy value, got: {}",
         amount_field.value
     );
 }
@@ -820,18 +813,18 @@ fn test_extract_fields_mixed_number_types() {
         .find(|f| f.name == "financial_amount")
         .unwrap();
     assert_eq!(
-        money_field.ty, "rusty_money::Money",
-        "format: money should be Money"
+        money_field.ty, "rust_decimal::Decimal",
+        "format: money should be Decimal (API layer)"
     );
     assert!(
-        money_field.value.contains("314"),
-        "Money should use 314 cents ($3.14)"
+        money_field.value.contains("rust_decimal::Decimal::new"),
+        "Money (Decimal) should use Decimal::new"
     );
 }
 
 #[test]
 fn test_extract_fields_money_optional() {
-    // Test optional money field
+    // Test optional money field (Decimal)
     let schema = json!({
         "type": "object",
         "properties": {
@@ -853,8 +846,8 @@ fn test_extract_fields_money_optional() {
         "Optional money field should be wrapped in Some()"
     );
     assert!(
-        amount_field.value.contains("314"),
-        "Optional money should still use $3.14 (314 cents)"
+        amount_field.value.contains("rust_decimal::Decimal::new"),
+        "Optional money (Decimal) should use Decimal::new"
     );
 }
 
