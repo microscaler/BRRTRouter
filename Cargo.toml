@@ -39,8 +39,8 @@ may_minihttp = { git = "https://github.com/microscaler/may_minihttp.git", branch
 regex = "1.11.1"
 smallvec = { version = "1.13", features = ["serde"] }  # Stack-allocated vectors for hot path (JSF: no heap in dispatch)
 url = "2.5.8"
-clap = { version = "4.5.54", features = ["cargo", "env", "derive"] }
-askama = { version = "0.15.1", features = ["full"] }
+clap = { version = "4.5.55", features = ["cargo", "env", "derive"] }
+askama = { version = "0.15.3", features = ["full"] }
 notify = "8"
 memory-stats = "1.1"  # For cross-platform memory monitoring
 tikv-jemallocator = { version = "0.6", optional = true }
