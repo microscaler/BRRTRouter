@@ -56,6 +56,37 @@ def run_gh_command(args: list[str], token: str) -> str:
         sys.exit(1)
 
 
+def _prs_by_commit_sha(repository: str, commit_sha: str, token: str) -> Tuple[Optional[int], Optional[str]]:
+    """Find open PR(s) associated with a commit SHA via GitHub API.
+
+    GitHub's pr list --search head:X matches branch name, not commit SHA.
+    Use GET /repos/{owner}/{repo}/commits/{commit_sha}/pulls instead.
+    Returns (pr_number, pr_url) for the first open PR, or (None, None) if none.
+    """
+    owner, _, repo = repository.partition("/")
+    if not repo:
+        return None, None
+    path = f"repos/{owner}/{repo}/commits/{commit_sha}/pulls"
+    env = os.environ.copy()
+    env["GH_TOKEN"] = token
+    result = subprocess.run(
+        ["gh", "api", path],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    if result.returncode != 0:
+        return None, None
+    try:
+        prs = json.loads(result.stdout.strip() or "[]")
+    except json.JSONDecodeError:
+        return None, None
+    for pr in prs:
+        if pr.get("state") == "open":
+            return pr["number"], pr.get("html_url") or f"https://github.com/{repository}/pull/{pr['number']}"
+    return None, None
+
+
 def extract_pr_info() -> Tuple[int, str]:
     """Extract PR number and URL based on event type."""
     event_name = get_event_name()
@@ -88,18 +119,15 @@ def extract_pr_info() -> Tuple[int, str]:
         if not commit_sha:
             print("Error: Could not determine commit SHA for status event", file=sys.stderr)
             sys.exit(1)
+        if not repository or "/" not in repository:
+            print("Error: GITHUB_REPOSITORY must be in owner/repo format for status event", file=sys.stderr)
+            sys.exit(1)
 
-        # Find PRs associated with this commit
-        result = run_gh_command(
-            ["pr", "list", "--state", "open", "--search", f"head:{commit_sha}", "--json", "number"],
-            token,
-        )
-        prs = json.loads(result)
-        if not prs:
+        # Find PRs by commit SHA via GitHub API (head: search qualifier matches branch name, not SHA)
+        pr_number, pr_url = _prs_by_commit_sha(repository, commit_sha, token)
+        if pr_number is None:
             print(f"Error: No open PR found for commit {commit_sha}", file=sys.stderr)
             sys.exit(1)
-        pr_number = prs[0]["number"]
-        pr_url = f"https://github.com/{repository}/pull/{pr_number}"
         return pr_number, pr_url
 
     print(f"Error: Unsupported event type: {event_name}", file=sys.stderr)
@@ -171,6 +199,39 @@ def merge_pr(pr_url: str, dependency_names: str, update_type: str) -> None:
     run_gh_command(["pr", "merge", pr_url, "--squash", "--auto"], token)
 
 
+# Marker text that identifies our "major version update" comment (used to avoid duplicates).
+MAJOR_UPDATE_COMMENT_MARKER = "⚠️ **Major version update** - requires manual review before merging."
+
+
+def major_update_comment_exists(pr_number: int) -> bool:
+    """Return True if the PR already has a comment containing our major-update marker."""
+    repository = get_repository()
+    if not repository or "/" not in repository:
+        return False
+    owner, _, repo = repository.partition("/")
+    if not repo:
+        return False
+    path = f"repos/{owner}/{repo}/issues/{pr_number}/comments"
+    token = get_github_token()
+    env = os.environ.copy()
+    env["GH_TOKEN"] = token
+    result = subprocess.run(
+        ["gh", "api", path],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    if result.returncode != 0:
+        return False
+    try:
+        comments = json.loads(result.stdout.strip() or "[]")
+    except json.JSONDecodeError:
+        return False
+    return any(
+        MAJOR_UPDATE_COMMENT_MARKER in (comment.get("body") or "") for comment in comments
+    )
+
+
 def comment_on_major_update(pr_url: str, dependency_names: str) -> None:
     """Add a comment to a major version update PR."""
     token = get_github_token()
@@ -219,8 +280,11 @@ def process_dependabot_pr() -> None:
         dependency_names, update_type = extract_metadata_from_title(pr_number)
         print(f"Extracted metadata: {dependency_names} ({update_type})")
 
-    # Handle major updates
+    # Handle major updates (comment at most once per PR to avoid duplicates across events)
     if update_type == "version-update:semver-major":
+        if major_update_comment_exists(pr_number):
+            print("⏭️ Major-update comment already exists on this PR, skipping")
+            sys.exit(0)
         comment_on_major_update(pr_url, dependency_names)
         sys.exit(0)
 

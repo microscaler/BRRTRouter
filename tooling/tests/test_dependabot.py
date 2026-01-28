@@ -9,6 +9,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from brrtrouter_tooling.dependabot.automerge import (
+    MAJOR_UPDATE_COMMENT_MARKER,
+    _prs_by_commit_sha,
     check_mergeability,
     comment_on_major_update,
     extract_metadata_from_title,
@@ -18,6 +20,7 @@ from brrtrouter_tooling.dependabot.automerge import (
     get_github_token,
     get_repository,
     is_dependabot_pr,
+    major_update_comment_exists,
     merge_pr,
     process_dependabot_pr,
     run_gh_command,
@@ -132,6 +135,90 @@ def test_extract_pr_info_check_suite() -> None:
         Path(event_path).unlink()
 
 
+def test_extract_pr_info_status() -> None:
+    """Test extracting PR info from status event via commits/SHA/pulls API."""
+    with patch.dict(
+        os.environ,
+        {
+            "GITHUB_EVENT_NAME": "status",
+            "GITHUB_REPOSITORY": "owner/repo",
+            "GITHUB_SHA": "abc123def",
+            "GITHUB_TOKEN": "test-token",
+        },
+    ):
+        with patch(
+            "brrtrouter_tooling.dependabot.automerge._prs_by_commit_sha",
+            return_value=(789, "https://github.com/owner/repo/pull/789"),
+        ):
+            pr_number, pr_url = extract_pr_info()
+            assert pr_number == 789
+            assert pr_url == "https://github.com/owner/repo/pull/789"
+
+
+def test_extract_pr_info_status_no_pr() -> None:
+    """Test status event when no open PR is found for the commit."""
+    with patch.dict(
+        os.environ,
+        {
+            "GITHUB_EVENT_NAME": "status",
+            "GITHUB_REPOSITORY": "owner/repo",
+            "GITHUB_SHA": "abc123def",
+            "GITHUB_TOKEN": "test-token",
+        },
+    ):
+        with patch(
+            "brrtrouter_tooling.dependabot.automerge._prs_by_commit_sha",
+            return_value=(None, None),
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                extract_pr_info()
+            assert exc_info.value.code == 1
+
+
+def test_prs_by_commit_sha() -> None:
+    """Test finding open PR by commit SHA via GitHub API."""
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout=json.dumps(
+                [
+                    {"number": 42, "state": "open", "html_url": "https://github.com/o/r/pull/42"},
+                ],
+            ),
+        )
+        with patch.dict(os.environ, {"GITHUB_TOKEN": "test-token"}):
+            pr_number, pr_url = _prs_by_commit_sha("owner/repo", "abc123", "token")
+            assert pr_number == 42
+            assert pr_url == "https://github.com/o/r/pull/42"
+        mock_run.assert_called_once()
+        call_args = mock_run.call_args[0][0]
+        assert call_args == ["gh", "api", "repos/owner/repo/commits/abc123/pulls"]
+
+        # Empty list returns (None, None)
+        mock_run.return_value = MagicMock(returncode=0, stdout="[]")
+        with patch.dict(os.environ, {"GITHUB_TOKEN": "test-token"}):
+            pr_number, pr_url = _prs_by_commit_sha("owner/repo", "abc123", "token")
+            assert pr_number is None
+            assert pr_url is None
+
+        # Only closed PRs returns (None, None)
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout=json.dumps([{"number": 1, "state": "closed", "html_url": "https://github.com/o/r/pull/1"}]),
+        )
+        with patch.dict(os.environ, {"GITHUB_TOKEN": "test-token"}):
+            pr_number, pr_url = _prs_by_commit_sha("owner/repo", "abc123", "token")
+            assert pr_number is None
+            assert pr_url is None
+
+        # API failure (non-zero returncode) returns (None, None)
+        mock_run.return_value = MagicMock(returncode=1, stdout="")
+        with patch.dict(os.environ, {"GITHUB_TOKEN": "test-token"}):
+            pr_number, pr_url = _prs_by_commit_sha("owner/repo", "abc123", "token")
+            assert pr_number is None
+            assert pr_url is None
+
+
 def test_is_dependabot_pr() -> None:
     """Test checking if PR is from Dependabot."""
     with patch("brrtrouter_tooling.dependabot.automerge.run_gh_command") as mock_gh:
@@ -211,6 +298,150 @@ def test_comment_on_major_update() -> None:
             assert call_args[0] == "pr"
             assert call_args[1] == "comment"
             assert "jsonwebtoken" in call_args[4]
+
+
+def test_major_update_comment_marker_constant() -> None:
+    """Test the marker constant is the expected string."""
+    assert "Major version update" in MAJOR_UPDATE_COMMENT_MARKER
+    assert "manual review" in MAJOR_UPDATE_COMMENT_MARKER
+
+
+def test_major_update_comment_exists_true() -> None:
+    """Test major_update_comment_exists when marker comment exists."""
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout=json.dumps(
+                [
+                    {"body": "Other comment"},
+                    {"body": f"Prefix {MAJOR_UPDATE_COMMENT_MARKER} suffix"},
+                ],
+            ),
+        )
+        with patch.dict(
+            os.environ,
+            {"GITHUB_REPOSITORY": "owner/repo", "GITHUB_TOKEN": "test-token"},
+        ):
+            assert major_update_comment_exists(123) is True
+        call_args = mock_run.call_args[0][0]
+        assert "repos/owner/repo/issues/123/comments" in call_args
+
+
+def test_major_update_comment_exists_false() -> None:
+    """Test major_update_comment_exists when no marker comment exists."""
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout=json.dumps([{"body": "Unrelated comment"}]),
+        )
+        with patch.dict(
+            os.environ,
+            {"GITHUB_REPOSITORY": "owner/repo", "GITHUB_TOKEN": "test-token"},
+        ):
+            assert major_update_comment_exists(456) is False
+
+        mock_run.return_value = MagicMock(returncode=0, stdout="[]")
+        with patch.dict(
+            os.environ,
+            {"GITHUB_REPOSITORY": "owner/repo", "GITHUB_TOKEN": "test-token"},
+        ):
+            assert major_update_comment_exists(456) is False
+
+
+def test_major_update_comment_exists_api_failure() -> None:
+    """Test major_update_comment_exists when API returns non-zero."""
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=1, stdout="")
+        with patch.dict(
+            os.environ,
+            {"GITHUB_REPOSITORY": "owner/repo", "GITHUB_TOKEN": "test-token"},
+        ):
+            assert major_update_comment_exists(123) is False
+
+
+def test_process_dependabot_pr_major_skips_if_comment_exists() -> None:
+    """Test that major update does not comment when marker comment already exists."""
+    event_data = {
+        "pull_request": {
+            "number": 99,
+            "html_url": "https://github.com/owner/repo/pull/99",
+        },
+    }
+    with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".json") as f:
+        json.dump(event_data, f)
+        event_path = f.name
+
+    try:
+        with patch.dict(
+            os.environ,
+            {
+                "GITHUB_EVENT_NAME": "pull_request",
+                "GITHUB_EVENT_PATH": event_path,
+                "GITHUB_REPOSITORY": "owner/repo",
+                "GITHUB_TOKEN": "test-token",
+                "DEPENDENCY_NAMES": "some-dep",
+                "UPDATE_TYPE": "version-update:semver-major",
+            },
+        ):
+            with patch("brrtrouter_tooling.dependabot.automerge.is_dependabot_pr") as mock_check:
+                mock_check.return_value = True
+                with patch(
+                    "brrtrouter_tooling.dependabot.automerge.major_update_comment_exists",
+                ) as mock_exists:
+                    mock_exists.return_value = True
+                    with patch(
+                        "brrtrouter_tooling.dependabot.automerge.comment_on_major_update",
+                    ) as mock_comment:
+                        with pytest.raises(SystemExit) as exc_info:
+                            process_dependabot_pr()
+                        assert exc_info.value.code == 0
+                        mock_comment.assert_not_called()
+    finally:
+        Path(event_path).unlink()
+
+
+def test_process_dependabot_pr_major_posts_when_no_comment_exists() -> None:
+    """Test that major update comments when no marker comment exists."""
+    event_data = {
+        "pull_request": {
+            "number": 99,
+            "html_url": "https://github.com/owner/repo/pull/99",
+        },
+    }
+    with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".json") as f:
+        json.dump(event_data, f)
+        event_path = f.name
+
+    try:
+        with patch.dict(
+            os.environ,
+            {
+                "GITHUB_EVENT_NAME": "pull_request",
+                "GITHUB_EVENT_PATH": event_path,
+                "GITHUB_REPOSITORY": "owner/repo",
+                "GITHUB_TOKEN": "test-token",
+                "DEPENDENCY_NAMES": "some-dep",
+                "UPDATE_TYPE": "version-update:semver-major",
+            },
+        ):
+            with patch("brrtrouter_tooling.dependabot.automerge.is_dependabot_pr") as mock_check:
+                mock_check.return_value = True
+                with patch(
+                    "brrtrouter_tooling.dependabot.automerge.major_update_comment_exists",
+                ) as mock_exists:
+                    mock_exists.return_value = False
+                    with patch(
+                        "brrtrouter_tooling.dependabot.automerge.comment_on_major_update",
+                    ) as mock_comment:
+                        with pytest.raises(SystemExit) as exc_info:
+                            process_dependabot_pr()
+                        assert exc_info.value.code == 0
+                        mock_comment.assert_called_once_with(
+                            "https://github.com/owner/repo/pull/99",
+                            "some-dep",
+                        )
+    finally:
+        Path(event_path).unlink()
 
 
 def test_process_dependabot_pr_non_dependabot() -> None:

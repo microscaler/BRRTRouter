@@ -7,22 +7,22 @@ name = "brrtrouter-tooling"
 version = "0.1.0"
 description = "BRRTRouter-specific development tooling: dependabot automerge, CI helpers"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
-    "PyYAML>=6.0",
-    "certifi>=2023.7.22",
+    "PyYAML>=6.0.3",
+    "certifi>=2026.1.4",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=7.0",
-    "pytest-cov>=4.0",
-    "ruff>=0.4.0",
-    "pre-commit>=3.0",
+    "pytest>=9.0.2",
+    "pytest-cov>=7.0.0",
+    "ruff>=0.14.14",
+    "pre-commit>=4.5.1",
 ]
 
 [project.scripts]
-brrtrouter = "brrtrouter_tooling.cli:main"
+brrtrouter = "brrtrouter_tooling.cli.main:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -33,7 +33,7 @@ pythonpath = ["src"]
 addopts = "-v --tb=short"
 
 [tool.ruff]
-target-version = "py39"
+target-version = "py310"
 line-length = 100
 exclude = [".venv", "__pycache__", "build", "dist", "*.egg-info", ".git"]
 
@@ -72,7 +72,6 @@ select = [
 ]
 ignore = [
     "E501",    # line too long
-    "UP045",   # X|None needs Python 3.10+ (we target 3.9)
     "S603",    # subprocess: false positives when argv is controlled
     "S607",    # partial executable path: docker/cargo/kubectl are intentional
     "S103",    # chmod 0o755: required for copied binaries

@@ -5,6 +5,10 @@
 # - Triggers on PR open/update and status check completion
 # - Auto-merges minor/patch updates after CI passes
 # - Comments on major updates requiring manual review
+#
+# Do not add job-level `if: github.actor == 'dependabot[bot]'`. On check_suite/status
+# events the actor is the app that posted the check (e.g. github-actions), so that
+# would skip the job and Dependabot PRs would never be auto-merged after CI passes.
 
 name: Dependabot Auto-Merge
 
@@ -30,7 +34,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.9"
+          python-version: "3.10"
 
       - name: Install GitHub CLI
         run: |
@@ -48,7 +52,7 @@ jobs:
           tooling/.venv/bin/pip install -e ./tooling[dev]
 
       - name: Fetch Dependabot metadata (pull_request events)
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && github.actor == 'dependabot[bot]'
         id: metadata-pr
         uses: dependabot/fetch-metadata@v2
         with:
