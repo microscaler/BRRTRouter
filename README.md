@@ -290,6 +290,7 @@ BRRTRouter reads `BRRTR_STACK_SIZE` to determine the stack size for coroutines. 
 - [🦆 Load Testing](docs/GOOSE_LOAD_TESTING.md) - Goose load testing guide
 
 ### Core Concepts  
+- [📖 BRRTRouter Overview](docs/BRRTRouter_OVERVIEW.md) - What it is, concepts, core components, and how it works (with diagrams)
 - [🏗️ Architecture](docs/ARCHITECTURE.md) - System design with Mermaid diagrams
 - [🔄 Request Lifecycle & Code Generation](docs/RequestLifecycle.md) - End-to-end request flow from OpenAPI to response
 - [🔐 Security & Authentication](docs/SecurityAuthentication.md) - OpenAPI-driven security with multiple auth providers

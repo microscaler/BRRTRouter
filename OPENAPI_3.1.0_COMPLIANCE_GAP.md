@@ -2,6 +2,8 @@
 
 This document catalogs what is **outstanding** in BRRTRouter to achieve full OpenAPI 3.1.0 support. It is intended to guide the "Deep dive into OpenAPI spec" work referenced in the README.
 
+**Status verification (Jan 2025):** The "Implemented", "Outstanding", and "Partial" rows below were checked against the current codebase. No items were found to be newly implemented; the document is up to date. See [§13 Relationship to BFF_PROXY](#13-relationship-to-bff_proxy) for whether OpenAPI compliance must be completed before BFF proxy work.
+
 **References:**
 - [OpenAPI 3.1.0 Spec](https://spec.openapis.org/oas/v3.1.0)
 - BRRTRouter uses the **oas3** Rust crate (v0.20) for parsing; oas3 targets OpenAPI 3.1.x (3.0 may have limited compatibility).
@@ -113,9 +115,7 @@ When using **bff-generator** to produce a BFF spec consumed by BRRTRouter:
 | **security (root) not merged** | BFF does not set `security`; if embedded script did, BRRTRouter would use it. |
 | **Shared Error schema / components** | bff-generator does not add a shared `Error` schema; BRRTRouter does not require it, but docs/contracts may. |
 
-**Recommendation:** Extend bff-generator to:
-1. Merge **components.parameters** from all service specs (and optionally a shared set, e.g. Page, Limit, Search).
-2. Allow **metadata** (or config) to inject **components.securitySchemes** and root **security** so BFF specs remain usable with BRRTRouter security.
+**Recommendation (addressed by BFF Epic 1.3):** Extend the BFF generator to merge **components.parameters**, **components.securitySchemes**, and root **security** so the emitted BFF spec is self-contained. This is the scope of [Epic 1 Story 1.3 — BFF generator components/security merge](docs/EPICS/BFF_PROXY/epic-1-spec-driven-proxy/story-1.3-bff-generator-components-security.md). Once the generator merges these, BRRTRouter does not need to resolve missing refs for BFF specs.
 
 ---
 
@@ -129,9 +129,9 @@ When using **bff-generator** to produce a BFF spec consumed by BRRTRouter:
 ## 10. Suggested Implementation Order
 
 1. **High impact, BFF/real specs**
-   - **components.parameters** in BFF: implement merge in bff-generator (and/or resolve `#/components/parameters/` when missing in BFF).
-   - **components.requestBodies**: add `resolve_request_body_ref` and use in `extract_request_schema`.
-   - **components.responses**: add `resolve_response_ref` and use in `extract_response_schema_and_example`.
+   - **components.parameters, securitySchemes, security in BFF:** Addressed by **BFF Epic 1.3** (BFF generator merge). No BRRTRouter change required for BFF Phase 1 if the generator merges these into the emitted spec.
+   - **components.requestBodies**: add `resolve_request_body_ref` in BRRTRouter and use in `extract_request_schema` (improves compliance for arbitrary specs; not a blocker for BFF if generator inlines request bodies).
+   - **components.responses**: add `resolve_response_ref` in BRRTRouter and use in `extract_response_schema_and_example` (same as above).
 
 2. **Medium impact**
    - **components.pathItems** and Path Item `$ref`: resolve so paths from `$ref` are included.
@@ -154,7 +154,7 @@ When using **bff-generator** to produce a BFF spec consumed by BRRTRouter:
 - **bff-generator** produces an OpenAPI 3.1.0 BFF spec. For BRRTRouter to consume it without subtle breakage:
   - BFF must include **components.parameters** (or avoid `$ref` to them).
   - BFF should include **components.securitySchemes** and **security** if the BFF is protected.
-- Extending bff-generator (metadata for `components`, `security`) reduces the need for a post-processing step and keeps BRRTRouter's existing `security` and `parameter` logic valid.
+- Extending the BFF generator (Epic 1.3) to merge components and security keeps the emitted BFF spec valid and BRRTRouter's existing logic sufficient.
 
 ---
 
@@ -168,3 +168,19 @@ When using **bff-generator** to produce a BFF spec consumed by BRRTRouter:
 | **Params** | path, query, header, cookie; schema; style; explode; $ref to components.parameters | — | content-based, allowReserved, allowEmptyValue, deprecated, content |
 | **Schema** | type, format, properties, items, required, allOf, oneOf, anyOf, $ref, 3.1 `type: [T,null]` | nullable (legacy), example vs examples, discriminator | $schema, jsonSchemaDialect, contentEncoding, contentMediaType, xml |
 | **Response** | status, content, schema, example/examples | — | headers, links, $ref to components.responses |
+
+---
+
+## 13. Relationship to BFF_PROXY
+
+**Do we need to complete OpenAPI compliance before BFF_PROXY work?**
+
+**No.** BFF proxy work (Epics 1–5) does not require closing all OpenAPI compliance gaps first.
+
+| Concern | Resolution |
+|--------|------------|
+| **§8 BFF generator gaps** | Addressed by **Epic 1.3** (BFF generator components/security merge). The BFF generator will merge `components.parameters`, `components.securitySchemes`, and root `security` into the emitted BFF spec, so the spec is self-contained and BRRTRouter's existing parameter and security logic works. |
+| **components.requestBodies / components.responses** | BRRTRouter does not currently resolve `$ref` to these. For BFF Phase 1, the BFF generator can emit **inline** request bodies and responses (or full components) so that the spec does not rely on BRRTRouter resolving those refs. Implementing `resolve_request_body_ref` and `resolve_response_ref` in BRRTRouter is recommended for general OpenAPI compliance and arbitrary specs but is **not a blocker** for BFF. |
+| **components.pathItems / Path Item $ref** | Only relevant if BFF or upstream specs use path item refs. Not required for Phase 1 BFF proxy. |
+
+**Recommendation:** Proceed with BFF_PROXY (Epic 1–5) in parallel with or before deep OpenAPI compliance work. Epic 1.3 ensures the BFF spec is valid and consumable by BRRTRouter; remaining compliance items (requestBodies/responses resolution, pathItems, etc.) can be scheduled separately for robustness and full 3.1.0 support.
