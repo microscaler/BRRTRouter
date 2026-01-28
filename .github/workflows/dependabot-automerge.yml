@@ -13,7 +13,7 @@ on:
     types: [opened, synchronize, reopened]
   check_suite:
     types: [completed]
-  status: {}
+  status:
 
 permissions:
   contents: write
@@ -23,65 +23,46 @@ permissions:
 jobs:
   dependabot-automerge:
     runs-on: ubuntu-latest
-    if: github.actor == 'dependabot[bot]'
     steps:
-      - name: Fetch Dependabot metadata
-        id: metadata
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+
+      - name: Install GitHub CLI
+        run: |
+          type -p curl >/dev/null || (apt update && apt install curl -y)
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+          && sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+          && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+          && sudo apt update \
+          && sudo apt install gh -y
+
+      - name: Set up tooling .venv
+        run: |
+          python3 -m venv tooling/.venv
+          tooling/.venv/bin/pip install --upgrade pip
+          tooling/.venv/bin/pip install -e ./tooling[dev]
+
+      - name: Fetch Dependabot metadata (pull_request events)
+        if: github.event_name == 'pull_request'
+        id: metadata-pr
         uses: dependabot/fetch-metadata@v2
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
 
-      - name: Check PR mergeability status
-        if: |
-          steps.metadata.outputs.update-type == 'version-update:semver-minor' ||
-          steps.metadata.outputs.update-type == 'version-update:semver-patch'
-        id: check-status
-        run: |
-          # Get PR mergeability status
-          MERGEABLE=$(gh pr view "$PR_NUMBER" --json mergeable --jq '.mergeable // false')
-          MERGEABLE_STATE=$(gh pr view "$PR_NUMBER" --json mergeableState --jq '.mergeableState // "unknown"')
-          
-          echo "mergeable=$MERGEABLE" >> $GITHUB_OUTPUT
-          echo "mergeable_state=$MERGEABLE_STATE" >> $GITHUB_OUTPUT
-          
-          # Only proceed if PR is mergeable and all checks have passed
-          if [ "$MERGEABLE" = "true" ] && [ "$MERGEABLE_STATE" = "clean" ]; then
-            echo "ready_to_merge=true" >> $GITHUB_OUTPUT
-            echo "✅ PR is ready to merge"
-          else
-            echo "ready_to_merge=false" >> $GITHUB_OUTPUT
-            echo "⏳ PR not ready: mergeable=$MERGEABLE, state=$MERGEABLE_STATE (will retry on next status update)"
-          fi
+      - name: Process Dependabot PR
         env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Auto-merge minor and patch updates
-        if: |
-          (steps.metadata.outputs.update-type == 'version-update:semver-minor' ||
-           steps.metadata.outputs.update-type == 'version-update:semver-patch') &&
-          steps.check-status.outputs.ready_to_merge == 'true'
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_EVENT_PATH: ${{ github.event_path }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
+          DEPENDENCY_NAMES: ${{ steps.metadata-pr.outputs.dependency-names }}
+          UPDATE_TYPE: ${{ steps.metadata-pr.outputs.update-type }}
         run: |
-          echo "🚀 Auto-merging ${{ steps.metadata.outputs.dependency-names }} (${{ steps.metadata.outputs.update-type }})"
-          gh pr merge "$PR_URL" --squash --auto
-        env:
-          PR_URL: ${{ github.event.pull_request.html_url }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Comment on major updates
-        if: steps.metadata.outputs.update-type == 'version-update:semver-major'
-        run: |
-          echo "⚠️ Major update detected for ${{ steps.metadata.outputs.dependency-names }} - requires manual review"
-          gh pr comment "$PR_URL" --body "⚠️ **Major version update** - requires manual review before merging.
-
-          This PR updates **${{ steps.metadata.outputs.dependency-names }}** to a new major version.
-          
-          Please:
-          1. Review the changelog for breaking changes
-          2. Run tests locally: \`cargo test\`
-          3. Run performance tests: \`hey -n 10000 -c 50 http://127.0.0.1:9999/health\`
-          4. Merge manually if all looks good"
-        env:
-          PR_URL: ${{ github.event.pull_request.html_url }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          tooling/.venv/bin/brrtrouter dependabot automerge
 
