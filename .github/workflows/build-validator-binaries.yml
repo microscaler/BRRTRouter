@@ -219,7 +219,7 @@ jobs:
           EOF
 
       - name: Upload binary artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: brrtrouter-validator-${{ matrix.platform }}
           path: brrtrouter-validator-python/binaries/${{ matrix.platform }}/brrtrouter_validator.${{ matrix.ext }}
