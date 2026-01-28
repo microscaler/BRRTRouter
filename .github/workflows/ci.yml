@@ -11,7 +11,57 @@ permissions:
   contents: read
 
 jobs:
+  tooling:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Set up tooling .venv
+        run: |
+          python3 -m venv tooling/.venv
+          tooling/.venv/bin/pip install --upgrade pip
+          tooling/.venv/bin/pip install -e ./tooling[dev]
+
+      - name: Run ruff check
+        run: |
+          tooling/.venv/bin/ruff check tooling/src/ tooling/tests/
+
+      - name: Run ruff format check
+        run: |
+          tooling/.venv/bin/ruff format --check tooling/src/ tooling/tests/
+
+      - name: Run tests
+        run: |
+          cd tooling && .venv/bin/pytest tests/ -v --cov=brrtrouter_tooling --cov-report=xml --cov-report=term
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./tooling/coverage.xml
+          flags: tooling
+          name: tooling-coverage
+
+      - name: Build tooling package
+        run: |
+          tooling/.venv/bin/pip install build
+          cd tooling
+          ../tooling/.venv/bin/python -m build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: tooling-dist
+          path: tooling/dist/*
+          retention-days: 7
+
   build-and-test:
+    needs: tooling
     runs-on: ubuntu-latest
     env:
       BRRTR_LOCAL: "1"

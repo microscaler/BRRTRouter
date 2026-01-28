@@ -1,52 +1,72 @@
 # Automatically merge Dependabot PRs for minor/patch updates
 # Only merges after CI passes
+#
+# This workflow:
+# - Triggers on PR open/update and status check completion
+# - Auto-merges minor/patch updates after CI passes
+# - Comments on major updates requiring manual review
+#
+# Do not add job-level `if: github.actor == 'dependabot[bot]'`. On check_suite/status
+# events the actor is the app that posted the check (e.g. github-actions), so that
+# would skip the job and Dependabot PRs would never be auto-merged after CI passes.
 
 name: Dependabot Auto-Merge
 
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+  check_suite:
+    types: [completed]
+  status:
 
 permissions:
   contents: write
   pull-requests: write
+  checks: read
 
 jobs:
   dependabot-automerge:
     runs-on: ubuntu-latest
-    if: github.actor == 'dependabot[bot]'
     steps:
-      - name: Fetch Dependabot metadata
-        id: metadata
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install GitHub CLI
+        run: |
+          type -p curl >/dev/null || (apt update && apt install curl -y)
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+          && sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+          && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+          && sudo apt update \
+          && sudo apt install gh -y
+
+      - name: Set up tooling .venv
+        run: |
+          python3 -m venv tooling/.venv
+          tooling/.venv/bin/pip install --upgrade pip
+          tooling/.venv/bin/pip install -e ./tooling[dev]
+
+      - name: Fetch Dependabot metadata (pull_request events)
+        if: github.event_name == 'pull_request' && github.actor == 'dependabot[bot]'
+        id: metadata-pr
         uses: dependabot/fetch-metadata@v2
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
 
-      - name: Auto-merge minor and patch updates
-        if: |
-          steps.metadata.outputs.update-type == 'version-update:semver-minor' ||
-          steps.metadata.outputs.update-type == 'version-update:semver-patch'
-        run: |
-          echo "Auto-merging ${{ steps.metadata.outputs.dependency-names }} (${{ steps.metadata.outputs.update-type }})"
-          gh pr merge --auto --squash "$PR_URL"
+      - name: Process Dependabot PR
         env:
-          PR_URL: ${{ github.event.pull_request.html_url }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Comment on major updates
-        if: steps.metadata.outputs.update-type == 'version-update:semver-major'
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_EVENT_PATH: ${{ github.event_path }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
+          DEPENDENCY_NAMES: ${{ steps.metadata-pr.outputs.dependency-names }}
+          UPDATE_TYPE: ${{ steps.metadata-pr.outputs.update-type }}
         run: |
-          echo "Major update detected for ${{ steps.metadata.outputs.dependency-names }} - requires manual review"
-          gh pr comment "$PR_URL" --body "⚠️ **Major version update** - requires manual review before merging.
-
-          This PR updates **${{ steps.metadata.outputs.dependency-names }}** to a new major version.
-          
-          Please:
-          1. Review the changelog for breaking changes
-          2. Run tests locally: \`cargo test\`
-          3. Run performance tests: \`hey -n 10000 -c 50 http://127.0.0.1:9999/health\`
-          4. Merge manually if all looks good"
-        env:
-          PR_URL: ${{ github.event.pull_request.html_url }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          tooling/.venv/bin/brrtrouter dependabot automerge
 

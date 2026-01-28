@@ -54,3 +54,27 @@ updates:
       - "dependencies"
       - "ci"
 
+  # Python dependencies in tooling directory
+  - package-ecosystem: "pip"
+    directory: "/tooling"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "chore(tooling)"
+    labels:
+      - "dependencies"
+      - "python"
+      - "tooling"
+    # Group minor/patch updates to reduce PR noise
+    groups:
+      python-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+

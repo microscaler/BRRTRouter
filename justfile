@@ -6,6 +6,109 @@ default:
 	@just --list
 
 # ============================================================================
+# Tooling (.venv and brrtrouter CLI)
+# ============================================================================
+# Setup is in the justfile (not in tooling) to avoid circular deps: tooling
+# requires .venv to exist; creating .venv must not depend on tooling.
+
+# Create tooling/.venv and install brrtrouter tooling [dev]. Run once before first
+# use of brrtrouter or tooling commands. Idempotent.
+init:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	echo "🐍 Setting up tooling .venv..."
+	if [ ! -d tooling/.venv ]; then
+		python3 -m venv tooling/.venv
+	fi
+	tooling/.venv/bin/pip install --upgrade pip
+	tooling/.venv/bin/pip install -e ./tooling[dev]
+	echo "✅ Tooling .venv ready. Use: tooling/.venv/bin/brrtrouter or add tooling/.venv/bin to PATH"
+
+# Rebuild tooling (pip install -e) after source changes. Run `just init` first
+# if tooling/.venv does not exist.
+build-tooling:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	if [ ! -d tooling/.venv ]; then
+		echo "❌ tooling/.venv not found. Run: just init"
+		exit 1
+	fi
+	echo "🔨 Rebuilding tooling..."
+	tooling/.venv/bin/pip install -e ./tooling[dev]
+	echo "✅ Tooling rebuilt"
+
+# Start an interactive shell with tooling/.venv sourced and activated (exit to leave).
+venv:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	if [ ! -d tooling/.venv ]; then
+		echo "❌ tooling/.venv not found. Run: just init"
+		exit 1
+	fi
+	echo "Shell with tooling/.venv activated (exit to leave)..."
+	exec bash -c "source tooling/.venv/bin/activate && exec bash -i"
+
+# Run ruff check on tooling. Run `just init` first.
+lint:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	if [ ! -d tooling/.venv ]; then
+		echo "❌ tooling/.venv not found. Run: just init"
+		exit 1
+	fi
+	tooling/.venv/bin/ruff check tooling/
+
+# Format tooling with ruff. Run `just init` first.
+format:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	if [ ! -d tooling/.venv ]; then
+		echo "❌ tooling/.venv not found. Run: just init"
+		exit 1
+	fi
+	tooling/.venv/bin/ruff format tooling/
+
+# Check tooling is formatted (CI). Run `just init` first.
+format-check:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	if [ ! -d tooling/.venv ]; then
+		echo "❌ tooling/.venv not found. Run: just init"
+		exit 1
+	fi
+	tooling/.venv/bin/ruff format tooling/ --check
+
+# Full QA: lint + format-check + tooling tests. Run before commit or demo.
+qa:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	just lint
+	just format-check
+	cd tooling && .venv/bin/pytest tests/ -v --tb=short
+
+# Install pre-commit hooks (qa, check-empty-print-statements, conventional-commits). Run `just init` first.
+install-hooks:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	if [ ! -d tooling/.venv ]; then
+		echo "❌ tooling/.venv not found. Run: just init"
+		exit 1
+	fi
+	tooling/.venv/bin/pre-commit install --install-hooks
+	tooling/.venv/bin/pre-commit install --hook-type commit-msg --install-hooks
+	echo "✅ Pre-commit hooks installed (pre-commit + commit-msg for conventional commits)"
+
+# Auto-fix fixable ruff rules (including unsafe). Run `just init` first.
+lint-fix:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	if [ ! -d tooling/.venv ]; then
+		echo "❌ tooling/.venv not found. Run: just init"
+		exit 1
+	fi
+	tooling/.venv/bin/ruff check tooling/ --fix --unsafe-fixes
+
+# ============================================================================
 # Building & Code Generation
 # ============================================================================
 
