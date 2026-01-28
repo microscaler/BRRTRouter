@@ -157,7 +157,7 @@ def test_extract_pr_info_status() -> None:
 
 
 def test_extract_pr_info_status_no_pr() -> None:
-    """Test status event when no open PR is found for the commit."""
+    """Test status event when no open PR is found for the commit (expected for non-PR commits)."""
     with (
         patch.dict(
             os.environ,
@@ -173,9 +173,63 @@ def test_extract_pr_info_status_no_pr() -> None:
             return_value=(None, None),
         ),
     ):
-        with pytest.raises(SystemExit) as exc_info:
-            extract_pr_info()
-        assert exc_info.value.code == 1
+        pr_number, pr_url = extract_pr_info()
+        assert pr_number is None
+        assert pr_url is None
+
+
+def test_extract_pr_info_check_suite_no_pr() -> None:
+    """Test check_suite event when no PRs are associated (expected for non-PR commits)."""
+    event_data = {
+        "check_suite": {
+            "pull_requests": [],
+        },
+    }
+    with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".json") as f:
+        json.dump(event_data, f)
+        event_path = f.name
+
+    try:
+        with patch.dict(
+            os.environ,
+            {
+                "GITHUB_EVENT_NAME": "check_suite",
+                "GITHUB_EVENT_PATH": event_path,
+                "GITHUB_REPOSITORY": "owner/repo",
+            },
+        ):
+            pr_number, pr_url = extract_pr_info()
+            assert pr_number is None
+            assert pr_url is None
+    finally:
+        Path(event_path).unlink()
+
+
+def test_extract_pr_info_check_suite_no_pr_number() -> None:
+    """Test check_suite event when PR list exists but number is missing."""
+    event_data = {
+        "check_suite": {
+            "pull_requests": [{}],  # PR object without number
+        },
+    }
+    with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".json") as f:
+        json.dump(event_data, f)
+        event_path = f.name
+
+    try:
+        with patch.dict(
+            os.environ,
+            {
+                "GITHUB_EVENT_NAME": "check_suite",
+                "GITHUB_EVENT_PATH": event_path,
+                "GITHUB_REPOSITORY": "owner/repo",
+            },
+        ):
+            pr_number, pr_url = extract_pr_info()
+            assert pr_number is None
+            assert pr_url is None
+    finally:
+        Path(event_path).unlink()
 
 
 def test_prs_by_commit_sha() -> None:
@@ -487,6 +541,33 @@ def test_process_dependabot_pr_non_dependabot() -> None:
             patch("brrtrouter_tooling.dependabot.automerge.is_dependabot_pr") as mock_check,
         ):
             mock_check.return_value = False
+            with pytest.raises(SystemExit) as exc_info:
+                process_dependabot_pr()
+            assert exc_info.value.code == 0
+    finally:
+        Path(event_path).unlink()
+
+
+def test_process_dependabot_pr_no_pr_associated() -> None:
+    """Test processing when no PR is associated with the event (expected for non-PR commits)."""
+    event_data = {
+        "check_suite": {
+            "pull_requests": [],
+        },
+    }
+    with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".json") as f:
+        json.dump(event_data, f)
+        event_path = f.name
+
+    try:
+        with patch.dict(
+            os.environ,
+            {
+                "GITHUB_EVENT_NAME": "check_suite",
+                "GITHUB_EVENT_PATH": event_path,
+                "GITHUB_REPOSITORY": "owner/repo",
+            },
+        ):
             with pytest.raises(SystemExit) as exc_info:
                 process_dependabot_pr()
             assert exc_info.value.code == 0

@@ -91,8 +91,13 @@ def _prs_by_commit_sha(
     return None, None
 
 
-def extract_pr_info() -> tuple[int, str]:
-    """Extract PR number and URL based on event type."""
+def extract_pr_info() -> tuple[int | None, str | None]:
+    """Extract PR number and URL based on event type.
+
+    Returns (pr_number, pr_url) or (None, None) if no PR is associated with the event.
+    For check_suite and status events, the absence of a PR is expected for non-PR commits
+    (e.g., main branch CI after merges) and should be handled gracefully by the caller.
+    """
     event_name = get_event_name()
     event_data = get_event_data()
     repository = get_repository()
@@ -110,12 +115,14 @@ def extract_pr_info() -> tuple[int, str]:
     if event_name == "check_suite":
         pull_requests = event_data.get("check_suite", {}).get("pull_requests", [])
         if not pull_requests:
-            print("Error: No PR found in check_suite event", file=sys.stderr)
-            sys.exit(1)
+            print("Info: No PR found in check_suite event (expected for non-PR commits)")
+            return None, None
         pr_number = pull_requests[0].get("number")
         if not pr_number:
-            print("Error: Could not extract PR number from check_suite event", file=sys.stderr)
-            sys.exit(1)
+            print(
+                "Info: Could not extract PR number from check_suite event (expected for non-PR commits)"
+            )
+            return None, None
         pr_url = f"https://github.com/{repository}/pull/{pr_number}"
         return pr_number, pr_url
 
@@ -135,8 +142,8 @@ def extract_pr_info() -> tuple[int, str]:
         # Find PRs by commit SHA via GitHub API (head: search qualifier matches branch name, not SHA)
         pr_number, pr_url = _prs_by_commit_sha(repository, commit_sha, token)
         if pr_number is None:
-            print(f"Error: No open PR found for commit {commit_sha}", file=sys.stderr)
-            sys.exit(1)
+            print(f"Info: No open PR found for commit {commit_sha} (expected for non-PR commits)")
+            return None, None
         return pr_number, pr_url
 
     print(f"Error: Unsupported event type: {event_name}", file=sys.stderr)
@@ -256,6 +263,12 @@ def process_dependabot_pr() -> None:
     """Main entry point for processing a Dependabot PR."""
     # Extract PR information
     pr_number, pr_url = extract_pr_info()
+
+    # If no PR is associated with the event (expected for non-PR commits), exit gracefully
+    if pr_number is None or pr_url is None:
+        print("Info: No PR associated with this event, skipping (expected for non-PR commits)")
+        sys.exit(0)
+
     print(f"Extracted PR #{pr_number}: {pr_url}")
 
     # Check if PR is from Dependabot
