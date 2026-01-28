@@ -86,6 +86,17 @@ qa:
 	just format-check
 	cd tooling && .venv/bin/pytest tests/ -v --tb=short
 
+# Install pre-commit hooks (qa, check-empty-print-statements). Run `just init` first.
+install-hooks:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	if [ ! -d tooling/.venv ]; then
+		echo "❌ tooling/.venv not found. Run: just init"
+		exit 1
+	fi
+	tooling/.venv/bin/pre-commit install
+	echo "✅ Pre-commit hooks installed"
+
 # Auto-fix fixable ruff rules (including unsafe). Run `just init` first.
 lint-fix:
 	#!/usr/bin/env bash
