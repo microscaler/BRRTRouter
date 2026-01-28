@@ -6,14 +6,14 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 
-def get_event_data() -> Dict[str, Any]:
+def get_event_data() -> dict[str, Any]:
     """Get GitHub event data from environment or event file."""
     event_path = os.getenv("GITHUB_EVENT_PATH")
     if event_path and Path(event_path).exists():
-        with open(event_path, encoding="utf-8") as f:
+        with Path(event_path).open(encoding="utf-8") as f:
             return json.load(f)
     return {}
 
@@ -43,7 +43,7 @@ def run_gh_command(args: list[str], token: str) -> str:
     env["GH_TOKEN"] = token
     try:
         result = subprocess.run(
-            ["gh"] + args,
+            ["gh", *args],
             capture_output=True,
             text=True,
             check=True,
@@ -56,7 +56,9 @@ def run_gh_command(args: list[str], token: str) -> str:
         sys.exit(1)
 
 
-def _prs_by_commit_sha(repository: str, commit_sha: str, token: str) -> Tuple[Optional[int], Optional[str]]:
+def _prs_by_commit_sha(
+    repository: str, commit_sha: str, token: str
+) -> tuple[int | None, str | None]:
     """Find open PR(s) associated with a commit SHA via GitHub API.
 
     GitHub's pr list --search head:X matches branch name, not commit SHA.
@@ -83,11 +85,13 @@ def _prs_by_commit_sha(repository: str, commit_sha: str, token: str) -> Tuple[Op
         return None, None
     for pr in prs:
         if pr.get("state") == "open":
-            return pr["number"], pr.get("html_url") or f"https://github.com/{repository}/pull/{pr['number']}"
+            return pr["number"], pr.get(
+                "html_url"
+            ) or f"https://github.com/{repository}/pull/{pr['number']}"
     return None, None
 
 
-def extract_pr_info() -> Tuple[int, str]:
+def extract_pr_info() -> tuple[int, str]:
     """Extract PR number and URL based on event type."""
     event_name = get_event_name()
     event_data = get_event_data()
@@ -97,7 +101,9 @@ def extract_pr_info() -> Tuple[int, str]:
         pr_number = event_data.get("pull_request", {}).get("number")
         pr_url = event_data.get("pull_request", {}).get("html_url")
         if not pr_number or not pr_url:
-            print("Error: Could not extract PR number or URL from pull_request event", file=sys.stderr)
+            print(
+                "Error: Could not extract PR number or URL from pull_request event", file=sys.stderr
+            )
             sys.exit(1)
         return pr_number, pr_url
 
@@ -120,7 +126,10 @@ def extract_pr_info() -> Tuple[int, str]:
             print("Error: Could not determine commit SHA for status event", file=sys.stderr)
             sys.exit(1)
         if not repository or "/" not in repository:
-            print("Error: GITHUB_REPOSITORY must be in owner/repo format for status event", file=sys.stderr)
+            print(
+                "Error: GITHUB_REPOSITORY must be in owner/repo format for status event",
+                file=sys.stderr,
+            )
             sys.exit(1)
 
         # Find PRs by commit SHA via GitHub API (head: search qualifier matches branch name, not SHA)
@@ -143,7 +152,7 @@ def is_dependabot_pr(pr_number: int) -> bool:
     return author == "dependabot[bot]"
 
 
-def extract_metadata_from_title(pr_number: int) -> Tuple[str, str]:
+def extract_metadata_from_title(pr_number: int) -> tuple[str, str]:
     """Extract dependency names and update type from PR title."""
     token = get_github_token()
     result = run_gh_command(["pr", "view", str(pr_number), "--json", "title"], token)
@@ -152,10 +161,7 @@ def extract_metadata_from_title(pr_number: int) -> Tuple[str, str]:
 
     # Extract dependency names (format: "Bump X from Y to Z" or "Bump X and Y from ...")
     dep_match = re.match(r"^Bump (.+) from .+$", title)
-    if dep_match:
-        dependency_names = dep_match.group(1).replace(" and ", ", ")
-    else:
-        dependency_names = "unknown"
+    dependency_names = dep_match.group(1).replace(" and ", ", ") if dep_match else "unknown"
 
     # Determine update type from version changes
     version_pattern = r"from ([0-9]+)\.([0-9]+)\.([0-9]+) to ([0-9]+)\.([0-9]+)\.([0-9]+)"
@@ -177,7 +183,7 @@ def extract_metadata_from_title(pr_number: int) -> Tuple[str, str]:
     return dependency_names, update_type
 
 
-def check_mergeability(pr_number: int) -> Tuple[bool, str, bool]:
+def check_mergeability(pr_number: int) -> tuple[bool, str, bool]:
     """Check if PR is mergeable and ready to merge."""
     token = get_github_token()
     result = run_gh_command(
@@ -227,9 +233,7 @@ def major_update_comment_exists(pr_number: int) -> bool:
         comments = json.loads(result.stdout.strip() or "[]")
     except json.JSONDecodeError:
         return False
-    return any(
-        MAJOR_UPDATE_COMMENT_MARKER in (comment.get("body") or "") for comment in comments
-    )
+    return any(MAJOR_UPDATE_COMMENT_MARKER in (comment.get("body") or "") for comment in comments)
 
 
 def comment_on_major_update(pr_url: str, dependency_names: str) -> None:
@@ -274,7 +278,9 @@ def process_dependabot_pr() -> None:
             dependency_names, update_type = extract_metadata_from_title(pr_number)
             print(f"Extracted metadata from PR title: {dependency_names} ({update_type})")
         else:
-            print(f"Using metadata from dependabot/fetch-metadata: {dependency_names} ({update_type})")
+            print(
+                f"Using metadata from dependabot/fetch-metadata: {dependency_names} ({update_type})"
+            )
     else:
         # For check_suite/status events, extract from PR title
         dependency_names, update_type = extract_metadata_from_title(pr_number)
@@ -293,7 +299,9 @@ def process_dependabot_pr() -> None:
     print(f"PR status: mergeable={mergeable}, state={mergeable_state}")
 
     if not ready:
-        print(f"⏳ PR not ready: mergeable={mergeable}, state={mergeable_state} (will retry on next status update)")
+        print(
+            f"⏳ PR not ready: mergeable={mergeable}, state={mergeable_state} (will retry on next status update)"
+        )
         sys.exit(0)
 
     # Merge the PR

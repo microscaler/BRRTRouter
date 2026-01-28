@@ -1,7 +1,6 @@
 """Main CLI entry point for BRRTRouter tooling."""
 
 import sys
-from typing import Optional
 
 from brrtrouter_tooling.cli import dependabot
 
