@@ -1,0 +1,27 @@
+# BRRTRouter Dependencies Configuration
+# 
+# This file allows you to specify additional dependencies for generated Cargo.toml files.
+# Place this file alongside your openapi.yaml file (e.g., openapi/accounting/invoice/brrtrouter-dependencies.toml)
+#
+# BRRTRouter will auto-detect this file, or you can specify it via --dependencies-config flag
+
+# Dependencies to always include in generated Cargo.toml
+[dependencies]
+# Example: Always include a dependency
+# my-crate = { workspace = true }
+# another-crate = { workspace = true, features = ["serde"] }
+# external-crate = { version = "1.0", features = ["async"] }
+
+# Conditional dependencies - included only if types are detected in generated code
+[conditional]
+# Example: Include rust_decimal if rust_decimal::Decimal is detected
+# rust_decimal = { detect = "rust_decimal::Decimal", workspace = true }
+# 
+# Example: Include rusty-money if rusty_money::Money is detected
+# rusty-money = { detect = "rusty_money::Money", workspace = true, features = ["serde"] }
+#
+# Example: Include chrono if any chrono type is detected
+# chrono = { detect = "chrono::", workspace = true }
+#
+# Example: Conditional with version (for non-workspace)
+# my-decimal = { detect = "my_decimal::Decimal", version = "2.0", features = ["serde"] }

@@ -109,6 +109,7 @@
 //!
 //! Modify these templates to customize code generation.
 
+mod dependencies_config;
 mod project;
 mod schema;
 mod stack_size;
@@ -116,6 +117,7 @@ mod templates;
 #[cfg(test)]
 mod tests;
 
+pub use dependencies_config::*;
 pub use project::*;
 pub use schema::*;
 pub use stack_size::*;

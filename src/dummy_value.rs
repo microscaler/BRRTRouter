@@ -1,7 +1,19 @@
 // dummy_value.rs
 
 pub fn dummy_value(ty: &str) -> askama::Result<String> {
-    let value = match ty {
+    // Handle Vec<T> first (return vec![] for any Vec type)
+    if ty.starts_with("Vec<") {
+        return Ok("vec![]".to_string());
+    }
+
+    // Extract inner type from Option<T>
+    let inner_ty = if let Some(stripped) = ty.strip_prefix("Option<") {
+        stripped.strip_suffix(">").unwrap_or(stripped)
+    } else {
+        ty
+    };
+
+    let value = match inner_ty {
         "String" => "\"example\".to_string()".to_string(),
         "i32" => "42".to_string(),
         "f64" => "3.14".to_string(), // Valid mathematical number - clippy warning is acceptable for f64
@@ -10,15 +22,35 @@ pub fn dummy_value(ty: &str) -> askama::Result<String> {
             "rust_decimal::Decimal::new(12345, 2)".to_string()
         }
         "rusty_money::Money" | "rusty_money::Money<rusty_money::iso::Currency>" => {
-            // Money: $3.14 USD - clearly a dollar amount, not PI
-            // from_minor(314, USD) = 314 cents = $3.14
+            // Money: 3.14 in default currency (314 minor units)
+            //
+            // MULTI-CURRENCY NOTE: This uses USD as a placeholder currency.
+            // For multi-currency systems (like RERP), replace with the appropriate currency
+            // from context (e.g., from a currency_code field in the same struct/request).
+            //
+            // Examples:
+            //   - USD: rusty_money::Money::from_minor(314, rusty_money::iso::USD)
+            //   - EUR: rusty_money::Money::from_minor(314, rusty_money::iso::EUR)
+            //   - GBP: rusty_money::Money::from_minor(314, rusty_money::iso::GBP)
+            //
+            // A consumer service, the API layer will use rust_decimal::Decimal for money (not Money),
+            // so this dummy value is primarily for entity/business logic layers.
             "rusty_money::Money::from_minor(314, rusty_money::iso::USD)".to_string()
         }
         "bool" => "true".to_string(),
-        "Vec<Value>" | "Vec<String>" | "Vec<i32>" | "Vec<f64>" | "Vec<bool>" => {
-            "vec![]".to_string()
+        "Value" | "serde_json::Value" => "Default::default()".to_string(),
+        _ => {
+            // Check if it contains Decimal (for cases like "Option<rust_decimal::Decimal>")
+            if inner_ty.contains("rust_decimal::Decimal") || inner_ty.contains("Decimal") {
+                "rust_decimal::Decimal::new(12345, 2)".to_string()
+            } else if inner_ty.contains("rusty_money::Money") || inner_ty.contains("Money") {
+                // MULTI-CURRENCY NOTE: Uses USD as placeholder - replace with appropriate currency
+                // from context (e.g., currency_code field). See main match arm for details.
+                "rusty_money::Money::from_minor(314, rusty_money::iso::USD)".to_string()
+            } else {
+                "Default::default()".to_string()
+            }
         }
-        _ => "Default::default()".to_string(),
     };
     Ok(value)
 }
@@ -117,6 +149,26 @@ mod tests {
         assert!(
             result.contains("rusty_money::iso::USD"),
             "Money should use ISO currency format"
+        );
+    }
+
+    #[test]
+    fn test_option_decimal() {
+        // Verify that Option<rust_decimal::Decimal> extracts inner type correctly
+        let result = dummy_value("Option<rust_decimal::Decimal>").unwrap();
+        assert_eq!(
+            result, "rust_decimal::Decimal::new(12345, 2)",
+            "Option<Decimal> should extract inner type and return Decimal::new()"
+        );
+    }
+
+    #[test]
+    fn test_option_f64() {
+        // Verify that Option<f64> extracts inner type correctly
+        let result = dummy_value("Option<f64>").unwrap();
+        assert_eq!(
+            result, "3.14",
+            "Option<f64> should extract inner type and return 3.14"
         );
     }
 }

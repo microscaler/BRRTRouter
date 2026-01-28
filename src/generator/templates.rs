@@ -1,7 +1,7 @@
 use askama::Template;
 // Remove explicit filters import; not needed and causes unresolved symbol errors
 use serde_json::Value;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -64,6 +64,13 @@ pub struct RouteDisplay {
     pub handler: String,
 }
 
+/// Formatted dependency entry for template rendering
+#[derive(Debug, Clone)]
+pub struct FormattedDependency {
+    pub name: String,
+    pub spec: String,
+}
+
 /// Template data for generating Cargo.toml
 #[derive(Template)]
 #[template(path = "Cargo.toml.txt")]
@@ -78,6 +85,10 @@ pub struct CargoTomlTemplateData {
     pub brrtrouter_path: String,
     /// Relative path to brrtrouter_macros (only used when use_workspace_deps is false)
     pub brrtrouter_macros_path: String,
+    /// Additional dependencies from config file (always included)
+    pub config_dependencies: Vec<FormattedDependency>,
+    /// Conditional dependencies from config file (included if types detected)
+    pub config_conditional_dependencies: Vec<FormattedDependency>,
 }
 
 /// Template for generating config.yaml with default settings
@@ -503,7 +514,190 @@ pub(crate) fn write_types_rs(
 pub(crate) fn write_cargo_toml(base: &Path, slug: &str) -> anyhow::Result<()> {
     // Detect if we're in a workspace and if workspace has brrtrouter dependencies
     let use_workspace_deps = detect_workspace_with_brrtrouter_deps(base);
-    write_cargo_toml_with_options(base, slug, use_workspace_deps, None, None)
+    write_cargo_toml_with_options(base, slug, use_workspace_deps, None, None, None, None)
+}
+
+/// Registry mapping Rust type patterns to Cargo dependency names
+///
+/// This allows BRRTRouter to automatically detect which dependencies are needed
+/// based on types used in generated code. New type→dependency mappings can be added here.
+///
+/// Example usage:
+/// ```rust
+/// let registry = DependencyRegistry::default();
+/// let deps = registry.detect_from_types("rust_decimal::Decimal");
+/// // Returns: {"rust_decimal"}
+/// ```
+pub struct DependencyRegistry {
+    /// Map of type patterns (e.g., "rust_decimal::Decimal") to dependency names (e.g., "rust_decimal")
+    type_to_dependency: HashMap<&'static str, &'static str>,
+}
+
+impl Default for DependencyRegistry {
+    fn default() -> Self {
+        let mut registry = Self {
+            type_to_dependency: HashMap::new(),
+        };
+        // Register common type → dependency mappings
+        // Format: (type_pattern, cargo_dependency_name)
+        registry.register("rust_decimal::Decimal", "rust_decimal");
+        registry.register("rusty_money::Money", "rusty-money");
+        registry.register("chrono::", "chrono");
+        registry.register("uuid::Uuid", "uuid");
+        registry
+    }
+}
+
+impl DependencyRegistry {
+    /// Register a type pattern → dependency mapping
+    fn register(&mut self, type_pattern: &'static str, dependency_name: &'static str) {
+        self.type_to_dependency
+            .insert(type_pattern, dependency_name);
+    }
+
+    /// Detect which dependencies are needed based on type usage
+    ///
+    /// Scans the type string for registered patterns and returns a set of dependency names.
+    pub fn detect_from_types(&self, type_string: &str) -> HashSet<String> {
+        let mut deps = HashSet::new();
+        for (pattern, dep_name) in &self.type_to_dependency {
+            if type_string.contains(pattern) {
+                deps.insert(dep_name.to_string());
+            }
+        }
+        deps
+    }
+}
+
+/// Format a dependency specification for Cargo.toml
+///
+/// Converts DependencySpec to a TOML-formatted string suitable for Cargo.toml
+fn format_dependency_spec(
+    name: &str,
+    spec: &crate::generator::DependencySpec,
+    use_workspace_deps: bool,
+) -> String {
+    match spec {
+        crate::generator::DependencySpec::Version(version) => {
+            format!(r#""{}""#, version)
+        }
+        crate::generator::DependencySpec::Workspace {
+            workspace: _,
+            features,
+        } => {
+            if use_workspace_deps {
+                if let Some(features) = features {
+                    let features_str = features
+                        .iter()
+                        .map(|f| format!(r#""{}""#, f))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    format!(r#"{{ workspace = true, features = [{}] }}"#, features_str)
+                } else {
+                    r#"{ workspace = true }"#.to_string()
+                }
+            } else {
+                // For non-workspace, we'd need version info - use a placeholder
+                // In practice, config should specify version for non-workspace
+                r#"{ workspace = true }"#.to_string()
+            }
+        }
+        crate::generator::DependencySpec::Full {
+            version,
+            path,
+            git,
+            branch,
+            features,
+            workspace,
+        } => {
+            let mut parts = Vec::new();
+
+            if let Some(ws) = workspace {
+                if *ws && use_workspace_deps {
+                    parts.push("workspace = true".to_string());
+                }
+            }
+
+            if let Some(ver) = version {
+                parts.push(format!(r#"version = "{}""#, ver));
+            }
+
+            if let Some(p) = path {
+                parts.push(format!(r#"path = "{}""#, p));
+            }
+
+            if let Some(g) = git {
+                parts.push(format!(r#"git = "{}""#, g));
+                if let Some(b) = branch {
+                    parts.push(format!(r#"branch = "{}""#, b));
+                }
+            }
+
+            if let Some(feats) = features {
+                if !feats.is_empty() {
+                    let features_str = feats
+                        .iter()
+                        .map(|f| format!(r#""{}""#, f))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    parts.push(format!(r#"features = [{}]"#, features_str));
+                }
+            }
+
+            format!("{{ {} }}", parts.join(", "))
+        }
+    }
+}
+
+/// Detect all dependencies available in workspace.dependencies
+///
+/// Scans parent directories for workspace Cargo.toml and extracts all dependency names
+/// from the [workspace.dependencies] section.
+pub(crate) fn detect_workspace_dependencies(output_dir: &Path) -> HashSet<String> {
+    let mut deps = std::collections::HashSet::new();
+    let mut current = output_dir;
+
+    loop {
+        let cargo_toml = current.join("Cargo.toml");
+        if cargo_toml.exists() {
+            if let Ok(contents) = std::fs::read_to_string(&cargo_toml) {
+                if contents.contains("[workspace.dependencies]") {
+                    // Parse [workspace.dependencies] section
+                    let lines: Vec<&str> = contents.lines().collect();
+                    let mut in_workspace_deps = false;
+                    for line in lines {
+                        let trimmed = line.trim();
+                        if trimmed == "[workspace.dependencies]" {
+                            in_workspace_deps = true;
+                            continue;
+                        }
+                        if trimmed.starts_with('[') && in_workspace_deps {
+                            // Left [workspace.dependencies] section
+                            break;
+                        }
+                        if in_workspace_deps && !trimmed.is_empty() && !trimmed.starts_with('#') {
+                            // Extract dependency name (everything before = or :)
+                            if let Some(equals_pos) = trimmed.find('=') {
+                                let dep_name = trimmed[..equals_pos].trim();
+                                // Handle both "name" and name = formats
+                                let dep_name = dep_name.trim_matches('"').trim();
+                                if !dep_name.is_empty() {
+                                    deps.insert(dep_name.to_string());
+                                }
+                            }
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+        match current.parent() {
+            Some(parent) => current = parent,
+            None => break,
+        }
+    }
+
+    deps
 }
 
 /// Detect if output directory is in a workspace that has brrtrouter in workspace.dependencies
@@ -593,12 +787,16 @@ pub(crate) fn detect_workspace_with_brrtrouter_deps(output_dir: &Path) -> bool {
 /// * `use_workspace_deps` - If true, use workspace dependencies; if false, calculate relative paths
 /// * `brrtrouter_root` - Optional path to BRRTRouter root (for calculating relative paths)
 /// * `version` - Optional version string (defaults to "0.1.0" if None)
+/// * `deps_config` - Optional dependencies configuration from brrtrouter-dependencies.toml
+/// * `detected_conditional_deps` - Set of conditional dependency names that were detected
 pub(crate) fn write_cargo_toml_with_options(
     base: &Path,
     slug: &str,
     use_workspace_deps: bool,
     brrtrouter_root: Option<&Path>,
     version: Option<String>,
+    deps_config: Option<&crate::generator::DependenciesConfig>,
+    detected_conditional_deps: Option<&HashSet<String>>,
 ) -> anyhow::Result<()> {
     let (brrtrouter_path, brrtrouter_macros_path) = if use_workspace_deps {
         (String::new(), String::new())
@@ -702,12 +900,44 @@ pub(crate) fn write_cargo_toml_with_options(
     };
 
     let version_str = version.unwrap_or_else(|| "0.1.0".to_string());
+
+    // Format dependencies from config file
+    let mut config_dependencies = Vec::new();
+    let mut config_conditional_dependencies = Vec::new();
+
+    if let Some(config) = deps_config {
+        // Always-included dependencies
+        for (name, spec) in &config.dependencies {
+            let formatted = format_dependency_spec(name, spec, use_workspace_deps);
+            config_dependencies.push(FormattedDependency {
+                name: name.clone(),
+                spec: formatted,
+            });
+        }
+
+        // Conditional dependencies (only include if detected)
+        let empty_set = HashSet::new();
+        let detected_set = detected_conditional_deps.unwrap_or(&empty_set);
+        for (name, cond_dep) in &config.conditional {
+            if detected_set.contains(name) {
+                let spec = cond_dep.to_spec();
+                let formatted = format_dependency_spec(name, &spec, use_workspace_deps);
+                config_conditional_dependencies.push(FormattedDependency {
+                    name: name.clone(),
+                    spec: formatted,
+                });
+            }
+        }
+    }
+
     let rendered = CargoTomlTemplateData {
         name: slug.to_string(),
         version: version_str,
         use_workspace_deps,
         brrtrouter_path,
         brrtrouter_macros_path,
+        config_dependencies,
+        config_conditional_dependencies,
     }
     .render()?;
     fs::write(base.join("Cargo.toml"), rendered)?;

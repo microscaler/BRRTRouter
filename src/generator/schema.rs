@@ -282,7 +282,9 @@ pub fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
                         let integer = parts[0].parse::<i64>().unwrap_or(0);
                         let decimal = parts.get(1).unwrap_or(&"0");
                         let scale = decimal.len() as u32;
-                        let mantissa = format!("{}{}", integer, decimal).parse::<i64>().unwrap_or(0);
+                        let mantissa = format!("{}{}", integer, decimal)
+                            .parse::<i64>()
+                            .unwrap_or(0);
                         format!("rust_decimal::Decimal::new({}, {})", mantissa, scale)
                     } else {
                         // Integer: 123 → Decimal::new(123, 0)

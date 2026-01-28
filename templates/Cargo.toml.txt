@@ -11,6 +11,12 @@ default = ["jemalloc"]
 jemalloc = ["tikv-jemallocator"]
 
 [dependencies]
+# NOTE: Additional dependencies can be configured via brrtrouter-dependencies.toml
+# Place brrtrouter-dependencies.toml alongside your openapi.yaml file.
+# BRRTRouter will auto-detect it and include dependencies from:
+#   - [dependencies] section (always included)
+#   - [conditional] section (included if types are detected)
+# See: https://github.com/microscaler/BRRTRouter/blob/main/DEPENDENCIES_CONFIG_GUIDE.md
 {% if use_workspace_deps %}
 brrtrouter = { workspace = true }
 brrtrouter_macros = { workspace = true }
@@ -24,6 +30,14 @@ may_minihttp = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
 tikv-jemallocator = { workspace = true, optional = true }
+{%- for dep in config_dependencies -%}
+# From brrtrouter-dependencies.toml [dependencies] section
+{{ dep.name }} = {{ dep.spec }}
+{% endfor -%}
+{%- for dep in config_conditional_dependencies -%}
+# From brrtrouter-dependencies.toml [conditional] section (type detected)
+{{ dep.name }} = {{ dep.spec }}
+{% endfor -%}
 {% else %}
 brrtrouter = { path = "{{ brrtrouter_path }}" }
 brrtrouter_macros = { path = "{{ brrtrouter_macros_path }}" }
@@ -37,4 +51,12 @@ may_minihttp = "0.1"
 anyhow = "1.0"
 clap = { version = "4.5.39", features = ["derive"] }
 tikv-jemallocator = { version = "0.6", features = ["profiling"], optional = true }
+{%- for dep in config_dependencies -%}
+# From brrtrouter-dependencies.toml [dependencies] section
+{{ dep.name }} = {{ dep.spec }}
+{% endfor -%}
+{%- for dep in config_conditional_dependencies -%}
+# From brrtrouter-dependencies.toml [conditional] section (type detected)
+{{ dep.name }} = {{ dep.spec }}
+{% endfor -%}
 {% endif %}

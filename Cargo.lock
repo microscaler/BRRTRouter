@@ -532,6 +532,7 @@ dependencies = [
  "tikv-jemallocator",
  "tiny_http",
  "tokio",
+ "toml",
  "tonic",
  "tracing",
  "tracing-appender",

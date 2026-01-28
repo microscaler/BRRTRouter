@@ -26,6 +26,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 jsonschema = "0.40"
 serde_yaml = "0.9.33"
+toml = "0.8"
 # Needed for simple JWT parsing in security providers
 base64 = "0.22"
 # Do not update to newer version

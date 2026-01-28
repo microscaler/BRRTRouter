@@ -99,7 +99,15 @@ impl GenerationScope {
 ///
 /// Returns an error if spec loading, code generation, or file I/O fails.
 pub fn generate_project_from_spec(spec_path: &Path, force: bool) -> anyhow::Result<PathBuf> {
-    generate_project_with_options(spec_path, None, force, false, &GenerationScope::all(), None)
+    generate_project_with_options(
+        spec_path,
+        None,
+        force,
+        false,
+        &GenerationScope::all(),
+        None,
+        None,
+    )
 }
 
 /// Generate a Rust project with fine-grained control over what gets generated
@@ -129,6 +137,7 @@ pub fn generate_project_with_options(
     dry_run: bool,
     scope: &GenerationScope,
     version: Option<String>,
+    dependencies_config_path: Option<&Path>,
 ) -> anyhow::Result<PathBuf> {
     let mut created: Vec<String> = Vec::new();
     let mut updated: Vec<String> = Vec::new();
@@ -193,6 +202,17 @@ pub fn generate_project_with_options(
         println!("ℹ️  Spec already present at {spec_copy_path:?} (use --force to overwrite)",);
         skipped.push(format!("spec: exists → {spec_copy_path:?}"));
     }
+
+    // Load dependencies config if available
+    let deps_config = if let Some(config_path) =
+        crate::generator::dependencies_config::resolve_config_path(
+            dependencies_config_path,
+            spec_path,
+        ) {
+        crate::generator::dependencies_config::load_dependencies_config(&config_path)?
+    } else {
+        None
+    };
 
     let mut schema_types = collect_component_schemas(spec_path)?;
 
@@ -356,12 +376,69 @@ pub fn generate_project_with_options(
             // This prevents using workspace deps when the workspace doesn't support them
             let use_workspace_deps =
                 crate::generator::templates::detect_workspace_with_brrtrouter_deps(&base_dir);
+
+            // Track which conditional dependencies from config were detected
+            let mut detected_conditional_deps = HashSet::new();
+
+            // Check conditional dependencies from config file
+            if let Some(ref config) = deps_config {
+                for (dep_name, cond_dep) in &config.conditional {
+                    // Check if the detect pattern matches any generated types
+                    let mut found = false;
+                    for type_def in schema_types.values() {
+                        for field in &type_def.fields {
+                            if field.ty.contains(&cond_dep.detect) {
+                                detected_conditional_deps.insert(dep_name.clone());
+                                found = true;
+                                break;
+                            }
+                        }
+                        if found {
+                            break;
+                        }
+                    }
+                    // Also check route fields
+                    if !found {
+                        for route in &routes {
+                            if let Some(schema) = &route.request_schema {
+                                let fields = extract_fields(schema);
+                                for field in fields {
+                                    if field.ty.contains(&cond_dep.detect) {
+                                        detected_conditional_deps.insert(dep_name.clone());
+                                        found = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            if found {
+                                break;
+                            }
+                            if let Some(schema) = &route.response_schema {
+                                let fields = extract_fields(schema);
+                                for field in fields {
+                                    if field.ty.contains(&cond_dep.detect) {
+                                        detected_conditional_deps.insert(dep_name.clone());
+                                        found = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            if found {
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
             crate::generator::templates::write_cargo_toml_with_options(
                 &base_dir,
                 &slug,
                 use_workspace_deps,
                 None,
                 version.clone(),
+                deps_config.as_ref(),
+                Some(&detected_conditional_deps),
             )?;
             // Detect if we're in a workspace context (e.g., microservices/crates/...)
             // by checking if there's a Cargo.toml with [workspace] in a parent directory
@@ -557,6 +634,7 @@ pub fn generate_project_with_options(
 pub fn generate_impl_stubs(
     spec_path: &Path,
     impl_output_dir: &Path,
+    component_name: Option<&str>,
     handler_name: Option<&str>,
     force: bool,
 ) -> anyhow::Result<()> {
@@ -570,13 +648,21 @@ pub fn generate_impl_stubs(
         .ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 in spec path"))?;
     let (routes, _slug) = load_spec(spec_str)?;
 
-    // Derive component name from output directory
-    let component_name = impl_output_dir
-        .file_name()
-        .and_then(|n| n.to_str())
-        .ok_or_else(|| anyhow::anyhow!("Invalid output directory"))?
-        .strip_suffix("_impl")
-        .ok_or_else(|| anyhow::anyhow!("Impl crate name must end with _impl"))?;
+    // Determine component name: use provided name, or derive from output directory
+    let component_name = if let Some(name) = component_name {
+        name.to_string()
+    } else {
+        // Backward compatibility: derive from directory name
+        impl_output_dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .ok_or_else(|| anyhow::anyhow!("Invalid output directory"))?
+            .strip_suffix("_impl")
+            .ok_or_else(|| {
+                anyhow::anyhow!("Impl crate name must end with _impl, or provide --component-name")
+            })?
+            .to_string()
+    };
 
     // Create directory structure
     let impl_src_dir = impl_output_dir.join("src");
@@ -588,14 +674,14 @@ pub fn generate_impl_stubs(
     // Generate Cargo.toml if it doesn't exist
     let cargo_toml = impl_output_dir.join("Cargo.toml");
     if !cargo_toml.exists() {
-        write_impl_cargo_toml(impl_output_dir, component_name)?;
+        write_impl_cargo_toml(impl_output_dir, &component_name)?;
         println!("✅ Created impl crate Cargo.toml: {cargo_toml:?}");
     }
 
     // Generate main.rs if it doesn't exist
     let main_rs = impl_src_dir.join("main.rs");
     if !main_rs.exists() {
-        write_impl_main_rs(&impl_src_dir, component_name, &routes)?;
+        write_impl_main_rs(&impl_src_dir, &component_name, &routes)?;
         println!("✅ Created impl crate main.rs: {main_rs:?}");
     }
 
@@ -665,7 +751,7 @@ pub fn generate_impl_stubs(
             path: &stub_path,
             handler: &handler,
             struct_name: &format!("{}Controller", to_camel_case(&handler)),
-            crate_name: component_name,
+            crate_name: &component_name,
             req_fields: &request_fields,
             res_fields: &response_fields,
             imports: &imports,

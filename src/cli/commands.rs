@@ -54,6 +54,11 @@ pub enum Commands {
         /// If not provided, defaults to "0.1.0"
         #[arg(long, default_value = "0.1.0")]
         version: String,
+
+        /// Path to dependencies configuration file (brrtrouter-dependencies.toml)
+        /// If not provided, will auto-detect alongside the OpenAPI spec
+        #[arg(long)]
+        dependencies_config: Option<PathBuf>,
     },
     /// Generate implementation stubs in impl crate
     ///
@@ -65,9 +70,14 @@ pub enum Commands {
         #[arg(short, long)]
         spec: PathBuf,
 
-        /// Output directory for impl crate (e.g., crates/bff_impl)
+        /// Output directory for impl crate (e.g., crates/bff_impl or crates/impl)
         #[arg(short, long)]
         output: PathBuf,
+
+        /// Component name (e.g., "bff" or "rerp_accounting_general_ledger_gen")
+        /// If not provided, will be derived from output directory name (stripping "_impl" suffix)
+        #[arg(long)]
+        component_name: Option<String>,
 
         /// Generate stub for specific handler only (per-path basis)
         #[arg(short, long)]
@@ -153,6 +163,7 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
             dry_run,
             only,
             version,
+            dependencies_config,
         } => {
             let spec_path = spec
                 .to_str()
@@ -166,6 +177,7 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
                 *dry_run,
                 &scope,
                 Some(version.clone()),
+                dependencies_config.as_deref(),
             )
             .expect("failed to generate example project");
             // Format the newly generated project (single implementation: generator owns fmt)
@@ -177,12 +189,14 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
         Commands::GenerateStubs {
             spec,
             output,
+            component_name,
             path,
             force,
         } => {
             crate::generator::generate_impl_stubs(
                 spec.as_path(),
                 output.as_path(),
+                component_name.as_deref(),
                 path.as_deref(),
                 *force,
             )?;
