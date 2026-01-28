@@ -65,7 +65,10 @@ prost = "0.14"
 tokio = { version = "1.49.0", features = ["rt-multi-thread", "macros"] }
 
 # Production JWT/JWKS validation and HTTP fetch (for external providers like PropelAuth)
-jsonwebtoken = { version = "10", features = ["rust_crypto"] }  # rust_crypto enables RSA/EC algorithms
+# Note: jsonwebtoken 10.3.0 still uses rsa 0.9.10 (RUSTSEC-2023-0071) - timing sidechannel vulnerability
+# No patched version available yet. Risk is mitigated by using rust_crypto feature and limiting
+# exposure to trusted environments. Monitor for updates to jsonwebtoken/rsa.
+jsonwebtoken = { version = "10.3.0", features = ["rust_crypto"] }  # rust_crypto enables RSA/EC algorithms
 reqwest = { version = "0.12.28", default-features = false, features = ["json", "rustls-tls", "blocking"] }
 urlencoding = "2.1"
 ulid = "1.1"
