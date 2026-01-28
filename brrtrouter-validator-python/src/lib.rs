@@ -30,11 +30,11 @@ impl ValidationResult {
 
     /// Convert to Python dict
     fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
-        let dict = PyDict::new_bound(py);
+        let dict = PyDict::new(py);
         dict.set_item("valid", self.valid)?;
-        let errors_list = PyList::empty_bound(py);
+        let errors_list = PyList::empty(py);
         for error in &self.errors {
-            let error_dict = PyDict::new_bound(py);
+            let error_dict = PyDict::new(py);
             error_dict.set_item("location", &error.location)?;
             error_dict.set_item("message", &error.message)?;
             error_dict.set_item("kind", &error.kind)?;
