@@ -12,7 +12,7 @@
 
 | Category | Already in BRRTRouter | Candidate to move | Stay in RERP | Migration status |
 |----------|------------------------|-------------------|--------------|-------------------|
-| **Modules** | BFF, docker, release, ports, build (host_aware) | OpenAPI, CI, gen, discovery, bootstrap, tilt, pre_commit, build (microservices) | CLI entry (`rerp`), RERP-specific config/wiring | Done / Not started / N/A |
+| **Modules** | BFF, docker, release, ports, build (host_aware + microservices), openapi, ci, gen, discovery, bootstrap, tilt, pre_commit | — | CLI entry (`rerp`), RERP config, gen/regenerate | All Done; N/A |
 | **Rationale** | Implemented and consumed by RERP via re-export/thin wrappers | Generic “BRRTRouter consumer” workflows (validate specs, fix paths, call brrtrouter-gen, bootstrap, Tilt/Kind) | Single `rerp` binary and RERP layout defaults | — |
 
 **Already migrated to BRRTRouter (RERP consumes):**
@@ -22,6 +22,14 @@
 - **release** — bump (Cargo version), notes (OpenAI/Anthropic)
 - **ports** — layout, discovery, registry, validate, reconcile, fix-duplicates
 - **build** — host_aware (ARCH_TARGETS, cargo/cross/zigbuild)
+- **openapi** — validate, fix_operation_id, check_decimal_formats, fix_impl_controllers
+- **ci** — patch_brrtrouter, fix_cargo_paths, fix_impl_dependencies, get_latest_tag, is_tag, validate_version
+- **gen** — find_brrtrouter, call_brrtrouter_generate, call_brrtrouter_generate_stubs (RERP keeps regenerate locally)
+- **discovery** — suites, sources (layout from ports.layout)
+- **bootstrap** — microservice (configurable layout; RERP re-exports, uses default layout)
+- **tilt** — setup_kind_registry, setup_persistent_volumes, setup, teardown, logs (RERP: thin wrappers)
+- **pre_commit** — workspace_fmt (run fmt when workspace dir changed; configurable workspace_dir, fmt_argv, extra_check_dirs; RERP: just fmt-rust + entities)
+- **build/microservices** — build_workspace_with_options, build_package_with_options (configurable workspace_dir, arch, release, gen_if_missing_callback; RERP: PACKAGE_NAMES + run_accounting_gen_if_missing)
 
 ---
 
@@ -63,8 +71,8 @@
 | **tilt/setup** | Create dirs and Docker volumes; check docker/tilt | Generic Tilt preflight | Configurable dirs/volumes. | Done |
 | **tilt/teardown** | Tilt down; optional remove images/volumes/system prune | Generic | Configurable service_names, container/image fns. | Done |
 | **tilt/logs** | Tail Tilt logs for a component | Generic | Generic. | Done |
-| **pre_commit/microservices_fmt** | Run `cargo fmt` in a workspace dir when it changed | Any Rust workspace | Configurable workspace_dir. | Not started |
-| **build/microservices** | build_microservices_workspace, build_microservice, PACKAGE_NAMES, run_accounting_gen_if_missing | Workspace build + optional “gen if missing” | Move “build workspace with package list” to BRRTRouter; RERP passes package list + optional gen callback. | Not started |
+| **pre_commit/microservices_fmt** | Run `cargo fmt` in a workspace dir when it changed | Any Rust workspace | Configurable workspace_dir, fmt_argv, extra_check_dirs. | Done |
+| **build/microservices** | build_microservices_workspace, build_microservice, PACKAGE_NAMES, run_accounting_gen_if_missing | Workspace build + optional “gen if missing” | Move “build workspace with package list” to BRRTRouter; BRRTRouter: build_workspace_with_options, build_package_with_options (gen_callback); RERP: PACKAGE_NAMES + run_accounting_gen_if_missing. | Done |
 
 ---
 
@@ -83,12 +91,12 @@
 
 ## 3. Test Audit
 
-**Policy:** When a module is moved to BRRTRouter, its unit tests are moved to BRRTRouter tooling and the duplicate test files are removed from RERP. RERP keeps only tests that exercise the `rerp` CLI or RERP-specific behaviour (e.g. test_cli, test_docker_*, test_release_*, test_bootstrap*, test_build_host_aware). After moving openapi, ci, gen, discovery, tilt: RERP ~185 tests; BRRTRouter tooling has openapi, ci, gen, discovery, and tilt unit tests (~179 tests).
+**Policy:** When a module is moved to BRRTRouter, its unit tests are moved to BRRTRouter tooling and the duplicate test files are removed from RERP. RERP keeps only tests that exercise the `rerp` CLI or RERP-specific behaviour (e.g. test_cli, test_docker_*, test_release_*, test_build_host_aware). **Current:** RERP tooling ~167 tests; BRRTRouter tooling ~200 tests (openapi, ci, gen, discovery, tilt, bootstrap, ports, bff, release, docker, build, etc.).
 
 | Test file | What it tests | Recommendation | Migration status |
 |-----------|----------------|-----------------|-------------------|
-| **test_bootstrap_microservice** | Port registry, to_snake_case, derive_binary_name, load_openapi_spec, update_workspace_cargo_toml, update_tiltfile, run_bootstrap_microservice | **Move with bootstrap** to BRRTRouter; keep RERP-specific layout tests in RERP or parametrized. | Not started |
-| **test_build_host_aware** | ARCH_TARGETS, detect_host_architecture, should_use_zigbuild/cross, _determine_architectures, run; build_microservice, build_microservices_workspace | **Host_aware:** already covered in BRRTRouter when we add build package tests. **Microservices:** move with build/microservices if moved. | Done (host_aware); Not started (microservices) |
+| **test_bootstrap_microservice** | Port registry, to_snake_case, derive_binary_name, load_openapi_spec, update_workspace_cargo_toml, update_tiltfile, run_bootstrap_microservice | **Move with bootstrap** to BRRTRouter; keep RERP-specific layout tests in RERP or parametrized. | Done (moved to BRRTRouter test_bootstrap.py; removed from RERP) |
+| **test_build_host_aware** | ARCH_TARGETS, detect_host_architecture, should_use_zigbuild/cross, _determine_architectures, run; build_microservice, build_microservices_workspace | **Host_aware:** in BRRTRouter. **Microservices:** RERP tests call brrtrouter_tooling.build.workspace_build; BRRTRouter has test_build_workspace. | Done |
 | **test_ci_fix_cargo_paths** | fix_cargo_toml, run | **Move with ci/fix_cargo_paths.** | Done (moved to BRRTRouter; removed from RERP) |
 | **test_ci_get_latest_tag** | get_latest_tag, run, retries, backoff | **Move with ci/get_latest_tag.** | Done (moved to BRRTRouter; removed from RERP) |
 | **test_ci_is_tag** | is_tag (GITHUB_REF) | **Move with ci/is_tag.** | Done (moved to BRRTRouter; removed from RERP) |
@@ -128,22 +136,22 @@
 | discovery/suites, sources | ✅ (done) | — | Layout from ports.layout | Done |
 | bootstrap/microservice | ✅ (done) | — | Configurable layout | Done |
 | tilt/* | ✅ (done) | Thin wrappers (RERP dirs/volumes/naming) | Kind registry, PVs, setup, teardown, logs | Done |
-| pre_commit (microservices_fmt) | ✅ Recommended | — | cargo fmt in workspace | Not started |
-| build/microservices | ✅ Recommended | — | Workspace build + package list + optional gen | Not started |
+| pre_commit (microservices_fmt) | ✅ (done) | Thin wrapper (just fmt-rust, entities) | cargo fmt in workspace | Done |
+| build/microservices | ✅ (done) | Thin wrapper (PACKAGE_NAMES, run_accounting_gen_if_missing) | Workspace build + package list + optional gen | Done |
 | cli/* | — | ✅ | RERP-specific `rerp` CLI | N/A |
 
 ---
 
 ## 5. Suggested Migration Order
 
-1. **OpenAPI** — validate, fix_operation_id (high reuse, low layout coupling).
-2. **CI** — fix_cargo_paths, patch_brrtrouter, get_latest_tag, is_tag, validate_version, fix_impl_dependencies (every consumer doing CI/release benefits).
-3. **gen** — brrtrouter (find + call_brrtrouter_generate), then regenerate with configurable discovery.
-4. **Discovery** — suites + sources with configurable layout (or reuse/extend ports layout).
-5. **Tilt** — setup_kind_registry, setup_persistent_volumes, setup, teardown, logs.
-6. **Bootstrap** — microservice with configurable paths/layout.
-7. **Pre-commit** — microservices_fmt (cargo fmt).
-8. **Build** — microservices: generic “build workspace with package list” + optional “gen if missing” in BRRTRouter; RERP keeps PACKAGE_NAMES and accounting gen hook.
+1. ~~**OpenAPI**~~ — Done.
+2. ~~**CI**~~ — Done.
+3. ~~**gen**~~ — brrtrouter Done; regenerate stays in RERP (uses brrtrouter_tooling.gen).
+4. ~~**Discovery**~~ — Done.
+5. ~~**Tilt**~~ — Done.
+6. ~~**Bootstrap**~~ — Done (microservice with configurable layout; RERP re-exports).
+7. ~~**Pre-commit**~~ — Done (workspace_fmt; RERP uses just fmt-rust + entities).
+8. **Build** — microservices: generic “build workspace with package list” + optional “gen if missing” — Done (workspace_build; RERP thin wrapper).
 
 ---
 
@@ -158,7 +166,18 @@
 
 ## 7. Document Metadata
 
-- **Audit date:** 2025-01-28
+- **Last updated:** 2026-01-28
 - **RERP tooling:** `rerp/tooling/src/rerp_tooling/`
 - **BRRTRouter tooling:** `BRRTRouter/tooling/src/brrtrouter_tooling/`
 - **Living doc:** Update this file as modules are moved or decisions change.
+- **Status:** All candidate modules migrated. gen/regenerate stays in RERP.
+
+---
+
+## 8. Next Steps (To-Do)
+
+| # | Task | Scope | Status |
+|---|------|--------|--------|
+| 1 | **pre_commit/microservices_fmt** | In BRRTRouter: run_workspace_fmt. RERP: thin wrapper (just fmt-rust, entities). | Done |
+| 2 | **build/microservices** | In BRRTRouter: build_workspace_with_options, build_package_with_options (gen_callback). RERP: thin wrapper (PACKAGE_NAMES + run_accounting_gen_if_missing). | Done |
+| — | gen/regenerate | Stays in RERP; already uses brrtrouter_tooling.gen. | N/A |

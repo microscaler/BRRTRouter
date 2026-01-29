@@ -11,6 +11,7 @@ from brrtrouter_tooling.cli import (
     gen_cmd,
     openapi_cmd,
     ports,
+    pre_commit_cmd,
     release_cmd,
 )
 from brrtrouter_tooling.cli import (
@@ -62,6 +63,10 @@ def main() -> None:
         )
         print(
             "  bootstrap microservice <name> - Bootstrap crate from OpenAPI (Dockerfile, Cargo, Tiltfile)",
+            file=sys.stderr,
+        )
+        print(
+            "  pre-commit workspace-fmt - Run cargo fmt when workspace dir changed (for hooks)",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -130,6 +135,8 @@ def main() -> None:
         gen_cmd.run_gen_argv()
     elif command == "bootstrap":
         bootstrap_cmd.run_bootstrap_argv()
+    elif command == "pre-commit":
+        pre_commit_cmd.run_pre_commit_argv()
     else:
         print(f"Error: Unknown command: {command}", file=sys.stderr)
         sys.exit(1)
