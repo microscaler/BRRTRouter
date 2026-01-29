@@ -1,36 +1,35 @@
 """Fix impl controllers to use Decimal instead of f64 literals."""
 
 import re
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from re import Match
 
 
 def convert_f64_to_decimal(match: Match[str]) -> str:
-    """Convert f64 literal to Decimal::new() call."""
+    """Convert f64 literal to Decimal::new() call.
+
+    Uses Decimal parsing to avoid float's scientific notation for 16+ digit values,
+    which would break mantissa/scale extraction (e.g. str(12345678901234567.5) -> '1.23...e+16').
+    """
     value = match.group(1)
 
     try:
-        float_val = float(value)
-    except ValueError:
+        d = Decimal(value)
+    except (ValueError, InvalidOperation):
         return match.group(0)
 
-    if float_val.is_integer():
-        int_val = int(float_val)
-        return f"rust_decimal::Decimal::new({int_val}, 0)"
+    if d == int(d):
+        return f"rust_decimal::Decimal::new({int(d)}, 0)"
 
-    str_val = str(float_val)
-    if "." in str_val:
-        parts = str_val.split(".")
-        integer_part = parts[0]
-        decimal_part = parts[1].rstrip("0")
-        if not decimal_part:
-            return f"rust_decimal::Decimal::new({int(float_val)}, 0)"
-        mantissa_str = integer_part + decimal_part
-        scale = len(decimal_part)
-        mantissa = int(mantissa_str)
-        return f"rust_decimal::Decimal::new({mantissa}, {scale})"
-
-    return match.group(0)
+    sign, digits, exponent = d.as_tuple()
+    # exponent is the power of 10 for the coefficient: value = sign * 0.digits * 10^exponent
+    # scale = number of decimal places = -exponent
+    mantissa = int("".join(str(dig) for dig in digits))
+    if sign:
+        mantissa = -mantissa
+    scale = -exponent
+    return f"rust_decimal::Decimal::new({mantissa}, {scale})"
 
 
 def fix_impl_controller(file_path: Path) -> tuple[int, bool]:

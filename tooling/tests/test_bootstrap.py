@@ -247,3 +247,28 @@ class TestGetPortFromRegistry:
 
         got = _get_port_from_registry(tmp_path, "svc1", {"port_registry": "nonexistent.json"})
         assert got is None
+
+
+class TestFixImplMainNaming:
+    """Test that _fix_impl_main_naming only replaces the gen-crate use, not std/brrtrouter/etc."""
+
+    def test_replaces_only_gen_crate_use(self, tmp_path: Path) -> None:
+        from brrtrouter_tooling.bootstrap.microservice import _fix_impl_main_naming
+
+        main_rs = tmp_path / "src" / "main.rs"
+        main_rs.parent.mkdir(parents=True, exist_ok=True)
+        content = """use pet_store_gen::registry;
+use brrtrouter::dispatcher::Dispatcher;
+use std::io;
+use std::path::PathBuf;
+use clap::Parser;
+"""
+        main_rs.write_text(content)
+        _fix_impl_main_naming(main_rs, "my-svc", "prefix")
+        result = main_rs.read_text()
+        assert "use prefix_my_svc_gen::registry;" in result
+        assert "use brrtrouter::dispatcher::Dispatcher;" in result
+        assert "use std::io;" in result
+        assert "use std::path::PathBuf;" in result
+        assert "use clap::Parser;" in result
+        assert "use pet_store_gen::" not in result

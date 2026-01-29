@@ -9,12 +9,9 @@ from pathlib import Path
 
 import yaml
 
+from brrtrouter_tooling.bff._text import _to_pascal_case
 from brrtrouter_tooling.bff.discovery import discover_sub_services
 from brrtrouter_tooling.bff.merge import merge_sub_service_specs
-
-
-def _to_pascal_case(name: str) -> str:
-    return "".join(word.capitalize() for word in name.split("-"))
 
 
 def _description_from_readme(

@@ -15,6 +15,7 @@ from typing import Any
 import yaml
 
 from brrtrouter_tooling.bootstrap.config import resolve_bootstrap_layout
+from brrtrouter_tooling.openapi.fix_operation_id import to_snake_case
 
 
 def _get_registry_path(project_root: Path, layout: dict[str, Any] | None = None) -> Path | None:
@@ -36,12 +37,6 @@ def _get_port_from_registry(
     with path.open() as f:
         data = json.load(f)
     return data.get("assignments", {}).get(service_name)
-
-
-def to_snake_case(name: str) -> str:
-    name = re.sub(r"[- ]+", "_", name)
-    name = re.sub(r"(?<!^)(?<!_)([A-Z])", r"_\1", name)
-    return name.lower()
 
 
 def to_pascal_case(name: str) -> str:
@@ -401,12 +396,17 @@ def _fix_impl_cargo_naming(cargo_path: Path, service_name: str, crate_name_prefi
 
 
 def _fix_impl_main_naming(main_path: Path, service_name: str, crate_name_prefix: str) -> None:
+    """Replace only the gen-crate use (e.g. use pet_store_gen::) with the actual gen crate name.
+
+    Do not replace std::, serde::, brrtrouter::, clap::, etc.
+    """
     if not main_path.exists():
         return
     service_snake = service_name.replace("-", "_")
     gen_crate_name = f"{crate_name_prefix}_{service_snake}_gen"
     content = main_path.read_text()
-    content = re.sub(r"use (\w+)::", f"use {gen_crate_name}::", content)
+    # Only replace use <name>_gen:: (the gen crate import), not use std::, use brrtrouter::, etc.
+    content = re.sub(r"use \w+_gen::", f"use {gen_crate_name}::", content)
     main_path.write_text(content)
 
 

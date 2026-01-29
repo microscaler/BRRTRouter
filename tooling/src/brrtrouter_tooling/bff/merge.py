@@ -1,4 +1,7 @@
-"""Merge sub-service OpenAPI specs: paths, schemas, $ref updates, proxy extensions (Story 1.2)."""
+"""Merge sub-service OpenAPI specs: paths, schemas, $ref updates, proxy extensions (Story 1.2).
+
+Per-operation x-brrtrouter-downstream-path and x-service are set here when each path is merged;
+no separate apply step is needed."""
 
 from __future__ import annotations
 
@@ -7,9 +10,7 @@ from typing import Any
 
 import yaml
 
-
-def _to_pascal_case(name: str) -> str:
-    return "".join(word.capitalize() for word in name.split("-"))
+from brrtrouter_tooling.bff._text import _to_pascal_case
 
 
 def _load_spec(p: Path) -> dict[str, Any]:
