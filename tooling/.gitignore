@@ -5,6 +5,9 @@ __pycache__/
 *.so
 .Python
 build/
+# Python package brrtrouter_tooling.build (host_aware) - do not ignore
+!src/brrtrouter_tooling/build/
+!src/brrtrouter_tooling/build/**
 develop-eggs/
 dist/
 downloads/

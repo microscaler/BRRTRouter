@@ -92,6 +92,8 @@ max-complexity = 20
 [tool.ruff.lint.per-file-ignores]
 # main: arg-parsing dispatcher; complexity expected
 "src/brrtrouter_tooling/cli/main.py" = ["C901"]
+# docker_cmd: argv dispatcher; complexity expected
+"src/brrtrouter_tooling/cli/docker_cmd.py" = ["C901"]
 
 # NOTE: Empty print statements to stderr/stdout are forbidden.
 # Pattern to avoid: print("", file=sys.stderr) or print("", file=sys.stdout)

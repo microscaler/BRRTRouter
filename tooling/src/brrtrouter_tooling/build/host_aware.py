@@ -1,0 +1,283 @@
+"""Host-aware build: cargo/cross/zigbuild, multi-arch (amd64, arm64, arm7). Generic for BRRTRouter and RERP-style workspaces."""
+
+from __future__ import annotations
+
+import os
+import platform
+import subprocess
+import sys
+from pathlib import Path
+from typing import Dict, List, Optional
+
+ARCH_TARGETS: Dict[str, str] = {
+    "amd64": "x86_64-unknown-linux-musl",
+    "arm64": "aarch64-unknown-linux-musl",
+    "arm7": "armv7-unknown-linux-musleabihf",
+}
+
+
+def detect_host_architecture() -> str:
+    """Return amd64, arm64, or amd64 fallback for unknown."""
+    machine = platform.machine().lower()
+    if machine in ("x86_64", "amd64"):
+        return "amd64"
+    if machine in ("arm64", "aarch64"):
+        return "arm64"
+    return "amd64"
+
+
+def should_use_zigbuild() -> bool:
+    """True on Darwin or Linux non-x86_64 (cross-compile)."""
+    os_name = platform.system()
+    arch = platform.machine()
+    return os_name == "Darwin" or (os_name == "Linux" and arch != "x86_64")
+
+
+def should_use_cross() -> bool:
+    """True if RERP_USE_CROSS=1 (or BRRT_USE_CROSS=1)."""
+    return os.environ.get("RERP_USE_CROSS") == "1" or os.environ.get("BRRT_USE_CROSS") == "1"
+
+
+def _install_rust_target(rust_target: str) -> bool:
+    try:
+        r = subprocess.run(
+            ["rustup", "target", "list", "--installed"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        if rust_target in r.stdout:
+            return True
+        print(f"📦 Installing Rust target: {rust_target}")
+        subprocess.run(["rustup", "target", "add", rust_target], check=True)
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        print(f"❌ Error: {e}", file=sys.stderr)
+        return False
+
+
+def _get_cargo_env(rust_target: str) -> Dict[str, str]:
+    env = os.environ.copy()
+    if rust_target == "x86_64-unknown-linux-musl":
+        env["CC_x86_64_unknown_linux_musl"] = "musl-gcc"
+        env["CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER"] = "musl-gcc"
+    elif rust_target == "aarch64-unknown-linux-musl":
+        env["CC_aarch64_unknown_linux_musl"] = "aarch64-linux-musl-gcc"
+        env["CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER"] = "aarch64-linux-musl-gcc"
+    elif rust_target == "armv7-unknown-linux-musleabihf":
+        env["CC_armv7_unknown_linux_musleabihf"] = "arm-linux-musleabihf-gcc"
+        env["CARGO_TARGET_ARMV7_UNKNOWN_LINUX_MUSLEABIHF_LINKER"] = "arm-linux-musleabihf-gcc"
+    return env
+
+
+def _build_workspace(
+    project_root: Path,
+    workspace_dir: str,
+    rust_target: str,
+    arch_name: str,
+    use_zigbuild: bool,
+    use_cross: bool,
+    extra_args: List[str],
+) -> bool:
+    workspace_path = project_root / workspace_dir
+    manifest = workspace_path / "Cargo.toml"
+    if not manifest.exists():
+        print(f"❌ Cargo.toml not found in {workspace_path}", file=sys.stderr)
+        return False
+
+    if use_cross:
+        cmd = [
+            "cross",
+            "build",
+            "--manifest-path",
+            str(manifest),
+            "--target",
+            rust_target,
+            "--workspace",
+            "--release",
+        ] + extra_args
+        try:
+            subprocess.run(cmd, check=True, cwd=str(project_root))
+            return True
+        except subprocess.CalledProcessError as e:
+            print(f"❌ Build failed for {arch_name}: {e}", file=sys.stderr)
+            return False
+
+    if use_zigbuild:
+        cmd = [
+            "cargo",
+            "zigbuild",
+            "--target",
+            rust_target,
+            "--workspace",
+            "--release",
+        ] + extra_args
+    else:
+        cmd = [
+            "cargo",
+            "build",
+            "--target",
+            rust_target,
+            "--workspace",
+            "--release",
+        ] + extra_args
+    try:
+        env = _get_cargo_env(rust_target) if not use_zigbuild else os.environ.copy()
+        subprocess.run(cmd, env=env, check=True, cwd=str(workspace_path))
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Build failed for {arch_name}: {e}", file=sys.stderr)
+        return False
+
+
+def _build_service(
+    project_root: Path,
+    workspace_dir: str,
+    system: str,
+    module: str,
+    binary_name: str,
+    rust_target: str,
+    arch_name: str,
+    use_zigbuild: bool,
+    use_cross: bool,
+    extra_args: List[str],
+) -> bool:
+    workspace_path = project_root / workspace_dir
+    manifest = workspace_path / "Cargo.toml"
+    if not manifest.exists():
+        print(f"❌ Cargo.toml not found in {workspace_path}", file=sys.stderr)
+        return False
+
+    if use_cross:
+        cmd = [
+            "cross",
+            "build",
+            "--manifest-path",
+            str(manifest),
+            "-p",
+            binary_name,
+            "--target",
+            rust_target,
+            "--release",
+        ] + extra_args
+        try:
+            subprocess.run(cmd, check=True, cwd=str(project_root))
+            return True
+        except subprocess.CalledProcessError as e:
+            print(f"❌ Build failed for {arch_name}: {e}", file=sys.stderr)
+            return False
+
+    if use_zigbuild:
+        cmd = [
+            "cargo",
+            "zigbuild",
+            "--target",
+            rust_target,
+            "-p",
+            binary_name,
+            "--release",
+        ] + extra_args
+    else:
+        cmd = [
+            "cargo",
+            "build",
+            "--target",
+            rust_target,
+            "-p",
+            binary_name,
+            "--release",
+        ] + extra_args
+    try:
+        env = _get_cargo_env(rust_target) if not use_zigbuild else os.environ.copy()
+        subprocess.run(cmd, env=env, check=True, cwd=str(workspace_path))
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Build failed for {arch_name}: {e}", file=sys.stderr)
+        return False
+
+
+def _build_for_arch(
+    project_root: Path,
+    target: str,
+    rust_target: str,
+    arch_name: str,
+    use_zigbuild: bool,
+    use_cross: bool,
+    extra_args: List[str],
+    workspace_dir: str = "microservices",
+) -> bool:
+    print(f"🔨 Building for {arch_name} ({rust_target})...")
+    if not use_cross and not _install_rust_target(rust_target):
+        return False
+    if target == "workspace":
+        return _build_workspace(
+            project_root, workspace_dir, rust_target, arch_name, use_zigbuild, use_cross, extra_args
+        )
+    parts = target.split("_", 1)
+    if len(parts) < 2:
+        print(
+            "❌ Service name must be <system>_<module> (e.g., auth_idam)",
+            file=sys.stderr,
+        )
+        return False
+    system, module = parts
+    binary_name = f"rerp_{system}_{module.replace('-', '_')}_impl"
+    return _build_service(
+        project_root,
+        workspace_dir,
+        system,
+        module,
+        binary_name,
+        rust_target,
+        arch_name,
+        use_zigbuild,
+        use_cross,
+        extra_args,
+    )
+
+
+def _determine_architectures(requested: Optional[str]) -> List[str]:
+    if requested == "all":
+        return ["amd64", "arm64", "arm7"]
+    if requested in ARCH_TARGETS:
+        return [requested]
+    if requested is None:
+        return [detect_host_architecture()]
+    print(
+        f"❌ Unknown architecture: {requested}. Valid: amd64, arm64, arm7, all",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+
+def run(
+    target: str,
+    arch: Optional[str] = None,
+    extra_args: Optional[List[str]] = None,
+    project_root: Optional[Path] = None,
+    workspace_dir: str = "microservices",
+) -> int:
+    """Run host-aware build. Returns 0 on success, 1 on failure."""
+    root = Path(project_root) if project_root is not None else Path.cwd()
+    extra = extra_args or []
+    archs = _determine_architectures(arch)
+    use_zigbuild = should_use_zigbuild()
+    use_cross = should_use_cross()
+    ok = True
+    for a in archs:
+        if not _build_for_arch(
+            root,
+            target,
+            ARCH_TARGETS[a],
+            a,
+            use_zigbuild,
+            use_cross,
+            extra,
+            workspace_dir=workspace_dir,
+        ):
+            ok = False
+    if ok:
+        print("🎉 All builds complete!")
+        return 0
+    print("❌ Some builds failed", file=sys.stderr)
+    return 1
