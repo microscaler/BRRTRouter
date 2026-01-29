@@ -160,8 +160,13 @@ def run(
         print(f"{workspace_toml} not found", file=sys.stderr)
         return 1
 
-    old = _read_current(workspace_toml)
-    new = _next_version(old, bump)
+    try:
+        old = _read_current(workspace_toml)
+        new = _next_version(old, bump)
+    except SystemExit as e:
+        msg = str(e.args[0]) if e.args else "Version error"
+        print(msg, file=sys.stderr)
+        return 1
 
     updated: list[Path] = []
     for p in find_cargo_tomls(project_root, exclude=SKIP_PARTS):
