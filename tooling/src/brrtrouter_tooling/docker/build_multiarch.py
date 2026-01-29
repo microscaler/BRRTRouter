@@ -8,6 +8,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from brrtrouter_tooling.helpers import default_binary_name
+
 ARCH_PLATFORMS = {
     "amd64": "linux/amd64",
     "arm64": "linux/arm64",
@@ -44,7 +46,7 @@ def run(
         return 1
 
     port = 8000
-    bin_name = binary_name or f"rerp_{system}_{module.replace('-', '_')}_impl"
+    bin_name = binary_name or default_binary_name(system, module)
 
     build_args = [
         "--build-arg",
@@ -187,7 +189,7 @@ def run(
         platform = ARCH_PLATFORMS[arch]
         arch_tag = f"{image_name}:{tag}-{arch}"
         pl = platform.split("/")
-        subprocess.run(
+        r = subprocess.run(
             [
                 "docker",
                 "manifest",
@@ -201,7 +203,14 @@ def run(
             ],
             cwd=str(root),
             capture_output=True,
+            text=True,
         )
+        if r.returncode != 0:
+            msg = f"❌ Failed to annotate manifest for {arch} ({manifest_tag} <- {arch_tag})"
+            if r.stderr and r.stderr.strip():
+                msg += f": {r.stderr.strip()}"
+            print(msg, file=sys.stderr)
+            return 1
 
     print(f"✅ Multi-architecture manifest created: {manifest_tag}")
 

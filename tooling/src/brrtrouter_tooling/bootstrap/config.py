@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from brrtrouter_tooling.helpers import resolve_layout_with_defaults
+
 # RERP-style default; override for other consumers.
 DEFAULT_BOOTSTRAP_LAYOUT: dict[str, str] = {
     "openapi_dir": "openapi",
@@ -18,8 +20,4 @@ DEFAULT_BOOTSTRAP_LAYOUT: dict[str, str] = {
 
 def resolve_bootstrap_layout(layout: dict[str, Any] | None) -> dict[str, str]:
     """Return layout dict with defaults filled. Paths relative to project_root."""
-    if layout is None:
-        return dict(DEFAULT_BOOTSTRAP_LAYOUT)
-    out = dict(DEFAULT_BOOTSTRAP_LAYOUT)
-    out.update({k: str(v) for k, v in layout.items() if k in out})
-    return out
+    return resolve_layout_with_defaults(layout, DEFAULT_BOOTSTRAP_LAYOUT)

@@ -89,6 +89,18 @@ def extract_readme_overview(readme_path: Path, default: str = "") -> str:
     return default
 
 
+def resolve_layout_with_defaults(
+    layout: dict[str, Any] | None,
+    default_layout: dict[str, str],
+) -> dict[str, str]:
+    """Return layout dict with default_layout as base; overlay layout keys that exist in default_layout."""
+    if layout is None:
+        return dict(default_layout)
+    out = dict(default_layout)
+    out.update({k: str(v) for k, v in layout.items() if k in out})
+    return out
+
+
 # --- Path ---
 
 

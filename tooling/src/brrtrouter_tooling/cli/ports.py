@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from brrtrouter_tooling.cli.parse_common import parse_flags, project_root_resolver
+from brrtrouter_tooling.cli.parse_common import parse_flags, path_resolver
 from brrtrouter_tooling.ports import PortRegistry, validate
 from brrtrouter_tooling.ports.layout import DEFAULT_LAYOUT
 
@@ -15,7 +15,7 @@ def run_ports_validate_argv() -> None:
     args = sys.argv[3:]
     parsed, rest = parse_flags(
         args,
-        ("project_root", "--project-root", Path.cwd, project_root_resolver),
+        ("project_root", "--project-root", Path.cwd, path_resolver),
         ("registry_path", "--registry", None, None),
     )
     for a in rest:

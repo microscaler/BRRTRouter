@@ -20,7 +20,8 @@ def run_build_argv(argv: list[str] | None = None) -> None:
         default=None,
         help="amd64, arm64, arm7, or all (default: host arch)",
     )
-    ap.add_argument("--release", action="store_true", help="Release build")
+    ap.add_argument("--release", action="store_true", default=True, help="Release build (default)")
+    ap.add_argument("--no-release", dest="no_release", action="store_true", help="Debug build")
     ap.add_argument(
         "--workspace-dir",
         default="microservices",
@@ -33,7 +34,7 @@ def run_build_argv(argv: list[str] | None = None) -> None:
         help="Project root (default: cwd)",
     )
     args = ap.parse_args(argv)
-    extra = ["--release"] if args.release else []
+    extra = [] if getattr(args, "no_release", False) else ["--release"]
     rc = run_host_aware(
         args.target,
         arch=args.arch,

@@ -38,11 +38,6 @@ def parse_flags(
     return result, rest
 
 
-def project_root_resolver(s: str) -> Path:
-    """Resolve --project-root argument to absolute Path."""
-    return Path(s).resolve()
-
-
 def path_resolver(s: str) -> Path:
-    """Resolve a path argument to absolute Path."""
+    """Resolve a path argument to absolute Path (e.g. --project-root, --openapi-dir)."""
     return Path(s).resolve()

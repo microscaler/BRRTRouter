@@ -9,6 +9,8 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from brrtrouter_tooling.helpers import default_binary_name
+
 ARCH_TARGETS: Dict[str, str] = {
     "amd64": "x86_64-unknown-linux-musl",
     "arm64": "aarch64-unknown-linux-musl",
@@ -17,12 +19,14 @@ ARCH_TARGETS: Dict[str, str] = {
 
 
 def detect_host_architecture() -> str:
-    """Return amd64, arm64, or amd64 fallback for unknown."""
+    """Return amd64, arm64, arm7, or amd64 fallback for unknown."""
     machine = platform.machine().lower()
     if machine in ("x86_64", "amd64"):
         return "amd64"
     if machine in ("arm64", "aarch64"):
         return "arm64"
+    if machine in ("armv7l", "armv7"):
+        return "arm7"
     return "amd64"
 
 
@@ -211,7 +215,7 @@ def _build_for_arch(
         return False
     # jemalloc does not support armv7; disable default features on arm7.
     no_jemalloc = rust_target == "armv7-unknown-linux-musleabihf"
-    build_extra = (["--no-default-features"] if no_jemalloc else []) + (extra_args or []) + ["--release"]
+    build_extra = (["--no-default-features"] if no_jemalloc else []) + (extra_args or [])
     if target == "workspace":
         return _build_workspace(
             project_root, workspace_dir, rust_target, arch_name, use_zigbuild, use_cross, build_extra
@@ -224,7 +228,7 @@ def _build_for_arch(
         )
         return False
     system, module = parts
-    binary_name = f"rerp_{system}_{module.replace('-', '_')}_impl"
+    binary_name = default_binary_name(system, module)
     return _build_service(
         project_root,
         workspace_dir,

@@ -279,6 +279,11 @@ def merge_sub_service_specs(
 
     bff["components"]["parameters"] = merged_params
     mapping = _schema_name_mapping(all_schemas, sub_services)
+    for pn, pd in merged_params.items():
+        if isinstance(pd, dict):
+            origin = param_origin.get(pn)
+            prefix = to_pascal_case(origin) if origin else None
+            _update_all_refs_in_value(pd, mapping, all_schemas, prefix)
     for prefixed_key, schema_def in all_schemas.items():
         if isinstance(schema_def, dict):
             prefix = _service_prefix_for_schema(prefixed_key, sub_services)

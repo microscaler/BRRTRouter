@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from brrtrouter_tooling.cli.parse_common import parse_flags, path_resolver, project_root_resolver
+from brrtrouter_tooling.cli.parse_common import parse_flags, path_resolver
 from brrtrouter_tooling.openapi import (
     check_openapi_dir,
     fix_impl_controllers_dir,
@@ -19,7 +19,7 @@ def _parse_openapi_argv() -> tuple[Path, Path]:
     args = sys.argv[3:]
     parsed, _ = parse_flags(
         args,
-        ("project_root", "--project-root", Path.cwd, project_root_resolver),
+        ("project_root", "--project-root", Path.cwd, path_resolver),
         ("openapi_dir", "--openapi-dir", None, path_resolver),
     )
     project_root = parsed["project_root"]
@@ -98,7 +98,7 @@ def run_openapi_fix_impl_controllers_argv() -> None:
     args = sys.argv[3:]
     parsed, _ = parse_flags(
         args,
-        ("project_root", "--project-root", Path.cwd, project_root_resolver),
+        ("project_root", "--project-root", Path.cwd, path_resolver),
         ("impl_dir", "--impl-dir", None, path_resolver),
     )
     project_root = parsed["project_root"]

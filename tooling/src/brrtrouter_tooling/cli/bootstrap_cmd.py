@@ -8,7 +8,7 @@ from typing import Any
 
 from brrtrouter_tooling.bootstrap import run_bootstrap_microservice
 from brrtrouter_tooling.bootstrap.config import DEFAULT_BOOTSTRAP_LAYOUT
-from brrtrouter_tooling.cli.parse_common import parse_flags, project_root_resolver
+from brrtrouter_tooling.cli.parse_common import parse_flags, path_resolver
 
 
 def _parse_layout_from_argv(args: list[str]) -> tuple[dict[str, Any], list[str]]:
@@ -73,14 +73,20 @@ def run_bootstrap_argv() -> None:
 
     def port_converter(s: str) -> int:
         try:
-            return int(s)
+            value = int(s)
+            if not (1 <= value <= 65535):
+                raise ValueError
+            return value
         except ValueError:
-            print(f"Error: --port must be an integer: {s}", file=sys.stderr)
+            print(
+                f"Error: --port must be an integer between 1 and 65535: {s}",
+                file=sys.stderr,
+            )
             sys.exit(1)
 
     parsed, rest = parse_flags(
         args,
-        ("project_root", "--project-root", Path.cwd, project_root_resolver),
+        ("project_root", "--project-root", Path.cwd, path_resolver),
         ("port", "--port", None, port_converter),
     )
     project_root = parsed["project_root"]

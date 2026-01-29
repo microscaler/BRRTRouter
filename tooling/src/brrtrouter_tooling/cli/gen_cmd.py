@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from brrtrouter_tooling.cli.parse_common import parse_flags, path_resolver, project_root_resolver
+from brrtrouter_tooling.cli.parse_common import parse_flags, path_resolver
 from brrtrouter_tooling.gen import (
     call_brrtrouter_generate,
     call_brrtrouter_generate_stubs,
@@ -16,7 +16,7 @@ def _parse_common_args(args: list[str]) -> tuple[Path, Path | None]:
     """Parse --project-root and --brrtrouter-path from args. Returns (project_root, brrtrouter_path)."""
     parsed, _ = parse_flags(
         args,
-        ("project_root", "--project-root", Path.cwd, project_root_resolver),
+        ("project_root", "--project-root", Path.cwd, path_resolver),
         ("brrtrouter_path", "--brrtrouter-path", None, path_resolver),
     )
     return parsed["project_root"], parsed["brrtrouter_path"]

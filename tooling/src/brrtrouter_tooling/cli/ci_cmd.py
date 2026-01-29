@@ -12,7 +12,7 @@ from brrtrouter_tooling.ci import (
     run_patch_brrtrouter,
     run_validate_version_cli,
 )
-from brrtrouter_tooling.cli.parse_common import parse_flags, path_resolver, project_root_resolver
+from brrtrouter_tooling.cli.parse_common import parse_flags, path_resolver
 
 
 def run_ci_argv() -> None:
@@ -34,7 +34,7 @@ def run_ci_argv() -> None:
     if sub == "patch-brrtrouter":
         parsed, _ = parse_flags(
             args,
-            ("project_root", "--project-root", Path.cwd, project_root_resolver),
+            ("project_root", "--project-root", Path.cwd, path_resolver),
             ("workspace_dir", "--workspace-dir", lambda: "microservices", None),
         )
         rc = run_patch_brrtrouter(
@@ -48,7 +48,7 @@ def run_ci_argv() -> None:
     if sub == "fix-cargo-paths":
         parsed, _ = parse_flags(
             args,
-            ("project_root", "--project-root", Path.cwd, project_root_resolver),
+            ("project_root", "--project-root", Path.cwd, path_resolver),
             ("cargo_toml", "--cargo-toml", None, path_resolver),
         )
         if not parsed["cargo_toml"]:
