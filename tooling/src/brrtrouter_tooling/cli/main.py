@@ -7,6 +7,7 @@ from brrtrouter_tooling.cli import (
     ci_cmd,
     dependabot,
     docker_cmd,
+    gen_cmd,
     openapi_cmd,
     ports,
     release_cmd,
@@ -52,6 +53,10 @@ def main() -> None:
         )
         print(
             "  release bump|generate-notes - Bump Cargo version; generate release notes (OpenAI/Anthropic)",
+            file=sys.stderr,
+        )
+        print(
+            "  gen generate|generate-stubs - Call brrtrouter-gen (gen crate or impl stubs)",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -116,6 +121,8 @@ def main() -> None:
         docker_cmd.run_docker_argv()
     elif command == "release":
         release_cmd.run_release_argv()
+    elif command == "gen":
+        gen_cmd.run_gen_argv()
     else:
         print(f"Error: Unknown command: {command}", file=sys.stderr)
         sys.exit(1)
