@@ -29,6 +29,8 @@ def process_file(path: Path, dry_run: bool) -> tuple[int, list[tuple[int, str, s
         if not m:
             continue
         raw = m.group(2) or m.group(3) or m.group(4)
+        if raw is None or not raw:
+            continue
         if is_snake_case(raw):
             continue
         new_val = to_snake_case(raw)

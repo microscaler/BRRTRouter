@@ -17,6 +17,9 @@ from brrtrouter_tooling.bootstrap.helpers import (
 )
 from brrtrouter_tooling.helpers import load_yaml_spec, to_pascal_case
 
+# Initial version for generated *_gen crates (conventional 0.1.0 for first pre-1.0 release).
+GEN_CRATE_INITIAL_VERSION = "0.1.0"
+
 
 def create_dockerfile(
     service_name: str,
@@ -232,7 +235,12 @@ def _update_gen_cargo_toml(cargo_path: Path, service_name: str, crate_name_prefi
     gen_crate_name = f"{crate_name_prefix}_{service_snake}_gen"
 
     content = re.sub(r'name = "[^"]+"', f'name = "{gen_crate_name}"', content, count=1)
-    content = re.sub(r'version = "[^"]+"', 'version = "0.1.3"', content, count=1)
+    content = re.sub(
+        r'version = "[^"]+"',
+        f'version = "{GEN_CRATE_INITIAL_VERSION}"',
+        content,
+        count=1,
+    )
 
     if "[lib]" not in content:
         content = re.sub(

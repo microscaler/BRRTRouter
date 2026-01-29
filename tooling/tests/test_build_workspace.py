@@ -22,7 +22,7 @@ class TestBuildWorkspaceWithOptions:
             (root / "microservices").mkdir(exist_ok=True)
             (root / "microservices" / "Cargo.toml").write_text("[workspace]\n")
 
-        with patch("brrtrouter_tooling.build.workspace_build.subprocess.run") as m_run:
+        with patch("brrtrouter_tooling.build.host_aware.subprocess.run") as m_run:
             m_run.return_value = type("R", (), {"returncode": 0})()
             rc = build_workspace_with_options(
                 tmp_path,
@@ -39,7 +39,7 @@ class TestBuildWorkspaceWithOptions:
 
         (tmp_path / "microservices").mkdir()
         (tmp_path / "microservices" / "Cargo.toml").write_text("[workspace]\n")
-        with patch("brrtrouter_tooling.build.workspace_build.subprocess.run") as m_run:
+        with patch("brrtrouter_tooling.build.host_aware.subprocess.run") as m_run:
             m_run.return_value = type("R", (), {"returncode": 0})()
             build_workspace_with_options(tmp_path, workspace_dir="microservices", arch="arm7")
         (cmd,) = m_run.call_args[0]
@@ -69,7 +69,7 @@ class TestBuildPackageWithOptions:
 
         (tmp_path / "microservices").mkdir()
         (tmp_path / "microservices" / "Cargo.toml").write_text("[workspace]\n")
-        with patch("brrtrouter_tooling.build.workspace_build.subprocess.run") as m_run:
+        with patch("brrtrouter_tooling.build.host_aware.subprocess.run") as m_run:
             m_run.return_value = type("R", (), {"returncode": 0})()
             build_package_with_options(
                 tmp_path, workspace_dir="microservices", package_name="my_crate", arch="arm7"
@@ -89,7 +89,7 @@ class TestBuildPackageWithOptions:
             (root / "microservices").mkdir(exist_ok=True)
             (root / "microservices" / "Cargo.toml").write_text("[workspace]\n")
 
-        with patch("brrtrouter_tooling.build.workspace_build.subprocess.run") as m_run:
+        with patch("brrtrouter_tooling.build.host_aware.subprocess.run") as m_run:
             m_run.return_value = type("R", (), {"returncode": 0})()
             rc = build_package_with_options(
                 tmp_path,

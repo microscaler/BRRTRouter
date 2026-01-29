@@ -10,15 +10,14 @@ would otherwise fail to build.
 
 from __future__ import annotations
 
-import os
-import subprocess
 import sys
 from pathlib import Path
 from typing import Callable
 
 from brrtrouter_tooling.build.host_aware import (
     ARCH_TARGETS,
-    _get_cargo_env,
+    _build_service,
+    _build_workspace,
     should_use_cross,
     should_use_zigbuild,
 )
@@ -47,57 +46,18 @@ def build_workspace_with_options(
     # jemalloc does not support armv7; disable default features on arm7 to avoid build failures.
     no_jemalloc = rust_target == "armv7-unknown-linux-musleabihf"
     base = ["--no-default-features"] if no_jemalloc else []
+    extra_args = base + rel
 
-    try:
-        if use_cross:
-            cmd = (
-                [
-                    "cross",
-                    "build",
-                    "--manifest-path",
-                    str(manifest),
-                    "--target",
-                    rust_target,
-                    "--workspace",
-                ]
-                + base
-                + rel
-            )
-            subprocess.run(cmd, check=True, cwd=str(project_root))
-        elif use_zigbuild:
-            cmd = (
-                [
-                    "cargo",
-                    "zigbuild",
-                    "--manifest-path",
-                    str(manifest),
-                    "--target",
-                    rust_target,
-                    "--workspace",
-                ]
-                + base
-                + rel
-            )
-            subprocess.run(cmd, check=True, cwd=str(project_root))
-        else:
-            cmd = (
-                [
-                    "cargo",
-                    "build",
-                    "--manifest-path",
-                    str(manifest),
-                    "--target",
-                    rust_target,
-                    "--workspace",
-                ]
-                + base
-                + rel
-            )
-            env = {**os.environ, **_get_cargo_env(rust_target)}
-            subprocess.run(cmd, check=True, cwd=str(project_root), env=env)
-        return 0
-    except subprocess.CalledProcessError:
-        return 1
+    ok = _build_workspace(
+        project_root,
+        workspace_dir,
+        rust_target,
+        arch,
+        use_zigbuild,
+        use_cross,
+        extra_args,
+    )
+    return 0 if ok else 1
 
 
 def build_package_with_options(
@@ -127,45 +87,16 @@ def build_package_with_options(
     # jemalloc does not support armv7; disable default features on arm7 to avoid build failures.
     no_jemalloc = rust_target == "armv7-unknown-linux-musleabihf"
     base = ["--no-default-features"] if no_jemalloc else []
+    extra_args = base + rel
 
-    env = {**os.environ, **_get_cargo_env(rust_target)}
-    try:
-        if use_cross:
-            cmd = [
-                "cross",
-                "build",
-                "--manifest-path",
-                str(manifest),
-                "--target",
-                rust_target,
-                "-p",
-                package_name,
-            ] + base + rel
-            subprocess.run(cmd, check=True, cwd=str(project_root), env=env)
-        elif use_zigbuild:
-            cmd = [
-                "cargo",
-                "zigbuild",
-                "--manifest-path",
-                str(manifest),
-                "--target",
-                rust_target,
-                "-p",
-                package_name,
-            ] + base + rel
-            subprocess.run(cmd, check=True, cwd=str(project_root), env=env)
-        else:
-            cmd = [
-                "cargo",
-                "build",
-                "--manifest-path",
-                str(manifest),
-                "--target",
-                rust_target,
-                "-p",
-                package_name,
-            ] + base + rel
-            subprocess.run(cmd, check=True, cwd=str(project_root), env=env)
-        return 0
-    except subprocess.CalledProcessError:
-        return 1
+    ok = _build_service(
+        project_root,
+        workspace_dir,
+        package_name,
+        rust_target,
+        arch,
+        use_zigbuild,
+        use_cross,
+        extra_args,
+    )
+    return 0 if ok else 1

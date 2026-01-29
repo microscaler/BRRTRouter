@@ -94,7 +94,6 @@ def _build_workspace(
             "--target",
             rust_target,
             "--workspace",
-            "--release",
         ] + extra_args
         try:
             subprocess.run(cmd, check=True, cwd=str(project_root))
@@ -107,23 +106,25 @@ def _build_workspace(
         cmd = [
             "cargo",
             "zigbuild",
+            "--manifest-path",
+            str(manifest),
             "--target",
             rust_target,
             "--workspace",
-            "--release",
         ] + extra_args
     else:
         cmd = [
             "cargo",
             "build",
+            "--manifest-path",
+            str(manifest),
             "--target",
             rust_target,
             "--workspace",
-            "--release",
         ] + extra_args
     try:
         env = _get_cargo_env(rust_target) if not use_zigbuild else os.environ.copy()
-        subprocess.run(cmd, env=env, check=True, cwd=str(workspace_path))
+        subprocess.run(cmd, env=env, check=True, cwd=str(project_root))
         return True
     except subprocess.CalledProcessError as e:
         print(f"❌ Build failed for {arch_name}: {e}", file=sys.stderr)
@@ -156,7 +157,6 @@ def _build_service(
             binary_name,
             "--target",
             rust_target,
-            "--release",
         ] + extra_args
         try:
             subprocess.run(cmd, check=True, cwd=str(project_root))
@@ -169,25 +169,27 @@ def _build_service(
         cmd = [
             "cargo",
             "zigbuild",
+            "--manifest-path",
+            str(manifest),
             "--target",
             rust_target,
             "-p",
             binary_name,
-            "--release",
         ] + extra_args
     else:
         cmd = [
             "cargo",
             "build",
+            "--manifest-path",
+            str(manifest),
             "--target",
             rust_target,
             "-p",
             binary_name,
-            "--release",
         ] + extra_args
     try:
         env = _get_cargo_env(rust_target) if not use_zigbuild else os.environ.copy()
-        subprocess.run(cmd, env=env, check=True, cwd=str(workspace_path))
+        subprocess.run(cmd, env=env, check=True, cwd=str(project_root))
         return True
     except subprocess.CalledProcessError as e:
         print(f"❌ Build failed for {arch_name}: {e}", file=sys.stderr)
@@ -207,9 +209,12 @@ def _build_for_arch(
     print(f"🔨 Building for {arch_name} ({rust_target})...")
     if not use_cross and not _install_rust_target(rust_target):
         return False
+    # jemalloc does not support armv7; disable default features on arm7.
+    no_jemalloc = rust_target == "armv7-unknown-linux-musleabihf"
+    build_extra = (["--no-default-features"] if no_jemalloc else []) + (extra_args or []) + ["--release"]
     if target == "workspace":
         return _build_workspace(
-            project_root, workspace_dir, rust_target, arch_name, use_zigbuild, use_cross, extra_args
+            project_root, workspace_dir, rust_target, arch_name, use_zigbuild, use_cross, build_extra
         )
     parts = target.split("_", 1)
     if len(parts) < 2:
@@ -228,7 +233,7 @@ def _build_for_arch(
         arch_name,
         use_zigbuild,
         use_cross,
-        extra_args,
+        build_extra,
     )
 
 
