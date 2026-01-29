@@ -62,6 +62,10 @@ def _next_version(old: str, bump: str) -> str:
     prerel = m.group(4)
     b = (bump or "patch").lower()
 
+    if prerel and b in ("patch", "minor", "major"):
+        msg = f"Cannot {b} bump prerelease {old}; use release/promote or rc."
+        raise SystemExit(msg)
+
     if b == "rc":
         if not prerel:
             return f"{x}.{y}.{z}-rc.1"
