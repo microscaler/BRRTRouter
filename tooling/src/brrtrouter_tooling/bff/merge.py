@@ -82,21 +82,25 @@ def _merge_one_sub_service(
             all_tags.add(t.get("name", str(t)) if isinstance(t, dict) else str(t))
 
     if "paths" in spec:
+        http_methods = (
+            "get",
+            "post",
+            "put",
+            "patch",
+            "delete",
+            "options",
+            "head",
+            "trace",
+        )
         for path, path_def in spec["paths"].items():
             if not isinstance(path_def, dict):
                 continue
+            existing = all_paths.get(path)
+            if existing is None:
+                existing = {}
             path_def = dict(path_def)
             for method in list(path_def.keys()):
-                if method not in (
-                    "get",
-                    "post",
-                    "put",
-                    "patch",
-                    "delete",
-                    "options",
-                    "head",
-                    "trace",
-                ):
+                if method not in http_methods:
                     continue
                 op = path_def[method]
                 if not isinstance(op, dict):
@@ -105,8 +109,16 @@ def _merge_one_sub_service(
                 op["x-service"] = sname
                 op["x-service-base-path"] = base_path
                 op["x-brrtrouter-downstream-path"] = _downstream_path(base_path, path)
-                path_def[method] = op
-            all_paths[path] = path_def
+                if method in existing:
+                    existing_service = (existing.get(method) or {}).get("x-service")
+                    if existing_service is not None and existing_service != sname:
+                        msg = (
+                            f"Path conflict: {path!r} method {method!r} already "
+                            f"defined by service {existing_service!r}, duplicate from {sname!r}"
+                        )
+                        raise ValueError(msg)
+                existing[method] = op
+            all_paths[path] = existing
 
     if "components" in spec and "schemas" in spec["components"]:
         _merge_schemas(all_schemas, sname, spec["components"]["schemas"])
@@ -126,23 +138,29 @@ def _schema_name_mapping(
 ) -> dict[str, list[str]]:
     mapping: dict[str, list[str]] = {}
     for prefixed in sorted(all_schemas.keys()):
-        for sname in sorted(sub_services.keys()):
-            prefix = _to_pascal_case(sname)
-            if prefixed.startswith(prefix):
-                unprefixed = prefixed[len(prefix) :]
-                if unprefixed not in mapping:
-                    mapping[unprefixed] = []
-                mapping[unprefixed].append(prefixed)
+        prefixes = [_to_pascal_case(sname) for sname in sub_services]
+        matching = [p for p in prefixes if prefixed.startswith(p)]
+        prefix = max(matching, key=len) if matching else None
+        if prefix is not None:
+            unprefixed = prefixed[len(prefix) :]
+            if unprefixed not in mapping:
+                mapping[unprefixed] = []
+            mapping[unprefixed].append(prefixed)
     return mapping
 
 
 def _service_prefix_for_schema(prefixed_key: str, sub_services: dict[str, Any]) -> str | None:
-    """Return the service prefix (PascalCase) for this prefixed schema key, or None if none match."""
-    for sname in sub_services:
-        prefix = _to_pascal_case(sname)
-        if prefixed_key.startswith(prefix):
-            return prefix
-    return None
+    """Return the longest matching service prefix (PascalCase) for this prefixed schema key.
+
+    When service names produce overlapping prefixes (e.g. Account vs Accounting),
+    the longest match is used so AccountingUser maps to Accounting, not Account.
+    """
+    matching = [
+        _to_pascal_case(sname)
+        for sname in sub_services
+        if prefixed_key.startswith(_to_pascal_case(sname))
+    ]
+    return max(matching, key=len) if matching else None
 
 
 def _update_all_refs_in_value(

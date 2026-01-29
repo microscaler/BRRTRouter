@@ -133,8 +133,6 @@ def _build_workspace(
 def _build_service(
     project_root: Path,
     workspace_dir: str,
-    system: str,
-    module: str,
     binary_name: str,
     rust_target: str,
     arch_name: str,
@@ -225,8 +223,6 @@ def _build_for_arch(
     return _build_service(
         project_root,
         workspace_dir,
-        system,
-        module,
         binary_name,
         rust_target,
         arch_name,

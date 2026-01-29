@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+import pytest
 import yaml
 
 from brrtrouter_tooling.bff.config import load_suite_config
@@ -154,6 +155,82 @@ class TestMergeSameSchemaNameAcrossServices:
         assert beta_user is not None
         addr_ref_beta = beta_user.get("properties", {}).get("address", {}).get("$ref")
         assert addr_ref_beta == "#/components/schemas/BetaAddress"
+
+
+class TestMergeOverlappingPrefixes:
+    """When service names produce overlapping PascalCase prefixes (Account vs Accounting), longest match wins."""
+
+    def test_longest_prefix_used_for_schema_and_refs(self, tmp_path: Path) -> None:
+        # account -> Account, accounting -> Accounting. AccountingUser must map to Accounting, not Account.
+        account_spec = tmp_path / "account.yaml"
+        accounting_spec = tmp_path / "accounting.yaml"
+        account_spec.write_text(
+            "openapi: 3.1.0\ninfo: { title: A, version: '1.0' }\npaths: {}\n"
+            "components:\n  schemas:\n    User:\n      type: object\n      properties:\n        id: { type: string }\n"
+        )
+        accounting_spec.write_text(
+            "openapi: 3.1.0\ninfo: { title: B, version: '1.0' }\npaths: {}\n"
+            "components:\n  schemas:\n    Address:\n      type: object\n      properties:\n        city: { type: string }\n"
+            "    User:\n      type: object\n      properties:\n        address:\n          $ref: '#/components/schemas/Address'\n"
+        )
+        sub_services = {
+            "account": {"base_path": "/api/account", "spec_path": account_spec},
+            "accounting": {"base_path": "/api/accounting", "spec_path": accounting_spec},
+        }
+        bff = merge_sub_service_specs(sub_services)
+        schemas = bff["components"]["schemas"]
+        # AccountingUser must resolve Address ref to AccountingAddress (longest prefix), not AccountAddress
+        accounting_user = schemas.get("AccountingUser")
+        assert accounting_user is not None
+        addr_ref = accounting_user.get("properties", {}).get("address", {}).get("$ref")
+        assert addr_ref == "#/components/schemas/AccountingAddress"
+        # Both AccountUser and AccountingUser must exist
+        assert "AccountUser" in schemas
+        assert "AccountingUser" in schemas
+        assert "AccountingAddress" in schemas
+
+
+class TestMergePathsPerMethod:
+    """Paths are merged per HTTP method; duplicate path+method from different services raises."""
+
+    def test_same_path_different_methods_merged(self, tmp_path: Path) -> None:
+        # Service A: GET /items; Service B: POST /items -> merged path has both.
+        a_spec = tmp_path / "a.yaml"
+        b_spec = tmp_path / "b.yaml"
+        a_spec.write_text(
+            "openapi: 3.1.0\ninfo: { title: A, version: '1.0' }\npaths:\n  /items:\n    get:\n      operationId: listItems\n      responses: { '200': { description: OK } }\n"
+        )
+        b_spec.write_text(
+            "openapi: 3.1.0\ninfo: { title: B, version: '1.0' }\npaths:\n  /items:\n    post:\n      operationId: createItem\n      responses: { '201': { description: Created } }\n"
+        )
+        sub_services = {
+            "alpha": {"base_path": "/api/alpha", "spec_path": a_spec},
+            "beta": {"base_path": "/api/beta", "spec_path": b_spec},
+        }
+        bff = merge_sub_service_specs(sub_services)
+        path_def = bff["paths"].get("/items")
+        assert path_def is not None
+        assert "get" in path_def and path_def["get"].get("x-service") == "alpha"
+        assert "post" in path_def and path_def["post"].get("x-service") == "beta"
+
+    def test_same_path_same_method_different_services_raises(self, tmp_path: Path) -> None:
+        # Both services define GET /items -> ValueError.
+        a_spec = tmp_path / "a.yaml"
+        b_spec = tmp_path / "b.yaml"
+        a_spec.write_text(
+            "openapi: 3.1.0\ninfo: { title: A, version: '1.0' }\npaths:\n  /items:\n    get:\n      operationId: listA\n      responses: { '200': { description: OK } }\n"
+        )
+        b_spec.write_text(
+            "openapi: 3.1.0\ninfo: { title: B, version: '1.0' }\npaths:\n  /items:\n    get:\n      operationId: listB\n      responses: { '200': { description: OK } }\n"
+        )
+        sub_services = {
+            "alpha": {"base_path": "/api/alpha", "spec_path": a_spec},
+            "beta": {"base_path": "/api/beta", "spec_path": b_spec},
+        }
+        with pytest.raises(ValueError) as exc_info:
+            merge_sub_service_specs(sub_services)
+        assert "/items" in str(exc_info.value)
+        assert "get" in str(exc_info.value).lower() or "method" in str(exc_info.value).lower()
 
 
 # --- discover_sub_services (migrated from RERP) ---
