@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from brrtrouter_tooling.cli.parse_common import parse_flags, path_resolver, project_root_resolver
+from brrtrouter_tooling.cli.parse_common import parse_flags, project_root_resolver
 from brrtrouter_tooling.ports import PortRegistry, validate
 from brrtrouter_tooling.ports.layout import DEFAULT_LAYOUT
 
@@ -16,7 +16,7 @@ def run_ports_validate_argv() -> None:
     parsed, rest = parse_flags(
         args,
         ("project_root", "--project-root", Path.cwd, project_root_resolver),
-        ("registry_path", "--registry", None, path_resolver),
+        ("registry_path", "--registry", None, None),
     )
     for a in rest:
         if a != "--json":
@@ -32,6 +32,10 @@ def run_ports_validate_argv() -> None:
 
     if registry_path is None:
         registry_path = project_root / DEFAULT_LAYOUT["port_registry"]
+    else:
+        registry_path = Path(registry_path)
+        if not registry_path.is_absolute():
+            registry_path = project_root / registry_path
 
     registry = PortRegistry(registry_path, project_root)
     exit_code = validate(registry, project_root, json_out=json_out)

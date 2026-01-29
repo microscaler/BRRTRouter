@@ -29,11 +29,14 @@ def run_pre_commit_argv() -> None:
     sub = sys.argv[2].lower()
     args = sys.argv[3:]
 
-    parsed, _ = parse_flags(
+    parsed, rest = parse_flags(
         args,
         ("project_root", "--project-root", Path.cwd, project_root_resolver),
         ("workspace_dir", "--workspace-dir", lambda: "microservices", None),
     )
+    if rest:
+        print(f"Error: Unknown or incomplete args: {' '.join(rest)}", file=sys.stderr)
+        sys.exit(1)
     project_root = parsed["project_root"]
     workspace_dir = parsed["workspace_dir"]
 

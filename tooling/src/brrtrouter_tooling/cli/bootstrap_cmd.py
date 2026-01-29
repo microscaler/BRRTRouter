@@ -11,9 +11,10 @@ from brrtrouter_tooling.bootstrap.config import DEFAULT_BOOTSTRAP_LAYOUT
 from brrtrouter_tooling.cli.parse_common import parse_flags, project_root_resolver
 
 
-def _parse_layout_from_argv(args: list[str]) -> dict[str, Any]:
-    """Parse layout overrides from argv (--openapi-dir, --workspace-dir, etc.)."""
+def _parse_layout_from_argv(args: list[str]) -> tuple[dict[str, Any], list[str]]:
+    """Parse layout overrides from argv (--openapi-dir, --workspace-dir, etc.). Returns (layout, unknown_args)."""
     layout: dict[str, Any] = {}
+    unknown: list[str] = []
     i = 0
     keys = set(DEFAULT_BOOTSTRAP_LAYOUT)
     while i < len(args):
@@ -39,8 +40,9 @@ def _parse_layout_from_argv(args: list[str]) -> dict[str, Any]:
             layout["crate_name_prefix"] = args[i + 1]
             i += 2
         else:
+            unknown.append(args[i])
             i += 1
-    return layout
+    return layout, unknown
 
 
 def run_bootstrap_argv() -> None:
@@ -83,7 +85,11 @@ def run_bootstrap_argv() -> None:
     )
     project_root = parsed["project_root"]
     port = parsed["port"]
-    layout = _parse_layout_from_argv(rest) or None
+    layout, unknown = _parse_layout_from_argv(rest)
+    if unknown:
+        print(f"Error: Unknown or incomplete layout args: {' '.join(unknown)}", file=sys.stderr)
+        sys.exit(1)
+    layout = layout or None
     code = run_bootstrap_microservice(
         service_name=service_name,
         port=port,

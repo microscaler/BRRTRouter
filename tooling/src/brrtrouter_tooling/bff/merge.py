@@ -5,6 +5,7 @@ no separate apply step is needed."""
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,8 @@ from brrtrouter_tooling.helpers import (
     load_yaml_spec,
     to_pascal_case,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _update_refs_in_value(val: Any, old_name: str, new_name: str) -> None:
@@ -65,6 +68,7 @@ def _merge_one_sub_service(
     param_origin: dict[str, str],
 ) -> None:
     if not spec_path.exists():
+        logger.warning("Spec file not found for service %r: %s", sname, spec_path)
         return
     spec = load_yaml_spec(spec_path)
 

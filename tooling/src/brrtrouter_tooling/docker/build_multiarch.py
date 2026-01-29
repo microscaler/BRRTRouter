@@ -106,7 +106,7 @@ def run(
             )
             if pull_result.returncode != 0:
                 print(f"  Pull failed, building base image for {arch} locally...")
-                subprocess.run(
+                r = subprocess.run(
                     [
                         "docker",
                         "buildx",
@@ -123,8 +123,10 @@ def run(
                         ".",
                     ],
                     cwd=str(root),
-                    check=True,
                 )
+                if r.returncode != 0:
+                    print(f"❌ Failed to build base image for {arch}", file=sys.stderr)
+                    return 1
 
     print("🔨 Building Docker images for all architectures...")
     image_tags = []

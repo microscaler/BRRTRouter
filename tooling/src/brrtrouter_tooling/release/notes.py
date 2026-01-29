@@ -223,20 +223,28 @@ def run(
         )
         return 1
 
-    commits = _get_commits_since(project_root, ref)
-    template = _load_template(template_path)
-    format_instructions = template.replace("{{VERSION}}", version)
+    try:
+        commits = _get_commits_since(project_root, ref)
+        template = _load_template(template_path)
+        format_instructions = template.replace("{{VERSION}}", version)
+    except SystemExit:
+        return 1
 
     provider = (provider or os.environ.get("RELEASE_NOTES_PROVIDER") or "anthropic").strip().lower()
     if provider not in ("openai", "anthropic"):
         print(f"Invalid provider {provider!r}; must be 'openai' or 'anthropic'.", file=sys.stderr)
         return 1
-    if provider == "anthropic":
-        model = (model or os.environ.get("ANTHROPIC_MODEL") or "claude-sonnet-4-5-20250929").strip()
-        body = _call_anthropic(commits, format_instructions, version, model)
-    else:
-        model = (model or os.environ.get("OPENAI_MODEL") or "gpt-4o-mini").strip()
-        body = _call_openai(commits, format_instructions, version, model)
+    try:
+        if provider == "anthropic":
+            model = (
+                model or os.environ.get("ANTHROPIC_MODEL") or "claude-sonnet-4-5-20250929"
+            ).strip()
+            body = _call_anthropic(commits, format_instructions, version, model)
+        else:
+            model = (model or os.environ.get("OPENAI_MODEL") or "gpt-4o-mini").strip()
+            body = _call_openai(commits, format_instructions, version, model)
+    except SystemExit:
+        return 1
 
     if not (body or "").strip():
         print("Release notes generation produced empty output.", file=sys.stderr)
