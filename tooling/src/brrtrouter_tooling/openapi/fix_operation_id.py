@@ -5,10 +5,13 @@ Matches BRRTRouter linter rules (operation_id_casing): list_pets, get_user, crea
 
 from __future__ import annotations
 
+import logging
 import re
 from pathlib import Path
 
 from brrtrouter_tooling.helpers import find_openapi_files, is_snake_case, to_snake_case
+
+logger = logging.getLogger(__name__)
 
 # operationId line: groups (prefix, dq_value, sq_value, unquoted_value, trailing).
 _OPID_RE = re.compile(
@@ -68,6 +71,10 @@ def run(
     Returns (total_replacements, files_touched).
     """
     if not openapi_dir.is_dir():
+        logger.warning(
+            "openapi_dir is not a directory or does not exist: %s",
+            openapi_dir,
+        )
         return 0, 0
     base = rel_to or openapi_dir
     files = find_openapi_files(openapi_dir)

@@ -196,18 +196,20 @@ def run(  # noqa: C901
         platform = ARCH_PLATFORMS[arch]
         arch_tag = f"{image_name}:{tag}-{arch}"
         pl = platform.split("/")
+        args = [
+            "docker",
+            "manifest",
+            "annotate",
+            "--arch",
+            pl[1] if len(pl) > 1 else arch,
+            "--os",
+            pl[0],
+        ]
+        if len(pl) > 2:
+            args += ["--variant", pl[2]]
+        args += [manifest_tag, arch_tag]
         r = subprocess.run(
-            [
-                "docker",
-                "manifest",
-                "annotate",
-                "--arch",
-                pl[1] if len(pl) > 1 else arch,
-                "--os",
-                pl[0],
-                manifest_tag,
-                arch_tag,
-            ],
+            args,
             cwd=str(root),
             capture_output=True,
             text=True,
