@@ -6,60 +6,17 @@ Layout is configurable (openapi_dir, suite, workspace_dir, docker_dir, tiltfile,
 
 from __future__ import annotations
 
-import json
-import os
 import re
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 from brrtrouter_tooling.bootstrap.config import resolve_bootstrap_layout
-from brrtrouter_tooling.openapi.fix_operation_id import to_snake_case
-
-
-def _get_registry_path(project_root: Path, layout: dict[str, Any] | None = None) -> Path | None:
-    cfg = resolve_bootstrap_layout(layout)
-    p = (
-        Path(os.environ.get("RERP_PORT_REGISTRY", "")).resolve()
-        if os.environ.get("RERP_PORT_REGISTRY")
-        else (project_root / cfg["port_registry"])
-    )
-    return p if p.exists() else None
-
-
-def _get_port_from_registry(
-    project_root: Path, service_name: str, layout: dict[str, Any] | None = None
-) -> int | None:
-    path = _get_registry_path(project_root, layout)
-    if not path:
-        return None
-    with path.open() as f:
-        data = json.load(f)
-    return data.get("assignments", {}).get(service_name)
-
-
-def to_pascal_case(name: str) -> str:
-    return "".join(word.capitalize() for word in name.split("-"))
-
-
-def derive_binary_name(openapi_spec: dict[str, Any], service_name: str) -> str:
-    title = (openapi_spec.get("info") or {}).get("title", "")
-    if title:
-        binary_name = to_snake_case(title)
-        if not binary_name.endswith("_api"):
-            binary_name = (
-                binary_name + "_api"
-                if binary_name.endswith("_service")
-                else binary_name + "_service_api"
-            )
-        return binary_name
-    return f"{service_name.replace('-', '_')}_service_api"
-
-
-def load_openapi_spec(spec_path: Path) -> dict[str, Any]:
-    with spec_path.open() as f:
-        return yaml.safe_load(f)
+from brrtrouter_tooling.bootstrap.helpers import (
+    _get_port_from_registry,
+    derive_binary_name,
+    load_openapi_spec,
+)
+from brrtrouter_tooling.helpers import to_pascal_case
 
 
 def create_dockerfile(

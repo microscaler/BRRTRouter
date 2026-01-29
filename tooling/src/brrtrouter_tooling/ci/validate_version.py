@@ -1,53 +1,9 @@
 """Validate version to prevent downgrades."""
 
 import os
-import re
 import sys
 
-
-def compare_versions(v1: str, v2: str) -> int:
-    """Compare two version strings. Returns positive if v1 > v2, negative if v1 < v2, zero if equal."""
-    v1 = v1.lstrip("v")
-    v2 = v2.lstrip("v")
-
-    def parse_version(v: str) -> tuple[int, int, int, str | None]:
-        m = re.match(r"^(\d+)\.(\d+)\.(\d+)(?:-([\w.-]+))?$", v)
-        if not m:
-            msg = "Invalid version format: " + str(v)
-            raise ValueError(msg)
-        return (int(m.group(1)), int(m.group(2)), int(m.group(3)), m.group(4))
-
-    try:
-        major1, minor1, patch1, prerelease1 = parse_version(v1)
-        major2, minor2, patch2, prerelease2 = parse_version(v2)
-    except ValueError as e:
-        msg = "Version comparison error: " + str(e)
-        raise SystemExit(msg) from e
-
-    if major1 != major2:
-        return major1 - major2
-    if minor1 != minor2:
-        return minor1 - minor2
-    if patch1 != patch2:
-        return patch1 - patch2
-
-    if prerelease1 is None and prerelease2 is not None:
-        return 1
-    if prerelease1 is not None and prerelease2 is None:
-        return -1
-    if prerelease1 is None and prerelease2 is None:
-        return 0
-
-    rc_match1 = re.match(r"^rc\.(\d+)$", prerelease1)
-    rc_match2 = re.match(r"^rc\.(\d+)$", prerelease2)
-    if rc_match1 and rc_match2:
-        return int(rc_match1.group(1)) - int(rc_match2.group(1))
-
-    if prerelease1 < prerelease2:
-        return -1
-    if prerelease1 > prerelease2:
-        return 1
-    return 0
+from brrtrouter_tooling.helpers import compare_versions
 
 
 def validate_version(current: str, latest: str | None, allow_same: bool = False) -> int:
@@ -55,7 +11,11 @@ def validate_version(current: str, latest: str | None, allow_same: bool = False)
     if latest is None:
         return 0
 
-    cmp_val = compare_versions(current, latest)
+    try:
+        cmp_val = compare_versions(current, latest)
+    except ValueError as e:
+        msg = "Version comparison error: " + str(e)
+        raise SystemExit(msg) from e
 
     if cmp_val > 0:
         return 0

@@ -13,20 +13,24 @@ import re
 import sys
 from pathlib import Path
 
+from brrtrouter_tooling.helpers import find_cargo_tomls
+
 VERSION_SECTIONS = ("package", "workspace.package")
 
-SKIP_PARTS = (
-    "target",
-    ".git",
-    ".venv",
-    "venv",
-    "env",
-    "__pycache__",
-    "node_modules",
-    "node_packages",
-    "build",
-    "dist",
-    "tmp",
+SKIP_PARTS = frozenset(
+    {
+        "target",
+        ".git",
+        ".venv",
+        "venv",
+        "env",
+        "__pycache__",
+        "node_modules",
+        "node_packages",
+        "build",
+        "dist",
+        "tmp",
+    }
 )
 
 
@@ -141,25 +145,6 @@ def _set_workspace_package_version(path: Path, new: str) -> bool:
     return changed
 
 
-def _cargo_toml_paths(project_root: Path) -> list[Path]:
-    """All Cargo.toml under project_root excluding SKIP_PARTS."""
-    out: list[Path] = []
-    for p in project_root.rglob("Cargo.toml"):
-        try:
-            rel = p.relative_to(project_root)
-        except ValueError:
-            continue
-        if any(part in rel.parts for part in SKIP_PARTS):
-            continue
-        try:
-            if not p.is_file():
-                continue
-        except OSError:
-            continue
-        out.append(p)
-    return sorted(out)
-
-
 def run(
     project_root: Path,
     bump: str,
@@ -175,7 +160,7 @@ def run(
     new = _next_version(old, bump)
 
     updated: list[Path] = []
-    for p in _cargo_toml_paths(project_root):
+    for p in find_cargo_tomls(project_root, exclude=SKIP_PARTS):
         try:
             if _replace_in_file(p, old, new):
                 updated.append(p.relative_to(project_root))

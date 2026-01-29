@@ -14,6 +14,8 @@ from pathlib import Path
 
 import certifi
 
+from brrtrouter_tooling.helpers import read_file_or_default
+
 DEFAULT_TEMPLATE = """# Release v{{VERSION}}
 
 ## Summary
@@ -70,9 +72,7 @@ def _get_commits_since(project_root: Path, ref: str) -> list[str]:
 
 
 def _load_template(path: Path | None) -> str:
-    if path is not None and path.is_file():
-        return path.read_text()
-    return DEFAULT_TEMPLATE
+    return read_file_or_default(path, DEFAULT_TEMPLATE)
 
 
 def _call_openai(commits: list[str], format_instructions: str, version: str, model: str) -> str:

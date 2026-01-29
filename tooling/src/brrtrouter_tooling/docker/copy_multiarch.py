@@ -8,10 +8,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from brrtrouter_tooling.build.host_aware import ARCH_TARGETS
-
-
-def _default_binary_name(system: str, module: str) -> str:
-    return f"rerp_{system}_{module.replace('-', '_')}_impl"
+from brrtrouter_tooling.helpers import default_binary_name
 
 
 def run(
@@ -34,7 +31,7 @@ def run(
         )
         return 1
 
-    fn = binary_name_fn or _default_binary_name
+    fn = binary_name_fn or default_binary_name
     root = project_root
     binary_name = fn(system, module)
     microservices_target = root / workspace_dir / "target"

@@ -6,6 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from brrtrouter_tooling.helpers import find_cargo_tomls
+
 log = logging.getLogger(__name__)
 
 BRRTRouter_GIT = '{ git = "https://github.com/microscaler/BRRTRouter", branch = "main" }'
@@ -21,21 +23,6 @@ PATH_DEP_LIFEGUARD = re.compile(
 )
 # Match path = "..." or path = '...' and optional trailing comma (for in-place replacement)
 _PATH_ENTRY = re.compile(r'path\s*=\s*["\'][^"\']*["\'][\s,]*')
-
-
-def find_cargo_tomls(root: Path) -> list[Path]:
-    """All Cargo.toml under root, excluding target, node_modules, .git."""
-    exclude = {"target", "node_modules", ".git"}
-    out = []
-    for p in root.rglob("Cargo.toml"):
-        try:
-            rel = p.relative_to(root)
-        except ValueError:
-            continue
-        if any(part in exclude for part in rel.parts):
-            continue
-        out.append(p)
-    return sorted(out)
 
 
 def _key_brrtrouter(full: str) -> str:

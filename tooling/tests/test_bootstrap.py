@@ -236,14 +236,14 @@ class TestRunBootstrapMicroservice:
 
 class TestGetPortFromRegistry:
     def test_returns_port_when_registry_has_assignment(self, tmp_path: Path) -> None:
-        from brrtrouter_tooling.bootstrap.microservice import _get_port_from_registry
+        from brrtrouter_tooling.bootstrap.helpers import _get_port_from_registry
 
         (tmp_path / "port-registry.json").write_text('{"assignments": {"svc1": 9100}}')
         got = _get_port_from_registry(tmp_path, "svc1", {"port_registry": "port-registry.json"})
         assert got == 9100
 
     def test_returns_none_when_registry_missing(self, tmp_path: Path) -> None:
-        from brrtrouter_tooling.bootstrap.microservice import _get_port_from_registry
+        from brrtrouter_tooling.bootstrap.helpers import _get_port_from_registry
 
         got = _get_port_from_registry(tmp_path, "svc1", {"port_registry": "nonexistent.json"})
         assert got is None

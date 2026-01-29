@@ -7,17 +7,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-
-def _fibonacci_backoff_sequence(max_total_seconds: int = 300) -> list[int]:
-    """Generate Fibonacci backoff sequence up to max_total_seconds."""
-    sequence = []
-    total = 0
-    a, b = 1, 1
-    while total + a <= max_total_seconds:
-        sequence.append(a)
-        total += a
-        a, b = b, a + b
-    return sequence
+from brrtrouter_tooling.helpers import fibonacci_backoff_sequence
 
 
 def get_latest_tag(repo: str, token: str, max_retries: int = 20) -> str | None:
@@ -32,7 +22,7 @@ def get_latest_tag(repo: str, token: str, max_retries: int = 20) -> str | None:
         "User-Agent": "brrtrouter-tooling",
     }
 
-    backoff_sequence = _fibonacci_backoff_sequence(max_total_seconds=300)
+    backoff_sequence = fibonacci_backoff_sequence(max_total_seconds=300)
     last_error: Exception | None = None
 
     for attempt in range(max_retries):

@@ -11,7 +11,7 @@ import pytest
 
 from brrtrouter_tooling.ci import get_latest_tag
 from brrtrouter_tooling.ci import run_get_latest_tag as run
-from brrtrouter_tooling.ci.get_latest_tag import _fibonacci_backoff_sequence
+from brrtrouter_tooling.helpers import fibonacci_backoff_sequence
 
 # Module under test (use sys.modules so we get the .py module, not ci's re-exported function).
 get_latest_tag_module = sys.modules["brrtrouter_tooling.ci.get_latest_tag"]
@@ -176,7 +176,7 @@ class TestGetLatestTag:
 
     def test_fibonacci_backoff_sequence(self) -> None:
         """Test Fibonacci backoff sequence generation."""
-        seq = _fibonacci_backoff_sequence(max_total_seconds=300)
+        seq = fibonacci_backoff_sequence(max_total_seconds=300)
         assert seq[0] == 1
         assert seq[1] == 1
         assert seq[2] == 2
@@ -186,7 +186,7 @@ class TestGetLatestTag:
         assert seq[6] == 13
         assert sum(seq) <= 300
 
-        seq_small = _fibonacci_backoff_sequence(max_total_seconds=10)
+        seq_small = fibonacci_backoff_sequence(max_total_seconds=10)
         assert sum(seq_small) <= 10
         assert seq_small == [1, 1, 2, 3]
 

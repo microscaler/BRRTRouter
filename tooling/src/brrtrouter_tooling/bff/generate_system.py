@@ -9,27 +9,9 @@ from pathlib import Path
 
 import yaml
 
-from brrtrouter_tooling.bff._text import _to_pascal_case
 from brrtrouter_tooling.bff.discovery import discover_sub_services
 from brrtrouter_tooling.bff.merge import merge_sub_service_specs
-
-
-def _description_from_readme(
-    openapi_dir: Path, system: str, system_title: str, default: str
-) -> str:
-    readme = openapi_dir / system / "README.md"
-    if not readme.exists():
-        return default
-    content = readme.read_text()
-    if "## Overview" not in content:
-        return default
-    section = content.split("## Overview")[1].split("##")[0].strip()
-    for line in section.split("\n"):
-        line = line.strip()
-        if line and not line.startswith("#"):
-            return line
-    return default
-
+from brrtrouter_tooling.helpers import extract_readme_overview, to_pascal_case
 
 # Default parameters injected into BFF (RERP compatibility).
 _DEFAULT_PARAMETERS = {
@@ -75,10 +57,10 @@ def generate_system_bff_spec(
     out = output_path if output_path is not None else (openapi_dir / system / "openapi.yaml")
     system_title = system.replace("-", " ").title()
     default_desc = f"System-level API gateway for all {system_title} services"
-    system_description = _description_from_readme(openapi_dir, system, system_title, default_desc)
+    system_description = extract_readme_overview(openapi_dir / system / "README.md", default_desc)
 
     service_routes = [
-        f"- `{cfg['base_path']}/*` → {_to_pascal_case(sname)} Service"
+        f"- `{cfg['base_path']}/*` → {to_pascal_case(sname)} Service"
         for sname, cfg in sorted(sub_services.items())
     ]
 

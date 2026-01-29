@@ -8,14 +8,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-import yaml
-
-from brrtrouter_tooling.bff._text import _to_pascal_case
-
-
-def _load_spec(p: Path) -> dict[str, Any]:
-    with p.open() as f:
-        return yaml.safe_load(f)
+from brrtrouter_tooling.helpers import (
+    downstream_path,
+    load_yaml_spec,
+    to_pascal_case,
+)
 
 
 def _update_refs_in_value(val: Any, old_name: str, new_name: str) -> None:
@@ -35,7 +32,7 @@ def _merge_schemas(
     schemas: dict[str, Any],
 ) -> None:
     for schema_name, schema_def in schemas.items():
-        prefixed = f"{_to_pascal_case(service_name)}{schema_name}"
+        prefixed = f"{to_pascal_case(service_name)}{schema_name}"
         all_schemas[prefixed] = dict(schema_def) if isinstance(schema_def, dict) else schema_def
         if isinstance(schema_def, dict):
             _update_refs_in_value(all_schemas[prefixed], schema_name, prefixed)
@@ -57,13 +54,6 @@ def _update_refs_in_paths(paths: dict[str, Any], old_name: str, new_name: str) -
                         _update_refs_in_value(r["content"], old_name, new_name)
 
 
-def _downstream_path(base_path: str, bff_path: str) -> str:
-    """Exact path on downstream: base_path + path (normalized)."""
-    base = base_path.rstrip("/")
-    path = bff_path.strip("/")
-    return f"{base}/{path}" if path else base
-
-
 def _merge_one_sub_service(
     sname: str,
     base_path: str,
@@ -75,7 +65,7 @@ def _merge_one_sub_service(
 ) -> None:
     if not spec_path.exists():
         return
-    spec = _load_spec(spec_path)
+    spec = load_yaml_spec(spec_path)
 
     if "tags" in spec:
         for t in spec["tags"]:
@@ -108,7 +98,7 @@ def _merge_one_sub_service(
                 op = dict(op)
                 op["x-service"] = sname
                 op["x-service-base-path"] = base_path
-                op["x-brrtrouter-downstream-path"] = _downstream_path(base_path, path)
+                op["x-brrtrouter-downstream-path"] = downstream_path(base_path, path)
                 if method in existing:
                     existing_service = (existing.get(method) or {}).get("x-service")
                     if existing_service is not None and existing_service != sname:
@@ -123,7 +113,7 @@ def _merge_one_sub_service(
     if "components" in spec and "schemas" in spec["components"]:
         _merge_schemas(all_schemas, sname, spec["components"]["schemas"])
         for schema_name in spec["components"]["schemas"]:
-            prefixed = f"{_to_pascal_case(sname)}{schema_name}"
+            prefixed = f"{to_pascal_case(sname)}{schema_name}"
             _update_refs_in_paths(all_paths, schema_name, prefixed)
 
     if "components" in spec and "parameters" in spec.get("components", {}):
@@ -138,7 +128,7 @@ def _schema_name_mapping(
 ) -> dict[str, list[str]]:
     mapping: dict[str, list[str]] = {}
     for prefixed in sorted(all_schemas.keys()):
-        prefixes = [_to_pascal_case(sname) for sname in sub_services]
+        prefixes = [to_pascal_case(sname) for sname in sub_services]
         matching = [p for p in prefixes if prefixed.startswith(p)]
         prefix = max(matching, key=len) if matching else None
         if prefix is not None:
@@ -156,9 +146,9 @@ def _service_prefix_for_schema(prefixed_key: str, sub_services: dict[str, Any]) 
     the longest match is used so AccountingUser maps to Accounting, not Account.
     """
     matching = [
-        _to_pascal_case(sname)
+        to_pascal_case(sname)
         for sname in sub_services
-        if prefixed_key.startswith(_to_pascal_case(sname))
+        if prefixed_key.startswith(to_pascal_case(sname))
     ]
     return max(matching, key=len) if matching else None
 
@@ -214,12 +204,18 @@ def _add_error_schema(
                 },
             },
         }
+    matches = []
     for sname in sorted(sub_services.keys()):
-        pe = f"{_to_pascal_case(sname)}Error"
+        pe = f"{to_pascal_case(sname)}Error"
         if pe in all_schemas:
-            _update_refs_in_paths(all_paths, "Error", pe)
-            all_schemas["Error"] = {"$ref": f"#/components/schemas/{pe}"}
-            break
+            matches.append(pe)
+    if len(matches) > 1:
+        msg = "Multiple service Error schemas found: " + ", ".join(matches)
+        raise ValueError(msg)
+    if len(matches) == 1:
+        pe = matches[0]
+        _update_refs_in_paths(all_paths, "Error", pe)
+        all_schemas["Error"] = {"$ref": f"#/components/schemas/{pe}"}
 
 
 def merge_sub_service_specs(

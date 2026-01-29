@@ -7,6 +7,7 @@ from pathlib import Path
 from brrtrouter_tooling.bff.components import merge_components_and_security
 from brrtrouter_tooling.bff.config import load_suite_config
 from brrtrouter_tooling.bff.merge import merge_sub_service_specs
+from brrtrouter_tooling.helpers import validate_openapi_spec
 
 
 def generate_bff_spec(
@@ -72,20 +73,6 @@ def generate_bff_spec(
         )
 
     if validate:
-        _validate_spec(out)
+        validate_openapi_spec(out)
 
     return out
-
-
-def _validate_spec(path: Path) -> None:
-    """Basic validation: spec loads and has openapi, paths, info."""
-    import yaml
-
-    with path.open() as f:
-        spec = yaml.safe_load(f)
-    if not spec or spec.get("openapi") != "3.1.0":
-        msg = f"Invalid or non-OpenAPI 3.1.0 spec: {path}"
-        raise ValueError(msg)
-    if "paths" not in spec or "info" not in spec:
-        msg = f"Spec missing paths or info: {path}"
-        raise ValueError(msg)

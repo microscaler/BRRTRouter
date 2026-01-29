@@ -233,6 +233,33 @@ class TestMergePathsPerMethod:
         assert "get" in str(exc_info.value).lower() or "method" in str(exc_info.value).lower()
 
 
+class TestMergeMultipleErrorSchemas:
+    """When multiple sub-services define a per-service Error schema, merge raises."""
+
+    def test_multiple_error_schemas_raises(self, tmp_path: Path) -> None:
+        # Both auth and idam define Error; after merge we get AuthError and IdamError -> ambiguous.
+        auth_spec = tmp_path / "auth.yaml"
+        idam_spec = tmp_path / "idam.yaml"
+        auth_spec.write_text(
+            "openapi: 3.1.0\ninfo: { title: Auth, version: '1.0' }\npaths: {}\n"
+            "components:\n  schemas:\n    Error:\n      type: object\n      properties:\n        code: { type: string }\n"
+        )
+        idam_spec.write_text(
+            "openapi: 3.1.0\ninfo: { title: Idam, version: '1.0' }\npaths: {}\n"
+            "components:\n  schemas:\n    Error:\n      type: object\n      properties:\n        code: { type: string }\n"
+        )
+        sub_services = {
+            "auth": {"base_path": "/api/auth", "spec_path": auth_spec},
+            "idam": {"base_path": "/api/idam", "spec_path": idam_spec},
+        }
+        with pytest.raises(ValueError) as exc_info:
+            merge_sub_service_specs(sub_services)
+        msg = str(exc_info.value)
+        assert "Multiple service Error schemas" in msg
+        assert "AuthError" in msg
+        assert "IdamError" in msg
+
+
 # --- discover_sub_services (migrated from RERP) ---
 
 

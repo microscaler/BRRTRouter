@@ -8,33 +8,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-
-def is_snake_case(s: str) -> bool:
-    """Match BRRTRouter linter: non-empty, first is lower or '_', all lower/digit/underscore."""
-    if not s:
-        return False
-    if s[0] != "_" and not s[0].islower():
-        return False
-    return all(c.islower() or c.isdigit() or c == "_" for c in s)
-
-
-def to_snake_case(s: str) -> str:
-    """Port of BRRTRouter src/linter.rs to_snake_case. Converts camelCase, kebab-case, spaces."""
-    result: list[str] = []
-    for ch in s:
-        if ch.isupper():
-            if result and result[-1] != "_":
-                result.append("_")
-            result.append(ch.lower())
-        elif ch.islower() or ch.isdigit():
-            result.append(ch)
-        elif ch in "- ":
-            if result and result[-1] != "_":
-                result.append("_")
-        else:
-            result.append(ch)
-    return "".join(result)
-
+from brrtrouter_tooling.helpers import find_openapi_files, is_snake_case, to_snake_case
 
 # operationId line: groups (prefix, dq_value, sq_value, unquoted_value, trailing).
 _OPID_RE = re.compile(
@@ -42,14 +16,6 @@ _OPID_RE = re.compile(
     r"(?:\"([^\"]*)\"|'([^']*)'|([A-Za-z0-9_\-]+))"
     r"(\s*(?:#.*)?)$"
 )
-
-
-def find_openapi_files(root: Path) -> list[Path]:
-    """Find openapi.yaml and openapi.yml under root (rglob)."""
-    out: list[Path] = []
-    for name in ("openapi.yaml", "openapi.yml"):
-        out.extend(root.rglob(name))
-    return sorted(out)
 
 
 def process_file(path: Path, dry_run: bool) -> tuple[int, list[tuple[int, str, str]]]:
