@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -12,6 +13,8 @@ ARCH_PLATFORMS = {
     "arm64": "linux/arm64",
     "arm7": "linux/arm/v7",
 }
+
+_SAFE_NAME = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 def run(
@@ -26,6 +29,13 @@ def run(
     binary_name: str | None = None,
 ) -> int:
     """Build binaries (via build_cmd), copy, buildx images, manifest, optional push. Returns 0 or 1."""
+    if not _SAFE_NAME.match(system) or not _SAFE_NAME.match(module):
+        print(
+            "❌ system and module must contain only letters, digits, underscore, and hyphen",
+            file=sys.stderr,
+        )
+        return 1
+
     root = project_root
 
     template_path = root / "docker" / "microservices" / "Dockerfile.template"

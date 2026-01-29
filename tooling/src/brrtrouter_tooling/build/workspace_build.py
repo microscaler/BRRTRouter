@@ -128,6 +128,7 @@ def build_package_with_options(
     no_jemalloc = rust_target == "armv7-unknown-linux-musleabihf"
     base = ["--no-default-features"] if no_jemalloc else []
 
+    env = {**os.environ, **_get_cargo_env(rust_target)}
     try:
         if use_cross:
             cmd = [
@@ -140,7 +141,7 @@ def build_package_with_options(
                 "-p",
                 package_name,
             ] + base + rel
-            subprocess.run(cmd, check=True, cwd=str(project_root))
+            subprocess.run(cmd, check=True, cwd=str(project_root), env=env)
         elif use_zigbuild:
             cmd = [
                 "cargo",
@@ -152,7 +153,7 @@ def build_package_with_options(
                 "-p",
                 package_name,
             ] + base + rel
-            subprocess.run(cmd, check=True, cwd=str(project_root))
+            subprocess.run(cmd, check=True, cwd=str(project_root), env=env)
         else:
             cmd = [
                 "cargo",
@@ -164,7 +165,6 @@ def build_package_with_options(
                 "-p",
                 package_name,
             ] + base + rel
-            env = {**os.environ, **_get_cargo_env(rust_target)}
             subprocess.run(cmd, check=True, cwd=str(project_root), env=env)
         return 0
     except subprocess.CalledProcessError:

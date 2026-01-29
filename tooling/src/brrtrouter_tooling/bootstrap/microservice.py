@@ -14,9 +14,8 @@ from brrtrouter_tooling.bootstrap.config import resolve_bootstrap_layout
 from brrtrouter_tooling.bootstrap.helpers import (
     _get_port_from_registry,
     derive_binary_name,
-    load_openapi_spec,
 )
-from brrtrouter_tooling.helpers import to_pascal_case
+from brrtrouter_tooling.helpers import load_yaml_spec, to_pascal_case
 
 
 def create_dockerfile(
@@ -43,7 +42,7 @@ COPY ./build_artifacts/{binary_name} /app/{binary_name}
 RUN chmod +x /app/{binary_name}
 
 RUN mkdir -p /app/config /app/doc /app/static_site && \\
-    chmod -R 777 /app
+    chmod -R 755 /app
 
 COPY ./{workspace_dir}/{suite}/{service_name}/impl/config /app/config
 COPY ./{workspace_dir}/{suite}/{service_name}/gen/doc /app/doc
@@ -252,7 +251,9 @@ def _update_gen_cargo_toml(cargo_path: Path, service_name: str, crate_name_prefi
                 fc = rust_file.read_text()
                 if "rusty_money::Money" in fc or "Money<" in fc:
                     uses_money = True
-                if "rust_decimal::Decimal" in fc or "Decimal" in fc:
+                if "rust_decimal::Decimal" in fc or re.search(
+                    r":\s*Decimal\b|<Decimal>|Decimal::", fc
+                ):
                     uses_decimal = True
                 if uses_money and uses_decimal:
                     break
@@ -328,8 +329,9 @@ def _generate_impl_with_brrtrouter(
     if impl_cargo.exists():
         _fix_impl_cargo_naming(impl_cargo, service_name, crate_name_prefix)
     impl_main = impl_dir / "src" / "main.rs"
+    gen_cargo = impl_dir.parent / "gen" / "Cargo.toml"
     if impl_main.exists():
-        _fix_impl_main_naming(impl_main, service_name, crate_name_prefix)
+        _fix_impl_main_naming(impl_main, service_name, crate_name_prefix, gen_cargo_toml=gen_cargo)
     print("✅ Generated impl crate with BRRTRouter")
 
 
@@ -359,7 +361,30 @@ def _fix_impl_cargo_naming(cargo_path: Path, service_name: str, crate_name_prefi
     cargo_path.write_text(content)
 
 
-def _fix_impl_main_naming(main_path: Path, service_name: str, crate_name_prefix: str) -> None:
+def _read_gen_crate_name_from_cargo_toml(gen_cargo_toml: Path) -> str | None:
+    """Read [package] name from gen Cargo.toml. Returns None if not found."""
+    if not gen_cargo_toml.exists():
+        return None
+    text = gen_cargo_toml.read_text()
+    in_package = False
+    for line in text.splitlines():
+        s = line.strip()
+        if s.startswith("["):
+            in_package = s.strip("[]").strip() == "package"
+            continue
+        if in_package:
+            m = re.match(r'name\s*=\s*"([^"]+)"', line)
+            if m:
+                return m.group(1)
+    return None
+
+
+def _fix_impl_main_naming(
+    main_path: Path,
+    service_name: str,
+    crate_name_prefix: str,
+    gen_cargo_toml: Path | None = None,
+) -> None:
     """Replace only the gen-crate use (e.g. use pet_store_gen::) with the actual gen crate name.
 
     Do not replace std::, serde::, brrtrouter::, clap::, etc.
@@ -369,8 +394,17 @@ def _fix_impl_main_naming(main_path: Path, service_name: str, crate_name_prefix:
     service_snake = service_name.replace("-", "_")
     gen_crate_name = f"{crate_name_prefix}_{service_snake}_gen"
     content = main_path.read_text()
-    # Only replace use <name>_gen:: (the gen crate import), not use std::, use brrtrouter::, etc.
-    content = re.sub(r"use \w+_gen::", f"use {gen_crate_name}::", content)
+    original_gen_name = (
+        _read_gen_crate_name_from_cargo_toml(gen_cargo_toml) if gen_cargo_toml else None
+    )
+    if original_gen_name:
+        content = re.sub(
+            re.escape(f"use {original_gen_name}::"),
+            f"use {gen_crate_name}::",
+            content,
+        )
+    else:
+        content = re.sub(r"use \w+_gen::", f"use {gen_crate_name}::", content)
     main_path.write_text(content)
 
 
@@ -428,7 +462,7 @@ def run_bootstrap_microservice(
         print(f"❌ OpenAPI spec not found: {spec_path}")
         return 1
 
-    openapi_spec = load_openapi_spec(spec_path)
+    openapi_spec = load_yaml_spec(spec_path)
     binary_name = derive_binary_name(openapi_spec, service_name)
     print(f"🚀 Bootstrapping {service_name} (port {port}, binary {binary_name})")
 

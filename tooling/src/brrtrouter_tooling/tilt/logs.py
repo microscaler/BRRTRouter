@@ -18,6 +18,9 @@ def _item_name(item: object) -> str | None:
 
 def run(component: str, project_root: Path) -> int:
     """Run tilt logs <component> --follow. Returns exit code from tilt logs."""
+    if not project_root.is_dir():
+        print(f"[ERROR] Project root is not a directory: {project_root}", file=sys.stderr)
+        return 1
     if not shutil.which("tilt"):
         print("[ERROR] Tilt is not installed.", file=sys.stderr)
         return 1
@@ -25,6 +28,7 @@ def run(component: str, project_root: Path) -> int:
         ["tilt", "get", "uiresources", "--format", "json"],
         capture_output=True,
         text=True,
+        cwd=project_root,
     )
     if r.returncode != 0:
         print("[ERROR] Tilt is not running or not connected.", file=sys.stderr)
@@ -45,4 +49,7 @@ def run(component: str, project_root: Path) -> int:
             file=sys.stderr,
         )
         return 1
-    return subprocess.run(["tilt", "logs", component, "--follow"]).returncode
+    return subprocess.run(
+        ["tilt", "logs", component, "--follow"],
+        cwd=project_root,
+    ).returncode

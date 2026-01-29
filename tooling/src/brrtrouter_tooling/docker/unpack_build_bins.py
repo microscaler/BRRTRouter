@@ -38,7 +38,7 @@ def run(
         count = 0
         with zipfile.ZipFile(z, "r") as zh:
             for name in zh.namelist():
-                if "/" not in name or name.startswith("/") or ".." in name:
+                if name.startswith("/") or ".." in name:
                     continue
                 zh.extract(name, dest)
                 count += 1

@@ -24,7 +24,8 @@ def process_file(path: Path, dry_run: bool) -> tuple[int, list[tuple[int, str, s
     lines = text.splitlines(keepends=True)
     changes: list[tuple[int, str, str]] = []
     for i, line in enumerate(lines):
-        m = _OPID_RE.match(line.rstrip("\n\r"))
+        stripped = line.rstrip("\r\n")
+        m = _OPID_RE.match(stripped)
         if not m:
             continue
         raw = m.group(2) or m.group(3) or m.group(4)
@@ -34,9 +35,13 @@ def process_file(path: Path, dry_run: bool) -> tuple[int, list[tuple[int, str, s
         if new_val == raw:
             continue
         prefix, _, _, _, trailing = m.groups()
-        new_line = f"{prefix}{new_val}{trailing}\n"
-        if not line.endswith("\n"):
-            new_line = new_line.rstrip("\n")
+        if line.endswith("\r\n"):
+            line_end = "\r\n"
+        elif line.endswith("\n"):
+            line_end = "\n"
+        else:
+            line_end = ""
+        new_line = f"{prefix}{new_val}{trailing}{line_end}"
         changes.append((i, raw, new_val))
         lines[i] = new_line
 

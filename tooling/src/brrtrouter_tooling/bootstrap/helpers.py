@@ -8,15 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from brrtrouter_tooling.bootstrap.config import resolve_bootstrap_layout
-from brrtrouter_tooling.helpers import (
-    load_yaml_spec,
-    to_snake_case,
-)
-
-
-def load_openapi_spec(spec_path: Path) -> dict[str, Any]:
-    """Load OpenAPI YAML spec from path."""
-    return load_yaml_spec(spec_path)
+from brrtrouter_tooling.helpers import to_snake_case
 
 
 def _get_registry_path(project_root: Path, layout: dict[str, Any] | None = None) -> Path | None:

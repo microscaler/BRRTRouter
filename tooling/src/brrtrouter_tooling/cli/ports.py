@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from brrtrouter_tooling.cli.parse_common import parse_flags, path_resolver, project_root_resolver
 from brrtrouter_tooling.ports import PortRegistry, validate
 from brrtrouter_tooling.ports.layout import DEFAULT_LAYOUT
 
@@ -12,28 +13,22 @@ from brrtrouter_tooling.ports.layout import DEFAULT_LAYOUT
 def run_ports_validate_argv() -> None:
     """Parse argv for brrtrouter ports validate and run."""
     args = sys.argv[3:]
-    project_root = Path.cwd()
-    registry_path: Path | None = None
-    json_out = False
-
-    i = 0
-    while i < len(args):
-        if args[i] == "--project-root" and i + 1 < len(args):
-            project_root = Path(args[i + 1]).resolve()
-            i += 2
-        elif args[i] == "--registry" and i + 1 < len(args):
-            registry_path = Path(args[i + 1]).resolve()
-            i += 2
-        elif args[i] == "--json":
-            json_out = True
-            i += 1
-        else:
-            print(f"Error: Unknown argument: {args[i]}", file=sys.stderr)
+    parsed, rest = parse_flags(
+        args,
+        ("project_root", "--project-root", Path.cwd, project_root_resolver),
+        ("registry_path", "--registry", None, path_resolver),
+    )
+    for a in rest:
+        if a != "--json":
+            print(f"Error: Unknown argument: {a}", file=sys.stderr)
             print(
                 "Usage: brrtrouter ports validate [--project-root <path>] [--registry <path>] [--json]",
                 file=sys.stderr,
             )
             sys.exit(1)
+    project_root = parsed["project_root"]
+    registry_path = parsed["registry_path"]
+    json_out = "--json" in rest
 
     if registry_path is None:
         registry_path = project_root / DEFAULT_LAYOUT["port_registry"]

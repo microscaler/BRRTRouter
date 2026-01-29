@@ -183,7 +183,7 @@ def _update_all_refs_in_value(
                         candidates = [p for p in candidates if p.startswith(service_prefix)]
                     for p in candidates:
                         if p in all_schemas:
-                            val["$ref"] = ref.replace(unprefixed, p)
+                            val["$ref"] = f"#/components/schemas/{p}"
                             break
         for v in val.values():
             _update_all_refs_in_value(v, mapping, all_schemas, service_prefix)

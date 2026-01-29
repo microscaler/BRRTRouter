@@ -78,11 +78,11 @@ def patch_file(
         text = text.replace(old, patched, 1)
 
     if "BRRTRouter" in text and re.search(r'path\s*=\s*["\'][^"\']*BRRTRouter', text):
-        print(f"error: {p} still contains path to BRRTRouter after patch", file=sys.stderr)
-        sys.exit(1)
+        msg = f"{p} still contains path to BRRTRouter after patch"
+        raise ValueError(msg)
     if re.search(r'path\s*=\s*["\'][^"\']*lifeguard', text):
-        print(f"error: {p} still contains path to lifeguard after patch", file=sys.stderr)
-        sys.exit(1)
+        msg = f"{p} still contains path to lifeguard after patch"
+        raise ValueError(msg)
 
     if not dry_run:
         p.write_text(text)
@@ -107,11 +107,8 @@ def run_cargo_update(workspace_dir: Path) -> None:
                         "Skipping cargo update (gen crates may not exist): %s", combined[:200]
                     )
                     continue
-                print(
-                    f"error: cargo update failed in {workspace_dir}: {r.stderr or r.stdout}",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
+                msg = f"cargo update failed in {workspace_dir}: {r.stderr or r.stdout}"
+                raise RuntimeError(msg)
         except FileNotFoundError as e:
             log.debug("cargo not in PATH: %s", e)
         except subprocess.CalledProcessError as e:
@@ -121,8 +118,8 @@ def run_cargo_update(workspace_dir: Path) -> None:
             if "no matching package named" in combined and re.search(r'_gen["\'`\s]', combined):
                 log.debug("Skipping cargo update (gen crates may not exist): %s", combined[:200])
                 continue
-            print(f"error: cargo update failed in {workspace_dir}: {combined}", file=sys.stderr)
-            sys.exit(1)
+            msg = f"cargo update failed in {workspace_dir}: {combined}"
+            raise RuntimeError(msg) from e
 
 
 def run(
@@ -131,8 +128,23 @@ def run(
     workspace_dir_name: str = "microservices",
     dry_run: bool = False,
     audit: bool = False,
+) -> int:
+    """Find Cargo.toml, patch BRRTRouter/lifeguard path deps, run cargo update in workspace_dir_name. Returns 0 on success, 1 on failure."""
+    try:
+        _run_impl(root, workspace_dir_name=workspace_dir_name, dry_run=dry_run, audit=audit)
+        return 0
+    except (ValueError, RuntimeError) as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+
+
+def _run_impl(
+    root: Path,
+    *,
+    workspace_dir_name: str = "microservices",
+    dry_run: bool = False,
+    audit: bool = False,
 ) -> None:
-    """Find Cargo.toml, patch BRRTRouter/lifeguard path deps, run cargo update in workspace_dir_name."""
     cargo_tomls = find_cargo_tomls(root)
     patched_workspace = False
     any_changed = False

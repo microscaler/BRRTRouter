@@ -26,8 +26,8 @@ def generate_dockerfile(
     out = output_path or (root / "docker" / "microservices" / f"Dockerfile.{system}_{module}")
 
     if not tpl.exists():
-        print(f"❌ Error: Template not found: {tpl}", file=sys.stderr)
-        sys.exit(1)
+        msg = f"Template not found: {tpl}"
+        raise FileNotFoundError(msg)
 
     binary_name = binary_name_pattern.format(system=system, module=module.replace("-", "_"))
     content = tpl.read_text()
@@ -50,12 +50,16 @@ def run(
     project_root: Path | None = None,
     binary_name_pattern: str = "rerp_{system}_{module}_impl",
 ) -> int:
-    """CLI entry: generate Dockerfile. Returns 0."""
-    generate_dockerfile(
-        system,
-        module,
-        port=port,
-        project_root=project_root,
-        binary_name_pattern=binary_name_pattern,
-    )
-    return 0
+    """CLI entry: generate Dockerfile. Returns 0 on success, 1 on error."""
+    try:
+        generate_dockerfile(
+            system,
+            module,
+            port=port,
+            project_root=project_root,
+            binary_name_pattern=binary_name_pattern,
+        )
+        return 0
+    except FileNotFoundError as e:
+        print(f"❌ {e}", file=sys.stderr)
+        return 1

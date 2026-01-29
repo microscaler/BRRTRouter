@@ -1,4 +1,4 @@
-"""Tests for brrtrouter_tooling.release.bump (_next_version and run)."""
+"""Tests for brrtrouter_tooling.release.bump (_next_version)."""
 
 import pytest
 

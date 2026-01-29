@@ -72,6 +72,9 @@ def _get_commits_since(project_root: Path, ref: str) -> list[str]:
 
 
 def _load_template(path: Path | None) -> str:
+    if path is not None and not path.is_file():
+        print(f"Template file not found: {path}", file=sys.stderr)
+        raise SystemExit(1)
     return read_file_or_default(path, DEFAULT_TEMPLATE)
 
 

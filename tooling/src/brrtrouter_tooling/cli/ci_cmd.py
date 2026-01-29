@@ -12,6 +12,7 @@ from brrtrouter_tooling.ci import (
     run_patch_brrtrouter,
     run_validate_version_cli,
 )
+from brrtrouter_tooling.cli.parse_common import parse_flags, path_resolver, project_root_resolver
 
 
 def run_ci_argv() -> None:
@@ -31,45 +32,29 @@ def run_ci_argv() -> None:
     args = sys.argv[3:]
 
     if sub == "patch-brrtrouter":
-        project_root = Path.cwd()
-        workspace_dir_name = "microservices"
-        dry_run = "--dry-run" in args
-        audit = "--audit" in args
-        i = 0
-        while i < len(args):
-            if args[i] == "--project-root" and i + 1 < len(args):
-                project_root = Path(args[i + 1]).resolve()
-                i += 2
-            elif args[i] == "--workspace-dir" and i + 1 < len(args):
-                workspace_dir_name = args[i + 1]
-                i += 2
-            else:
-                i += 1
-        run_patch_brrtrouter(
-            project_root,
-            workspace_dir_name=workspace_dir_name,
-            dry_run=dry_run,
-            audit=audit,
+        parsed, _ = parse_flags(
+            args,
+            ("project_root", "--project-root", Path.cwd, project_root_resolver),
+            ("workspace_dir", "--workspace-dir", lambda: "microservices", None),
         )
-        sys.exit(0)
+        rc = run_patch_brrtrouter(
+            parsed["project_root"],
+            workspace_dir_name=parsed["workspace_dir"],
+            dry_run="--dry-run" in args,
+            audit="--audit" in args,
+        )
+        sys.exit(rc)
 
     if sub == "fix-cargo-paths":
-        cargo_toml = None
-        project_root = Path.cwd()
-        i = 0
-        while i < len(args):
-            if args[i] == "--cargo-toml" and i + 1 < len(args):
-                cargo_toml = Path(args[i + 1]).resolve()
-                i += 2
-            elif args[i] == "--project-root" and i + 1 < len(args):
-                project_root = Path(args[i + 1]).resolve()
-                i += 2
-            else:
-                i += 1
-        if not cargo_toml:
+        parsed, _ = parse_flags(
+            args,
+            ("project_root", "--project-root", Path.cwd, project_root_resolver),
+            ("cargo_toml", "--cargo-toml", None, path_resolver),
+        )
+        if not parsed["cargo_toml"]:
             print("Error: --cargo-toml required", file=sys.stderr)
             sys.exit(1)
-        rc = run_fix_cargo_paths(cargo_toml, project_root=project_root)
+        rc = run_fix_cargo_paths(parsed["cargo_toml"], project_root=parsed["project_root"])
         sys.exit(rc)
 
     if sub == "is-tag":

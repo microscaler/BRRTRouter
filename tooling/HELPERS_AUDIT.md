@@ -13,7 +13,7 @@ Canonical utility helpers live in **`brrtrouter_tooling.helpers`**. Other module
 | **root**  | `helpers.py`           | `compare_versions`, `fibonacci_backoff_sequence`             | **Canonical** (version / retry).                                                 |
 | **root**  | `helpers.py`           | `default_binary_name`                                       | **Canonical** (naming).                                                          |
 | **bff**   | `merge.py`, `generate*.py`, `generate.py` | Import from `brrtrouter_tooling.helpers` (downstream_path, load_yaml_spec, to_pascal_case, extract_readme_overview, validate_openapi_spec) | **Done** – canonical location is root helpers only; no bff.helpers re-export.   |
-| **bootstrap** | `helpers.py`        | `load_openapi_spec` (alias), `derive_binary_name`, `_get_registry_path`, `_get_port_from_registry` | **Done** – `load_openapi_spec` = root `load_yaml_spec`; rest bootstrap-specific. |
+| **bootstrap** | `helpers.py`        | `derive_binary_name`, `_get_registry_path`, `_get_port_from_registry` | **Done** – bootstrap uses root `load_yaml_spec` directly; no alias. |
 | **bootstrap** | `microservice.py`   | Uses bootstrap.helpers                                      | **Done**.                                                                        |
 | **release** | `bump.py`            | `_cargo_toml_paths`, `_read_current`, `_next_version`, `_replace_in_file`, `_set_workspace_package_version` | **Relocate path only**: use `find_cargo_tomls(root, exclude=SKIP_PARTS)`. Rest stay (version-bump domain). |
 | **release** | `notes.py`           | `_load_template(path \| None) -> str`                       | **Done** – uses root `read_file_or_default`.                                     |

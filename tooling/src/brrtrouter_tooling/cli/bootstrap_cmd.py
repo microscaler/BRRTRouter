@@ -8,6 +8,7 @@ from typing import Any
 
 from brrtrouter_tooling.bootstrap import run_bootstrap_microservice
 from brrtrouter_tooling.bootstrap.config import DEFAULT_BOOTSTRAP_LAYOUT
+from brrtrouter_tooling.cli.parse_common import parse_flags, project_root_resolver
 
 
 def _parse_layout_from_argv(args: list[str]) -> dict[str, Any]:
@@ -64,29 +65,25 @@ def run_bootstrap_argv() -> None:
         sys.exit(1)
 
     service_name = sys.argv[3]
-    args = sys.argv[4:]
+    raw_args = sys.argv[4:]
+    add_dependencies_config = "--add-dependencies-config" in raw_args
+    args = [a for a in raw_args if a != "--add-dependencies-config"]
 
-    project_root = Path.cwd()
-    port = None
-    add_dependencies_config = "--add-dependencies-config" in args
-    args = [a for a in args if a != "--add-dependencies-config"]
+    def port_converter(s: str) -> int:
+        try:
+            return int(s)
+        except ValueError:
+            print(f"Error: --port must be an integer: {s}", file=sys.stderr)
+            sys.exit(1)
 
-    i = 0
-    while i < len(args):
-        if args[i] == "--project-root" and i + 1 < len(args):
-            project_root = Path(args[i + 1]).resolve()
-            i += 2
-        elif args[i] == "--port" and i + 1 < len(args):
-            try:
-                port = int(args[i + 1])
-            except ValueError:
-                print(f"Error: --port must be an integer: {args[i + 1]}", file=sys.stderr)
-                sys.exit(1)
-            i += 2
-        else:
-            i += 1
-
-    layout = _parse_layout_from_argv(args) or None
+    parsed, rest = parse_flags(
+        args,
+        ("project_root", "--project-root", Path.cwd, project_root_resolver),
+        ("port", "--port", None, port_converter),
+    )
+    project_root = parsed["project_root"]
+    port = parsed["port"]
+    layout = _parse_layout_from_argv(rest) or None
     code = run_bootstrap_microservice(
         service_name=service_name,
         port=port,

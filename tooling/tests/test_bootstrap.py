@@ -33,24 +33,24 @@ class TestResolveBootstrapLayout:
 
 class TestToSnakeCase:
     def test_dash_to_underscore(self) -> None:
-        from brrtrouter_tooling.bootstrap import to_snake_case
+        from brrtrouter_tooling.helpers import to_snake_case
 
         assert to_snake_case("my-service") == "my_service"
 
     def test_camel_to_snake(self) -> None:
-        from brrtrouter_tooling.bootstrap import to_snake_case
+        from brrtrouter_tooling.helpers import to_snake_case
 
         assert to_snake_case("MyService") == "my_service"
 
     def test_spaces_to_underscore(self) -> None:
-        from brrtrouter_tooling.bootstrap import to_snake_case
+        from brrtrouter_tooling.helpers import to_snake_case
 
         assert to_snake_case("my service") == "my_service"
 
 
 class TestToPascalCase:
     def test_dash_separated(self) -> None:
-        from brrtrouter_tooling.bootstrap import to_pascal_case
+        from brrtrouter_tooling.helpers import to_pascal_case
 
         assert to_pascal_case("my-service") == "MyService"
 
@@ -77,11 +77,11 @@ class TestDeriveBinaryName:
 
 class TestLoadOpenApiSpec:
     def test_load_yaml(self, tmp_path: Path) -> None:
-        from brrtrouter_tooling.bootstrap import load_openapi_spec
+        from brrtrouter_tooling.helpers import load_yaml_spec
 
         spec_file = tmp_path / "openapi.yaml"
         spec_file.write_text("openapi: '3.0'\ninfo:\n  title: Test API\n")
-        got = load_openapi_spec(spec_file)
+        got = load_yaml_spec(spec_file)
         assert got["info"]["title"] == "Test API"
 
 

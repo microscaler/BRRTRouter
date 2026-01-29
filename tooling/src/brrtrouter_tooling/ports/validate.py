@@ -11,7 +11,7 @@ from typing import Any
 
 import yaml
 
-from brrtrouter_tooling.ports.discovery import (
+from brrtrouter_tooling.discovery import (
     bff_suite_config_path,
     discover_bff_suite_config,
     discover_helm,
@@ -217,11 +217,11 @@ def reconcile(
                     f"Warning: {name}: helm has port {port} but it is already taken; skip adding."
                 )
                 continue
-            registry.assign_port(name, force=False, preferred_port=port)
-            print(f"Added to registry: {name} = {port}")
-            assigned_ports.add(port)
+            assigned_port, _ = registry.assign_port(name, force=False, preferred_port=port)
+            print(f"Added to registry: {name} = {assigned_port}")
+            assigned_ports.add(assigned_port)
             if update_configs:
-                registry.update_config_files(name, port)
+                registry.update_config_files(name, assigned_port)
         else:
             if reg[name] != port:
                 print(f"Warning: {name}: registry={reg[name]}, helm={port} (no change)")

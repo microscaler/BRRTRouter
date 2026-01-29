@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from brrtrouter_tooling.cli.parse_common import parse_flags, path_resolver, project_root_resolver
 from brrtrouter_tooling.openapi import (
     check_openapi_dir,
     fix_impl_controllers_dir,
@@ -16,20 +17,13 @@ from brrtrouter_tooling.openapi import (
 def _parse_openapi_argv() -> tuple[Path, Path]:
     """Parse --project-root and --openapi-dir from sys.argv. Returns (project_root, openapi_dir)."""
     args = sys.argv[3:]
-    project_root = Path.cwd()
-    openapi_dir: Path | None = None
-    i = 0
-    while i < len(args):
-        if args[i] == "--project-root" and i + 1 < len(args):
-            project_root = Path(args[i + 1]).resolve()
-            i += 2
-        elif args[i] == "--openapi-dir" and i + 1 < len(args):
-            openapi_dir = Path(args[i + 1]).resolve()
-            i += 2
-        else:
-            i += 1
-    if openapi_dir is None:
-        openapi_dir = project_root / "openapi"
+    parsed, _ = parse_flags(
+        args,
+        ("project_root", "--project-root", Path.cwd, project_root_resolver),
+        ("openapi_dir", "--openapi-dir", None, path_resolver),
+    )
+    project_root = parsed["project_root"]
+    openapi_dir = parsed["openapi_dir"] or (project_root / "openapi")
     return project_root, openapi_dir
 
 
@@ -102,20 +96,13 @@ def run_openapi_check_decimal_formats_argv() -> None:
 def run_openapi_fix_impl_controllers_argv() -> None:
     """brrtrouter openapi fix-impl-controllers [--project-root <path>] [--impl-dir <path>]."""
     args = sys.argv[3:]
-    project_root = Path.cwd()
-    impl_dir: Path | None = None
-    i = 0
-    while i < len(args):
-        if args[i] == "--project-root" and i + 1 < len(args):
-            project_root = Path(args[i + 1]).resolve()
-            i += 2
-        elif args[i] == "--impl-dir" and i + 1 < len(args):
-            impl_dir = Path(args[i + 1]).resolve()
-            i += 2
-        else:
-            i += 1
-    if impl_dir is None:
-        impl_dir = project_root / "microservices" / "accounting"
+    parsed, _ = parse_flags(
+        args,
+        ("project_root", "--project-root", Path.cwd, project_root_resolver),
+        ("impl_dir", "--impl-dir", None, path_resolver),
+    )
+    project_root = parsed["project_root"]
+    impl_dir = parsed["impl_dir"] or (project_root / "microservices" / "accounting")
     if not impl_dir.exists():
         print(f"❌ Impl directory not found: {impl_dir}", file=sys.stderr)
         sys.exit(1)

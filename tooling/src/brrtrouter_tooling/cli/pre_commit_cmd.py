@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from brrtrouter_tooling.cli.parse_common import parse_flags, project_root_resolver
 from brrtrouter_tooling.pre_commit import run_workspace_fmt
 
 
@@ -28,18 +29,13 @@ def run_pre_commit_argv() -> None:
     sub = sys.argv[2].lower()
     args = sys.argv[3:]
 
-    project_root = Path.cwd()
-    workspace_dir = "microservices"
-    i = 0
-    while i < len(args):
-        if args[i] == "--project-root" and i + 1 < len(args):
-            project_root = Path(args[i + 1]).resolve()
-            i += 2
-        elif args[i] == "--workspace-dir" and i + 1 < len(args):
-            workspace_dir = args[i + 1]
-            i += 2
-        else:
-            i += 1
+    parsed, _ = parse_flags(
+        args,
+        ("project_root", "--project-root", Path.cwd, project_root_resolver),
+        ("workspace_dir", "--workspace-dir", lambda: "microservices", None),
+    )
+    project_root = parsed["project_root"]
+    workspace_dir = parsed["workspace_dir"]
 
     if sub == "workspace-fmt":
         code = run_workspace_fmt(

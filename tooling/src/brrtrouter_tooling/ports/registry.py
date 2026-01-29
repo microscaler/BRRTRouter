@@ -8,7 +8,7 @@ from typing import Any
 
 import yaml
 
-from brrtrouter_tooling.ports.discovery import (
+from brrtrouter_tooling.discovery import (
     bff_service_to_suite,
     bff_suite_config_path,
     service_to_suite,
