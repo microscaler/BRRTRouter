@@ -103,6 +103,20 @@ class TestPatchFile:
         assert "path" not in txt or "BRRTRouter" not in txt
         assert "git" in txt and "microscaler/BRRTRouter" in txt
 
+    def test_patch_preserves_extra_keys(self, tmp_path: Path) -> None:
+        """Extra attributes (features, optional, package) are kept when replacing path with git."""
+        from brrtrouter_tooling.ci import patch_file
+
+        f = tmp_path / "Cargo.toml"
+        orig = '[dependencies]\nbrrtrouter = { path = "../../BRRTRouter", features = ["sso"] }\n'
+        f.write_text(orig)
+        changed, _ = patch_file(f, dry_run=False, audit=False)
+        assert changed is True
+        txt = f.read_text()
+        assert "git" in txt and "microscaler/BRRTRouter" in txt
+        assert "features" in txt and "sso" in txt
+        assert "path" not in txt
+
     def test_patch_idempotent_second_run_no_matches(self, tmp_path: Path) -> None:
         from brrtrouter_tooling.ci import patch_file
 

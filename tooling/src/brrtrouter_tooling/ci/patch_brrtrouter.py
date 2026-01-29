@@ -19,6 +19,8 @@ PATH_DEP_LIFEGUARD = re.compile(
     r'((?:lifeguard|lifeguard-derive|lifeguard-migrate)\s*=\s*\{\s*path\s*=\s*["\'][^"\']*lifeguard[^"\']*["\'][^}]*\})',
     re.MULTILINE,
 )
+# Match path = "..." or path = '...' and optional trailing comma (for in-place replacement)
+_PATH_ENTRY = re.compile(r'path\s*=\s*["\'][^"\']*["\'][\s,]*')
 
 
 def find_cargo_tomls(root: Path) -> list[Path]:
@@ -76,7 +78,17 @@ def patch_file(
         return True, matches
 
     for old, new in matches:
-        text = text.replace(old, new, 1)
+        # Preserve extra keys (features, optional, package): replace only path = "..." with git/branch
+        inner_m = re.search(r"\{\s*(.+)\s*\}\s*$", new)
+        if inner_m:
+            git_fragment = inner_m.group(1).strip() + ", "
+            patched = _PATH_ENTRY.sub(git_fragment, old, count=1)
+            patched = re.sub(r",\s*}", " }", patched)  # TOML inline table: no trailing comma
+            if patched == old:
+                patched = new
+        else:
+            patched = new
+        text = text.replace(old, patched, 1)
 
     if "BRRTRouter" in text and re.search(r'path\s*=\s*["\'][^"\']*BRRTRouter', text):
         print(f"error: {p} still contains path to BRRTRouter after patch", file=sys.stderr)

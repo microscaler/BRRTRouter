@@ -239,11 +239,9 @@ def _determine_architectures(requested: Optional[str]) -> List[str]:
         return [requested]
     if requested is None:
         return [detect_host_architecture()]
-    print(
-        f"❌ Unknown architecture: {requested}. Valid: amd64, arm64, arm7, all",
-        file=sys.stderr,
+    raise ValueError(
+        f"Unknown architecture: {requested}. Valid: amd64, arm64, arm7, all"
     )
-    sys.exit(1)
 
 
 def run(
@@ -256,7 +254,11 @@ def run(
     """Run host-aware build. Returns 0 on success, 1 on failure."""
     root = Path(project_root) if project_root is not None else Path.cwd()
     extra = extra_args or []
-    archs = _determine_architectures(arch)
+    try:
+        archs = _determine_architectures(arch)
+    except ValueError as e:
+        print(f"❌ {e}", file=sys.stderr)
+        return 1
     use_zigbuild = should_use_zigbuild()
     use_cross = should_use_cross()
     ok = True
