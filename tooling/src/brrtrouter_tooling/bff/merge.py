@@ -94,9 +94,19 @@ def _merge_one_sub_service(
             if existing is None:
                 existing = {}
             path_def = dict(path_def)
-            for method in list(path_def.keys()):
-                if method not in http_methods:
+            for key in list(path_def.keys()):
+                if key not in http_methods:
+                    # Preserve path-level properties (parameters, summary, description, servers).
+                    if key not in existing:
+                        existing[key] = path_def[key]
+                    elif existing[key] != path_def[key]:
+                        logger.warning(
+                            "Path-level property %r conflict for %s, keeping first",
+                            key,
+                            path,
+                        )
                     continue
+                method = key
                 op = path_def[method]
                 if not isinstance(op, dict):
                     continue

@@ -92,13 +92,7 @@ def run() -> int:
         print("Error: GITHUB_TOKEN environment variable is required", file=sys.stderr)
         return 1
 
-    try:
-        latest = get_latest_tag(repo, token)
-        if latest:
-            print(latest)
-        return 0
-    except SystemExit:
-        raise
-    except (HTTPError, URLError) as e:
-        print(f"Error: {e}", file=sys.stderr)
-        return 1
+    latest = get_latest_tag(repo, token)
+    if latest:
+        print(latest)
+    return 0

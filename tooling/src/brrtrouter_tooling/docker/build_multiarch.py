@@ -19,7 +19,7 @@ ARCH_PLATFORMS = {
 _SAFE_NAME = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
-def run(
+def run(  # noqa: C901
     system: str,
     module: str,
     image_name: str,
@@ -70,7 +70,10 @@ def run(
 
     from brrtrouter_tooling.docker.copy_multiarch import run as copy_run
 
-    if copy_run(system, module, "all", root) != 0:
+    def _binary_name_fn(_s: str, _m: str) -> str:
+        return bin_name
+
+    if copy_run(system, module, "all", root, binary_name_fn=_binary_name_fn) != 0:
         return 1
 
     owner = (
@@ -132,7 +135,6 @@ def run(
 
     print("🔨 Building Docker images for all architectures...")
     image_tags = []
-    base_image_default = f"ghcr.io/{owner}/{base_image_name}:latest"
 
     for arch in ["amd64", "arm64", "arm7"]:
         platform = ARCH_PLATFORMS[arch]
@@ -142,9 +144,14 @@ def run(
         base_image_arch = f"ghcr.io/{owner}/{base_image_name}:{arch}"
 
         template_content = template_path.read_text()
-        mod = template_content.replace(
-            f"ARG BASE_IMAGE={base_image_default}", f"ARG BASE_IMAGE={base_image_arch}"
+        mod = re.sub(
+            r"(?m)^ARG BASE_IMAGE=.*$",
+            f"ARG BASE_IMAGE={base_image_arch}",
+            template_content,
         )
+        if mod == template_content:
+            print("❌ Dockerfile.template missing ARG BASE_IMAGE", file=sys.stderr)
+            return 1
         mod = mod.replace(
             "./build_artifacts/${TARGETARCH}/",
             f"./build_artifacts/{system}_{module}/{arch}/",
@@ -216,9 +223,16 @@ def run(
 
     if push:
         print("📤 Pushing images...")
-        for t in image_tags:
-            subprocess.run(["docker", "push", t], cwd=str(root), check=True)
-        subprocess.run(["docker", "manifest", "push", manifest_tag], cwd=str(root), check=True)
+        try:
+            for t in image_tags:
+                subprocess.run(["docker", "push", t], cwd=str(root), check=True)
+            subprocess.run(["docker", "manifest", "push", manifest_tag], cwd=str(root), check=True)
+        except subprocess.CalledProcessError as e:
+            msg = f"❌ Push failed: {e}"
+            if e.stderr:
+                msg += f" {e.stderr}"
+            print(msg, file=sys.stderr)
+            return 1
         print("✅ All images pushed")
     else:
         print("Info:  Images built locally. Use --push to push.")

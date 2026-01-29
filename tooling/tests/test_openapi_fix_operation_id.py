@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import pytest
+
 
 class TestIsSnakeCase:
     def test_empty_false(self) -> None:
@@ -107,6 +109,17 @@ class TestProcessFile:
         assert n == 1
         assert ch[0][1] == "getStuff" and ch[0][2] == "get_stuff"
         assert "get_stuff" in spec.read_text()
+
+    def test_empty_operation_id_raises_with_path(self, tmp_path: Path) -> None:
+        from brrtrouter_tooling.openapi.fix_operation_id import process_file
+
+        spec = tmp_path / "openapi.yaml"
+        spec.write_text('paths:\n  /pets:\n    get:\n      operationId: ""\n')
+        with pytest.raises(ValueError) as exc_info:
+            process_file(spec, dry_run=False)
+        assert "Empty or missing operationId" in str(exc_info.value)
+        assert str(spec) in str(exc_info.value)
+        assert ":4" in str(exc_info.value)
 
 
 class TestRun:

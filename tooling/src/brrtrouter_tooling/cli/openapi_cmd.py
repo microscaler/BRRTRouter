@@ -32,9 +32,9 @@ def run_openapi_validate_argv() -> None:
     _project_root, openapi_dir = _parse_openapi_argv()
     errors = validate_specs(openapi_dir)
     for path, exc in errors:
-        print(f"❌ {path}: {exc}")
+        print(f"❌ {path}: {exc}", file=sys.stderr)
     if errors:
-        print(f"\n❌ Found {len(errors)} invalid OpenAPI specs")
+        print(f"\n❌ Found {len(errors)} invalid OpenAPI specs", file=sys.stderr)
         sys.exit(1)
     if openapi_dir.exists():
         count = len(list(openapi_dir.rglob("openapi.yaml")))
@@ -53,9 +53,13 @@ def run_openapi_fix_operation_id_argv() -> None:
     project_root, openapi_dir = _parse_openapi_argv()
     dry_run = "--dry-run" in args
     verbose = "--verbose" in args
-    total, touched = fix_operation_id_run(
-        openapi_dir, dry_run=dry_run, verbose=verbose, rel_to=project_root
-    )
+    try:
+        total, touched = fix_operation_id_run(
+            openapi_dir, dry_run=dry_run, verbose=verbose, rel_to=project_root
+        )
+    except ValueError as e:
+        print(str(e), file=sys.stderr)
+        sys.exit(1)
     if touched:
         prefix = "[DRY-RUN] " if dry_run else ""
         print(f"{prefix}Updated {touched} file(s), {total} operationId(s) converted to snake_case.")
