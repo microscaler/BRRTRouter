@@ -45,21 +45,45 @@ def build_workspace_with_options(
     try:
         if use_cross:
             cmd = (
-                ["cross", "build", "--manifest-path", str(manifest), "--target", rust_target, "--workspace"]
+                [
+                    "cross",
+                    "build",
+                    "--manifest-path",
+                    str(manifest),
+                    "--target",
+                    rust_target,
+                    "--workspace",
+                ]
                 + base
                 + rel
             )
             subprocess.run(cmd, check=True, cwd=str(project_root))
         elif use_zigbuild:
             cmd = (
-                ["cargo", "zigbuild", "--manifest-path", str(manifest), "--target", rust_target, "--workspace"]
+                [
+                    "cargo",
+                    "zigbuild",
+                    "--manifest-path",
+                    str(manifest),
+                    "--target",
+                    rust_target,
+                    "--workspace",
+                ]
                 + base
                 + rel
             )
             subprocess.run(cmd, check=True, cwd=str(project_root))
         else:
             cmd = (
-                ["cargo", "build", "--manifest-path", str(manifest), "--target", rust_target, "--workspace"]
+                [
+                    "cargo",
+                    "build",
+                    "--manifest-path",
+                    str(manifest),
+                    "--target",
+                    rust_target,
+                    "--workspace",
+                ]
                 + base
                 + rel
             )
