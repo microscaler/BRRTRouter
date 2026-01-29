@@ -35,6 +35,7 @@ wheels/
 .installed.cfg
 *.egg
 MANIFEST
+*.pyc
 
 # Python Virtual environments
 .venv/
@@ -112,3 +113,6 @@ examples/pet_store/static_site/assets/index.html
 examples/pet_store/static_site/index.html
 
 goose_*.txt
+
+tooling/src/brrtrouter_tooling/build/__pycache__/
+tooling/src/brrtrouter_tooling/build

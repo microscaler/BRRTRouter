@@ -2,6 +2,7 @@
 # Install: just init && just install-hooks
 # Run manually: pre-commit run --all-files
 # Conventional commits are validated on commit-msg (see commit-msg hook).
+# Hooks run in order: Ruff (lint --fix + format) on tooling Python, then QA (lint + format-check + tests).
 
 default_install_hook_types: [pre-commit, commit-msg]
 
@@ -14,6 +15,14 @@ repos:
 
   - repo: local
     hooks:
+      # Use project Ruff so we always commit linted/formatted tooling code (same as just lint + just format).
+      - id: ruff
+        name: Ruff (lint --fix + format)
+        entry: bash -c 'tooling/.venv/bin/ruff check tooling/ --fix && tooling/.venv/bin/ruff format tooling/'
+        language: system
+        pass_filenames: false
+        files: ^tooling/.*\.py$
+
       - id: qa
         name: Tooling QA (lint, format-check, tests)
         entry: just qa
