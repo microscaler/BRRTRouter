@@ -191,7 +191,7 @@ class TestGetLatestTag:
         assert seq_small == [1, 1, 2, 3]
 
     def test_run_fails_after_retries_exhausted(self) -> None:
-        """Test that run() returns 1 when retries are exhausted."""
+        """Test that run() raises SystemExit with detailed message when retries are exhausted."""
         http_error = HTTPError("url", 503, "Service Unavailable", {}, None)
         with (
             patch.object(
@@ -205,10 +205,9 @@ class TestGetLatestTag:
                 {"GITHUB_REPOSITORY": "owner/repo", "GITHUB_TOKEN": "token"},
                 clear=False,
             ),
-            patch("sys.stdout", new=StringIO()) as fake_out,
-            patch("sys.stderr", new=StringIO()) as fake_err,
+            patch("sys.stdout", new=StringIO()),
+            patch("sys.stderr", new=StringIO()),
+            pytest.raises(SystemExit) as exc_info,
         ):
-            result = run()
-            assert result == 1
-            assert fake_out.getvalue().strip() == ""
-            assert "Failed to fetch latest release" in fake_err.getvalue()
+            run()
+        assert "Failed to fetch latest release" in str(exc_info.value)

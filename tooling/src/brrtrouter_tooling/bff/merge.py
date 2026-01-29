@@ -62,6 +62,7 @@ def _merge_one_sub_service(
     all_tags: set[str],
     all_paths: dict[str, Any],
     merged_params: dict[str, Any],
+    param_origin: dict[str, str],
 ) -> None:
     if not spec_path.exists():
         return
@@ -118,8 +119,15 @@ def _merge_one_sub_service(
 
     if "components" in spec and "parameters" in spec.get("components", {}):
         for pn, pd in spec["components"]["parameters"].items():
-            if pn not in merged_params:
-                merged_params[pn] = pd
+            if pn in merged_params and merged_params[pn] != pd:
+                first_service = param_origin.get(pn, "?")
+                msg = (
+                    f"Parameter conflict for {pn!r}: already defined by service "
+                    f"{first_service!r}, conflicting definition from {sname!r}"
+                )
+                raise ValueError(msg)
+            merged_params.setdefault(pn, pd)
+            param_origin.setdefault(pn, sname)
 
 
 def _schema_name_mapping(
@@ -246,6 +254,7 @@ def merge_sub_service_specs(
     all_tags: set[str] = set()
     all_paths: dict[str, Any] = {}
     merged_params = dict(bff["components"]["parameters"])
+    param_origin: dict[str, str] = {}
 
     for sname, cfg in sorted(sub_services.items()):
         spec_path = cfg.get("spec_path")
@@ -261,6 +270,7 @@ def merge_sub_service_specs(
                 all_tags,
                 all_paths,
                 merged_params,
+                param_origin,
             )
 
     bff["components"]["parameters"] = merged_params

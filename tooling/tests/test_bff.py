@@ -233,6 +233,150 @@ class TestMergePathsPerMethod:
         assert "get" in str(exc_info.value).lower() or "method" in str(exc_info.value).lower()
 
 
+class TestMergeComponentParameters:
+    """Component parameters: same name with same definition is OK; differing definitions raise."""
+
+    def test_single_service_parameters_merged(self, tmp_path: Path) -> None:
+        # One service defines component parameters -> they appear in merged spec.
+        spec = tmp_path / "svc.yaml"
+        spec.write_text(
+            "openapi: 3.1.0\ninfo: { title: S, version: '1.0' }\npaths: {}\n"
+            "components:\n  parameters:\n"
+            "    Limit:\n      name: limit\n      in: query\n      schema:\n        type: integer\n"
+            "    Offset:\n      name: offset\n      in: query\n      schema:\n        type: integer\n"
+        )
+        sub_services = {"svc": {"base_path": "/api/svc", "spec_path": spec}}
+        bff = merge_sub_service_specs(sub_services)
+        params = bff["components"]["parameters"]
+        assert params["Limit"]["schema"]["type"] == "integer"
+        assert params["Offset"]["schema"]["type"] == "integer"
+
+    def test_different_parameter_names_both_merged(self, tmp_path: Path) -> None:
+        # Service A has Limit, service B has Offset -> both appear.
+        a_spec = tmp_path / "a.yaml"
+        b_spec = tmp_path / "b.yaml"
+        a_spec.write_text(
+            "openapi: 3.1.0\ninfo: { title: A, version: '1.0' }\npaths: {}\n"
+            "components:\n  parameters:\n    Limit:\n      name: limit\n      in: query\n      schema:\n        type: integer\n"
+        )
+        b_spec.write_text(
+            "openapi: 3.1.0\ninfo: { title: B, version: '1.0' }\npaths: {}\n"
+            "components:\n  parameters:\n    Offset:\n      name: offset\n      in: query\n      schema:\n        type: integer\n"
+        )
+        sub_services = {
+            "alpha": {"base_path": "/api/alpha", "spec_path": a_spec},
+            "beta": {"base_path": "/api/beta", "spec_path": b_spec},
+        }
+        bff = merge_sub_service_specs(sub_services)
+        params = bff["components"]["parameters"]
+        assert "Limit" in params and "Offset" in params
+        assert params["Limit"]["schema"]["type"] == "integer"
+        assert params["Offset"]["schema"]["type"] == "integer"
+
+    def test_same_parameter_name_same_definition_merged_once(self, tmp_path: Path) -> None:
+        # Both services define components.parameters.Limit with identical definition -> one entry.
+        a_spec = tmp_path / "a.yaml"
+        b_spec = tmp_path / "b.yaml"
+        common_param = (
+            "    Limit:\n      name: limit\n      in: query\n      schema:\n        type: integer\n"
+        )
+        a_spec.write_text(
+            "openapi: 3.1.0\ninfo: { title: A, version: '1.0' }\npaths: {}\n"
+            "components:\n  parameters:\n" + common_param
+        )
+        b_spec.write_text(
+            "openapi: 3.1.0\ninfo: { title: B, version: '1.0' }\npaths: {}\n"
+            "components:\n  parameters:\n" + common_param
+        )
+        sub_services = {
+            "alpha": {"base_path": "/api/alpha", "spec_path": a_spec},
+            "beta": {"base_path": "/api/beta", "spec_path": b_spec},
+        }
+        bff = merge_sub_service_specs(sub_services)
+        assert bff["components"]["parameters"]["Limit"]["schema"]["type"] == "integer"
+
+    def test_same_parameter_name_different_definition_raises(self, tmp_path: Path) -> None:
+        # Two services define Limit with different schemas -> ValueError with parameter and services.
+        a_spec = tmp_path / "a.yaml"
+        b_spec = tmp_path / "b.yaml"
+        a_spec.write_text(
+            "openapi: 3.1.0\ninfo: { title: A, version: '1.0' }\npaths: {}\n"
+            "components:\n  parameters:\n    Limit:\n      name: limit\n      in: query\n      schema:\n        type: integer\n"
+        )
+        b_spec.write_text(
+            "openapi: 3.1.0\ninfo: { title: B, version: '1.0' }\npaths: {}\n"
+            "components:\n  parameters:\n    Limit:\n      name: limit\n      in: query\n      schema:\n        type: string\n"
+        )
+        sub_services = {
+            "alpha": {"base_path": "/api/alpha", "spec_path": a_spec},
+            "beta": {"base_path": "/api/beta", "spec_path": b_spec},
+        }
+        with pytest.raises(ValueError) as exc_info:
+            merge_sub_service_specs(sub_services)
+        msg = str(exc_info.value)
+        assert "Limit" in msg or "limit" in msg
+        assert "alpha" in msg
+        assert "beta" in msg
+        assert "conflict" in msg.lower() or "conflicting" in msg.lower()
+        assert "already defined by" in msg
+        assert "conflicting definition from" in msg
+
+    def test_parameter_conflict_error_names_both_services(self, tmp_path: Path) -> None:
+        # Conflict message must name the parameter and both services for debugging.
+        a_spec = tmp_path / "a.yaml"
+        b_spec = tmp_path / "b.yaml"
+        a_spec.write_text(
+            "openapi: 3.1.0\ninfo: { title: A, version: '1.0' }\npaths: {}\n"
+            "components:\n  parameters:\n    PageSize:\n      name: page_size\n      in: query\n      schema:\n        type: integer\n"
+        )
+        b_spec.write_text(
+            "openapi: 3.1.0\ninfo: { title: B, version: '1.0' }\npaths: {}\n"
+            "components:\n  parameters:\n    PageSize:\n      name: page_size\n      in: query\n      schema:\n        type: string\n"
+        )
+        sub_services = {
+            "alpha": {"base_path": "/api/alpha", "spec_path": a_spec},
+            "beta": {"base_path": "/api/beta", "spec_path": b_spec},
+        }
+        with pytest.raises(ValueError) as exc_info:
+            merge_sub_service_specs(sub_services)
+        msg = str(exc_info.value)
+        assert "PageSize" in msg
+        assert "alpha" in msg
+        assert "beta" in msg
+
+    def test_three_services_third_conflicts_on_parameter_raises(self, tmp_path: Path) -> None:
+        # Alpha and beta define same Limit (identical); gamma defines Limit with different type -> raise.
+        common_param = (
+            "    Limit:\n      name: limit\n      in: query\n      schema:\n        type: integer\n"
+        )
+        alpha_spec = tmp_path / "alpha.yaml"
+        beta_spec = tmp_path / "beta.yaml"
+        gamma_spec = tmp_path / "gamma.yaml"
+        alpha_spec.write_text(
+            "openapi: 3.1.0\ninfo: { title: A, version: '1.0' }\npaths: {}\n"
+            "components:\n  parameters:\n" + common_param
+        )
+        beta_spec.write_text(
+            "openapi: 3.1.0\ninfo: { title: B, version: '1.0' }\npaths: {}\n"
+            "components:\n  parameters:\n" + common_param
+        )
+        gamma_spec.write_text(
+            "openapi: 3.1.0\ninfo: { title: G, version: '1.0' }\npaths: {}\n"
+            "components:\n  parameters:\n    Limit:\n      name: limit\n      in: query\n      schema:\n        type: string\n"
+        )
+        sub_services = {
+            "alpha": {"base_path": "/api/alpha", "spec_path": alpha_spec},
+            "beta": {"base_path": "/api/beta", "spec_path": beta_spec},
+            "gamma": {"base_path": "/api/gamma", "spec_path": gamma_spec},
+        }
+        with pytest.raises(ValueError) as exc_info:
+            merge_sub_service_specs(sub_services)
+        msg = str(exc_info.value)
+        assert "Limit" in msg
+        assert "alpha" in msg
+        assert "gamma" in msg
+
+
 class TestMergeMultipleErrorSchemas:
     """When multiple sub-services define a per-service Error schema, merge raises."""
 

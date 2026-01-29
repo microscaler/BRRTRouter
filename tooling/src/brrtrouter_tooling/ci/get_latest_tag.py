@@ -97,6 +97,8 @@ def run() -> int:
         if latest:
             print(latest)
         return 0
-    except (SystemExit, HTTPError, URLError) as e:
+    except SystemExit:
+        raise
+    except (HTTPError, URLError) as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1

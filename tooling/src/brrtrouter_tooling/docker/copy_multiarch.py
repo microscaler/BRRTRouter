@@ -37,6 +37,7 @@ def run(
     microservices_target = root / workspace_dir / "target"
     base_dest = root / "build_artifacts" / f"{system}_{module}"
     any_ok = False
+    missing_arches: list[str] = []
 
     for a in archs:
         triple = ARCH_TARGETS[a]
@@ -48,6 +49,7 @@ def run(
         if not src.exists():
             print(f"❌ Binary not found: {src}", file=sys.stderr)
             print(f"   Build first for {a}", file=sys.stderr)
+            missing_arches.append(a)
             continue
 
         dest_dir.mkdir(parents=True, exist_ok=True)
@@ -57,7 +59,12 @@ def run(
         print(f"✅ {a} binary copied and hash generated: {hash_path.relative_to(root)}")
         any_ok = True
 
-    if not any_ok:
+    if not any_ok or missing_arches:
+        if missing_arches:
+            print(
+                f"⚠️ Some requested binaries were missing: {', '.join(missing_arches)}",
+                file=sys.stderr,
+            )
         return 1
     print("🎉 All requested binaries copied!")
     return 0
