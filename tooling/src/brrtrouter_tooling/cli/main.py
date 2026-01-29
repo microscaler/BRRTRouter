@@ -4,6 +4,7 @@ import sys
 
 from brrtrouter_tooling.cli import (
     bff,
+    ci_cmd,
     dependabot,
     docker_cmd,
     openapi_cmd,
@@ -35,6 +36,10 @@ def main() -> None:
         )
         print(
             "  openapi <subcommand>  - validate, fix-operation-id-casing, check-decimal-formats, fix-impl-controllers",
+            file=sys.stderr,
+        )
+        print(
+            "  ci <subcommand>       - patch-brrtrouter, fix-cargo-paths, is-tag, get-latest-tag, validate-version",
             file=sys.stderr,
         )
         print(
@@ -88,6 +93,8 @@ def main() -> None:
             sys.exit(1)
     elif command == "openapi":
         openapi_cmd.run_openapi_argv()
+    elif command == "ci":
+        ci_cmd.run_ci_argv()
     elif command == "ports":
         if len(sys.argv) < 3:
             print("Usage: brrtrouter ports <subcommand>", file=sys.stderr)
