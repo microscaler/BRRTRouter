@@ -31,6 +31,19 @@ def test_load_suite_config(tmp_path: Path) -> None:
     assert resolved["output_path"] == tmp_path / "openapi" / "suite" / "openapi_bff.yaml"
 
 
+def test_merge_components_null_no_typeerror(tmp_path: Path) -> None:
+    """Spec with components: null or components: (empty) does not raise TypeError."""
+    spec_path = tmp_path / "openapi.yaml"
+    spec_path.write_text(
+        "openapi: 3.1.0\ninfo: { title: S, version: '1.0' }\npaths:\n  /ping:\n    get:\n      responses: { '200': { description: OK } }\ncomponents: null\n"
+    )
+    sub_services = {"svc": {"base_path": "/api/svc", "spec_path": spec_path}}
+    bff = merge_sub_service_specs(sub_services)
+    assert "paths" in bff
+    assert "/ping" in bff["paths"]
+    assert bff["paths"]["/ping"]["get"]["x-service"] == "svc"
+
+
 def test_merge_sets_proxy_extensions(tmp_path: Path) -> None:
     """Merged spec has x-service, x-service-base-path, x-brrtrouter-downstream-path on operations."""
     spec_path = tmp_path / "openapi.yaml"

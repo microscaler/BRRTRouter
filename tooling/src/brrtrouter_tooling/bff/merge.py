@@ -71,6 +71,7 @@ def _merge_one_sub_service(
         logger.warning("Spec file not found for service %r: %s", sname, spec_path)
         return
     spec = load_yaml_spec(spec_path)
+    components = spec.get("components") or {}
 
     if "tags" in spec:
         for t in spec["tags"]:
@@ -125,14 +126,14 @@ def _merge_one_sub_service(
                 existing[method] = op
             all_paths[path] = existing
 
-    if "components" in spec and "schemas" in spec["components"]:
-        _merge_schemas(all_schemas, sname, spec["components"]["schemas"])
-        for schema_name in spec["components"]["schemas"]:
+    if "schemas" in components:
+        _merge_schemas(all_schemas, sname, components["schemas"])
+        for schema_name in components["schemas"]:
             prefixed = f"{to_pascal_case(sname)}{schema_name}"
             _update_refs_in_paths(all_paths, schema_name, prefixed)
 
-    if "components" in spec and "parameters" in spec.get("components", {}):
-        for pn, pd in spec["components"]["parameters"].items():
+    if "parameters" in components:
+        for pn, pd in components["parameters"].items():
             if pn in merged_params and merged_params[pn] != pd:
                 first_service = param_origin.get(pn, "?")
                 msg = (
@@ -275,17 +276,19 @@ def merge_sub_service_specs(
         base_path = cfg.get("base_path", f"/api/{sname}")
         if isinstance(spec_path, str):
             spec_path = Path(spec_path)
-        if spec_path:
-            _merge_one_sub_service(
-                sname,
-                base_path,
-                spec_path,
-                all_schemas,
-                all_tags,
-                all_paths,
-                merged_params,
-                param_origin,
-            )
+        if not spec_path:
+            logger.warning("No spec_path configured for service %r, skipping", sname)
+            continue
+        _merge_one_sub_service(
+            sname,
+            base_path,
+            spec_path,
+            all_schemas,
+            all_tags,
+            all_paths,
+            merged_params,
+            param_origin,
+        )
 
     bff["components"]["parameters"] = merged_params
     mapping = _schema_name_mapping(all_schemas, sub_services)
