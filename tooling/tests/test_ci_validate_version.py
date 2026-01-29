@@ -1,5 +1,6 @@
 """Tests for brrtrouter_tooling.ci.validate_version (brrtrouter ci validate-version)."""
 
+import sys
 from io import StringIO
 from unittest.mock import patch
 
@@ -11,6 +12,9 @@ from brrtrouter_tooling.ci import (
     run_validate_version_cli,
     validate_version,
 )
+
+# Module where get_latest_tag is defined (use sys.modules so we get the .py module).
+get_latest_tag_module = sys.modules["brrtrouter_tooling.ci.get_latest_tag"]
 
 
 class TestCompareVersions:
@@ -132,8 +136,9 @@ class TestRunValidateVersionCli:
                 "os.environ",
                 {"GITHUB_REPOSITORY": "owner/repo", "GITHUB_TOKEN": "token"},
             ),
-            patch(
-                "brrtrouter_tooling.ci.get_latest_tag.get_latest_tag",
+            patch.object(
+                get_latest_tag_module,
+                "get_latest_tag",
                 return_value="0.39.0",
             ),
         ):

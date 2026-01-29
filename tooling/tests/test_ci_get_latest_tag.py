@@ -2,6 +2,7 @@
 
 import json
 import os
+import sys
 from io import StringIO
 from unittest.mock import Mock, patch
 from urllib.error import HTTPError, URLError
@@ -11,6 +12,9 @@ import pytest
 from brrtrouter_tooling.ci import get_latest_tag
 from brrtrouter_tooling.ci import run_get_latest_tag as run
 from brrtrouter_tooling.ci.get_latest_tag import _fibonacci_backoff_sequence
+
+# Module under test (use sys.modules so we get the .py module, not ci's re-exported function).
+get_latest_tag_module = sys.modules["brrtrouter_tooling.ci.get_latest_tag"]
 
 
 def _fake_urlopen_success(tag_name: str):
@@ -33,46 +37,51 @@ def _fake_urlopen_404():
 
 class TestGetLatestTag:
     def test_returns_latest_tag_from_github_api(self) -> None:
-        with patch(
-            "brrtrouter_tooling.ci.get_latest_tag.urlopen",
+        with patch.object(
+            get_latest_tag_module,
+            "urlopen",
             return_value=_fake_urlopen_success("v0.39.0"),
         ):
             result = get_latest_tag("owner/repo", "token")
             assert result == "0.39.0"
 
     def test_strips_v_prefix(self) -> None:
-        with patch(
-            "brrtrouter_tooling.ci.get_latest_tag.urlopen",
+        with patch.object(
+            get_latest_tag_module,
+            "urlopen",
             return_value=_fake_urlopen_success("v1.2.3"),
         ):
             result = get_latest_tag("owner/repo", "token")
             assert result == "1.2.3"
 
     def test_handles_tag_without_v_prefix(self) -> None:
-        with patch(
-            "brrtrouter_tooling.ci.get_latest_tag.urlopen",
+        with patch.object(
+            get_latest_tag_module,
+            "urlopen",
             return_value=_fake_urlopen_success("0.39.0"),
         ):
             result = get_latest_tag("owner/repo", "token")
             assert result == "0.39.0"
 
     def test_handles_rc_tags(self) -> None:
-        with patch(
-            "brrtrouter_tooling.ci.get_latest_tag.urlopen",
+        with patch.object(
+            get_latest_tag_module,
+            "urlopen",
             return_value=_fake_urlopen_success("v0.39.0-rc.2"),
         ):
             result = get_latest_tag("owner/repo", "token")
             assert result == "0.39.0-rc.2"
 
     def test_returns_none_when_no_releases(self) -> None:
-        with patch("brrtrouter_tooling.ci.get_latest_tag.urlopen", side_effect=_fake_urlopen_404()):
+        with patch.object(get_latest_tag_module, "urlopen", side_effect=_fake_urlopen_404()):
             result = get_latest_tag("owner/repo", "token")
             assert result is None
 
     def test_run_prints_version_to_stdout(self) -> None:
         with (
-            patch(
-                "brrtrouter_tooling.ci.get_latest_tag.urlopen",
+            patch.object(
+                get_latest_tag_module,
+                "urlopen",
                 return_value=_fake_urlopen_success("v0.39.0"),
             ),
             patch.dict(
@@ -88,8 +97,9 @@ class TestGetLatestTag:
 
     def test_run_handles_no_releases(self) -> None:
         with (
-            patch(
-                "brrtrouter_tooling.ci.get_latest_tag.urlopen",
+            patch.object(
+                get_latest_tag_module,
+                "urlopen",
                 side_effect=_fake_urlopen_404(),
             ),
             patch.dict(
@@ -107,8 +117,8 @@ class TestGetLatestTag:
         """Test retry logic: fails twice with 503, then succeeds."""
         http_error = HTTPError("url", 503, "Service Unavailable", {}, None)
         with (
-            patch("brrtrouter_tooling.ci.get_latest_tag.urlopen") as mock_urlopen,
-            patch("brrtrouter_tooling.ci.get_latest_tag.time.sleep") as mock_sleep,
+            patch.object(get_latest_tag_module, "urlopen") as mock_urlopen,
+            patch("time.sleep") as mock_sleep,
             patch("sys.stderr", new=StringIO()) as fake_err,
         ):
             mock_urlopen.side_effect = [
@@ -130,8 +140,8 @@ class TestGetLatestTag:
         """Test retry logic: fails with URLError, then succeeds."""
         url_error = URLError("Connection refused")
         with (
-            patch("brrtrouter_tooling.ci.get_latest_tag.urlopen") as mock_urlopen,
-            patch("brrtrouter_tooling.ci.get_latest_tag.time.sleep") as mock_sleep,
+            patch.object(get_latest_tag_module, "urlopen") as mock_urlopen,
+            patch("time.sleep") as mock_sleep,
             patch("sys.stderr", new=StringIO()) as fake_err,
         ):
             mock_urlopen.side_effect = [url_error, _fake_urlopen_success("v0.39.0")]
@@ -147,11 +157,12 @@ class TestGetLatestTag:
         """Test that SystemExit is raised when all retries are exhausted."""
         http_error = HTTPError("url", 503, "Service Unavailable", {}, None)
         with (
-            patch(
-                "brrtrouter_tooling.ci.get_latest_tag.urlopen",
+            patch.object(
+                get_latest_tag_module,
+                "urlopen",
                 side_effect=http_error,
             ),
-            patch("brrtrouter_tooling.ci.get_latest_tag.time.sleep"),
+            patch("time.sleep"),
             patch("sys.stderr", new=StringIO()) as fake_err,
         ):
             with pytest.raises(SystemExit) as exc_info:
@@ -183,11 +194,12 @@ class TestGetLatestTag:
         """Test that run() returns 1 when retries are exhausted."""
         http_error = HTTPError("url", 503, "Service Unavailable", {}, None)
         with (
-            patch(
-                "brrtrouter_tooling.ci.get_latest_tag.urlopen",
+            patch.object(
+                get_latest_tag_module,
+                "urlopen",
                 side_effect=http_error,
             ),
-            patch("brrtrouter_tooling.ci.get_latest_tag.time.sleep"),
+            patch("time.sleep"),
             patch.dict(
                 os.environ,
                 {"GITHUB_REPOSITORY": "owner/repo", "GITHUB_TOKEN": "token"},
