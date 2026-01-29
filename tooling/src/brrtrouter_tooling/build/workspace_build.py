@@ -30,10 +30,11 @@ def build_workspace_with_options(
     """Build workspace at project_root/workspace_dir. arch: amd64|arm64|arm7. Returns 0/1."""
     manifest = project_root / workspace_dir / "Cargo.toml"
     if not manifest.exists():
-        print(f"❌ {manifest} not found", file=sys.stderr)
-        return 1
-    if gen_if_missing_callback is not None:
-        gen_if_missing_callback(project_root)
+        if gen_if_missing_callback is not None:
+            gen_if_missing_callback(project_root)
+        if not manifest.exists():
+            print(f"❌ {manifest} not found", file=sys.stderr)
+            return 1
 
     rust_target = ARCH_TARGETS.get(arch, ARCH_TARGETS["amd64"])
     use_cross = should_use_cross()
@@ -108,15 +109,18 @@ def build_package_with_options(
         return 1
     manifest = project_root / workspace_dir / "Cargo.toml"
     if not manifest.exists():
-        print(f"❌ {manifest} not found", file=sys.stderr)
-        return 1
-    if gen_if_missing_callback is not None:
-        gen_if_missing_callback(project_root)
+        if gen_if_missing_callback is not None:
+            gen_if_missing_callback(project_root)
+        if not manifest.exists():
+            print(f"❌ {manifest} not found", file=sys.stderr)
+            return 1
 
     rust_target = ARCH_TARGETS.get(arch, ARCH_TARGETS["amd64"])
     use_cross = should_use_cross()
     use_zigbuild = should_use_zigbuild()
     rel = ["--release"] if release else []
+    no_jemalloc = rust_target == "armv7-unknown-linux-musleabihf"
+    base = ["--no-default-features"] if no_jemalloc else []
 
     try:
         if use_cross:
@@ -129,7 +133,7 @@ def build_package_with_options(
                 rust_target,
                 "-p",
                 package_name,
-            ] + rel
+            ] + base + rel
             subprocess.run(cmd, check=True, cwd=str(project_root))
         elif use_zigbuild:
             cmd = [
@@ -141,7 +145,7 @@ def build_package_with_options(
                 rust_target,
                 "-p",
                 package_name,
-            ] + rel
+            ] + base + rel
             subprocess.run(cmd, check=True, cwd=str(project_root))
         else:
             cmd = [
@@ -153,7 +157,7 @@ def build_package_with_options(
                 rust_target,
                 "-p",
                 package_name,
-            ] + rel
+            ] + base + rel
             env = {**os.environ, **_get_cargo_env(rust_target)}
             subprocess.run(cmd, check=True, cwd=str(project_root), env=env)
         return 0
