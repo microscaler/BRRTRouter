@@ -120,6 +120,42 @@ class TestUpdateRefsInValue:
         assert val["$ref"] == "#/components/schemas/Foo"
 
 
+class TestMergeSameSchemaNameAcrossServices:
+    """When multiple sub-services have schemas with the same name, $ref resolves to the correct service."""
+
+    def test_refs_resolve_to_same_service_not_alphabetical_first(self, tmp_path: Path) -> None:
+        # Service alpha has User (refs Address); service beta has User (refs Address).
+        # Refs inside AlphaUser must become AlphaAddress; refs inside BetaUser must become BetaAddress.
+        alpha_spec = tmp_path / "alpha.yaml"
+        beta_spec = tmp_path / "beta.yaml"
+        alpha_spec.write_text(
+            "openapi: 3.1.0\ninfo: { title: A, version: '1.0' }\npaths: {}\n"
+            "components:\n  schemas:\n    Address:\n      type: object\n      properties:\n        street: { type: string }\n"
+            "    User:\n      type: object\n      properties:\n        address:\n          $ref: '#/components/schemas/Address'\n"
+        )
+        beta_spec.write_text(
+            "openapi: 3.1.0\ninfo: { title: B, version: '1.0' }\npaths: {}\n"
+            "components:\n  schemas:\n    Address:\n      type: object\n      properties:\n        city: { type: string }\n"
+            "    User:\n      type: object\n      properties:\n        address:\n          $ref: '#/components/schemas/Address'\n"
+        )
+        sub_services = {
+            "alpha": {"base_path": "/api/alpha", "spec_path": alpha_spec},
+            "beta": {"base_path": "/api/beta", "spec_path": beta_spec},
+        }
+        bff = merge_sub_service_specs(sub_services)
+        schemas = bff["components"]["schemas"]
+        # AlphaUser's address ref must point to AlphaAddress, not BetaAddress
+        alpha_user = schemas.get("AlphaUser")
+        assert alpha_user is not None
+        addr_ref = alpha_user.get("properties", {}).get("address", {}).get("$ref")
+        assert addr_ref == "#/components/schemas/AlphaAddress"
+        # BetaUser's address ref must point to BetaAddress, not AlphaAddress
+        beta_user = schemas.get("BetaUser")
+        assert beta_user is not None
+        addr_ref_beta = beta_user.get("properties", {}).get("address", {}).get("$ref")
+        assert addr_ref_beta == "#/components/schemas/BetaAddress"
+
+
 # --- discover_sub_services (migrated from RERP) ---
 
 

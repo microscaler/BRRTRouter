@@ -136,26 +136,44 @@ def _schema_name_mapping(
     return mapping
 
 
+def _service_prefix_for_schema(prefixed_key: str, sub_services: dict[str, Any]) -> str | None:
+    """Return the service prefix (PascalCase) for this prefixed schema key, or None if none match."""
+    for sname in sub_services:
+        prefix = _to_pascal_case(sname)
+        if prefixed_key.startswith(prefix):
+            return prefix
+    return None
+
+
 def _update_all_refs_in_value(
     val: Any,
     mapping: dict[str, list[str]],
     all_schemas: dict[str, Any],
+    service_prefix: str | None,
 ) -> None:
+    """Update $ref from unprefixed to prefixed name.
+
+    When service_prefix is set, resolve to the prefixed schema for that service only,
+    so e.g. refs inside BillingUser resolve to BillingAddress, not AccountAddress.
+    """
     if isinstance(val, dict):
         if "$ref" in val:
             ref = val["$ref"]
             if "#/components/schemas/" in ref:
                 unprefixed = ref.split("#/components/schemas/")[-1]
                 if unprefixed in mapping:
-                    for p in mapping[unprefixed]:
+                    candidates = mapping[unprefixed]
+                    if service_prefix is not None:
+                        candidates = [p for p in candidates if p.startswith(service_prefix)]
+                    for p in candidates:
                         if p in all_schemas:
                             val["$ref"] = ref.replace(unprefixed, p)
                             break
         for v in val.values():
-            _update_all_refs_in_value(v, mapping, all_schemas)
+            _update_all_refs_in_value(v, mapping, all_schemas, service_prefix)
     elif isinstance(val, list):
         for it in val:
-            _update_all_refs_in_value(it, mapping, all_schemas)
+            _update_all_refs_in_value(it, mapping, all_schemas, service_prefix)
 
 
 def _add_error_schema(
@@ -233,9 +251,10 @@ def merge_sub_service_specs(
 
     bff["components"]["parameters"] = merged_params
     mapping = _schema_name_mapping(all_schemas, sub_services)
-    for schema_def in all_schemas.values():
+    for prefixed_key, schema_def in all_schemas.items():
         if isinstance(schema_def, dict):
-            _update_all_refs_in_value(schema_def, mapping, all_schemas)
+            prefix = _service_prefix_for_schema(prefixed_key, sub_services)
+            _update_all_refs_in_value(schema_def, mapping, all_schemas, prefix)
     _add_error_schema(all_schemas, all_paths, sub_services)
 
     bff["tags"] = sorted([{"name": t} for t in all_tags], key=lambda x: x["name"])
