@@ -4,6 +4,7 @@ import sys
 
 from brrtrouter_tooling.cli import (
     bff,
+    bootstrap_cmd,
     ci_cmd,
     dependabot,
     docker_cmd,
@@ -57,6 +58,10 @@ def main() -> None:
         )
         print(
             "  gen generate|generate-stubs - Call brrtrouter-gen (gen crate or impl stubs)",
+            file=sys.stderr,
+        )
+        print(
+            "  bootstrap microservice <name> - Bootstrap crate from OpenAPI (Dockerfile, Cargo, Tiltfile)",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -123,6 +128,8 @@ def main() -> None:
         release_cmd.run_release_argv()
     elif command == "gen":
         gen_cmd.run_gen_argv()
+    elif command == "bootstrap":
+        bootstrap_cmd.run_bootstrap_argv()
     else:
         print(f"Error: Unknown command: {command}", file=sys.stderr)
         sys.exit(1)
