@@ -32,17 +32,29 @@ class TestSetupKindRegistry:
 
 
 class TestSetupPersistentVolumes:
+    def test_returns_1_when_kubectl_not_installed(self, tmp_path: Path) -> None:
+        from brrtrouter_tooling.tilt.setup_persistent_volumes import run
+
+        with patch("shutil.which", return_value=None):
+            assert run(tmp_path) == 1
+
     def test_returns_1_when_kubectl_not_connected(self, tmp_path: Path) -> None:
         from brrtrouter_tooling.tilt.setup_persistent_volumes import run
 
-        with patch("subprocess.run") as m:
+        with (
+            patch("shutil.which", return_value="/usr/bin/kubectl"),
+            patch("subprocess.run") as m,
+        ):
             m.return_value = MagicMock(returncode=1)
             assert run(tmp_path) == 1
 
     def test_returns_0_when_no_pv_files(self, tmp_path: Path) -> None:
         from brrtrouter_tooling.tilt.setup_persistent_volumes import run
 
-        with patch("subprocess.run") as m:
+        with (
+            patch("shutil.which", return_value="/usr/bin/kubectl"),
+            patch("subprocess.run") as m,
+        ):
             m.return_value = MagicMock(returncode=0, stdout="")
             assert run(tmp_path) == 0
 
