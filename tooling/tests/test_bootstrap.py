@@ -272,3 +272,25 @@ use clap::Parser;
         assert "use std::path::PathBuf;" in result
         assert "use clap::Parser;" in result
         assert "use pet_store_gen::" not in result
+
+
+class TestUpdateGenCargoToml:
+    """Test _update_gen_cargo_toml injects rust_decimal when no anchor deps exist."""
+
+    def test_injects_rust_decimal_under_dependencies_when_no_anchor(self, tmp_path: Path) -> None:
+        from brrtrouter_tooling.bootstrap.microservice import _update_gen_cargo_toml
+
+        gen_dir = tmp_path / "gen"
+        gen_dir.mkdir()
+        (gen_dir / "src").mkdir()
+        cargo_toml = gen_dir / "Cargo.toml"
+        cargo_toml.write_text(
+            '[package]\nname = "old"\nversion = "0.1.0"\n\n[dependencies]\nbrrtrouter = { workspace = true }\n'
+        )
+        (gen_dir / "src" / "lib.rs").write_text(
+            "use rust_decimal::Decimal;\nfn f() -> Decimal { Decimal::ZERO }\n"
+        )
+        _update_gen_cargo_toml(cargo_toml, "my-svc", "prefix")
+        content = cargo_toml.read_text()
+        assert "rust_decimal = { workspace = true }" in content
+        assert "rust_decimal" in content

@@ -289,6 +289,13 @@ def _update_gen_cargo_toml(cargo_path: Path, service_name: str, crate_name_prefi
                 content,
                 count=1,
             )
+        else:
+            content = re.sub(
+                r"(\[dependencies\][^\[]+)",
+                r"\1rust_decimal = { workspace = true }\n",
+                content,
+                count=1,
+            )
     cargo_path.write_text(content)
 
 

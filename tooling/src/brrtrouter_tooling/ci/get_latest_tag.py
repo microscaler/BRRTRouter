@@ -29,10 +29,22 @@ def get_latest_tag(repo: str, token: str, max_retries: int = 20) -> str | None:
         req = Request(url, headers=headers)
 
         try:
-            with urlopen(req) as response:
+            with urlopen(req, timeout=10) as response:
                 data = json.loads(response.read().decode())
                 tag_name = data.get("tag_name", "")
                 return tag_name.lstrip("v") if tag_name else None
+        except json.JSONDecodeError as e:
+            last_error = e
+            wait_time = (
+                backoff_sequence[attempt]
+                if attempt < len(backoff_sequence)
+                else (backoff_sequence[-1] if backoff_sequence else 1)
+            )
+            print(
+                f"Retry {attempt + 1}/{max_retries}: Invalid JSON ({e}), waiting {wait_time}s...",
+                file=sys.stderr,
+            )
+            time.sleep(wait_time)
         except HTTPError as e:
             if e.code == 404:
                 return None

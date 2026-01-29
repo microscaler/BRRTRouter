@@ -2,6 +2,10 @@
 
 Uses host_aware (ARCH_TARGETS, cargo/cross/zigbuild). Configurable workspace_dir,
 package list (caller passes package name), and optional gen_if_missing_callback(project_root).
+
+For arm7 (armv7-unknown-linux-musleabihf), --no-default-features is passed because
+jemalloc does not support armv7; packages that use jemalloc as a default feature
+would otherwise fail to build.
 """
 
 from __future__ import annotations
@@ -40,6 +44,7 @@ def build_workspace_with_options(
     use_cross = should_use_cross()
     use_zigbuild = should_use_zigbuild()
     rel = ["--release"] if release else []
+    # jemalloc does not support armv7; disable default features on arm7 to avoid build failures.
     no_jemalloc = rust_target == "armv7-unknown-linux-musleabihf"
     base = ["--no-default-features"] if no_jemalloc else []
 
@@ -119,6 +124,7 @@ def build_package_with_options(
     use_cross = should_use_cross()
     use_zigbuild = should_use_zigbuild()
     rel = ["--release"] if release else []
+    # jemalloc does not support armv7; disable default features on arm7 to avoid build failures.
     no_jemalloc = rust_target == "armv7-unknown-linux-musleabihf"
     base = ["--no-default-features"] if no_jemalloc else []
 

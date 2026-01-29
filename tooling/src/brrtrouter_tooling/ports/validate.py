@@ -259,10 +259,12 @@ def fix_duplicates(
                         reg = registry.list_assignments()
                     print(f"  release {s} (free {port} for {keeper})")
             if not dry_run:
-                registry.assign_port(keeper, force=False, preferred_port=port)
-                registry.update_config_files(keeper, port, port_only=True)
+                assigned_port, _ = registry.assign_port(keeper, force=False, preferred_port=port)
+                registry.update_config_files(keeper, assigned_port, port_only=True)
                 reg = registry.list_assignments()
-            print(f"  assign {keeper} = {port}")
+            else:
+                assigned_port = port
+            print(f"  assign {keeper} = {assigned_port}")
         for loser in losers:
             if reg.get(loser) is not None:
                 if not dry_run:
