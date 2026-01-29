@@ -74,7 +74,7 @@ def _get_cargo_env(rust_target: str) -> Dict[str, str]:
     return env
 
 
-def _build_workspace(
+def _run_build(
     project_root: Path,
     workspace_dir: str,
     rust_target: str,
@@ -82,12 +82,20 @@ def _build_workspace(
     use_zigbuild: bool,
     use_cross: bool,
     extra_args: List[str],
+    package_name: Optional[str] = None,
 ) -> bool:
+    """Run cargo/cross/zigbuild for workspace or a single package.
+
+    When package_name is None, uses --workspace; otherwise uses -p package_name.
+    Returns True on success.
+    """
     workspace_path = project_root / workspace_dir
     manifest = workspace_path / "Cargo.toml"
     if not manifest.exists():
         print(f"❌ Cargo.toml not found in {workspace_path}", file=sys.stderr)
         return False
+
+    package_args = ["--workspace"] if package_name is None else ["-p", package_name]
 
     if use_cross:
         cmd = [
@@ -97,8 +105,7 @@ def _build_workspace(
             str(manifest),
             "--target",
             rust_target,
-            "--workspace",
-        ] + extra_args
+        ] + package_args + extra_args
         try:
             subprocess.run(cmd, check=True, cwd=str(project_root))
             return True
@@ -114,8 +121,7 @@ def _build_workspace(
             str(manifest),
             "--target",
             rust_target,
-            "--workspace",
-        ] + extra_args
+        ] + package_args + extra_args
     else:
         cmd = [
             "cargo",
@@ -124,73 +130,7 @@ def _build_workspace(
             str(manifest),
             "--target",
             rust_target,
-            "--workspace",
-        ] + extra_args
-    try:
-        env = _get_cargo_env(rust_target) if not use_zigbuild else os.environ.copy()
-        subprocess.run(cmd, env=env, check=True, cwd=str(project_root))
-        return True
-    except subprocess.CalledProcessError as e:
-        print(f"❌ Build failed for {arch_name}: {e}", file=sys.stderr)
-        return False
-
-
-def _build_service(
-    project_root: Path,
-    workspace_dir: str,
-    binary_name: str,
-    rust_target: str,
-    arch_name: str,
-    use_zigbuild: bool,
-    use_cross: bool,
-    extra_args: List[str],
-) -> bool:
-    workspace_path = project_root / workspace_dir
-    manifest = workspace_path / "Cargo.toml"
-    if not manifest.exists():
-        print(f"❌ Cargo.toml not found in {workspace_path}", file=sys.stderr)
-        return False
-
-    if use_cross:
-        cmd = [
-            "cross",
-            "build",
-            "--manifest-path",
-            str(manifest),
-            "-p",
-            binary_name,
-            "--target",
-            rust_target,
-        ] + extra_args
-        try:
-            subprocess.run(cmd, check=True, cwd=str(project_root))
-            return True
-        except subprocess.CalledProcessError as e:
-            print(f"❌ Build failed for {arch_name}: {e}", file=sys.stderr)
-            return False
-
-    if use_zigbuild:
-        cmd = [
-            "cargo",
-            "zigbuild",
-            "--manifest-path",
-            str(manifest),
-            "--target",
-            rust_target,
-            "-p",
-            binary_name,
-        ] + extra_args
-    else:
-        cmd = [
-            "cargo",
-            "build",
-            "--manifest-path",
-            str(manifest),
-            "--target",
-            rust_target,
-            "-p",
-            binary_name,
-        ] + extra_args
+        ] + package_args + extra_args
     try:
         env = _get_cargo_env(rust_target) if not use_zigbuild else os.environ.copy()
         subprocess.run(cmd, env=env, check=True, cwd=str(project_root))
@@ -217,7 +157,7 @@ def _build_for_arch(
     no_jemalloc = rust_target == "armv7-unknown-linux-musleabihf"
     build_extra = (["--no-default-features"] if no_jemalloc else []) + (extra_args or [])
     if target == "workspace":
-        return _build_workspace(
+        return _run_build(
             project_root, workspace_dir, rust_target, arch_name, use_zigbuild, use_cross, build_extra
         )
     parts = target.split("_", 1)
@@ -229,15 +169,15 @@ def _build_for_arch(
         return False
     system, module = parts
     binary_name = default_binary_name(system, module)
-    return _build_service(
+    return _run_build(
         project_root,
         workspace_dir,
-        binary_name,
         rust_target,
         arch_name,
         use_zigbuild,
         use_cross,
         build_extra,
+        package_name=binary_name,
     )
 
 
