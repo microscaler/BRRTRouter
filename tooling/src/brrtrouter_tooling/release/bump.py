@@ -109,7 +109,7 @@ def _replace_in_file(path: Path, old: str, new: str) -> bool:
             out.append(line)
             continue
         if in_sec:
-            pat = r'(\s*version\s*=")v?' + re.escape(old) + r'"'
+            pat = r'(\s*version\s*=\s*")v?' + re.escape(old) + r'"'
             if re.search(pat, line):
                 new_line = re.sub(pat, lambda m: m.group(1) + new + '"', line, count=1)
                 out.append(new_line)

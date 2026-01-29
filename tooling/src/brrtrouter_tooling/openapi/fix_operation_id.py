@@ -39,6 +39,12 @@ def process_file(path: Path, dry_run: bool) -> tuple[int, list[tuple[int, str, s
             continue
         new_val = to_snake_case(raw)
         if new_val == raw:
+            logger.warning(
+                "operationId %r at %s:%d is not snake_case and could not be normalized",
+                raw,
+                path,
+                i + 1,
+            )
             continue
         prefix, _, _, _, trailing = m.groups()
         if line.endswith("\r\n"):
