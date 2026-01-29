@@ -6,6 +6,7 @@ from brrtrouter_tooling.cli import (
     bff,
     dependabot,
     docker_cmd,
+    openapi_cmd,
     ports,
     release_cmd,
 )
@@ -30,6 +31,10 @@ def main() -> None:
         )
         print(
             "  ports validate        - Scan registry, helm, kind, Tiltfile; report port conflicts",
+            file=sys.stderr,
+        )
+        print(
+            "  openapi <subcommand>  - validate, fix-operation-id-casing, check-decimal-formats, fix-impl-controllers",
             file=sys.stderr,
         )
         print(
@@ -81,6 +86,8 @@ def main() -> None:
         else:
             print(f"Error: Unknown bff subcommand: {subcommand}", file=sys.stderr)
             sys.exit(1)
+    elif command == "openapi":
+        openapi_cmd.run_openapi_argv()
     elif command == "ports":
         if len(sys.argv) < 3:
             print("Usage: brrtrouter ports <subcommand>", file=sys.stderr)
