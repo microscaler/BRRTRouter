@@ -2,13 +2,18 @@
 # Only merges after CI passes
 #
 # This workflow:
-# - Triggers on PR open/update and status check completion
+# - Triggers on PR open/update and check_suite completion (not status)
 # - Auto-merges minor/patch updates after CI passes
 # - Comments on major updates requiring manual review
 #
-# Do not add job-level `if: github.actor == 'dependabot[bot]'`. On check_suite/status
-# events the actor is the app that posted the check (e.g. github-actions), so that
-# would skip the job and Dependabot PRs would never be auto-merged after CI passes.
+# We trigger on check_suite (completed) only, not status. GitHub sends one status
+# event per status update (each job start/complete, codecov, etc.), so a single
+# CI run could trigger this workflow 6+ times. check_suite fires once when the
+# entire suite completes, so we run once per CI completion.
+#
+# Do not add job-level `if: github.actor == 'dependabot[bot]'`. On check_suite
+# events the actor is the app that posted the check (e.g. github-actions), so
+# that would skip the job and Dependabot PRs would never be auto-merged.
 
 name: Dependabot Auto-Merge
 
@@ -17,7 +22,11 @@ on:
     types: [opened, synchronize, reopened]
   check_suite:
     types: [completed]
-  status:
+
+# One run per PR: cancel in-progress runs when a new event fires for the same PR
+concurrency:
+  group: dependabot-automerge-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: write

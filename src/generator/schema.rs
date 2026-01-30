@@ -488,6 +488,18 @@ pub fn process_schema_type_with_spec(
     }
 }
 
+/// Returns true if any generated type uses rust_decimal::Decimal (from OpenAPI format: decimal | money).
+pub fn spec_uses_rust_decimal(types: &HashMap<String, TypeDefinition>) -> bool {
+    for type_def in types.values() {
+        for field in &type_def.fields {
+            if field.ty.contains("rust_decimal::Decimal") {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 /// Recursively collect all types referenced via $ref in a schema
 ///
 /// This ensures that when a schema references another type (e.g., Account, AccountRole),

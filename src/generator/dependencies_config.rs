@@ -165,3 +165,33 @@ pub fn resolve_config_path(explicit_path: Option<&Path>, spec_path: &Path) -> Op
 
     auto_detect_config_path(spec_path)
 }
+
+/// Path to the default brrtrouter-dependencies.toml alongside the spec (whether or not it exists).
+pub fn default_config_path(spec_path: &Path) -> Option<PathBuf> {
+    spec_path.parent().map(|p| p.join("brrtrouter-dependencies.toml"))
+}
+
+/// Write brrtrouter-dependencies.toml starter content only if the file does not exist.
+///
+/// Used when the OpenAPI spec uses decimal/money and no config exists; the caller
+/// provides content (e.g. from the Askama template). Does nothing if the file
+/// already exists (does not overwrite).
+pub fn write_dependencies_config_if_missing(
+    config_path: &Path,
+    content: &str,
+) -> anyhow::Result<()> {
+    if config_path.exists() {
+        return Ok(());
+    }
+    if let Some(parent) = config_path.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("Failed to create directory for {}", config_path.display()))?;
+    }
+    std::fs::write(config_path, content).with_context(|| {
+        format!(
+            "Failed to write dependencies config: {}",
+            config_path.display()
+        )
+    })?;
+    Ok(())
+}

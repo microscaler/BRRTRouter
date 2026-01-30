@@ -103,6 +103,7 @@ fn test_version_default_behavior() {
         false, // dry_run
         &GenerationScope::all(),
         None, // version - should default to "0.1.0"
+        None, // package_name
         None, // dependencies_config_path
     )
     .unwrap();
@@ -134,6 +135,7 @@ fn test_version_standard_semver() {
             false,
             &GenerationScope::all(),
             Some(version.to_string()),
+            None, // package_name
             None, // dependencies_config_path
         )
         .unwrap();
@@ -165,6 +167,7 @@ fn test_version_rc_prerelease() {
             false,
             &GenerationScope::all(),
             Some(version.to_string()),
+            None, // package_name
             None, // dependencies_config_path
         )
         .unwrap();
@@ -201,6 +204,7 @@ fn test_version_with_build_metadata() {
             false,
             &GenerationScope::all(),
             Some(version.to_string()),
+            None, // package_name
             None, // dependencies_config_path
         )
         .unwrap();
@@ -236,6 +240,7 @@ fn test_version_rc_with_build_metadata() {
             false,
             &GenerationScope::all(),
             Some(version.to_string()),
+            None, // package_name
             None, // dependencies_config_path
         )
         .unwrap();
@@ -319,6 +324,7 @@ fn test_version_whitespace_only() {
             false,
             &GenerationScope::all(),
             Some(version.to_string()),
+            None, // package_name
             None, // dependencies_config_path
         )
         .unwrap();
@@ -362,6 +368,7 @@ fn test_version_special_characters() {
             false,
             &GenerationScope::all(),
             Some(version.to_string()),
+            None, // package_name
             None, // dependencies_config_path
         )
         .unwrap();
@@ -402,6 +409,7 @@ fn test_version_unicode_characters() {
             false,
             &GenerationScope::all(),
             Some(version.to_string()),
+            None, // package_name
             None, // dependencies_config_path
         )
         .unwrap();
@@ -523,6 +531,7 @@ fn test_version_multiple_dashes() {
             false,
             &GenerationScope::all(),
             Some(version.to_string()),
+            None, // package_name
             None, // dependencies_config_path
         )
         .unwrap();
@@ -559,6 +568,7 @@ fn test_version_leading_zeros() {
             false,
             &GenerationScope::all(),
             Some(version.to_string()),
+            None, // package_name
             None, // dependencies_config_path
         )
         .unwrap();
@@ -598,6 +608,7 @@ fn test_version_very_large_numbers() {
             false,
             &GenerationScope::all(),
             Some(version.to_string()),
+            None, // package_name
             None, // dependencies_config_path
         )
         .unwrap();

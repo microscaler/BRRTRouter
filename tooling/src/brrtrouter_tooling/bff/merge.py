@@ -1,0 +1,309 @@
+"""Merge sub-service OpenAPI specs: paths, schemas, $ref updates, proxy extensions (Story 1.2).
+
+Per-operation x-brrtrouter-downstream-path and x-service are set here when each path is merged;
+no separate apply step is needed."""
+
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+from typing import Any
+
+from brrtrouter_tooling.helpers import (
+    downstream_path,
+    load_yaml_spec,
+    to_pascal_case,
+)
+
+logger = logging.getLogger(__name__)
+
+
+def _update_refs_in_value(val: Any, old_name: str, new_name: str) -> None:
+    if isinstance(val, dict):
+        if "$ref" in val and val["$ref"] == f"#/components/schemas/{old_name}":
+            val["$ref"] = f"#/components/schemas/{new_name}"
+        for v in val.values():
+            _update_refs_in_value(v, old_name, new_name)
+    elif isinstance(val, list):
+        for it in val:
+            _update_refs_in_value(it, old_name, new_name)
+
+
+def _merge_schemas(
+    all_schemas: dict[str, Any],
+    service_name: str,
+    schemas: dict[str, Any],
+) -> None:
+    for schema_name, schema_def in schemas.items():
+        prefixed = f"{to_pascal_case(service_name)}{schema_name}"
+        all_schemas[prefixed] = dict(schema_def) if isinstance(schema_def, dict) else schema_def
+        if isinstance(schema_def, dict):
+            _update_refs_in_value(all_schemas[prefixed], schema_name, prefixed)
+
+
+def _update_refs_in_paths(paths: dict[str, Any], old_name: str, new_name: str) -> None:
+    methods = {"get", "post", "put", "patch", "delete", "options", "head", "trace"}
+    for path_def in paths.values():
+        if not isinstance(path_def, dict):
+            continue
+        for method, op in path_def.items():
+            if method not in methods or not isinstance(op, dict):
+                continue
+            if "requestBody" in op:
+                _update_refs_in_value(op["requestBody"], old_name, new_name)
+            if "responses" in op:
+                for r in op["responses"].values():
+                    if isinstance(r, dict) and "content" in r:
+                        _update_refs_in_value(r["content"], old_name, new_name)
+
+
+def _merge_one_sub_service(
+    sname: str,
+    base_path: str,
+    spec_path: Path,
+    all_schemas: dict[str, Any],
+    all_tags: set[str],
+    all_paths: dict[str, Any],
+    merged_params: dict[str, Any],
+    param_origin: dict[str, str],
+) -> None:
+    if not spec_path.exists():
+        logger.warning("Spec file not found for service %r: %s", sname, spec_path)
+        return
+    spec = load_yaml_spec(spec_path)
+    components = spec.get("components") or {}
+
+    if "tags" in spec:
+        for t in spec["tags"]:
+            all_tags.add(t.get("name", str(t)) if isinstance(t, dict) else str(t))
+
+    if "paths" in spec:
+        http_methods = (
+            "get",
+            "post",
+            "put",
+            "patch",
+            "delete",
+            "options",
+            "head",
+            "trace",
+        )
+        for path, path_def in spec["paths"].items():
+            if not isinstance(path_def, dict):
+                continue
+            existing = all_paths.get(path)
+            if existing is None:
+                existing = {}
+            path_def = dict(path_def)
+            for key in list(path_def.keys()):
+                if key not in http_methods:
+                    # Preserve path-level properties (parameters, summary, description, servers).
+                    if key not in existing:
+                        existing[key] = path_def[key]
+                    elif existing[key] != path_def[key]:
+                        logger.warning(
+                            "Path-level property %r conflict for %s, keeping first",
+                            key,
+                            path,
+                        )
+                    continue
+                method = key
+                op = path_def[method]
+                if not isinstance(op, dict):
+                    continue
+                op = dict(op)
+                op["x-service"] = sname
+                op["x-service-base-path"] = base_path
+                op["x-brrtrouter-downstream-path"] = downstream_path(base_path, path)
+                if method in existing:
+                    existing_service = (existing.get(method) or {}).get("x-service")
+                    if existing_service is not None and existing_service != sname:
+                        msg = (
+                            f"Path conflict: {path!r} method {method!r} already "
+                            f"defined by service {existing_service!r}, duplicate from {sname!r}"
+                        )
+                        raise ValueError(msg)
+                existing[method] = op
+            all_paths[path] = existing
+
+    if "schemas" in components:
+        _merge_schemas(all_schemas, sname, components["schemas"])
+        for schema_name in components["schemas"]:
+            prefixed = f"{to_pascal_case(sname)}{schema_name}"
+            _update_refs_in_paths(all_paths, schema_name, prefixed)
+
+    if "parameters" in components:
+        for pn, pd in components["parameters"].items():
+            if pn in merged_params and merged_params[pn] != pd:
+                first_service = param_origin.get(pn, "?")
+                msg = (
+                    f"Parameter conflict for {pn!r}: already defined by service "
+                    f"{first_service!r}, conflicting definition from {sname!r}"
+                )
+                raise ValueError(msg)
+            merged_params.setdefault(pn, pd)
+            param_origin.setdefault(pn, sname)
+
+
+def _schema_name_mapping(
+    all_schemas: dict[str, Any],
+    sub_services: dict[str, Any],
+) -> dict[str, list[str]]:
+    mapping: dict[str, list[str]] = {}
+    for prefixed in sorted(all_schemas.keys()):
+        prefixes = [to_pascal_case(sname) for sname in sub_services]
+        matching = [p for p in prefixes if prefixed.startswith(p)]
+        prefix = max(matching, key=len) if matching else None
+        if prefix is not None:
+            unprefixed = prefixed[len(prefix) :]
+            if unprefixed not in mapping:
+                mapping[unprefixed] = []
+            mapping[unprefixed].append(prefixed)
+    return mapping
+
+
+def _service_prefix_for_schema(prefixed_key: str, sub_services: dict[str, Any]) -> str | None:
+    """Return the longest matching service prefix (PascalCase) for this prefixed schema key.
+
+    When service names produce overlapping prefixes (e.g. Account vs Accounting),
+    the longest match is used so AccountingUser maps to Accounting, not Account.
+    """
+    matching = [
+        to_pascal_case(sname)
+        for sname in sub_services
+        if prefixed_key.startswith(to_pascal_case(sname))
+    ]
+    return max(matching, key=len) if matching else None
+
+
+def _update_all_refs_in_value(
+    val: Any,
+    mapping: dict[str, list[str]],
+    all_schemas: dict[str, Any],
+    service_prefix: str | None,
+) -> None:
+    """Update $ref from unprefixed to prefixed name.
+
+    When service_prefix is set, resolve to the prefixed schema for that service only,
+    so e.g. refs inside BillingUser resolve to BillingAddress, not AccountAddress.
+    """
+    if isinstance(val, dict):
+        if "$ref" in val:
+            ref = val["$ref"]
+            if "#/components/schemas/" in ref:
+                unprefixed = ref.split("#/components/schemas/")[-1]
+                if unprefixed in mapping:
+                    candidates = mapping[unprefixed]
+                    if service_prefix is not None:
+                        candidates = [p for p in candidates if p.startswith(service_prefix)]
+                    for p in candidates:
+                        if p in all_schemas:
+                            val["$ref"] = f"#/components/schemas/{p}"
+                            break
+        for v in val.values():
+            _update_all_refs_in_value(v, mapping, all_schemas, service_prefix)
+    elif isinstance(val, list):
+        for it in val:
+            _update_all_refs_in_value(it, mapping, all_schemas, service_prefix)
+
+
+def _add_error_schema(
+    all_schemas: dict[str, Any],
+    all_paths: dict[str, Any],
+    sub_services: dict[str, Any],
+) -> None:
+    if "Error" not in all_schemas:
+        all_schemas["Error"] = {
+            "type": "object",
+            "required": ["error", "message"],
+            "properties": {
+                "error": {"type": "string", "description": "Error code"},
+                "message": {"type": "string", "description": "Human-readable error message"},
+                "details": {
+                    "type": "object",
+                    "nullable": True,
+                    "description": "Additional details",
+                    "additionalProperties": True,
+                },
+            },
+        }
+    matches = []
+    for sname in sorted(sub_services.keys()):
+        pe = f"{to_pascal_case(sname)}Error"
+        if pe in all_schemas:
+            matches.append(pe)
+    if len(matches) > 1:
+        msg = "Multiple service Error schemas found: " + ", ".join(matches)
+        raise ValueError(msg)
+    if len(matches) == 1:
+        pe = matches[0]
+        _update_refs_in_paths(all_paths, "Error", pe)
+        all_schemas["Error"] = {"$ref": f"#/components/schemas/{pe}"}
+
+
+def merge_sub_service_specs(
+    sub_services: dict[str, dict[str, Any]],
+    info: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Merge sub-service specs into one BFF spec with prefixed schemas and proxy extensions.
+
+    sub_services: name -> { base_path, spec_path (Path) }
+    info: optional openapi info override (title, version, description).
+    """
+    bff: dict[str, Any] = {
+        "openapi": "3.1.0",
+        "info": {
+            "title": "BFF API",
+            "description": "Backend for Frontend API (generated). Do not edit manually.",
+            "version": "1.0.0",
+        },
+        "servers": [{"url": "/", "description": "BFF"}],
+        "tags": [],
+        "paths": {},
+        "components": {"parameters": {}, "schemas": {}},
+    }
+    if info:
+        bff["info"].update(info)
+
+    all_schemas = bff["components"]["schemas"]
+    all_tags: set[str] = set()
+    all_paths: dict[str, Any] = {}
+    merged_params = dict(bff["components"]["parameters"])
+    param_origin: dict[str, str] = {}
+
+    for sname, cfg in sorted(sub_services.items()):
+        spec_path = cfg.get("spec_path")
+        base_path = cfg.get("base_path", f"/api/{sname}")
+        if isinstance(spec_path, str):
+            spec_path = Path(spec_path)
+        if not spec_path:
+            logger.warning("No spec_path configured for service %r, skipping", sname)
+            continue
+        _merge_one_sub_service(
+            sname,
+            base_path,
+            spec_path,
+            all_schemas,
+            all_tags,
+            all_paths,
+            merged_params,
+            param_origin,
+        )
+
+    bff["components"]["parameters"] = merged_params
+    mapping = _schema_name_mapping(all_schemas, sub_services)
+    for pn, pd in merged_params.items():
+        if isinstance(pd, dict):
+            origin = param_origin.get(pn)
+            prefix = to_pascal_case(origin) if origin else None
+            _update_all_refs_in_value(pd, mapping, all_schemas, prefix)
+    for prefixed_key, schema_def in all_schemas.items():
+        if isinstance(schema_def, dict):
+            prefix = _service_prefix_for_schema(prefixed_key, sub_services)
+            _update_all_refs_in_value(schema_def, mapping, all_schemas, prefix)
+    _add_error_schema(all_schemas, all_paths, sub_services)
+
+    bff["tags"] = sorted([{"name": t} for t in all_tags], key=lambda x: x["name"])
+    bff["paths"] = dict(sorted(all_paths.items()))
+    bff["components"]["schemas"] = dict(sorted(all_schemas.items()))
+    return bff

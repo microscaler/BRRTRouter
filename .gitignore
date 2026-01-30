@@ -14,6 +14,7 @@ test_results.json
 
 # Python
 __pycache__/
+**/__pycache__
 *.py[cod]
 *$py.class
 *.so
@@ -34,6 +35,7 @@ wheels/
 .installed.cfg
 *.egg
 MANIFEST
+*.pyc
 
 # Python Virtual environments
 .venv/
@@ -111,3 +113,4 @@ examples/pet_store/static_site/assets/index.html
 examples/pet_store/static_site/index.html
 
 goose_*.txt
+

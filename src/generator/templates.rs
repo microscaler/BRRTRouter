@@ -96,6 +96,14 @@ pub struct CargoTomlTemplateData {
 #[template(path = "config.yaml", escape = "none")]
 pub struct ConfigYamlTemplate;
 
+/// Template data for generating brrtrouter-dependencies.toml starter
+#[derive(Template)]
+#[template(path = "brrtrouter-dependencies.toml.txt", escape = "none")]
+pub struct BrrtrouterDependenciesTomlTemplate {
+    /// Include conditional rust_decimal when spec uses format: decimal | format: money
+    pub conditional_rust_decimal: bool,
+}
+
 /// Template data for generating main.rs entry point
 #[derive(Template)]
 #[template(path = "main.rs.txt", escape = "none")]
@@ -1048,6 +1056,27 @@ pub fn write_default_config(dir: &Path) -> anyhow::Result<()> {
     std::fs::create_dir_all(dir)?;
     std::fs::write(dir.join("config.yaml"), rendered)?;
     println!("✅ Wrote default config → {:?}", dir.join("config.yaml"));
+    Ok(())
+}
+
+/// Render brrtrouter-dependencies.toml starter content from the Askama template.
+pub fn render_brrtrouter_dependencies_starter(
+    conditional_rust_decimal: bool,
+) -> askama::Result<String> {
+    BrrtrouterDependenciesTomlTemplate {
+        conditional_rust_decimal,
+    }
+    .render()
+}
+
+/// Write brrtrouter-dependencies.toml starter to `path` only if the file does not exist.
+/// Renders from the Askama template; does not overwrite existing files.
+pub fn write_brrtrouter_dependencies_starter(
+    path: &Path,
+    conditional_rust_decimal: bool,
+) -> anyhow::Result<()> {
+    let content = render_brrtrouter_dependencies_starter(conditional_rust_decimal)?;
+    crate::generator::dependencies_config::write_dependencies_config_if_missing(path, &content)?;
     Ok(())
 }
 

@@ -55,6 +55,11 @@ pub enum Commands {
         #[arg(long, default_value = "0.1.0")]
         version: String,
 
+        /// Package name for generated Cargo.toml [package].name (e.g. rerp_accounting_financial_reports_gen)
+        /// If not provided, derived from OpenAPI spec info.title (slug)
+        #[arg(long)]
+        package_name: Option<String>,
+
         /// Path to dependencies configuration file (brrtrouter-dependencies.toml)
         /// If not provided, will auto-detect alongside the OpenAPI spec
         #[arg(long)]
@@ -163,6 +168,7 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
             dry_run,
             only,
             version,
+            package_name,
             dependencies_config,
         } => {
             let spec_path = spec
@@ -177,6 +183,7 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
                 *dry_run,
                 &scope,
                 Some(version.clone()),
+                package_name.as_deref(),
                 dependencies_config.as_deref(),
             )
             .expect("failed to generate example project");

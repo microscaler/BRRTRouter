@@ -9,12 +9,13 @@ use oas3;
 
 use crate::generator::schema::{
     collect_component_schemas, extract_fields, is_named_type, parameter_to_field,
-    process_schema_type_with_spec, to_camel_case, unique_handler_name,
+    process_schema_type_with_spec, spec_uses_rust_decimal, to_camel_case, unique_handler_name,
 };
 use crate::generator::stack_size::compute_stack_size;
 use crate::generator::templates::{
-    write_controller, write_handler, write_lib_rs, write_main_rs_with_options, write_mod_rs,
-    write_openapi_index, write_registry_rs, write_static_index, write_types_rs, RegistryEntry,
+    write_brrtrouter_dependencies_starter, write_controller, write_handler, write_lib_rs,
+    write_main_rs_with_options, write_mod_rs, write_openapi_index, write_registry_rs,
+    write_static_index, write_types_rs, RegistryEntry,
 };
 
 use anyhow::Context;
@@ -107,6 +108,7 @@ pub fn generate_project_from_spec(spec_path: &Path, force: bool) -> anyhow::Resu
         &GenerationScope::all(),
         None,
         None,
+        None,
     )
 }
 
@@ -137,6 +139,7 @@ pub fn generate_project_with_options(
     dry_run: bool,
     scope: &GenerationScope,
     version: Option<String>,
+    package_name: Option<&str>,
     dependencies_config_path: Option<&Path>,
 ) -> anyhow::Result<PathBuf> {
     let mut created: Vec<String> = Vec::new();
@@ -203,17 +206,6 @@ pub fn generate_project_with_options(
         skipped.push(format!("spec: exists → {spec_copy_path:?}"));
     }
 
-    // Load dependencies config if available
-    let deps_config = if let Some(config_path) =
-        crate::generator::dependencies_config::resolve_config_path(
-            dependencies_config_path,
-            spec_path,
-        ) {
-        crate::generator::dependencies_config::load_dependencies_config(&config_path)?
-    } else {
-        None
-    };
-
     let mut schema_types = collect_component_schemas(spec_path)?;
 
     // Load spec once for resolving $ref in request/response schemas
@@ -235,6 +227,32 @@ pub fn generate_project_with_options(
             process_schema_type_with_spec(&name, schema, &mut schema_types, Some(&spec));
         }
     }
+
+    // Resolve dependencies config: use explicit path, or auto-detect alongside spec.
+    // If spec uses decimal/money and no config exists, create brrtrouter-dependencies.toml
+    // so gen produces it from the spec instead of requiring manual creation.
+    let mut config_path =
+        crate::generator::dependencies_config::resolve_config_path(
+            dependencies_config_path,
+            spec_path,
+        );
+    if config_path.is_none() && spec_uses_rust_decimal(&schema_types) {
+        if let Some(ref default_path) =
+            crate::generator::dependencies_config::default_config_path(spec_path)
+        {
+            write_brrtrouter_dependencies_starter(
+                default_path,
+                true, // starter includes rust_decimal when spec uses decimal/money
+            )?;
+            println!("✅ Created brrtrouter-dependencies.toml (spec uses decimal/money)");
+            config_path = Some(default_path.clone());
+        }
+    }
+    let deps_config = if let Some(ref path) = config_path {
+        crate::generator::dependencies_config::load_dependencies_config(path)?
+    } else {
+        None
+    };
 
     let mut seen = HashSet::new();
     let mut modules_handlers = Vec::new();
@@ -431,9 +449,10 @@ pub fn generate_project_with_options(
                 }
             }
 
+            let cargo_package_name = package_name.unwrap_or(&slug);
             crate::generator::templates::write_cargo_toml_with_options(
                 &base_dir,
-                &slug,
+                cargo_package_name,
                 use_workspace_deps,
                 None,
                 version.clone(),
