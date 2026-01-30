@@ -79,6 +79,7 @@ def run_gen_argv() -> None:
         output = None
         component_name = None
         force = "--force" in args
+        sync = "--sync" in args
         project_root, brrtrouter_path = _parse_common_args(args)
         i = 0
         while i < len(args):
@@ -103,6 +104,7 @@ def run_gen_argv() -> None:
             project_root=project_root,
             brrtrouter_path=brrtrouter_path,
             force=force,
+            sync=sync,
             capture_output=False,
         )
         sys.exit(result.returncode)

@@ -231,11 +231,10 @@ pub fn generate_project_with_options(
     // Resolve dependencies config: use explicit path, or auto-detect alongside spec.
     // If spec uses decimal/money and no config exists, create brrtrouter-dependencies.toml
     // so gen produces it from the spec instead of requiring manual creation.
-    let mut config_path =
-        crate::generator::dependencies_config::resolve_config_path(
-            dependencies_config_path,
-            spec_path,
-        );
+    let mut config_path = crate::generator::dependencies_config::resolve_config_path(
+        dependencies_config_path,
+        spec_path,
+    );
     if config_path.is_none() && spec_uses_rust_decimal(&schema_types) {
         if let Some(ref default_path) =
             crate::generator::dependencies_config::default_config_path(spec_path)
@@ -630,32 +629,45 @@ pub fn generate_project_with_options(
     Ok(base_dir)
 }
 
+/// Sentinels that mark a handler as user-owned; when present, --force does not overwrite the body.
+pub const USER_OWNED_SENTINELS: &[&str] = &["// BRRTRouter: user-owned", "// Implemented"];
+
+/// Returns true if the file content contains a user-owned sentinel (handler is protected from overwrite).
+fn file_has_user_owned_sentinel(content: &str) -> bool {
+    USER_OWNED_SENTINELS
+        .iter()
+        .any(|sentinel| content.contains(sentinel))
+}
+
 /// Generate implementation stubs in the impl crate
 ///
 /// Creates stub files for controllers that don't have implementations yet.
 /// Stubs are NOT auto-regenerated - they are user-owned once created.
-/// Use --force to overwrite existing stubs.
+/// Use --force to overwrite existing stubs (handlers with sentinel are never overwritten).
+/// Use --sync to patch only signature and Response struct literal for stubs that have the sentinel.
 ///
 /// # Arguments
 ///
 /// * `spec_path` - Path to OpenAPI specification
 /// * `impl_output_dir` - Path to impl crate directory (e.g., `crates/bff_impl`)
 /// * `handler_name` - Optional: generate stub for specific handler only (per-path)
-/// * `force` - Overwrite existing stubs
+/// * `force` - Overwrite existing stubs (skipped when sentinel present)
+/// * `sync` - When true, only patch existing stubs that have the sentinel (no create, no full overwrite)
 ///
 /// # Behavior
 ///
-/// - If stub doesn't exist → create it
-/// - If stub exists and --force → overwrite it (with warning)
-/// - If stub exists and no --force → skip it (protect user implementation)
-/// - Updates mod.rs to include new modules
-/// - Creates Cargo.toml and main.rs if impl crate doesn't exist
+/// - If `sync`: for each existing stub with sentinel → patch Response/signature only
+/// - If stub doesn't exist and !sync → create it
+/// - If stub exists and --force and no sentinel → overwrite it
+/// - If stub exists and --force and sentinel present → skip overwrite (preserve user implementation)
+/// - If stub exists and no --force → skip it
 pub fn generate_impl_stubs(
     spec_path: &Path,
     impl_output_dir: &Path,
     component_name: Option<&str>,
     handler_name: Option<&str>,
     force: bool,
+    sync: bool,
 ) -> anyhow::Result<()> {
     use crate::generator::templates::{
         update_impl_mod_rs, write_impl_cargo_toml, write_impl_controller_stub, write_impl_main_rs,
@@ -717,17 +729,68 @@ pub fn generate_impl_stubs(
     let mut created = Vec::new();
     let mut skipped = Vec::new();
     let mut overwritten = Vec::new();
+    let mut preserved = Vec::new();
+    let mut synced = Vec::new();
 
     // Generate stubs for each handler
     for handler in handlers_to_generate {
         let stub_path = impl_controllers_dir.join(format!("{handler}.rs"));
         let existed = stub_path.exists();
 
-        // Check if we should skip
+        // Sync-only mode: only patch existing stubs that have the sentinel
+        if sync {
+            if !existed {
+                continue;
+            }
+            let content = match fs::read_to_string(&stub_path) {
+                Ok(c) => c,
+                Err(e) => {
+                    println!("⚠️  Could not read {stub_path:?}: {e}");
+                    continue;
+                }
+            };
+            if !file_has_user_owned_sentinel(&content) {
+                continue;
+            }
+            // Find route and patch Response block
+            let route = routes
+                .iter()
+                .find(|r| r.handler_name.as_ref() == handler.as_str())
+                .ok_or_else(|| anyhow::anyhow!("Handler not found in spec: {}", handler))?;
+            let response_fields = route
+                .response_schema
+                .as_ref()
+                .map_or(vec![], extract_fields);
+            if let Ok(new_content) = crate::generator::templates::sync_impl_stub_response(
+                &content,
+                &response_fields,
+                route.sse,
+                route.example.as_ref(),
+            ) {
+                fs::write(&stub_path, new_content)?;
+                synced.push(handler.clone());
+                println!("✅ Synced (signature/Response): {stub_path:?}");
+            } else {
+                println!("⚠️  Sync skipped (could not patch): {stub_path:?}");
+            }
+            continue;
+        }
+
+        // Check if we should skip (existed and no force)
         if existed && !force {
             skipped.push(handler.clone());
             println!("⚠️  Skipping existing stub: {stub_path:?} (use --force to overwrite)");
             continue;
+        }
+
+        // When force: if stub has sentinel, do not overwrite (preserve user implementation)
+        if existed && force {
+            let content = fs::read_to_string(&stub_path).unwrap_or_default();
+            if file_has_user_owned_sentinel(&content) {
+                preserved.push(handler.clone());
+                println!("ℹ️  Preserved (user-owned): {stub_path:?} (use --sync to patch signature/Response only)");
+                continue;
+            }
         }
 
         // Find route for this handler
@@ -799,6 +862,16 @@ pub fn generate_impl_stubs(
             overwritten.len(),
             overwritten
         );
+    }
+    if !preserved.is_empty() {
+        println!(
+            "ℹ️  Preserved {} user-owned stub(s): {:?} (use --sync to patch signature/Response only)",
+            preserved.len(),
+            preserved
+        );
+    }
+    if !synced.is_empty() {
+        println!("✅ Synced {} stub(s): {:?}", synced.len(), synced);
     }
     if !skipped.is_empty() {
         println!(

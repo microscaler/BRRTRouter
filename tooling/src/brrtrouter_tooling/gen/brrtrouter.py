@@ -105,6 +105,7 @@ def call_brrtrouter_generate_stubs(
     project_root: Path,
     brrtrouter_path: Path | None = None,
     force: bool = False,
+    sync: bool = False,
     capture_output: bool = False,
 ) -> subprocess.CompletedProcess:
     """Call BRRTRouter's generate-stubs command to generate impl crate.
@@ -115,7 +116,8 @@ def call_brrtrouter_generate_stubs(
         component_name: Component name (gen crate name) for --component-name
         project_root: Consumer project root (cwd for cargo run)
         brrtrouter_path: Optional path to BRRTRouter (defaults to ../BRRTRouter)
-        force: Whether to force overwrite existing stubs
+        force: Whether to force overwrite existing stubs (skipped when sentinel present)
+        sync: When true, only patch existing stubs that have the user-owned sentinel
         capture_output: Whether to capture stdout/stderr
 
     Returns:
@@ -136,6 +138,8 @@ def call_brrtrouter_generate_stubs(
         ]
         if force:
             cmd.append("--force")
+        if sync:
+            cmd.append("--sync")
     else:
         cmd = [
             "cargo",
@@ -155,6 +159,8 @@ def call_brrtrouter_generate_stubs(
         ]
         if force:
             cmd.append("--force")
+        if sync:
+            cmd.append("--sync")
 
     return subprocess.run(
         cmd,

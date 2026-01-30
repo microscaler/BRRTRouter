@@ -70,6 +70,8 @@ pub enum Commands {
     /// Creates stub files for controllers in the {component}_impl crate.
     /// Stubs are NOT auto-regenerated - they are user-owned once created.
     /// Use --force to overwrite existing stubs (per-path basis).
+    /// Handlers that contain the sentinel (e.g. // BRRTRouter: user-owned) are
+    /// never overwritten by --force; use --sync to patch only signature/Response shape.
     GenerateStubs {
         /// Path to the OpenAPI specification file (YAML or JSON)
         #[arg(short, long)]
@@ -91,6 +93,10 @@ pub enum Commands {
         /// Overwrite existing stub files (required to regenerate)
         #[arg(short, long, default_value_t = false)]
         force: bool,
+
+        /// Sync only: patch handler signature and Response struct literal to match spec; do not overwrite body. Only affects files that contain the user-owned sentinel.
+        #[arg(long, default_value_t = false)]
+        sync: bool,
     },
     /// Lint an OpenAPI specification
     ///
@@ -199,6 +205,7 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
             component_name,
             path,
             force,
+            sync,
         } => {
             crate::generator::generate_impl_stubs(
                 spec.as_path(),
@@ -206,6 +213,7 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
                 component_name.as_deref(),
                 path.as_deref(),
                 *force,
+                *sync,
             )?;
             // Format generated stubs using the same implementation as generate
             crate::generator::format_project(output.as_path())?;

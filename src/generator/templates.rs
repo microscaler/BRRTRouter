@@ -1340,6 +1340,82 @@ pub fn write_impl_main_rs(
     Ok(())
 }
 
+/// Sync only the Response { ... } block in an existing impl stub (Option B).
+/// Used when the stub has the user-owned sentinel; patches struct literal to match current spec.
+/// Returns Ok(new_content) on success, Err if the block could not be found or replaced.
+pub fn sync_impl_stub_response(
+    content: &str,
+    response_fields: &[FieldDef],
+    sse: bool,
+    example: Option<&Value>,
+) -> anyhow::Result<String> {
+    if sse {
+        return Err(anyhow::anyhow!("Sync not supported for SSE handlers"));
+    }
+    let response_is_array =
+        response_fields.len() == 1 && response_fields.get(0).map(|f| f.name.as_str()) == Some("items");
+    if response_is_array {
+        return Err(anyhow::anyhow!("Sync not supported for array response handlers"));
+    }
+    let example_map = example
+        .and_then(|v| v.as_object())
+        .map(|m| m.clone())
+        .unwrap_or_default();
+    let enriched: Vec<FieldDef> = response_fields
+        .iter()
+        .map(|field| {
+            let value = example_map
+                .get(&field.original_name)
+                .map(|val| super::schema::rust_literal_for_example(field, val))
+                .unwrap_or_else(|| field.value.clone());
+            FieldDef {
+                name: field.name.clone(),
+                original_name: field.original_name.clone(),
+                ty: field.ty.clone(),
+                optional: field.optional,
+                value,
+            }
+        })
+        .collect();
+    let new_block = format!(
+        "Response {{\n        {}\n    }}",
+        enriched
+            .iter()
+            .map(|f| {
+                let val = if f.optional {
+                    "None".to_string()
+                } else {
+                    f.value.clone()
+                };
+                format!("{}: {},", f.name, val)
+            })
+            .collect::<Vec<_>>()
+            .join("\n        ")
+    );
+    let needle = "Response {";
+    let start = content.find(needle).ok_or_else(|| anyhow::anyhow!("Response {{ not found"))?;
+    let after_brace = start + needle.len();
+    let mut depth = 1u32;
+    let mut i = after_brace;
+    let bytes = content.as_bytes();
+    while i < bytes.len() && depth > 0 {
+        match bytes[i] {
+            b'{' => depth += 1,
+            b'}' => depth -= 1,
+            _ => {}
+        }
+        i += 1;
+    }
+    if depth != 0 {
+        return Err(anyhow::anyhow!("Unbalanced braces in Response block"));
+    }
+    let end = i;
+    let mut out = content[..start].to_string();
+    out.push_str(&new_block);
+    out.push_str(&content[end..]);
+    Ok(out)
+}
+
 /// Update impl crate's controllers/mod.rs to include a new module
 ///
 /// If mod.rs doesn't exist, create it with the module declaration.
