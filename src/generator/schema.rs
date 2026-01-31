@@ -274,7 +274,7 @@ pub fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
             if field.ty.contains("rust_decimal::Decimal") || field.ty.contains("Decimal") {
                 // Convert number to Decimal::new(mantissa, scale)
                 // For example: 123.45 → Decimal::new(12345, 2)
-                if let Some(f) = n.as_f64() {
+                if let Some(_f) = n.as_f64() {
                     // Parse as string to preserve precision, then convert to Decimal
                     let s = n.to_string();
                     if s.contains('.') {
