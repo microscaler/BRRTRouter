@@ -293,3 +293,59 @@ fn test_to_snake_case() {
     assert_eq!(to_snake_case("getUserById"), "get_user_by_id");
     assert_eq!(to_snake_case("get-user"), "get_user");
 }
+
+#[test]
+fn test_lint_money_type_without_decimal_format() {
+    // type: number without format: decimal for money-like property should warn
+    let spec = r#"
+openapi: 3.1.0
+info:
+  title: Test API
+  version: 1.0.0
+paths:
+  /payments:
+    get:
+      operationId: list_payments
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  payment_amount:
+                    type: number
+                  total_balance:
+                    type: number
+                  currency_code:
+                    type: string
+components:
+  schemas:
+    Payment:
+      type: object
+      properties:
+        amount:
+          type: number
+        applied_amount:
+          type: number
+          format: decimal
+"#;
+
+    let issues = lint_yaml(spec);
+    let money_issues: Vec<_> = issues
+        .iter()
+        .filter(|i| i.kind == "money_type_without_decimal_format")
+        .collect();
+
+    // payment_amount and total_balance in response schema; amount in Payment (applied_amount has format: decimal)
+    assert!(
+        money_issues.len() >= 2,
+        "Should warn for type: number without format on money-like properties. Found: {:?}",
+        issues
+    );
+    assert!(money_issues
+        .iter()
+        .all(|i| i.severity == LintSeverity::Warning));
+    assert!(money_issues.iter().all(|i| i.suggestion.is_some()));
+}

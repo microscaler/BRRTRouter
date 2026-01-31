@@ -581,7 +581,7 @@ impl DependencyRegistry {
 ///
 /// Converts DependencySpec to a TOML-formatted string suitable for Cargo.toml
 fn format_dependency_spec(
-    name: &str,
+    _name: &str,
     spec: &crate::generator::DependencySpec,
     use_workspace_deps: bool,
 ) -> String {
@@ -913,9 +913,19 @@ pub(crate) fn write_cargo_toml_with_options(
     let mut config_dependencies = Vec::new();
     let mut config_conditional_dependencies = Vec::new();
 
+    // When using workspace deps, only include deps that exist in [workspace.dependencies]
+    let workspace_deps: HashSet<String> = if use_workspace_deps {
+        detect_workspace_dependencies(base)
+    } else {
+        HashSet::new()
+    };
+
     if let Some(config) = deps_config {
-        // Always-included dependencies
+        // Always-included dependencies (filter by workspace when use_workspace_deps)
         for (name, spec) in &config.dependencies {
+            if use_workspace_deps && !workspace_deps.is_empty() && !workspace_deps.contains(name) {
+                continue;
+            }
             let formatted = format_dependency_spec(name, spec, use_workspace_deps);
             config_dependencies.push(FormattedDependency {
                 name: name.clone(),
@@ -928,6 +938,12 @@ pub(crate) fn write_cargo_toml_with_options(
         let detected_set = detected_conditional_deps.unwrap_or(&empty_set);
         for (name, cond_dep) in &config.conditional {
             if detected_set.contains(name) {
+                if use_workspace_deps
+                    && !workspace_deps.is_empty()
+                    && !workspace_deps.contains(name)
+                {
+                    continue;
+                }
                 let spec = cond_dep.to_spec();
                 let formatted = format_dependency_spec(name, &spec, use_workspace_deps);
                 config_conditional_dependencies.push(FormattedDependency {
