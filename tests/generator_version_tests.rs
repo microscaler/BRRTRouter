@@ -271,6 +271,7 @@ fn test_version_empty_string() {
         false,
         &GenerationScope::all(),
         Some(String::new()),
+        None, // package_name
         None, // dependencies_config_path
     )
     .unwrap();
@@ -431,6 +432,7 @@ fn test_version_unicode_characters() {
         false,
         &GenerationScope::all(),
         Some(unicode_version.to_string()),
+        None, // package_name
         None, // dependencies_config_path
     )
     .unwrap();
@@ -463,6 +465,7 @@ fn test_version_very_long_string() {
         false,
         &GenerationScope::all(),
         Some(long_version.clone()),
+        None, // package_name
         None, // dependencies_config_path
     )
     .unwrap();
@@ -492,6 +495,7 @@ fn test_version_with_quotes() {
         false,
         &GenerationScope::all(),
         Some(version_with_quotes.to_string()),
+        None, // package_name
         None, // dependencies_config_path
     )
     .unwrap();
@@ -640,6 +644,7 @@ fn test_version_preserved_in_cargo_toml_structure() {
         false,
         &GenerationScope::all(),
         Some(version.to_string()),
+        None, // package_name
         None, // dependencies_config_path
     )
     .unwrap();
