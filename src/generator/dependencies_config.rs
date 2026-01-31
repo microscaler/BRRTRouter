@@ -168,7 +168,9 @@ pub fn resolve_config_path(explicit_path: Option<&Path>, spec_path: &Path) -> Op
 
 /// Path to the default brrtrouter-dependencies.toml alongside the spec (whether or not it exists).
 pub fn default_config_path(spec_path: &Path) -> Option<PathBuf> {
-    spec_path.parent().map(|p| p.join("brrtrouter-dependencies.toml"))
+    spec_path
+        .parent()
+        .map(|p| p.join("brrtrouter-dependencies.toml"))
 }
 
 /// Write brrtrouter-dependencies.toml starter content only if the file does not exist.
