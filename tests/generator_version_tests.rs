@@ -167,7 +167,10 @@ fn test_package_name_default_behavior() {
     assert!(cargo_toml.exists());
     let name = read_package_name_from_cargo_toml(&cargo_toml);
     // examples/openapi.yaml has title "Pet Store" -> slug "pet_store"
-    assert_eq!(name, "pet_store", "default package name should be slug from spec title");
+    assert_eq!(
+        name, "pet_store",
+        "default package name should be slug from spec title"
+    );
 }
 
 #[test]
@@ -185,9 +188,9 @@ fn test_package_name_rerp_use_case() {
         true,
         false,
         &GenerationScope::all(),
-        None, // version
+        None,                            // version
         Some("rerp_accounting_edi_gen"), // package_name (RERP use case)
-        None, // dependencies_config_path
+        None,                            // dependencies_config_path
     )
     .unwrap();
 
@@ -195,8 +198,7 @@ fn test_package_name_rerp_use_case() {
     assert!(cargo_toml.exists());
     let name = read_package_name_from_cargo_toml(&cargo_toml);
     assert_eq!(
-        name,
-        "rerp_accounting_edi_gen",
+        name, "rerp_accounting_edi_gen",
         "when package_name is provided it must be used verbatim in Cargo.toml"
     );
 }

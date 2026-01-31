@@ -40,9 +40,9 @@ pub fn handle(req: TypedHandlerRequest<Request>) -> Response {
     Response({{ response_array_literal }})
     {% else %}
     Response {
-        {% for field in response_fields -%}
-        {{ field.name }}: {% if field.optional %}None{% else %}{{ field.value }}{% endif %},  // TODO: Set from your business logic
-        {%- endfor %}
+        {% for field in response_fields %}
+        {{ field.name }}: {% if field.optional %}None{% else %}{{ field.value }}{% endif %}, // TODO: Set from your business logic
+        {% endfor %}
     }
     {% endif %}
 }
