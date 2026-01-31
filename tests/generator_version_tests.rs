@@ -45,6 +45,34 @@ impl Drop for VersionTestFixture {
     }
 }
 
+/// Helper to read [package].name from generated Cargo.toml
+fn read_package_name_from_cargo_toml(cargo_toml: &Path) -> String {
+    let content = fs::read_to_string(cargo_toml).unwrap();
+    let mut in_package = false;
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed == "[package]" {
+            in_package = true;
+            continue;
+        }
+        if in_package && trimmed.starts_with('[') {
+            break;
+        }
+        if in_package && trimmed.starts_with("name =") {
+            if let Some(start) = trimmed.find('"') {
+                let rest = &trimmed[start + 1..];
+                if let Some(end) = rest.find('"') {
+                    return rest[..end].to_string();
+                }
+            }
+        }
+    }
+    panic!(
+        "Could not find [package].name in Cargo.toml. Content:\n{}",
+        content
+    );
+}
+
 /// Helper to read version from generated Cargo.toml
 fn read_version_from_cargo_toml(cargo_toml: &Path) -> String {
     let content = fs::read_to_string(cargo_toml).unwrap();
@@ -112,6 +140,65 @@ fn test_version_default_behavior() {
     assert!(cargo_toml.exists());
     let version = read_version_from_cargo_toml(&cargo_toml);
     assert_eq!(version, "0.1.0");
+}
+
+#[test]
+fn test_package_name_default_behavior() {
+    // When package_name is None, [package].name should be the slug derived from spec title
+    let fixture = VersionTestFixture::new();
+    let dir = fixture.path();
+    let spec_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("examples")
+        .join("openapi.yaml");
+
+    let project = generate_project_with_options(
+        &spec_path,
+        Some(dir),
+        true,
+        false,
+        &GenerationScope::all(),
+        None, // version
+        None, // package_name -> defaults to slug
+        None, // dependencies_config_path
+    )
+    .unwrap();
+
+    let cargo_toml = project.join("Cargo.toml");
+    assert!(cargo_toml.exists());
+    let name = read_package_name_from_cargo_toml(&cargo_toml);
+    // examples/openapi.yaml has title "Pet Store" -> slug "pet_store"
+    assert_eq!(name, "pet_store", "default package name should be slug from spec title");
+}
+
+#[test]
+fn test_package_name_rerp_use_case() {
+    // RERP passes --package-name so gen crate has e.g. rerp_accounting_edi_gen
+    let fixture = VersionTestFixture::new();
+    let dir = fixture.path();
+    let spec_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("examples")
+        .join("openapi.yaml");
+
+    let project = generate_project_with_options(
+        &spec_path,
+        Some(dir),
+        true,
+        false,
+        &GenerationScope::all(),
+        None, // version
+        Some("rerp_accounting_edi_gen"), // package_name (RERP use case)
+        None, // dependencies_config_path
+    )
+    .unwrap();
+
+    let cargo_toml = project.join("Cargo.toml");
+    assert!(cargo_toml.exists());
+    let name = read_package_name_from_cargo_toml(&cargo_toml);
+    assert_eq!(
+        name,
+        "rerp_accounting_edi_gen",
+        "when package_name is provided it must be used verbatim in Cargo.toml"
+    );
 }
 
 #[test]
