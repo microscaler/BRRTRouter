@@ -28,5 +28,5 @@ http = "1.0"  # Do not update to newer version, it that is not compatible with m
 may = "0.3"
 may_minihttp = "0.1"
 anyhow = "1.0"
-clap = { version = "4.5.39", features = ["derive"] }
+clap = { version = "4.5.56", features = ["derive"] }
 tikv-jemallocator = { version = "0.6", features = ["profiling"], optional = true }
