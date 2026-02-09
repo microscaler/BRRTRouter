@@ -36,11 +36,11 @@ http = "1.0"  # Do not update to newer version, it that is not compatible with m
 may = "0.3"  # generator-rs is patched via [patch.crates-io] section at the end of this file
 # Using our fork until PR #21 is merged upstream
 may_minihttp = { git = "https://github.com/microscaler/may_minihttp.git", branch = "feat/configurable-max-headers" }
-regex = "1.11.1"
+regex = "1.12.3"
 smallvec = { version = "1.13", features = ["serde"] }  # Stack-allocated vectors for hot path (JSF: no heap in dispatch)
 url = "2.5.8"
-clap = { version = "4.5.55", features = ["cargo", "env", "derive"] }
-askama = { version = "0.15.3", features = ["full"] }
+clap = { version = "4.5.57", features = ["cargo", "env", "derive"] }
+askama = { version = "0.15.4", features = ["full"] }
 notify = "8"
 memory-stats = "1.1"  # For cross-platform memory monitoring
 tikv-jemallocator = { version = "0.6", optional = true }
