@@ -103,7 +103,7 @@ jobs:
 
       - name: Set up QEMU for cross-compilation
         if: matrix.cross == true
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
         with:
           platforms: ${{ matrix.container_platform != '' && format('{0}', matrix.container_platform) || 'arm64,arm' }}
 
