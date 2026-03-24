@@ -5,17 +5,18 @@ apiVersion: kind.x-k8s.io/v1alpha4
 name: brrtrouter-dev
 # Use stable Kubernetes version (v1.33.1 may have issues on some systems)
 # Uncomment to use a specific version:
-# nodes:
-#   - role: control-plane
-#     image: kindest/node:v1.29.2
+#nodes:
+# - role: control-plane
+#   image: kindest/node:v1.33.7@sha256:d26ef333bdb2cbe9862a0f7c3803ecc7b4303d8cea8e814b481b09949d353040
 # Enable local registry support for project images
 # See: https://kind.sigs.k8s.io/docs/user/local-registry/
 containerdConfigPatches:
   - |-
     [plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:5001"]
-      endpoint = ["http://kind-registry:5000"]
+      endpoint = ["http://kind-registry:5001"]
 nodes:
   - role: control-plane
+    image: kindest/node:v1.33.7@sha256:d26ef333bdb2cbe9862a0f7c3803ecc7b4303d8cea8e814b481b09949d353040
     # Mount Docker volumes for persistent observability data
     # These volumes survive cluster recreation
     extraMounts:
@@ -79,4 +80,10 @@ nodes:
             # Faster reconciliation for development
             node-monitor-period: "2s"
             node-monitor-grace-period: "16s"
-
+      - |
+        kind: ClusterConfiguration
+        apiVersion: kubeadm.k8s.io/v1beta4
+        apiServer:
+          extraArgs:
+            - name: "v"
+              value: "4"

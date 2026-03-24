@@ -499,9 +499,12 @@ backup-before-upgrade:
 # ============================================================================
 
 # Start local Docker registry for project images (needed for Tilt)
+# Docker client 29+ uses API 1.44; older daemons (e.g. Docker Desktop) may return 500.
+# Set DOCKER_API_VERSION=1.43 (or 1.42) if you see "500 Internal Server Error" / "check if the server supports the requested API version".
 dev-registry:
 	#!/usr/bin/env bash
 	set -euo pipefail
+	export DOCKER_API_VERSION="${DOCKER_API_VERSION:-1.44}"
 	echo "Starting local Docker registry..."
 	
 	# Check if registry is already running
@@ -529,6 +532,7 @@ dev-registry:
 dev-registry-verify:
 	#!/usr/bin/env bash
 	set -euo pipefail
+	export DOCKER_API_VERSION="${DOCKER_API_VERSION:-1.43}"
 	echo "Verifying local registry..."
 	
 	# Check if running
@@ -584,6 +588,8 @@ dev-observability-verify:
 dev-up:
 	#!/usr/bin/env bash
 	set -euo pipefail
+	# Docker 29 client vs older daemon: force API 1.43 to avoid 500 on _ping (see dev-registry comment).
+	export DOCKER_API_VERSION="${DOCKER_API_VERSION:-1.43}"
 	echo "Starting BRRTRouter development environment..."
 	echo ""
 	
@@ -620,6 +626,7 @@ dev-up:
 dev-down:
 	#!/usr/bin/env bash
 	set -euo pipefail
+	export DOCKER_API_VERSION="${DOCKER_API_VERSION:-1.43}"
 	echo "Stopping Tilt..."
 	tilt down || true
 	echo ""
@@ -660,6 +667,7 @@ dev-rebuild:
 dev-clean:
 	#!/usr/bin/env bash
 	set -euo pipefail
+	export DOCKER_API_VERSION="${DOCKER_API_VERSION:-1.43}"
 	echo "Cleaning Docker state for KIND..."
 	echo ""
 	
