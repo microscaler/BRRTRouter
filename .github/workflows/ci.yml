@@ -379,7 +379,7 @@ jobs:
           cargo run --release --example api_load_test -- \
             --host http://127.0.0.1:8080 \
             --users 20 \
-            --hatch-rate 5 \
+            --increase-rate 5 \
             --run-time 2m \
             --no-reset-metrics \
             --report-file goose-report.html \

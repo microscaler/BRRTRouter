@@ -4,11 +4,18 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["jemalloc"]
-# Use jemalloc as the global allocator for better memory performance.
-# Disable this feature if brrtrouter is already providing jemalloc via its own feature,
-# or if you want to use the system allocator.
+default = []
+# jemalloc is opt-in (--features jemalloc). On armv7-unknown-linux-musleabihf and other musl
+# targets, tikv-jemallocator can pull in compiler-rt symbols (e.g. __ffsdi2) that are not
+# provided by musl, causing link errors. Use default = [] and enable jemalloc only for
+# amd64/arm64 glibc builds where it is supported. See: https://github.com/rust-lang/compiler-builtins
 jemalloc = ["tikv-jemallocator"]
+
+# Gen crates expose request/response types in handlers/types.rs that are only constructed
+# in the impl crate (via serde). When CI runs clippy -p <gen> -- -D warnings, those types
+# are reported as dead code unless we allow it here.
+[lints.rust]
+dead_code = "allow"
 
 [dependencies]
 # NOTE: Additional dependencies can be configured via brrtrouter-dependencies.toml

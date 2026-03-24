@@ -36,7 +36,7 @@ def run_goose_test(host: str, users: int, run_time: str, hatch_rate: int,
     print(f"   Host: {host}")
     print(f"   Users: {users}")
     print(f"   Run Time: {run_time}")
-    print(f"   Hatch Rate: {hatch_rate}/s")
+    print(f"   Increase rate: {hatch_rate}/s (Goose -r / --increase-rate)")
     print(f"   Output: {output_file}\n")
     
     cmd = [
@@ -45,7 +45,7 @@ def run_goose_test(host: str, users: int, run_time: str, hatch_rate: int,
         '--host', host,
         '--users', str(users),
         '--run-time', run_time,
-        '--hatch-rate', str(hatch_rate),
+        '--increase-rate', str(hatch_rate),
         '--no-reset-metrics',
     ]
     
@@ -81,7 +81,7 @@ def warmup_server(host: str, warmup_time: int = 10) -> None:
         '--',
         '--host', host,
         '--users', '10',
-        '--hatch-rate', '5',
+        '--increase-rate', '5',
         '--run-time', f'{warmup_time}s',
         '--no-reset-metrics',
     ]
@@ -327,8 +327,15 @@ def main():
                        help='Number of concurrent users (default: 2000)')
     parser.add_argument('--run-time', default='60s',
                        help='Test duration (default: 60s)')
-    parser.add_argument('--hatch-rate', type=int, default=200,
-                       help='Users to spawn per second (default: 200)')
+    parser.add_argument(
+        '-r',
+        '--increase-rate',
+        '--hatch-rate',
+        type=int,
+        default=200,
+        dest='hatch_rate',
+        help='Per-second user increase rate, Goose -r/--increase-rate (default: 200)',
+    )
     parser.add_argument('--warmup-time', type=int, default=10,
                        help='Warmup duration in seconds (default: 10)')
     parser.add_argument('--baseline', 

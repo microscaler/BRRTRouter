@@ -337,7 +337,7 @@ local_resource(
 # Button to run standard Goose API load test (all endpoints)
 local_resource(
     'run-goose-api-test',
-    'cargo run --example api_load_test -- --host http://localhost:8080 --users 25 --hatch-rate 2 --run-time 300s',
+    'cargo run --example api_load_test -- --host http://localhost:8080 --users 25 --increase-rate 2 --run-time 300s',
     resource_deps=['petstore'],
     trigger_mode=TRIGGER_MODE_MANUAL,
     labels=['tools'],

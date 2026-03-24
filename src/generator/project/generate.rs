@@ -4,8 +4,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use crate::spec::load_spec;
-use crate::spec::resolve_schema_ref;
+use crate::spec::{load_spec, resolve_schema_ref, RouteMeta};
 use oas3;
 use oas3::OpenApiV3Spec;
 
@@ -269,10 +268,7 @@ pub fn generate_project_with_options(
         for param in &route.parameters {
             request_fields.push(parameter_to_field(param));
         }
-        let response_fields = route
-            .response_schema
-            .as_ref()
-            .map_or(vec![], extract_fields);
+        let response_fields = extract_fields(&resolved_response_schema_json(&spec, route));
 
         let mut imports = BTreeSet::new();
         for field in request_fields.iter().chain(response_fields.iter()) {
@@ -645,6 +641,22 @@ fn file_has_user_owned_sentinel(content: &str) -> bool {
         .any(|sentinel| content.contains(sentinel))
 }
 
+/// JSON value for `extract_fields` on the response body: follows `$ref` into components/schemas
+/// so impl stubs (including `--sync`) get full struct fields, not an empty object.
+fn resolved_response_schema_json(spec: &OpenApiV3Spec, route: &RouteMeta) -> serde_json::Value {
+    route
+        .response_schema
+        .as_ref()
+        .and_then(|v| {
+            if let Some(ref_path) = v.get("$ref").and_then(|r| r.as_str()) {
+                resolve_schema_ref(spec, ref_path).and_then(|s| serde_json::to_value(s).ok())
+            } else {
+                Some(v.clone())
+            }
+        })
+        .unwrap_or_default()
+}
+
 /// Generate implementation stubs in the impl crate
 ///
 /// Creates stub files for controllers that don't have implementations yet.
@@ -774,10 +786,7 @@ pub fn generate_impl_stubs(
                 .iter()
                 .find(|r| r.handler_name.as_ref() == handler.as_str())
                 .ok_or_else(|| anyhow::anyhow!("Handler not found in spec: {}", handler))?;
-            let response_fields = route
-                .response_schema
-                .as_ref()
-                .map_or(vec![], extract_fields);
+            let response_fields = extract_fields(&resolved_response_schema_json(&spec, route));
             if let Ok(new_content) = crate::generator::templates::sync_impl_stub_response(
                 &content,
                 &response_fields,
@@ -823,19 +832,7 @@ pub fn generate_impl_stubs(
             request_fields.push(parameter_to_field(param));
         }
         // Resolve response schema if it's a bare $ref so extract_fields gets full properties (full Response in stub)
-        let response_schema_value: serde_json::Value = route
-            .response_schema
-            .as_ref()
-            .and_then(|v| {
-                if v.get("$ref").and_then(|r| r.as_str()).is_some() {
-                    let ref_path = v.get("$ref").and_then(|r| r.as_str()).unwrap();
-                    resolve_schema_ref(&spec, ref_path).and_then(|s| serde_json::to_value(s).ok())
-                } else {
-                    Some(v.clone())
-                }
-            })
-            .unwrap_or_default();
-        let response_fields = extract_fields(&response_schema_value);
+        let response_fields = extract_fields(&resolved_response_schema_json(&spec, route));
 
         let mut imports = BTreeSet::new();
         for field in request_fields.iter().chain(response_fields.iter()) {

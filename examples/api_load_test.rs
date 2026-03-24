@@ -2,6 +2,9 @@
 //!
 //! Tests ALL OpenAPI endpoints under load to find memory leaks and performance issues.
 //!
+//! **CLI:** Goose exposes per-second ramp as `--increase-rate` / `-r` (not `--hatch-rate`).
+//! Run `cargo run --example api_load_test -- --help` for current flags.
+//!
 //! # Usage
 //!
 //! ```bash
@@ -9,7 +12,7 @@
 //! cargo run --release --example api_load_test -- \
 //!   --host http://localhost:8080 \
 //!   --users 50 \
-//!   --hatch-rate 10 \
+//!   --increase-rate 10 \
 //!   --run-time 5m \
 //!   --no-reset-metrics \
 //!   --report-file load-test-report.html
