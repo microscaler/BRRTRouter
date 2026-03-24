@@ -47,12 +47,13 @@ tikv-jemallocator = { version = "0.6", optional = true }
 tikv-jemalloc-ctl = { version = "0.6", optional = true, features = ["stats"] }
 minijinja = "2"
 
-# OpenTelemetry observability (PROVEN VERSIONS from obsctl)
-# CRITICAL: These versions work with otel-collector-contrib:0.93.0
-# DO NOT UPDATE without testing against OTEL collector!
+# OpenTelemetry: crates.io 0.31.x still pins reqwest ^0.12; we patch the stack from
+# open-telemetry/opentelemetry-rust (main) for reqwest 0.13 alignment. Pin otlp to =0.31.0
+# so the patch applies (0.31.1 on crates.io does not). Re-validate against otel-collector when bumping.
 tracing = "0.1"
 opentelemetry = { version = "0.31", features = ["metrics", "trace"] }
-opentelemetry-otlp = { version = "0.31", features = ["grpc-tonic", "metrics", "trace"] }
+# Pin 0.31.0 so [patch] replaces crates.io with git main (reqwest 0.13); 0.31.1 would skip the patch.
+opentelemetry-otlp = { version = "=0.31.0", features = ["grpc-tonic", "metrics", "trace"] }
 opentelemetry_sdk = { version = "0.31", features = ["metrics", "trace"] }
 opentelemetry-semantic-conventions = "0.31"
 tracing-opentelemetry = "0.32"
@@ -69,7 +70,8 @@ tokio = { version = "1.50.0", features = ["rt-multi-thread", "macros"] }
 # No patched version available yet. Risk is mitigated by using rust_crypto feature and limiting
 # exposure to trusted environments. Monitor for updates to jsonwebtoken/rsa.
 jsonwebtoken = { version = "10.3.0", features = ["rust_crypto"] }  # rust_crypto enables RSA/EC algorithms
-reqwest = { version = "0.12.28", default-features = false, features = ["json", "rustls-tls", "blocking"] }
+# jsonschema + OpenTelemetry (git patch) + goose (git) share reqwest 0.13.x.
+reqwest = { version = "0.13.1", default-features = false, features = ["json", "rustls", "blocking"] }
 urlencoding = "2.1"
 ulid = "1.1"
 sha2 = "0.10"
@@ -91,7 +93,8 @@ tar = "0.4"
 walkdir = "2"
 futures-util = "0.3"
 futures = "0.3"
-goose = "0.18.1"  # Load testing framework for static sites and APIs
+# 0.18.x pins reqwest ^0.12; main (pre-0.19) uses reqwest 0.13.
+goose = { git = "https://github.com/tag1consulting/goose", rev = "614f75149cab5a963a8bc26d7b62639dedfa7a2b" }
 parking_lot = "0.12"  # For RwLock in test utilities
 libc = "0.2"  # For signal handling in tests (SIGINT cleanup)
 tiny_http = "0.12.0"  # Lightweight HTTP server for mock JWKS endpoints in tests
@@ -182,3 +185,12 @@ large_stack_arrays = "warn"   # Stack arrays that may overflow
 # Override generator-rs with our fork that fixes Rust 1.90+ macOS thread-local bug
 [patch.crates-io]
 generator = { git = "https://github.com/microscaler/generator-rs.git", branch = "fix/rust-1.90-thread-local-macos" }
+# crates.io 0.31.x still resolves reqwest ^0.12; upstream main uses workspace reqwest 0.13.1.
+# Patch the full OTLP stack together or opentelemetry-otlp fails to link HttpClient + reqwest.
+# rev pinned for reproducible builds; advance when intentionally upgrading OTEL.
+opentelemetry = { git = "https://github.com/open-telemetry/opentelemetry-rust", rev = "965078315b58ae14725721735f1c8e2bc2d3b445" }
+opentelemetry_sdk = { git = "https://github.com/open-telemetry/opentelemetry-rust", rev = "965078315b58ae14725721735f1c8e2bc2d3b445" }
+opentelemetry-http = { git = "https://github.com/open-telemetry/opentelemetry-rust", rev = "965078315b58ae14725721735f1c8e2bc2d3b445" }
+opentelemetry-otlp = { git = "https://github.com/open-telemetry/opentelemetry-rust", rev = "965078315b58ae14725721735f1c8e2bc2d3b445" }
+opentelemetry-proto = { git = "https://github.com/open-telemetry/opentelemetry-rust", rev = "965078315b58ae14725721735f1c8e2bc2d3b445" }
+opentelemetry-semantic-conventions = { git = "https://github.com/open-telemetry/opentelemetry-rust", rev = "965078315b58ae14725721735f1c8e2bc2d3b445" }

@@ -455,8 +455,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .set_default(GooseDefault::Host, config.host.as_str())?
             .set_default(GooseDefault::Users, current_users)?
             .set_default(GooseDefault::RunTime, config.stage_duration_secs as usize)?
+            // Goose 0.19+: HatchRate renamed to IncreaseRate (clients started per second).
             .set_default(
-                GooseDefault::HatchRate,
+                GooseDefault::IncreaseRate,
                 config.hatch_rate.to_string().as_str(),
             )?
             // Built-in endpoints (10% weight) - no auth required

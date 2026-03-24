@@ -2756,9 +2756,15 @@ fn test_jwks_sub_second_cache_ttl_various_values() {
 
 #[test]
 fn test_jwks_sub_second_cache_ttl_timing_accuracy() {
-    // Test that sub-second cache_ttl actually respects the timing
-    // This verifies the cache expires at the correct time, not immediately
+    // Sub-second cache_ttl: verify we do not refetch on every validate while the cache entry
+    // is still valid, and that a fetch happens after TTL expiry.
+    //
+    // Previous version used 200ms TTL then slept 250ms before validating — by then
+    // `cache.0.elapsed() >= ttl` already held, so `refresh_jwks_if_needed` legitimately
+    // issued extra HTTP requests (flaky: 2 vs 3+ depending on scheduling).
     use std::sync::atomic::{AtomicU32, Ordering};
+
+    const TTL_MS: u64 = 600;
 
     let request_count = Arc::new(AtomicU32::new(0));
     let request_count_clone = request_count.clone();
@@ -2779,9 +2785,9 @@ fn test_jwks_sub_second_cache_ttl_timing_accuracy() {
     let jwks_url = format!("http://{}:{}/jwks.json", addr.ip(), addr.port());
     let jwks_body = jwks.to_string();
 
-    // Spawn server that counts requests
+    // Spawn server that counts requests (generous accept loop for slow CI)
     std::thread::spawn(move || {
-        for _ in 0..10 {
+        for _ in 0..32 {
             match listener.accept() {
                 Ok((mut stream, _)) => {
                     request_count_clone.fetch_add(1, Ordering::Relaxed);
@@ -2797,12 +2803,18 @@ fn test_jwks_sub_second_cache_ttl_timing_accuracy() {
         }
     });
 
-    // Create provider with 200ms cache_ttl
     let provider = brrtrouter::security::JwksBearerProvider::new(jwks_url)
-        .cache_ttl(Duration::from_millis(200));
+        .cache_ttl(Duration::from_millis(TTL_MS));
 
-    // Wait for initial refresh
-    std::thread::sleep(Duration::from_millis(250));
+    // Bounded wait for initial background JWKS fetch (avoid fixed sleep on slow CI).
+    let warmup_deadline = Instant::now() + Duration::from_secs(2);
+    while request_count.load(Ordering::Relaxed) == 0 && Instant::now() < warmup_deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(
+        request_count.load(Ordering::Relaxed) >= 1,
+        "Initial JWKS fetch did not complete within timeout"
+    );
 
     let token = make_hs256_jwt(secret, "https://issuer.example", "audience", "test-key", 60);
     let scheme = SecurityScheme::Http {
@@ -2811,7 +2823,7 @@ fn test_jwks_sub_second_cache_ttl_timing_accuracy() {
         description: None,
     };
 
-    // Make validation calls before cache expires (should not trigger refresh)
+    // Burst of validates well within TTL (warmup + 5×10ms << 600ms).
     for _ in 0..5 {
         let mut headers: HeaderVec = HeaderVec::new();
         headers.push((Arc::from("authorization"), format!("Bearer {token}")));
@@ -2825,18 +2837,21 @@ fn test_jwks_sub_second_cache_ttl_timing_accuracy() {
         std::thread::sleep(Duration::from_millis(10));
     }
 
-    // At this point, we should have only 1 request (initial refresh)
-    // Cache should still be valid (200ms TTL, we've only waited ~250ms total)
     let requests_before_expiry = request_count.load(Ordering::Relaxed);
+    // Initial fetch only in the common case; allow an extra HTTP attempt if the client retries.
     assert!(
-        requests_before_expiry <= 2,
-        "Cache should still be valid before TTL expires. Got {requests_before_expiry} requests, expected <= 2"
+        requests_before_expiry <= 3,
+        "Cache should stay hot during burst (no per-request refresh). Got {requests_before_expiry} requests, expected <= 3"
     );
 
-    // Now wait for cache to expire (200ms TTL + buffer)
-    std::thread::sleep(Duration::from_millis(300));
+    // Stop background refresher so the post-expiry HTTP count can only rise via
+    // validate() -> refresh_jwks_if_needed (not a scheduled background tick).
+    provider.stop_background_refresh();
 
-    // Make another validation call - should trigger refresh now that cache expired
+    std::thread::sleep(Duration::from_millis(TTL_MS.saturating_add(200)));
+
+    let before_post_expiry_validate = request_count.load(Ordering::Relaxed);
+
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
     let req = SecurityRequest {
@@ -2846,17 +2861,19 @@ fn test_jwks_sub_second_cache_ttl_timing_accuracy() {
     };
     let _ = provider.validate(&scheme, &[], &req);
 
-    // Wait for refresh to complete
-    std::thread::sleep(Duration::from_millis(500));
+    // Validate may spawn a refresh thread; poll until count increases or timeout.
+    let refresh_deadline = Instant::now() + Duration::from_secs(2);
+    while request_count.load(Ordering::Relaxed) == before_post_expiry_validate
+        && Instant::now() < refresh_deadline
+    {
+        std::thread::sleep(Duration::from_millis(10));
+    }
 
-    // Should have at least 2 requests now (initial + refresh after expiry)
     let requests_after_expiry = request_count.load(Ordering::Relaxed);
     assert!(
-        requests_after_expiry >= 2,
-        "Cache should trigger refresh after TTL expires. Got {requests_after_expiry} requests, expected >= 2"
+        requests_after_expiry > before_post_expiry_validate,
+        "Post-expiry validate should trigger a JWKS fetch. Before: {before_post_expiry_validate}, after: {requests_after_expiry}"
     );
-
-    provider.stop_background_refresh();
 }
 
 #[test]
