@@ -1,88 +1,33 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use reqwest::blocking::{Client, Response};
-use reqwest::Method;
-use std::time::Duration;
+mod common;
+
 #[path = "curl_harness.rs"]
 mod curl_harness;
 
-#[derive(Default, Clone, Debug)]
-struct HttpOptions {
-    connect_timeout_ms: Option<u64>,
-    max_time_ms: Option<u64>,
-    headers: Vec<(String, String)>,
-    method: Option<String>,
-    data: Option<String>,
-}
-
-fn run_http_with(url: &str, opts: &HttpOptions) -> (bool, String, String) {
-    let mut client_builder = Client::builder();
-    if let Some(ct) = opts.connect_timeout_ms {
-        client_builder = client_builder.connect_timeout(Duration::from_millis(ct));
-    }
-    let client = match client_builder.build() {
-        Ok(c) => c,
-        Err(e) => return (false, String::new(), format!("client build error: {e}")),
-    };
-    let method = opts
-        .method
-        .as_deref()
-        .and_then(|m| m.parse::<Method>().ok())
-        .unwrap_or(Method::GET);
-    let mut req = client.request(method, url);
-    for (name, val) in &opts.headers {
-        req = req.header(name, val);
-    }
-    if let Some(d) = &opts.data {
-        req = req.body(d.clone());
-    }
-    if let Some(mt) = opts.max_time_ms {
-        req = req.timeout(Duration::from_millis(mt));
-    }
-    let resp: Result<Response, _> = req.send();
-    match resp {
-        Ok(r) => {
-            let status_ok = r.status().is_success();
-            let headers_str = {
-                let mut h = String::new();
-                h.push_str(&format!("HTTP/1.1 {}\n", r.status()));
-                for (k, v) in r.headers() {
-                    h.push_str(&format!("{}: {}\n", k, v.to_str().unwrap_or("<bin>")));
-                }
-                h
-            };
-            let body = r.text().unwrap_or_default();
-            (status_ok, body, headers_str)
-        }
-        Err(e) => (false, String::new(), format!("request error: {e}")),
-    }
-}
-
-fn run_http(url: &str) -> (bool, String, String) {
-    run_http_with(url, &HttpOptions::default())
-}
+use common::pet_store_e2e::{run_http, run_http_with, HttpOptions};
 
 #[test]
 fn curl_health_works() {
     let url = format!("{}/health", curl_harness::base_url());
-    let (ok, _body, headers) = run_http(&url);
-    assert!(ok, "GET /health failed: headers=\n{headers}");
+    let ex = run_http(&url);
+    assert!(ex.success, "GET /health failed: {}", ex.headers_dump);
 }
 
 #[test]
 fn curl_openapi_yaml_served() {
     let url = format!("{}/openapi.yaml", curl_harness::base_url());
-    let (ok, body, headers) = run_http(&url);
-    assert!(ok, "GET /openapi.yaml failed: headers=\n{headers}");
-    assert!(body.contains("openapi: 3.1.0"));
+    let ex = run_http(&url);
+    assert!(ex.success, "GET /openapi.yaml failed: {}", ex.headers_dump);
+    assert!(ex.body.contains("openapi: 3.1.0"));
 }
 
 #[test]
 fn curl_docs_html_served() {
     let url = format!("{}/docs", curl_harness::base_url());
-    let (ok, body, headers) = run_http(&url);
-    assert!(ok, "GET /docs failed: headers=\n{headers}");
-    assert!(body.contains("SwaggerUIBundle"));
+    let ex = run_http(&url);
+    assert!(ex.success, "GET /docs failed: {}", ex.headers_dump);
+    assert!(ex.body.contains("SwaggerUIBundle"));
 }
 
 #[test]
@@ -94,23 +39,23 @@ fn curl_metrics_exposes_prometheus() {
         max_time_ms: Some(4000),
         ..Default::default()
     };
-    let (ok, body, headers) =
-        run_http_with(&format!("{}/metrics", curl_harness::base_url()), &opts);
-    assert!(ok, "GET /metrics failed: headers=\n{headers}");
-    assert!(body.contains("brrtrouter_requests_total"));
-    assert!(body.contains("brrtrouter_top_level_requests_total"));
-    assert!(body.contains("brrtrouter_auth_failures_total"));
-    assert!(body.contains("brrtrouter_request_latency_seconds"));
+    let ex = run_http_with(&format!("{}/metrics", curl_harness::base_url()), &opts);
+    assert!(ex.success, "GET /metrics failed: {}", ex.headers_dump);
+    assert!(ex.body.contains("brrtrouter_requests_total"));
+    assert!(ex.body.contains("brrtrouter_top_level_requests_total"));
+    assert!(ex.body.contains("brrtrouter_auth_failures_total"));
+    assert!(ex.body.contains("brrtrouter_request_latency_seconds"));
 }
 
 #[test]
 fn curl_auth_api_key_unauthorized_then_authorized() {
     // Without API key should be 401
     let url = format!("{}/pets", curl_harness::base_url());
-    let (ok_no_key, _body_no_key, headers_no_key) = run_http(&url);
+    let ex = run_http(&url);
     assert!(
-        !ok_no_key,
-        "GET /pets without key should fail: headers=\n{headers_no_key}"
+        !ex.success,
+        "GET /pets without key should fail: {}",
+        ex.headers_dump
     );
 
     // With API key should be 200
@@ -118,12 +63,8 @@ fn curl_auth_api_key_unauthorized_then_authorized() {
         headers: vec![("X-API-Key".to_string(), "test123".to_string())],
         ..Default::default()
     };
-    let (ok_with_key, _body_with_key, headers_with_key) =
-        run_http_with(&format!("{}/pets", curl_harness::base_url()), &opts);
-    assert!(
-        ok_with_key,
-        "GET /pets with key failed: headers=\n{headers_with_key}"
-    );
+    let ex = run_http_with(&format!("{}/pets", curl_harness::base_url()), &opts);
+    assert!(ex.success, "GET /pets with key failed: {}", ex.headers_dump);
 }
 
 #[test]
@@ -131,17 +72,18 @@ fn curl_static_index_html_served() {
     // The container ships a static index. This could be either:
     // 1. Simple "It works!" HTML (default static_site/index.html)
     // 2. SolidJS Pet Store Dashboard (if sample-ui has been built)
-    let (ok, body, headers) = run_http(&format!("{}/index.html", curl_harness::base_url()));
-    assert!(ok, "GET /index.html failed: headers=\n{headers}");
+    let ex = run_http(&format!("{}/index.html", curl_harness::base_url()));
+    assert!(ex.success, "GET /index.html failed: {}", ex.headers_dump);
 
     // Accept either the simple static HTML or the Pet Store Dashboard
-    let is_simple_html = body.contains("It works!");
-    let is_pet_store_dashboard =
-        body.contains("Pet Store") || body.contains("pet-store") || body.contains("BRRTRouter");
+    let is_simple_html = ex.body.contains("It works!");
+    let is_pet_store_dashboard = ex.body.contains("Pet Store")
+        || ex.body.contains("pet-store")
+        || ex.body.contains("BRRTRouter");
 
     assert!(
         is_simple_html || is_pet_store_dashboard,
         "Expected either simple 'It works!' HTML or Pet Store Dashboard, got body snippet: {}",
-        &body[..body.len().min(200)]
+        &ex.body[..ex.body.len().min(200)]
     );
 }

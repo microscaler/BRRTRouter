@@ -6,8 +6,10 @@ fn status_reason(status: u16) -> &'static str {
     match status {
         200 => "OK",
         201 => "Created",
+        204 => "No Content",
         400 => "Bad Request",
         401 => "Unauthorized",
+        403 => "Forbidden",
         404 => "Not Found",
         500 => "Internal Server Error",
         _ => "OK",
@@ -109,6 +111,35 @@ mod tests {
     impl HttpService for ErrorService {
         fn call(&mut self, _req: Request, res: &mut Response) -> std::io::Result<()> {
             write_json_error(res, 404, serde_json::json!({"error": "nope"}));
+            Ok(())
+        }
+    }
+
+    #[derive(Clone)]
+    struct ForbiddenJsonService;
+
+    impl HttpService for ForbiddenJsonService {
+        fn call(&mut self, _req: Request, res: &mut Response) -> std::io::Result<()> {
+            write_handler_response(
+                res,
+                403,
+                serde_json::json!({"error": "Origin not allowed by CORS policy"}),
+                false,
+                &HeaderVec::new(),
+            );
+            Ok(())
+        }
+    }
+
+    /// Mirrors `CorsMiddleware` + `AppService`: `HandlerResponse::error` then `write_handler_response`.
+    #[derive(Clone)]
+    struct CorsForbiddenViaHandlerResponse;
+
+    impl HttpService for CorsForbiddenViaHandlerResponse {
+        fn call(&mut self, _req: Request, res: &mut Response) -> std::io::Result<()> {
+            let hr =
+                crate::dispatcher::HandlerResponse::error(403, "Origin not allowed by CORS policy");
+            write_handler_response(res, hr.status, hr.body, false, &hr.headers);
             Ok(())
         }
     }
@@ -245,6 +276,7 @@ mod tests {
     #[test]
     fn test_status_reason() {
         assert_eq!(status_reason(200), "OK");
+        assert_eq!(status_reason(403), "Forbidden");
         assert_eq!(status_reason(404), "Not Found");
     }
 
@@ -279,5 +311,56 @@ mod tests {
         assert_eq!(status, 404);
         assert_eq!(ct, "application/json");
         assert_eq!(body, "{\"error\":\"nope\"}");
+    }
+
+    #[test]
+    fn test_write_handler_response_403_uses_forbidden_not_ok() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        drop(listener);
+        let handle = HttpServer(ForbiddenJsonService).start(addr).unwrap();
+        let resp = send_request(&addr, "POST /form HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: 11\r\n\r\nfoo=bar&baz=1");
+        unsafe { handle.coroutine().cancel() };
+        let first = resp.lines().next().unwrap_or("");
+        assert!(
+            first.contains("403 Forbidden"),
+            "status line must use Forbidden for 403, got {first:?}"
+        );
+        assert!(
+            !first.contains("403 OK"),
+            "must not emit 403 with OK reason phrase (regression guard): {first:?}"
+        );
+        let (_status, _ct, body) = parse_parts(&resp);
+        assert_eq!(
+            body, "{\"error\":\"Origin not allowed by CORS policy\"}",
+            "JSON body must be an object, not null"
+        );
+    }
+
+    #[test]
+    fn test_cors_handler_response_error_round_trip_not_null() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        drop(listener);
+        let handle = HttpServer(CorsForbiddenViaHandlerResponse)
+            .start(addr)
+            .unwrap();
+        let resp = send_request(
+            &addr,
+            "POST /webhooks HTTP/1.1\r\nHost: localhost\r\nOrigin: https://evil.example\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n{}",
+        );
+        unsafe { handle.coroutine().cancel() };
+        let first = resp.lines().next().unwrap_or("");
+        assert!(
+            first.contains("403 Forbidden"),
+            "expected 403 Forbidden status line, got {first:?}"
+        );
+        let (_status, _ct, body) = parse_parts(&resp);
+        assert_ne!(
+            body,
+            "null",
+            "CORS HandlerResponse::error must not write bare JSON null (regression: POST /webhooks UI)"
+        );
+        assert!(body.contains("Origin not allowed"), "body={body:?}");
     }
 }

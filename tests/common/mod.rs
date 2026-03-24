@@ -62,6 +62,9 @@ pub mod test_server {
     }
 }
 
+/// HTTP helpers for pet_store Docker E2E tests (same harness as `curl_integration_tests`).
+pub mod pet_store_e2e;
+
 #[allow(dead_code)]
 pub mod http {
     use std::io::{Read, Write};

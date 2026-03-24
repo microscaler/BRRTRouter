@@ -71,7 +71,7 @@ tokio = { version = "1.50.0", features = ["rt-multi-thread", "macros"] }
 # exposure to trusted environments. Monitor for updates to jsonwebtoken/rsa.
 jsonwebtoken = { version = "10.3.0", features = ["rust_crypto"] }  # rust_crypto enables RSA/EC algorithms
 # jsonschema + OpenTelemetry (git patch) + goose (git) share reqwest 0.13.x.
-reqwest = { version = "0.13.1", default-features = false, features = ["json", "rustls", "blocking"] }
+reqwest = { version = "0.13.1", default-features = false, features = ["json", "rustls", "blocking", "multipart"] }
 urlencoding = "2.1"
 ulid = "1.1"
 sha2 = "0.10"

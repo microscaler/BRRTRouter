@@ -399,8 +399,12 @@ paths:
           description: Upserted
           content:
             application/json:
+              # Inline (same as components/schemas/Item) so response validators never see an unresolved $ref
               schema:
-                $ref: "#/components/schemas/Item"
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
               examples:
                 itemExample:
                   value:
@@ -415,7 +419,10 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Item'
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
 
   /events:
     get:
@@ -655,6 +662,21 @@ paths:
               responses:
                 "200": { description: Received }
       responses:
+        # Typed handlers default to HTTP 200; document 200 so validation uses this schema.
+        "200":
+          description: Registered (200 OK)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subscription_id: { type: string }
+                  url: { type: string, format: uri }
+              examples:
+                webhookRegistered:
+                  value:
+                    subscription_id: "sub_123"
+                    url: "https://example.com/webhook"
         "201":
           description: Registered
           content:

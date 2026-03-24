@@ -133,6 +133,34 @@ fn test_load_spec_yaml_and_json() {
     let _ = std::fs::remove_file(&json_path);
 }
 
+#[test]
+fn test_pet_store_post_item_response_schemas_are_objects() {
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/openapi.yaml");
+    let (routes, _) = brrtrouter::load_spec(path.to_str().unwrap()).unwrap();
+    let r = routes
+        .iter()
+        .find(|x| x.handler_name.as_ref() == "post_item")
+        .expect("post_item route from examples/openapi.yaml");
+    let default = r
+        .response_schema
+        .as_ref()
+        .expect("default response schema for post_item");
+    assert_eq!(
+        default.get("type").and_then(|v| v.as_str()),
+        Some("object"),
+        "default schema should be a JSON object, got {default:?}"
+    );
+    let s200 = r
+        .responses
+        .get(&200)
+        .and_then(|m| m.get("application/json"))
+        .expect("200 application/json for post_item");
+    assert!(
+        s200.schema.is_some(),
+        "200 response should carry a JSON schema for validation"
+    );
+}
+
 const YAML_NO_OPID: &str = r#"openapi: 3.1.0
 info:
   title: Bad API

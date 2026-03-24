@@ -21,6 +21,62 @@ use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use tracing::{info, warn};
 
+fn response_schema_is_binary_string(s: &serde_json::Value) -> bool {
+    s.get("type").and_then(|t| t.as_str()) == Some("string")
+        && s.get("format").and_then(|f| f.as_str()) == Some("binary")
+}
+
+/// JSON Schema used to validate a **JSON** response body for this status.
+///
+/// OpenAPI may list several `content` types for one status (e.g. `image/png` + `application/json`).
+/// We must never validate a JSON object against a `type: string` + `format: binary` schema.
+///
+/// Prefer `application/json` on the status, then any non-binary schema (typically `type: object`),
+/// then the route default `response_schema` for **2xx only** if it is not a binary-only schema.
+fn response_body_schema_for_status(
+    route: &crate::spec::RouteMeta,
+    status: u16,
+) -> Option<&serde_json::Value> {
+    if let Some(status_map) = route.responses.get(&status) {
+        if let Some(s) = status_map
+            .get("application/json")
+            .and_then(|r| r.schema.as_ref())
+        {
+            return Some(s);
+        }
+        for (_mt, spec) in status_map {
+            let Some(s) = spec.schema.as_ref() else {
+                continue;
+            };
+            if response_schema_is_binary_string(s) {
+                continue;
+            }
+            if s.get("type").and_then(|t| t.as_str()) == Some("object")
+                || s.get("properties").is_some()
+            {
+                return Some(s);
+            }
+        }
+        for (_mt, spec) in status_map {
+            let Some(s) = spec.schema.as_ref() else {
+                continue;
+            };
+            if !response_schema_is_binary_string(s) {
+                return Some(s);
+            }
+        }
+    }
+    // OpenAPI default success schema on the operation when `responses` omits this status.
+    if (200..300).contains(&status) {
+        route
+            .response_schema
+            .as_ref()
+            .filter(|s| !response_schema_is_binary_string(s))
+    } else {
+        None
+    }
+}
+
 /// HTTP application service that handles all incoming requests
 ///
 /// This is the core service that processes HTTP requests through the full pipeline:
@@ -1191,8 +1247,8 @@ impl HttpService for AppService {
 
             // V1 & V3: Request validation start and failure
             if let (Some(schema), Some(body_val)) = (&route_match.route.request_schema, &body) {
-                // V1: Request validation start
-                let schema_path = "#/components/schemas/request";
+                // V1: Request validation start (schema is operation requestBody, not necessarily #/components/schemas/*)
+                let schema_path = "(operation requestBody)";
                 let required_fields: Vec<String> = schema
                     .get("required")
                     .and_then(|r| r.as_array())
@@ -1329,7 +1385,9 @@ impl HttpService for AppService {
                             headers.push((Arc::from("content-type"), ct));
                         }
                     }
-                    if let Some(schema) = &route_match.route.response_schema {
+                    if let Some(schema) =
+                        response_body_schema_for_status(&route_match.route, hr.status)
+                    {
                         // V6: Response validation start
                         debug!(
                             handler = %route_match.handler_name,
@@ -1352,7 +1410,7 @@ impl HttpService for AppService {
                                 // V7: Response validation failed
                                 let error_details: Vec<String> =
                                     errors.iter().map(|e| e.to_string()).collect();
-                                let schema_path = "#/components/schemas/response";
+                                let schema_path = "(operation response schema)";
 
                                 error!(
                                     handler = %route_match.handler_name,

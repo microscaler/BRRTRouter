@@ -61,10 +61,18 @@ pub fn handler(attr: TokenStream, item: TokenStream) -> TokenStream {
         panic!("expected TypedHandlerRequest type");
     };
 
-    // Extract response type
+    // Extract response type — must be explicit: `()` serializes to JSON null and breaks responses.
     let resp_ty: Type = match &input_fn.sig.output {
         ReturnType::Type(_, ty) => (**ty).clone(),
-        ReturnType::Default => syn::parse_quote!(()),
+        ReturnType::Default => {
+            return syn::Error::new_spanned(
+                &input_fn.sig,
+                "handler functions must declare an explicit return type (e.g. `-> crate::handlers::my_op::Response`). \
+Omitting `-> ...` makes the macro use `()` as the response type, which serializes to JSON `null`.",
+            )
+            .to_compile_error()
+            .into();
+        }
     };
 
     let fn_name = &input_fn.sig.ident;

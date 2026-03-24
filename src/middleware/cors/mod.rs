@@ -874,7 +874,10 @@ impl Middleware for CorsMiddleware {
                 None => {
                     warn!("CORS preflight: invalid origin '{}'", origin);
                     // Return 403 Forbidden for invalid origin (no CORS headers)
-                    return Some(HandlerResponse::new(403, HeaderVec::new(), Value::Null));
+                    return Some(HandlerResponse::error(
+                        403,
+                        "Origin not allowed by CORS policy",
+                    ));
                 }
             };
 
@@ -898,7 +901,10 @@ impl Middleware for CorsMiddleware {
                 if self.validate_origin(origin, &req.handler_name).is_none() {
                     warn!("CORS: invalid origin '{}'", origin);
                     // Return 403 Forbidden for invalid origin
-                    return Some(HandlerResponse::new(403, HeaderVec::new(), Value::Null));
+                    return Some(HandlerResponse::error(
+                        403,
+                        "Origin not allowed by CORS policy",
+                    ));
                 }
             }
             None
@@ -1013,5 +1019,153 @@ impl Middleware for CorsMiddleware {
 
         // Add Vary: Origin header for dynamic origin validation (RFC requirement)
         res.set_header("vary", "Origin".to_string());
+    }
+}
+
+#[cfg(test)]
+mod cors_middleware_tests {
+    use super::*;
+    use crate::ids::RequestId;
+    use crate::router::ParamVec;
+    use may::sync::mpsc;
+    use std::sync::Arc;
+
+    fn test_request(
+        method: Method,
+        path: &str,
+        handler_name: &str,
+        headers: Vec<(&str, &str)>,
+    ) -> HandlerRequest {
+        let (reply_tx, _) = mpsc::channel();
+        let mut hv = HeaderVec::new();
+        for (k, v) in headers {
+            hv.push((Arc::from(k), v.to_string()));
+        }
+        HandlerRequest {
+            request_id: RequestId::new(),
+            method,
+            path: path.to_string(),
+            handler_name: handler_name.to_string(),
+            path_params: ParamVec::new(),
+            query_params: ParamVec::new(),
+            headers: hv,
+            cookies: HeaderVec::new(),
+            body: None,
+            jwt_claims: None,
+            reply_tx,
+        }
+    }
+
+    fn cors_localhost_only() -> CorsMiddleware {
+        CorsMiddleware::new(
+            vec!["http://localhost:3000".to_string()],
+            vec!["Content-Type".to_string()],
+            vec![
+                Method::GET,
+                Method::POST,
+                Method::PUT,
+                Method::DELETE,
+                Method::OPTIONS,
+            ],
+            false,
+            vec![],
+            None,
+        )
+    }
+
+    /// Regression: browser POST with `application/x-www-form-urlencoded` and a disallowed
+    /// `Origin` must short-circuit with JSON `{"error":...}`, not bare `null`, and must not use
+    /// the default "OK" reason phrase for 403.
+    #[test]
+    fn post_form_urlencoded_invalid_origin_403_json_error_not_null() {
+        let cors = cors_localhost_only();
+        let req = test_request(
+            Method::POST,
+            "/form",
+            "submit_form",
+            vec![
+                ("Origin", "https://evil.example"),
+                ("Content-Type", "application/x-www-form-urlencoded"),
+            ],
+        );
+        let early = cors
+            .before(&req)
+            .expect("invalid origin should short-circuit");
+        assert_eq!(early.status, 403);
+        assert!(
+            !early.body.is_null(),
+            "403 CORS rejection must not use Value::Null body (UI showed 4-byte null)"
+        );
+        assert_eq!(
+            early.body.get("error").and_then(|v| v.as_str()),
+            Some("Origin not allowed by CORS policy")
+        );
+    }
+
+    #[test]
+    fn options_preflight_invalid_origin_403_json_error_not_null() {
+        let cors = cors_localhost_only();
+        let req = test_request(
+            Method::OPTIONS,
+            "/form",
+            "submit_form",
+            vec![
+                ("Origin", "https://evil.example"),
+                ("Access-Control-Request-Method", "POST"),
+            ],
+        );
+        let early = cors
+            .before(&req)
+            .expect("invalid origin should short-circuit");
+        assert_eq!(early.status, 403);
+        assert!(!early.body.is_null());
+        assert_eq!(
+            early.body.get("error").and_then(|v| v.as_str()),
+            Some("Origin not allowed by CORS policy")
+        );
+    }
+
+    #[test]
+    fn post_form_urlencoded_allowed_origin_does_not_short_circuit() {
+        let cors = cors_localhost_only();
+        let req = test_request(
+            Method::POST,
+            "/form",
+            "submit_form",
+            vec![
+                ("Origin", "http://localhost:3000"),
+                ("Content-Type", "application/x-www-form-urlencoded"),
+            ],
+        );
+        assert!(cors.before(&req).is_none());
+    }
+
+    /// Pet store `POST /webhooks` (`register_webhook`) from the API explorer with a bad `Origin`
+    /// must return the same JSON error shape as other CORS rejections — not `null` / `403 OK`.
+    #[test]
+    fn post_json_webhooks_invalid_origin_403_json_error_not_null() {
+        let cors = cors_localhost_only();
+        let req = test_request(
+            Method::POST,
+            "/webhooks",
+            "register_webhook",
+            vec![
+                ("Origin", "https://evil.example"),
+                ("Content-Type", "application/json"),
+            ],
+        );
+        let early = cors
+            .before(&req)
+            .expect("invalid origin should short-circuit");
+        assert_eq!(early.status, 403);
+        assert!(!early.body.is_null());
+        assert_eq!(
+            early.body.get("error").and_then(|v| v.as_str()),
+            Some("Origin not allowed by CORS policy")
+        );
+        assert!(
+            early.get_header("content-type").is_some(),
+            "HandlerResponse::json must set Content-Type for API clients"
+        );
     }
 }
