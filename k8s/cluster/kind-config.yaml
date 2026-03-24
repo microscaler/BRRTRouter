@@ -1,32 +1,29 @@
 # kind cluster configuration for BRRTRouter local development
-# Creates a single-node cluster with port mappings for services
+# Creates a single-node cluster with port mappings for services.
+#
+# Kept minimal like octopilot/cronjob-log-monitor: no extraMounts (they break kubelet on
+# Docker Desktop for Mac), and containerd uses certs.d (config_path) — not inline
+# registry.mirrors. After `kind create`, `just dev-up` writes hosts.toml per:
+# https://kind.sigs.k8s.io/docs/user/local-registry/
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 name: brrtrouter-dev
-# Use stable Kubernetes version (v1.33.1 may have issues on some systems)
-# Uncomment to use a specific version:
-# nodes:
-#   - role: control-plane
-#     image: kindest/node:v1.29.2
-# Enable local registry support for project images
-# See: https://kind.sigs.k8s.io/docs/user/local-registry/
+# Pin to v1.34.x; default kind image may track newer k8s.
+# Observability PVs use in-node paths under /mnt/... (DirectoryOrCreate); data is
+# ephemeral across cluster deletes unless you add optional mounts yourself (Linux).
 containerdConfigPatches:
   - |-
-    [plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:5001"]
-      endpoint = ["http://kind-registry:5000"]
+    [plugins."io.containerd.grpc.v1.cri".registry]
+      config_path = "/etc/containerd/certs.d"
 nodes:
   - role: control-plane
-    # Mount Docker volumes for persistent observability data
-    # These volumes survive cluster recreation
-    extraMounts:
-      - hostPath: /var/lib/docker/volumes/brrtrouter-prometheus-data/_data
-        containerPath: /mnt/prometheus-data
-      - hostPath: /var/lib/docker/volumes/brrtrouter-loki-data/_data
-        containerPath: /mnt/loki-data
-      - hostPath: /var/lib/docker/volumes/brrtrouter-grafana-data/_data
-        containerPath: /mnt/grafana-data
-      - hostPath: /var/lib/docker/volumes/brrtrouter-jaeger-data/_data
-        containerPath: /mnt/jaeger-data
+    image: kindest/node:v1.34.3
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
     # Port mappings for local access to services
     # All BRRTRouter services use 31xxx NodePort range (Kubernetes requires 30000-32767)
     extraPortMappings:
@@ -66,17 +63,3 @@ nodes:
       - containerPort: 31404
         hostPort: 4040
         protocol: TCP
-    # Resource limits for local development
-    kubeadmConfigPatches:
-      - |
-        kind: ClusterConfiguration
-        apiServer:
-          extraArgs:
-            # Increase API server timeout for debugging
-            request-timeout: "300s"
-        controllerManager:
-          extraArgs:
-            # Faster reconciliation for development
-            node-monitor-period: "2s"
-            node-monitor-grace-period: "16s"
-

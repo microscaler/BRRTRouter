@@ -587,14 +587,6 @@ dev-up:
 	echo "Starting BRRTRouter development environment..."
 	echo ""
 	
-	# Create persistent Docker volumes
-	echo "Creating persistent Docker volumes..."
-	docker volume create brrtrouter-prometheus-data 2>/dev/null && echo "[OK] Prometheus volume" || echo "[OK] Prometheus volume exists"
-	docker volume create brrtrouter-loki-data 2>/dev/null && echo "[OK] Loki volume" || echo "[OK] Loki volume exists"
-	docker volume create brrtrouter-grafana-data 2>/dev/null && echo "[OK] Grafana volume" || echo "[OK] Grafana volume exists"
-	docker volume create brrtrouter-jaeger-data 2>/dev/null && echo "[OK] Jaeger volume" || echo "[OK] Jaeger volume exists"
-	echo ""
-	
 	# Start Docker registry (for local project images)
 	just dev-registry
 	echo ""
@@ -603,6 +595,19 @@ dev-up:
 	if ! kind get clusters 2>/dev/null | grep -q '^brrtrouter-dev$'; then
 		echo "Creating kind cluster..."
 		kind create cluster --config k8s/cluster/kind-config.yaml --wait 60s
+		
+		# Map localhost:5001 pulls to kind-registry (same pattern as kind local-registry docs;
+		# avoids inline containerd registry.mirrors which can break node startup on Docker Desktop).
+		REGISTRY_DIR="/etc/containerd/certs.d/localhost:5001"
+		for node in $(kind get nodes -n brrtrouter-dev); do
+			docker exec "${node}" mkdir -p "${REGISTRY_DIR}"
+			printf '%s\n' '[host."http://kind-registry:5000"]' | docker exec -i "${node}" sh -c 'cat > /etc/containerd/certs.d/localhost:5001/hosts.toml'
+			docker exec "${node}" systemctl restart containerd || true
+			for _ in $(seq 1 30); do
+				docker exec "${node}" ctr version >/dev/null 2>&1 && break
+				sleep 1
+			done
+		done
 		
 		# Document the local registry
 		kubectl apply -f k8s/core/local-registry-hosting.yaml
@@ -634,7 +639,7 @@ dev-down:
 	echo ""
 	
 	echo "[OK] Development environment stopped"
-	echo "Note: Persistent volumes preserved (run 'docker volume prune' to remove)"
+	echo "Note: Observability data under /mnt/* in the kind node is discarded when the cluster is deleted"
 
 # Check development environment status
 dev-status:

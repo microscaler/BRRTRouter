@@ -235,12 +235,25 @@ jobs:
             docker run -d --restart=always -p 5001:5000 --name kind-registry registry:2
           fi
 
-      - name: Create kind cluster (with local registry mirror)
+      - name: Create kind cluster (certs.d registry; hosts.toml applied in next step)
         uses: helm/kind-action@v1
         with:
           cluster_name: brrtrouter-ci
           wait: 60s
           config: k8s/cluster/kind-config.yaml
+
+      - name: Configure containerd for local registry (localhost:5001 -> kind-registry)
+        run: |
+          REGISTRY_DIR="/etc/containerd/certs.d/localhost:5001"
+          for node in $(kind get nodes -n brrtrouter-ci); do
+            docker exec "${node}" mkdir -p "${REGISTRY_DIR}"
+            printf '%s\n' '[host."http://kind-registry:5000"]' | docker exec -i "${node}" sh -c 'cat > /etc/containerd/certs.d/localhost:5001/hosts.toml'
+            docker exec "${node}" systemctl restart containerd || true
+            for _ in $(seq 1 30); do
+              docker exec "${node}" ctr version >/dev/null 2>&1 && break
+              sleep 1
+            done
+          done
 
       - name: Connect registry to kind network
         run: |
