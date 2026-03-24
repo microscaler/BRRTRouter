@@ -39,8 +39,8 @@ may_minihttp = { git = "https://github.com/microscaler/may_minihttp.git", branch
 regex = "1.12.3"
 smallvec = { version = "1.13", features = ["serde"] }  # Stack-allocated vectors for hot path (JSF: no heap in dispatch)
 url = "2.5.8"
-clap = { version = "4.5.60", features = ["cargo", "env", "derive"] }
-askama = { version = "0.15.4", features = ["full"] }
+clap = { version = "4.6.0", features = ["cargo", "env", "derive"] }
+askama = { version = "0.15.5", features = ["full"] }
 notify = "8"
 memory-stats = "1.1"  # For cross-platform memory monitoring
 tikv-jemallocator = { version = "0.6", optional = true }
@@ -62,7 +62,7 @@ tracing-appender = "0.2"
 # gRPC dependencies for OTLP (compatible with opentelemetry 0.31)
 tonic = "0.14"
 prost = "0.14"
-tokio = { version = "1.49.0", features = ["rt-multi-thread", "macros"] }
+tokio = { version = "1.50.0", features = ["rt-multi-thread", "macros"] }
 
 # Production JWT/JWKS validation and HTTP fetch (for external providers like PropelAuth)
 # Note: jsonwebtoken 10.3.0 still uses rsa 0.9.10 (RUSTSEC-2023-0071) - timing sidechannel vulnerability
@@ -84,7 +84,7 @@ pet_store = { path = "./examples/pet_store" }
 criterion = "0.8"
 # Using our own OTLP test utilities compatible with opentelemetry 0.31
 flamegraph = "0.6"
-tempfile = "3.26"
+tempfile = "3.27"
 bollard = { version = "0.20", features = ["ssl", "chrono"] }
 bytes = "1"  # For bollard body_full()
 tar = "0.4"
