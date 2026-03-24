@@ -1352,10 +1352,12 @@ pub fn sync_impl_stub_response(
     if sse {
         return Err(anyhow::anyhow!("Sync not supported for SSE handlers"));
     }
-    let response_is_array =
-        response_fields.len() == 1 && response_fields.get(0).map(|f| f.name.as_str()) == Some("items");
+    let response_is_array = response_fields.len() == 1
+        && response_fields.get(0).map(|f| f.name.as_str()) == Some("items");
     if response_is_array {
-        return Err(anyhow::anyhow!("Sync not supported for array response handlers"));
+        return Err(anyhow::anyhow!(
+            "Sync not supported for array response handlers"
+        ));
     }
     let example_map = example
         .and_then(|v| v.as_object())
@@ -1393,7 +1395,9 @@ pub fn sync_impl_stub_response(
             .join("\n        ")
     );
     let needle = "Response {";
-    let start = content.find(needle).ok_or_else(|| anyhow::anyhow!("Response {{ not found"))?;
+    let start = content
+        .find(needle)
+        .ok_or_else(|| anyhow::anyhow!("Response {{ not found"))?;
     let after_brace = start + needle.len();
     let mut depth = 1u32;
     let mut i = after_brace;
