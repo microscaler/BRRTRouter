@@ -14,6 +14,13 @@ tilt_port = cfg.get('tilt_port', '10351')  # Default to 10351 to avoid common co
 # Set the Tilt UI port
 os.putenv('TILT_PORT', tilt_port)
 
+# Skip Prometheus, Grafana, Loki, Jaeger, OTEL Collector, Pyroscope (faster `tilt ci` / kind ready).
+# Set TILT_SKIP_OBSERVABILITY=1 (or true/yes). Pet Store still references otel-collector in YAML;
+# OTLP export may log connection errors until a collector exists — acceptable for CI smoke tests.
+skip_observability = os.environ.get('TILT_SKIP_OBSERVABILITY', '').lower() in ('1', 'true', 'yes')
+if skip_observability:
+    print('ℹ️  Observability stack skipped (TILT_SKIP_OBSERVABILITY). Postgres, Redis, and app still deploy.')
+
 # Host-aware build selection via shell script (exception approved)
 brr_build_cmd = 'scripts/host-aware-build.sh brr'
 pet_build_cmd = 'scripts/host-aware-build.sh pet'
@@ -42,7 +49,7 @@ local_resource(
 local_resource(
     'build-brrtrouter',
     brr_build_cmd,
-    resource_deps=['prometheus', 'loki', 'promtail'],
+    resource_deps=([] if skip_observability else ['prometheus', 'loki', 'promtail']),
     deps=['src/', 'Cargo.toml', 'Cargo.lock'],
     labels=['build'],
     allow_parallel=True,
@@ -195,22 +202,23 @@ k8s_yaml([
 ])
 
 # ============================================================================
-# Load Observability Stack
+# Load Observability Stack (optional — skip in CI via TILT_SKIP_OBSERVABILITY=1)
 # ============================================================================
-# Load storage (PVCs) first
-k8s_yaml('k8s/observability/storage.yaml')
+if not skip_observability:
+    # Load storage (PVCs) first
+    k8s_yaml('k8s/observability/storage.yaml')
 
-# Load observability services
-k8s_yaml([
-    'k8s/observability/prometheus.yaml',
-    'k8s/observability/loki.yaml',
-    'k8s/observability/promtail.yaml',
-    'k8s/observability/grafana.yaml',
-    'k8s/observability/grafana-dashboard.yaml',
-    'k8s/observability/jaeger.yaml',
-    'k8s/observability/otel-collector.yaml',
-    'k8s/observability/pyroscope.yaml',
-])
+    # Load observability services
+    k8s_yaml([
+        'k8s/observability/prometheus.yaml',
+        'k8s/observability/loki.yaml',
+        'k8s/observability/promtail.yaml',
+        'k8s/observability/grafana.yaml',
+        'k8s/observability/grafana-dashboard.yaml',
+        'k8s/observability/jaeger.yaml',
+        'k8s/observability/otel-collector.yaml',
+        'k8s/observability/pyroscope.yaml',
+    ])
 
 # ============================================================================
 # Load Application (Pet Store) - Using Kustomize overlays
@@ -251,58 +259,57 @@ k8s_resource(
 # Note: Port forwarding handled by Kind NodePort mappings (see kind-config.yaml)
 # NodePorts: Prometheus 31090, Grafana 31300, Jaeger 31166, Loki 31310, OTEL 31417/31418/31889, Pyroscope 31404
 # Host ports: 9090, 3000, 16686, 3100, 4317/4318/8889, 4040
-k8s_resource(
-    'prometheus',
-    labels=['observability'],
-)
+if not skip_observability:
+    k8s_resource(
+        'prometheus',
+        labels=['observability'],
+    )
 
-k8s_resource(
-    'loki',
-    resource_deps=['prometheus'],
-    labels=['observability'],
-)
+    k8s_resource(
+        'loki',
+        resource_deps=['prometheus'],
+        labels=['observability'],
+    )
 
-k8s_resource(
-    'promtail',
-    resource_deps=['loki'],
-    labels=['observability'],
-)
+    k8s_resource(
+        'promtail',
+        resource_deps=['loki'],
+        labels=['observability'],
+    )
 
-k8s_resource(
-    'grafana',
-    resource_deps=['prometheus', 'loki', 'jaeger'],
-    labels=['observability'],
-)
+    k8s_resource(
+        'grafana',
+        resource_deps=['prometheus', 'loki', 'jaeger'],
+        labels=['observability'],
+    )
 
-k8s_resource(
-    'jaeger',
-    resource_deps=['postgres', 'redis'],
-    labels=['observability'],
-)
+    k8s_resource(
+        'jaeger',
+        resource_deps=['postgres', 'redis'],
+        labels=['observability'],
+    )
 
-k8s_resource(
-    'otel-collector',
-    resource_deps=['jaeger', 'prometheus', 'loki'],
-    labels=['observability'],
-)
+    k8s_resource(
+        'otel-collector',
+        resource_deps=['jaeger', 'prometheus', 'loki'],
+        labels=['observability'],
+    )
 
-k8s_resource(
-    'pyroscope',
-    labels=['observability'],
-)
+    k8s_resource(
+        'pyroscope',
+        labels=['observability'],
+    )
 
-# Petstore application - depends on everything
+# Petstore application - depends on data + image; observability optional
 # Port forwarding: Tilt port forward 8080:8080 (also available via Kind NodePort 31080 -> host 8080)
+petstore_deps = ['docker-build-and-push', 'postgres', 'redis'] + (
+    [] if skip_observability else ['prometheus', 'otel-collector']
+)
+
 k8s_resource(
     'petstore',
     port_forwards='8080:8080',
-    resource_deps=[
-        'docker-build-and-push',  # Image must be built and pushed FIRST
-        'postgres',
-        'redis',
-        'prometheus',
-        'otel-collector'
-    ],
+    resource_deps=petstore_deps,
     labels=['app'],
     # Auto-reconnect on pod restart
     auto_init=True,
@@ -361,6 +368,20 @@ local_resource(
 # DISPLAY INFORMATION
 # ============================================================================
 
+_obs_urls = '' if skip_observability else """
+  📊 Grafana:          http://localhost:3000 (admin/admin - includes Loki/Jaeger datasources)
+  📈 Prometheus:       http://localhost:9090
+  📋 Loki (logs):      http://localhost:3100
+  🔍 Jaeger UI:        http://localhost:16686
+"""
+_obs_order = (
+    '  2. Pet Store API (application)\n'
+    if skip_observability else
+    (
+        '  2. Prometheus, Loki + Promtail, Grafana, Jaeger, OTEL Collector (observability)\n'
+        + '  3. Pet Store API (application)\n'
+    )
+)
 print("""
 ╔══════════════════════════════════════════════════════════════════════╗
 ║                 BRRTRouter Local Development                         ║
@@ -369,20 +390,14 @@ print("""
 🚀 Services will be available at:
 
   📦 Pet Store API:    http://localhost:8080
-  📊 Grafana:          http://localhost:3000 (admin/admin - includes Loki/Jaeger datasources)
-  📈 Prometheus:       http://localhost:9090
-  📋 Loki (logs):      http://localhost:3100
-  🔍 Jaeger UI:        http://localhost:16686
-  🎛️  Tilt Dashboard:   http://localhost:{tilt_port} (press 'space' to open)
+{obs_urls}  🎛️  Tilt Dashboard:   http://localhost:{tilt_port} (press 'space' to open)
   
   🗄️  PostgreSQL:       localhost:5432 (user: brrtrouter, db: brrtrouter)
-  🔴 Redis:            localhost:6379""".format(tilt_port=tilt_port) + """
+  🔴 Redis:            localhost:6379""".format(tilt_port=tilt_port, obs_urls=_obs_urls) + """
 
 🏗️  Startup Order:
   1. PostgreSQL & Redis (data stores)
-  2. Prometheus, Loki + Promtail, Grafana, Jaeger, OTEL Collector (observability)
-  3. Pet Store API (application)
-
+{obs_order}""".format(obs_order=_obs_order) + """
 🔧 Quick Actions (in Tilt UI):
   - Click "regenerate-petstore" to rebuild from OpenAPI spec
   - Click "run-curl-tests" to test all endpoints

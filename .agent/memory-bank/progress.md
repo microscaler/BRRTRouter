@@ -1,5 +1,10 @@
 # Progress
 
+## 2026-03-25 — Tilt: `TILT_SKIP_OBSERVABILITY` for faster CI / kind
+
+- **Done:** `Tiltfile` reads `TILT_SKIP_OBSERVABILITY` (`1` / `true` / `yes`) and omits observability YAML + `k8s_resource` entries; `build-brrtrouter` no longer waits on Prometheus/Loki/Promtail; `petstore` deps drop `prometheus` + `otel-collector`. Banner text adjusts. GitHub `tilt-ci` job sets `TILT_SKIP_OBSERVABILITY: "1"`.
+- **Note:** Pet Store deployment still points OTLP at `otel-collector`; if skipped, export may log errors — OK for smoke tests.
+
 ## 2026-03-25 — `ui_secure_endpoint_bearer`: JWT payload base64url decode + E2E token
 
 - **Cause:** `BearerJwtProvider` decoded the JWT payload with `base64::STANDARD`, which requires padding. Real JWTs (and jwt.io’s HS256 example) use **base64url without padding** → `InvalidPadding` → payload never parsed → validation always failed → **401** on `GET /secure`.

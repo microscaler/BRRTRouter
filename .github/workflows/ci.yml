@@ -197,6 +197,8 @@ jobs:
     env:
       RUST_BACKTRACE: "1"
       RUST_LOG: "info"
+      # Tiltfile: skip Prometheus/Grafana/Loki/Jaeger/OTEL/Pyroscope for faster `tilt ci`
+      TILT_SKIP_OBSERVABILITY: "1"
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
