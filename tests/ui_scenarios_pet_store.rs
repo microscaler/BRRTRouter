@@ -2,6 +2,10 @@
 //!
 //! Run via the same Docker harness as `curl_integration_tests` (requires Docker + image build).
 //! CI: `cargo llvm-cov nextest` includes this crate's integration tests.
+//!
+//! **CORS:** Use `PET_STORE_CORS_DEV_ORIGIN` from `pet_store_e2e` for allowed `Origin` headers; it
+//! must match `cors.origins` in `examples/pet_store/config/config.yaml` and the CORS section in
+//! `examples/openapi.yaml`.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
@@ -12,6 +16,7 @@ mod curl_harness;
 
 use common::pet_store_e2e::{
     api_key_headers, run_http_with, HttpExchange, HttpOptions, PET_STORE_API_KEY,
+    PET_STORE_CORS_DEV_ORIGIN,
 };
 use reqwest::blocking::multipart;
 use reqwest::blocking::Client;
@@ -129,9 +134,9 @@ fn ui_head_user() {
 
 #[test]
 fn ui_options_user_preflight_allowed_origin() {
-    // Must match an origin in examples/pet_store/config/config.yaml (cors.origins).
+    // Must match cors.origins + OpenAPI CORS docs (see PET_STORE_CORS_DEV_ORIGIN).
     let mut headers = api_key_headers();
-    headers.push(("Origin".into(), "http://localhost:3000".into()));
+    headers.push(("Origin".into(), PET_STORE_CORS_DEV_ORIGIN.into()));
     headers.push(("Access-Control-Request-Method".into(), "GET".into()));
     let ex = run_http_with(
         &format!("{}/users/abc-123", base()),
@@ -331,9 +336,10 @@ fn ui_label_style_path() {
 
 #[test]
 fn ui_matrix_style_path() {
-    // Matrix serialization for `coords` (see OpenAPI `style: matrix`).
+    // Path pattern is `/matrix/{coords}` (two segments). Matrix-style value is encoded in the
+    // last segment (commas / semicolons); `/matrix;coords=...` is one segment and does not match.
     let ex = run_http_with(
-        &format!("{}/matrix;coords=1,2,3", base()),
+        &format!("{}/matrix/1,2,3", base()),
         &HttpOptions {
             headers: api_key_headers(),
             ..Default::default()

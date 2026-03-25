@@ -1,5 +1,14 @@
 # Progress
 
+## 2026-03-24 — OpenAPI + config + tests: CORS documentation and `x-cors: inherit`
+
+- **Done:** `examples/openapi.yaml` — `info.description` + `info.x-brrtrouter-cors` (origins from `config.yaml`); explicit `x-cors: inherit` on `list_pets`, `options_user`, `submit_form`, `get_matrix`, `register_webhook`. `templates/config.yaml` + generated `examples/pet_store/config/config.yaml` comments aligned. `PET_STORE_CORS_DEV_ORIGIN` in `tests/common/pet_store_e2e.rs`; `ui_scenarios_pet_store` imports it for preflight test. Ran `brrtrouter-gen generate --force`.
+
+## 2026-03-24 — UI E2E: OPTIONS preflight `{}` not `null`; matrix URL `/matrix/1,2,3`
+
+- **OPTIONS 500:** CORS short-circuit returned `HandlerResponse` with JSON `null`; `options_user` documents `200` + `type: object` → response validation failed (`null is not of type "object"`). **Done:** use `serde_json::json!({})` for all middleware OPTIONS `200` bodies (preflight success, CORS disabled OPTIONS, no `Origin` OPTIONS).
+- **Matrix:** Radix matches `/matrix/{coords}` as two segments; `/matrix;coords=1,2,3` is one segment and does not match. **Done:** `ui_matrix_style_path` uses `{}/matrix/1,2,3`.
+
 ## 2026-03-24 — `response_body_schema_for_status`: fallback to `route.response_schema` when `responses` has no status entry
 
 - **Cause:** `response_body_schema_for_status` used `route.responses.get(&status)?`, so an empty `responses` map (e.g. `CustomServerTestFixture` / legacy `response_schema` only) returned `None` and skipped JSON response validation — `test_response_body_validation_failure` saw 200 instead of 500.

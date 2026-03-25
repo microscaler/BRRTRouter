@@ -6,6 +6,16 @@ info:
     Sample Pet Store API used to generate example services.
     Includes pets, users, posts, items, admin settings, and SSE.
 
+    **CORS:** Allowed browser `Origin` values are configured in
+    `examples/pet_store/config/config.yaml` under `cors.origins` (not in this file).
+    Use `http://localhost:3000` for local sample-ui / API explorer. Per-operation overrides use the
+    `x-cors` extension: `inherit` (default), `false` (disable CORS for the route), or an object with
+    `allowedHeaders`, `allowedMethods`, `allowCredentials`, `exposeHeaders`, `maxAge` (see
+    `src/middleware/cors/route_config.rs`).
+  x-brrtrouter-cors:
+    originsFromConfig: examples/pet_store/config/config.yaml
+    devOriginExample: "http://localhost:3000"
+
 servers:
   - url: http://localhost:8080
     description: Local dev server
@@ -17,6 +27,7 @@ paths:
     get:
       summary: List pets
       operationId: list_pets
+      x-cors: inherit
       parameters:
         - $ref: '#/components/parameters/LimitParam'
         - $ref: '#/components/parameters/OffsetParam'
@@ -233,6 +244,7 @@ paths:
     options:
       summary: Allowed operations
       operationId: options_user
+      x-cors: inherit
       parameters:
         - name: user_id
           in: path
@@ -467,6 +479,7 @@ paths:
     post:
       summary: Submit form
       operationId: submit_form
+      x-cors: inherit
       requestBody:
         required: true
         content:
@@ -526,6 +539,7 @@ paths:
     get:
       summary: Matrix-style path parameter
       operationId: get_matrix
+      x-cors: inherit
       parameters:
         - name: coords
           in: path
@@ -637,6 +651,7 @@ paths:
     post:
       summary: Register webhook
       operationId: register_webhook
+      x-cors: inherit
       requestBody:
         required: true
         content:

@@ -2,6 +2,10 @@
 //!
 //! Used by `curl_integration_tests.rs` and `ui_scenarios_pet_store.rs` so UI / curl scenarios
 //! stay aligned and regressions are caught in CI (`cargo llvm-cov nextest`).
+//!
+//! **CORS:** Allowed origins are configured in `examples/pet_store/config/config.yaml` (`cors.origins`).
+//! OpenAPI lists per-operation `x-cors` in `examples/openapi.yaml`. Tests that send `Origin` must use
+//! an origin allowed there (dev default below).
 #![allow(dead_code)]
 // Each integration test crate imports a different subset; keep the full API without warnings.
 
@@ -11,6 +15,9 @@ use std::time::Duration;
 
 /// Default API key from `examples/pet_store/config/config.yaml` (`ApiKeyHeader` → `test123`).
 pub const PET_STORE_API_KEY: &str = "test123";
+
+/// Dev origin allowed by pet_store CORS — must match `cors.origins` in `config.yaml` and sample-ui.
+pub const PET_STORE_CORS_DEV_ORIGIN: &str = "http://localhost:3000";
 
 #[derive(Default, Clone, Debug)]
 pub struct HttpOptions {

@@ -13,7 +13,6 @@ use std::time::Duration;
 
 use http::Method;
 use regex::Regex;
-use serde_json::Value;
 use tracing::{debug, warn};
 
 use crate::dispatcher::{HandlerRequest, HandlerResponse, HeaderVec};
@@ -731,7 +730,9 @@ impl CorsMiddleware {
         // Add Vary: Origin header for dynamic origin validation
         headers.push((std::sync::Arc::from("vary"), "Origin".to_string()));
 
-        Some(HandlerResponse::new(200, headers, Value::Null))
+        // Empty JSON object — not `null` — so OpenAPI response validation (`type: object`) passes
+        // when middleware short-circuits OPTIONS (e.g. `options_user` documents `200` + JSON schema).
+        Some(HandlerResponse::new(200, headers, serde_json::json!({})))
     }
 
     /// Create a permissive CORS middleware for development/testing
@@ -847,7 +848,11 @@ impl Middleware for CorsMiddleware {
         ) {
             // CORS is disabled - for OPTIONS requests, return 200 OK without CORS headers
             if req.method == Method::OPTIONS {
-                return Some(HandlerResponse::new(200, HeaderVec::new(), Value::Null));
+                return Some(HandlerResponse::new(
+                    200,
+                    HeaderVec::new(),
+                    serde_json::json!({}),
+                ));
             }
             // For non-OPTIONS requests, proceed normally (no CORS headers will be added in after())
             return None;
@@ -861,7 +866,11 @@ impl Middleware for CorsMiddleware {
                 None => {
                     // No Origin header - not a CORS request, but still handle OPTIONS
                     // Return 200 OK without CORS headers
-                    return Some(HandlerResponse::new(200, HeaderVec::new(), Value::Null));
+                    return Some(HandlerResponse::new(
+                        200,
+                        HeaderVec::new(),
+                        serde_json::json!({}),
+                    ));
                 }
             };
 
