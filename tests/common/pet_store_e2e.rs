@@ -19,6 +19,10 @@ pub const PET_STORE_API_KEY: &str = "test123";
 /// Dev origin allowed by pet_store CORS — must match `cors.origins` in `config.yaml` and sample-ui.
 pub const PET_STORE_CORS_DEV_ORIGIN: &str = "http://localhost:3000";
 
+/// Bearer token for Docker E2E against pet_store’s simplified bearer-JWT check: the third JWT segment
+/// must equal `security.bearer.signature` in config (default `sig`), not a real HS256 MAC.
+pub const PET_STORE_BEARER_DEV_TOKEN: &str = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.sig";
+
 #[derive(Default, Clone, Debug)]
 pub struct HttpOptions {
     pub connect_timeout_ms: Option<u64>,

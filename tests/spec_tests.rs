@@ -161,6 +161,33 @@ fn test_pet_store_post_item_response_schemas_are_objects() {
     );
 }
 
+#[test]
+fn test_pet_store_secure_security_is_bearer_or_oauth2_not_and() {
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("examples/pet_store/doc/openapi.yaml");
+    let (routes, _) = brrtrouter::load_spec(path.to_str().unwrap()).unwrap();
+    let r = routes
+        .iter()
+        .find(|x| x.handler_name.as_ref() == "secure_endpoint")
+        .expect("secure_endpoint route from pet_store doc openapi.yaml");
+    assert_eq!(
+        r.security.len(),
+        2,
+        "GET /secure must declare two alternative requirements (BearerAuth OR OAuth2); if this fails with len 1, YAML may have merged into one AND requirement: {:?}",
+        r.security
+    );
+    assert_eq!(
+        r.security[0].0.len(),
+        1,
+        "first alternative should be a single scheme"
+    );
+    assert_eq!(
+        r.security[1].0.len(),
+        1,
+        "second alternative should be a single scheme"
+    );
+}
+
 const YAML_NO_OPID: &str = r#"openapi: 3.1.0
 info:
   title: Bad API

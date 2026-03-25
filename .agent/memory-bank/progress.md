@@ -1,5 +1,11 @@
 # Progress
 
+## 2026-03-25 — `ui_secure_endpoint_bearer`: JWT payload base64url decode + E2E token
+
+- **Cause:** `BearerJwtProvider` decoded the JWT payload with `base64::STANDARD`, which requires padding. Real JWTs (and jwt.io’s HS256 example) use **base64url without padding** → `InvalidPadding` → payload never parsed → validation always failed → **401** on `GET /secure`.
+- **Done:** `decode_jwt_segment()` tries `URL_SAFE_NO_PAD`, then padded `STANDARD` (compat with `make_token` in tests). `PET_STORE_BEARER_DEV_TOKEN` in `tests/common/pet_store_e2e.rs` (third segment `sig` for mock `BearerJwtProvider`). `tests/spec_tests.rs`: `test_pet_store_secure_security_is_bearer_or_oauth2_not_and` guards OpenAPI OR semantics. Lib tests in `bearer_jwt.rs` for jwt.io payload + `.sig` token.
+- **Verify:** `cargo test -p brrtrouter bearer_jwt::tests::`; `cargo test --test security_tests test_bearer_jwt_token_validation`; `cargo test --test ui_scenarios_pet_store ui_secure_endpoint_bearer` (Docker).
+
 ## 2026-03-24 — OpenAPI + config + tests: CORS documentation and `x-cors: inherit`
 
 - **Done:** `examples/openapi.yaml` — `info.description` + `info.x-brrtrouter-cors` (origins from `config.yaml`); explicit `x-cors: inherit` on `list_pets`, `options_user`, `submit_form`, `get_matrix`, `register_webhook`. `templates/config.yaml` + generated `examples/pet_store/config/config.yaml` comments aligned. `PET_STORE_CORS_DEV_ORIGIN` in `tests/common/pet_store_e2e.rs`; `ui_scenarios_pet_store` imports it for preflight test. Ran `brrtrouter-gen generate --force`.

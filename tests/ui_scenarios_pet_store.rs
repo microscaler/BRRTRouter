@@ -16,7 +16,7 @@ mod curl_harness;
 
 use common::pet_store_e2e::{
     api_key_headers, run_http_with, HttpExchange, HttpOptions, PET_STORE_API_KEY,
-    PET_STORE_CORS_DEV_ORIGIN,
+    PET_STORE_BEARER_DEV_TOKEN, PET_STORE_CORS_DEV_ORIGIN,
 };
 use reqwest::blocking::multipart;
 use reqwest::blocking::Client;
@@ -380,8 +380,7 @@ fn ui_secure_endpoint_bearer() {
     let mut headers = api_key_headers();
     headers.push((
         "Authorization".into(),
-        "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
-            .into(),
+        format!("Bearer {PET_STORE_BEARER_DEV_TOKEN}"),
     ));
     let ex = run_http_with(
         &format!("{}/secure", base()),
