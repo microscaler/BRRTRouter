@@ -1,5 +1,10 @@
 # Progress
 
+## 2026-03-25 — Docker E2E: cross-process `flock` for pet_store build (fix flaky exit 139)
+
+- **Cause:** `cargo nextest` runs multiple test **processes** in parallel; each called `ensure_image_ready()` and concurrently wrote `target/x86_64-unknown-linux-musl/release/pet_store` → corrupted binary → **SIGSEGV** in container (exit **139**). Failure looked tied to `ui_list_user_posts` but was startup/race, not that route.
+- **Done:** `tests/curl_harness.rs` — `E2eDockerBuildLock` uses `libc::flock(LOCK_EX)` on `target/.pet_store_e2e_docker.lock` for the whole cargo + `docker build` sequence (Unix); no-op on non-Unix.
+
 ## 2026-03-25 — Tilt: `TILT_SKIP_OBSERVABILITY` for faster CI / kind
 
 - **Done:** `Tiltfile` reads `TILT_SKIP_OBSERVABILITY` (`1` / `true` / `yes`) and omits observability YAML + `k8s_resource` entries; `build-brrtrouter` no longer waits on Prometheus/Loki/Promtail; `petstore` deps drop `prometheus` + `otel-collector`. Banner text adjusts. GitHub `tilt-ci` job sets `TILT_SKIP_OBSERVABILITY: "1"`.
