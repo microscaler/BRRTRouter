@@ -1066,3 +1066,98 @@ serde = "1.0"
 
     fs::remove_dir_all(&dir).unwrap();
 }
+
+/// When `[workspace.dependencies]` exists but omits a crate, explicit versions from
+/// `brrtrouter-dependencies.toml` must still appear in the generated manifest (P2: do not drop).
+#[test]
+fn test_write_cargo_toml_keeps_explicit_dep_not_in_workspace_dependencies() {
+    let root = temp_dir();
+    let workspace_dir = root.join("ws");
+    fs::create_dir_all(&workspace_dir).unwrap();
+    fs::write(
+        workspace_dir.join("Cargo.toml"),
+        r#"[workspace]
+members = []
+
+[workspace.dependencies]
+serde = "1.0"
+"#,
+    )
+    .unwrap();
+
+    let gen_dir = workspace_dir.join("generated_svc");
+    fs::create_dir_all(&gen_dir).unwrap();
+
+    let mut deps_config = DependenciesConfig::default();
+    deps_config.dependencies.insert(
+        "rand".to_string(),
+        DependencySpec::Version("0.8".to_string()),
+    );
+
+    write_cargo_toml_with_options(
+        &gen_dir,
+        "generated_svc",
+        true,
+        None,
+        None,
+        Some(&deps_config),
+        None,
+    )
+    .unwrap();
+
+    let cargo_toml = fs::read_to_string(gen_dir.join("Cargo.toml")).unwrap();
+    assert!(
+        cargo_toml.contains("rand = \"0.8\""),
+        "expected explicit version for dep not in [workspace.dependencies], got:\n{cargo_toml}"
+    );
+
+    fs::remove_dir_all(&root).unwrap();
+}
+
+/// Workspace-only spec (`workspace = true`) cannot be resolved if the crate is absent from
+/// `[workspace.dependencies]`; generation must fail with a clear message instead of emitting
+/// invalid `{ workspace = true }`.
+#[test]
+fn test_write_cargo_toml_errors_workspace_only_dep_missing_from_table() {
+    let root = temp_dir();
+    let workspace_dir = root.join("ws");
+    fs::create_dir_all(&workspace_dir).unwrap();
+    fs::write(
+        workspace_dir.join("Cargo.toml"),
+        r#"[workspace]
+members = []
+
+[workspace.dependencies]
+serde = "1.0"
+"#,
+    )
+    .unwrap();
+
+    let gen_dir = workspace_dir.join("generated_svc");
+    fs::create_dir_all(&gen_dir).unwrap();
+
+    let mut deps_config = DependenciesConfig::default();
+    deps_config.dependencies.insert(
+        "orphan".to_string(),
+        DependencySpec::Workspace {
+            workspace: true,
+            features: None,
+        },
+    );
+
+    let err = write_cargo_toml_with_options(
+        &gen_dir,
+        "generated_svc",
+        true,
+        None,
+        None,
+        Some(&deps_config),
+        None,
+    )
+    .unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("orphan"), "msg: {msg}");
+    assert!(msg.contains("workspace.dependencies"), "msg: {msg}");
+
+    fs::remove_dir_all(&root).unwrap();
+}

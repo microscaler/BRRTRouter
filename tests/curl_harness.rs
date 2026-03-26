@@ -6,6 +6,55 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 use std::thread;
 use std::time::{Duration, Instant};
+
+/// Serialize `cargo build` + `docker build` for the pet_store e2e image across **processes**.
+/// `cargo nextest` runs multiple test binaries in parallel; without this, concurrent writes to
+/// `target/x86_64-unknown-linux-musl/release/pet_store` can corrupt the binary → SIGSEGV (exit 139)
+/// inside the container.
+#[cfg(unix)]
+struct E2eDockerBuildLock {
+    file: std::fs::File,
+}
+
+#[cfg(unix)]
+impl E2eDockerBuildLock {
+    fn acquire() -> std::io::Result<Self> {
+        use std::fs::OpenOptions;
+        use std::os::unix::io::AsRawFd;
+
+        std::fs::create_dir_all("target").ok();
+        let file = OpenOptions::new()
+            .create(true)
+            .read(true)
+            .write(true)
+            .open("target/.pet_store_e2e_docker.lock")?;
+        let r = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) };
+        if r != 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        Ok(Self { file })
+    }
+}
+
+#[cfg(unix)]
+impl Drop for E2eDockerBuildLock {
+    fn drop(&mut self) {
+        use std::os::unix::io::AsRawFd;
+        unsafe {
+            let _ = libc::flock(self.file.as_raw_fd(), libc::LOCK_UN);
+        }
+    }
+}
+
+#[cfg(not(unix))]
+struct E2eDockerBuildLock;
+
+#[cfg(not(unix))]
+impl E2eDockerBuildLock {
+    fn acquire() -> std::io::Result<Self> {
+        Ok(Self)
+    }
+}
 #[path = "common/mod.rs"]
 mod common;
 use common::http::wait_for_http_200;
@@ -233,6 +282,16 @@ pub fn ensure_image_ready() {
             return Err("Docker is required for curl e2e tests. Please install Docker and ensure it's running.".to_string());
         }
         eprintln!("      ✓ Docker is available");
+
+        // Hold until cargo + docker build finish (see `E2eDockerBuildLock` docs).
+        let _e2e_build_lock = match E2eDockerBuildLock::acquire() {
+            Ok(g) => g,
+            Err(e) => {
+                return Err(format!(
+                    "failed to acquire cross-process e2e build lock (target/.pet_store_e2e_docker.lock): {e}"
+                ));
+            }
+        };
 
         // STEP 2: Build the binary locally using cross-compilation
         // =========================================================

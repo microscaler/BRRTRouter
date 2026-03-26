@@ -780,3 +780,24 @@ impl Dispatcher {
         metrics
     }
 }
+
+#[cfg(test)]
+mod handler_response_tests {
+    use super::HandlerResponse;
+    use serde_json::Value;
+
+    #[test]
+    fn error_response_is_json_object_not_null() {
+        let r = HandlerResponse::error(403, "Origin not allowed by CORS policy");
+        assert_eq!(r.status, 403);
+        assert_ne!(
+            r.body,
+            Value::Null,
+            "403 errors must not serialize to bare JSON null"
+        );
+        assert_eq!(
+            r.body.get("error").and_then(Value::as_str),
+            Some("Origin not allowed by CORS policy")
+        );
+    }
+}

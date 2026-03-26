@@ -577,11 +577,41 @@ impl DependencyRegistry {
     }
 }
 
+/// Whether the generated crate should use `workspace = true` for this dependency name.
+/// If the workspace root lists `[workspace.dependencies]` and this name is absent, we emit
+/// an explicit spec instead (see `ensure_dep_spec_allows_non_workspace`).
+fn use_workspace_flag_for_dep(
+    use_workspace_deps: bool,
+    workspace_deps: &HashSet<String>,
+    name: &str,
+) -> bool {
+    use_workspace_deps && (workspace_deps.is_empty() || workspace_deps.contains(name))
+}
+
+/// When we cannot use workspace inheritance, `workspace = true`-only specs are invalid.
+fn ensure_dep_spec_allows_non_workspace(
+    name: &str,
+    spec: &crate::generator::DependencySpec,
+    use_workspace_flag: bool,
+) -> anyhow::Result<()> {
+    if use_workspace_flag {
+        return Ok(());
+    }
+    if matches!(spec, crate::generator::DependencySpec::Workspace { .. }) {
+        anyhow::bail!(
+            "Dependency `{name}` is configured as workspace inheritance (`workspace = true`) but is not listed in \
+[workspace.dependencies] at the workspace root. Add `{name}` there or set an explicit `version` / `path` / `git` in \
+brrtrouter-dependencies.toml."
+        );
+    }
+    Ok(())
+}
+
 /// Format a dependency specification for Cargo.toml
 ///
 /// Converts DependencySpec to a TOML-formatted string suitable for Cargo.toml
 fn format_dependency_spec(
-    name: &str,
+    _name: &str,
     spec: &crate::generator::DependencySpec,
     use_workspace_deps: bool,
 ) -> String {
@@ -913,10 +943,19 @@ pub(crate) fn write_cargo_toml_with_options(
     let mut config_dependencies = Vec::new();
     let mut config_conditional_dependencies = Vec::new();
 
+    // Keys present in [workspace.dependencies] at the workspace root (may be empty if detection failed).
+    let workspace_deps: HashSet<String> = if use_workspace_deps {
+        detect_workspace_dependencies(base)
+    } else {
+        HashSet::new()
+    };
+
     if let Some(config) = deps_config {
-        // Always-included dependencies
+        // Always-included dependencies: use workspace inheritance when listed, else keep explicit spec.
         for (name, spec) in &config.dependencies {
-            let formatted = format_dependency_spec(name, spec, use_workspace_deps);
+            let use_ws = use_workspace_flag_for_dep(use_workspace_deps, &workspace_deps, name);
+            ensure_dep_spec_allows_non_workspace(name, spec, use_ws)?;
+            let formatted = format_dependency_spec(name, spec, use_ws);
             config_dependencies.push(FormattedDependency {
                 name: name.clone(),
                 spec: formatted,
@@ -929,7 +968,9 @@ pub(crate) fn write_cargo_toml_with_options(
         for (name, cond_dep) in &config.conditional {
             if detected_set.contains(name) {
                 let spec = cond_dep.to_spec();
-                let formatted = format_dependency_spec(name, &spec, use_workspace_deps);
+                let use_ws = use_workspace_flag_for_dep(use_workspace_deps, &workspace_deps, name);
+                ensure_dep_spec_allows_non_workspace(name, &spec, use_ws)?;
+                let formatted = format_dependency_spec(name, &spec, use_ws);
                 config_conditional_dependencies.push(FormattedDependency {
                     name: name.clone(),
                     spec: formatted,

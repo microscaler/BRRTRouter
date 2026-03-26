@@ -197,6 +197,8 @@ jobs:
     env:
       RUST_BACKTRACE: "1"
       RUST_LOG: "info"
+      # Tiltfile: skip Prometheus/Grafana/Loki/Jaeger/OTEL/Pyroscope for faster `tilt ci`
+      TILT_SKIP_OBSERVABILITY: "1"
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -379,7 +381,7 @@ jobs:
           cargo run --release --example api_load_test -- \
             --host http://127.0.0.1:8080 \
             --users 20 \
-            --hatch-rate 5 \
+            --increase-rate 5 \
             --run-time 2m \
             --no-reset-metrics \
             --report-file goose-report.html \

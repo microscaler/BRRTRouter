@@ -8,8 +8,9 @@ use tracing::{debug, warn};
 /// `Authorization` header or a cookie.
 ///
 /// Tokens are expected to have the form `header.payload.signature` where the
-/// signature part must match the configured `signature` string. Only the
-/// payload section is inspected for a whitespace separated `scope` field.
+/// signature part must match the configured `signature` string. The payload is
+/// decoded as JWT base64url (RFC 7515), with a fallback for padded standard base64.
+/// Only the payload JSON is inspected for a whitespace separated `scope` field.
 pub struct BearerJwtProvider {
     pub(crate) signature: String,
     pub(crate) cookie_name: Option<String>,
@@ -57,9 +58,8 @@ impl BearerJwtProvider {
             return false;
         }
         // Safe to unwrap here because we checked is_none() above
-        let payload_bytes = match general_purpose::STANDARD
-            .decode(payload.expect("payload already validated as Some"))
-        {
+        let payload_str = payload.expect("payload already validated as Some");
+        let payload_bytes = match decode_jwt_segment(payload_str) {
             Ok(b) => b,
             Err(e) => {
                 debug!(
@@ -94,6 +94,21 @@ impl BearerJwtProvider {
 
         has_all_scopes
     }
+}
+
+/// Decode a JWT segment: real JWTs use base64url without padding (RFC 7515); tests may use
+/// standard base64 with padding.
+fn decode_jwt_segment(segment: &str) -> Result<Vec<u8>, base64::DecodeError> {
+    general_purpose::URL_SAFE_NO_PAD
+        .decode(segment)
+        .or_else(|_| {
+            let mut s = segment.to_string();
+            let rem = s.len() % 4;
+            if rem != 0 {
+                s.push_str(&"=".repeat(4 - rem));
+            }
+            general_purpose::STANDARD.decode(s)
+        })
 }
 
 /// Bearer JWT authentication provider implementation
@@ -157,5 +172,23 @@ impl SecurityProvider for BearerJwtProvider {
             debug!("BearerJWT validation succeeded: token valid");
         }
         result
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{decode_jwt_segment, BearerJwtProvider};
+
+    #[test]
+    fn jwt_io_example_payload_decodes() {
+        let payload = "eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ";
+        let _ = decode_jwt_segment(payload).expect("jwt.io-style base64url payload should decode");
+    }
+
+    #[test]
+    fn pet_store_e2e_style_token_validates_with_default_sig() {
+        let p = BearerJwtProvider::new("sig");
+        let tok = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.sig";
+        assert!(p.validate_token(tok, &[]));
     }
 }

@@ -27,7 +27,7 @@
 //! cargo run --release --example performance_metrics_load_test -- \
 //!   --host http://localhost:8080 \
 //!   --users 1000 \
-//!   --hatch-rate 100 \
+//!   --increase-rate 100 \
 //!   --run-time 10m \
 //!   --report-file extreme-metrics-report.html
 //! ```

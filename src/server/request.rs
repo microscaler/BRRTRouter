@@ -15,9 +15,11 @@ use crate::router::ParamVec;
 use crate::spec::ParameterStyle;
 use http::Method;
 use may_minihttp::Request;
+use serde_json::{json, Map, Number, Value};
 use std::io::Read;
 use std::sync::Arc;
 use tracing::{debug, info};
+use url::form_urlencoded::parse as parse_form_urlencoded;
 
 /// Parsed HTTP request data used by `AppService`.
 ///
@@ -41,7 +43,8 @@ pub struct ParsedRequest {
     pub cookies: HeaderVec,
     /// Parsed query string parameters - stack-allocated for ≤8 params
     pub query_params: ParamVec,
-    /// Parsed JSON body (if content-type is application/json)
+    /// Parsed request body as JSON: `application/json`, `application/x-www-form-urlencoded`,
+    /// or a placeholder object for `multipart/form-data` (see `parse_request_body`).
     pub body: Option<serde_json::Value>,
 }
 
@@ -175,14 +178,29 @@ pub fn decode_param_value(
         match ty {
             "array" => {
                 let items_schema = schema.and_then(|s| s.get("items"));
-                let delim = match style.unwrap_or(ParameterStyle::Form) {
-                    ParameterStyle::SpaceDelimited => ' ',
-                    ParameterStyle::PipeDelimited => '|',
-                    _ => ',',
+                let style = style.unwrap_or(ParameterStyle::Form);
+                let parts: Vec<&str> = if matches!(style, ParameterStyle::Matrix) {
+                    // Matrix: OpenAPI uses comma-separated values in `;name=1,2,3`; browsers may
+                    // also send a single segment `1;2;3` for `/matrix/{coords}` — split on `;` then.
+                    let mut s = value.trim();
+                    if let Some(i) = s.find('=') {
+                        s = s[i + 1..].trim();
+                    }
+                    if s.contains(';') {
+                        s.split(';').filter(|p| !p.is_empty()).collect()
+                    } else {
+                        s.split(',').filter(|p| !p.is_empty()).collect()
+                    }
+                } else {
+                    let delim = match style {
+                        ParameterStyle::SpaceDelimited => ' ',
+                        ParameterStyle::PipeDelimited => '|',
+                        _ => ',',
+                    };
+                    value.split(delim).filter(|p| !p.is_empty()).collect()
                 };
-                let parts = value
-                    .split(delim)
-                    .filter(|s| !s.is_empty())
+                let parts = parts
+                    .into_iter()
                     .map(|p| convert_primitive(p.trim(), items_schema))
                     .collect::<Vec<_>>();
                 Value::Array(parts)
@@ -193,6 +211,55 @@ pub fn decode_param_value(
     } else {
         Value::String(value.to_string())
     }
+}
+
+fn primary_content_type(content_type: &str) -> &str {
+    content_type.split(';').next().unwrap_or("").trim()
+}
+
+fn loose_json_scalar(s: &str) -> Value {
+    if let Ok(i) = s.parse::<i64>() {
+        return Value::Number(i.into());
+    }
+    if let Ok(u) = s.parse::<u64>() {
+        return Value::Number(u.into());
+    }
+    if let Ok(f) = s.parse::<f64>() {
+        if let Some(n) = Number::from_f64(f) {
+            return Value::Number(n);
+        }
+    }
+    if let Ok(b) = s.parse::<bool>() {
+        return Value::Bool(b);
+    }
+    Value::String(s.to_string())
+}
+
+fn form_urlencoded_body_to_json(raw: &[u8]) -> Value {
+    let mut map = Map::new();
+    for (k, v) in parse_form_urlencoded(raw) {
+        map.insert(k.into_owned(), loose_json_scalar(&v.into_owned()));
+    }
+    Value::Object(map)
+}
+
+/// Build a [`serde_json::Value`] from raw bytes and `Content-Type`.
+///
+/// Supports `application/json`, `application/x-www-form-urlencoded`, and a minimal
+/// `multipart/form-data` placeholder so `request_body_required` routes receive `Some(body)`.
+fn parse_request_body(raw: &[u8], content_type: &str) -> Option<Value> {
+    let ct = primary_content_type(content_type);
+    let ct_lower = ct.to_ascii_lowercase();
+    if ct_lower == "application/json" || ct_lower.ends_with("+json") {
+        return serde_json::from_slice(raw).ok();
+    }
+    if ct_lower == "application/x-www-form-urlencoded" {
+        return Some(form_urlencoded_body_to_json(raw));
+    }
+    if ct_lower == "multipart/form-data" {
+        return Some(json!({}));
+    }
+    serde_json::from_slice(raw).ok()
 }
 
 /// Parse an incoming HTTP request into a ParsedRequest
@@ -272,11 +339,11 @@ pub fn parse_request(req: Request) -> Result<ParsedRequest, String> {
         "Query params parsed"
     );
 
-    // R5 & R6: Request body read and JSON body parsed
+    // R5 & R6: Request body read and parsed (JSON, form-urlencoded, multipart)
     let parse_start = std::time::Instant::now();
     let body = {
-        let mut body_str = String::new();
-        if let Ok(size) = req.body().read_to_string(&mut body_str) {
+        let mut raw: Vec<u8> = Vec::new();
+        if let Ok(size) = req.body().read_to_end(&mut raw) {
             if size > 0 {
                 // Find content-type header using the HeaderVec helper
                 let content_type = headers
@@ -293,25 +360,23 @@ pub fn parse_request(req: Request) -> Result<ParsedRequest, String> {
                     "Request body read"
                 );
 
-                // R6: JSON body parsed
-                let body_result: Result<serde_json::Value, _> = serde_json::from_str(&body_str);
+                let parsed = parse_request_body(&raw, content_type);
                 let parse_duration_ms = parse_start.elapsed().as_millis() as u64;
 
-                if let Ok(ref json) = body_result {
+                if let Some(ref json) = parsed {
                     debug!(
                         parse_duration_ms = parse_duration_ms,
                         body_fields = json.as_object().map(|o| o.len()),
-                        "JSON body parsed"
+                        "Request body parsed"
                     );
-                } else if body_result.is_err() {
+                } else {
                     debug!(
                         parse_duration_ms = parse_duration_ms,
-                        error = "JSON parse failed",
-                        "JSON body parse attempted"
+                        "Request body not recognized or invalid JSON"
                     );
                 }
 
-                body_result.ok()
+                parsed
             } else {
                 None
             }
@@ -341,6 +406,8 @@ pub fn parse_request(req: Request) -> Result<ParsedRequest, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::spec::ParameterStyle;
+    use serde_json::json;
     use std::sync::Arc;
 
     /// Helper to get a param value from ParamVec (uses Arc<str> keys)
@@ -375,6 +442,44 @@ mod tests {
         let q = parse_query_params("/p?x=1&y=2");
         assert_eq!(find_query_param(&q, "x"), Some("1"));
         assert_eq!(find_query_param(&q, "y"), Some("2"));
+    }
+
+    #[test]
+    fn test_parse_request_body_json() {
+        let v = parse_request_body(br#"{"x":1}"#, "application/json").expect("json");
+        assert_eq!(v["x"], 1);
+    }
+
+    #[test]
+    fn test_parse_request_body_form_urlencoded() {
+        let v = parse_request_body(b"name=Bob&age=30", "application/x-www-form-urlencoded")
+            .expect("form");
+        assert_eq!(v["name"], "Bob");
+        assert_eq!(v["age"], 30);
+    }
+
+    #[test]
+    fn test_parse_request_body_multipart_placeholder() {
+        let v = parse_request_body(
+            b"pretend-binary",
+            "multipart/form-data; boundary=----WebKit",
+        )
+        .expect("multipart");
+        assert!(v.is_object());
+        assert!(v.as_object().unwrap().is_empty());
+    }
+
+    /// `GET /matrix/1;2;3` captures `coords=1;2;3` as one path param; matrix style must split on `;`.
+    #[test]
+    fn test_decode_param_matrix_array_semicolons() {
+        let schema = json!({"type": "array", "items": {"type": "integer"}});
+        let v = decode_param_value(
+            "1;2;3",
+            Some(&schema),
+            Some(ParameterStyle::Matrix),
+            Some(false),
+        );
+        assert_eq!(v, json!([1, 2, 3]));
     }
 
     // Helper function to test HTTP method parsing logic

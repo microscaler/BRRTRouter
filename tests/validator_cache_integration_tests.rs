@@ -226,6 +226,22 @@ fn test_cache_key_uniqueness() {
 }
 
 #[test]
+fn test_cache_same_status_different_response_schemas() {
+    let cache = ValidatorCache::new(true);
+    let schema_json = json!({"type": "object", "properties": {"id": {"type": "string"}}});
+    let schema_binary = json!({"type": "string", "format": "binary"});
+
+    cache.get_or_compile("download_file", "response", Some(200), &schema_json);
+    cache.get_or_compile("download_file", "response", Some(200), &schema_binary);
+
+    assert_eq!(
+        cache.size(),
+        2,
+        "Multiple response media types for one status must not collide in cache"
+    );
+}
+
+#[test]
 fn test_cache_thread_safety() {
     use std::sync::Arc as StdArc;
     use std::thread;

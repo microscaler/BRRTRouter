@@ -235,7 +235,7 @@ goose-jsf label users="2000" runtime="60s" hatch-rate="200" baseline="" warmup="
 		--label {{label}} \
 		--users {{users}} \
 		--run-time {{runtime}} \
-		--hatch-rate {{hatch-rate}} \
+		--increase-rate {{hatch-rate}} \
 		--warmup-time {{warmup}} \
 		$BASELINE_ARG
 

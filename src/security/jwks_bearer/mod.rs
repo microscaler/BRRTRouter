@@ -639,13 +639,17 @@ impl JwksBearerProvider {
         // Convert from milliseconds to Duration, preserving sub-second precision
         let current_cache_ttl =
             Duration::from_millis(self.cache_ttl_millis.load(Ordering::Acquire));
-        // Check if refresh is needed (non-blocking read)
+        // Check if refresh is needed (non-blocking read).
+        //
+        // **Do not** use `|| guard.1.is_empty()` here: a successful JWKS fetch may legitimately
+        // return `{"keys":[]}` — we still update the cache timestamp in `refresh_jwks_internal`.
+        // If we always refreshed whenever keys were empty, every `validate()` would re-fetch,
+        // breaking `test_jwks_empty_cache_no_retry_on_successful_empty_response` and wasting
+        // traffic. Failed refreshes leave the old timestamp in place, so TTL expiry still
+        // triggers another attempt.
         let (needs_refresh, is_empty) = {
             if let Ok(guard) = self.cache.read() {
-                (
-                    guard.0.elapsed() >= current_cache_ttl || guard.1.is_empty(),
-                    guard.1.is_empty(),
-                )
+                (guard.0.elapsed() >= current_cache_ttl, guard.1.is_empty())
             } else {
                 // Lock poisoned, skip refresh
                 return;

@@ -21,12 +21,18 @@
 //!
 //! ## Cache Key Structure
 //!
-//! Cache keys are formatted as: `{spec_version}:{spec_hash}:{handler_name}:{kind}:{status}`
+//! Cache keys are formatted as:
+//! `{spec_version}:{spec_hash}:{handler_name}:{kind}[:{status}]:{schema_digest}`
 //! - `spec_version`: Monotonic counter incremented on each hot reload
 //! - `spec_hash`: SHA-256 hash of the spec content for defense in depth
 //! - `handler_name`: The route handler name (e.g., "list_pets")
 //! - `kind`: Either "request" or "response"
-//! - `status`: For responses, the HTTP status code (e.g., "200"), or empty for requests
+//! - `status`: For responses, the HTTP status code (e.g., "200"), omitted for requests
+//! - `schema_digest`: First 16 hex chars of SHA-256 of canonical JSON bytes for the schema
+//!
+//! The digest is required because one OpenAPI operation can define **multiple** response
+//! `content` types for the same status (e.g. `image/png` and `application/json` for 200).
+//! Validators for those schemas must not share a cache entry.
 //!
 //! ## Thread Safety
 //!
@@ -205,7 +211,7 @@ impl Default for SpecVersion {
 #[derive(Clone)]
 pub struct ValidatorCache {
     /// Internal cache storage: key -> `Arc<Validator>`
-    /// Key format: "{spec_version}:{spec_hash}:{handler_name}:{kind}:{status}"
+    /// Key format: "{spec_version}:{spec_hash}:{handler_name}:{kind}[:{status}]:{schema_digest}"
     cache: Arc<RwLock<HashMap<String, Arc<Validator>>>>,
     /// Whether the cache is enabled (from BRRTR_SCHEMA_CACHE env var)
     enabled: bool,
@@ -236,6 +242,14 @@ impl ValidatorCache {
         }
     }
 
+    /// Stable digest of a JSON Schema value for cache keys (same schema → same digest).
+    fn schema_digest(schema: &Value) -> String {
+        let bytes = serde_json::to_vec(schema).unwrap_or_default();
+        let h = Sha256::digest(&bytes);
+        // First 8 bytes → 16 hex chars (enough to avoid collisions in practice)
+        h[..8].iter().map(|b| format!("{:02x}", b)).collect()
+    }
+
     /// Generate a cache key for a validator
     ///
     /// # Arguments
@@ -244,20 +258,24 @@ impl ValidatorCache {
     /// * `handler_name` - Name of the handler function
     /// * `kind` - Validation kind: "request" or "response"
     /// * `status` - Optional HTTP status code (for response validators)
+    /// * `schema` - JSON Schema used to compile the validator (distinguishes multiple
+    ///   response media types for the same status)
     ///
     /// # Returns
     ///
-    /// Cache key string in format: "{version}:{hash}:{handler_name}:{kind}:{status}"
+    /// Cache key string including a schema digest so different schemas never collide.
     fn cache_key(
         spec_version: &SpecVersion,
         handler_name: &str,
         kind: &str,
         status: Option<u16>,
+        schema: &Value,
     ) -> String {
         let version_key = spec_version.to_key();
+        let digest = Self::schema_digest(schema);
         match status {
-            Some(s) => format!("{}:{}:{}:{}", version_key, handler_name, kind, s),
-            None => format!("{}:{}:{}", version_key, handler_name, kind),
+            Some(s) => format!("{}:{}:{}:{}:{}", version_key, handler_name, kind, s, digest),
+            None => format!("{}:{}:{}:{}", version_key, handler_name, kind, digest),
         }
     }
 
@@ -299,7 +317,7 @@ impl ValidatorCache {
             .read()
             .expect("spec version lock poisoned")
             .clone();
-        let key = Self::cache_key(&spec_version, handler_name, kind, status);
+        let key = Self::cache_key(&spec_version, handler_name, kind, status, schema);
 
         // Fast path: Check if validator is already cached (read lock only)
         {
@@ -597,18 +615,37 @@ mod tests {
     fn test_cache_key_format() {
         let v1 = SpecVersion::new(1, "abc123");
         let v2 = SpecVersion::new(2, "def456");
+        let schema_a = json!({"type": "object"});
+        let schema_b = json!({"type": "string"});
+        let d_a = ValidatorCache::schema_digest(&schema_a);
+        let d_b = ValidatorCache::schema_digest(&schema_b);
 
         assert_eq!(
-            ValidatorCache::cache_key(&v1, "list_pets", "request", None),
-            "1:abc123:list_pets:request"
+            ValidatorCache::cache_key(&v1, "list_pets", "request", None, &schema_a),
+            format!("1:abc123:list_pets:request:{d_a}")
         );
         assert_eq!(
-            ValidatorCache::cache_key(&v1, "get_pet", "response", Some(200)),
-            "1:abc123:get_pet:response:200"
+            ValidatorCache::cache_key(&v1, "get_pet", "response", Some(200), &schema_a),
+            format!("1:abc123:get_pet:response:200:{d_a}")
         );
         assert_eq!(
-            ValidatorCache::cache_key(&v2, "list_pets", "request", None),
-            "2:def456:list_pets:request"
+            ValidatorCache::cache_key(&v2, "list_pets", "request", None, &schema_a),
+            format!("2:def456:list_pets:request:{d_a}")
+        );
+        assert_ne!(d_a, d_b); // different schemas → different digests
+    }
+
+    #[test]
+    fn test_response_cache_same_status_different_schemas() {
+        let cache = ValidatorCache::new(true);
+        let schema_object = json!({"type": "object", "properties": {"id": {"type": "string"}}});
+        let schema_string = json!({"type": "string"});
+        cache.get_or_compile("download_file", "response", Some(200), &schema_object);
+        cache.get_or_compile("download_file", "response", Some(200), &schema_string);
+        assert_eq!(
+            cache.size(),
+            2,
+            "two response media types for same status must not share one cache slot"
         );
     }
 
@@ -726,10 +763,36 @@ mod tests {
         );
         assert_eq!(cache.size(), 2, "Cache should contain 2 entries");
 
-        // Verify schemas are cached by trying to retrieve them
+        // Verify schemas are cached by key (includes schema digest)
         let spec_version = cache.spec_version();
-        let request_key = format!("{}:test_handler:request", spec_version.to_key());
-        let response_key = format!("{}:test_handler:response:200", spec_version.to_key());
+        let request_schema = json!({
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"}
+            },
+            "required": ["name"]
+        });
+        let response_schema = json!({
+            "type": "object",
+            "properties": {
+                "id": {"type": "integer"},
+                "name": {"type": "string"}
+            }
+        });
+        let request_key = ValidatorCache::cache_key(
+            &spec_version,
+            "test_handler",
+            "request",
+            None,
+            &request_schema,
+        );
+        let response_key = ValidatorCache::cache_key(
+            &spec_version,
+            "test_handler",
+            "response",
+            Some(200),
+            &response_schema,
+        );
 
         {
             let cache_map = cache.cache.read().unwrap();

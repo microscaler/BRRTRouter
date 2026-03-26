@@ -202,12 +202,26 @@ function App() {
           filename: "test.txt",
           content: "Hello World"
         }, null, 2);
-      } else if (path.includes('/items') || path.includes('/payment')) {
-        // Money/currency examples
+      } else if (path.includes('/payment')) {
+        // Money/currency (CreateItemRequest is only `name`; use payment path for price fields)
         exampleBody = JSON.stringify({
           name: "Test Item",
           price: 3.14,
           currency_code: "USD"
+        }, null, 2);
+      } else if (path.includes('/items')) {
+        // POST /items/{id} — CreateItemRequest: name only (path carries id)
+        exampleBody = JSON.stringify(
+          {
+            name: "Test Item"
+          },
+          null,
+          2
+        );
+      } else if (path.includes('/webhooks')) {
+        // OpenAPI requires `url` (format: uri) for POST /webhooks — `{}` fails validation
+        exampleBody = JSON.stringify({
+          url: 'https://example.com/webhook'
         }, null, 2);
       }
       

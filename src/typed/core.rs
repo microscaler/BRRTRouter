@@ -200,16 +200,22 @@ where
                         // STEP 3: Call the actual handler
                         let result = handler.handle(typed_req);
 
-                        // STEP 4: Serialize and send response
-                        let _ = reply_tx_inner.send(HandlerResponse::json(
-                            200,
-                            serde_json::to_value(result).unwrap_or_else(|e| {
-                                serde_json::json!({
-                                    "error": "Failed to serialize response",
-                                    "details": e.to_string(),
-                                })
-                            }),
-                        ));
+                        // STEP 4: Serialize and send response (`()` serializes to JSON null)
+                        let body = serde_json::to_value(result).unwrap_or_else(|e| {
+                            serde_json::json!({
+                                "error": "Failed to serialize response",
+                                "details": e.to_string(),
+                            })
+                        });
+                        let response = if body.is_null() {
+                            HandlerResponse::error(
+                                500,
+                                "Handler response serialized to JSON null — add an explicit `-> YourResponse` return type on #[handler] functions",
+                            )
+                        } else {
+                            HandlerResponse::json(200, body)
+                        };
+                        let _ = reply_tx_inner.send(response);
                     }
                 }));
 
@@ -389,18 +395,27 @@ where
                         // STEP 3: Call the actual handler
                         let result = handler.handle(typed_req);
 
-                        // STEP 4: Serialize and send response
-                        let _ = reply_tx_inner.send(HandlerResponse {
-                            status: 200,
-                            headers: HeaderVec::new(),
-                            body: serde_json::to_value(result).unwrap_or_else(|e| {
-                                serde_json::json!({
-                                    "error": "Failed to serialize response",
-                                    "details": e.to_string(),
-                                    "request_id": request_id.to_string(),
-                                })
-                            }),
+                        // STEP 4: Serialize and send response (`()` serializes to JSON null)
+                        let body = serde_json::to_value(result).unwrap_or_else(|e| {
+                            serde_json::json!({
+                                "error": "Failed to serialize response",
+                                "details": e.to_string(),
+                                "request_id": request_id.to_string(),
+                            })
                         });
+                        let response = if body.is_null() {
+                            HandlerResponse::error(
+                                500,
+                                "Handler response serialized to JSON null — add an explicit `-> YourResponse` return type on #[handler] functions",
+                            )
+                        } else {
+                            HandlerResponse {
+                                status: 200,
+                                headers: HeaderVec::new(),
+                                body,
+                            }
+                        };
+                        let _ = reply_tx_inner.send(response);
                     }
                 }));
 
@@ -664,18 +679,27 @@ impl Dispatcher {
             // Call the handler
             let result = handler.handle(typed_req);
 
-            // Send response
-            let _ = reply_tx.send(HandlerResponse {
-                status: 200,
-                headers: HeaderVec::new(),
-                body: serde_json::to_value(result).unwrap_or_else(|e| {
-                    serde_json::json!({
-                        "error": "Failed to serialize response",
-                        "details": e.to_string(),
-                        "request_id": request_id.to_string(),
-                    })
-                }),
+            // Send response (`()` serializes to JSON null)
+            let body = serde_json::to_value(result).unwrap_or_else(|e| {
+                serde_json::json!({
+                    "error": "Failed to serialize response",
+                    "details": e.to_string(),
+                    "request_id": request_id.to_string(),
+                })
             });
+            let response = if body.is_null() {
+                HandlerResponse::error(
+                    500,
+                    "Handler response serialized to JSON null — add an explicit `-> YourResponse` return type on #[handler] functions",
+                )
+            } else {
+                HandlerResponse {
+                    status: 200,
+                    headers: HeaderVec::new(),
+                    body,
+                }
+            };
+            let _ = reply_tx.send(response);
         };
 
         self.register_handler_with_pool_config(name, handler_fn, config);

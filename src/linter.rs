@@ -11,6 +11,7 @@
 //! 4. **Schema completeness** - Schemas should have full typing (type, format, enum)
 //! 5. **Missing operationId** - All operations must have operationId
 //! 6. **Schema reference resolution** - All $ref paths must be valid
+//! 7. **Money/decimal format** - Properties that look like monetary amounts (e.g. `*_amount`, `balance`) must use `format: decimal` or `format: money` when `type: number`
 //!
 //! ## Usage
 //!
@@ -445,6 +446,7 @@ fn lint_schema_object(
                     spec,
                     issues,
                     &format!("{}.{}", location, prop_name),
+                    prop_name,
                     prop_value,
                     defined_schemas,
                 );
@@ -489,11 +491,74 @@ fn lint_schema_object(
     }
 }
 
+/// Substrings that indicate a property is likely a monetary/amount value and should use format: decimal
+const MONEY_LIKE_PROPERTY_SUBSTRINGS: &[&str] = &[
+    "amount",
+    "balance",
+    "price",
+    "cost",
+    "total_",
+    "outstanding",
+    "payment_",
+    "applied_",
+    "exchange_rate",
+    "discount",
+    "depreciation",
+    "variance",
+    "credit_limit",
+    "credit_used",
+    "write_off",
+    "gain_loss",
+    "sale_proceeds",
+    "impairment",
+    "subtotal",
+    "tax_amount",
+    "discount_amount",
+    "paid_amount",
+    "unapplied",
+    "book_balance",
+    "bank_balance",
+    "difference",
+    "deposit",
+    "withdrawal",
+    "unit_price",
+    "line_subtotal",
+    "line_total",
+    "opening_balance",
+    "closing_balance",
+    "total_debits",
+    "total_credits",
+    "budget_amount",
+    "actual_amount",
+    "total_budget",
+    "total_actual",
+    "total_variance",
+    "variance_percent",
+    "purchase_cost",
+    "current_value",
+    "accumulated_depreciation",
+    "salvage_value",
+    "depreciation_rate",
+    "document_total",
+    "tax_rate",
+    "discount_percent",
+    "outstanding_deposits",
+    "outstanding_withdrawals",
+];
+
+fn is_money_like_property_name(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    MONEY_LIKE_PROPERTY_SUBSTRINGS
+        .iter()
+        .any(|sub| lower.contains(sub))
+}
+
 /// Lint a property definition
 fn lint_property(
     _spec: &OpenApiV3Spec,
     issues: &mut Vec<LintIssue>,
     location: &str,
+    prop_name: &str,
     property: &Value,
     defined_schemas: &HashSet<String>,
 ) {
@@ -521,6 +586,26 @@ fn lint_property(
                 "Add type field (e.g., type: string, type: integer) or use const/enum/oneOf",
             ),
         );
+    }
+
+    // Money/decimal: type: number without format: decimal|money for money-like property names
+    if property.get("type").and_then(|t| t.as_str()) == Some("number") {
+        let format_val = property.get("format").and_then(|f| f.as_str());
+        let has_decimal_format = matches!(format_val, Some("decimal") | Some("money"));
+        if !has_decimal_format && is_money_like_property_name(prop_name) {
+            issues.push(
+                LintIssue::new(
+                    location,
+                    LintSeverity::Warning,
+                    "money_type_without_decimal_format",
+                    format!(
+                        "Property '{}' looks like a monetary/amount field but has no format: decimal or format: money; use format: decimal for currency/amounts to avoid f64 rounding",
+                        prop_name
+                    ),
+                )
+                .with_suggestion("Add format: decimal (or format: money) to this number property"),
+            );
+        }
     }
 
     // Check for $ref in property

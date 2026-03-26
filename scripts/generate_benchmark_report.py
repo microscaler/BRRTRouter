@@ -72,7 +72,7 @@ def run_performance_test(host: str, users: int, run_time: str, hatch_rate: int,
     print(f"   Host: {host}")
     print(f"   Users: {users}")
     print(f"   Run Time: {run_time}")
-    print(f"   Hatch Rate: {hatch_rate}")
+    print(f"   Increase rate: {hatch_rate} (Goose -r / --increase-rate)")
     print()
     
     cmd = [
@@ -81,7 +81,7 @@ def run_performance_test(host: str, users: int, run_time: str, hatch_rate: int,
         '--host', host,
         '--users', str(users),
         '--run-time', run_time,
-        '--hatch-rate', str(hatch_rate),
+        '--increase-rate', str(hatch_rate),
         '--report-file', report_file,
     ]
     
@@ -260,8 +260,15 @@ def main():
                        help='Number of concurrent users (default: 100)')
     parser.add_argument('--run-time', default=os.environ.get('RUN_TIME', '5m'),
                        help='Test duration (default: 5m)')
-    parser.add_argument('--hatch-rate', type=int, default=int(os.environ.get('HATCH_RATE', '10')),
-                       help='Users to spawn per second (default: 10)')
+    parser.add_argument(
+        '-r',
+        '--increase-rate',
+        '--hatch-rate',
+        type=int,
+        default=int(os.environ.get('HATCH_RATE', '10')),
+        dest='hatch_rate',
+        help='Per-second user increase rate, Goose -r/--increase-rate (default: 10)',
+    )
     parser.add_argument('--baseline', type=Path, default=Path('baseline-metrics.json'),
                        help='Baseline metrics file for comparison (default: baseline-metrics.json)')
     

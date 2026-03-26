@@ -4,8 +4,9 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use crate::spec::load_spec;
+use crate::spec::{load_spec, resolve_schema_ref, RouteMeta};
 use oas3;
+use oas3::OpenApiV3Spec;
 
 use crate::generator::schema::{
     collect_component_schemas, extract_fields, is_named_type, parameter_to_field,
@@ -267,10 +268,7 @@ pub fn generate_project_with_options(
         for param in &route.parameters {
             request_fields.push(parameter_to_field(param));
         }
-        let response_fields = route
-            .response_schema
-            .as_ref()
-            .map_or(vec![], extract_fields);
+        let response_fields = extract_fields(&resolved_response_schema_json(&spec, route));
 
         let mut imports = BTreeSet::new();
         for field in request_fields.iter().chain(response_fields.iter()) {
@@ -449,15 +447,19 @@ pub fn generate_project_with_options(
             }
 
             let cargo_package_name = package_name.unwrap_or(&slug);
-            crate::generator::templates::write_cargo_toml_with_options(
-                &base_dir,
-                cargo_package_name,
-                use_workspace_deps,
-                None,
-                version.clone(),
-                deps_config.as_ref(),
-                Some(&detected_conditional_deps),
-            )?;
+            if deps_config.is_none() && version.is_none() {
+                crate::generator::templates::write_cargo_toml(&base_dir, cargo_package_name)?;
+            } else {
+                crate::generator::templates::write_cargo_toml_with_options(
+                    &base_dir,
+                    cargo_package_name,
+                    use_workspace_deps,
+                    None,
+                    version.clone(),
+                    deps_config.as_ref(),
+                    Some(&detected_conditional_deps),
+                )?;
+            }
             // Detect if we're in a workspace context (e.g., microservices/crates/...)
             // by checking if there's a Cargo.toml with [workspace] in a parent directory
             let use_crate_prefix = detect_workspace_context(&base_dir);
@@ -639,6 +641,22 @@ fn file_has_user_owned_sentinel(content: &str) -> bool {
         .any(|sentinel| content.contains(sentinel))
 }
 
+/// JSON value for `extract_fields` on the response body: follows `$ref` into components/schemas
+/// so impl stubs (including `--sync`) get full struct fields, not an empty object.
+fn resolved_response_schema_json(spec: &OpenApiV3Spec, route: &RouteMeta) -> serde_json::Value {
+    route
+        .response_schema
+        .as_ref()
+        .and_then(|v| {
+            if let Some(ref_path) = v.get("$ref").and_then(|r| r.as_str()) {
+                resolve_schema_ref(spec, ref_path).and_then(|s| serde_json::to_value(s).ok())
+            } else {
+                Some(v.clone())
+            }
+        })
+        .unwrap_or_default()
+}
+
 /// Generate implementation stubs in the impl crate
 ///
 /// Creates stub files for controllers that don't have implementations yet.
@@ -673,11 +691,22 @@ pub fn generate_impl_stubs(
         update_impl_mod_rs, write_impl_cargo_toml, write_impl_controller_stub, write_impl_main_rs,
     };
 
-    // Load spec
+    // Load spec and routes
     let spec_str = spec_path
         .to_str()
         .ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 in spec path"))?;
     let (routes, _slug) = load_spec(spec_str)?;
+
+    // Load OpenAPI spec again for $ref resolution when building response fields (ensures full Response in stubs)
+    let spec: OpenApiV3Spec = if spec_path
+        .extension()
+        .map(|e| e == "yaml" || e == "yml")
+        .unwrap_or(false)
+    {
+        serde_yaml::from_str(&std::fs::read_to_string(spec_path)?)?
+    } else {
+        serde_json::from_str(&std::fs::read_to_string(spec_path)?)?
+    };
 
     // Determine component name: use provided name, or derive from output directory
     let component_name = if let Some(name) = component_name {
@@ -757,10 +786,7 @@ pub fn generate_impl_stubs(
                 .iter()
                 .find(|r| r.handler_name.as_ref() == handler.as_str())
                 .ok_or_else(|| anyhow::anyhow!("Handler not found in spec: {}", handler))?;
-            let response_fields = route
-                .response_schema
-                .as_ref()
-                .map_or(vec![], extract_fields);
+            let response_fields = extract_fields(&resolved_response_schema_json(&spec, route));
             if let Ok(new_content) = crate::generator::templates::sync_impl_stub_response(
                 &content,
                 &response_fields,
@@ -805,10 +831,8 @@ pub fn generate_impl_stubs(
         for param in &route.parameters {
             request_fields.push(parameter_to_field(param));
         }
-        let response_fields = route
-            .response_schema
-            .as_ref()
-            .map_or(vec![], extract_fields);
+        // Resolve response schema if it's a bare $ref so extract_fields gets full properties (full Response in stub)
+        let response_fields = extract_fields(&resolved_response_schema_json(&spec, route));
 
         let mut imports = BTreeSet::new();
         for field in request_fields.iter().chain(response_fields.iter()) {
