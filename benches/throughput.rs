@@ -116,7 +116,7 @@ fn bench_route_scalability(c: &mut Criterion) {
         let mut routes = Vec::new();
         // Create many routes to test scalability
         for i in 0..*route_count {
-            routes.push(RouteMeta {
+            routes.push(RouteMeta { x_service: None, x_brrtrouter_downstream_path: None,
                 method: Method::GET,
                 path_pattern: Arc::from(format!("/api/v1/resource{i}/{{id}}").as_str()),
                 handler_name: Arc::from(format!("handler_{i}").as_str()),

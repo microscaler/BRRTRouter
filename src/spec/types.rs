@@ -255,6 +255,10 @@ pub struct RouteMeta {
     /// - `Disabled`: Disable CORS for this route (no CORS headers)
     /// - `Custom(config)`: Use route-specific CORS configuration
     pub cors_policy: crate::middleware::RouteCorsPolicy,
+    /// Upstream microservice name derived from the x-service extension
+    pub x_service: Option<String>,
+    /// Upstream target path derived from the x-brrtrouter-downstream-path extension
+    pub x_brrtrouter_downstream_path: Option<String>,
 }
 
 impl RouteMeta {

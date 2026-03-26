@@ -13,6 +13,26 @@ use crate::handlers::types::{{ import }};
 
 #[handler({{ struct_name }})]
 pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
+    {% if let Some(service) = downstream_service %}
+    {% if let Some(path) = downstream_path %}
+    let url = format!("http://hauliage-{}:80{}", "{{ service }}", "{{ path }}");
+    let client = reqwest::blocking::Client::builder().build().unwrap();
+    let reqwest_method = reqwest::Method::from_bytes(b"{{ method }}").unwrap();
+    
+    let mut req_builder = client.request(reqwest_method, &url)
+        .header("Content-Type", "application/json")
+        .header("Accept", "application/json");
+
+    {% if method == "POST" || method == "PUT" || method == "PATCH" %}
+    req_builder = req_builder.json(&_req.data);
+    {% endif %}
+    
+    let resp = req_builder.send().unwrap();
+    resp.json().unwrap()
+    {% else %}
+    unimplemented!("Downstream service specified but no downstream path configured")
+    {% endif %}
+    {% else %}
     {% if sse %}
     let (tx, rx) = sse::channel();
     for i in 0..3 { tx.send(format!("tick {i}")); }
@@ -31,6 +51,7 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
         {{ field.name }}: {{ field.value }},
         {%- endfor %}
     }
+    {% endif %}
     {% endif %}
     {% endif %}
 }

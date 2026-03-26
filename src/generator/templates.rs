@@ -206,6 +206,12 @@ pub struct ControllerTemplateData {
     pub imports: Vec<String>,
     /// Whether this handler uses Server-Sent Events
     pub sse: bool,
+    /// Upstream target service name explicitly set by x-service OpenAPI macro
+    pub downstream_service: Option<String>,
+    /// Upstream URI explicit proxy path mapped by x-brrtrouter-downstream-path macro
+    pub downstream_path: Option<String>,
+    /// The HTTP Method for the current path
+    pub method: String,
 }
 
 /// Write a handler module file
@@ -283,6 +289,9 @@ pub fn write_controller(
     example: Option<Value>,
     sse: bool,
     force: bool,
+    downstream_service: Option<String>,
+    downstream_path: Option<String>,
+    method: String,
 ) -> anyhow::Result<()> {
     if path.exists() && !force {
         println!("⚠️  Skipping existing controller file: {path:?}");
@@ -400,6 +409,9 @@ pub fn write_controller(
         response_array_literal: array_literal,
         imports: imports.iter().cloned().collect(),
         sse,
+        downstream_service,
+        downstream_path,
+        method,
     };
     fs::write(path, context.render()?)?;
     println!("✅ Generated controller: {path:?}");
@@ -646,6 +658,7 @@ fn format_dependency_spec(
             git,
             branch,
             features,
+            default_features,
             workspace,
         } => {
             let mut parts = Vec::new();
@@ -680,6 +693,10 @@ fn format_dependency_spec(
                         .join(", ");
                     parts.push(format!(r#"features = [{}]"#, features_str));
                 }
+            }
+
+            if let Some(df) = default_features {
+                parts.push(format!("default-features = {}", df));
             }
 
             format!("{{ {} }}", parts.join(", "))

@@ -27,6 +27,8 @@ pub enum DependencySpec {
         git: Option<String>,
         branch: Option<String>,
         features: Option<Vec<String>>,
+        #[serde(rename = "default-features", skip_serializing_if = "Option::is_none")]
+        default_features: Option<bool>,
         #[serde(skip_serializing_if = "Option::is_none")]
         workspace: Option<bool>,
     },
@@ -67,6 +69,9 @@ pub struct ConditionalDependency {
     /// Features to enable
     #[serde(skip_serializing_if = "Option::is_none")]
     pub features: Option<Vec<String>>,
+    /// Default features toggle
+    #[serde(rename = "default-features", skip_serializing_if = "Option::is_none")]
+    pub default_features: Option<bool>,
 }
 
 impl ConditionalDependency {
@@ -84,6 +89,7 @@ impl ConditionalDependency {
                 git: self.git.clone(),
                 branch: self.branch.clone(),
                 features: self.features.clone(),
+                default_features: self.default_features,
                 workspace: self.workspace,
             }
         } else {

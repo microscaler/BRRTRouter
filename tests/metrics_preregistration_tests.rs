@@ -16,7 +16,7 @@ use std::sync::{Arc, RwLock};
 
 /// Helper function to create a basic RouteMeta for testing
 fn create_route_meta(method: Method, path: &str, handler: &str) -> RouteMeta {
-    RouteMeta {
+    RouteMeta { x_service: None, x_brrtrouter_downstream_path: None,
         method,
         path_pattern: Arc::from(path),
         handler_name: Arc::from(handler),

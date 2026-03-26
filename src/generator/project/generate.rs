@@ -161,8 +161,18 @@ pub fn generate_project_with_options(
     let config_dir = base_dir.join("config");
     if !dry_run {
         fs::create_dir_all(&src_dir)?;
-        fs::create_dir_all(&handler_dir)?;
-        fs::create_dir_all(&controller_dir)?;
+        if scope.handlers {
+            if handler_dir.exists() {
+                let _ = fs::remove_dir_all(&handler_dir);
+            }
+            fs::create_dir_all(&handler_dir)?;
+        }
+        if scope.controllers {
+            if controller_dir.exists() {
+                let _ = fs::remove_dir_all(&controller_dir);
+            }
+            fs::create_dir_all(&controller_dir)?;
+        }
         fs::create_dir_all(&doc_dir)?;
         fs::create_dir_all(&static_dir)?;
         fs::create_dir_all(&config_dir)?;
@@ -337,6 +347,9 @@ pub fn generate_project_with_options(
                     route.example.clone(),
                     route.sse,
                     force,
+                    route.x_service.clone(),
+                    route.x_brrtrouter_downstream_path.clone(),
+                    route.method.as_str().to_string(),
                 )?;
                 if existed && force {
                     updated.push(format!("controller: {controller_path:?}"));
@@ -731,6 +744,15 @@ pub fn generate_impl_stubs(
         fs::create_dir_all(&impl_controllers_dir)?;
     }
 
+    // Ensure mod.rs exists so "use controllers::*;" inside main.rs compiles even if zero controllers are shipped.
+    let mod_rs_path = impl_controllers_dir.join("mod.rs");
+    if !mod_rs_path.exists() {
+        fs::write(
+            &mod_rs_path,
+            "// Controller module declarations\n// This file is automatically updated when stubs are generated\n// You can manually add/remove module declarations as needed\n\n"
+        )?;
+    }
+
     // Generate Cargo.toml if it doesn't exist
     let cargo_toml = impl_output_dir.join("Cargo.toml");
     if !cargo_toml.exists() {
@@ -820,11 +842,15 @@ pub fn generate_impl_stubs(
         }
 
         // Find route for this handler
-        // JSF P0-2: Compare Arc<str> with &str
         let route = routes
             .iter()
             .find(|r| r.handler_name.as_ref() == handler.as_str())
             .ok_or_else(|| anyhow::anyhow!("Handler not found in spec: {}", handler))?;
+
+        if route.x_service.is_some() && route.x_brrtrouter_downstream_path.is_some() {
+            println!("ℹ️  Skipped proxy-only stub: {:?}", stub_path);
+            continue;
+        }
 
         // Extract fields and types
         let mut request_fields = route.request_schema.as_ref().map_or(vec![], extract_fields);

@@ -69,6 +69,9 @@ fn test_template_writers() {
         None,
         false,
         true,
+        None,
+        None,
+        "crate::AppState".to_string(),
     )
     .unwrap();
 
@@ -81,7 +84,7 @@ fn test_template_writers() {
     }];
     write_registry_rs(&src_dir, &entries).unwrap();
 
-    let route = RouteMeta {
+    let route = RouteMeta { x_service: None, x_brrtrouter_downstream_path: None,
         method: Method::GET,
         path_pattern: "/test".into(),
         handler_name: "test".into(),
