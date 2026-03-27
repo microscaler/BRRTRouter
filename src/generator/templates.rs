@@ -25,6 +25,8 @@ pub struct RegistryEntry {
     pub parameters: Vec<ParameterMeta>,
     /// Computed stack size for the coroutine in bytes
     pub stack_size_bytes: usize,
+    /// Whether this handler executes as a pure bytes-stream proxy (JSF rule isolation)
+    pub is_proxy: bool,
 }
 
 /// Parameters for writing implementation controller stub files
@@ -178,6 +180,8 @@ pub struct HandlerTemplateData {
     pub parameters: Vec<ParameterMeta>,
     /// Whether this handler uses Server-Sent Events
     pub sse: bool,
+    /// Whether this handler acts as a transparent proxy
+    pub is_proxy: bool,
 }
 
 /// Template data for generating a controller module
@@ -241,6 +245,7 @@ pub fn write_handler(
     imports: &BTreeSet<String>,
     params: &[ParameterMeta],
     sse: bool,
+    is_proxy: bool,
     force: bool,
 ) -> anyhow::Result<()> {
     if path.exists() && !force {
@@ -256,6 +261,7 @@ pub fn write_handler(
         imports: imports.iter().cloned().collect(),
         parameters: params.to_vec(),
         sse,
+        is_proxy,
     }
     .render()?;
     fs::write(path, rendered)?;

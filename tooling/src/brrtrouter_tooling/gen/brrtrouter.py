@@ -48,7 +48,7 @@ def call_brrtrouter_generate(
     Returns:
         CompletedProcess from subprocess.run
     """
-    brrtrouter_bin, manifest = find_brrtrouter(project_root, brrtrouter_path)
+    _brrtrouter_bin, manifest = find_brrtrouter(project_root, brrtrouter_path)
 
     deps_config_arg = []
     if deps_config_path and deps_config_path.exists():
@@ -58,36 +58,23 @@ def call_brrtrouter_generate(
     if package_name:
         package_name_arg = ["--package-name", package_name]
 
-    if brrtrouter_bin.exists():
-        cmd = [
-            str(brrtrouter_bin),
-            "generate",
-            "--spec",
-            str(spec_path),
-            "--output",
-            str(output_dir),
-            "--force",
-            *deps_config_arg,
-            *package_name_arg,
-        ]
-    else:
-        cmd = [
-            "cargo",
-            "run",
-            "--manifest-path",
-            str(manifest),
-            "--bin",
-            "brrtrouter-gen",
-            "--",
-            "generate",
-            "--spec",
-            str(spec_path),
-            "--output",
-            str(output_dir),
-            "--force",
-            *deps_config_arg,
-            *package_name_arg,
-        ]
+    cmd = [
+        "cargo",
+        "run",
+        "--manifest-path",
+        str(manifest),
+        "--bin",
+        "brrtrouter-gen",
+        "--",
+        "generate",
+        "--spec",
+        str(spec_path),
+        "--output",
+        str(output_dir),
+        "--force",
+        *deps_config_arg,
+        *package_name_arg,
+    ]
 
     return subprocess.run(
         cmd,
@@ -123,44 +110,28 @@ def call_brrtrouter_generate_stubs(
     Returns:
         CompletedProcess from subprocess.run
     """
-    brrtrouter_bin, manifest = find_brrtrouter(project_root, brrtrouter_path)
+    _brrtrouter_bin, manifest = find_brrtrouter(project_root, brrtrouter_path)
 
-    if brrtrouter_bin.exists():
-        cmd = [
-            str(brrtrouter_bin),
-            "generate-stubs",
-            "--spec",
-            str(spec_path),
-            "--output",
-            str(impl_dir),
-            "--component-name",
-            component_name,
-        ]
-        if force:
-            cmd.append("--force")
-        if sync:
-            cmd.append("--sync")
-    else:
-        cmd = [
-            "cargo",
-            "run",
-            "--manifest-path",
-            str(manifest),
-            "--bin",
-            "brrtrouter-gen",
-            "--",
-            "generate-stubs",
-            "--spec",
-            str(spec_path),
-            "--output",
-            str(impl_dir),
-            "--component-name",
-            component_name,
-        ]
-        if force:
-            cmd.append("--force")
-        if sync:
-            cmd.append("--sync")
+    cmd = [
+        "cargo",
+        "run",
+        "--manifest-path",
+        str(manifest),
+        "--bin",
+        "brrtrouter-gen",
+        "--",
+        "generate-stubs",
+        "--spec",
+        str(spec_path),
+        "--output",
+        str(impl_dir),
+        "--component-name",
+        component_name,
+    ]
+    if force:
+        cmd.append("--force")
+    if sync:
+        cmd.append("--sync")
 
     return subprocess.run(
         cmd,

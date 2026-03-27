@@ -54,42 +54,7 @@ class TestFindBrrtrouter:
 class TestCallBrrtrouterGenerate:
     """Unit tests for call_brrtrouter_generate (subprocess.run mocked)."""
 
-    def test_uses_binary_when_exists(self, tmp_path: Path) -> None:
-        from brrtrouter_tooling.gen.brrtrouter import call_brrtrouter_generate
-
-        project_root = tmp_path / "consumer"
-        project_root.mkdir()
-        brrtrouter_path = tmp_path / "BRRTRouter"
-        brrtrouter_path.mkdir()
-        (brrtrouter_path / "Cargo.toml").write_text("[package]\n")
-        (brrtrouter_path / "target" / "debug" / "brrtrouter-gen").parent.mkdir(parents=True)
-        (brrtrouter_path / "target" / "debug" / "brrtrouter-gen").touch()
-        spec = tmp_path / "openapi.yaml"
-        spec.write_text("openapi: 3.0.3\n")
-        output_dir = tmp_path / "gen"
-        output_dir.mkdir()
-
-        with patch("brrtrouter_tooling.gen.brrtrouter.subprocess.run") as run:
-            run.return_value = MagicMock(returncode=0)
-            call_brrtrouter_generate(
-                spec_path=spec,
-                output_dir=output_dir,
-                project_root=project_root,
-                brrtrouter_path=brrtrouter_path,
-                capture_output=True,
-            )
-            run.assert_called_once()
-            cmd = run.call_args[0][0]
-            assert cmd[0] == str(brrtrouter_path / "target" / "debug" / "brrtrouter-gen")
-            assert "generate" in cmd
-            assert "--spec" in cmd
-            assert str(spec) in cmd
-            assert "--output" in cmd
-            assert str(output_dir) in cmd
-            assert "--force" in cmd
-            assert run.call_args[1]["cwd"] == str(project_root)
-
-    def test_uses_cargo_run_when_binary_missing(self, tmp_path: Path) -> None:
+    def test_uses_cargo_run(self, tmp_path: Path) -> None:
         from brrtrouter_tooling.gen.brrtrouter import call_brrtrouter_generate
 
         project_root = tmp_path / "consumer"

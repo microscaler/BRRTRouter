@@ -258,6 +258,128 @@ impl HandlerResponse {
 /// Type alias for a channel sender that dispatches requests to a handler
 pub type HandlerSender = mpsc::Sender<HandlerRequest>;
 
+/// Spawn an untyped handler coroutine with a specific stack size and handler name.
+///
+/// This directly returns a sender channel for dispatcher registration, similarly
+/// to `brrtrouter::typed::spawn_typed_with_stack_size_and_name`, but avoids any
+/// JSON strongly-typed request/response validation overhead.
+///
+/// # Safety
+///
+/// See `register_handler` safety constraints.
+pub unsafe fn spawn_untyped_with_stack_size_and_name<F>(
+    handler_fn: F,
+    stack_size_bytes: usize,
+    handler_name: Option<&str>,
+) -> mpsc::Sender<HandlerRequest>
+where
+    F: Fn(HandlerRequest) -> HandlerResponse + Send + 'static + Clone,
+{
+    let (tx, rx) = mpsc::channel::<HandlerRequest>();
+    let effective_name = handler_name.unwrap_or("unknown").to_string();
+    let handler_name_for_logging = effective_name.clone();
+
+    // Apply environment variable overrides
+    let env_var_name = format!("BRRTR_STACK_SIZE__{}", effective_name.to_uppercase());
+    let mut stack_size = std::env::var(&env_var_name)
+        .ok()
+        .and_then(|s| {
+            if let Some(hex) = s.strip_prefix("0x") {
+                usize::from_str_radix(hex, 16).ok()
+            } else {
+                s.parse().ok()
+            }
+        })
+        .or_else(|| {
+            std::env::var("BRRTR_STACK_SIZE").ok().and_then(|s| {
+                if let Some(hex) = s.strip_prefix("0x") {
+                    usize::from_str_radix(hex, 16).ok()
+                } else {
+                    s.parse().ok()
+                }
+            })
+        })
+        .unwrap_or(stack_size_bytes);
+
+    // Apply clamping
+    let min = std::env::var("BRRTR_STACK_MIN_BYTES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(16 * 1024);
+    let max = std::env::var("BRRTR_STACK_MAX_BYTES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(256 * 1024);
+    stack_size = stack_size.clamp(min, max);
+
+    let spawn_result = may::coroutine::Builder::new()
+        .stack_size(stack_size)
+        .spawn(move || {
+            debug!(
+                handler_name = %handler_name_for_logging,
+                stack_size = stack_size,
+                "Untyped handler coroutine start"
+            );
+
+            for req in rx.iter() {
+                let reply_tx = req.reply_tx.clone();
+                let h_name = req.handler_name.clone();
+                let request_id = req.request_id;
+
+                info!(
+                    request_id = %request_id,
+                    handler_name = %h_name,
+                    "Untyped handler execution start"
+                );
+
+                let execution_start = std::time::Instant::now();
+
+                if let Err(panic) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    let response = handler_fn(req);
+                    let _ = reply_tx.send(response);
+                })) {
+                    let panic_message = format!("{panic:?}");
+                    error!(
+                        request_id = %request_id,
+                        handler_name = %h_name,
+                        panic_message = %panic_message,
+                        "Untyped handler panicked - CRITICAL"
+                    );
+                    let error_response = HandlerResponse::error(
+                        500,
+                        &format!("Handler panicked: {}", panic_message),
+                    );
+                    let _ = reply_tx.send(error_response);
+                } else {
+                    let execution_time_ms = execution_start.elapsed().as_millis() as u64;
+                    info!(
+                        request_id = %request_id,
+                        handler_name = %h_name,
+                        execution_time_ms = execution_time_ms,
+                        "Untyped handler execution complete"
+                    );
+                }
+            }
+        });
+
+    #[allow(clippy::panic)]
+    match spawn_result {
+        Ok(_) => tx,
+        Err(e) => {
+            error!(
+                handler = %effective_name,
+                stack_size_bytes = stack_size,
+                error = %e,
+                "Critical: Failed to spawn untyped handler coroutine"
+            );
+            panic!(
+                "Failed to spawn untyped handler coroutine for '{}': {}",
+                effective_name, e
+            );
+        }
+    }
+}
+
 /// Dispatcher that routes requests to registered handler coroutines
 ///
 /// Maintains a registry of handler names to their corresponding channel senders,
