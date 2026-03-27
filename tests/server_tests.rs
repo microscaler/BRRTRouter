@@ -194,7 +194,7 @@ impl CustomServerTestFixture {
         may::config().set_stack_size(0x8000);
         let tracing = TestTracing::init();
 
-        let route = RouteMeta {
+        let route = RouteMeta { x_service: None, x_brrtrouter_downstream_path: None,
             method,
             path_pattern: Arc::from(path),
             handler_name: Arc::from(handler_name),

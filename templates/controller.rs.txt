@@ -13,6 +13,45 @@ use crate::handlers::types::{{ import }};
 
 #[handler({{ struct_name }})]
 pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
+    {% if let Some(service) = downstream_service %}
+    {% if let Some(path) = downstream_path %}
+    let url: http_legacy::Uri = format!("http://hauliage-{}:80{}", "{{ service }}", "{{ path }}").parse().unwrap();
+    let method = http_legacy::Method::from_bytes(b"{{ method|upper }}").unwrap();
+    
+    thread_local! {
+        static CLIENT_CACHE: std::cell::RefCell<Option<may_http::client::HttpClient>> = std::cell::RefCell::new(None);
+    }
+    
+    let (mut rsp, buf) = CLIENT_CACHE.with(|cache| {
+        let mut client_opt = cache.borrow_mut();
+        if client_opt.is_none() {
+            let client = may_http::client::HttpClient::connect(&(format!("hauliage-{}", "{{ service }}").as_str(), 80)).unwrap();
+            *client_opt = Some(client);
+        }
+        let client = client_opt.as_mut().unwrap();
+        let mut req = client.new_request(method.clone(), url);
+    
+    req.headers_mut().insert(http_legacy::header::CONTENT_TYPE, "application/json".parse().unwrap());
+    req.headers_mut().insert(http_legacy::header::ACCEPT, "application/json".parse().unwrap());
+    
+    {% if method == "POST" || method == "PUT" || method == "PATCH" %}
+    let body_bytes = serde_json::to_vec(&_req.data).unwrap();
+    req.send(&body_bytes).unwrap();
+    let mut rsp = client.send_request(req).unwrap();
+    {% else %}
+    let mut rsp = client.send_request(req).unwrap();
+    {% endif %}
+    
+    let mut buf = Vec::new();
+    std::io::Read::read_to_end(&mut rsp, &mut buf).unwrap();
+    (rsp, buf)
+    });
+    
+    serde_json::from_slice(&buf).unwrap()
+    {% else %}
+    unimplemented!("Downstream service specified but no downstream path configured")
+    {% endif %}
+    {% else %}
     {% if sse %}
     let (tx, rx) = sse::channel();
     for i in 0..3 { tx.send(format!("tick {i}")); }
@@ -31,6 +70,7 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
         {{ field.name }}: {{ field.value }},
         {%- endfor %}
     }
+    {% endif %}
     {% endif %}
     {% endif %}
 }

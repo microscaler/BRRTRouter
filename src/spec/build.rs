@@ -596,6 +596,19 @@ pub fn build_routes(spec: &OpenApiV3Spec, slug: &str) -> anyhow::Result<Vec<Rout
                 // Extract route-specific CORS policy from x-cors extension
                 let cors_policy = crate::middleware::extract_route_cors_config(operation);
 
+                // Extract proxy downstream routes
+                let x_service = operation
+                    .extensions
+                    .get("service")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+
+                let x_brrtrouter_downstream_path = operation
+                    .extensions
+                    .get("brrtrouter-downstream-path")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+
                 routes.push(RouteMeta {
                     method,
                     // JSF P0-2: Use Arc<str> for O(1) cloning
@@ -616,6 +629,8 @@ pub fn build_routes(spec: &OpenApiV3Spec, slug: &str) -> anyhow::Result<Vec<Rout
                     estimated_request_body_bytes,
                     x_brrtrouter_stack_size,
                     cors_policy,
+                    x_service,
+                    x_brrtrouter_downstream_path,
                 });
             }
         }

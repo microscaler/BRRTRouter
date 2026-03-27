@@ -252,7 +252,7 @@ mod tests {
     }
 
     fn create_test_route() -> RouteMeta {
-        RouteMeta {
+        RouteMeta { x_service: None, x_brrtrouter_downstream_path: None,
             method: Method::GET,
             path_pattern: Arc::from("/test"),
             handler_name: Arc::from("test_handler"),

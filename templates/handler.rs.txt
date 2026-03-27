@@ -23,7 +23,7 @@ pub struct Request {
     {% endfor -%}
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 {% if sse %}
 pub struct Response(pub String);
 {% elif response_is_array %}

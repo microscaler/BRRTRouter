@@ -23,10 +23,13 @@ pub enum DependencySpec {
     /// Full specification: { version = "1.33", features = ["serde"] }
     Full {
         version: Option<String>,
+        package: Option<String>,
         path: Option<String>,
         git: Option<String>,
         branch: Option<String>,
         features: Option<Vec<String>>,
+        #[serde(rename = "default-features", skip_serializing_if = "Option::is_none")]
+        default_features: Option<bool>,
         #[serde(skip_serializing_if = "Option::is_none")]
         workspace: Option<bool>,
     },
@@ -55,6 +58,9 @@ pub struct ConditionalDependency {
     /// Version string
     #[serde(skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
+    /// Package name mapping
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub package: Option<String>,
     /// Path to dependency
     #[serde(skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
@@ -67,6 +73,9 @@ pub struct ConditionalDependency {
     /// Features to enable
     #[serde(skip_serializing_if = "Option::is_none")]
     pub features: Option<Vec<String>>,
+    /// Default features toggle
+    #[serde(rename = "default-features", skip_serializing_if = "Option::is_none")]
+    pub default_features: Option<bool>,
 }
 
 impl ConditionalDependency {
@@ -80,10 +89,12 @@ impl ConditionalDependency {
         } else if let Some(version) = &self.version {
             DependencySpec::Full {
                 version: Some(version.clone()),
+                package: self.package.clone(),
                 path: self.path.clone(),
                 git: self.git.clone(),
                 branch: self.branch.clone(),
                 features: self.features.clone(),
+                default_features: self.default_features,
                 workspace: self.workspace,
             }
         } else {
