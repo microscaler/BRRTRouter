@@ -163,13 +163,13 @@ pub fn generate_project_with_options(
         fs::create_dir_all(&src_dir)?;
         if scope.handlers {
             if handler_dir.exists() {
-                fs::remove_dir_all(&handler_dir)?;
+                let _ = fs::remove_dir_all(&handler_dir);
             }
             fs::create_dir_all(&handler_dir)?;
         }
         if scope.controllers {
             if controller_dir.exists() {
-                fs::remove_dir_all(&controller_dir)?;
+                let _ = fs::remove_dir_all(&controller_dir);
             }
             fs::create_dir_all(&controller_dir)?;
         }

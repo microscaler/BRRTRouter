@@ -622,8 +622,8 @@ brrtrouter-dependencies.toml."
 /// Format a dependency specification for Cargo.toml
 ///
 /// Converts DependencySpec to a TOML-formatted string suitable for Cargo.toml
-fn format_dependency_spec(
-    _name: &str,
+pub fn format_dependency_spec(
+    name: &str,
     spec: &crate::generator::DependencySpec,
     use_workspace_deps: bool,
 ) -> String {
@@ -654,6 +654,7 @@ fn format_dependency_spec(
         }
         crate::generator::DependencySpec::Full {
             version,
+            package,
             path,
             git,
             branch,
@@ -671,6 +672,10 @@ fn format_dependency_spec(
 
             if let Some(ver) = version {
                 parts.push(format!(r#"version = "{}""#, ver));
+            }
+
+            if let Some(pkg) = package {
+                parts.push(format!(r#"package = "{}""#, pkg));
             }
 
             if let Some(p) = path {

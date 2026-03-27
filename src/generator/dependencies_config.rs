@@ -23,6 +23,7 @@ pub enum DependencySpec {
     /// Full specification: { version = "1.33", features = ["serde"] }
     Full {
         version: Option<String>,
+        package: Option<String>,
         path: Option<String>,
         git: Option<String>,
         branch: Option<String>,
@@ -57,6 +58,9 @@ pub struct ConditionalDependency {
     /// Version string
     #[serde(skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
+    /// Package name mapping
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub package: Option<String>,
     /// Path to dependency
     #[serde(skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
@@ -85,6 +89,7 @@ impl ConditionalDependency {
         } else if let Some(version) = &self.version {
             DependencySpec::Full {
                 version: Some(version.clone()),
+                package: self.package.clone(),
                 path: self.path.clone(),
                 git: self.git.clone(),
                 branch: self.branch.clone(),

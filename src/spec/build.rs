@@ -599,13 +599,13 @@ pub fn build_routes(spec: &OpenApiV3Spec, slug: &str) -> anyhow::Result<Vec<Rout
                 // Extract proxy downstream routes
                 let x_service = operation
                     .extensions
-                    .get("x-service")
+                    .get("service")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
 
                 let x_brrtrouter_downstream_path = operation
                     .extensions
-                    .get("x-brrtrouter-downstream-path")
+                    .get("brrtrouter-downstream-path")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
 
