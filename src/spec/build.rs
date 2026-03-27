@@ -467,7 +467,7 @@ pub fn extract_parameters(
             out.push(ParameterMeta {
                 name: param.name.clone(),
                 location: ParameterLocation::from(param.location),
-                required: param.required.is_some(),
+                required: param.required.unwrap_or(false),
                 schema,
                 style: param.style.map(ParameterStyle::from),
                 explode: param.explode,
