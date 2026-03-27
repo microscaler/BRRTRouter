@@ -1,5 +1,119 @@
 {# controller.rs.txt #}
 // User-owned controller for handler '{{ handler_name }}'.
+{% if let Some(service) = downstream_service %}
+// Native untyped proxy route matching JSF Compliance
+use brrtrouter::dispatcher::{HandlerRequest, HandlerResponse};
+
+pub fn handle(req: HandlerRequest) -> HandlerResponse {
+    {% if let Some(path) = downstream_path %}
+    // Build path matching the spec
+    let path_str = "{{ path }}";
+    let mut resolved_path = path_str.to_string();
+    for (k, v) in &req.path_params {
+        let mut target = String::from("{");
+        target.push_str(k);
+        target.push('}');
+        resolved_path = resolved_path.replace(&target, v.as_str());
+    }
+    
+    // JSF Rule 208: Catch all protocol failures gracefully
+    let url = match format!("http://hauliage-{}:80{}", "{{ service }}", resolved_path).parse::<http_legacy::Uri>() {
+        Ok(uri) => uri,
+        Err(e) => return HandlerResponse::error(500, &format!("Invalid Proxy URI: {}", e)),
+    };
+    
+    let method = match http_legacy::Method::from_bytes(req.method.as_str().as_bytes()) {
+        Ok(m) => m,
+        Err(e) => return HandlerResponse::error(400, &format!("Invalid Method: {}", e)),
+    };
+
+    thread_local! {
+        static CLIENT_CACHE: std::cell::RefCell<Option<may_http::client::HttpClient>> = std::cell::RefCell::new(None);
+    }
+
+    let proxy_result = CLIENT_CACHE.with(|cache| -> Result<HandlerResponse, String> {
+        let mut client_opt = cache.borrow_mut();
+        if client_opt.is_none() {
+            match may_http::client::HttpClient::connect(&(format!("hauliage-{}", "{{ service }}").as_str(), 80)) {
+                Ok(client) => *client_opt = Some(client),
+                Err(e) => return Err(format!("Failed to connect to proxy target: {}", e)),
+            }
+        }
+        
+        let client = client_opt.as_mut().unwrap();
+        let mut proxy_req = client.new_request(method.clone(), url);
+        
+        // Forward headers (specifically content-type)
+        if let Some(ct) = req.get_header("content-type") {
+            if let Ok(v) = ct.parse() {
+                proxy_req.headers_mut().insert(http_legacy::header::CONTENT_TYPE, v);
+            }
+        }
+        if let Some(acc) = req.get_header("accept") {
+            if let Ok(v) = acc.parse() {
+                proxy_req.headers_mut().insert(http_legacy::header::ACCEPT, v);
+            }
+        } else {
+            proxy_req.headers_mut().insert(http_legacy::header::ACCEPT, "application/json".parse().unwrap());
+        }
+
+        let mut buf = Vec::new(); // JSF warning: this heap allocation is required for HTTP transit payload extraction but happens OFF the dispatcher thread lock!
+
+        let mut rsp = if let Some(body_json) = &req.body {
+            let body_bytes = match serde_json::to_vec(body_json) {
+                Ok(b) => b,
+                Err(e) => return Err(format!("Failed to serialize body: {}", e)),
+            };
+            if let Err(e) = proxy_req.send(&body_bytes) {
+                *client_opt = None; // Reset connection on drop
+                return Err(format!("Failed to send proxy body: {}", e));
+            }
+            match client.send_request(proxy_req) {
+                Ok(r) => r,
+                Err(e) => {
+                    *client_opt = None;
+                    return Err(format!("Failed to send proxy request: {}", e));
+                }
+            }
+        } else {
+            match client.send_request(proxy_req) {
+                Ok(r) => r,
+                Err(e) => {
+                    *client_opt = None;
+                    return Err(format!("Failed to send proxy request: {}", e));
+                }
+            }
+        };
+
+        match std::io::Read::read_to_end(&mut rsp, &mut buf) {
+            Ok(_) => {},
+            Err(e) => return Err(format!("Failed to read proxy response: {}", e)),
+        }
+
+        // Deserialize response text into serde JSON
+        let body_json: serde_json::Value = match serde_json::from_slice(&buf) {
+            Ok(v) => v,
+            Err(_) => {
+                let text = String::from_utf8_lossy(&buf).into_owned();
+                serde_json::json!({ "text_response": text })
+            }
+        };
+        
+        let status = rsp.status().as_u16();
+        let out_headers = brrtrouter::dispatcher::HeaderVec::new();
+        Ok(HandlerResponse::new(status, out_headers, body_json))
+    });
+
+    match proxy_result {
+        Ok(res) => res,
+        Err(err_msg) => HandlerResponse::error(502, &err_msg),
+    }
+
+    {% else %}
+    HandlerResponse::error(500, "Downstream service specified but no downstream path configured")
+    {% endif %}
+}
+{% else %}
 use brrtrouter_macros::handler;
 use brrtrouter::typed::TypedHandlerRequest;
 use crate::handlers::{{ handler_name }}::{ Request, Response };
@@ -13,45 +127,6 @@ use crate::handlers::types::{{ import }};
 
 #[handler({{ struct_name }})]
 pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
-    {% if let Some(service) = downstream_service %}
-    {% if let Some(path) = downstream_path %}
-    let url: http_legacy::Uri = format!("http://hauliage-{}:80{}", "{{ service }}", "{{ path }}").parse().unwrap();
-    let method = http_legacy::Method::from_bytes(b"{{ method|upper }}").unwrap();
-    
-    thread_local! {
-        static CLIENT_CACHE: std::cell::RefCell<Option<may_http::client::HttpClient>> = std::cell::RefCell::new(None);
-    }
-    
-    let (mut rsp, buf) = CLIENT_CACHE.with(|cache| {
-        let mut client_opt = cache.borrow_mut();
-        if client_opt.is_none() {
-            let client = may_http::client::HttpClient::connect(&(format!("hauliage-{}", "{{ service }}").as_str(), 80)).unwrap();
-            *client_opt = Some(client);
-        }
-        let client = client_opt.as_mut().unwrap();
-        let mut req = client.new_request(method.clone(), url);
-    
-    req.headers_mut().insert(http_legacy::header::CONTENT_TYPE, "application/json".parse().unwrap());
-    req.headers_mut().insert(http_legacy::header::ACCEPT, "application/json".parse().unwrap());
-    
-    {% if method == "POST" || method == "PUT" || method == "PATCH" %}
-    let body_bytes = serde_json::to_vec(&_req.data).unwrap();
-    req.send(&body_bytes).unwrap();
-    let mut rsp = client.send_request(req).unwrap();
-    {% else %}
-    let mut rsp = client.send_request(req).unwrap();
-    {% endif %}
-    
-    let mut buf = Vec::new();
-    std::io::Read::read_to_end(&mut rsp, &mut buf).unwrap();
-    (rsp, buf)
-    });
-    
-    serde_json::from_slice(&buf).unwrap()
-    {% else %}
-    unimplemented!("Downstream service specified but no downstream path configured")
-    {% endif %}
-    {% else %}
     {% if sse %}
     let (tx, rx) = sse::channel();
     for i in 0..3 { tx.send(format!("tick {i}")); }
@@ -72,5 +147,5 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     }
     {% endif %}
     {% endif %}
-    {% endif %}
 }
+{% endif %}

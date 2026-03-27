@@ -328,7 +328,7 @@ cargo doc --open
 
 ## 🧪 Testing
 
-**219 tests** covering all HTTP verbs, paths, routing, validation, security, and middleware.
+**722 tests** covering all HTTP verbs, paths, routing, validation, security, and middleware.
 
 See [docs/TEST_DOCUMENTATION.md](docs/TEST_DOCUMENTATION.md) for complete testing guide, including:
 - Running tests (standard and parallel with nextest)
