@@ -138,6 +138,7 @@ def run(
     build_cmd = [
         "docker",
         "build",
+        "--no-cache",
         "-t",
         tag,
         "--rm",
