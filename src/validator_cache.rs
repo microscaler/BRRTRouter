@@ -163,7 +163,14 @@ impl SpecVersion {
         let mut hasher = Sha256::new();
         hasher.update(content);
         let result = hasher.finalize();
-        let hash = format!("{:x}", result);
+        let hash = {
+            use std::fmt::Write as _;
+            let mut s = String::with_capacity(64);
+            for b in &result {
+                let _ = write!(s, "{b:02x}");
+            }
+            s
+        };
         Self {
             version,
             hash: hash.chars().take(16).collect(),
@@ -448,7 +455,14 @@ impl ValidatorCache {
         let mut hasher = Sha256::new();
         hasher.update(spec_content);
         let result = hasher.finalize();
-        let hash_full = format!("{:x}", result);
+        let hash_full = {
+            use std::fmt::Write as _;
+            let mut s = String::with_capacity(64);
+            for b in &result {
+                let _ = write!(s, "{b:02x}");
+            }
+            s
+        };
         version.hash = hash_full.chars().take(16).collect();
 
         let new_version = version.clone();
