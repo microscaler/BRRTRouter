@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
-use tracing::{info, warn};
+use tracing::info;
 
 fn response_schema_is_binary_string(s: &serde_json::Value) -> bool {
     s.get("type").and_then(|t| t.as_str()) == Some("string")
