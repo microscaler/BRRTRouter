@@ -2,6 +2,18 @@
 //!
 //! This is a simple in-memory span collector that uses the OpenTelemetry SDK
 //! to collect spans for test assertions without requiring external infrastructure.
+//!
+//! # One provider, scoped subscriber (same idea as production)
+//!
+//! Production code should install **one** global `TracerProvider` and **one** `tracing` subscriber
+//! in `brrtrouter::otel::init_logging_with_config` (`src/otel.rs`). Tests here use
+//! [`tracing::subscriber::set_default`] with a `Registry` + [`OpenTelemetryLayer`] so they do not
+//! fight `try_init()` and so each test can own a fresh in-memory provider.
+//!
+//! When a test binary also depends on **Lifeguard**, you can add `lifeguard::channel_layer()` to the
+//! same `Registry::default().with(...)` chain **in the test setup** if you need the may-channel log
+//! path; still use **one** `TracerProvider` per `TestTracing` instance. See Lifeguard
+//! `docs/OBSERVABILITY_APP_INTEGRATION.md`.
 
 use opentelemetry::trace::TracerProvider as _;
 use opentelemetry_sdk::error::OTelSdkError;

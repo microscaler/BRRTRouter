@@ -668,7 +668,16 @@
 //!
 //! ### OpenTelemetry Tracing
 //!
-//! BRRTRouter includes OpenTelemetry support for distributed tracing:
+//! BRRTRouter includes OpenTelemetry-oriented tracing hooks and test utilities. **Production
+//! subscriber setup** lives in the [`otel`](crate::otel) module: see [`otel::init_logging_with_config`].
+//! That function is the **canonical place** to add a global `TracerProvider` and
+//! `tracing_opentelemetry::OpenTelemetryLayer` when OTLP is wired — **one** provider, **one**
+//! `tracing_subscriber::Registry` stack, composed with `.with(...)`.
+//!
+//! If you use **[Lifeguard](https://github.com/microscaler/lifeguard)**, add `lifeguard::channel_layer()`
+//! to that same layer chain (Lifeguard does not call `set_tracer_provider`). See Lifeguard’s
+//! `docs/OBSERVABILITY_APP_INTEGRATION.md`. Tests use `tests/tracing_util.rs` (`TestTracing`) with
+//! `set_default` instead of a second global init.
 //!
 //! ```rust,ignore
 //! use brrtrouter::middleware::TracingMiddleware;
