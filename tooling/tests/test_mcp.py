@@ -118,12 +118,21 @@ def test_code_generation_guide_mentions_gen_and_impl() -> None:
     assert "gen crate" in guide
     assert "impl crate" in guide
     assert "generate-stubs" in guide
+    assert "Consumer CLI: host-aware build" in guide
+    assert "bff_traderBFF" in guide
 
 
 def test_bff_guide_mentions_suite_config() -> None:
     guide = get_bff_pattern_guide()
     assert "suite" in guide.lower()
     assert "x-brrtrouter-downstream-path" in guide
+
+
+def test_bff_guide_documents_tilt_scan_for_bff_spec_gen_deps() -> None:
+    guide = get_bff_pattern_guide()
+    assert "bff-spec-gen" in guide
+    assert "tilt scan" in guide
+    assert "TRADER_SERVICES" in guide
 
 
 def test_extensions_reference_covers_x_sse() -> None:

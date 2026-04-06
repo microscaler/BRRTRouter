@@ -5,13 +5,13 @@
 // To regenerate this stub, use: brrtrouter-gen generate-stubs --path {{ handler_name }} --force
 
 use brrtrouter_macros::handler;
-use {{ crate_name }}::handlers::{{ handler_name }}::{Request, Response};
+use {{ rust_crate_ident }}::handlers::{{ handler_name }}::{Request, Response};
 use brrtrouter::typed::TypedHandlerRequest;
 {% if sse %}use brrtrouter::sse;{% endif %}
 {% if imports.len() > 0 %}
 {% for import in imports -%}
 #[allow(unused_imports)]
-use {{ crate_name }}::handlers::types::{{ import }};
+use {{ rust_crate_ident }}::handlers::types::{{ import }};
 {% endfor %}
 {% endif %}
 
@@ -23,10 +23,10 @@ pub fn handle(req: TypedHandlerRequest<Request>) -> Response {
     {% for field in request_fields -%}
     // let {{ field.name }} = req.inner.{{ field.name }};
     {%- endfor %}
-    // 
+    //
     // Example: Database query, validation, etc.
     // let result = your_service.process(&req.inner)?;
-    // 
+    //
     // Example: Return response
     {% if sse %}
     // TODO: Implement Server-Sent Events logic
@@ -40,9 +40,9 @@ pub fn handle(req: TypedHandlerRequest<Request>) -> Response {
     Response({{ response_array_literal }})
     {% else %}
     Response {
-        {% for field in response_fields %}
+{%- for field in response_fields %}
         {{ field.name }}: {% if field.optional %}None{% else %}{{ field.value }}{% endif %}, // TODO: Set from your business logic
-        {% endfor %}
+{%- endfor %}
     }
     {% endif %}
 }

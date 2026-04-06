@@ -91,7 +91,7 @@ class PortRegistry:
     ):
         self.registry_file = registry_file
         self.project_root = project_root
-        self._layout = resolve_layout(layout)
+        self._layout = resolve_layout(layout, project_root)
         self.registry = self._load_registry()
 
     def _load_registry(self) -> dict:
@@ -169,9 +169,18 @@ class PortRegistry:
         node_port = 31000 + (port - 8000)
         lay = self._layout
         values_file = self.project_root / lay["helm_values_dir"] / f"{service_name}.yaml"
+
+        # Extract system name from helm_values_dir structure, e.g. 'helm/pricewhisperer-microservice/values'
+        system_name = "rerp"  # default
+        parts = Path(lay["helm_values_dir"]).parts
+        for part in parts:
+            if part.endswith("-microservice"):
+                system_name = part.replace("-microservice", "")
+                break
+
         if not values_file.exists():
             print(f"Helm values file not found: {values_file}")
-            print("   Create it with: rerp bootstrap microservice <service>")
+            print(f"   Create it with: {system_name} bootstrap microservice <service>")
             return
         with values_file.open() as f:
             values = yaml.safe_load(f) or {}
@@ -184,7 +193,7 @@ class PortRegistry:
         if not port_only:
             if "image" not in values:
                 values["image"] = {}
-            values["image"]["name"] = f"rerp-{service_name}"
+            values["image"]["name"] = f"{system_name}-{service_name}"
             if "app" not in values:
                 values["app"] = {}
             values["app"]["serviceName"] = service_name

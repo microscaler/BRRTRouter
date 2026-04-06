@@ -23,14 +23,14 @@ def run_mcp_argv() -> None:
 
 def _print_usage() -> None:
     print(
-        "Usage: brrtrouter mcp serve [--transport stdio|sse] [--host HOST] [--port PORT]",
+        "Usage: brrtrouter mcp serve [--transport stdio|sse] [--host HOST] [--port PORT]\n"
+        "\n"
+        "Subcommands:\n"
+        "  serve   Start the BRRTRouter MCP server\n"
+        "\n"
+        "Options for serve:",
         file=sys.stderr,
     )
-    print("", file=sys.stderr)
-    print("Subcommands:", file=sys.stderr)
-    print("  serve   Start the BRRTRouter MCP server", file=sys.stderr)
-    print("", file=sys.stderr)
-    print("Options for serve:", file=sys.stderr)
     print("  --transport stdio|sse   Transport protocol (default: stdio)", file=sys.stderr)
     print(
         "  --host HOST             Bind host for SSE transport (default: 127.0.0.1)",

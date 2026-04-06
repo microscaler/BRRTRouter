@@ -32,7 +32,7 @@ Generates a BFF OpenAPI spec from a suite config YAML that lists sub-services. I
 - **Output:** Merged spec with `x-brrtrouter-downstream-path`, `x-service`, `x-service-base-path` on each operation; merged `components.parameters`, `components.securitySchemes`, root `security` when provided in config.
 - **generate-system:** Directory-based discovery: `openapi_dir/{system}/{service}/openapi.yaml` → merged BFF at `openapi_dir/{system}/openapi.yaml`. Same merge logic as suite-config; RERP uses this via re-export from `brrtrouter_tooling.bff`.
 - **ports validate:** Scan port-registry, helm values, kind-config, Tiltfile, bff-suite-config; report conflicts. RERP-style default layout (configurable). RERP re-exports `PortRegistry`, `validate`, `reconcile`, `fix_duplicates` from `brrtrouter_tooling.ports`.
-- **build:** Host-aware Rust build (cargo/cross/zigbuild) for workspace or `<system>_<module>`. Configurable `--workspace-dir` (default: microservices).
+- **build:** Host-aware Rust build (cargo/cross/zigbuild) for workspace or `client build <system>_<module>`. Default `-p` is `{snake}_service_api_impl`, or `{Module}_impl` for camelCase BFF modules. Optional `--package` expands `foo_impl` or passes `rerp_`* through. Configurable `--workspace-dir` (default: microservices).
 - **docker:** Generate Dockerfile from template, copy binaries, build base/image (simple or multiarch), unpack build bins. RERP consumes with `base_image_name="rerp-base"`, `build_cmd`, etc.
 - **release:** Bump Cargo.toml versions (configurable workspace path); generate release notes via OpenAI/Anthropic.
 - **mcp serve:** Start the BRRTRouter MCP server (see below).
@@ -75,37 +75,43 @@ brrtrouter mcp serve --transport sse --host 127.0.0.1 --port 8765
 
 **Tools exposed:**
 
-| Tool | Description |
-|------|-------------|
-| `lint_spec` | Lint an OpenAPI YAML string for BRRTRouter conformance |
+
+| Tool                     | Description                                                     |
+| ------------------------ | --------------------------------------------------------------- |
+| `lint_spec`              | Lint an OpenAPI YAML string for BRRTRouter conformance          |
 | `check_spec_conformance` | Comprehensive conformance check (errors, warnings, suggestions) |
-| `validate_openapi_dir` | Validate all `openapi.yaml` files under a directory |
-| `fix_operation_ids` | Convert operationIds to snake_case (dry-run by default) |
-| `list_spec_operations` | List all operations in a spec file |
-| `generate_project` | Run `brrtrouter-gen generate` to create a gen crate |
-| `generate_stubs` | Run `brrtrouter-gen generate-stubs` to create an impl crate |
-| `generate_bff` | Generate a merged BFF spec from a suite config |
-| `inspect_generated_dir` | Summarise the contents of a generated (gen) crate |
-| `inspect_impl_dir` | Show which impl handlers are user-owned vs stubs |
+| `validate_openapi_dir`   | Validate all `openapi.yaml` files under a directory             |
+| `fix_operation_ids`      | Convert operationIds to snake_case (dry-run by default)         |
+| `list_spec_operations`   | List all operations in a spec file                              |
+| `generate_project`       | Run `brrtrouter-gen generate` to create a gen crate             |
+| `generate_stubs`         | Run `brrtrouter-gen generate-stubs` to create an impl crate     |
+| `generate_bff`           | Generate a merged BFF spec from a suite config                  |
+| `inspect_generated_dir`  | Summarise the contents of a generated (gen) crate               |
+| `inspect_impl_dir`       | Show which impl handlers are user-owned vs stubs                |
+
 
 **Resources exposed:**
 
-| URI | Description |
-|-----|-------------|
-| `brrtrouter://guide/openapi-spec` | Guide for writing BRRTRouter-conformant specs |
-| `brrtrouter://guide/code-generation` | Guide for gen/impl directory layout and workflow |
-| `brrtrouter://guide/bff-pattern` | BFF (Backend for Frontend) setup guide |
-| `brrtrouter://reference/extensions` | All BRRTRouter OpenAPI extensions reference |
-| `brrtrouter://examples/openapi-spec` | Minimal conformant OpenAPI 3.1.0 example |
+
+| URI                                  | Description                                                                    |
+| ------------------------------------ | ------------------------------------------------------------------------------ |
+| `brrtrouter://guide/openapi-spec`    | Guide for writing BRRTRouter-conformant specs                                  |
+| `brrtrouter://guide/code-generation` | Gen/impl layout, regeneration, and consumer `client build` / cargo `-p` naming |
+| `brrtrouter://guide/bff-pattern`     | BFF (Backend for Frontend) setup guide                                         |
+| `brrtrouter://reference/extensions`  | All BRRTRouter OpenAPI extensions reference                                    |
+| `brrtrouter://examples/openapi-spec` | Minimal conformant OpenAPI 3.1.0 example                                       |
+
 
 **Prompts exposed:**
 
-| Prompt | Arguments | Description |
-|--------|-----------|-------------|
-| `write_openapi_spec` | `service_name`, `description` | Prime assistant to write a conformant spec |
-| `setup_bff` | `system_name`, `services` (comma-sep) | Prime assistant to create a BFF config |
-| `implement_handler` | `operation_id`, `request_type`, `response_type` | Prime assistant to implement a handler stub |
-| `review_spec` | `spec_content` | Prime assistant to review and improve a spec |
+
+| Prompt               | Arguments                                       | Description                                  |
+| -------------------- | ----------------------------------------------- | -------------------------------------------- |
+| `write_openapi_spec` | `service_name`, `description`                   | Prime assistant to write a conformant spec   |
+| `setup_bff`          | `system_name`, `services` (comma-sep)           | Prime assistant to create a BFF config       |
+| `implement_handler`  | `operation_id`, `request_type`, `response_type` | Prime assistant to implement a handler stub  |
+| `review_spec`        | `spec_content`                                  | Prime assistant to review and improve a spec |
+
 
 ## Development
 
@@ -127,3 +133,4 @@ pytest
 ```bash
 pip install -e .
 ```
+

@@ -3,7 +3,7 @@
 // This file is generated as a starting point.
 // You can modify this file freely - it will NOT be auto-regenerated.
 
-use {{ crate_name }}::registry;
+use {{ rust_crate_ident }}::registry;
 use brrtrouter::dispatcher::Dispatcher;
 use brrtrouter::middleware::MetricsMiddleware;
 use brrtrouter::router::Router;
@@ -13,7 +13,6 @@ use brrtrouter::server::HttpServer;
 use clap::Parser;
 use std::io;
 use std::path::PathBuf;
-use std::fs;
 
 // Use jemalloc as the global allocator for better memory performance.
 // This is gated behind the "jemalloc" feature (enabled by default).

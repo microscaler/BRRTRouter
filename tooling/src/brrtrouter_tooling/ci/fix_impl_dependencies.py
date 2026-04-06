@@ -39,6 +39,25 @@ def update_impl_cargo_dependencies(impl_cargo_path: Path) -> bool:
     content = impl_cargo_path.read_text()
     modified = False
 
+    # impl_main.rs always uses clap (CLI) and may (coroutine stack); must be in [dependencies].
+    if "clap = { workspace = true }" not in content and "clap =" not in content:
+        if "tikv-jemallocator = { workspace = true" in content:
+            content = re.sub(
+                r"(tikv-jemallocator = \{[^\}]+\}\n)",
+                r"\1clap = { workspace = true }\nmay = { workspace = true }\n",
+                content,
+                count=1,
+            )
+            modified = True
+        elif "tikv-jemallocator = { version" in content and "workspace = true" not in content:
+            content = re.sub(
+                r"(tikv-jemallocator = \{[^\}]+\}\n)",
+                r'\1clap = { version = "4.6", features = ["derive"] }\nmay = "0.3"\n',
+                content,
+                count=1,
+            )
+            modified = True
+
     if uses_decimal and "rust_decimal" not in content:
         if "tikv-jemallocator" in content:
             content = re.sub(

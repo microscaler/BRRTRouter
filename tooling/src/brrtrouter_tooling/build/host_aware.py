@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from brrtrouter_tooling.helpers import default_binary_name
+from brrtrouter_tooling.helpers import resolve_cargo_impl_package_name
 
 ARCH_TARGETS: Dict[str, str] = {
     "amd64": "x86_64-unknown-linux-musl",
@@ -149,6 +149,7 @@ def _build_for_arch(
     use_cross: bool,
     extra_args: List[str],
     workspace_dir: str = "microservices",
+    package: Optional[str] = None,
 ) -> bool:
     print(f"🔨 Building for {arch_name} ({rust_target})...")
     if not use_cross and not _install_rust_target(rust_target):
@@ -160,15 +161,17 @@ def _build_for_arch(
         return _run_build(
             project_root, workspace_dir, rust_target, arch_name, use_zigbuild, use_cross, build_extra
         )
+
     parts = target.split("_", 1)
     if len(parts) < 2:
         print(
-            "❌ Service name must be <system>_<module> (e.g., auth_idam)",
+            "❌ Service name must be <system>_<module> (e.g., trader_amd or auth_idam)",
             file=sys.stderr,
         )
         return False
-    system, module = parts
-    binary_name = default_binary_name(system, module)
+    _system, module = parts
+    crate_name = resolve_cargo_impl_package_name(package, module)
+
     return _run_build(
         project_root,
         workspace_dir,
@@ -177,7 +180,7 @@ def _build_for_arch(
         use_zigbuild,
         use_cross,
         build_extra,
-        package_name=binary_name,
+        package_name=crate_name,
     )
 
 
@@ -199,12 +202,14 @@ def run(
     extra_args: Optional[List[str]] = None,
     project_root: Optional[Path] = None,
     workspace_dir: str = "microservices",
+    package: Optional[str] = None,
 ) -> int:
     """Run host-aware build. Returns 0 on success, 1 on failure."""
     root = Path(project_root) if project_root is not None else Path.cwd()
     extra = extra_args or []
     try:
         archs = _determine_architectures(arch)
+
     except ValueError as e:
         print(f"❌ {e}", file=sys.stderr)
         return 1
@@ -221,10 +226,12 @@ def run(
             use_cross,
             extra,
             workspace_dir=workspace_dir,
+            package=package,
         ):
             ok = False
     if ok:
         print("🎉 All builds complete!")
+
         return 0
     print("❌ Some builds failed", file=sys.stderr)
     return 1

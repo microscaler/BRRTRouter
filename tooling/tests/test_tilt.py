@@ -115,55 +115,46 @@ class TestSetup:
         from brrtrouter_tooling.tilt.setup import run
 
         with patch("shutil.which") as m:
-            m.side_effect = ["/usr/bin/docker", None]  # docker ok, tilt missing
+            # Four volume iterations + final docker/tilt check in the dependency loop
+            m.side_effect = ["/usr/bin/docker"] * 5 + [None]
             with patch("subprocess.run", return_value=MagicMock(returncode=0)):
                 assert run(tmp_path) == 1
 
     def test_returns_0_creates_dirs_and_volumes_mocked(self, tmp_path: Path) -> None:
         from brrtrouter_tooling.tilt.setup import run
 
-        dirs = [
-            "docker/prometheus",
-            "openapi/accounting",
-            "microservices/accounting",
-            "k8s/data",
-        ]
-        volumes = ["postgres_data"]
         with (
             patch("shutil.which", return_value="/usr/bin/docker"),
             patch("subprocess.run", return_value=MagicMock(returncode=0)),
         ):
-            assert run(tmp_path, dirs=dirs, volumes=volumes) == 0
-        for p in dirs:
-            assert (tmp_path / p).is_dir()
+            assert run(tmp_path) == 0
+        assert (tmp_path / "microservices").is_dir()
+        assert (tmp_path / "k8s/data").is_dir()
 
 
 class TestTeardown:
     def test_returns_0_with_mocked_subprocess(self, tmp_path: Path) -> None:
         from brrtrouter_tooling.tilt.teardown import run
 
-        with patch("subprocess.run", return_value=MagicMock(returncode=0)):
-            assert (
-                run(
-                    tmp_path,
-                    [],
-                    remove_images=False,
-                    remove_volumes=False,
-                    system_prune=False,
-                )
-                == 0
-            )
+        with (
+            patch("subprocess.run", return_value=MagicMock(returncode=0)),
+            patch("brrtrouter_tooling.tilt.teardown.tilt_service_names", return_value=[]),
+        ):
+            assert run(tmp_path, remove_images=False, remove_volumes=False, system_prune=False) == 0
 
     def test_returns_0_with_remove_flags_mocked(self, tmp_path: Path) -> None:
         from brrtrouter_tooling.tilt.teardown import run
 
-        with patch("subprocess.run", return_value=MagicMock(returncode=0)):
+        with (
+            patch("subprocess.run", return_value=MagicMock(returncode=0)),
+            patch(
+                "brrtrouter_tooling.tilt.teardown.tilt_service_names",
+                return_value=["bff"],
+            ),
+        ):
             assert (
                 run(
                     tmp_path,
-                    [],
-                    static_containers=["postgres-dev"],
-                    volume_names=["postgres_data"],
                     remove_images=True,
                     remove_volumes=True,
                     system_prune=True,
@@ -171,37 +162,18 @@ class TestTeardown:
                 == 0
             )
 
-    def test_uses_container_and_image_fns(self, tmp_path: Path) -> None:
+    def test_remove_images_calls_rmi_for_services(self, tmp_path: Path) -> None:
         from brrtrouter_tooling.tilt.teardown import run
 
-        def container_name_fn(s: str) -> str:
-            return f"rerp-{s}-dev"
-
-        def image_rmi_list_fn(s: str) -> list[str]:
-            return [
-                f"rerp-accounting-{s}:latest",
-                f"localhost:5001/rerp-accounting-{s}:tilt",
-            ]
-
-        service_names = ["bff", "edi", "financial-reports"]
-        with patch("subprocess.run", return_value=MagicMock(returncode=0)) as m:
-            run(
-                tmp_path,
-                service_names,
-                container_name_fn=container_name_fn,
-                image_rmi_list_fn=image_rmi_list_fn,
-                remove_images=True,
-                remove_volumes=False,
-                system_prune=False,
-            )
+        with (
+            patch("subprocess.run", return_value=MagicMock(returncode=0)) as m,
+            patch(
+                "brrtrouter_tooling.tilt.teardown.tilt_service_names",
+                return_value=["bff", "edi"],
+            ),
+        ):
+            run(tmp_path, remove_images=True, remove_volumes=False, system_prune=False)
         calls = [c[0][0] for c in m.call_args_list]
-        assert ["docker", "stop", "rerp-bff-dev"] in [
-            c[:3] for c in calls if c[:2] == ["docker", "stop"] and len(c) > 2
-        ]
-        assert ["docker", "stop", "rerp-edi-dev"] in [
-            c[:3] for c in calls if c[:2] == ["docker", "stop"] and len(c) > 2
-        ]
-        rmi_calls = [c for c in calls if c[:2] == ["docker", "rmi"] and len(c) > 2]
-        rmi_args = [c[2] for c in rmi_calls]
-        assert "rerp-accounting-bff:latest" in rmi_args
-        assert "localhost:5001/rerp-accounting-financial-reports:tilt" in rmi_args
+        rmi_args = [c[2] for c in calls if c[:2] == ["docker", "rmi"] and len(c) > 2]
+        assert any("bff" in a for a in rmi_args)
+        assert any("edi" in a for a in rmi_args)

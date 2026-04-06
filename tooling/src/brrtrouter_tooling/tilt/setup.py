@@ -1,4 +1,4 @@
-"""Tilt setup: create dirs, docker volumes, check docker/tilt."""
+"""Tilt-only setup: create dirs, docker volumes, check deps, print instructions. Replaces setup-tilt.sh."""
 
 from __future__ import annotations
 
@@ -7,22 +7,28 @@ import subprocess
 import sys
 from pathlib import Path
 
+from brrtrouter_tooling.discovery.suites import _openapi_dir
+from brrtrouter_tooling.ports.layout import resolve_layout
 
-def run(
-    project_root: Path,
-    dirs: list[str] | None = None,
-    volumes: list[str] | None = None,
-) -> int:
-    """Create dirs (relative to project_root), docker volumes; check docker/tilt. Returns 0 or 1."""
-    if dirs is None:
-        dirs = []
-    if volumes is None:
-        volumes = []
-    for p in dirs:
-        (project_root / p).mkdir(parents=True, exist_ok=True)
-    for v in volumes:
+
+def run(project_root: Path) -> int:
+    """Create dirs, docker volumes; check docker/tilt; print help. Returns 0 or 1."""
+    layout = resolve_layout(None)
+    openapi_dir = _openapi_dir(project_root, layout)
+
+    # Generic paths that most projects might need
+    for p in [
+        openapi_dir,
+        project_root / "microservices",
+        project_root / "k8s/microservices",
+        project_root / "k8s/data",
+    ]:
+        p.mkdir(parents=True, exist_ok=True)
+
+    for v in ["postgres_data", "redis_data", "prometheus_data", "grafana_data"]:
         if shutil.which("docker"):
             subprocess.run(["docker", "volume", "create", v], capture_output=True)
+
     for cmd in ["docker", "tilt"]:
         if not shutil.which(cmd):
             print(
@@ -30,6 +36,7 @@ def run(
                 file=sys.stderr,
             )
             return 1
+
     print("Setup complete! 🎉")
-    print("To start: tilt up  (or your project's command)")
+    print("To start: just up  or  just up-k8s  or  tilt up")
     return 0

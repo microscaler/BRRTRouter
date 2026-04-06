@@ -21,6 +21,11 @@ from brrtrouter_tooling.gen import (
 )
 from brrtrouter_tooling.helpers import is_snake_case, load_yaml_spec
 from brrtrouter_tooling.openapi import fix_operation_id_run, validate_specs
+from brrtrouter_tooling.tilt import setup as tilt_setup
+from brrtrouter_tooling.tilt import setup_kind_registry as tilt_setup_kind_registry
+from brrtrouter_tooling.tilt import setup_persistent_volumes as tilt_setup_persistent_volumes
+from brrtrouter_tooling.tilt import teardown as tilt_teardown
+from brrtrouter_tooling.tilt.scan import run as run_tilt_scan
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -650,3 +655,116 @@ def list_spec_operations(spec_path: str) -> str:
     if not lines:
         return "No operations found in spec."
     return f"Operations in {p.name}:\n" + "\n".join(lines)
+
+
+def setup_kind_registry(project_root: str) -> str:
+    """Setup local Docker registry for Kind cluster.
+
+    Args:
+        project_root: The root path of the project.
+
+    Returns:
+        Status message about the registry setup.
+    """
+    root = Path(project_root).resolve()
+    if not root.exists():
+        return f"Directory not found: {project_root}"
+
+    try:
+        ret = tilt_setup_kind_registry.run(root)
+        if ret == 0:
+            return "Kind registry setup completed successfully."
+        return "Kind registry setup failed."
+    except Exception as e:  # noqa: BLE001
+        return f"Failed to run kind registry setup: {e}"
+
+
+def setup_persistent_volumes(project_root: str) -> str:
+    """Setup PersistentVolumes in Kubernetes cluster.
+
+    Args:
+        project_root: The root path of the project.
+
+    Returns:
+        Status message about the persistent volumes setup.
+    """
+    root = Path(project_root).resolve()
+    if not root.exists():
+        return f"Directory not found: {project_root}"
+
+    try:
+        ret = tilt_setup_persistent_volumes.run(root)
+        if ret == 0:
+            return "Persistent Volumes setup completed successfully."
+        return "Persistent Volumes setup failed."
+    except Exception as e:  # noqa: BLE001
+        return f"Failed to run persistent volumes setup: {e}"
+
+
+def setup_tilt(project_root: str) -> str:
+    """Setup Tilt environment by creating directories and docker volumes.
+
+    Args:
+        project_root: The root path of the project.
+
+    Returns:
+        Status message about the setup.
+    """
+    root = Path(project_root).resolve()
+    if not root.exists():
+        return f"Directory not found: {project_root}"
+
+    try:
+        tilt_setup.run(root)
+        return "Tilt setup completed successfully."
+    except Exception as e:  # noqa: BLE001
+        return f"Failed to run tilt setup: {e}"
+
+
+def teardown_tilt(
+    project_root: str,
+    remove_images: bool = False,
+    remove_volumes: bool = False,
+    system_prune: bool = False,
+) -> str:
+    """Teardown Tilt environment, stop containers, and optionally prune.
+
+    Args:
+        project_root: The root path of the project.
+        remove_images: If True, remove dynamically built images.
+        remove_volumes: If True, remove local docker volumes.
+        system_prune: If True, run docker system prune.
+
+    Returns:
+        Status message about the teardown.
+    """
+    root = Path(project_root).resolve()
+    if not root.exists():
+        return f"Directory not found: {project_root}"
+
+    try:
+        tilt_teardown.run(root, remove_images, remove_volumes, system_prune)
+        return "Tilt teardown completed successfully."
+    except Exception as e:  # noqa: BLE001
+        return f"Failed to run tilt teardown: {e}"
+
+
+def scan_tilt(openapi_dir: str, base_port: int = 8000) -> str:
+    """Crawl an openapi directory to automatically map service names, crates, and ports.
+
+    Args:
+        openapi_dir: Path to directory tree to scan for openapi.yaml files.
+        base_port: The starting port number.
+
+    Returns:
+        JSON payload string of the scan results.
+    """
+    import json
+
+    try:
+        result = run_tilt_scan(openapi_dir, base_port)
+        if isinstance(result, int):
+            return f"Scan failed with code {result}"
+        return json.dumps(result, indent=2)
+    except Exception as e:  # noqa: BLE001
+        return f"Failed to run tilt scan: {e}"

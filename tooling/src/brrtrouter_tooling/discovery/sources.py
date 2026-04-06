@@ -23,7 +23,7 @@ log = logging.getLogger(__name__)
 def discover_helm(project_root: Path, layout: dict[str, Any] | None = None) -> dict[str, int]:
     """Discover service.port from helm values dir (layout['helm_values_dir'])."""
     out: dict[str, int] = {}
-    cfg = resolve_layout(layout)
+    cfg = resolve_layout(layout, project_root)
     d = project_root / cfg["helm_values_dir"]
     if not d.exists():
         return out
@@ -46,7 +46,7 @@ def discover_kind_host_ports(
 ) -> list[tuple[int, str]]:
     """Discover hostPort from kind-config extraPortMappings. Returns [(host_port, comment_or_container_port)]."""
     out: list[tuple[int, str]] = []
-    cfg = resolve_layout(layout)
+    cfg = resolve_layout(layout, project_root)
     p = project_root / cfg["kind_config"]
     if not p.exists():
         return out
@@ -67,7 +67,7 @@ def discover_kind_host_ports(
 def discover_tiltfile(project_root: Path, layout: dict[str, Any] | None = None) -> dict[str, int]:
     """Discover get_service_port dict from Tiltfile (starlark)."""
     out: dict[str, int] = {}
-    cfg = resolve_layout(layout)
+    cfg = resolve_layout(layout, project_root)
     p = project_root / cfg["tiltfile"]
     if not p.exists():
         return out
@@ -138,7 +138,7 @@ def discover_openapi_suite_microservice_localhost(
 ) -> dict[str, tuple[str, int]]:
     """Extract localhost ports from openapi/{suite}/{name}/openapi.yaml. Returns {service_name: (suite, port)}."""
     out: dict[str, tuple[str, int]] = {}
-    cfg = resolve_layout(layout)
+    cfg = resolve_layout(layout, project_root)
     d = project_root / cfg["openapi_dir"]
     if not d.exists():
         return out
