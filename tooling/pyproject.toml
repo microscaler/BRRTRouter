@@ -20,6 +20,9 @@ dev = [
     "ruff>=0.14.14",
     "pre-commit>=4.5.1",
 ]
+mcp = [
+    "mcp[cli]>=1.23.0",
+]
 
 [project.scripts]
 brrtrouter = "brrtrouter_tooling.cli.main:main"

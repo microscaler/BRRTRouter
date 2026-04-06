@@ -9,6 +9,7 @@ from brrtrouter_tooling.cli import (
     dependabot,
     docker_cmd,
     gen_cmd,
+    mcp_cmd,
     openapi_cmd,
     ports,
     pre_commit_cmd,
@@ -67,6 +68,10 @@ def main() -> None:
         )
         print(
             "  pre-commit workspace-fmt - Run cargo fmt when workspace dir changed (for hooks)",
+            file=sys.stderr,
+        )
+        print(
+            "  mcp serve               - Start the BRRTRouter MCP server (stdio or SSE)",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -137,6 +142,8 @@ def main() -> None:
         bootstrap_cmd.run_bootstrap_argv()
     elif command == "pre-commit":
         pre_commit_cmd.run_pre_commit_argv()
+    elif command == "mcp":
+        mcp_cmd.run_mcp_argv()
     else:
         print(f"Error: Unknown command: {command}", file=sys.stderr)
         sys.exit(1)
