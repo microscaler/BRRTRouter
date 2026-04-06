@@ -8,6 +8,35 @@
 //! - Async buffered logging for minimal latency impact
 //!
 //! OTLP export will be added in a future phase once we verify the basic logging works.
+//!
+//! # Canonical place for subscriber + (future) OTel provider
+//!
+//! **[`init_logging_with_config`]** is the **single** place that calls
+//! `tracing_subscriber::registry()` and composes layers, then `try_init()` on the subscriber.
+//! When you wire **OpenTelemetry** export, do it **here** (or in a helper called only from here):
+//!
+//! 1. Build **one** OpenTelemetry SDK `TracerProvider` for the process.
+//! 2. Call `opentelemetry::global::set_tracer_provider` **once** (or the API version your stack uses).
+//! 3. Add `tracing_opentelemetry::OpenTelemetryLayer::new(tracer)` to the **same** `.with(...)` chain
+//!    as the existing `EnvFilter`, sampling, redaction, and `fmt` layers.
+//!
+//! Do **not** register a second global provider from a library crate (e.g. Lifeguard).
+//!
+//! # Lifeguard (may-channel logging + DB spans)
+//!
+//! Services that use **[Lifeguard](https://github.com/microscaler/lifeguard)** should depend on it with
+//! the **`tracing`** feature and, if you want the may-channel log path, add
+//! **`lifeguard::channel_layer()`** to the same `.with(...)` chain in [`init_logging_with_config`]
+//! (after `EnvFilter` if you want filtered events only). Lifeguard’s `tracing` spans then share the
+//! host subscriber with BRRTRouter; it does not call `set_tracer_provider`.
+//!
+//! Cross-repo doc: `lifeguard/docs/OBSERVABILITY_APP_INTEGRATION.md`.
+//!
+//! # Tests
+//!
+//! Integration tests use `tests/tracing_util.rs` (`TestTracing`): `tracing::subscriber::set_default`
+//! with a scoped `Registry` + `OpenTelemetryLayer` avoids fighting the global `try_init()` used by
+//! production init.
 
 use anyhow::{Context, Result};
 use std::env;

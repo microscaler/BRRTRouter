@@ -188,6 +188,13 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     {% if has_example -%}
     // Example response:
 {{ example_json }}
+    match serde_json::from_str::<Response>(r###"{{ example|safe }}"###) {
+        Ok(parsed) => return parsed,
+        Err(e) => {
+            eprintln!("Failed to parse mock example JSON into Response: {}", e);
+            // Fallback to empty default structs below
+        }
+    }
     {%- endif %}
     {% if response_is_array %}
     Response({{ response_array_literal }})
