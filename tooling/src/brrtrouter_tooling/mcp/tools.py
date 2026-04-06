@@ -625,7 +625,7 @@ def list_spec_operations(spec_path: str) -> str:
     try:
         spec = load_yaml_spec(p)
     except Exception as e:  # noqa: BLE001
-        return f"Failed to load spec: {e}"
+        return f"Failed to load spec ({type(e).__name__}): {e}"
 
     paths = spec.get("paths", {})
     lines: list[str] = []

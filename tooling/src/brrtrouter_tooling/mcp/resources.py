@@ -386,7 +386,7 @@ EXTENSIONS_REFERENCE = """\
 | Extension | Type | Description |
 |-----------|------|-------------|
 | `x-sse` | `boolean` | `true` → generate SSE streaming handler instead of request/response handler |
-| `x-cors` | `string\\|object` | CORS override: `"inherit"` (default), `false`, or config object |
+| `x-cors` | `string|object` | CORS override: `"inherit"` (default), `false`, or config object |
 
 ### `x-cors` object shape
 ```yaml
