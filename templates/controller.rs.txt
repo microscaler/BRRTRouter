@@ -27,22 +27,16 @@ pub fn handle(req: HandlerRequest) -> HandlerResponse {
         resolved_path.push_str(&qs);
     }
     
-    let port: u16 = match "{{ service }}" {
-        "identity" => 8001,
-        "fleet" => 8002,
-        "consignments" => 8003,
-        "bidding" => 8004,
-        "inbox" => 8005,
-        "notifications" => 8006,
-        "analytics" => 8007,
-        "telemetry" => 8008,
-        "company" => 8009,
-        "bff" => 8010,
-        _ => 80,
-    };
+    let service_name_upper = "{{ service }}".to_uppercase();
+    let port_env_key = format!("{}_PORT", service_name_upper);
+    let port: u16 = std::env::var(&port_env_key)
+        .ok()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(80);
 
     // JSF Rule 208: Catch all protocol failures gracefully
-    let service_fqdn = format!("{}.hauliage.svc.cluster.local", "{{ service }}");
+    let domain_suffix = std::env::var("SERVICE_DOMAIN").unwrap_or_else(|_| "svc.cluster.local".to_string());
+    let service_fqdn = format!("{}.{}", "{{ service }}", domain_suffix);
     
     let target_ip = match std::net::ToSocketAddrs::to_socket_addrs(&(service_fqdn.as_str(), port)) {
         Ok(mut iter) => {
