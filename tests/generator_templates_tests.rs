@@ -57,6 +57,7 @@ fn test_template_writers() {
         &params,
         false,
         true,
+        true,
     )
     .unwrap();
 
@@ -81,6 +82,7 @@ fn test_template_writers() {
         controller_struct: "TestController".into(),
         parameters: vec![],
         stack_size_bytes: 16384,
+        is_proxy: false,
     }];
     write_registry_rs(&src_dir, &entries).unwrap();
 

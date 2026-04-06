@@ -1,10 +1,8 @@
-"""Setup local Docker registry for Kind (localhost:5001)."""
+"""Setup local Docker registry for Kind (localhost:5001). Replaces setup-kind-registry.sh."""
 
 from __future__ import annotations
 
-import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 REG_NAME = "kind-registry"
@@ -13,9 +11,7 @@ REG_PORT = "5001"
 
 def run(project_root: Path) -> int:
     """Create/start kind-registry, connect to kind network, optional ConfigMap. Returns 0 or 1."""
-    if not shutil.which("docker"):
-        print("[ERROR] docker is not installed.", file=sys.stderr)
-        return 1
+    # 1. Create or start registry
     inspect = subprocess.run(["docker", "inspect", REG_NAME], capture_output=True, text=True)
     if inspect.returncode != 0:
         print(f"📦 Creating local registry: {REG_NAME} (host port {REG_PORT})")
@@ -49,6 +45,7 @@ def run(project_root: Path) -> int:
         else:
             print(f"📦 Registry already running: {REG_NAME}")
 
+    # 2. Connect to kind network
     net = subprocess.run(
         ["docker", "network", "inspect", "kind"],
         capture_output=True,
@@ -75,10 +72,8 @@ def run(project_root: Path) -> int:
     else:
         print("🔗 Registry already on kind network")
 
-    if (
-        shutil.which("kubectl")
-        and subprocess.run(["kubectl", "cluster-info"], capture_output=True).returncode == 0
-    ):
+    # 3. ConfigMap (optional)
+    if subprocess.run(["kubectl", "cluster-info"], capture_output=True).returncode == 0:
         cm = f"""apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -95,7 +90,5 @@ data:
             capture_output=True,
             text=True,
         )
-    elif not shutil.which("kubectl"):
-        print("[WARN] kubectl not installed; skipping registry ConfigMap.", file=sys.stderr)
     print(f"✅ Local registry ready: push images to localhost:{REG_PORT}/<image>:<tag>")
     return 0
