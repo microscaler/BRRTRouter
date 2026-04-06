@@ -82,7 +82,9 @@ def _run_brrtrouter_gen_lint(
         cwd=str(project_root),
     )
     output = (result.stdout + result.stderr).strip()
-    return output or ("Lint passed (exit 0)" if result.returncode == 0 else "Lint failed (no output)")
+    return output or (
+        "Lint passed (exit 0)" if result.returncode == 0 else "Lint failed (no output)"
+    )
 
 
 def _collect_refs(obj: Any) -> list[str]:
@@ -321,7 +323,11 @@ def validate_openapi_dir(openapi_dir: str) -> str:
     errors = validate_specs(d)
     if not errors:
         count = len(list(d.rglob("openapi.yaml"))) if d.exists() else 0
-        return f"All {count} OpenAPI spec(s) under {d} are valid." if count else "No openapi.yaml files found."
+        return (
+            f"All {count} OpenAPI spec(s) under {d} are valid."
+            if count
+            else "No openapi.yaml files found."
+        )
     lines = [f"Found {len(errors)} invalid spec(s):"]
     for path, exc in errors:
         lines.append(f"  {path}: {exc}")
@@ -644,4 +650,3 @@ def list_spec_operations(spec_path: str) -> str:
     if not lines:
         return "No operations found in spec."
     return f"Operations in {p.name}:\n" + "\n".join(lines)
-

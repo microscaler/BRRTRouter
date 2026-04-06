@@ -385,9 +385,7 @@ def _make_impl_dir(tmp_path: Path) -> Path:
     handlers = d / "src" / "handlers"
     handlers.mkdir(parents=True)
     (handlers / "mod.rs").write_text("// mod")
-    (handlers / "list_items.rs").write_text(
-        "// BRRTROUTER_USER_OWNED\npub fn list_items() {}"
-    )
+    (handlers / "list_items.rs").write_text("// BRRTROUTER_USER_OWNED\npub fn list_items() {}")
     (handlers / "get_item.rs").write_text("// generated stub\npub fn get_item() {}")
     return d
 

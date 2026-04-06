@@ -83,7 +83,9 @@ def setup_bff_prompt(system_name: str, services: list[str]) -> GetPromptResult:
     )
 
 
-def implement_handler_prompt(operation_id: str, request_type: str, response_type: str) -> GetPromptResult:
+def implement_handler_prompt(
+    operation_id: str, request_type: str, response_type: str
+) -> GetPromptResult:
     """Return a prompt for implementing a BRRTRouter handler stub.
 
     Args:
