@@ -301,7 +301,7 @@ def create_mcp_server() -> FastMCP:  # noqa: C901
 
     @mcp.resource("brrtrouter://guide/tilt-setup")
     def tilt_setup_guide() -> str:
-        """Guide for setting up dynamic template-based Tiltfile configurations."""
+        """Tilt + BRRTRouter: Starlark vs Python, tilt/lib.tilt load(), CLI-only boundary, loops, bff-spec-gen deps."""
         return _resources.get_tilt_setup_guide()
 
     # ------------------------------------------------------------------

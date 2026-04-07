@@ -406,6 +406,8 @@ local_resource(
 )
 ```
 
+**Factor helpers:** put repeated `local_resource` definitions in `./tilt/lib.tilt` and `load()` them from the root `Tiltfile` (Starlark only; still no Python import). See `brrtrouter://guide/tilt-setup` sections 3-4 for full examples.
+
 Tune `--dir`, file paths, and `--base-port` for your repository. Default `--openapi-dir` is
 `./openapi` (cwd-relative); a symlink `openapi` → `microservices/openapi` is common.
 
@@ -809,7 +811,82 @@ for service in MICROSERVICES:
     create_microservice_deployment(service)
 ```
 
-## 3. brrtrouter local tools support
+## 3. Starlark vs Python (BRRTRouter is not importable from Tilt)
+Tiltfiles are **Starlark**, not Python. You **cannot** `import brrtrouter_tooling` or call Python APIs from a `Tiltfile` or from `./tilt/lib.tilt`.
+
+**Correct boundary:** use the **`brrtrouter` CLI** inside `local_resource` / `local()` command strings, e.g.:
+`tooling/.venv/bin/brrtrouter client gen suite ...`
+
+**What you can import in Starlark:** other **Tilt/Starlark** files via `load()` / `load_dynamic()`, or Tilt **extensions** via `load('ext://name', ...)`. Those files only contain Starlark—shared helpers, constants, and wrappers that still call `brrtrouter` through the shell.
+
+**Anti-pattern:** expecting `./tilt/lib.tilt` to "import" BRRTRouter Python modules. That will never work; use CLI instead.
+
+## 4. Example: `./tilt/lib.tilt` for shared Starlark helpers
+Keep the **root `Tiltfile` thin**: `load()` one library file, then loops and `config.parse()`. Put repeated `local_resource` patterns in **`tilt/lib.tilt`** (or `tilt/lib.tilt` + `tilt/bff.tilt` if you split further).
+
+### `tilt/lib.tilt` (Starlark library — example)
+```python
+# tilt/lib.tilt — Starlark only. Cannot import Python or brrtrouter_tooling.
+
+def brrtrouter_bin():
+    # Path to venv brrtrouter; adjust if your repo uses a different layout.
+    return "tooling/.venv/bin/brrtrouter"
+
+
+def create_trader_service_gen(name, openapi_spec_relpath):
+    # Register codegen for one trader service (example paths for a typical layout).
+    cmd = "%s client gen suite trader --service %s --openapi-dir microservices/openapi" % (
+        brrtrouter_bin(),
+        name,
+    )
+    local_resource(
+        "%s-service-gen" % name,
+        cmd=cmd,
+        deps=[
+            "./microservices/openapi/trader/%s" % openapi_spec_relpath,
+            "./tooling/pyproject.toml",
+        ],
+        resource_deps=["%s-lint" % name],
+        labels=["trd_" + name],
+        allow_parallel=True,
+    )
+
+
+def create_bff_spec_gen_deps(trader_service_names):
+    # deps for bff-spec-gen: every trader openapi.yaml + tooling (see bff-pattern guide).
+    paths = ["./microservices/openapi/trader/%s/openapi.yaml" % n for n in trader_service_names]
+    return paths + ["./tooling/pyproject.toml"]
+```
+
+### Root `Tiltfile` (loads library, runs scan, loops)
+```python
+# Tiltfile at repo root
+load("./tilt/lib.tilt", "create_trader_service_gen", "create_bff_spec_gen_deps")
+
+services_json = str(
+    local(
+        "tooling/.venv/bin/brrtrouter client tilt scan --dir microservices/openapi/trader --base-port 8002",
+        quiet=True,
+    )
+).strip()
+tilt_config = decode_json(services_json)
+TRADER_SERVICES = tilt_config["services"]
+
+for name in TRADER_SERVICES:
+    create_trader_service_gen(name, "%s/openapi.yaml" % name)
+
+local_resource(
+    "bff-spec-gen",
+    cmd="set -e && tooling/.venv/bin/brrtrouter client bff generate-system --system trader --output openapi/bff/openapi_bff.yaml",
+    deps=create_bff_spec_gen_deps(TRADER_SERVICES),
+    ignore=["./microservices/openapi/bff/openapi_bff.yaml"],
+    labels=["bff"],
+)
+```
+
+Paths and flags must match your repo (`--openapi-dir`, `--output`, symlink `openapi` → `microservices/openapi`, etc.). The library file **only** reduces duplication; **BRRTRouter behavior always runs through the CLI** in `cmd=`.
+
+## 5. brrtrouter local tools support
 The `brrtrouter` toolset includes several subcommands designed for this model:
 - `brrtrouter client build <system>_<module>`: Host-aware `cargo`/`cargo zigbuild` for one impl crate.
   Default `-p` is `{snake}_service_api_impl` for normal modules, or `{Module}_impl` when the module
@@ -818,7 +895,7 @@ The `brrtrouter` toolset includes several subcommands designed for this model:
 - `brrtrouter client docker copy-binary`: Efficient binary copying using hashes preventing unaffected binaries from re-triggering container pushes.
 - `brrtrouter client tilt scan`: Emits JSON with `services` (and ports, binary names) for a tree under `microservices/openapi/<system>/`. Use that list for **all** Tilt loops *and* for the `deps` of any `local_resource` that runs `bff generate-system`, so BFF regeneration tracks every trader spec automatically. See `brrtrouter://guide/bff-pattern` (Tiltfile `bff-spec-gen` section).
 
-## 4. Running
+## 6. Running
 Just use `tilt up`. Tilt will now concurrently parse and loop over `MICROSERVICES` and create parallel pipelines that don't crowd the config file.
 """
 
