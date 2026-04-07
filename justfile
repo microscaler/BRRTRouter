@@ -592,14 +592,14 @@ dev-up:
 	echo ""
 	
 	# Create kind cluster if it doesn't exist
-	if ! kind get clusters 2>/dev/null | grep -q '^brrtrouter-dev$'; then
-		echo "Creating kind cluster..."
+	if ! kind get clusters 2>/dev/null | grep -q '^kind$'; then
+		echo "Creating shared Kind cluster (kind)..."
 		kind create cluster --config k8s/cluster/kind-config.yaml --wait 60s
 		
 		# Map localhost:5001 pulls to kind-registry (same pattern as kind local-registry docs;
 		# avoids inline containerd registry.mirrors which can break node startup on Docker Desktop).
 		REGISTRY_DIR="/etc/containerd/certs.d/localhost:5001"
-		for node in $(kind get nodes -n brrtrouter-dev); do
+		for node in $(kind get nodes -n kind); do
 			docker exec "${node}" mkdir -p "${REGISTRY_DIR}"
 			printf '%s\n' '[host."http://kind-registry:5000"]' | docker exec -i "${node}" sh -c 'cat > /etc/containerd/certs.d/localhost:5001/hosts.toml'
 			docker exec "${node}" systemctl restart containerd || true
@@ -630,7 +630,7 @@ dev-down:
 	echo ""
 	
 	echo "Deleting kind cluster..."
-	kind delete cluster --name brrtrouter-dev || true
+	kind delete cluster --name kind || true
 	echo ""
 	
 	echo "Stopping Docker registry..."
@@ -644,7 +644,7 @@ dev-down:
 # Check development environment status
 dev-status:
 	@echo "KIND cluster status:"
-	@kind get clusters | grep brrtrouter-dev || echo "[FAIL] Cluster not found"
+	@kind get clusters | grep '^kind$$' || echo "[FAIL] Cluster not found"
 	@echo ""
 	@echo "Kubernetes pods:"
 	@kubectl get pods -n brrtrouter-dev 2>/dev/null || echo "[FAIL] Namespace not found"

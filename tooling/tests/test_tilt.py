@@ -1,5 +1,6 @@
 """Tests for brrtrouter_tooling.tilt."""
 
+import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -32,6 +33,12 @@ class TestSetupKindRegistry:
 
 
 class TestSetupPersistentVolumes:
+    def test_returns_0_when_skip_env_set(self, tmp_path: Path) -> None:
+        from brrtrouter_tooling.tilt.setup_persistent_volumes import run
+
+        with patch.dict(os.environ, {"BRRTROUTER_SKIP_SETUP_PERSISTENT_VOLUMES": "1"}):
+            assert run(tmp_path) == 0
+
     def test_returns_1_when_kubectl_not_installed(self, tmp_path: Path) -> None:
         from brrtrouter_tooling.tilt.setup_persistent_volumes import run
 

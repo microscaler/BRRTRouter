@@ -111,6 +111,10 @@ chmod +x ./kind && sudo mv ./kind /usr/local/bin/
 curl -fsSL https://github.com/tilt-dev/tilt/releases/latest/download/tilt.$(uname -s)-$(uname -m).tar.gz | tar -xzv tilt && sudo mv tilt /usr/local/bin/
 ```
 
+### Python tooling (`brrtrouter` CLI)
+
+Install the CLI into the **shared** venv at `~/.local/share/brrtrouter/venv` (override with **`BRRTRouter_VENV`**). See [tooling/README.md](tooling/README.md). CI continues to use a workspace-local `tooling/.venv` on runners.
+
 See [docs/LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md) for full installation details.
 
 ### Development Cycle

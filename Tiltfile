@@ -4,6 +4,9 @@
 # Set minimum Tilt version
 version_settings(constraint='>=0.33.0')
 
+# Shared default cluster: kind-kind (see microscaler/shared-kind-cluster). Legacy: kind-brrtrouter-dev.
+allow_k8s_contexts(['kind-kind', 'kind-brrtrouter-dev'])
+
 # Configure Tilt web UI port (default: 10350)
 # Change this if you have port conflicts
 update_settings(k8s_upsert_timeout_secs=60)

@@ -2,14 +2,34 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 
+def _skip_persistent_volume_setup() -> bool:
+    v = os.environ.get("BRRTROUTER_SKIP_SETUP_PERSISTENT_VOLUMES", "").strip().lower()
+    return v in ("1", "true", "yes", "on")
+
+
+def _first_existing(*candidates: Path) -> Path | None:
+    for p in candidates:
+        if p.exists():
+            return p
+    return None
+
+
 def run(project_root: Path) -> int:
-    """Apply k8s/data/persistent-volumes.yaml and k8s/monitoring/persistent-volumes.yaml. Returns 0 or 1."""
+    """Apply data + monitoring PersistentVolume manifests. Returns 0 or 1.
+
+    Looks for k8s paths under the project first; PriceWhisperer moved PV YAML to
+    ``shared-kind-cluster/k8s/platform-data/`` (sibling of the app repo).
+    """
+    if _skip_persistent_volume_setup():
+        print("⏭️  Skipping setup-persistent-volumes (BRRTROUTER_SKIP_SETUP_PERSISTENT_VOLUMES=1)")
+        return 0
     if not shutil.which("kubectl"):
         print("❌ Error: kubectl is not installed or not on PATH", file=sys.stderr)
         return 1
@@ -20,11 +40,25 @@ def run(project_root: Path) -> int:
             file=sys.stderr,
         )
         return 1
-    for label, path in [
-        ("data", project_root / "k8s" / "data" / "persistent-volumes.yaml"),
-        ("monitoring", project_root / "k8s" / "monitoring" / "persistent-volumes.yaml"),
-    ]:
-        if path.exists():
+    sibling_shared_kind = project_root.parent / "shared-kind-cluster" / "k8s" / "platform-data"
+    for label, candidates in (
+        (
+            "data",
+            (
+                project_root / "k8s" / "data" / "persistent-volumes.yaml",
+                sibling_shared_kind / "data" / "persistent-volumes.yaml",
+            ),
+        ),
+        (
+            "monitoring",
+            (
+                project_root / "k8s" / "monitoring" / "persistent-volumes.yaml",
+                sibling_shared_kind / "monitoring" / "persistent-volumes.yaml",
+            ),
+        ),
+    ):
+        path = _first_existing(*candidates)
+        if path is not None:
             print(f"📦 Creating {label} PersistentVolumes...")
             r = subprocess.run(
                 ["kubectl", "apply", "-f", str(path)], capture_output=True, text=True
