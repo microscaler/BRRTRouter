@@ -708,7 +708,7 @@ efficiently without duplicating `Dockerfile` and Tilt resource definitions.
 Use **one** virtualenv on your machine for the `brrtrouter` CLI (and, in Hauliage, the `hauliage` CLI installed into the same env):
 
 - **Default path:** `~/.local/share/brrtrouter/venv`
-- **Override:** set `BRRTRouter_VENV` to the venv directory (the one that contains `bin/brrtrouter`).
+- **Override:** set `BRRTROUTER_VENV` to the venv directory (the one that contains `bin/brrtrouter`).
 
 Create and install (from a BRRTRouter clone):
 
@@ -718,7 +718,7 @@ python3 -m venv ~/.local/share/brrtrouter/venv
 ~/.local/share/brrtrouter/venv/bin/pip install -e ./tooling[dev]   # or tooling[mcp] for MCP
 ```
 
-Consumer Tiltfiles (PriceWhisperer, Hauliage) resolve `brrtrouter_bin` / `hauliage_bin` from `BRRTRouter_VENV` with this default. Per-repo `tooling/.venv` is **not** required for Tilt.
+Consumer Tiltfiles (PriceWhisperer, Hauliage) resolve `brrtrouter_bin` / `hauliage_bin` from `BRRTROUTER_VENV` with this default. Per-repo `tooling/.venv` is **not** required for Tilt.
 
 ## 1. Unified Docker templating
 Instead of maintaining individual `Dockerfile.<service>` files, use a unified `Dockerfile.template`
@@ -845,7 +845,7 @@ Keep the **root `Tiltfile` thin**: `load()` one library file, then loops and `co
 # tilt/lib.tilt — Starlark only. Cannot import Python or brrtrouter_tooling.
 
 def brrtrouter_bin():
-    v = os.getenv("BRRTRouter_VENV", "").strip().rstrip("/")
+    v = os.getenv("BRRTROUTER_VENV", "").strip().rstrip("/")
     if v:
         return v + "/bin/brrtrouter"
     h = os.getenv("HOME", "") or os.getenv("USERPROFILE", "")

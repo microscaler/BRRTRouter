@@ -1,5 +1,8 @@
 # Kind config for BRRTRouter CI (standalone clone) and local dev when not using ../shared-kind-cluster symlink.
 # Canonical merged config for microscaler: ../../shared-kind-cluster/kind-config.yaml (default cluster `kind` → context `kind-kind`).
+#
+# CI (`.github/workflows/ci.yml`): create the cluster with `--name kind` so context is `kind-kind`, matching
+# shared-kind-cluster and app Tiltfiles. Do not use a separate cluster name unless you extend `allow_k8s_contexts`.
 
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4

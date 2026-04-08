@@ -22,7 +22,7 @@ pub struct Request {
     pub offset: Option<i32>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 
 pub struct Response(pub Vec<Post>);
 

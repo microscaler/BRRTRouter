@@ -95,6 +95,8 @@ max-complexity = 20
 [tool.ruff.lint.per-file-ignores]
 # main: arg-parsing dispatcher; complexity expected
 "src/brrtrouter_tooling/cli/main.py" = ["C901"]
+# Hauliage client CLI (sibling repo hauliage/tooling)
+"src/brrtrouter_tooling/workspace/cli/main.py" = ["C901"]
 # docker_cmd: argv dispatcher; complexity expected
 "src/brrtrouter_tooling/cli/docker_cmd.py" = ["C901"]
 

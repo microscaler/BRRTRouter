@@ -195,8 +195,14 @@ fn main() -> io::Result<()> {
         }
     };
 
-    let (routes, schemes, _slug) = brrtrouter::spec::load_spec_full(spec_path.to_str().unwrap())
-        .expect("failed to load OpenAPI spec");
+    let spec_str = spec_path.to_str().unwrap_or_else(|| {
+        eprintln!("[startup][error] OpenAPI spec path contains invalid UTF-8");
+        std::process::exit(1);
+    });
+    let (routes, schemes, _slug) = brrtrouter::spec::load_spec_full(spec_str).unwrap_or_else(|e| {
+        eprintln!("[startup][error] failed to load OpenAPI spec: {}", e);
+        std::process::exit(1);
+    });
     let _router = Router::new(routes.clone());
     // Create router and dispatcher
     let mut dispatcher = Dispatcher::new();
@@ -311,7 +317,11 @@ fn main() -> io::Result<()> {
     // This returns a coroutine JoinHandle; we join on it to keep the server running
     let router = std::sync::Arc::new(std::sync::RwLock::new(Router::new(routes.clone())));
     // Dump initial route table
-    router.read().unwrap().dump_routes();
+    if let Ok(r) = router.read() {
+        r.dump_routes();
+    } else {
+        eprintln!("[startup][warning] router lock poisoned during initialization");
+    }
     let dispatcher = std::sync::Arc::new(std::sync::RwLock::new(dispatcher));
     let mut service = AppService::new(
         router,

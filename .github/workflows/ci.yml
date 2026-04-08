@@ -240,14 +240,16 @@ jobs:
       - name: Create kind cluster (certs.d registry; hosts.toml applied in next step)
         uses: helm/kind-action@v1
         with:
-          cluster_name: brrtrouter-ci
+          # Cluster name `kind` → kubectl context `kind-kind` (same as microscaler/shared-kind-cluster & local Tilt)
+          cluster_name: kind
           wait: 60s
           config: k8s/cluster/kind-config.yaml
 
       - name: Configure containerd for local registry (localhost:5001 -> kind-registry)
         run: |
+          kubectl config use-context kind-kind
           REGISTRY_DIR="/etc/containerd/certs.d/localhost:5001"
-          for node in $(kind get nodes -n brrtrouter-ci); do
+          for node in $(kind get nodes -n kind); do
             docker exec "${node}" mkdir -p "${REGISTRY_DIR}"
             printf '%s\n' '[host."http://kind-registry:5000"]' | docker exec -i "${node}" sh -c 'cat > /etc/containerd/certs.d/localhost:5001/hosts.toml'
             docker exec "${node}" systemctl restart containerd || true
@@ -272,6 +274,9 @@ jobs:
         run: |
           curl -fsSL https://raw.githubusercontent.com/tilt-dev/tilt/master/scripts/install.sh | bash
           tilt version
+
+      - name: Use kind-kind context (matches local shared cluster)
+        run: kubectl config use-context kind-kind
 
       - name: Build BRRTRouter and Pet Store binaries
         env:
@@ -451,6 +456,6 @@ jobs:
         if: always()
         run: |
           tilt down || true
-          kind delete cluster --name brrtrouter-ci || true
+          kind delete cluster --name kind || true
           docker rm -f kind-registry || true
 

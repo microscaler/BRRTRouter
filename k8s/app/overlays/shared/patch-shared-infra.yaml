@@ -1,0 +1,56 @@
+# Route petstore to cluster DNS for shared-kind-cluster services.
+# Postgres/Redis: namespace `data`. OTEL: namespace `observability`.
+# DB defaults use Supabase-style superuser on shared postgres; create DB/user as needed for your stack.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: petstore-config
+  namespace: brrtrouter-dev
+data:
+  config.yaml: |
+    # BRRTRouter Pet Store — shared cluster (see k8s/app/overlays/shared)
+    port: 8080
+
+    security:
+      api_keys:
+        ApiKeyHeader:
+          key: "test123"
+
+    http:
+      keep_alive: true
+      timeout_secs: 5
+      max_requests: 50000
+
+    database:
+      host: "postgres.data.svc.cluster.local"
+      port: 5432
+      name: "postgres"
+      user: "postgres"
+      password: "postgres"
+      max_connections: 10
+
+    redis:
+      host: "redis.data.svc.cluster.local"
+      port: 6379
+      db: 0
+      max_connections: 10
+
+    observability:
+      metrics_enabled: true
+      tracing_enabled: true
+      otlp_endpoint: "http://otel-collector.observability.svc.cluster.local:4317"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: petstore
+  namespace: brrtrouter-dev
+spec:
+  template:
+    spec:
+      containers:
+        - name: petstore
+          env:
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.observability.svc.cluster.local:4317"

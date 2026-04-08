@@ -26,7 +26,7 @@ Inspired by the *GAU-8/A Avenger* on the A-10 Warthog, this router delivers prec
 | Add validation per endpoint | Automatic from JSON Schema |
 | Configure observability stack | Built-in, zero config (Prometheus, Jaeger, Loki) |
 | Build admin/testing UI | Included (Sample SolidJS dashboard) |
-| Setup local infrastructure | One command: `just dev-up` (Tilt + kind) |
+| Setup local infrastructure | Shared Kind: `../shared-kind-cluster` **`just dev-up`**, then BRRTRouter **`just dev-up`** (Tilt) |
 | Test with curl scripts | Interactive dashboard with API testing |
 | Memory leak hunting | Goose load tests (2+ minute sustained tests) |
 
@@ -273,7 +273,7 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for complete development guide, i
 | **Jaeger** | http://localhost:16686 | Distributed tracing |
 | **PostgreSQL** | localhost:5432 | Database (user: brrtrouter, db: brrtrouter, pass: dev_password) |
 | **Redis** | localhost:6379 | Cache/session store |
-| **Tilt Web UI** | http://localhost:10351 | Dev dashboard (press 'space' in terminal) |
+| **Tilt Web UI** | http://localhost:10353 | Dev dashboard (press 'space' in terminal) |
 
 ### Environment Variables
 

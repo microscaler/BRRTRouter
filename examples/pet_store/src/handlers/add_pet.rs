@@ -13,7 +13,7 @@ pub struct Request {
     pub name: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 
 pub struct Response {
     #[serde(skip_serializing_if = "Option::is_none")]

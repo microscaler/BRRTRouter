@@ -1161,3 +1161,68 @@ serde = "1.0"
 
     fs::remove_dir_all(&root).unwrap();
 }
+
+/// `brrtrouter-dependencies.toml` must not repeat keys already in templates/Cargo.toml.txt (e.g. may_http).
+#[test]
+fn test_write_cargo_toml_skips_builtin_deps_repeated_in_config() {
+    let root = temp_dir();
+    let workspace_dir = root.join("ws");
+    fs::create_dir_all(&workspace_dir).unwrap();
+    fs::write(
+        workspace_dir.join("Cargo.toml"),
+        r#"[workspace]
+members = []
+
+[workspace.dependencies]
+may_http = { git = "https://github.com/rust-may/may_http.git" }
+serde = "1.0"
+"#,
+    )
+    .unwrap();
+
+    let gen_dir = workspace_dir.join("bff_gen");
+    fs::create_dir_all(&gen_dir).unwrap();
+
+    let mut deps_config = DependenciesConfig::default();
+    deps_config.dependencies.insert(
+        "may_http".to_string(),
+        DependencySpec::Full {
+            version: None,
+            package: None,
+            path: None,
+            git: Some("https://github.com/rust-may/may_http.git".to_string()),
+            branch: None,
+            features: None,
+            default_features: None,
+            workspace: None,
+        },
+    );
+    deps_config.dependencies.insert(
+        "tracing".to_string(),
+        DependencySpec::Version("0.1".to_string()),
+    );
+
+    write_cargo_toml_with_options(
+        &gen_dir,
+        "hauliage_bff_gen",
+        true,
+        None,
+        None,
+        Some(&deps_config),
+        None,
+    )
+    .unwrap();
+
+    let cargo_toml = fs::read_to_string(gen_dir.join("Cargo.toml")).unwrap();
+    assert_eq!(
+        cargo_toml.matches("may_http").count(),
+        1,
+        "expected exactly one may_http line from template, got:\n{cargo_toml}"
+    );
+    assert!(
+        cargo_toml.contains("tracing = \"0.1\""),
+        "expected tracing from config, got:\n{cargo_toml}"
+    );
+
+    fs::remove_dir_all(&root).unwrap();
+}

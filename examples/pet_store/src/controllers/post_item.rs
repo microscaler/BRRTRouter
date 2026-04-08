@@ -1,4 +1,5 @@
 // User-owned controller for handler 'post_item'.
+
 use crate::handlers::post_item::{Request, Response};
 use brrtrouter::typed::TypedHandlerRequest;
 use brrtrouter_macros::handler;
@@ -10,6 +11,18 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     //   "id": "item-001",
     //   "name": "New Item"
     // }
+    match serde_json::from_str::<Response>(
+        r###"{
+  "id": "item-001",
+  "name": "New Item"
+}"###,
+    ) {
+        Ok(parsed) => return parsed,
+        Err(e) => {
+            eprintln!("Failed to parse mock example JSON into Response: {}", e);
+            // Fallback to empty default structs below
+        }
+    }
 
     Response {
         id: Some("item-001".to_string()),

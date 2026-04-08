@@ -1,0 +1,10 @@
+# Pet Store against Postgres/Redis/OTEL in shared-kind-cluster (namespaces data + observability).
+# Use with Tilt when TILT_USE_SHARED_KIND_INFRA=1 (default for local dev; CI uses overlays/ci + bundled manifests).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+patches:
+  - path: patch-shared-infra.yaml

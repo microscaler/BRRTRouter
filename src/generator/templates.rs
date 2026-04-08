@@ -80,6 +80,29 @@ pub struct FormattedDependency {
     pub spec: String,
 }
 
+/// Crate names already listed in `templates/Cargo.toml.txt` under `[dependencies]` (both
+/// `use_workspace_deps` branches). Entries in `brrtrouter-dependencies.toml` that repeat these
+/// keys produce **duplicate TOML keys** and break `cargo metadata` / `cargo fmt`.
+pub(crate) fn is_builtin_gen_cargo_dependency(name: &str) -> bool {
+    matches!(
+        name,
+        "anyhow"
+            | "brrtrouter"
+            | "brrtrouter_macros"
+            | "clap"
+            | "config"
+            | "http"
+            | "http_legacy"
+            | "may"
+            | "may_http"
+            | "may_minihttp"
+            | "serde"
+            | "serde_json"
+            | "serde_yaml"
+            | "tikv-jemallocator"
+    )
+}
+
 /// Template data for generating Cargo.toml
 #[derive(Template)]
 #[template(path = "Cargo.toml.txt")]
@@ -988,6 +1011,9 @@ pub(crate) fn write_cargo_toml_with_options(
     if let Some(config) = deps_config {
         // Always-included dependencies: use workspace inheritance when listed, else keep explicit spec.
         for (name, spec) in &config.dependencies {
+            if is_builtin_gen_cargo_dependency(name) {
+                continue;
+            }
             let use_ws = use_workspace_flag_for_dep(use_workspace_deps, &workspace_deps, name);
             ensure_dep_spec_allows_non_workspace(name, spec, use_ws)?;
             let formatted = format_dependency_spec(name, spec, use_ws);
@@ -1002,6 +1028,9 @@ pub(crate) fn write_cargo_toml_with_options(
         let detected_set = detected_conditional_deps.unwrap_or(&empty_set);
         for (name, cond_dep) in &config.conditional {
             if detected_set.contains(name) {
+                if is_builtin_gen_cargo_dependency(name) {
+                    continue;
+                }
                 let spec = cond_dep.to_spec();
                 let use_ws = use_workspace_flag_for_dep(use_workspace_deps, &workspace_deps, name);
                 ensure_dep_spec_allows_non_workspace(name, &spec, use_ws)?;

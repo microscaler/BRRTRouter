@@ -13,7 +13,7 @@ pub struct Request {
     pub id: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 
 pub struct Response {
     #[serde(rename = "age")]
