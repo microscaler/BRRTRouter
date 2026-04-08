@@ -333,6 +333,9 @@ may_minihttp = {{ workspace = true }}
 anyhow = {{ workspace = true }}
 clap = {{ workspace = true }}
 tikv-jemallocator = {{ workspace = true, optional = true }}
+# Direct `may_postgres` is required for `lifeguard_derive` (`LifeModel` / `LifeRecord`) macros.
+# Workspaces may `[patch]` this git URL to a local fork (e.g. Microscaler `may_postgres`).
+may_postgres = {{ git = "https://github.com/microscaler/may_postgres.git", branch = "master", features = ["with-serde_json-1", "with-chrono-0_4"] }}
 """
 
     cargo_path.parent.mkdir(parents=True, exist_ok=True)
