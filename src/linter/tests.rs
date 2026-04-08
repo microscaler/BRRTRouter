@@ -349,3 +349,92 @@ components:
         .all(|i| i.severity == LintSeverity::Warning));
     assert!(money_issues.iter().all(|i| i.suggestion.is_some()));
 }
+
+#[test]
+fn test_lint_query_enum_mismatch_item_schema_errors() {
+    let spec = r#"
+openapi: 3.1.0
+info:
+  title: Test API
+  version: 1.0.0
+paths:
+  /jobs:
+    get:
+      operationId: list_jobs
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [OPEN, COVERED]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Job'
+components:
+  schemas:
+    Job:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [OPEN, COVERED, DRAFT]
+"#;
+
+    let issues = lint_yaml(spec);
+    let mismatch: Vec<_> = issues
+        .iter()
+        .filter(|i| i.kind == "query_enum_mismatch_item_schema")
+        .collect();
+    assert_eq!(mismatch.len(), 1, "expected one parity error, got {:?}", issues);
+    assert_eq!(mismatch[0].severity, LintSeverity::Error);
+}
+
+#[test]
+fn test_lint_query_enum_matches_item_schema_passes() {
+    let spec = r#"
+openapi: 3.1.0
+info:
+  title: Test API
+  version: 1.0.0
+paths:
+  /jobs:
+    get:
+      operationId: list_jobs
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [COVERED, DRAFT, OPEN]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Job'
+components:
+  schemas:
+    Job:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [OPEN, COVERED, DRAFT]
+"#;
+
+    let issues = lint_yaml(spec);
+    let mismatch: Vec<_> = issues
+        .iter()
+        .filter(|i| i.kind == "query_enum_mismatch_item_schema")
+        .collect();
+    assert!(mismatch.is_empty(), "sorted enums match: {:?}", issues);
+}

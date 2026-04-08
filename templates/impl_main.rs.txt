@@ -51,6 +51,7 @@ fn main() -> io::Result<()> {
     // Configure coroutine stack size
     let config = RuntimeConfig::from_env();
     may::config().set_stack_size(config.stack_size);
+    may::config().set_workers(config.may_workers);
     
     // Load OpenAPI spec
     let spec_path = if args.spec.is_relative() {
