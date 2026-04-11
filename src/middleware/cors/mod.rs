@@ -1062,6 +1062,7 @@ mod cors_middleware_tests {
             body: None,
             jwt_claims: None,
             reply_tx,
+            queue_guard: None,
         }
     }
 

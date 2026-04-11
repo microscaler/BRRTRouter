@@ -35,6 +35,7 @@ fn create_test_request(method: Method, path: &str, headers: HeaderVec) -> Handle
         body: None,
         jwt_claims: None,
         reply_tx: tx,
+            queue_guard: None,
     }
 }
 
@@ -1218,6 +1219,7 @@ fn test_cors_x_cors_false_disables_cors() {
         body: None,
         jwt_claims: None,
         reply_tx: mpsc::channel::<HandlerResponse>().0,
+            queue_guard: None,
     };
 
     let resp = cors
@@ -1254,6 +1256,7 @@ fn test_cors_x_cors_false_disables_cors() {
         body: None,
         jwt_claims: None,
         reply_tx: mpsc::channel::<HandlerResponse>().0,
+            queue_guard: None,
     };
 
     // before() should not short-circuit (CORS disabled, so no validation)
@@ -1317,6 +1320,7 @@ fn test_cors_x_cors_inherit_uses_global_config() {
         body: None,
         jwt_claims: None,
         reply_tx: mpsc::channel::<HandlerResponse>().0,
+            queue_guard: None,
     };
 
     let resp = cors
@@ -1353,6 +1357,7 @@ fn test_cors_x_cors_inherit_uses_global_config() {
         body: None,
         jwt_claims: None,
         reply_tx: mpsc::channel::<HandlerResponse>().0,
+            queue_guard: None,
     };
 
     let mut resp2 = HandlerResponse::new(200, HeaderVec::new(), serde_json::Value::Null);
@@ -1418,6 +1423,7 @@ fn test_cors_x_cors_false_vs_inherit_distinction() {
         body: None,
         jwt_claims: None,
         reply_tx: mpsc::channel::<HandlerResponse>().0,
+            queue_guard: None,
     };
 
     let mut resp_disabled = HandlerResponse::new(200, HeaderVec::new(), serde_json::Value::Null);
@@ -1441,6 +1447,7 @@ fn test_cors_x_cors_false_vs_inherit_distinction() {
         body: None,
         jwt_claims: None,
         reply_tx: mpsc::channel::<HandlerResponse>().0,
+            queue_guard: None,
     };
 
     let mut resp_inherit = HandlerResponse::new(200, HeaderVec::new(), serde_json::Value::Null);

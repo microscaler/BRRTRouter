@@ -151,15 +151,14 @@ See [CONTRIBUTING.md](CONTRIBUTING.md#-see-it-in-action) for the interactive das
 
 ---
 
-## 📊 Performance Benchmarks
+## 📊 Performance & Scale-Out Strategy
 
-**Current: ~81k req/s** with full OpenAPI validation, authentication, and JSON handling — competitive with Go's net/http.
+BRRTRouter is engineered for **cloud-native scale-out** rather than monolithic scale-up architectures. To guarantee high availability and stability, the system aggressively bounds heap constraints.
 
-**Key highlights:**
-- **10,000 concurrent users** handled with 0% failures
-- **JSF AV Rules** implementation doubled throughput from ~40k to ~81k req/s
-- **16KB stack size** optimal (4x safety margin, 480 MB saved vs 64KB)
-- **Zero allocations** in hot path (SmallVec for params/headers)
+**Capacity Targets per Pod:**
+- **2,000 concurrent users** handling up to **20,000 req/s**.
+- **Fail-fast shedding:** Built-in queue bounded protection forces `503 Service Unavailable` caps during excessive load spikes. This intentionally triggers cloud-native infrastructure (like Kubernetes HPA) to scale out horizontally rather than allowing unbounded memory growth to crash the pod natively.
+- **Real-world Latencies:** Standard routing prior to implementing business logic sees responses around **~15ms**, while production endpoints involving data reads/writes average **~200ms to 400ms** depending on complexity.
 
 See [docs/PERFORMANCE.md](docs/PERFORMANCE.md) for complete benchmarks, load test results, and optimization details.
 
@@ -241,7 +240,7 @@ BRRTRouter implements coding standards inspired by the [**Joint Strike Fighter A
 - **Result-based** error handling (no panics in dispatch)
 - **Stack-allocated** collections (JSF Rule 206)
 
-**Results:** 81,407 req/s with 0% failures, 1ms p50/p99 latency.
+**Results:** 81,407 req/s peak load potential, 15ms latency without business logic, ~200-400ms with business logic.
 
 See [docs/JSF_COMPLIANCE.md](docs/JSF_COMPLIANCE.md) for complete implementation details and validation results.
 

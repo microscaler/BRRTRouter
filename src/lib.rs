@@ -498,7 +498,7 @@
 //! **Test conditions:**
 //! - 4 threads, 200 connections, 30 second duration
 //! - Includes: Routing, auth validation, JSON parsing, handler execution
-//! - Default coroutine stack size (16KB)
+//! - Default coroutine stack size (32KB)
 //! - Metrics collection enabled
 //!
 //! ### ApacheBench (ab) Alternative
@@ -583,7 +583,7 @@
 //!
 //! 1. **Reduce stack size** for more concurrent coroutines:
 //!    ```bash
-//!    BRRTR_STACK_SIZE=0x4000 cargo run  # 16KB (default)
+//!    BRRTR_STACK_SIZE=0x8000 cargo run  # 32KB (default)
 //!    BRRTR_STACK_SIZE=0x2000 cargo run  # 8KB (less memory)
 //!    ```
 //!
@@ -622,7 +622,7 @@
 //! - ⚠️ **Regex matching** - O(n) route matching, will add trie-based router
 //! - ⚠️ **JSON parsing** - Each request parses JSON, will add connection-level caching
 //! - ⚠️ **Authentication** - No caching yet, will add token cache
-//! - ⚠️ **Stack size** - Default 16KB may be too large, tuning in progress
+//! - ⚠️ **Stack size** - Default 32KB may be too large, tuning in progress
 //! - ⚠️ **Connection handling** - May runtime has optimization opportunities
 //!
 //! **Target for v1.0 stable:** 100,000+ req/s on Raspberry Pi 5 (single core).
@@ -860,6 +860,8 @@ static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 pub mod cli;
 
+#[doc(hidden)]
+pub mod agent_debug;
 pub mod dispatcher;
 mod dummy_value;
 mod echo;

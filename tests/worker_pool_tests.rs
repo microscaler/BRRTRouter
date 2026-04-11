@@ -119,6 +119,7 @@ fn test_worker_pool_shed_mode() {
             body: None,
             jwt_claims: None,
             reply_tx,
+            queue_guard: None,
         };
 
         match pool.dispatch(req) {
@@ -197,6 +198,7 @@ fn test_worker_pool_block_mode() {
             body: None,
             jwt_claims: None,
             reply_tx,
+            queue_guard: None,
         };
 
         match pool.dispatch(req) {
@@ -271,6 +273,7 @@ fn test_worker_pool_metrics() {
             body: None,
             jwt_claims: None,
             reply_tx,
+            queue_guard: None,
         };
 
         let _ = pool.dispatch(req);

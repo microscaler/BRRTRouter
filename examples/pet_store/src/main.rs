@@ -145,6 +145,7 @@ fn main() -> io::Result<()> {
     // configure coroutine stack size
     let config = RuntimeConfig::from_env();
     may::config().set_stack_size(config.stack_size);
+    may::config().set_workers(config.may_workers);
     // Load OpenAPI spec and create router
     // Resolve relative specs against the crate directory so launches from other CWDs work
     let spec_path = if args.spec.is_relative() {
@@ -348,6 +349,7 @@ fn main() -> io::Result<()> {
     let spec_display = spec_path.display();
     let doc_display = args.doc_dir.display();
     let stack_size = config.stack_size;
+    let may_workers = config.may_workers;
     let routes_count = routes.len();
     let hot_reload = args.hot_reload;
     println!("[startup] spec_path={spec_display}");
@@ -356,9 +358,7 @@ fn main() -> io::Result<()> {
         println!("[startup] static_dir={sd_display}");
     }
     println!("[startup] doc_dir={doc_display}");
-    println!(
-        "[startup] stack_size={stack_size} routes_count={routes_count} hot_reload={hot_reload}"
-    );
+    println!("[startup] stack_size={stack_size} may_workers={may_workers} routes_count={routes_count} hot_reload={hot_reload}");
 
     match serde_yaml::to_string(&app_config) {
         Ok(y) => println!("[config]\n{y}"),

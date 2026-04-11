@@ -118,7 +118,7 @@ where
     let (tx, rx) = mpsc::channel::<HandlerRequest>();
 
     // Use a larger default stack size to prevent stack overflows
-    // 64KB is more reasonable for complex handlers
+    // 32KB is more reasonable for complex handlers
     let stack_size = std::env::var("BRRTR_STACK_SIZE")
         .ok()
         .and_then(|s| {
@@ -128,7 +128,7 @@ where
                 s.parse().ok()
             }
         })
-        .unwrap_or(0x10000); // 64KB default instead of 16KB
+        .unwrap_or(0x8000); // 32KB default
 
     let spawn_result = may::coroutine::Builder::new()
         .stack_size(stack_size)
@@ -326,6 +326,7 @@ where
 
     let spawn_result = may::coroutine::Builder::new()
         .stack_size(stack_size)
+        .name(effective_name.to_string())
         .spawn(move || {
             let handler = handler;
             // Main event loop: process requests until channel closes

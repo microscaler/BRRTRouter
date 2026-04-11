@@ -107,6 +107,18 @@ pub struct HandlerRequest {
     pub jwt_claims: Option<Value>,
     /// Channel for sending the response back to the dispatcher
     pub reply_tx: mpsc::Sender<HandlerResponse>,
+    /// Guard for tracking queue depth and applying backpressure (decrements on Drop)
+    pub queue_guard: Option<Arc<QueueDepthGuard>>,
+}
+
+/// Guard that decreases queue depth counter when request processing completes and it drops
+#[derive(Debug)]
+pub struct QueueDepthGuard(pub std::sync::Arc<std::sync::atomic::AtomicUsize>);
+
+impl Drop for QueueDepthGuard {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+    }
 }
 
 impl HandlerRequest {
@@ -314,6 +326,7 @@ where
 
     let spawn_result = may::coroutine::Builder::new()
         .stack_size(stack_size)
+        .name(effective_name.to_string())
         .spawn(move || {
             debug!(
                 handler_name = %handler_name_for_logging,
@@ -395,6 +408,10 @@ pub struct Dispatcher {
     pub worker_pools: HashMap<String, Arc<WorkerPool>>,
     /// Ordered list of middleware to apply to requests/responses
     pub middlewares: Vec<Arc<dyn Middleware>>,
+    /// Map of handler names to active queue limit tracker
+    pub queue_depths: HashMap<String, std::sync::Arc<std::sync::atomic::AtomicUsize>>,
+    /// Global backpressure bound for standard queues
+    pub queue_bound: usize,
 }
 
 impl Default for Dispatcher {
@@ -409,10 +426,17 @@ impl Dispatcher {
     /// Handlers must be registered using `register_handler` or `add_route`.
     #[must_use]
     pub fn new() -> Self {
+        let queue_bound = std::env::var("BRRTR_HANDLER_QUEUE_BOUND")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(1024);
+        
         Dispatcher {
             handlers: HashMap::new(),
             worker_pools: HashMap::new(),
             middlewares: Vec::new(),
+            queue_depths: HashMap::new(),
+            queue_bound,
         }
     }
 
@@ -443,7 +467,8 @@ impl Dispatcher {
             "Handler registered successfully"
         );
 
-        self.handlers.insert(handler_name, sender);
+        self.handlers.insert(handler_name.clone(), sender);
+        self.queue_depths.insert(handler_name, std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)));
     }
 
     /// Add middleware to the processing pipeline
@@ -503,7 +528,7 @@ impl Dispatcher {
                     s.parse().ok()
                 }
             })
-            .unwrap_or(0x10000); // 64KB default instead of 16KB
+            .unwrap_or(0x8000); // 32KB default
 
         // SAFETY: may::coroutine::Builder::spawn() is marked unsafe by the may runtime.
         // The unsafety comes from the coroutine runtime's requirements, not from this function's logic.
@@ -732,7 +757,7 @@ impl Dispatcher {
             }
         };
 
-        let request = HandlerRequest {
+        let mut request = HandlerRequest {
             request_id: request_id.parse().unwrap_or_else(|_| RequestId::new()),
             method: route_match.route.method.clone(),
             // JSF P0-2: Convert Arc<str> to String for HandlerRequest
@@ -745,6 +770,7 @@ impl Dispatcher {
             body,
             jwt_claims,
             reply_tx,
+            queue_guard: None,
         };
 
         // D4: Middleware before execution
@@ -806,6 +832,29 @@ impl Dispatcher {
                 }
             } else {
                 // No worker pool - send directly to handler coroutine
+                
+                // C1: Apply backpressure limit
+                if let Some(depth) = self.queue_depths.get(&request.handler_name) {
+                    if depth.load(std::sync::atomic::Ordering::Relaxed) >= self.queue_bound {
+                        error!(
+                            request_id = %request_id,
+                            handler_name = %request.handler_name,
+                            queue_depth = depth.load(std::sync::atomic::Ordering::Relaxed),
+                            queue_bound = self.queue_bound,
+                            "Handler queue full - shedding load natively"
+                        );
+                        return Some(HandlerResponse::error(
+                            503,
+                            "Service Unavailable: Handler Queue Full - Request Shed"
+                        ));
+                    }
+                    depth.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    // Attach Drop boundary
+                    let mut req = request.clone();
+                    req.queue_guard = Some(std::sync::Arc::new(QueueDepthGuard(depth.clone())));
+                    request = req;
+                }
+
                 if let Err(e) = tx.send(request.clone()) {
                     error!(
                         request_id = %request_id,

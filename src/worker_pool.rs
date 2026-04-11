@@ -96,7 +96,7 @@ impl WorkerPoolConfig {
                     s.parse().ok()
                 }
             })
-            .unwrap_or(0x10000); // 64KB default
+            .unwrap_or(0x8000); // 32KB default
 
         Self {
             num_workers,
@@ -132,7 +132,7 @@ impl Default for WorkerPoolConfig {
             queue_bound: 1024,
             backpressure_mode: BackpressureMode::Block,
             backpressure_timeout_ms: 50,
-            stack_size: 0x10000, // 64KB
+            stack_size: 0x8000, // 32KB
         }
     }
 }
@@ -261,6 +261,7 @@ impl WorkerPool {
 
             let spawn_result = may::coroutine::Builder::new()
                 .stack_size(config.stack_size)
+                .name(format!("{}-worker-{}", handler_name_clone, worker_id))
                 .spawn(move || {
                     debug!(
                         handler_name = %handler_name_clone,
@@ -380,6 +381,21 @@ impl WorkerPool {
     fn dispatch_with_shedding(&self, req: HandlerRequest) -> Result<(), HandlerResponse> {
         let request_id = req.request_id;
 
+        if self.metrics.get_queue_depth() >= self.config.queue_bound {
+            self.metrics.record_shed();
+            error!(
+                request_id = %request_id,
+                handler_name = %self.handler_name,
+                queue_depth = self.metrics.get_queue_depth(),
+                queue_bound = self.config.queue_bound,
+                "Worker pool queue full - shedding load"
+            );
+            return Err(HandlerResponse::error(
+                503,
+                "Service Unavailable: Handler Queue Full - Request Shed",
+            ));
+        }
+
         // Simply send to the unbounded channel
         // Note: The channel is unbounded, so this will always succeed unless disconnected
         self.metrics.record_dispatch();
@@ -458,7 +474,7 @@ mod tests {
         assert_eq!(config.queue_bound, 1024);
         assert_eq!(config.backpressure_mode, BackpressureMode::Block);
         assert_eq!(config.backpressure_timeout_ms, 50);
-        assert_eq!(config.stack_size, 0x10000);
+        assert_eq!(config.stack_size, 0x8000);
     }
 
     #[test]

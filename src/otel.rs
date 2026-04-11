@@ -129,6 +129,12 @@ pub struct LogConfig {
     pub target_filter: Option<String>,
     /// Include file:line location (dev only)
     pub include_location: bool,
+    /// Merge [`crate::agent_debug::LOG_DIRECTIVE`] into the [`EnvFilter`] so debug-session markers
+    /// are emitted at INFO without hand-editing `RUST_LOG`.
+    ///
+    /// Toggle via env **`BRRTR_DEBUG_SESSION`**: `1`, `true`, `yes`, or `on` (case-insensitive) enables;
+    /// unset or any other value disables. Kubernetes: set in a ConfigMap and reference from the pod.
+    pub enable_debug_session_tracing: bool,
 }
 
 impl LogConfig {
@@ -166,6 +172,14 @@ impl LogConfig {
                 .ok()
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(false),
+            enable_debug_session_tracing: env::var("BRRTR_DEBUG_SESSION")
+                .map(|s| {
+                    matches!(
+                        s.trim().to_ascii_lowercase().as_str(),
+                        "1" | "true" | "yes" | "on"
+                    )
+                })
+                .unwrap_or(false),
         }
     }
 
@@ -182,6 +196,7 @@ impl LogConfig {
             buffer_size: 1024,
             target_filter: None,
             include_location: true,
+            enable_debug_session_tracing: false,
         }
     }
 
@@ -198,6 +213,7 @@ impl LogConfig {
             buffer_size: 8192,
             target_filter: None,
             include_location: false,
+            enable_debug_session_tracing: false,
         }
     }
 }
@@ -409,6 +425,14 @@ pub fn init_logging_with_config(config: &LogConfig) -> Result<()> {
             .expect("valid directive"),
     );
 
+    if config.enable_debug_session_tracing {
+        env_filter = env_filter.add_directive(
+            crate::agent_debug::LOG_DIRECTIVE
+                .parse()
+                .expect("valid debug_session directive"),
+        );
+    }
+
     // Apply custom target filters if provided
     if let Some(target_filter) = &config.target_filter {
         for filter in target_filter.split(',') {
@@ -523,6 +547,7 @@ mod tests {
         assert_eq!(config.sampling_rate, 1.0);
         assert!(!config.async_logging);
         assert!(config.include_location);
+        assert!(!config.enable_debug_session_tracing);
     }
 
     #[test]
@@ -535,6 +560,7 @@ mod tests {
         assert_eq!(config.sampling_rate, 0.1);
         assert!(config.async_logging);
         assert!(!config.include_location);
+        assert!(!config.enable_debug_session_tracing);
     }
 
     #[test]

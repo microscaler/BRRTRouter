@@ -57,6 +57,7 @@ fn test_from_handler_non_string_params() {
         body: None,
         jwt_claims: None,
         reply_tx: tx,
+            queue_guard: None,
     };
 
     let typed = TypedHandlerRequest::<Req>::from_handler(req).expect("conversion failed");
@@ -105,6 +106,7 @@ fn test_header_cookie_params() {
         body: None,
         jwt_claims: None,
         reply_tx: tx,
+            queue_guard: None,
     };
 
     let typed = TypedHandlerRequest::<HeaderCookieReq>::from_handler(req).unwrap();
@@ -172,6 +174,7 @@ fn test_spawn_typed_success_and_error() {
         body: None,
         jwt_claims: None,
         reply_tx,
+            queue_guard: None,
     })
     .unwrap();
     let resp = reply_rx.recv().unwrap();
@@ -192,6 +195,7 @@ fn test_spawn_typed_success_and_error() {
         body: None,
         jwt_claims: None,
         reply_tx,
+            queue_guard: None,
     })
     .unwrap();
     let resp = reply_rx.recv().unwrap();
