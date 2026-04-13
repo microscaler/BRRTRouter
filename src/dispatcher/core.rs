@@ -430,7 +430,7 @@ impl Dispatcher {
             .ok()
             .and_then(|s| s.parse().ok())
             .unwrap_or(1024);
-        
+
         Dispatcher {
             handlers: HashMap::new(),
             worker_pools: HashMap::new(),
@@ -468,7 +468,10 @@ impl Dispatcher {
         );
 
         self.handlers.insert(handler_name.clone(), sender);
-        self.queue_depths.insert(handler_name, std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)));
+        self.queue_depths.insert(
+            handler_name,
+            std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        );
     }
 
     /// Add middleware to the processing pipeline
@@ -832,7 +835,7 @@ impl Dispatcher {
                 }
             } else {
                 // No worker pool - send directly to handler coroutine
-                
+
                 // C1: Apply backpressure limit
                 if let Some(depth) = self.queue_depths.get(&request.handler_name) {
                     if depth.load(std::sync::atomic::Ordering::Relaxed) >= self.queue_bound {
@@ -845,7 +848,7 @@ impl Dispatcher {
                         );
                         return Some(HandlerResponse::error(
                             503,
-                            "Service Unavailable: Handler Queue Full - Request Shed"
+                            "Service Unavailable: Handler Queue Full - Request Shed",
                         ));
                     }
                     depth.fetch_add(1, std::sync::atomic::Ordering::Relaxed);

@@ -5,7 +5,7 @@ use brrtrouter::typed::TypedHandlerFor;
 use brrtrouter::{
     dispatcher::{HandlerRequest, HandlerResponse, HeaderVec},
     router::ParamVec,
-    typed::TypedHandlerRequest,
+    typed::{HttpJson, TypedHandlerRequest},
 };
 use http::Method;
 use may::sync::mpsc;
@@ -57,7 +57,7 @@ fn test_from_handler_non_string_params() {
         body: None,
         jwt_claims: None,
         reply_tx: tx,
-            queue_guard: None,
+        queue_guard: None,
     };
 
     let typed = TypedHandlerRequest::<Req>::from_handler(req).expect("conversion failed");
@@ -106,7 +106,7 @@ fn test_header_cookie_params() {
         body: None,
         jwt_claims: None,
         reply_tx: tx,
-            queue_guard: None,
+        queue_guard: None,
     };
 
     let typed = TypedHandlerRequest::<HeaderCookieReq>::from_handler(req).unwrap();
@@ -174,7 +174,7 @@ fn test_spawn_typed_success_and_error() {
         body: None,
         jwt_claims: None,
         reply_tx,
-            queue_guard: None,
+        queue_guard: None,
     })
     .unwrap();
     let resp = reply_rx.recv().unwrap();
@@ -195,9 +195,62 @@ fn test_spawn_typed_success_and_error() {
         body: None,
         jwt_claims: None,
         reply_tx,
-            queue_guard: None,
+        queue_guard: None,
     })
     .unwrap();
     let resp = reply_rx.recv().unwrap();
     assert_eq!(resp.status, 400);
+}
+
+#[derive(Clone)]
+struct HttpJson404Handler;
+
+#[derive(Serialize)]
+struct NotFoundBody {
+    err: String,
+}
+
+impl brrtrouter::typed::Handler for HttpJson404Handler {
+    type Request = SumReq;
+    type Response = HttpJson<NotFoundBody>;
+
+    fn handle(
+        &self,
+        _req: brrtrouter::typed::TypedHandlerRequest<Self::Request>,
+    ) -> Self::Response {
+        HttpJson::new(
+            404,
+            NotFoundBody {
+                err: "not here".into(),
+            },
+        )
+    }
+}
+
+#[test]
+fn test_spawn_typed_http_json_status_without_panic() {
+    let tx = unsafe { brrtrouter::typed::spawn_typed(HttpJson404Handler) };
+    let (reply_tx, reply_rx) = mpsc::channel();
+    let q: ParamVec = smallvec![
+        (Arc::from("a"), "2".to_string()),
+        (Arc::from("b"), "3".to_string())
+    ];
+    tx.send(HandlerRequest {
+        request_id: brrtrouter::ids::RequestId::new(),
+        method: Method::GET,
+        path: "/sum".into(),
+        handler_name: "nf".into(),
+        path_params: ParamVec::new(),
+        query_params: q,
+        headers: HeaderVec::new(),
+        cookies: HeaderVec::new(),
+        body: None,
+        jwt_claims: None,
+        reply_tx,
+        queue_guard: None,
+    })
+    .unwrap();
+    let resp = reply_rx.recv().unwrap();
+    assert_eq!(resp.status, 404);
+    assert_eq!(resp.body["err"], "not here");
 }

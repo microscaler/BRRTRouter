@@ -1,6 +1,7 @@
 // typed.rs
 #[allow(unused_imports)]
 use crate::dispatcher::{Dispatcher, HandlerRequest, HandlerResponse, HeaderVec};
+use crate::ids::RequestId;
 use anyhow::Result;
 use http::Method;
 use may::sync::mpsc;
@@ -9,6 +10,104 @@ use serde_json;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use tracing::error;
+
+// ---------------------------------------------------------------------------
+// Typed handler → HandlerResponse (REST status without panicking)
+// ---------------------------------------------------------------------------
+
+/// Converts a typed handler return value into [`HandlerResponse`].
+///
+/// - Any type that implements [`serde::Serialize`] maps to **HTTP 200** with a JSON body.
+/// - Use [`HttpJson`] when you need a **non-200** success or error status with a JSON body.
+pub trait HandlerResponseOutput: Send + 'static {
+    /// Build the wire response (status line + JSON body).
+    fn into_handler_response(self) -> Result<HandlerResponse, serde_json::Error>;
+}
+
+impl<T: Serialize + Send + 'static> HandlerResponseOutput for T {
+    fn into_handler_response(self) -> Result<HandlerResponse, serde_json::Error> {
+        let body = serde_json::to_value(self)?;
+        Ok(HandlerResponse::json(200, body))
+    }
+}
+
+/// Explicit HTTP status with a JSON-serializable body (REST).
+///
+/// Does **not** implement [`Serialize`] intentionally, so it does not collide with the blanket
+/// [`HandlerResponseOutput`] impl for plain serializable types.
+///
+/// # Example
+///
+/// ```ignore
+/// use brrtrouter::typed::HttpJson;
+///
+/// // Return 404 with a JSON body (e.g. `{ "error": "not found" }`) without panicking.
+/// HttpJson::new(404, serde_json::json!({ "error": "Pet not found" }))
+/// ```
+#[derive(Debug)]
+pub struct HttpJson<T> {
+    /// HTTP status (e.g. 201, 404, 409).
+    pub status: u16,
+    /// Value serialized as the JSON response body (after status line).
+    pub body: T,
+}
+
+impl<T> HttpJson<T> {
+    #[must_use]
+    pub fn new(status: u16, body: T) -> Self {
+        Self { status, body }
+    }
+
+    #[must_use]
+    pub fn ok(body: T) -> Self {
+        Self { status: 200, body }
+    }
+
+    #[must_use]
+    pub fn not_found(body: T) -> Self {
+        Self { status: 404, body }
+    }
+}
+
+impl<T: Serialize + Send + 'static> HandlerResponseOutput for HttpJson<T> {
+    fn into_handler_response(self) -> Result<HandlerResponse, serde_json::Error> {
+        let body = serde_json::to_value(self.body)?;
+        Ok(HandlerResponse::json(self.status, body))
+    }
+}
+
+/// Shared STEP 4: map typed output to [`HandlerResponse`] with legacy null-body and serde-error behavior.
+fn typed_handler_output_to_response(
+    result: impl HandlerResponseOutput,
+    request_id: Option<&RequestId>,
+) -> HandlerResponse {
+    match result.into_handler_response() {
+        Ok(hr) => {
+            if hr.body.is_null() {
+                let mut err = serde_json::json!({
+                    "error": "Failed to serialize response",
+                    "details": "Handler response serialized to JSON null — add an explicit `-> YourResponse` return type on #[handler] functions",
+                });
+                if let Some(rid) = request_id {
+                    err["request_id"] = serde_json::json!(rid.to_string());
+                }
+                HandlerResponse::json(500, err)
+            } else {
+                hr
+            }
+        }
+        Err(e) => {
+            let mut err = serde_json::json!({
+                "error": "Failed to serialize response",
+                "details": e.to_string(),
+            });
+            if let Some(rid) = request_id {
+                err["request_id"] = serde_json::json!(rid.to_string());
+            }
+            HandlerResponse::json(500, err)
+        }
+    }
+}
 
 /// Get the stack size for a handler with environment variable overrides applied
 ///
@@ -71,11 +170,14 @@ fn get_stack_size_with_overrides(handler_name: &str, stack_size_bytes: usize) ->
 ///
 /// A handler receives a [`TypedHandlerRequest`] and returns a typed response.
 /// This provides type-safe request/response handling with automatic validation.
+///
+/// The associated [`HandlerResponseOutput`] type is usually your JSON DTO (`Serialize` → HTTP 200),
+/// or [`HttpJson`] for explicit status codes (REST).
 pub trait Handler: Send + 'static {
     /// The typed request type (converted from HandlerRequest)
     type Request: TryFrom<HandlerRequest, Error = anyhow::Error> + Send + 'static;
-    /// The typed response type (serialized to JSON)
-    type Response: Serialize + Send + 'static;
+    /// Success / error payload converted to [`HandlerResponse`] (see [`HandlerResponseOutput`]).
+    type Response: HandlerResponseOutput;
 
     /// Handle a typed request and return a typed response
     ///
@@ -85,7 +187,7 @@ pub trait Handler: Send + 'static {
     ///
     /// # Returns
     ///
-    /// A typed response that will be serialized to JSON
+    /// A value convertible to JSON and an HTTP status (see [`HandlerResponseOutput`]).
     fn handle(&self, req: TypedHandlerRequest<Self::Request>) -> Self::Response;
 }
 
@@ -140,7 +242,6 @@ where
                 // These are cheap clones (sender clones or small strings) and are ok to clone.
                 let reply_tx_outer = req.reply_tx.clone();
                 let handler_name_outer = req.handler_name.clone();
-                let _request_id = req.request_id;
 
                 // COMPLEX PANIC HANDLING: Wrap entire request processing in catch_unwind
                 // This prevents a panicking handler from killing the entire coroutine
@@ -161,6 +262,7 @@ where
                         let method = req.method.clone();
                         let path = req.path.clone();
                         let handler_name = req.handler_name.clone();
+                        let request_id = req.request_id;
                         // JSF: Map Arc<str> to String for HashMap
                         let path_params: HashMap<String, String> = req
                             .path_params
@@ -200,21 +302,8 @@ where
                         // STEP 3: Call the actual handler
                         let result = handler.handle(typed_req);
 
-                        // STEP 4: Serialize and send response (`()` serializes to JSON null)
-                        let body = serde_json::to_value(result).unwrap_or_else(|e| {
-                            serde_json::json!({
-                                "error": "Failed to serialize response",
-                                "details": e.to_string(),
-                            })
-                        });
-                        let response = if body.is_null() {
-                            HandlerResponse::error(
-                                500,
-                                "Handler response serialized to JSON null — add an explicit `-> YourResponse` return type on #[handler] functions",
-                            )
-                        } else {
-                            HandlerResponse::json(200, body)
-                        };
+                        // STEP 4: Map typed output to HandlerResponse (supports HttpJson for non-200 REST)
+                        let response = typed_handler_output_to_response(result, Some(&request_id));
                         let _ = reply_tx_inner.send(response);
                     }
                 }));
@@ -396,26 +485,8 @@ where
                         // STEP 3: Call the actual handler
                         let result = handler.handle(typed_req);
 
-                        // STEP 4: Serialize and send response (`()` serializes to JSON null)
-                        let body = serde_json::to_value(result).unwrap_or_else(|e| {
-                            serde_json::json!({
-                                "error": "Failed to serialize response",
-                                "details": e.to_string(),
-                                "request_id": request_id.to_string(),
-                            })
-                        });
-                        let response = if body.is_null() {
-                            HandlerResponse::error(
-                                500,
-                                "Handler response serialized to JSON null — add an explicit `-> YourResponse` return type on #[handler] functions",
-                            )
-                        } else {
-                            HandlerResponse {
-                                status: 200,
-                                headers: HeaderVec::new(),
-                                body,
-                            }
-                        };
+                        // STEP 4: Map typed output to HandlerResponse (supports HttpJson for non-200 REST)
+                        let response = typed_handler_output_to_response(result, Some(&request_id));
                         let _ = reply_tx_inner.send(response);
                     }
                 }));
@@ -680,26 +751,7 @@ impl Dispatcher {
             // Call the handler
             let result = handler.handle(typed_req);
 
-            // Send response (`()` serializes to JSON null)
-            let body = serde_json::to_value(result).unwrap_or_else(|e| {
-                serde_json::json!({
-                    "error": "Failed to serialize response",
-                    "details": e.to_string(),
-                    "request_id": request_id.to_string(),
-                })
-            });
-            let response = if body.is_null() {
-                HandlerResponse::error(
-                    500,
-                    "Handler response serialized to JSON null — add an explicit `-> YourResponse` return type on #[handler] functions",
-                )
-            } else {
-                HandlerResponse {
-                    status: 200,
-                    headers: HeaderVec::new(),
-                    body,
-                }
-            };
+            let response = typed_handler_output_to_response(result, Some(&request_id));
             let _ = reply_tx.send(response);
         };
 
@@ -821,5 +873,37 @@ mod tests {
         assert_eq!(stack_size, 16384);
 
         clean_stack_env_vars(handler);
+    }
+
+    #[test]
+    fn test_typed_handler_output_serializable_default_200() {
+        #[derive(serde::Serialize)]
+        struct Dto {
+            n: i32,
+        }
+        let hr = typed_handler_output_to_response(Dto { n: 7 }, None);
+        assert_eq!(hr.status, 200);
+        assert_eq!(hr.body["n"], 7);
+    }
+
+    #[test]
+    fn test_http_json_preserves_non_200_status() {
+        #[derive(serde::Serialize)]
+        struct E {
+            msg: &'static str,
+        }
+        let hr = typed_handler_output_to_response(HttpJson::new(404, E { msg: "gone" }), None);
+        assert_eq!(hr.status, 404);
+        assert_eq!(hr.body["msg"], "gone");
+    }
+
+    #[test]
+    fn test_http_json_201_json_value_body() {
+        let hr = typed_handler_output_to_response(
+            HttpJson::new(201, serde_json::json!({"id": "new"})),
+            None,
+        );
+        assert_eq!(hr.status, 201);
+        assert_eq!(hr.body["id"], "new");
     }
 }
