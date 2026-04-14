@@ -99,7 +99,7 @@ def main() -> None:
         if not getattr(args, "docker_cmd", None):
             print("hauliage docker: missing subcommand")
             print(
-                "  generate-dockerfile, copy-artifacts, copy-binary, build-image-simple, copy-multiarch, build-multiarch, build-base"
+                "  generate-dockerfile, copy-artifacts, copy-binary, build-image-simple, prune, copy-multiarch, build-multiarch, build-base"
             )
             print("  Use: hauliage docker --help")
             sys.exit(1)
@@ -317,7 +317,7 @@ def __build_parser():
     # --- docker ---
     pd = sub.add_parser(
         "docker",
-        help="Docker: generate-dockerfile, render-dockerfile, copy-artifacts, copy-binary, build-image-simple, copy-multiarch, build-multiarch, build-base, unpack-build-bins, validate-build-artifacts",
+        help="Docker: generate-dockerfile, render-dockerfile, copy-artifacts, copy-binary, build-image-simple, prune, copy-multiarch, build-multiarch, build-base, unpack-build-bins, validate-build-artifacts",
     )
     pd_sub = pd.add_subparsers(dest="docker_cmd")
     pdr = pd_sub.add_parser(
@@ -423,6 +423,27 @@ def __build_parser():
         "--dev-sync-only",
         action="store_true",
         help="Only alias and tag the base image to the target, bypassing docker build (for live_update).",
+    )
+    pdbi.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Force full rebuild (no layer cache). Default uses cache to reduce disk churn during dev.",
+    )
+    pdbi.add_argument(
+        "--prune-dangling",
+        action="store_true",
+        help="After success, run docker image prune -f. Or set BRRTR_DOCKER_PRUNE_DANGLING_AFTER_BUILD=1.",
+    )
+    pdpr = pd_sub.add_parser(
+        "prune",
+        help="Free local Docker disk (dangling images, stopped containers, buildx cache); same targets as brrtrouter docker prune",
+    )
+    pdpr.add_argument(
+        "prune_target",
+        nargs="?",
+        default="dev",
+        metavar="TARGET",
+        help="dangling, containers, buildx, or dev (default: dev — all three in order)",
     )
     pdcm = pd_sub.add_parser(
         "copy-multiarch",

@@ -77,6 +77,28 @@ class TestBuildImageSimple:
             )
             m.assert_called_once()
             assert m.call_args[0][0][:2] == ["docker", "build"]
+            assert "--no-cache" not in m.call_args[0][0]
+
+    def test_no_cache_adds_flag(self, tmp_path: Path):
+        from brrtrouter_tooling.docker.build_image_simple import run
+
+        (tmp_path / "h.sha256").write_text("a" * 64)
+        (tmp_path / "art").write_bytes(b"x")
+        (tmp_path / "Dockerfile").write_text("FROM alpine\n")
+        with patch("brrtrouter_tooling.docker.build_image_simple.subprocess.run") as m:
+            m.return_value = MagicMock(returncode=0)
+            assert (
+                run(
+                    "img",
+                    Path("h.sha256"),
+                    Path("art"),
+                    tmp_path,
+                    dockerfile=Path("Dockerfile"),
+                    no_cache=True,
+                )
+                == 0
+            )
+            assert "--no-cache" in m.call_args_list[0][0][0]
 
     def test_docker_build_ok_push_ok_returns_0(self, tmp_path: Path):
         from brrtrouter_tooling.docker.build_image_simple import run
@@ -98,6 +120,7 @@ class TestBuildImageSimple:
             )
             assert m.call_count >= 2
             assert m.call_args_list[0][0][0][:2] == ["docker", "build"]
+            assert "--no-cache" not in m.call_args_list[0][0][0]
             assert m.call_args_list[1][0][0][:2] == ["docker", "push"]
 
     def test_docker_build_ok_push_fail_kind_ok_returns_0(self, tmp_path: Path):
@@ -125,3 +148,27 @@ class TestBuildImageSimple:
             assert m.call_count == 3
             assert m.call_args_list[1][0][0][:2] == ["docker", "push"]
             assert "kind" in m.call_args_list[2][0][0]
+
+    def test_prune_dangling_after_calls_image_prune(self, tmp_path: Path):
+        from brrtrouter_tooling.docker.build_image_simple import run
+
+        (tmp_path / "h.sha256").write_text("a" * 64)
+        (tmp_path / "art").write_bytes(b"x")
+        (tmp_path / "Dockerfile").write_text("FROM alpine\n")
+        with (
+            patch("brrtrouter_tooling.docker.cleanup.prune_dangling_images") as prune,
+            patch("brrtrouter_tooling.docker.build_image_simple.subprocess.run") as m,
+        ):
+            m.return_value = MagicMock(returncode=0)
+            assert (
+                run(
+                    "img",
+                    Path("h.sha256"),
+                    Path("art"),
+                    tmp_path,
+                    dockerfile=Path("Dockerfile"),
+                    prune_dangling_after=True,
+                )
+                == 0
+            )
+            prune.assert_called_once()

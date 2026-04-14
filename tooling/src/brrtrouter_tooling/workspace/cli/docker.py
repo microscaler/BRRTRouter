@@ -101,6 +101,8 @@ def run_docker(args, project_root: Path) -> None:
                     kind_cluster_name=Hauliage_KIND_CLUSTER,
                     base_image_name=Hauliage_BASE_IMAGE,
                     dev_sync_only=getattr(args, "dev_sync_only", False),
+                    no_cache=getattr(args, "no_cache", False),
+                    prune_dangling_after=(True if getattr(args, "prune_dangling", False) else None),
                 )
             finally:
                 temp_dockerfile.unlink(missing_ok=True)
@@ -116,8 +118,24 @@ def run_docker(args, project_root: Path) -> None:
                 kind_cluster_name=Hauliage_KIND_CLUSTER,
                 base_image_name=Hauliage_BASE_IMAGE,
                 dev_sync_only=getattr(args, "dev_sync_only", False),
+                no_cache=getattr(args, "no_cache", False),
+                prune_dangling_after=(True if getattr(args, "prune_dangling", False) else None),
             )
         sys.exit(rc)
+    if args.docker_cmd == "prune":
+        from brrtrouter_tooling.docker import cleanup
+
+        t = getattr(args, "prune_target", "dev")
+        if t == "dangling":
+            sys.exit(cleanup.prune_dangling_images())
+        if t == "containers":
+            sys.exit(cleanup.prune_stopped_containers())
+        if t == "buildx":
+            sys.exit(cleanup.prune_buildx_cache())
+        if t == "dev":
+            sys.exit(cleanup.prune_dev_sweep())
+        print(f"Unknown prune target: {t}", file=sys.stderr)
+        sys.exit(1)
     if args.docker_cmd == "copy-multiarch":
         from brrtrouter_tooling.docker.copy_multiarch import run as run_copy_multiarch
 
