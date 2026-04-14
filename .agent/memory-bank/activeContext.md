@@ -1,5 +1,11 @@
 # Active Context
 
+## 2026-04-14 — CORS trusted `X-Forwarded-*`, Private Network Access, HTTP conformance tests
+
+- **`trust_forwarded_host`** / **`CorsMiddlewareBuilder::trust_forwarded_host`** — same-origin uses `effective_server_authority` (`X-Forwarded-Host`, optional `X-Forwarded-Port`).
+- **`allow_private_network_access`** — `Access-Control-Allow-Private-Network: true` on preflight (when `Access-Control-Request-Private-Network` present) and on cross-origin `after()` responses; `Vary` includes `Access-Control-Request-Private-Network` when enabled.
+- **Tests:** `tests/cors_http_conformance_tests.rs` (raw HTTP); `test_cors_trust_forwarded_host_same_origin_skips_cors_headers` in `middleware_tests.rs`. Docs: `CORS_OPERATIONS.md`, `CORS_IMPLEMENTATION_AUDIT.md`.
+
 ## 2026-04-13 — CORS per-route disabled metric
 
 - **Added:** `brrtrouter_cors_route_disabled_total` on `/metrics` (`MetricsMiddleware::inc_cors_route_disabled` / `cors_route_disabled()`), incremented once per request when `RouteCorsPolicy::Disabled` (`x-cors: false`) in `CorsMiddleware::before`.

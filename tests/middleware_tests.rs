@@ -835,6 +835,34 @@ fn test_cors_metrics_sink_route_disabled() {
 }
 
 #[test]
+fn test_cors_trust_forwarded_host_same_origin_skips_cors_headers() {
+    use brrtrouter::middleware::CorsMiddlewareBuilder;
+
+    let cors = CorsMiddlewareBuilder::new()
+        .allowed_origins(&["https://api.example.com"])
+        .trust_forwarded_host(true)
+        .build()
+        .expect("cors");
+
+    let mut headers = HeaderVec::new();
+    headers.push((Arc::from("host"), "127.0.0.1:8080".to_string()));
+    headers.push((
+        Arc::from("x-forwarded-host"),
+        "api.example.com".to_string(),
+    ));
+    headers.push((Arc::from("x-forwarded-port"), "443".to_string()));
+    headers.push((Arc::from("origin"), "https://api.example.com".to_string()));
+    let req = create_test_request(Method::GET, "/", headers);
+    let mut resp = create_test_response(200);
+    cors.after(&req, &mut resp, Duration::from_millis(0));
+    assert_eq!(
+        resp.get_header("access-control-allow-origin"),
+        None,
+        "forwarded public host should match Origin for same-origin (no ACAO)"
+    );
+}
+
+#[test]
 fn test_cors_builder_with_credentials() {
     use brrtrouter::middleware::CorsMiddlewareBuilder;
     use http::Method;

@@ -20,8 +20,9 @@
 //!
 //! # Documentation
 //!
-//! Deployment-focused notes (ingress/`Host`, `Vary`, middleware ordering) live in the repository file
-//! `docs/CORS_OPERATIONS.md`. The architectural audit is `docs/CORS_IMPLEMENTATION_AUDIT.md`.
+//! Deployment-focused notes (ingress/`Host`, trusted `X-Forwarded-*`, Private Network Access, `Vary`,
+//! middleware ordering) live in `docs/CORS_OPERATIONS.md`. The architectural audit is
+//! `docs/CORS_IMPLEMENTATION_AUDIT.md`.
 
 mod builder;
 mod error;
@@ -34,6 +35,7 @@ pub use route_config::{
     RouteCorsConfig, RouteCorsPolicy,
 };
 
+use std::borrow::Cow;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -43,6 +45,55 @@ use tracing::{debug, warn};
 
 use crate::dispatcher::{HandlerRequest, HandlerResponse, HeaderVec};
 use crate::middleware::{MetricsMiddleware, Middleware};
+
+/// First comma-separated value from `X-Forwarded-*` headers (typical reverse-proxy chains).
+fn first_forwarded_token(s: &str) -> &str {
+    s.split(',').next().unwrap_or("").trim()
+}
+
+/// Whether `host` already includes an explicit `:port` (handles bracketed IPv6).
+fn host_has_explicit_port(host: &str) -> bool {
+    if host.starts_with('[') {
+        host.contains("]:")
+    } else {
+        host
+            .rfind(':')
+            .is_some_and(|i| host[i + 1..].parse::<u16>().is_ok())
+    }
+}
+
+/// Effective `Host` authority (`host[:port]`) for same-origin checks.
+///
+/// When [`CorsMiddleware`] is configured with [`CorsMiddleware::with_trust_forwarded_host`],
+/// uses `X-Forwarded-Host` and optional `X-Forwarded-Port` if the request is from a trusted edge
+/// (configure only when proxies strip or validate these headers).
+fn effective_server_authority(req: &HandlerRequest, trust_forwarded: bool) -> Option<Cow<'_, str>> {
+    if trust_forwarded {
+        if let Some(fh_raw) = req.get_header("x-forwarded-host") {
+            let host = first_forwarded_token(fh_raw);
+            if !host.is_empty() {
+                if !host_has_explicit_port(host) {
+                    if let Some(fp_raw) = req.get_header("x-forwarded-port") {
+                        let port = first_forwarded_token(fp_raw);
+                        if port.parse::<u16>().is_ok() {
+                            return Some(Cow::Owned(format!("{host}:{port}")));
+                        }
+                    }
+                }
+                return Some(Cow::Borrowed(host));
+            }
+        }
+    }
+    req.get_header("host").map(Cow::Borrowed)
+}
+
+fn cors_vary_value(allow_private_network: bool) -> &'static str {
+    if allow_private_network {
+        "Origin, Access-Control-Request-Private-Network"
+    } else {
+        "Origin"
+    }
+}
 
 /// CORS ([Cross-Origin Resource Sharing](https://fetch.spec.whatwg.org/#http-cors-protocol)) middleware.
 ///
@@ -168,6 +219,11 @@ pub struct CorsMiddleware {
     pub(crate) route_policies: std::collections::HashMap<String, RouteCorsPolicy>,
     /// When set, CORS denials increment [`MetricsMiddleware`] counters for `/metrics`.
     pub(crate) metrics_sink: Option<Arc<MetricsMiddleware>>,
+    /// Use [`effective_server_authority`] (`X-Forwarded-Host` / `X-Forwarded-Port`) for same-origin detection.
+    pub(crate) trust_forwarded_host: bool,
+    /// [Private Network Access](https://wicg.github.io/private-network-access/): emit
+    /// `Access-Control-Allow-Private-Network` when enabled and the request participates in PNA.
+    pub(crate) allow_private_network_access: bool,
 }
 
 impl CorsMiddleware {
@@ -185,6 +241,24 @@ impl CorsMiddleware {
     #[must_use]
     pub fn with_metrics_sink(mut self, m: Arc<MetricsMiddleware>) -> Self {
         self.metrics_sink = Some(m);
+        self
+    }
+
+    /// When `true`, same-origin detection uses [`effective_server_authority`] so deployments behind
+    /// Envoy/nginx can match browser `Origin` to `X-Forwarded-Host` (and optional `X-Forwarded-Port`).
+    ///
+    /// **Security:** enable only when your edge overwrites or strips these headers from untrusted clients.
+    #[must_use]
+    pub fn with_trust_forwarded_host(mut self, trust: bool) -> Self {
+        self.trust_forwarded_host = trust;
+        self
+    }
+
+    /// Enable [Private Network Access](https://wicg.github.io/private-network-access/) response headers
+    /// (`Access-Control-Allow-Private-Network: true`) for eligible preflight and cross-origin responses.
+    #[must_use]
+    pub fn with_allow_private_network_access(mut self, allow: bool) -> Self {
+        self.allow_private_network_access = allow;
         self
     }
 
@@ -278,6 +352,8 @@ impl CorsMiddleware {
             max_age,
             route_policies: std::collections::HashMap::new(),
             metrics_sink: None,
+            trust_forwarded_host: false,
+            allow_private_network_access: false,
         }
     }
 
@@ -321,6 +397,8 @@ impl CorsMiddleware {
             max_age: global_config.max_age,
             route_policies,
             metrics_sink: global_config.metrics_sink,
+            trust_forwarded_host: global_config.trust_forwarded_host,
+            allow_private_network_access: global_config.allow_private_network_access,
         }
     }
 
@@ -397,6 +475,8 @@ impl CorsMiddleware {
             max_age,
             route_policies: std::collections::HashMap::new(),
             metrics_sink: None,
+            trust_forwarded_host: false,
+            allow_private_network_access: false,
         }
     }
 
@@ -450,6 +530,8 @@ impl CorsMiddleware {
             max_age,
             route_policies: std::collections::HashMap::new(),
             metrics_sink: None,
+            trust_forwarded_host: false,
+            allow_private_network_access: false,
         }
     }
 
@@ -571,11 +653,11 @@ impl CorsMiddleware {
     /// - Host header without port uses default port based on Origin scheme
     /// - Both hostname and port must match for same-origin
     fn is_same_origin(&self, req: &HandlerRequest, origin: &str) -> bool {
-        // Extract server origin from Host header
-        let host_header = match req.get_header("host") {
-            Some(h) => h,
-            None => return false, // No Host header, assume cross-origin
+        let host_header = match effective_server_authority(req, self.trust_forwarded_host) {
+            Some(c) => c,
+            None => return false, // No Host / forwarded authority, assume cross-origin
         };
+        let host_header: &str = host_header.as_ref();
 
         // Parse origin to extract scheme, hostname, and port
         // Origin format: scheme://hostname:port or scheme://hostname
@@ -810,8 +892,21 @@ impl CorsMiddleware {
             ));
         }
 
-        // Add Vary: Origin header for dynamic origin validation
-        headers.push((std::sync::Arc::from("vary"), "Origin".to_string()));
+        let pna_requested = req
+            .get_header("access-control-request-private-network")
+            .is_some_and(|v| v.is_empty() || v.eq_ignore_ascii_case("true"));
+        if self.allow_private_network_access && pna_requested {
+            headers.push((
+                std::sync::Arc::from("access-control-allow-private-network"),
+                "true".to_string(),
+            ));
+        }
+
+        // Vary for caches (Origin; PNA preflight token when enabled)
+        headers.push((
+            std::sync::Arc::from("vary"),
+            cors_vary_value(self.allow_private_network_access).to_string(),
+        ));
 
         // Empty JSON object — not `null` — so OpenAPI response validation (`type: object`) passes
         // when middleware short-circuits OPTIONS (e.g. `options_user` documents `200` + JSON schema).
@@ -855,6 +950,8 @@ impl CorsMiddleware {
             max_age: None,
             route_policies: std::collections::HashMap::new(),
             metrics_sink: None,
+            trust_forwarded_host: false,
+            allow_private_network_access: false,
         }
     }
 }
@@ -906,6 +1003,8 @@ impl Default for CorsMiddleware {
             max_age: None,
             route_policies: std::collections::HashMap::new(),
             metrics_sink: None,
+            trust_forwarded_host: false,
+            allow_private_network_access: false,
         }
     }
 }
@@ -1113,8 +1212,17 @@ impl Middleware for CorsMiddleware {
             res.set_header("access-control-expose-headers", exposed);
         }
 
-        // Add Vary: Origin header for dynamic origin validation (RFC requirement)
-        res.set_header("vary", "Origin".to_string());
+        if self.allow_private_network_access {
+            res.set_header(
+                "access-control-allow-private-network",
+                "true".to_string(),
+            );
+        }
+
+        res.set_header(
+            "vary",
+            cors_vary_value(self.allow_private_network_access).to_string(),
+        );
     }
 }
 

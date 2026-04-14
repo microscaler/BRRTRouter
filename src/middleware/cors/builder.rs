@@ -32,6 +32,10 @@ pub struct CorsMiddlewareBuilder {
     allow_credentials: bool,
     expose_headers: Vec<String>,
     max_age: Option<u32>,
+    /// Same as [`CorsMiddleware::with_trust_forwarded_host`].
+    trust_forwarded_host: bool,
+    /// Same as [`CorsMiddleware::with_allow_private_network_access`].
+    allow_private_network_access: bool,
 }
 
 impl CorsMiddlewareBuilder {
@@ -69,7 +73,25 @@ impl CorsMiddlewareBuilder {
             allow_credentials: false,
             expose_headers: vec![],
             max_age: None,
+            trust_forwarded_host: false,
+            allow_private_network_access: false,
         }
+    }
+
+    /// Trust `X-Forwarded-Host` / `X-Forwarded-Port` for same-origin detection (Envoy, nginx).
+    ///
+    /// See [`CorsMiddleware::with_trust_forwarded_host`].
+    #[must_use]
+    pub fn trust_forwarded_host(mut self, trust: bool) -> Self {
+        self.trust_forwarded_host = trust;
+        self
+    }
+
+    /// Enable Private Network Access response headers. See [`CorsMiddleware::with_allow_private_network_access`].
+    #[must_use]
+    pub fn allow_private_network_access(mut self, allow: bool) -> Self {
+        self.allow_private_network_access = allow;
+        self
     }
 
     /// Set allowed origins
@@ -347,7 +369,9 @@ impl CorsMiddlewareBuilder {
             ),
         };
 
-        Ok(cors)
+        Ok(cors
+            .with_trust_forwarded_host(self.trust_forwarded_host)
+            .with_allow_private_network_access(self.allow_private_network_access))
     }
 
     /// Build CORS middleware with route-specific configurations from OpenAPI
