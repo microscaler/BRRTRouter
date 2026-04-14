@@ -1,5 +1,6 @@
 use oas3::spec::Operation;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use super::OriginValidation;
 use crate::spec::RouteMeta;
@@ -101,6 +102,54 @@ impl RouteCorsConfig {
         }
         self
     }
+
+    /// Apply the **global** origin policy (from `CorsMiddlewareBuilder` / deployment config) to this
+    /// OpenAPI-derived route. `x-cors` objects never include origins; this must run at startup.
+    ///
+    /// Delegates to [`with_origins`](Self::with_origins) for exact and wildcard globals; copies
+    /// regex or custom validators from the global middleware so route-specific methods/headers
+    /// still share the same origin allowlist logic.
+    pub fn merge_global_origin_validation(mut self, global: &OriginValidation) -> Self {
+        match global {
+            OriginValidation::Exact(origins) => {
+                let refs: Vec<&str> = origins.iter().map(|s| s.as_str()).collect();
+                self.with_origins(&refs)
+            }
+            OriginValidation::Wildcard => self.with_origins(&["*"]),
+            OriginValidation::Regex(patterns) => {
+                self.origin_validation = OriginValidation::Regex(patterns.clone());
+                self
+            }
+            OriginValidation::Custom(validator) => {
+                self.origin_validation = OriginValidation::Custom(Arc::clone(validator));
+                self
+            }
+        }
+    }
+}
+
+/// Merge global origin validation into OpenAPI-derived route policies (typically before
+/// [`CorsMiddleware::with_route_policies`](super::CorsMiddleware::with_route_policies)).
+///
+/// Only [`RouteCorsPolicy::Custom`] entries are updated; [`Inherit`](RouteCorsPolicy::Inherit) and
+/// [`Disabled`](RouteCorsPolicy::Disabled) are unchanged. This matches the pattern used in
+/// `examples/pet_store` and is invoked automatically by [`CorsMiddlewareBuilder::build_with_routes`](super::CorsMiddlewareBuilder::build_with_routes).
+pub fn merge_route_policies_with_global_origins(
+    global: &OriginValidation,
+    policies: HashMap<String, RouteCorsPolicy>,
+) -> HashMap<String, RouteCorsPolicy> {
+    policies
+        .into_iter()
+        .map(|(k, pol)| {
+            let pol = match pol {
+                RouteCorsPolicy::Custom(cfg) => {
+                    RouteCorsPolicy::Custom(cfg.merge_global_origin_validation(global))
+                }
+                other => other,
+            };
+            (k, pol)
+        })
+        .collect()
 }
 
 /// Extract CORS policy from OpenAPI `x-cors` extension
@@ -230,4 +279,47 @@ pub fn build_route_cors_map(routes: &[RouteMeta]) -> HashMap<String, RouteCorsPo
     }
 
     map
+}
+
+#[cfg(test)]
+mod merge_tests {
+    use super::*;
+
+    #[test]
+    fn merge_custom_applies_exact_global_origins() {
+        let global = OriginValidation::Exact(vec![
+            "https://a.example.com".into(),
+            "https://b.example.com".into(),
+        ]);
+        let cfg = RouteCorsConfig::default().merge_global_origin_validation(&global);
+        match &cfg.origin_validation {
+            OriginValidation::Exact(v) => {
+                assert_eq!(v.len(), 2);
+                assert!(v.iter().any(|o| o == "https://a.example.com"));
+            }
+            _ => panic!("expected Exact origins"),
+        }
+    }
+
+    #[test]
+    fn merge_route_policies_leaves_inherit_and_disabled() {
+        let global = OriginValidation::Exact(vec!["https://x.com".into()]);
+        let mut m = HashMap::new();
+        m.insert("a".into(), RouteCorsPolicy::Inherit);
+        m.insert("b".into(), RouteCorsPolicy::Disabled);
+        m.insert(
+            "c".into(),
+            RouteCorsPolicy::Custom(RouteCorsConfig::default()),
+        );
+        let out = merge_route_policies_with_global_origins(&global, m);
+        assert!(matches!(out.get("a"), Some(RouteCorsPolicy::Inherit)));
+        assert!(matches!(out.get("b"), Some(RouteCorsPolicy::Disabled)));
+        match out.get("c") {
+            Some(RouteCorsPolicy::Custom(cfg)) => match &cfg.origin_validation {
+                OriginValidation::Exact(v) => assert_eq!(v, &vec!["https://x.com".to_string()]),
+                _ => panic!("expected merged Exact"),
+            },
+            _ => panic!("expected Custom for c"),
+        }
+    }
 }

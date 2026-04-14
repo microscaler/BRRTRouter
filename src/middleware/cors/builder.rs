@@ -353,7 +353,10 @@ impl CorsMiddlewareBuilder {
     /// Build CORS middleware with route-specific configurations from OpenAPI
     ///
     /// This method extracts route-specific CORS configs from route metadata
-    /// and creates a route-aware CORS middleware.
+    /// and creates a route-aware CORS middleware. For each OpenAPI `x-cors` **object** policy
+    /// ([`RouteCorsPolicy::Custom`](crate::middleware::RouteCorsPolicy::Custom)), it **merges global origins** (or regex/custom validators
+    /// from this builder) into the route — OpenAPI never supplies origins, so this avoids empty
+    /// origin lists on custom routes.
     ///
     /// # Arguments
     ///
@@ -374,17 +377,23 @@ impl CorsMiddlewareBuilder {
     ///     .allowed_origins(&["https://example.com"])
     ///     .build_with_routes(&routes)?;
     /// ```
+    ///
+    /// # See also
+    ///
+    /// [`merge_route_policies_with_global_origins`](crate::middleware::merge_route_policies_with_global_origins) — the same merge logic if you build
+    /// [`CorsMiddleware`](crate::middleware::CorsMiddleware) without this builder.
     pub fn build_with_routes(
         self,
         routes: &[crate::spec::RouteMeta],
     ) -> Result<CorsMiddleware, CorsConfigError> {
-        use super::build_route_cors_map;
+        use super::{build_route_cors_map, merge_route_policies_with_global_origins};
         let global_cors = self.build()?;
         let route_policies = build_route_cors_map(routes);
-        Ok(CorsMiddleware::with_route_policies(
-            global_cors,
+        let merged = merge_route_policies_with_global_origins(
+            global_cors.global_origin_validation(),
             route_policies,
-        ))
+        );
+        Ok(CorsMiddleware::with_route_policies(global_cors, merged))
     }
 }
 

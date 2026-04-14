@@ -516,14 +516,19 @@ pub fn extract_stack_size_override(operation: &oas3::spec::Operation) -> Option<
         .get("x-brrtrouter-stack-size")
         .or_else(|| operation.extensions.get("x-stack-size"))
         .and_then(|v| {
-            v.as_u64()
-                .map(|n| n as usize)
-                .or_else(|| v.as_str().and_then(|s| {
-                    if s == "small" { Some(16384) }
-                    else if s == "medium" { Some(32768) }
-                    else if s == "large" { Some(65536) }
-                    else { s.parse().ok() }
-                }))
+            v.as_u64().map(|n| n as usize).or_else(|| {
+                v.as_str().and_then(|s| {
+                    if s == "small" {
+                        Some(16384)
+                    } else if s == "medium" {
+                        Some(32768)
+                    } else if s == "large" {
+                        Some(65536)
+                    } else {
+                        s.parse().ok()
+                    }
+                })
+            })
         })
 }
 

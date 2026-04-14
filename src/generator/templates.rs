@@ -1590,7 +1590,10 @@ mod cargo_pkg_name_to_rust_ident_tests {
 
     #[test]
     fn plain_snake_unchanged() {
-        assert_eq!(cargo_pkg_name_to_rust_ident("amd_service_api"), "amd_service_api");
+        assert_eq!(
+            cargo_pkg_name_to_rust_ident("amd_service_api"),
+            "amd_service_api"
+        );
     }
 
     #[test]
@@ -1608,6 +1611,9 @@ mod cargo_pkg_name_to_rust_ident_tests {
 
     #[test]
     fn camel_case_bff_style_unchanged() {
-        assert_eq!(cargo_pkg_name_to_rust_ident("traderBFF_service_api"), "traderBFF_service_api");
+        assert_eq!(
+            cargo_pkg_name_to_rust_ident("traderBFF_service_api"),
+            "traderBFF_service_api"
+        );
     }
 }

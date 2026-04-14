@@ -1,5 +1,10 @@
 # Active Context
 
+## 2026-04-13 — CORS per-route disabled metric
+
+- **Added:** `brrtrouter_cors_route_disabled_total` on `/metrics` (`MetricsMiddleware::inc_cors_route_disabled` / `cors_route_disabled()`), incremented once per request when `RouteCorsPolicy::Disabled` (`x-cors: false`) in `CorsMiddleware::before`.
+- **Tests:** `test_cors_metrics_sink_route_disabled`; metrics endpoint asserts new series; docs: `CORS_OPERATIONS.md`, `CORS_IMPLEMENTATION_AUDIT.md`.
+
 ## 2026-03-25 — `ui_secure_endpoint_bearer` / `BearerJwtProvider` JWT payload decoding
 
 - **Fixed:** Payload segments are decoded with **base64url (no padding)** first, then padded standard base64 for internal test tokens. E2E uses `PET_STORE_BEARER_DEV_TOKEN` (third segment `sig` matching default mock signature).

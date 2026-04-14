@@ -156,10 +156,7 @@ impl RuntimeConfig {
             .unwrap_or(10);
         let default_may_workers = (cpus + db_pool_max + 16).max(32);
         let may_workers = match env::var("BRRTR_MAY_WORKERS") {
-            Ok(val) => val
-                .parse::<usize>()
-                .unwrap_or(default_may_workers)
-                .max(2),
+            Ok(val) => val.parse::<usize>().unwrap_or(default_may_workers).max(2),
             Err(_) => default_may_workers.max(2),
         };
 

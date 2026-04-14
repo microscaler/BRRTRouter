@@ -170,12 +170,7 @@ fn lint_one_operation_query_item_enum_parity(
         .get("operationId")
         .and_then(|v| v.as_str())
         .unwrap_or("?");
-    let location_base = format!(
-        "{} {} ({})",
-        path_key,
-        method.to_uppercase(),
-        operation_id
-    );
+    let location_base = format!("{} {} ({})", path_key, method.to_uppercase(), operation_id);
 
     let mut query_enums: Vec<(String, Vec<String>)> = Vec::new();
     if let Some(params) = op.get("parameters").and_then(|p| p.as_array()) {
@@ -238,10 +233,7 @@ fn lint_one_operation_query_item_enum_parity(
     let Some(item_schema) = array_item_schema else {
         return;
     };
-    let Some(props) = item_schema
-        .get("properties")
-        .and_then(|p| p.as_object())
-    else {
+    let Some(props) = item_schema.get("properties").and_then(|p| p.as_object()) else {
         return;
     };
 
@@ -282,10 +274,7 @@ fn lint_one_operation_query_item_enum_parity(
 fn resolve_schema_value_in_spec<'a>(spec: &'a Value, schema: &'a Value) -> Option<&'a Value> {
     if let Some(ref_path) = schema.get("$ref").and_then(|r| r.as_str()) {
         let suffix = ref_path.strip_prefix("#/components/schemas/")?;
-        return spec
-            .get("components")?
-            .get("schemas")?
-            .get(suffix);
+        return spec.get("components")?.get("schemas")?.get(suffix);
     }
     Some(schema)
 }

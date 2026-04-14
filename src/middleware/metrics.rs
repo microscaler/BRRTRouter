@@ -129,7 +129,9 @@ impl PathMetrics {
 
 /// Middleware for collecting Prometheus-compatible metrics
 ///
-/// Tracks request counts, latency, stack usage, and authentication failures.
+/// Tracks request counts, latency, stack usage, authentication failures, and (when linked from
+/// [`CorsMiddleware::with_metrics_sink`](crate::middleware::CorsMiddleware::with_metrics_sink))
+/// CORS denial counters.
 /// Uses lock-free concurrent data structures (DashMap) for high-throughput scenarios.
 ///
 /// Metrics collected:
@@ -140,6 +142,10 @@ impl PathMetrics {
 /// - Stack size and usage (for coroutine monitoring)
 /// - Top-level request count (non-handler requests like /health, /metrics)
 /// - Authentication failure count
+/// - CORS: `brrtrouter_cors_origin_rejections_total`, `brrtrouter_cors_preflight_denials_total`,
+///   `brrtrouter_cors_route_disabled_total`
+///   (incremented by [`CorsMiddleware`](crate::middleware::CorsMiddleware) via [`inc_cors_origin_rejection`](MetricsMiddleware::inc_cors_origin_rejection),
+///   [`inc_cors_preflight_denial`](MetricsMiddleware::inc_cors_preflight_denial), and [`inc_cors_route_disabled`](MetricsMiddleware::inc_cors_route_disabled))
 /// - Per-path metrics (count, latency, min/max)
 ///
 /// ## Performance Optimizations
@@ -167,6 +173,12 @@ pub struct MetricsMiddleware {
     connection_closes: AtomicUsize,
     /// Connection errors (broken pipe, reset, etc.)
     connection_errors: AtomicUsize,
+    /// CORS: `Origin` failed validation (403 before handler)
+    cors_origin_rejections: AtomicUsize,
+    /// CORS: preflight denied (invalid method / header after origin OK)
+    cors_preflight_denials: AtomicUsize,
+    /// CORS: route has `x-cors: false` / [`RouteCorsPolicy::Disabled`](crate::middleware::RouteCorsPolicy::Disabled) — one increment per request (no CORS headers)
+    cors_route_disabled: AtomicUsize,
 }
 
 /// Default initialization for metrics middleware
@@ -191,6 +203,9 @@ impl Default for MetricsMiddleware {
             duration_histogram: Arc::new(HistogramMetric::new()),
             connection_closes: AtomicUsize::new(0),
             connection_errors: AtomicUsize::new(0),
+            cors_origin_rejections: AtomicUsize::new(0),
+            cors_preflight_denials: AtomicUsize::new(0),
+            cors_route_disabled: AtomicUsize::new(0),
         }
     }
 }
@@ -275,6 +290,48 @@ impl MetricsMiddleware {
     /// Get the total number of connection errors
     pub fn connection_errors(&self) -> usize {
         self.connection_errors.load(Ordering::Relaxed)
+    }
+
+    /// Increment the CORS origin rejection counter (Prometheus: `brrtrouter_cors_origin_rejections_total`).
+    ///
+    /// Called from [`CorsMiddleware`](crate::middleware::CorsMiddleware) when a request has an
+    /// `Origin` that fails validation (`403` before the handler).
+    pub fn inc_cors_origin_rejection(&self) {
+        self.cors_origin_rejections.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Current total for `brrtrouter_cors_origin_rejections_total`.
+    #[must_use]
+    pub fn cors_origin_rejections(&self) -> usize {
+        self.cors_origin_rejections.load(Ordering::Relaxed)
+    }
+
+    /// Increment the CORS preflight denial counter (Prometheus: `brrtrouter_cors_preflight_denials_total`).
+    ///
+    /// Called when `OPTIONS` preflight is recognized but the requested method or header is not
+    /// permitted (`403` after the origin was accepted).
+    pub fn inc_cors_preflight_denial(&self) {
+        self.cors_preflight_denials.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Current total for `brrtrouter_cors_preflight_denials_total`.
+    #[must_use]
+    pub fn cors_preflight_denials(&self) -> usize {
+        self.cors_preflight_denials.load(Ordering::Relaxed)
+    }
+
+    /// Increment the CORS per-route disabled counter (Prometheus: `brrtrouter_cors_route_disabled_total`).
+    ///
+    /// Called when a request matches a route with CORS turned off (`x-cors: false`); the response
+    /// deliberately omits CORS headers (not a denial).
+    pub fn inc_cors_route_disabled(&self) {
+        self.cors_route_disabled.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Current total for `brrtrouter_cors_route_disabled_total`.
+    #[must_use]
+    pub fn cors_route_disabled(&self) -> usize {
+        self.cors_route_disabled.load(Ordering::Relaxed)
     }
 
     /// Get connection health ratio (successful requests vs connection issues)
@@ -412,6 +469,7 @@ impl MetricsMiddleware {
 /// - **Stack usage**: Coroutine stack size and peak usage
 /// - **Top-level requests**: Infrastructure endpoints (health, metrics, docs)
 /// - **Auth failures**: Failed authentication attempts
+/// - **CORS**: Origin rejections and preflight denials (when `CorsMiddleware` uses `with_metrics_sink`)
 ///
 /// # Performance
 ///

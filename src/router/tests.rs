@@ -10,7 +10,9 @@ fn create_route_meta(method: Method, path: &str, handler: &str) -> RouteMeta {
     use std::collections::HashMap;
     use std::path::PathBuf;
 
-    RouteMeta { x_service: None, x_brrtrouter_downstream_path: None,
+    RouteMeta {
+        x_service: None,
+        x_brrtrouter_downstream_path: None,
         method,
         path_pattern: Arc::from(path),
         handler_name: Arc::from(handler),

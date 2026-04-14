@@ -74,6 +74,7 @@ def run_docker_argv(argv: list[str] | None = None) -> None:
             sys.exit(1)
         image_name, hash_path, artifact_path = rest[0], Path(rest[1]), Path(rest[2])
         system = module = port = binary_name = None
+        dev_sync_only = False
         i = 3
         while i < len(rest):
             if rest[i] == "--system" and i + 1 < len(rest):
@@ -88,6 +89,9 @@ def run_docker_argv(argv: list[str] | None = None) -> None:
             elif rest[i] == "--binary-name" and i + 1 < len(rest):
                 binary_name = rest[i + 1]
                 i += 2
+            elif rest[i] == "--dev-sync-only":
+                dev_sync_only = True
+                i += 1
             else:
                 i += 1
         rc = run_build_image_simple(
@@ -99,6 +103,7 @@ def run_docker_argv(argv: list[str] | None = None) -> None:
             module=module,
             port=port,
             binary_name=binary_name,
+            dev_sync_only=dev_sync_only,
         )
         sys.exit(rc)
 

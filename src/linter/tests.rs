@@ -391,7 +391,12 @@ components:
         .iter()
         .filter(|i| i.kind == "query_enum_mismatch_item_schema")
         .collect();
-    assert_eq!(mismatch.len(), 1, "expected one parity error, got {:?}", issues);
+    assert_eq!(
+        mismatch.len(),
+        1,
+        "expected one parity error, got {:?}",
+        issues
+    );
     assert_eq!(mismatch[0].severity, LintSeverity::Error);
 }
 

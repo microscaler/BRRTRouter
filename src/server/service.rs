@@ -246,10 +246,7 @@ impl AppService {
     /// // All paths from OpenAPI spec are now pre-registered
     /// ```
     /// Append OpenMetrics text from another subsystem (e.g. database pool metrics).
-    pub fn set_extra_prometheus(
-        &mut self,
-        scrape: Option<Arc<dyn Fn() -> String + Send + Sync>>,
-    ) {
+    pub fn set_extra_prometheus(&mut self, scrape: Option<Arc<dyn Fn() -> String + Send + Sync>>) {
         self.extra_prometheus = scrape;
     }
 
@@ -526,6 +523,36 @@ pub fn metrics_endpoint(
         body,
         "brrtrouter_auth_failures_total {}",
         metrics.auth_failures()
+    );
+
+    body.push_str(
+        "# HELP brrtrouter_cors_origin_rejections_total CORS rejections: Origin not allowed (403)\n",
+    );
+    body.push_str("# TYPE brrtrouter_cors_origin_rejections_total counter\n");
+    let _ = writeln!(
+        body,
+        "brrtrouter_cors_origin_rejections_total {}",
+        metrics.cors_origin_rejections()
+    );
+
+    body.push_str(
+        "# HELP brrtrouter_cors_preflight_denials_total CORS preflight denied: method or header not allowed (403)\n",
+    );
+    body.push_str("# TYPE brrtrouter_cors_preflight_denials_total counter\n");
+    let _ = writeln!(
+        body,
+        "brrtrouter_cors_preflight_denials_total {}",
+        metrics.cors_preflight_denials()
+    );
+
+    body.push_str(
+        "# HELP brrtrouter_cors_route_disabled_total CORS: per-route policy disabled (x-cors false); no CORS headers\n",
+    );
+    body.push_str("# TYPE brrtrouter_cors_route_disabled_total counter\n");
+    let _ = writeln!(
+        body,
+        "brrtrouter_cors_route_disabled_total {}",
+        metrics.cors_route_disabled()
     );
 
     // Connection metrics

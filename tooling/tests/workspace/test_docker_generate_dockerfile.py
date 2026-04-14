@@ -31,12 +31,24 @@ class TestGenerateDockerfile:
         assert "auth" in text
         assert "idam" in text
 
-    def test_template_missing_returns_1(self, tmp_path: Path):
+    def test_uses_bundled_template_when_project_template_missing(self, tmp_path: Path):
         from brrtrouter_tooling.docker.generate_dockerfile import run
 
         (tmp_path / "docker" / "microservices").mkdir(parents=True)
-        # No template: run() catches FileNotFoundError and returns 1
-        assert run("x", "y", project_root=tmp_path) == 1
+        # No Dockerfile.template under project: falls back to bundled template
+        assert run("x", "y", project_root=tmp_path) == 0
+        out = tmp_path / "docker" / "microservices" / "Dockerfile.x_y"
+        assert out.exists()
+
+    def test_returns_1_when_no_template_in_project_or_bundle(self, tmp_path: Path, monkeypatch):
+        from importlib import import_module
+
+        gd = import_module("brrtrouter_tooling.docker.generate_dockerfile")
+
+        (tmp_path / "docker" / "microservices").mkdir(parents=True)
+        missing = tmp_path / "nowhere" / "Dockerfile.template"
+        monkeypatch.setattr(gd, "bundled_microservices_template", lambda: missing)
+        assert gd.run("x", "y", project_root=tmp_path) == 1
 
 
 class TestRun:

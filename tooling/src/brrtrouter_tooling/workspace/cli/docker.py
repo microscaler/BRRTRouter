@@ -100,6 +100,7 @@ def run_docker(args, project_root: Path) -> None:
                     dockerfile=temp_dockerfile,
                     kind_cluster_name=Hauliage_KIND_CLUSTER,
                     base_image_name=Hauliage_BASE_IMAGE,
+                    dev_sync_only=getattr(args, "dev_sync_only", False),
                 )
             finally:
                 temp_dockerfile.unlink(missing_ok=True)
@@ -114,6 +115,7 @@ def run_docker(args, project_root: Path) -> None:
                 dockerfile=dockerfile_path,
                 kind_cluster_name=Hauliage_KIND_CLUSTER,
                 base_image_name=Hauliage_BASE_IMAGE,
+                dev_sync_only=getattr(args, "dev_sync_only", False),
             )
         sys.exit(rc)
     if args.docker_cmd == "copy-multiarch":

@@ -2,8 +2,8 @@
 
 use brrtrouter::generator::FieldDef;
 use brrtrouter::generator::{
-    write_controller, write_handler, write_impl_controller_stub, write_impl_main_rs,
-    write_main_rs, write_registry_rs, ImplControllerStubParams, RegistryEntry,
+    write_controller, write_handler, write_impl_controller_stub, write_impl_main_rs, write_main_rs,
+    write_registry_rs, ImplControllerStubParams, RegistryEntry,
 };
 use brrtrouter::spec::{ParameterMeta, RouteMeta};
 use http::Method;
@@ -87,7 +87,9 @@ fn test_template_writers() {
     }];
     write_registry_rs(&src_dir, &entries).unwrap();
 
-    let route = RouteMeta { x_service: None, x_brrtrouter_downstream_path: None,
+    let route = RouteMeta {
+        x_service: None,
+        x_brrtrouter_downstream_path: None,
         method: Method::GET,
         path_pattern: "/test".into(),
         handler_name: "test".into(),

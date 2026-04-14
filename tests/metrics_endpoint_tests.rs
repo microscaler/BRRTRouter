@@ -157,6 +157,9 @@ fn test_metrics_endpoint() {
     assert!(body.contains("brrtrouter_coroutine_stack_used_bytes"));
     // With labeled counters, expect at least one labeled series incremented
     assert!(body.contains("brrtrouter_requests_total{"));
+    assert!(body.contains("brrtrouter_cors_origin_rejections_total"));
+    assert!(body.contains("brrtrouter_cors_preflight_denials_total"));
+    assert!(body.contains("brrtrouter_cors_route_disabled_total"));
 
     // Automatic cleanup!
 }
