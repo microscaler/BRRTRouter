@@ -18,6 +18,11 @@
 //! `Arc` used on the dispatcher so CORS denials increment Prometheus counters (`brrtrouter_cors_*`)
 //! exposed by [`metrics_endpoint`](crate::server::service::metrics_endpoint) on `GET /metrics`.
 //!
+//! # `Vary` merging
+//!
+//! Use [`merge_vary_field_value`](merge_vary_field_value) when combining CORS’s `Vary` value with
+//! other header names your response depends on (e.g. `Accept-Encoding`).
+//!
 //! # Documentation
 //!
 //! Deployment-focused notes (ingress/`Host`, RFC 7239 `Forwarded`, `X-Forwarded-*`, Private Network
@@ -28,9 +33,11 @@ mod builder;
 mod error;
 mod forwarded;
 mod route_config;
+mod vary_merge;
 
 pub use builder::CorsMiddlewareBuilder;
 pub use error::CorsConfigError;
+pub use vary_merge::merge_vary_field_value;
 pub use route_config::{
     build_route_cors_map, extract_route_cors_config, merge_route_policies_with_global_origins,
     RouteCorsConfig, RouteCorsPolicy,

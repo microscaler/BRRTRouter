@@ -1,14 +1,14 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, unsafe_code)]
 
-//! HTTP CORS + **global** OpenAPI security beyond `ApiKeyHeader` (Bearer, cookie API key).
-//! Complements `cors_http_conformance_tests.rs` (pet_store `examples/openapi.yaml`).
-//! See `docs/CORS_IMPLEMENTATION_AUDIT.md` §3 and §4.
+//! HTTP CORS + **global** OpenAPI security beyond single-scheme `ApiKeyHeader` (Bearer, cookie API
+//! key, OR ApiKey/Bearer). Complements `cors_http_conformance_tests.rs` (pet_store
+//! `examples/openapi.yaml`). See `docs/CORS_IMPLEMENTATION_AUDIT.md` §3 and §4.
 
 use brrtrouter::server::{HttpServer, ServerHandle};
 use brrtrouter::spec::SecurityScheme;
 use brrtrouter::{
     dispatcher::{Dispatcher, HandlerRequest, HandlerResponse, HeaderVec},
-    middleware::{CorsMiddleware, CorsMiddlewareBuilder, MetricsMiddleware, TracingMiddleware},
+    middleware::{CorsMiddlewareBuilder, MetricsMiddleware, TracingMiddleware},
     router::Router,
     server::AppService,
     BearerJwtProvider, SecurityProvider, SecurityRequest,
@@ -57,7 +57,7 @@ impl SecurityProvider for StaticCookieApiKeyProvider {
         req: &SecurityRequest,
     ) -> bool {
         match scheme {
-            SecurityScheme::ApiKey { name, location, .. } if location == "cookie" => req
+            SecurityScheme::ApiKey { name, location, .. } if location.as_str() == "cookie" => req
                 .get_cookie(name)
                 .map(|v| v == self.key)
                 .unwrap_or(false),
@@ -73,7 +73,7 @@ struct MinimalCorsFixture {
 }
 
 impl MinimalCorsFixture {
-    fn new(spec_rel: &str, cors: Arc<CorsMiddleware>, register_auth: impl FnOnce(&mut AppService)) -> Self {
+    fn new(spec_rel: &str, register_auth: impl FnOnce(&mut AppService)) -> Self {
         std::env::set_var("BRRTR_STACK_SIZE", "0x8000");
         let config = brrtrouter::runtime_config::RuntimeConfig::from_env();
         may::config().set_stack_size(config.stack_size);
@@ -85,6 +85,14 @@ impl MinimalCorsFixture {
         let mut dispatcher = Dispatcher::new();
         let metrics = Arc::new(MetricsMiddleware::new());
         dispatcher.add_middleware(metrics.clone());
+        let cors = Arc::new(
+            CorsMiddlewareBuilder::new()
+                .allowed_origins(&["https://client.example"])
+                .allowed_methods(&[Method::GET, Method::HEAD, Method::OPTIONS])
+                .build()
+                .unwrap()
+                .with_metrics_sink(metrics.clone()),
+        );
         dispatcher.add_middleware(cors);
         dispatcher.add_middleware(Arc::new(TracingMiddleware));
         unsafe {
@@ -138,21 +146,31 @@ impl Drop for MinimalCorsFixture {
     }
 }
 
-fn cors_for_client_origin() -> Arc<CorsMiddleware> {
-    Arc::new(
-        CorsMiddlewareBuilder::new()
-            .allowed_origins(&["https://client.example"])
-            .allowed_methods(&[Method::GET, Method::HEAD, Method::OPTIONS])
-            .build()
-            .unwrap(),
-    )
+struct StaticHeaderApiKeyProvider {
+    key: String,
+}
+
+impl SecurityProvider for StaticHeaderApiKeyProvider {
+    fn validate(
+        &self,
+        scheme: &SecurityScheme,
+        _scopes: &[String],
+        req: &SecurityRequest,
+    ) -> bool {
+        match scheme {
+            SecurityScheme::ApiKey { name, location, .. } if location.as_str() == "header" => req
+                .get_header(&name.to_ascii_lowercase())
+                .map(|v| v == self.key)
+                .unwrap_or(false),
+            _ => false,
+        }
+    }
 }
 
 #[test]
 fn http_cors_preflight_global_bearer_returns_401_without_authorization() {
     let f = MinimalCorsFixture::new(
         "tests/fixtures/cors_global_bearer.yaml",
-        cors_for_client_origin(),
         |service| {
             service.register_security_provider(
                 "BearerAuth",
@@ -180,7 +198,6 @@ fn http_cors_preflight_global_bearer_returns_200_with_valid_bearer() {
     let token = make_dummy_bearer_token("");
     let f = MinimalCorsFixture::new(
         "tests/fixtures/cors_global_bearer.yaml",
-        cors_for_client_origin(),
         |service| {
             service.register_security_provider(
                 "BearerAuth",
@@ -209,7 +226,6 @@ fn http_cors_preflight_global_bearer_returns_200_with_valid_bearer() {
 fn http_cors_preflight_global_cookie_api_key_returns_401_without_cookie() {
     let f = MinimalCorsFixture::new(
         "tests/fixtures/cors_global_apikey_cookie.yaml",
-        cors_for_client_origin(),
         |service| {
             service.register_security_provider(
                 "SessionCookie",
@@ -238,7 +254,6 @@ fn http_cors_preflight_global_cookie_api_key_returns_401_without_cookie() {
 fn http_cors_preflight_global_cookie_api_key_returns_200_with_session_cookie() {
     let f = MinimalCorsFixture::new(
         "tests/fixtures/cors_global_apikey_cookie.yaml",
-        cors_for_client_origin(),
         |service| {
             service.register_security_provider(
                 "SessionCookie",
@@ -267,4 +282,64 @@ fn http_cors_preflight_global_cookie_api_key_returns_200_with_session_cookie() {
         lower.contains("access-control-allow-origin: https://client.example"),
         "expected ACAO: {resp}"
     );
+}
+
+/// OpenAPI global `security` lists two requirements → **either** API key **or** Bearer satisfies.
+#[test]
+fn http_cors_preflight_security_or_succeeds_with_api_key_only() {
+    let f = MinimalCorsFixture::new(
+        "tests/fixtures/cors_security_or_apikey_bearer.yaml",
+        |service| {
+            service.register_security_provider(
+                "ApiKeyHeader",
+                Arc::new(StaticHeaderApiKeyProvider {
+                    key: "test123".into(),
+                }),
+            );
+            service.register_security_provider(
+                "BearerAuth",
+                Arc::new(BearerJwtProvider::new("sig")),
+            );
+        },
+    );
+    let port = f.addr().port();
+    let req = format!(
+        "OPTIONS /echo HTTP/1.1\r\n\
+         Host: 127.0.0.1:{port}\r\n\
+         Origin: https://client.example\r\n\
+         Access-Control-Request-Method: GET\r\n\
+         X-API-Key: test123\r\n\r\n"
+    );
+    let resp = send_request(&f.addr(), &req);
+    assert_eq!(parse_response_status(&resp), 200, "OR security with API key: {resp}");
+}
+
+#[test]
+fn http_cors_preflight_security_or_succeeds_with_bearer_only() {
+    let token = make_dummy_bearer_token("");
+    let f = MinimalCorsFixture::new(
+        "tests/fixtures/cors_security_or_apikey_bearer.yaml",
+        |service| {
+            service.register_security_provider(
+                "ApiKeyHeader",
+                Arc::new(StaticHeaderApiKeyProvider {
+                    key: "test123".into(),
+                }),
+            );
+            service.register_security_provider(
+                "BearerAuth",
+                Arc::new(BearerJwtProvider::new("sig")),
+            );
+        },
+    );
+    let port = f.addr().port();
+    let req = format!(
+        "OPTIONS /echo HTTP/1.1\r\n\
+         Host: 127.0.0.1:{port}\r\n\
+         Origin: https://client.example\r\n\
+         Access-Control-Request-Method: GET\r\n\
+         Authorization: Bearer {token}\r\n\r\n"
+    );
+    let resp = send_request(&f.addr(), &req);
+    assert_eq!(parse_response_status(&resp), 200, "OR security with Bearer: {resp}");
 }

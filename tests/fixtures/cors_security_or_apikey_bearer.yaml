@@ -1,0 +1,29 @@
+# Global security: OpenAPI OR — satisfy ApiKeyHeader **or** BearerAuth (tests/cors_http_security_schemes_tests.rs).
+openapi: 3.1.0
+info:
+  title: CORS security OR ApiKey Bearer
+  version: "1.0"
+paths:
+  /echo:
+    get:
+      operationId: echo_get
+      responses:
+        "200":
+          description: OK
+    options:
+      operationId: echo_options
+      responses:
+        "200":
+          description: OK
+components:
+  securitySchemes:
+    ApiKeyHeader:
+      type: apiKey
+      in: header
+      name: X-API-Key
+    BearerAuth:
+      type: http
+      scheme: bearer
+security:
+  - ApiKeyHeader: []
+  - BearerAuth: []

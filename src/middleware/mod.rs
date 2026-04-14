@@ -99,8 +99,8 @@ pub use auth::AuthMiddleware;
 pub use core::Middleware;
 pub use cors::{
     build_route_cors_map, extract_route_cors_config, merge_route_policies_with_global_origins,
-    CorsConfigError, CorsMiddleware, CorsMiddlewareBuilder, OriginValidation, RouteCorsConfig,
-    RouteCorsPolicy,
+    merge_vary_field_value, CorsConfigError, CorsMiddleware, CorsMiddlewareBuilder,
+    OriginValidation, RouteCorsConfig, RouteCorsPolicy,
 };
 pub use memory::MemoryMiddleware;
 pub use metrics::MetricsMiddleware;

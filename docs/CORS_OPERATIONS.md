@@ -6,7 +6,7 @@ Canonical architecture and gap analysis: [`CORS_IMPLEMENTATION_AUDIT.md`](./CORS
 
 - **Global policy:** `CorsMiddlewareBuilder` (origins, methods, headers, credentials, `maxAge`, exposed headers).
 - **Per-route overrides:** OpenAPI `x-cors` — `inherit`, `false` (disable CORS for that operation), or an object (`allowedMethods`, `allowedHeaders`, `allowCredentials`, `exposeHeaders`, `maxAge`). **Origins are not** in OpenAPI; set them in deployment config (e.g. `config.yaml`) and merge via `merge_route_policies_with_global_origins` or `CorsMiddlewareBuilder::build_with_routes`.
-- **Reference app:** `examples/pet_store` wires YAML + OpenAPI and registers **`MetricsMiddleware`** on the dispatcher plus **`AppService::set_metrics_middleware`**. **`brrtrouter_cors_*` Prometheus counters** still require **`CorsMiddleware::with_metrics_sink`** chained with the **same** `Arc<MetricsMiddleware>` — add that in generated or hand-written wiring when you need CORS metrics (see [Prometheus metrics](#prometheus-metrics)).
+- **Reference app:** `examples/pet_store` (from `templates/main.rs.txt`) registers **`MetricsMiddleware`**, **`AppService::set_metrics_middleware`**, and chains **`CorsMiddleware::with_metrics_sink(metrics.clone())`** so **`brrtrouter_cors_*`** counters populate on `/metrics`.
 
 ## Middleware order and OPTIONS preflight
 
@@ -31,6 +31,19 @@ Same-origin detection compares the request **`Origin`** to the **effective serve
 
 **Runbook snippet (what to write down):** (1) Which component terminates TLS and injects `Forwarded` / `X-Forwarded-*`. (2) Whether clients can reach the app directly (if yes, `trust_forwarded_host` is usually wrong). (3) Which header names your ingress uses (`Forwarded` vs legacy `X-Forwarded-*`). (4) Who owns updating this when the edge changes.
 
+**nginx (illustrative)** — set upstream `Host` and forward client proto; your app then sees consistent `Host` / `X-Forwarded-*` (enable `trust_forwarded_host` only behind this hop):
+
+```nginx
+location /api/ {
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_pass http://brrtrouter_upstream;
+}
+```
+
+**Envoy** — use `xff_num_trusted_hops` / `use_remote_address` and `RouteConfiguration` `request_headers_to_add` for `Forwarded` or `X-Forwarded-*` per your platform docs; document the effective hop count in your runbook.
+
 ## `Vary`
 
 Successful CORS responses set a **`Vary`** header for cache correctness. The framework sets:
@@ -40,7 +53,19 @@ Successful CORS responses set a **`Vary`** header for cache correctness. The fra
 
 ### Vary merging
 
-BRRTRouter **replaces** the `Vary` header for CORS (it does not parse or append to an existing comma-separated list from upstream). If your handler or compression middleware also needs **`Accept-Encoding`**, **`Accept-Language`**, **`Authorization`**, or other tokens, **merge** those into the final response `Vary` value in application code (or your gateway) so caches see every axis the response depends on.
+BRRTRouter **replaces** the `Vary` header for CORS (it does not parse or append to an existing comma-separated list from upstream). If your handler or compression middleware also needs **`Accept-Encoding`**, **`Accept-Language`**, **`Authorization`**, or other tokens, build the final value with **`brrtrouter::middleware::merge_vary_field_value`**, which merges a comma-separated existing `Vary` with extra field-name tokens (dedupes ASCII case-insensitively; if any token is `*`, the result is `*` per RFC 7231).
+
+```rust
+use brrtrouter::middleware::merge_vary_field_value;
+
+let final_vary = merge_vary_field_value(
+    resp.get_header("vary"),
+    &["Accept-Encoding", "Accept-Language"],
+);
+// Set `final_vary` on the outgoing response (exact API depends on your handler).
+```
+
+If your gateway normalizes `Vary`, you can call the same helper there instead of in Rust.
 
 ## Prometheus metrics
 
@@ -59,9 +84,20 @@ If no sink is linked, CORS behavior is unchanged; counters stay at zero.
 Use this checklist when wiring a generated or hand-rolled service for production:
 
 1. **Ingress / forwarded headers** — Document who sets **`Host`**, **`Forwarded`**, and **`X-Forwarded-*`** at your edge (Envoy, nginx, cloud LB). Enable **`trust_forwarded_host`** on `CorsMiddleware` **only** on a **trusted path** (TLS at the edge, forwarded metadata from the proxy, not unvalidated client input). See [Reverse proxies and `Host`](#reverse-proxies-and-host-envoy--nginx) and the runbook snippet there.
-2. **Metrics** — Call **`CorsMiddleware::with_metrics_sink`** with the **same** `Arc<MetricsMiddleware>` instance registered on the `Dispatcher` so `/metrics` exposes `brrtrouter_cors_*` counters. **`AppService::set_metrics_middleware` alone does not attach CORS to those counters** — the CORS middleware must use `with_metrics_sink`. Without linking, behavior is correct but CORS counters stay at zero.
+2. **Metrics** — Call **`CorsMiddleware::with_metrics_sink`** with the **same** `Arc<MetricsMiddleware>` instance registered on the `Dispatcher` so `/metrics` exposes `brrtrouter_cors_*` counters. **`AppService::set_metrics_middleware` alone does not attach CORS to those counters** — the CORS middleware must use `with_metrics_sink`. Without linking, behavior is correct but CORS counters stay at zero. The **`examples/pet_store`** template wires both.
 3. **Tracing** — Run a **`tracing`** subscriber (JSON or pretty) in the process so CORS-related `warn!` / `debug!` lines are available in your log pipeline.
-4. **Optional browser E2E** — In-repo tests use **raw HTTP** (and exercise security before CORS). They do **not** exercise browser cookie jars, redirects, or `credentials: 'include'` the way a real browser does. If your gate needs that, add one of: **Playwright** / **WebDriver** / **Cypress** hitting a deployed or CI URL; or a **manual** check (DevTools → Network → confirm preflight + response headers). Not required for every team.
+4. **Optional browser verification** — In-repo tests use **raw TCP HTTP**. For a **real browser** check (cookie jar, `credentials: 'include'`, redirect chains), either:
+   - **Automated:** Playwright / WebDriver / Cypress against a staging URL; assert `OPTIONS` and follow-up requests show expected `Access-Control-*` and auth headers.
+   - **Manual:** Open DevTools → Network → trigger the flow from your SPA; confirm preflight returns 2xx with correct CORS headers, then the actual request.
+   - **Console snippet (same-origin API on another port still cross-origin):**
+
+```javascript
+fetch("https://api.example.com/echo", {
+  credentials: "include",
+  headers: { "X-Custom": "1" },
+}).then((r) => console.log(r.status));
+```
+
 5. **OAuth / third-party IdP** — If browsers complete redirects or PKCE outside your API, validate flows in staging; the framework tests do not replace IdP integration testing.
 
 ## Credentials and cookies

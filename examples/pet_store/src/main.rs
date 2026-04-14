@@ -290,12 +290,14 @@ fn main() -> io::Result<()> {
                     };
                     merged_policies.insert(handler_name, merged_policy);
                 }
-                // Create CORS middleware with all policies pre-processed at startup
+                // Create CORS middleware with all policies pre-processed at startup; link metrics
+                // so /metrics exposes brrtrouter_cors_* counters (same Arc as dispatcher).
                 Some(std::sync::Arc::new(
                     brrtrouter::middleware::CorsMiddleware::with_route_policies(
                         global_cors,
                         merged_policies,
-                    ),
+                    )
+                    .with_metrics_sink(metrics.clone()),
                 ))
             }
             Err(e) => {
