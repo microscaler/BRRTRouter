@@ -3,6 +3,7 @@
 //! HTTP-level CORS conformance: forwarded `Host`, Private Network Access, IDN (punycode) bytes,
 //! and release-gate scenarios from `docs/CORS_IMPLEMENTATION_AUDIT.md` §3 (OpenAPI global
 //! `ApiKeyHeader` security runs **before** dispatch; preflight must include the key when required).
+//! Global **Bearer** and **cookie** API key: `tests/cors_http_security_schemes_tests.rs`.
 
 use brrtrouter::server::{HttpServer, ServerHandle};
 use brrtrouter::spec::SecurityScheme;

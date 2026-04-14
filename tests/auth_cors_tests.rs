@@ -1,8 +1,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 //! Unit-level `AuthMiddleware` + `CorsMiddleware` behavior. For OpenAPI global security + raw TCP
-//! HTTP (preflight with `X-API-Key`, `Access-Control-Allow-Credentials`), see
-//! `tests/cors_http_conformance_tests.rs` and `docs/CORS_IMPLEMENTATION_AUDIT.md` §3.
+//! HTTP, see `tests/cors_http_conformance_tests.rs` (API key), `tests/cors_http_security_schemes_tests.rs`
+//! (Bearer / cookie), and `docs/CORS_IMPLEMENTATION_AUDIT.md` §3.
 
 use brrtrouter::dispatcher::{HandlerRequest, HandlerResponse, HeaderVec};
 use brrtrouter::ids::RequestId;
