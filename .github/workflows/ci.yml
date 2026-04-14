@@ -27,6 +27,7 @@ jobs:
           python3 -m venv tooling/.venv
           tooling/.venv/bin/pip install --upgrade pip
           tooling/.venv/bin/pip install -e ./tooling[dev]
+          tooling/.venv/bin/ruff --version
 
       - name: Run ruff check
         run: |

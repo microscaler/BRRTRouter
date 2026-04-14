@@ -17,7 +17,8 @@ dependencies = [
 dev = [
     "pytest>=9.0.2",
     "pytest-cov>=7.1.0",
-    "ruff>=0.14.14",
+    # Pinned so local venv, pre-commit (tooling/.venv/bin/ruff), and CI stay aligned.
+    "ruff==0.15.9",
     "pre-commit>=4.5.1",
 ]
 mcp = [
