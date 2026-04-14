@@ -20,8 +20,9 @@
 //!
 //! # `Vary` merging
 //!
-//! Use [`merge_vary_field_value`](merge_vary_field_value) when combining CORS’s `Vary` value with
-//! other header names your response depends on (e.g. `Accept-Encoding`).
+//! [`CorsMiddleware::after`](CorsMiddleware::after) **merges** any existing handler `Vary` with CORS
+//! tokens via [`merge_vary_field_value`](merge_vary_field_value). For gateways or non-CORS code paths,
+//! call [`merge_vary_field_value`](merge_vary_field_value) yourself when combining values manually.
 //!
 //! # Documentation
 //!
@@ -105,11 +106,12 @@ fn effective_server_authority(req: &HandlerRequest, trust_forwarded: bool) -> Op
     req.get_header("host").map(Cow::Borrowed)
 }
 
-fn cors_vary_value(allow_private_network: bool) -> &'static str {
+/// Tokens CORS adds to `Vary` (stable order for [`vary_merge::merge_vary_field_value`]).
+fn cors_vary_tokens(allow_private_network: bool) -> &'static [&'static str] {
     if allow_private_network {
-        "Origin, Access-Control-Request-Private-Network"
+        &["Origin", "Access-Control-Request-Private-Network"]
     } else {
-        "Origin"
+        &["Origin"]
     }
 }
 
@@ -921,11 +923,12 @@ impl CorsMiddleware {
             ));
         }
 
-        // Vary for caches (Origin; PNA preflight token when enabled)
-        headers.push((
-            std::sync::Arc::from("vary"),
-            cors_vary_value(self.allow_private_network_access).to_string(),
-        ));
+        // Vary for caches — merge with any prior tokens (preflight responses are usually fresh)
+        let vary_merged = vary_merge::merge_vary_field_value(
+            None,
+            cors_vary_tokens(self.allow_private_network_access),
+        );
+        headers.push((std::sync::Arc::from("vary"), vary_merged));
 
         // Empty JSON object — not `null` — so OpenAPI response validation (`type: object`) passes
         // when middleware short-circuits OPTIONS (e.g. `options_user` documents `200` + JSON schema).
@@ -1238,10 +1241,11 @@ impl Middleware for CorsMiddleware {
             );
         }
 
-        res.set_header(
-            "vary",
-            cors_vary_value(self.allow_private_network_access).to_string(),
+        let merged = vary_merge::merge_vary_field_value(
+            res.get_header("vary"),
+            cors_vary_tokens(self.allow_private_network_access),
         );
+        res.set_header("vary", merged);
     }
 }
 

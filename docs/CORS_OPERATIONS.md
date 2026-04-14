@@ -53,7 +53,9 @@ Successful CORS responses set a **`Vary`** header for cache correctness. The fra
 
 ### Vary merging
 
-BRRTRouter **replaces** the `Vary` header for CORS (it does not parse or append to an existing comma-separated list from upstream). If your handler or compression middleware also needs **`Accept-Encoding`**, **`Accept-Language`**, **`Authorization`**, or other tokens, build the final value with **`brrtrouter::middleware::merge_vary_field_value`**, which merges a comma-separated existing `Vary` with extra field-name tokens (dedupes ASCII case-insensitively; if any token is `*`, the result is `*` per RFC 7231).
+**In Rust:** set **`Vary`** on the handler `HandlerResponse` for any non-CORS axis **before** middleware `after` hooks run (e.g. `Accept-Encoding` from compression). **`CorsMiddleware::after`** then **merges** that value with CORS/PNA tokens via **`merge_vary_field_value`**, so you normally do **not** need to merge CORS tokens by hand for responses that pass through `CorsMiddleware`.
+
+For gateways or code outside this stack, build the final value with **`brrtrouter::middleware::merge_vary_field_value`**, which merges a comma-separated existing `Vary` with extra field-name tokens (dedupes ASCII case-insensitively; if any token is `*`, the result is `*` per RFC 7231).
 
 ```rust
 use brrtrouter::middleware::merge_vary_field_value;

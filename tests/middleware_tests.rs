@@ -937,6 +937,27 @@ fn test_cors_builder_with_credentials() {
 }
 
 #[test]
+fn test_cors_after_merges_existing_vary_with_origin() {
+    use brrtrouter::middleware::CorsMiddlewareBuilder;
+    use http::Method;
+
+    let cors = CorsMiddlewareBuilder::new()
+        .allowed_origins(&["https://example.com"])
+        .allowed_methods(&[Method::GET])
+        .build()
+        .expect("Valid CORS configuration");
+
+    let mut headers = HeaderVec::new();
+    headers.push((Arc::from("origin"), "https://example.com".to_string()));
+    let req = create_test_request(Method::GET, "/", headers);
+    let mut resp = create_test_response(200);
+    resp.set_header("vary", "Accept-Encoding".to_string());
+
+    cors.after(&req, &mut resp, Duration::from_millis(0));
+    assert_eq!(resp.get_header("vary"), Some("Accept-Encoding, Origin"));
+}
+
+#[test]
 fn test_cors_preflight_includes_credentials_when_enabled() {
     use brrtrouter::middleware::CorsMiddlewareBuilder;
     use http::Method;

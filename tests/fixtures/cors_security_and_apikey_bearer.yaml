@@ -1,0 +1,29 @@
+# Global security: one requirement with two schemes → **both** API key and Bearer required (AND).
+openapi: 3.1.0
+info:
+  title: CORS security AND ApiKey Bearer
+  version: "1.0"
+paths:
+  /echo:
+    get:
+      operationId: echo_get
+      responses:
+        "200":
+          description: OK
+    options:
+      operationId: echo_options
+      responses:
+        "200":
+          description: OK
+components:
+  securitySchemes:
+    ApiKeyHeader:
+      type: apiKey
+      in: header
+      name: X-API-Key
+    BearerAuth:
+      type: http
+      scheme: bearer
+security:
+  - ApiKeyHeader: []
+    BearerAuth: []

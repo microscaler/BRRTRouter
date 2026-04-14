@@ -64,7 +64,8 @@
 //! - **[`router`]** - Path matching and route resolution using regex-based matchers
 //! - **[`dispatcher`]** - Coroutine-based request handler dispatch
 //! - **[`server`]** - HTTP server built on `may_minihttp` with request/response types
-//! - **[`middleware`]** - Pluggable middleware (metrics, CORS, authentication, tracing)
+//! - **[`middleware`]** - Pluggable middleware (metrics, CORS, authentication, tracing); for
+//!   combining handler `Vary` with CORS tokens see [`merge_vary_field_value`](middleware::merge_vary_field_value)
 //! - **[`security`]** - Security provider implementations (API keys, JWT, OAuth2)
 //! - **[`generator`]** - Code generator that creates example projects from OpenAPI specs
 //! - **[`typed`]** - Type-safe request/response handler traits

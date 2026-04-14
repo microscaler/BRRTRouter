@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, unsafe_code)]
 
 //! HTTP CORS + **global** OpenAPI security beyond single-scheme `ApiKeyHeader` (Bearer, cookie API
-//! key, OR ApiKey/Bearer). Complements `cors_http_conformance_tests.rs` (pet_store
+//! key, OR ApiKey/Bearer, AND ApiKey+Bearer). Complements `cors_http_conformance_tests.rs` (pet_store
 //! `examples/openapi.yaml`). See `docs/CORS_IMPLEMENTATION_AUDIT.md` §3 and §4.
 
 use brrtrouter::server::{HttpServer, ServerHandle};
@@ -342,4 +342,107 @@ fn http_cors_preflight_security_or_succeeds_with_bearer_only() {
     );
     let resp = send_request(&f.addr(), &req);
     assert_eq!(parse_response_status(&resp), 200, "OR security with Bearer: {resp}");
+}
+
+/// OpenAPI: one security requirement with **two** schemes → **both** must pass (AND).
+#[test]
+fn http_cors_preflight_security_and_fails_with_api_key_only() {
+    let f = MinimalCorsFixture::new(
+        "tests/fixtures/cors_security_and_apikey_bearer.yaml",
+        |service| {
+            service.register_security_provider(
+                "ApiKeyHeader",
+                Arc::new(StaticHeaderApiKeyProvider {
+                    key: "test123".into(),
+                }),
+            );
+            service.register_security_provider(
+                "BearerAuth",
+                Arc::new(BearerJwtProvider::new("sig")),
+            );
+        },
+    );
+    let port = f.addr().port();
+    let req = format!(
+        "OPTIONS /echo HTTP/1.1\r\n\
+         Host: 127.0.0.1:{port}\r\n\
+         Origin: https://client.example\r\n\
+         Access-Control-Request-Method: GET\r\n\
+         X-API-Key: test123\r\n\r\n"
+    );
+    let resp = send_request(&f.addr(), &req);
+    assert_eq!(
+        parse_response_status(&resp),
+        401,
+        "AND security: API key alone must not authorize: {resp}"
+    );
+}
+
+#[test]
+fn http_cors_preflight_security_and_fails_with_bearer_only() {
+    let token = make_dummy_bearer_token("");
+    let f = MinimalCorsFixture::new(
+        "tests/fixtures/cors_security_and_apikey_bearer.yaml",
+        |service| {
+            service.register_security_provider(
+                "ApiKeyHeader",
+                Arc::new(StaticHeaderApiKeyProvider {
+                    key: "test123".into(),
+                }),
+            );
+            service.register_security_provider(
+                "BearerAuth",
+                Arc::new(BearerJwtProvider::new("sig")),
+            );
+        },
+    );
+    let port = f.addr().port();
+    let req = format!(
+        "OPTIONS /echo HTTP/1.1\r\n\
+         Host: 127.0.0.1:{port}\r\n\
+         Origin: https://client.example\r\n\
+         Access-Control-Request-Method: GET\r\n\
+         Authorization: Bearer {token}\r\n\r\n"
+    );
+    let resp = send_request(&f.addr(), &req);
+    assert_eq!(
+        parse_response_status(&resp),
+        401,
+        "AND security: Bearer alone must not authorize: {resp}"
+    );
+}
+
+#[test]
+fn http_cors_preflight_security_and_succeeds_with_both_credentials() {
+    let token = make_dummy_bearer_token("");
+    let f = MinimalCorsFixture::new(
+        "tests/fixtures/cors_security_and_apikey_bearer.yaml",
+        |service| {
+            service.register_security_provider(
+                "ApiKeyHeader",
+                Arc::new(StaticHeaderApiKeyProvider {
+                    key: "test123".into(),
+                }),
+            );
+            service.register_security_provider(
+                "BearerAuth",
+                Arc::new(BearerJwtProvider::new("sig")),
+            );
+        },
+    );
+    let port = f.addr().port();
+    let req = format!(
+        "OPTIONS /echo HTTP/1.1\r\n\
+         Host: 127.0.0.1:{port}\r\n\
+         Origin: https://client.example\r\n\
+         Access-Control-Request-Method: GET\r\n\
+         X-API-Key: test123\r\n\
+         Authorization: Bearer {token}\r\n\r\n"
+    );
+    let resp = send_request(&f.addr(), &req);
+    assert_eq!(
+        parse_response_status(&resp),
+        200,
+        "AND security: both API key and Bearer: {resp}"
+    );
 }
