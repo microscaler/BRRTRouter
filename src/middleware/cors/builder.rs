@@ -78,7 +78,7 @@ impl CorsMiddlewareBuilder {
         }
     }
 
-    /// Trust `X-Forwarded-Host` / `X-Forwarded-Port` for same-origin detection (Envoy, nginx).
+    /// Trust RFC 7239 `Forwarded` and/or `X-Forwarded-Host` / `X-Forwarded-Port` for same-origin detection.
     ///
     /// See [`CorsMiddleware::with_trust_forwarded_host`].
     #[must_use]

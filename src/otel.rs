@@ -821,9 +821,9 @@ mod tests {
     struct TestCallsite;
     impl tracing::callsite::Callsite for TestCallsite {
         fn set_interest(&self, _interest: tracing::subscriber::Interest) {}
+        // Test-only stub: `metadata()` is never invoked in these tests.
+        #[allow(clippy::panic)]
         fn metadata(&self) -> &tracing::Metadata<'_> {
-            // This is a test-only implementation - metadata() is never called in tests
-            #[allow(clippy::panic)] // Test-only code: this method is never called
             panic!("not used in tests")
         }
     }

@@ -168,6 +168,39 @@ fn http_cors_trusted_forwarded_host_treats_as_same_origin() {
 }
 
 #[test]
+fn http_cors_forwarded_rfc7239_same_origin() {
+    let cors = Arc::new(
+        CorsMiddlewareBuilder::new()
+            .allowed_origins(&["https://api.example.com"])
+            .allowed_methods(&[
+                Method::GET,
+                Method::POST,
+                Method::PUT,
+                Method::DELETE,
+                Method::OPTIONS,
+            ])
+            .trust_forwarded_host(true)
+            .build()
+            .unwrap(),
+    );
+    let f = CorsHttpFixture::new(cors);
+    let port = f.addr().port();
+    let req = format!(
+        "GET /pets HTTP/1.1\r\n\
+         Host: 127.0.0.1:{port}\r\n\
+         Forwarded: proto=https;host=api.example.com\r\n\
+         Origin: https://api.example.com\r\n\
+         X-API-Key: test123\r\n\r\n"
+    );
+    let resp = send_request(&f.addr(), &req);
+    let (_status, body) = parse_response_parts(&resp);
+    assert!(
+        !body.to_ascii_lowercase().contains("access-control-allow-origin:"),
+        "same-origin with RFC 7239 Forwarded should not add ACAO: {body}"
+    );
+}
+
+#[test]
 fn http_cors_preflight_private_network_access_header() {
     let cors = Arc::new(
         CorsMiddlewareBuilder::new()

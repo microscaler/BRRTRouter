@@ -20,12 +20,13 @@
 //!
 //! # Documentation
 //!
-//! Deployment-focused notes (ingress/`Host`, trusted `X-Forwarded-*`, Private Network Access, `Vary`,
-//! middleware ordering) live in `docs/CORS_OPERATIONS.md`. The architectural audit is
+//! Deployment-focused notes (ingress/`Host`, RFC 7239 `Forwarded`, `X-Forwarded-*`, Private Network
+//! Access, `Vary`, middleware ordering) live in `docs/CORS_OPERATIONS.md`. The architectural audit is
 //! `docs/CORS_IMPLEMENTATION_AUDIT.md`.
 
 mod builder;
 mod error;
+mod forwarded;
 mod route_config;
 
 pub use builder::CorsMiddlewareBuilder;
@@ -65,10 +66,20 @@ fn host_has_explicit_port(host: &str) -> bool {
 /// Effective `Host` authority (`host[:port]`) for same-origin checks.
 ///
 /// When [`CorsMiddleware`] is configured with [`CorsMiddleware::with_trust_forwarded_host`],
-/// uses `X-Forwarded-Host` and optional `X-Forwarded-Port` if the request is from a trusted edge
-/// (configure only when proxies strip or validate these headers).
+/// uses (in order) RFC 7239 **`Forwarded`** (`host` / `proto`), then **`X-Forwarded-Host`** and
+/// optional **`X-Forwarded-Port`**, when the request is from a trusted edge (configure only when
+/// proxies strip or validate these headers).
 fn effective_server_authority(req: &HandlerRequest, trust_forwarded: bool) -> Option<Cow<'_, str>> {
     if trust_forwarded {
+        let forwarded_vals: Vec<&str> = req
+            .headers
+            .iter()
+            .filter(|(k, _)| k.eq_ignore_ascii_case("forwarded"))
+            .map(|(_, v)| v.as_str())
+            .collect();
+        if let Some(auth) = forwarded::authority_from_forwarded_field_values(&forwarded_vals) {
+            return Some(Cow::Owned(auth));
+        }
         if let Some(fh_raw) = req.get_header("x-forwarded-host") {
             let host = first_forwarded_token(fh_raw);
             if !host.is_empty() {
@@ -244,8 +255,9 @@ impl CorsMiddleware {
         self
     }
 
-    /// When `true`, same-origin detection uses [`effective_server_authority`] so deployments behind
-    /// Envoy/nginx can match browser `Origin` to `X-Forwarded-Host` (and optional `X-Forwarded-Port`).
+    /// When `true`, same-origin detection uses [`effective_server_authority`]: RFC 7239 **`Forwarded`**
+    /// (`host` / `proto`), then **`X-Forwarded-Host`** / **`X-Forwarded-Port`**, so Envoy/nginx can
+    /// match browser `Origin` to the public authority.
     ///
     /// **Security:** enable only when your edge overwrites or strips these headers from untrusted clients.
     #[must_use]
