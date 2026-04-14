@@ -1,6 +1,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, unsafe_code)]
 
-//! HTTP-level CORS conformance: forwarded `Host`, Private Network Access, IDN (punycode) bytes.
+//! HTTP-level CORS conformance: forwarded `Host`, Private Network Access, IDN (punycode) bytes,
+//! and release-gate scenarios from `docs/CORS_IMPLEMENTATION_AUDIT.md` §3 (OpenAPI global
+//! `ApiKeyHeader` security runs **before** dispatch; preflight must include the key when required).
 
 use brrtrouter::server::{HttpServer, ServerHandle};
 use brrtrouter::spec::SecurityScheme;
@@ -255,6 +257,94 @@ fn http_cors_get_cross_origin_includes_aca_private_network_when_enabled() {
         body.contains("access-control-allow-private-network: true")
             || body.contains("Access-Control-Allow-Private-Network: true"),
         "expected ACA-PN on actual response when enabled: {body}"
+    );
+}
+
+/// Preflight without credentials: security rejects before CORS short-circuit (401).
+#[test]
+fn http_cors_preflight_returns_401_without_api_key() {
+    let cors = Arc::new(
+        CorsMiddlewareBuilder::new()
+            .allowed_origins(&["https://client.example"])
+            .allowed_methods(&[Method::GET, Method::HEAD, Method::OPTIONS])
+            .build()
+            .unwrap(),
+    );
+    let f = CorsHttpFixture::new(cors);
+    let port = f.addr().port();
+    let req = format!(
+        "OPTIONS /users/1 HTTP/1.1\r\n\
+         Host: 127.0.0.1:{port}\r\n\
+         Origin: https://client.example\r\n\
+         Access-Control-Request-Method: GET\r\n\r\n"
+    );
+    let resp = send_request(&f.addr(), &req);
+    let (status, body) = parse_response_parts(&resp);
+    assert_eq!(
+        status, 401,
+        "preflight without API key must fail auth first: {body}"
+    );
+}
+
+/// Valid API key on preflight: 200 with CORS success headers (`docs/CORS_IMPLEMENTATION_AUDIT.md` §3).
+#[test]
+fn http_cors_preflight_with_api_key_returns_200_and_acao() {
+    let cors = Arc::new(
+        CorsMiddlewareBuilder::new()
+            .allowed_origins(&["https://client.example"])
+            .allowed_methods(&[Method::GET, Method::HEAD, Method::OPTIONS])
+            .build()
+            .unwrap(),
+    );
+    let f = CorsHttpFixture::new(cors);
+    let port = f.addr().port();
+    let req = format!(
+        "OPTIONS /users/1 HTTP/1.1\r\n\
+         Host: 127.0.0.1:{port}\r\n\
+         Origin: https://client.example\r\n\
+         Access-Control-Request-Method: GET\r\n\
+         X-API-Key: test123\r\n\r\n"
+    );
+    let resp = send_request(&f.addr(), &req);
+    let (status, body) = parse_response_parts(&resp);
+    assert_eq!(status, 200, "preflight with API key: {body}");
+    let lower = body.to_ascii_lowercase();
+    assert!(
+        lower.contains("access-control-allow-origin: https://client.example"),
+        "expected reflected ACAO: {body}"
+    );
+}
+
+/// HTTP-level `Access-Control-Allow-Credentials` when enabled (non-wildcard origin + allowlist).
+#[test]
+fn http_cors_get_with_allow_credentials_includes_acac_and_reflected_origin() {
+    let origin = "https://client.example";
+    let cors = Arc::new(
+        CorsMiddlewareBuilder::new()
+            .allowed_origins(&[origin])
+            .allowed_methods(&[Method::GET, Method::OPTIONS])
+            .allow_credentials(true)
+            .build()
+            .unwrap(),
+    );
+    let f = CorsHttpFixture::new(cors);
+    let port = f.addr().port();
+    let req = format!(
+        "GET /pets HTTP/1.1\r\n\
+         Host: 127.0.0.1:{port}\r\n\
+         Origin: {origin}\r\n\
+         X-API-Key: test123\r\n\r\n"
+    );
+    let resp = send_request(&f.addr(), &req);
+    let (_status, body) = parse_response_parts(&resp);
+    let lower = body.to_ascii_lowercase();
+    assert!(
+        lower.contains(&format!("access-control-allow-origin: {origin}")),
+        "expected reflected origin with credentials mode: {body}"
+    );
+    assert!(
+        lower.contains("access-control-allow-credentials: true"),
+        "expected ACAC when credentials enabled: {body}"
     );
 }
 
