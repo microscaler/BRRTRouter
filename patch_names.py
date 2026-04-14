@@ -6,9 +6,9 @@ with open("src/typed/core.rs", "r") as f:
 
 # For spawn_typed_with_stack_size_and_name
 content = re.sub(
-    r'(let spawn_result = may::coroutine::Builder::new\(\)\s*\n\s*\.stack_size\([^)]+\))',
-    r'\1\n        .name(effective_name.to_string())',
-    content
+    r"(let spawn_result = may::coroutine::Builder::new\(\)\s*\n\s*\.stack_size\([^)]+\))",
+    r"\1\n        .name(effective_name.to_string())",
+    content,
 )
 
 with open("src/typed/core.rs", "w") as f:
@@ -20,9 +20,9 @@ with open("src/dispatcher/core.rs", "r") as f:
 
 # For register_handler
 content = re.sub(
-    r'(let spawn_result = may::coroutine::Builder::new\(\)\s*\n\s*\.stack_size\([^)]+\))',
-    r'\1\n        .name(effective_name.to_string())',
-    content
+    r"(let spawn_result = may::coroutine::Builder::new\(\)\s*\n\s*\.stack_size\([^)]+\))",
+    r"\1\n        .name(effective_name.to_string())",
+    content,
 )
 
 with open("src/dispatcher/core.rs", "w") as f:
@@ -33,11 +33,10 @@ with open("src/worker_pool.rs", "r") as f:
     content = f.read()
 
 content = re.sub(
-    r'(let spawn_result = may::coroutine::Builder::new\(\)\s*\n\s*\.stack_size\([^)]+\))',
+    r"(let spawn_result = may::coroutine::Builder::new\(\)\s*\n\s*\.stack_size\([^)]+\))",
     r'\1\n                .name(format!("{}-worker-{}", handler_name_clone, worker_id))',
-    content
+    content,
 )
 
 with open("src/worker_pool.rs", "w") as f:
     f.write(content)
-
