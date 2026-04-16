@@ -270,6 +270,17 @@ impl HandlerResponse {
 /// Type alias for a channel sender that dispatches requests to a handler
 pub type HandlerSender = mpsc::Sender<HandlerRequest>;
 
+/// Parse `usize` from an environment variable, accepting optional `0x` hex prefix.
+fn parse_stack_size_from_env(key: &str) -> Option<usize> {
+    std::env::var(key).ok().and_then(|s| {
+        if let Some(hex) = s.strip_prefix("0x") {
+            usize::from_str_radix(hex, 16).ok()
+        } else {
+            s.parse().ok()
+        }
+    })
+}
+
 /// Spawn an untyped handler coroutine with a specific stack size and handler name.
 ///
 /// This directly returns a sender channel for dispatcher registration, similarly
@@ -293,24 +304,8 @@ where
 
     // Apply environment variable overrides
     let env_var_name = format!("BRRTR_STACK_SIZE__{}", effective_name.to_uppercase());
-    let mut stack_size = std::env::var(&env_var_name)
-        .ok()
-        .and_then(|s| {
-            if let Some(hex) = s.strip_prefix("0x") {
-                usize::from_str_radix(hex, 16).ok()
-            } else {
-                s.parse().ok()
-            }
-        })
-        .or_else(|| {
-            std::env::var("BRRTR_STACK_SIZE").ok().and_then(|s| {
-                if let Some(hex) = s.strip_prefix("0x") {
-                    usize::from_str_radix(hex, 16).ok()
-                } else {
-                    s.parse().ok()
-                }
-            })
-        })
+    let mut stack_size = parse_stack_size_from_env(&env_var_name)
+        .or_else(|| parse_stack_size_from_env("BRRTR_STACK_SIZE"))
         .unwrap_or(stack_size_bytes);
 
     // Apply clamping

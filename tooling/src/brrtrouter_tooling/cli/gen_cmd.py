@@ -271,9 +271,8 @@ def run_gen_argv() -> None:
 
     if sub == "suite":
         _run_gen_suite_argv(args)
-
-    if sub == "stubs":
+    elif sub == "stubs":
         _run_gen_stubs_argv(args)
-
-    print(f"Error: Unknown gen subcommand: {sub}", file=sys.stderr)
-    sys.exit(1)
+    else:
+        print(f"Error: Unknown gen subcommand: {sub}", file=sys.stderr)
+        sys.exit(1)

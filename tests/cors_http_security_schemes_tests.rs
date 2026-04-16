@@ -50,17 +50,11 @@ struct StaticCookieApiKeyProvider {
 }
 
 impl SecurityProvider for StaticCookieApiKeyProvider {
-    fn validate(
-        &self,
-        scheme: &SecurityScheme,
-        _scopes: &[String],
-        req: &SecurityRequest,
-    ) -> bool {
+    fn validate(&self, scheme: &SecurityScheme, _scopes: &[String], req: &SecurityRequest) -> bool {
         match scheme {
-            SecurityScheme::ApiKey { name, location, .. } if location.as_str() == "cookie" => req
-                .get_cookie(name)
-                .map(|v| v == self.key)
-                .unwrap_or(false),
+            SecurityScheme::ApiKey { name, location, .. } if location.as_str() == "cookie" => {
+                req.get_cookie(name).map(|v| v == self.key).unwrap_or(false)
+            }
             _ => false,
         }
     }
@@ -151,12 +145,7 @@ struct StaticHeaderApiKeyProvider {
 }
 
 impl SecurityProvider for StaticHeaderApiKeyProvider {
-    fn validate(
-        &self,
-        scheme: &SecurityScheme,
-        _scopes: &[String],
-        req: &SecurityRequest,
-    ) -> bool {
+    fn validate(&self, scheme: &SecurityScheme, _scopes: &[String], req: &SecurityRequest) -> bool {
         match scheme {
             SecurityScheme::ApiKey { name, location, .. } if location.as_str() == "header" => req
                 .get_header(&name.to_ascii_lowercase())
@@ -169,15 +158,9 @@ impl SecurityProvider for StaticHeaderApiKeyProvider {
 
 #[test]
 fn http_cors_preflight_global_bearer_returns_401_without_authorization() {
-    let f = MinimalCorsFixture::new(
-        "tests/fixtures/cors_global_bearer.yaml",
-        |service| {
-            service.register_security_provider(
-                "BearerAuth",
-                Arc::new(BearerJwtProvider::new("sig")),
-            );
-        },
-    );
+    let f = MinimalCorsFixture::new("tests/fixtures/cors_global_bearer.yaml", |service| {
+        service.register_security_provider("BearerAuth", Arc::new(BearerJwtProvider::new("sig")));
+    });
     let port = f.addr().port();
     let req = format!(
         "OPTIONS /echo HTTP/1.1\r\n\
@@ -196,15 +179,9 @@ fn http_cors_preflight_global_bearer_returns_401_without_authorization() {
 #[test]
 fn http_cors_preflight_global_bearer_returns_200_with_valid_bearer() {
     let token = make_dummy_bearer_token("");
-    let f = MinimalCorsFixture::new(
-        "tests/fixtures/cors_global_bearer.yaml",
-        |service| {
-            service.register_security_provider(
-                "BearerAuth",
-                Arc::new(BearerJwtProvider::new("sig")),
-            );
-        },
-    );
+    let f = MinimalCorsFixture::new("tests/fixtures/cors_global_bearer.yaml", |service| {
+        service.register_security_provider("BearerAuth", Arc::new(BearerJwtProvider::new("sig")));
+    });
     let port = f.addr().port();
     let req = format!(
         "OPTIONS /echo HTTP/1.1\r\n\
@@ -214,7 +191,11 @@ fn http_cors_preflight_global_bearer_returns_200_with_valid_bearer() {
          Authorization: Bearer {token}\r\n\r\n"
     );
     let resp = send_request(&f.addr(), &req);
-    assert_eq!(parse_response_status(&resp), 200, "preflight with Bearer: {resp}");
+    assert_eq!(
+        parse_response_status(&resp),
+        200,
+        "preflight with Bearer: {resp}"
+    );
     let lower = resp.to_ascii_lowercase();
     assert!(
         lower.contains("access-control-allow-origin: https://client.example"),
@@ -224,17 +205,14 @@ fn http_cors_preflight_global_bearer_returns_200_with_valid_bearer() {
 
 #[test]
 fn http_cors_preflight_global_cookie_api_key_returns_401_without_cookie() {
-    let f = MinimalCorsFixture::new(
-        "tests/fixtures/cors_global_apikey_cookie.yaml",
-        |service| {
-            service.register_security_provider(
-                "SessionCookie",
-                Arc::new(StaticCookieApiKeyProvider {
-                    key: "test123".into(),
-                }),
-            );
-        },
-    );
+    let f = MinimalCorsFixture::new("tests/fixtures/cors_global_apikey_cookie.yaml", |service| {
+        service.register_security_provider(
+            "SessionCookie",
+            Arc::new(StaticCookieApiKeyProvider {
+                key: "test123".into(),
+            }),
+        );
+    });
     let port = f.addr().port();
     let req = format!(
         "OPTIONS /echo HTTP/1.1\r\n\
@@ -252,17 +230,14 @@ fn http_cors_preflight_global_cookie_api_key_returns_401_without_cookie() {
 
 #[test]
 fn http_cors_preflight_global_cookie_api_key_returns_200_with_session_cookie() {
-    let f = MinimalCorsFixture::new(
-        "tests/fixtures/cors_global_apikey_cookie.yaml",
-        |service| {
-            service.register_security_provider(
-                "SessionCookie",
-                Arc::new(StaticCookieApiKeyProvider {
-                    key: "test123".into(),
-                }),
-            );
-        },
-    );
+    let f = MinimalCorsFixture::new("tests/fixtures/cors_global_apikey_cookie.yaml", |service| {
+        service.register_security_provider(
+            "SessionCookie",
+            Arc::new(StaticCookieApiKeyProvider {
+                key: "test123".into(),
+            }),
+        );
+    });
     let port = f.addr().port();
     let req = format!(
         "OPTIONS /echo HTTP/1.1\r\n\
@@ -296,10 +271,8 @@ fn http_cors_preflight_security_or_succeeds_with_api_key_only() {
                     key: "test123".into(),
                 }),
             );
-            service.register_security_provider(
-                "BearerAuth",
-                Arc::new(BearerJwtProvider::new("sig")),
-            );
+            service
+                .register_security_provider("BearerAuth", Arc::new(BearerJwtProvider::new("sig")));
         },
     );
     let port = f.addr().port();
@@ -311,7 +284,11 @@ fn http_cors_preflight_security_or_succeeds_with_api_key_only() {
          X-API-Key: test123\r\n\r\n"
     );
     let resp = send_request(&f.addr(), &req);
-    assert_eq!(parse_response_status(&resp), 200, "OR security with API key: {resp}");
+    assert_eq!(
+        parse_response_status(&resp),
+        200,
+        "OR security with API key: {resp}"
+    );
 }
 
 #[test]
@@ -326,10 +303,8 @@ fn http_cors_preflight_security_or_succeeds_with_bearer_only() {
                     key: "test123".into(),
                 }),
             );
-            service.register_security_provider(
-                "BearerAuth",
-                Arc::new(BearerJwtProvider::new("sig")),
-            );
+            service
+                .register_security_provider("BearerAuth", Arc::new(BearerJwtProvider::new("sig")));
         },
     );
     let port = f.addr().port();
@@ -341,7 +316,11 @@ fn http_cors_preflight_security_or_succeeds_with_bearer_only() {
          Authorization: Bearer {token}\r\n\r\n"
     );
     let resp = send_request(&f.addr(), &req);
-    assert_eq!(parse_response_status(&resp), 200, "OR security with Bearer: {resp}");
+    assert_eq!(
+        parse_response_status(&resp),
+        200,
+        "OR security with Bearer: {resp}"
+    );
 }
 
 /// OpenAPI: one security requirement with **two** schemes → **both** must pass (AND).
@@ -356,10 +335,8 @@ fn http_cors_preflight_security_and_fails_with_api_key_only() {
                     key: "test123".into(),
                 }),
             );
-            service.register_security_provider(
-                "BearerAuth",
-                Arc::new(BearerJwtProvider::new("sig")),
-            );
+            service
+                .register_security_provider("BearerAuth", Arc::new(BearerJwtProvider::new("sig")));
         },
     );
     let port = f.addr().port();
@@ -390,10 +367,8 @@ fn http_cors_preflight_security_and_fails_with_bearer_only() {
                     key: "test123".into(),
                 }),
             );
-            service.register_security_provider(
-                "BearerAuth",
-                Arc::new(BearerJwtProvider::new("sig")),
-            );
+            service
+                .register_security_provider("BearerAuth", Arc::new(BearerJwtProvider::new("sig")));
         },
     );
     let port = f.addr().port();
@@ -424,10 +399,8 @@ fn http_cors_preflight_security_and_succeeds_with_both_credentials() {
                     key: "test123".into(),
                 }),
             );
-            service.register_security_provider(
-                "BearerAuth",
-                Arc::new(BearerJwtProvider::new("sig")),
-            );
+            service
+                .register_security_provider("BearerAuth", Arc::new(BearerJwtProvider::new("sig")));
         },
     );
     let port = f.addr().port();

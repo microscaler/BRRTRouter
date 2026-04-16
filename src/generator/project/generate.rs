@@ -313,7 +313,7 @@ pub fn generate_project_with_options(
                     &imports,
                     &route.parameters,
                     route.sse,
-                    route.x_brrtrouter_downstream_path.is_some(),
+                    route.x_service.is_some() && route.x_brrtrouter_downstream_path.is_some(),
                     force,
                 )?;
                 if existed && force {

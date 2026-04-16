@@ -71,7 +71,10 @@ mod tests {
 
     #[test]
     fn merge_additional_only() {
-        assert_eq!(merge_vary_field_value(None, &["Authorization"]), "Authorization");
+        assert_eq!(
+            merge_vary_field_value(None, &["Authorization"]),
+            "Authorization"
+        );
     }
 
     #[test]

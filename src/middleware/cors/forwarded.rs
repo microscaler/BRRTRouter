@@ -103,8 +103,7 @@ fn host_has_explicit_port(host: &str) -> bool {
     if host.starts_with('[') {
         host.contains("]:")
     } else {
-        host
-            .rfind(':')
+        host.rfind(':')
             .is_some_and(|i| host[i + 1..].parse::<u16>().is_ok())
     }
 }
@@ -154,20 +153,22 @@ mod tests {
 
     #[test]
     fn forwarded_proto_https_adds_443() {
-        let a = authority_from_forwarded_field_values(&["proto=https;host=api.example.com"]).unwrap();
+        let a =
+            authority_from_forwarded_field_values(&["proto=https;host=api.example.com"]).unwrap();
         assert_eq!(a, "api.example.com:443");
     }
 
     #[test]
     fn forwarded_host_has_port_skips_proto() {
-        let a =
-            authority_from_forwarded_field_values(&["proto=http;host=api.example.com:8443"]).unwrap();
+        let a = authority_from_forwarded_field_values(&["proto=http;host=api.example.com:8443"])
+            .unwrap();
         assert_eq!(a, "api.example.com:8443");
     }
 
     #[test]
     fn forwarded_comma_separated_first_hop() {
-        let a = authority_from_forwarded_field_values(&[r#"for=192.0.2.1;host=edge.example"#]).unwrap();
+        let a =
+            authority_from_forwarded_field_values(&[r#"for=192.0.2.1;host=edge.example"#]).unwrap();
         assert_eq!(a, "edge.example");
     }
 

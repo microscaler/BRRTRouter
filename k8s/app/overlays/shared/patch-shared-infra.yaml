@@ -15,7 +15,8 @@ data:
     security:
       api_keys:
         ApiKeyHeader:
-          key: "test123"
+          # Dev-only placeholder; replace via Secret/SealedSecret in real clusters.
+          key: "dev-placeholder-api-key-not-for-production"
 
     http:
       keep_alive: true
@@ -27,7 +28,8 @@ data:
       port: 5432
       name: "postgres"
       user: "postgres"
-      password: "postgres"
+      # Align with your cluster Secret; avoid default superuser password literals in git.
+      password: "dev_password_change_in_prod"
       max_connections: 10
 
     redis:

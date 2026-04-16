@@ -85,6 +85,7 @@ def main() -> None:
             print("  Use: hauliage ci --help")
             sys.exit(1)
         ci_cli.run_ci(args, project_root)
+        return
 
     if args.command == "bff":
         if not getattr(args, "bff_cmd", None):
@@ -104,6 +105,7 @@ def main() -> None:
             print("  Use: hauliage docker --help")
             sys.exit(1)
         docker_cli.run_docker(args, project_root)
+        return
 
     if args.command == "gen":
         if not getattr(args, "gen_cmd", None):
@@ -117,6 +119,7 @@ def main() -> None:
 
     if args.command == "build":
         build_cli.run_build(args, project_root)
+        return
 
     if args.command == "bootstrap":
         if not getattr(args, "bootstrap_cmd", None):

@@ -778,7 +778,9 @@ fn test_cors_metrics_sink_preflight_denial() {
 
 #[test]
 fn test_cors_metrics_sink_route_disabled() {
-    use brrtrouter::middleware::{CorsMiddleware, CorsMiddlewareBuilder, MetricsMiddleware, Middleware};
+    use brrtrouter::middleware::{
+        CorsMiddleware, CorsMiddlewareBuilder, MetricsMiddleware, Middleware,
+    };
     use std::collections::HashMap;
 
     let m = Arc::new(MetricsMiddleware::new());
@@ -789,7 +791,8 @@ fn test_cors_metrics_sink_route_disabled() {
         .expect("cors");
     let mut route_policies = HashMap::new();
     route_policies.insert("internal_handler".into(), RouteCorsPolicy::Disabled);
-    let cors = CorsMiddleware::with_route_policies(global, route_policies).with_metrics_sink(m.clone());
+    let cors =
+        CorsMiddleware::with_route_policies(global, route_policies).with_metrics_sink(m.clone());
 
     let mut headers = HeaderVec::new();
     headers.push((Arc::from("origin"), "https://example.com".to_string()));
@@ -846,10 +849,7 @@ fn test_cors_trust_forwarded_host_same_origin_skips_cors_headers() {
 
     let mut headers = HeaderVec::new();
     headers.push((Arc::from("host"), "127.0.0.1:8080".to_string()));
-    headers.push((
-        Arc::from("x-forwarded-host"),
-        "api.example.com".to_string(),
-    ));
+    headers.push((Arc::from("x-forwarded-host"), "api.example.com".to_string()));
     headers.push((Arc::from("x-forwarded-port"), "443".to_string()));
     headers.push((Arc::from("origin"), "https://api.example.com".to_string()));
     let req = create_test_request(Method::GET, "/", headers);

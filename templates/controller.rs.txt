@@ -10,10 +10,11 @@ pub fn handle(req: HandlerRequest) -> HandlerResponse {
     let path_str = "{{ path }}";
     let mut resolved_path = path_str.to_string();
     for (k, v) in &req.path_params {
-        let mut target = String::from("{");
-        target.push_str(k);
-        target.push('}');
-        resolved_path = resolved_path.replace(&target, v.as_str());
+        let mut needle = String::new();
+        needle.push('{');
+        needle.push_str(k.as_ref());
+        needle.push('}');
+        resolved_path = resolved_path.replace(&needle, v.as_str());
     }
 
     if !req.query_params.is_empty() {
@@ -70,34 +71,38 @@ pub fn handle(req: HandlerRequest) -> HandlerResponse {
                 Err(e) => return Err(format!("Failed to connect to proxy target: {}", e)),
             }
         }
-        
-        let mut client_fallback;
-        let client = match client_opt.as_mut() {
-            Some(c) => c,
-            None => {
-                // Failsafe to honor JSF AV Rule 208 avoiding unwrap() panics
-                match may_http::client::HttpClient::connect(target_ip) {
-                    Ok(c) => {
-                        client_fallback = c;
-                        &mut client_fallback
-                    },
-                    Err(e) => return Err(format!("Failed to initialize socket fallback: {}", e)),
-                }
-            }
-        };
+        let client = client_opt
+            .as_mut()
+            .expect("HttpClient must be present after connect");
+
+        fn skip_forward_request_header(name: &str) -> bool {
+            name.eq_ignore_ascii_case("host")
+                || name.eq_ignore_ascii_case("connection")
+                || name.eq_ignore_ascii_case("content-length")
+                || name.eq_ignore_ascii_case("transfer-encoding")
+                || name.eq_ignore_ascii_case("upgrade")
+                || name.eq_ignore_ascii_case("te")
+                || name.eq_ignore_ascii_case("trailer")
+                || name.eq_ignore_ascii_case("proxy-connection")
+        }
+
         let mut proxy_req = client.new_request(method.clone(), url);
-        
-        // Forward headers (specifically content-type)
-        if let Some(ct) = req.get_header("content-type") {
-            if let Ok(v) = ct.parse() {
-                proxy_req.headers_mut().insert(http_legacy::header::CONTENT_TYPE, v);
+        for (hk, hv) in &req.headers {
+            let name = hk.as_ref();
+            if skip_forward_request_header(name) {
+                continue;
+            }
+            match (
+                http_legacy::header::HeaderName::from_bytes(name.as_bytes()),
+                http_legacy::header::HeaderValue::from_str(hv.as_str()),
+            ) {
+                (Ok(hname), Ok(hval)) => {
+                    proxy_req.headers_mut().insert(hname, hval);
+                }
+                _ => {}
             }
         }
-        if let Some(acc) = req.get_header("accept") {
-            if let Ok(v) = acc.parse() {
-                proxy_req.headers_mut().insert(http_legacy::header::ACCEPT, v);
-            }
-        } else {
+        if proxy_req.headers().get(http_legacy::header::ACCEPT).is_none() {
             if let Ok(safe_accept) = http_legacy::header::HeaderValue::from_str("application/json") {
                 proxy_req.headers_mut().insert(http_legacy::header::ACCEPT, safe_accept);
             }
@@ -105,29 +110,21 @@ pub fn handle(req: HandlerRequest) -> HandlerResponse {
 
         let mut buf = Vec::with_capacity(1024); // JSF-compliant: allocating maximum socket transit size avoids multi-page OS interrupts
 
-        let mut rsp = if let Some(body_json) = &req.body {
+        if let Some(body_json) = &req.body {
             let body_bytes = match serde_json::to_vec(body_json) {
                 Ok(b) => b,
                 Err(e) => return Err(format!("Failed to serialize body: {}", e)),
             };
             if let Err(e) = proxy_req.send(&body_bytes) {
-                *client_opt = None; // Reset connection on drop
+                *client_opt = None;
                 return Err(format!("Failed to send proxy body: {}", e));
             }
-            match client.send_request(proxy_req) {
-                Ok(r) => r,
-                Err(e) => {
-                    *client_opt = None;
-                    return Err(format!("Failed to send proxy request: {}", e));
-                }
-            }
-        } else {
-            match client.send_request(proxy_req) {
-                Ok(r) => r,
-                Err(e) => {
-                    *client_opt = None;
-                    return Err(format!("Failed to send proxy request: {}", e));
-                }
+        }
+        let mut rsp = match client.send_request(proxy_req) {
+            Ok(r) => r,
+            Err(e) => {
+                *client_opt = None;
+                return Err(format!("Failed to send proxy request: {}", e));
             }
         };
 
@@ -146,7 +143,32 @@ pub fn handle(req: HandlerRequest) -> HandlerResponse {
         };
         
         let status = rsp.status().as_u16();
-        let out_headers = brrtrouter::dispatcher::HeaderVec::new();
+        fn skip_forward_response_header(name: &str) -> bool {
+            name.eq_ignore_ascii_case("connection")
+                || name.eq_ignore_ascii_case("transfer-encoding")
+                || name.eq_ignore_ascii_case("keep-alive")
+                || name.eq_ignore_ascii_case("upgrade")
+                || name.eq_ignore_ascii_case("trailer")
+                || name.eq_ignore_ascii_case("proxy-authenticate")
+        }
+        let mut out_headers = brrtrouter::dispatcher::HeaderVec::new();
+        for (name, value) in rsp.headers().iter() {
+            if skip_forward_response_header(name.as_str()) {
+                continue;
+            }
+            if let Ok(s) = value.to_str() {
+                out_headers.push((std::sync::Arc::from(name.as_str()), s.to_string()));
+            }
+        }
+        if !out_headers
+            .iter()
+            .any(|(k, _)| k.eq_ignore_ascii_case("content-type"))
+        {
+            out_headers.push((
+                std::sync::Arc::from("content-type"),
+                "application/json".to_string(),
+            ));
+        }
         Ok(HandlerResponse::new(status, out_headers, body_json))
     });
 

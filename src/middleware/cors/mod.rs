@@ -38,11 +38,11 @@ mod vary_merge;
 
 pub use builder::CorsMiddlewareBuilder;
 pub use error::CorsConfigError;
-pub use vary_merge::merge_vary_field_value;
 pub use route_config::{
     build_route_cors_map, extract_route_cors_config, merge_route_policies_with_global_origins,
     RouteCorsConfig, RouteCorsPolicy,
 };
+pub use vary_merge::merge_vary_field_value;
 
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -65,8 +65,7 @@ fn host_has_explicit_port(host: &str) -> bool {
     if host.starts_with('[') {
         host.contains("]:")
     } else {
-        host
-            .rfind(':')
+        host.rfind(':')
             .is_some_and(|i| host[i + 1..].parse::<u16>().is_ok())
     }
 }
@@ -1235,10 +1234,7 @@ impl Middleware for CorsMiddleware {
         }
 
         if self.allow_private_network_access {
-            res.set_header(
-                "access-control-allow-private-network",
-                "true".to_string(),
-            );
+            res.set_header("access-control-allow-private-network", "true".to_string());
         }
 
         let merged = vary_merge::merge_vary_field_value(

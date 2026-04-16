@@ -31,11 +31,11 @@ jobs:
 
       - name: Run ruff check
         run: |
-          tooling/.venv/bin/ruff check tooling/src/ tooling/tests/ || true
+          tooling/.venv/bin/ruff check tooling/src/ tooling/tests/
 
       - name: Run ruff format check
         run: |
-          tooling/.venv/bin/ruff format --check tooling/src/ tooling/tests/ || true
+          tooling/.venv/bin/ruff format --check tooling/src/ tooling/tests/
 
       - name: Run tests
         run: |
