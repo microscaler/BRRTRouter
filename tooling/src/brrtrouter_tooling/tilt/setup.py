@@ -13,7 +13,7 @@ from brrtrouter_tooling.ports.layout import resolve_layout
 
 def run(project_root: Path) -> int:
     """Create dirs, docker volumes; check docker/tilt; print help. Returns 0 or 1."""
-    layout = resolve_layout(None)
+    layout = resolve_layout(None, project_root=project_root)
     openapi_dir = _openapi_dir(project_root, layout)
 
     # Generic paths that most projects might need

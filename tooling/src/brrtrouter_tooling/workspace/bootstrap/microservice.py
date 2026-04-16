@@ -369,7 +369,11 @@ def _create_impl_main(gen_main_path: Path, impl_main_path: Path, service_name: s
     )
 
     # 2. Add comment at top explaining this uses gen crate
-    header = f"""// This file uses generated code from the {gen_crate_name} crate
+    header = f"""//! Impl binary: routing uses `{gen_crate_name}::registry`, which registers the
+//! **generated** crate's handler/controller symbols. Custom code in `impl/src/controllers`
+//! is the supported place for business logic; wiring it as the active dispatch target is a
+//! workspace/build concern (see `BUILDING_WITH_BRRTRouter.md`, gen vs impl boundary).
+// This file uses generated code from the {gen_crate_name} crate
 // Business logic controllers are in impl/src/controllers/
 // This file is based on gen/src/main.rs but uses impl controllers
 

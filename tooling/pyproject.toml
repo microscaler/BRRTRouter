@@ -21,9 +21,9 @@ dev = [
     "ruff==0.15.9",
     "pre-commit>=4.5.1",
 ]
-# Pin MCP SDK; verified installable from PyPI (see CI / pip install -e ".[mcp]").
+# MCP SDK: bounded range so CI resolves a published wheel (not a non-existent floor version).
 mcp = [
-    "mcp[cli]>=1.27.0",
+    "mcp[cli]>=1.27.0,<3",
 ]
 
 [project.scripts]

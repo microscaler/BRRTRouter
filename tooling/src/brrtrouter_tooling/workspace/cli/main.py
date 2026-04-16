@@ -69,7 +69,7 @@ def main() -> None:
         exit_code = ports_cli.run_ports(args, project_root, registry_path)
         sys.exit(exit_code)
 
-    if args.command == "openapi":
+    elif args.command == "openapi":
         if not getattr(args, "openapi_cmd", None):
             print("hauliage openapi: missing subcommand")
             print("  validate, fix-operation-id-casing")
@@ -78,7 +78,7 @@ def main() -> None:
         exit_code = openapi_cli.run_openapi(args, project_root)
         sys.exit(exit_code)
 
-    if args.command == "ci":
+    elif args.command == "ci":
         if not getattr(args, "ci_cmd", None):
             print("hauliage ci: missing subcommand")
             print("  patch-brrtrouter, fix-cargo-paths, is-tag, get-latest-tag, validate-version")
@@ -87,7 +87,7 @@ def main() -> None:
         ci_cli.run_ci(args, project_root)
         return
 
-    if args.command == "bff":
+    elif args.command == "bff":
         if not getattr(args, "bff_cmd", None):
             print("hauliage bff: missing subcommand")
             print("  generate-system")
@@ -96,7 +96,7 @@ def main() -> None:
         bff_cli.run_bff(args, project_root)
         return
 
-    if args.command == "docker":
+    elif args.command == "docker":
         if not getattr(args, "docker_cmd", None):
             print("hauliage docker: missing subcommand")
             print(
@@ -107,7 +107,7 @@ def main() -> None:
         docker_cli.run_docker(args, project_root)
         return
 
-    if args.command == "gen":
+    elif args.command == "gen":
         if not getattr(args, "gen_cmd", None):
             print("hauliage gen: missing subcommand")
             print("  suite <suite-name> [--service <name>]")
@@ -117,11 +117,11 @@ def main() -> None:
         gen_cli.run_gen(args, project_root)
         return
 
-    if args.command == "build":
+    elif args.command == "build":
         build_cli.run_build(args, project_root)
         return
 
-    if args.command == "bootstrap":
+    elif args.command == "bootstrap":
         if not getattr(args, "bootstrap_cmd", None):
             print("hauliage bootstrap: missing subcommand")
             print("  microservice")
@@ -130,7 +130,7 @@ def main() -> None:
         bootstrap_cli.run_bootstrap(args, project_root)
         return
 
-    if args.command == "tilt":
+    elif args.command == "tilt":
         if not getattr(args, "tilt_cmd", None):
             print("hauliage tilt: missing subcommand")
             print("  setup-kind-registry, setup-persistent-volumes, setup, teardown, logs")
@@ -139,7 +139,7 @@ def main() -> None:
         tilt_cli.run_tilt(args, project_root)
         return
 
-    if args.command == "release":
+    elif args.command == "release":
         if not getattr(args, "release_cmd", None):
             print("hauliage release: missing subcommand")
             print("  bump, generate-notes")
@@ -148,7 +148,7 @@ def main() -> None:
         release_cli.run_release(args, project_root)
         return
 
-    if args.command == "pre-commit":
+    elif args.command == "pre-commit":
         if not getattr(args, "pre_commit_cmd", None):
             print("hauliage pre-commit: missing subcommand")
             print("  microservices-fmt")
@@ -157,10 +157,11 @@ def main() -> None:
         pre_commit_cli.run_pre_commit(args, project_root)
         return
 
-    print(
-        f"hauliage {args.command}: not implemented. Use 'hauliage ports', 'hauliage openapi', 'hauliage ci', 'hauliage gen', 'hauliage bff', 'hauliage docker', 'hauliage build', 'hauliage bootstrap', 'hauliage release', or 'hauliage tilt'."
-    )
-    sys.exit(1)
+    else:
+        print(
+            f"hauliage {args.command}: not implemented. Use 'hauliage ports', 'hauliage openapi', 'hauliage ci', 'hauliage gen', 'hauliage bff', 'hauliage docker', 'hauliage build', 'hauliage bootstrap', 'hauliage release', or 'hauliage tilt'."
+        )
+        sys.exit(1)
 
 
 def __build_parser():
