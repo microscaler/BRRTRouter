@@ -240,10 +240,12 @@ pub struct ControllerTemplateData {
     pub imports: Vec<String>,
     /// Whether this handler uses Server-Sent Events
     pub sse: bool,
-    /// Upstream target service name explicitly set by x-service OpenAPI macro
-    pub downstream_service: Option<String>,
-    /// Upstream URI explicit proxy path mapped by x-brrtrouter-downstream-path macro
-    pub downstream_path: Option<String>,
+    /// True only when both `x-service` and `x-brrtrouter-downstream-path` are set (Codex P1).
+    pub is_untyped_proxy: bool,
+    /// Service name for proxy template (empty when not `is_untyped_proxy`).
+    pub proxy_service: String,
+    /// Downstream path template for proxy (empty when not `is_untyped_proxy`).
+    pub proxy_path: String,
     /// The HTTP Method for the current path
     pub method: String,
 }
@@ -434,6 +436,9 @@ pub fn write_controller(
         // Not an array response, no array literal needed
         String::new()
     };
+    let is_untyped_proxy = downstream_service.is_some() && downstream_path.is_some();
+    let proxy_service = downstream_service.unwrap_or_default();
+    let proxy_path = downstream_path.unwrap_or_default();
     let context = ControllerTemplateData {
         handler_name: handler.to_string(),
         struct_name: struct_name.to_string(),
@@ -445,8 +450,9 @@ pub fn write_controller(
         response_array_literal: array_literal,
         imports: imports.iter().cloned().collect(),
         sse,
-        downstream_service,
-        downstream_path,
+        is_untyped_proxy,
+        proxy_service,
+        proxy_path,
         method,
     };
     fs::write(path, context.render()?)?;

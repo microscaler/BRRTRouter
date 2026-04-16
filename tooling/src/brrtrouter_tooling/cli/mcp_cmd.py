@@ -58,6 +58,12 @@ def _run_serve(args: list[str]) -> None:
             except ValueError:
                 print(f"Error: --port must be an integer, got {args[i + 1]!r}", file=sys.stderr)
                 sys.exit(1)
+            if not (1 <= port <= 65535):
+                print(
+                    f"Error: --port must be between 1 and 65535, got {port}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
             i += 2
         elif args[i] in ("-h", "--help"):
             _print_usage()
@@ -86,4 +92,8 @@ def _run_serve(args: list[str]) -> None:
     else:
         print("Starting BRRTRouter MCP server (stdio) ...", file=sys.stderr)
 
-    run_server(transport=transport, host=host, port=port)
+    try:
+        run_server(transport=transport, host=host, port=port)
+    except (OSError, RuntimeError, ValueError) as e:
+        print(f"Error: MCP server failed: {e}", file=sys.stderr)
+        sys.exit(1)

@@ -1,13 +1,12 @@
 {# controller.rs.txt #}
 // User-owned controller for handler '{{ handler_name }}'.
-{% if let Some(service) = downstream_service %}
+{% if is_untyped_proxy %}
 // Native untyped proxy route matching JSF Compliance
 use brrtrouter::dispatcher::{HandlerRequest, HandlerResponse};
 
 pub fn handle(req: HandlerRequest) -> HandlerResponse {
-    {% if let Some(path) = downstream_path %}
     // Build path matching the spec
-    let path_str = "{{ path }}";
+    let path_str = "{{ proxy_path }}";
     let mut resolved_path = path_str.to_string();
     for (k, v) in &req.path_params {
         let mut needle = String::new();
@@ -28,7 +27,7 @@ pub fn handle(req: HandlerRequest) -> HandlerResponse {
         resolved_path.push_str(&qs);
     }
     
-    let service_name_upper = "{{ service }}".to_uppercase();
+    let service_name_upper = "{{ proxy_service }}".to_uppercase();
     let port_env_key = format!("{}_PORT", service_name_upper);
     let port: u16 = std::env::var(&port_env_key)
         .ok()
@@ -37,7 +36,7 @@ pub fn handle(req: HandlerRequest) -> HandlerResponse {
 
     // JSF Rule 208: Catch all protocol failures gracefully
     let domain_suffix = std::env::var("SERVICE_DOMAIN").unwrap_or_else(|_| "svc.cluster.local".to_string());
-    let service_fqdn = format!("{}.{}", "{{ service }}", domain_suffix);
+    let service_fqdn = format!("{}.{}", "{{ proxy_service }}", domain_suffix);
     
     let target_ip = match std::net::ToSocketAddrs::to_socket_addrs(&(service_fqdn.as_str(), port)) {
         Ok(mut iter) => {
@@ -176,10 +175,6 @@ pub fn handle(req: HandlerRequest) -> HandlerResponse {
         Ok(res) => res,
         Err(err_msg) => HandlerResponse::error(502, &err_msg),
     }
-
-    {% else %}
-    HandlerResponse::error(500, "Downstream service specified but no downstream path configured")
-    {% endif %}
 }
 {% else %}
 use brrtrouter_macros::handler;

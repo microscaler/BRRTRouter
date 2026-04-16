@@ -21,6 +21,7 @@ pub unsafe fn register_all(dispatcher: &mut Dispatcher) {
             {{ entry.stack_size_bytes }},
             Some("{{ entry.name }}"),
         )
+        .expect("failed to spawn untyped proxy handler coroutine")
     );
     {% else %}
     dispatcher.register_typed_with_stack_size(
@@ -56,7 +57,8 @@ pub unsafe fn register_from_spec(dispatcher: &mut Dispatcher, routes: &[RouteMet
                     crate::controllers::{{ entry.name }}::handle,
                     {{ entry.stack_size_bytes }},
                     Some(route.handler_name.as_ref()),
-                );
+                )
+                .expect("failed to spawn untyped proxy handler coroutine");
                 dispatcher.add_route(route.clone(), tx);
                 {% else %}
                 let tx = spawn_typed_with_stack_size_and_name(

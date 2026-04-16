@@ -287,6 +287,9 @@ fn parse_stack_size_from_env(key: &str) -> Option<usize> {
 /// to `brrtrouter::typed::spawn_typed_with_stack_size_and_name`, but avoids any
 /// JSON strongly-typed request/response validation overhead.
 ///
+/// Returns [`std::io::Error`] if the underlying coroutine runtime cannot spawn the handler
+/// (for example invalid stack configuration).
+///
 /// # Safety
 ///
 /// See `register_handler` safety constraints.
@@ -294,7 +297,7 @@ pub unsafe fn spawn_untyped_with_stack_size_and_name<F>(
     handler_fn: F,
     stack_size_bytes: usize,
     handler_name: Option<&str>,
-) -> mpsc::Sender<HandlerRequest>
+) -> std::io::Result<mpsc::Sender<HandlerRequest>>
 where
     F: Fn(HandlerRequest) -> HandlerResponse + Send + 'static + Clone,
 {
@@ -370,9 +373,8 @@ where
             }
         });
 
-    #[allow(clippy::panic)]
     match spawn_result {
-        Ok(_) => tx,
+        Ok(_) => Ok(tx),
         Err(e) => {
             error!(
                 handler = %effective_name,
@@ -380,10 +382,7 @@ where
                 error = %e,
                 "Critical: Failed to spawn untyped handler coroutine"
             );
-            panic!(
-                "Failed to spawn untyped handler coroutine for '{}': {}",
-                effective_name, e
-            );
+            Err(e)
         }
     }
 }

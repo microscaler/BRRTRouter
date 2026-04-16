@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 REG_NAME = "kind-registry"
@@ -11,6 +13,13 @@ REG_PORT = "5001"
 
 def run(project_root: Path) -> int:
     """Create/start kind-registry, connect to kind network, optional ConfigMap. Returns 0 or 1."""
+    if not shutil.which("docker"):
+        print(
+            "[ERROR] docker not found in PATH. Install Docker Desktop or the docker CLI.",
+            file=sys.stderr,
+        )
+        return 1
+
     # 1. Create or start registry
     inspect = subprocess.run(["docker", "inspect", REG_NAME], capture_output=True, text=True)
     if inspect.returncode != 0:
@@ -73,7 +82,10 @@ def run(project_root: Path) -> int:
         print("🔗 Registry already on kind network")
 
     # 3. ConfigMap (optional)
-    if subprocess.run(["kubectl", "cluster-info"], capture_output=True).returncode == 0:
+    if (
+        shutil.which("kubectl")
+        and subprocess.run(["kubectl", "cluster-info"], capture_output=True).returncode == 0
+    ):
         cm = f"""apiVersion: v1
 kind: ConfigMap
 metadata:

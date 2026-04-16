@@ -18,12 +18,15 @@ def run_bff(args, project_root: Path) -> None:
 
 
 def _run_generate_system(project_root: Path, args) -> None:
-    openapi_dir = getattr(args, "openapi_dir", None) or (project_root / "openapi")
+    raw_dir = getattr(args, "openapi_dir", None)
+    openapi_dir = (
+        Path(raw_dir).expanduser().resolve() if raw_dir else (project_root / "openapi").resolve()
+    )
     system = getattr(args, "system", None)
     output = getattr(args, "output", None)
 
     if system:
-        out_path = Path(output) if output else None
+        out_path = Path(output).expanduser().resolve() if output else None
         subs = discover_sub_services(openapi_dir, system)
         if not subs:
             print(f"⚠️  No sub-services found for {system}")
@@ -32,7 +35,11 @@ def _run_generate_system(project_root: Path, args) -> None:
             f"🔄 Generating {system} system BFF OpenAPI specification ({len(subs)} sub-services)..."
         )
         generate_system_bff_spec(openapi_dir, system, output_path=out_path)
-        out = Path(output) if output else (openapi_dir / system / "openapi.yaml")
+        out = (
+            Path(output).expanduser().resolve()
+            if output
+            else (openapi_dir / system / "openapi.yaml")
+        )
         print(f"✅ Generated {system} BFF spec: {out}")
     else:
         systems = list_systems_with_sub_services(openapi_dir)

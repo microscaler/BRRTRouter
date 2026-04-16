@@ -143,11 +143,14 @@ def run_validate_version_cli(
         validate_version(current, latest, allow_same=allow_same)
         return 0
     except SystemExit as e:
-        # SystemExit.code is the exit code (if set), otherwise args[0] if int, else 1
         code = getattr(e, "code", None)
         if code is None and e.args and isinstance(e.args[0], int):
             code = e.args[0]
-        return code if code is not None else 1
+        if isinstance(code, int):
+            return code
+        if isinstance(code, str) and code.isdigit():
+            return int(code)
+        return 1
 
 
 def run() -> int:

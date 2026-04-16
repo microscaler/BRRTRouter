@@ -33,4 +33,8 @@ def resolve_layout(
                     system_name = d.name.replace("-microservice", "")
                     break
         resolved["helm_values_dir"] = resolved["helm_values_dir"].replace("{system}", system_name)
+    if project_root:
+        hd = resolved["helm_values_dir"]
+        if "{" not in hd and not Path(hd).is_absolute():
+            resolved["helm_values_dir"] = str((project_root / hd).resolve())
     return resolved

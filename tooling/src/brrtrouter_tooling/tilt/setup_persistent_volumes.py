@@ -63,8 +63,16 @@ def run(project_root: Path) -> int:
             r = subprocess.run(
                 ["kubectl", "apply", "-f", str(path)], capture_output=True, text=True
             )
-            if r.returncode != 0 and "AlreadyExists" not in (r.stderr or ""):
-                print(f"⚠️  Warning: Some {label} PVs may already exist (this is OK)")
+            combined = (r.stderr or "") + (r.stdout or "")
+            if r.returncode != 0:
+                if "AlreadyExists" in combined:
+                    print(f"Info: Some {label} PVs already exist (OK)")
+                else:
+                    print(
+                        f"[ERROR] kubectl apply failed for {path} (exit {r.returncode}):\n{combined}",
+                        file=sys.stderr,
+                    )
+                    return 1
         else:
             print(f"Info:  No {label} PersistentVolumes file found (this is OK for initial setup)")
     print("✅ PersistentVolumes setup complete!")

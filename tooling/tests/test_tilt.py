@@ -84,26 +84,32 @@ class TestLogs:
             assert run("general-ledger", tmp_path) == 1
 
     def test_returns_1_when_component_not_found(self, tmp_path: Path) -> None:
+        import json
+
         from brrtrouter_tooling.tilt.logs import run
 
+        uires = json.dumps({"items": [{"metadata": {"name": "other"}}]})
         with (
             patch("shutil.which", return_value="/usr/bin/tilt"),
             patch("subprocess.run") as m,
         ):
             m.side_effect = [
-                MagicMock(returncode=0, stdout='[{"name":"other"}]'),
+                MagicMock(returncode=0, stdout=uires),
             ]
             assert run("general-ledger", tmp_path) == 1
 
     def test_returns_tilt_logs_exit_code_when_ok(self, tmp_path: Path) -> None:
+        import json
+
         from brrtrouter_tooling.tilt.logs import run
 
+        uires = json.dumps({"items": [{"metadata": {"name": "general-ledger"}}]})
         with (
             patch("shutil.which", return_value="/usr/bin/tilt"),
             patch("subprocess.run") as m,
         ):
             m.side_effect = [
-                MagicMock(returncode=0, stdout='[{"name":"general-ledger"}]'),
+                MagicMock(returncode=0, stdout=uires),
                 MagicMock(returncode=0),
             ]
             assert run("general-ledger", tmp_path) == 0

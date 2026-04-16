@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import sys
@@ -21,7 +22,17 @@ def run(component: str, project_root: Path) -> int:
     if r.returncode != 0:
         print("[ERROR] Tilt is not running or not connected.", file=sys.stderr)
         return 1
-    if f'"name":"{component}"' not in (r.stdout or ""):
+    try:
+        data = json.loads(r.stdout or "null")
+    except json.JSONDecodeError:
+        print("[ERROR] Could not parse tilt get uiresources JSON.", file=sys.stderr)
+        return 1
+    names: list[str] = []
+    for item in data.get("items") or []:
+        meta = item.get("metadata") if isinstance(item, dict) else None
+        if isinstance(meta, dict) and (n := meta.get("name")):
+            names.append(str(n))
+    if component not in names:
         print(
             f"[WARN] Component '{component}' not found. Run: tilt get uiresources",
             file=sys.stderr,

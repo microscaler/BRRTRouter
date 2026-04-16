@@ -261,7 +261,7 @@ def create_mcp_server() -> FastMCP:  # noqa: C901
         )
 
     @mcp.tool()
-    def scan_tilt(openapi_dir: str, base_port: int = 8000) -> str:
+    def scan_tilt(openapi_dir: str, base_port: int = 8002) -> str:
         """Crawl an openapi directory to automatically map service names, crates, and ports.
 
         Args:

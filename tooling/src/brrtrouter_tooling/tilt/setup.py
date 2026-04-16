@@ -27,7 +27,14 @@ def run(project_root: Path) -> int:
 
     for v in ["postgres_data", "redis_data", "prometheus_data", "grafana_data"]:
         if shutil.which("docker"):
-            subprocess.run(["docker", "volume", "create", v], capture_output=True)
+            vr = subprocess.run(["docker", "volume", "create", v], capture_output=True)
+            if vr.returncode != 0:
+                err = (vr.stderr or vr.stdout or b"").decode("utf-8", errors="replace").strip()
+                print(
+                    f"[ERROR] docker volume create {v} failed (exit {vr.returncode}): {err}",
+                    file=sys.stderr,
+                )
+                return 1
 
     for cmd in ["docker", "tilt"]:
         if not shutil.which(cmd):

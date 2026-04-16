@@ -6,7 +6,7 @@ This comprehensive guide defines the formal architectural layout for a microserv
 
 A standard microservice directory tree (e.g., `hauliage/microservices/{your_service}`) looks strictly like this:
 
-```
+```text
 microservices/{service_name}/
 ├── gen/                 # ⚠️ Auto-generated. Do NOT edit.
 │   ├── doc/

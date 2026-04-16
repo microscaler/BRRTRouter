@@ -404,25 +404,17 @@ use controllers::*;
     lines.insert(insert_idx, imports_section.rstrip())
     content = "\n".join(lines)
 
-    # 5. Update registry registration - add note about impl controllers
-    content = re.sub(
-        r"(unsafe \{\s*registry::register_from_spec)",
-        r"// NOTE: This registers controllers from gen crate. We need to register impl controllers instead.\n    // TODO: Update to register impl controllers\n    \1",
-        content,
-        flags=re.MULTILINE,
-    )
-
-    # 6. Update config path (it's now in impl/config/)
+    # 5. Update config path (it's now in impl/config/)
     content = re.sub(
         r'default_value = "\./config/config\.yaml"',
         r'default_value = "./config/config.yaml"',
         content,
     )
 
-    # 7. Update doc path (it's now in gen/doc/)
+    # 6. Update doc path (it's now in gen/doc/)
     content = re.sub(r'default_value = "\./doc"', r'default_value = "../gen/doc"', content)
 
-    # 8. Update spec path (it's now in gen/doc/)
+    # 7. Update spec path (it's now in gen/doc/)
     content = re.sub(
         r'default_value = "\./doc/openapi\.yaml"',
         r'default_value = "../gen/doc/openapi.yaml"',

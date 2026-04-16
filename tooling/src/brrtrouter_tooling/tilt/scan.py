@@ -23,20 +23,26 @@ def run(directory: str, base_port: int) -> dict | int:
 
     current_port = base_port
 
-    for p in sorted(search_path.glob("*/openapi.yaml")):
-        service_name = p.parent.name
-        services.append(service_name)
+    seen_parents: set[Path] = set()
+    for pattern in ("*/openapi.yaml", "*/openapi.yml"):
+        for p in sorted(search_path.glob(pattern)):
+            parent = p.parent
+            if parent in seen_parents:
+                continue
+            seen_parents.add(parent)
+            service_name = parent.name
+            services.append(service_name)
 
-        try:
-            with p.open(encoding="utf-8") as f:
-                _ = yaml.safe_load(f)
-            binary_names[service_name] = f"{to_snake_case(service_name)}_service_api"
-        except Exception as e:  # noqa: BLE001
-            print(f"Warning: Failed to parse {p}: {e}", file=sys.stderr)
-            binary_names[service_name] = f"{to_snake_case(service_name)}_service_api"
+            try:
+                with p.open(encoding="utf-8") as f:
+                    _ = yaml.safe_load(f)
+                binary_names[service_name] = f"{to_snake_case(service_name)}_service_api"
+            except Exception as e:  # noqa: BLE001
+                print(f"Warning: Failed to parse {p}: {e}", file=sys.stderr)
+                binary_names[service_name] = f"{to_snake_case(service_name)}_service_api"
 
-        ports[service_name] = str(current_port)
-        current_port += 1
+            ports[service_name] = str(current_port)
+            current_port += 1
 
     return {
         "services": services,
