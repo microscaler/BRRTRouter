@@ -16,7 +16,6 @@ use std::collections::HashMap;
 use std::fmt::Write;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use tracing::info;
@@ -105,8 +104,11 @@ pub struct AppService {
     pub doc_files: Option<StaticFiles>,
     /// Optional file watcher for hot reloading
     pub watcher: Option<notify::RecommendedWatcher>,
-    /// Precomputed Keep-Alive header (to avoid per-request allocations/leaks)
-    pub keep_alive_header: Option<&'static str>,
+    /// Precomputed `Keep-Alive: …` header line, set once via [`set_keep_alive`].
+    /// Cloned (O(1) `Arc`-free `String::clone`? — just a `Box<str>` copy) per
+    /// response; no `Box::leak` needed since `may_minihttp::Response::header`
+    /// now accepts owned values.
+    pub keep_alive_header: Option<Box<str>>,
     /// JSON Schema validator cache for eliminating per-request compilation
     pub validator_cache: ValidatorCache,
 }
@@ -151,27 +153,13 @@ impl Clone for AppService {
             static_files: self.static_files.clone(),
             doc_files: self.doc_files.clone(),
             watcher: None,
-            keep_alive_header: self.keep_alive_header,
+            keep_alive_header: self.keep_alive_header.clone(),
             validator_cache: self.validator_cache.clone(),
         }
     }
 }
 
 impl AppService {
-    /// Intern table for keep-alive header values to avoid repeated leaks
-    fn intern_keep_alive(value: String) -> &'static str {
-        static INTERN: OnceLock<RwLock<HashMap<String, &'static str>>> = OnceLock::new();
-        let map = INTERN.get_or_init(|| RwLock::new(HashMap::new()));
-        // Acquire write lock to make race-free and avoid leaking duplicates.
-        let mut write = map.write().expect("keep-alive interner poisoned");
-        if let Some(existing) = write.get(&value).copied() {
-            return existing;
-        }
-        let leaked: &'static str = Box::leak(value.into_boxed_str());
-        write.insert(leaked.to_string(), leaked);
-        leaked
-    }
-
     /// Create a new application service
     ///
     /// # Arguments
@@ -284,13 +272,10 @@ impl AppService {
     /// allocate once and leak a single header string here to avoid per-request leaks.
     pub fn set_keep_alive(&mut self, enable: bool, timeout_secs: u64, max_requests: u64) {
         if enable {
-            // Build the desired header value and intern it to reuse any previously leaked instance.
-            let new_value = format!("Keep-Alive: timeout={timeout_secs}, max={max_requests}");
-            let interned = Self::intern_keep_alive(new_value);
-            if self.keep_alive_header == Some(interned) {
-                return;
-            }
-            self.keep_alive_header = Some(interned);
+            self.keep_alive_header = Some(
+                format!("Keep-Alive: timeout={timeout_secs}, max={max_requests}")
+                    .into_boxed_str(),
+            );
         } else {
             self.keep_alive_header = None;
         }
@@ -934,43 +919,23 @@ impl HttpService for AppService {
             span: span.clone(),
         };
 
-        // Log incoming request with sanitized headers (for debugging TooManyHeaders)
-        // Sensitive header/cookie/query values are masked per BRRTR_LOG_REDACT_LEVEL.
-        // Guard sanitization behind debug-enabled check to avoid hot-path cloning in production.
-        if tracing::enabled!(tracing::Level::DEBUG) {
-            let sanitizer = crate::sanitize::default_sanitizer();
-            if sanitizer.level() == crate::otel::RedactionLevel::None {
-                debug!(
-                    method = %method,
-                    path = %path,
-                    header_count = headers.len(),
-                    headers = ?headers,
-                    query_params = ?query_params,
-                    cookies = ?cookies,
-                    body_size = body.as_ref().map(|v| v.as_object().map(|o| o.len())),
-                    "Request received"
-                );
-            } else {
-                let safe_headers = sanitizer.sanitize_headers(&headers);
-                let safe_cookies = sanitizer.sanitize_headers(&cookies);
-                let safe_query = sanitizer.sanitize_params(&query_params);
-                debug!(
-                    method = %method,
-                    path = %path,
-                    header_count = headers.len(),
-                    headers = ?safe_headers,
-                    query_params = ?safe_query,
-                    cookies = ?safe_cookies,
-                    body_size = body.as_ref().map(|v| v.as_object().map(|o| o.len())),
-                    "Request received"
-                );
-            }
-        }
+        // Log incoming request with all headers (for debugging TooManyHeaders)
+        debug!(
+            method = %method,
+            path = %path,
+            header_count = headers.len(),
+            headers = ?headers,
+            query_params = ?query_params,
+            cookies = ?cookies,
+            body_size = body.as_ref().map(|v| v.as_object().map(|o| o.len())),
+            "Request received"
+        );
 
-        // Apply keep-alive headers early so all responses inherit them
-        if let Some(ka) = self.keep_alive_header {
+        // Apply keep-alive headers early so all responses inherit them.
+        // Owned `Box<str>` clone per response — freed with the response, no leak.
+        if let Some(ka) = &self.keep_alive_header {
             res.header("Connection: keep-alive");
-            res.header(ka);
+            res.header(ka.clone());
         }
 
         // Count every incoming request at top-level (even those short-circuited before dispatch)
@@ -1050,9 +1015,8 @@ impl HttpService for AppService {
                         };
                         res.header(header);
                     } else {
-                        // Fallback for uncommon types (rare case)
-                        let header = format!("Content-Type: {ct}").into_boxed_str();
-                        res.header(Box::leak(header));
+                        // Uncommon MIME — owned header, freed with the response.
+                        res.header(format!("Content-Type: {ct}"));
                     }
                     res.body_vec(bytes);
                     return Ok(());
@@ -1351,9 +1315,7 @@ impl HttpService for AppService {
                         // accepted by the resource for POST — we include it on all
                         // methods as a diagnostic aid for clients).
                         let accept_post = declared.join(", ");
-                        res.header(Box::leak(
-                            format!("Accept-Post: {accept_post}").into_boxed_str(),
-                        ));
+                        res.header(format!("Accept-Post: {accept_post}"));
                         write_json_error(
                             res,
                             415,

@@ -1,5 +1,12 @@
 # LLM Wiki Log
 
+## [2026-04-17] ship | Phase 0.1 — Box::leak removed from the request path
+
+- `may_minihttp` fork branch `feat/response-header-owned-values` (commit `f9daffe`) adds `IntoResponseHeader` + `ResponseHeader { Static, Owned }`; `Response::header` now generic over static/owned inputs. Owned values drop with the response.
+- BRRTRouter `Cargo.toml` repointed to that branch; `AppService::intern_keep_alive` deleted; 3 `Box::leak` call sites gone. `cargo test --lib` 292/292.
+- `write_json_error` switched to `serde_json::to_vec` while we were in the file (PRD Phase 2.6 bonus).
+- PRD [`docs/PRD_HOT_PATH_V2_STABILITY_AND_PERF.md`](../docs/PRD_HOT_PATH_V2_STABILITY_AND_PERF.md) updated to mark Phase 0.1 shipped; 0.2 subsumed; 0.3 (metrics path bound) is next.
+
 ## [2026-04-17] PRD | hot-path v2 — stability & perf
 
 - Authored [`docs/PRD_HOT_PATH_V2_STABILITY_AND_PERF.md`](../docs/PRD_HOT_PATH_V2_STABILITY_AND_PERF.md). Scope: root-cause the Hauliage dev-env "microservice needs reboot" pattern and collapse previous hot-path findings into a phased plan.

@@ -37,9 +37,10 @@ pub fn write_handler_response(
 ) {
     let reason = status_reason(status);
     res.status_code(status as usize, reason);
+    // Owned headers are freed with the `Response` — `may_minihttp` accepts
+    // `String` via `IntoResponseHeader` on our fork, so no `Box::leak`.
     for (k, v) in headers {
-        let header_value = format!("{k}: {v}").into_boxed_str();
-        res.header(Box::leak(header_value));
+        res.header(format!("{k}: {v}"));
     }
     match body {
         Value::String(s) => {
@@ -52,11 +53,9 @@ pub fn write_handler_response(
         }
         other => {
             res.header("Content-Type: application/json");
-            // Serialize to JSON - if this fails, use fallback error response
             match serde_json::to_vec(&other) {
                 Ok(json_bytes) => res.body_vec(json_bytes),
                 Err(e) => {
-                    // Serialization failed - send error message as plain text
                     res.status_code(500, "Internal Server Error");
                     res.header("Content-Type: text/plain");
                     res.body_vec(format!("Failed to serialize response: {}", e).into_bytes());
@@ -80,7 +79,12 @@ pub fn write_json_error(res: &mut Response, status: u16, body: Value) {
     let reason = status_reason(status);
     res.status_code(status as usize, reason);
     res.header("Content-Type: application/json");
-    res.body_vec(body.to_string().into_bytes());
+    // Direct Vec<u8> — avoids the intermediate `String` allocation from
+    // `to_string().into_bytes()`.
+    match serde_json::to_vec(&body) {
+        Ok(bytes) => res.body_vec(bytes),
+        Err(_) => res.body_vec(br#"{"error":"serialization failure"}"#.to_vec()),
+    }
 }
 
 #[cfg(test)]

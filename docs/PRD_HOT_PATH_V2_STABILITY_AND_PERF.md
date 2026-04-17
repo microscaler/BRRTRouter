@@ -1,9 +1,9 @@
 # PRD: BRRTRouter hot-path v2 — stability, memory, and performance
 
 **Project:** BRRTRouter
-**Document version:** 1.0
-**Date:** 2026-04-17
-**Status:** Draft — ready for review
+**Document version:** 1.1
+**Date:** 2026-04-17 (Phase 0.1 shipped)
+**Status:** Active — Phase 0.1 shipped; Phase 0.2/0.3 next
 **Owner:** BRRTRouter core
 **Target branch:** `pre_BFF_work` (lands in phases; merges through small PRs)
 **Primary driver:** Hauliage dev-env stability — eliminate the "microservice keeps needing reboots" class of failure.
@@ -213,12 +213,17 @@ Each phase ships as its own PR. Each PR must include Goose v2 numbers (once Phas
 
 **Goal:** Eliminate the memory-growth class of failure that drives the reboot cadence.
 
-- **0.1 — Non-`'static` response header values.** Remove `Box::leak` from [`src/server/response.rs`](../src/server/response.rs) and the three sites in [`src/server/service.rs`](../src/server/service.rs).
-    - **Upstream option A (preferred):** land a second `may_minihttp` PR that lets `Response::header` accept `impl Into<Cow<'static, str>>`, with the response owning a `SmallVec<[Cow<'static, str>; 16]>`.
-    - **Fallback option B:** maintain a single-purpose fork branch (`feat/response-header-owned-values`) until upstream accepts the API.
-    - Remove `intern_keep_alive` once 0.1 lands (no longer needed).
-- **0.2 — Retire the `feat/configurable-max-headers` fork pin.** PR #21 is merged upstream (2026-01-05). Switch `Cargo.toml` to the next `may_minihttp` release cut. Keep `HttpServerWithHeaders<_, 32>` usage — that's upstream API now.
-- **0.3 — Bound the metrics path map.** In [`src/middleware/metrics.rs`](../src/middleware/metrics.rs) add: (a) a single `__unmatched` key for 404s, (b) a configurable soft cap (`BRRTR_METRICS_PATH_MAX`, default 4096) after which inserts go to `__other`.
+- **0.1 — Non-`'static` response header values.** ✅ **SHIPPED (2026-04-17).**
+    - `may_minihttp` fork branch [`feat/response-header-owned-values`](https://github.com/microscaler/may_minihttp/tree/feat/response-header-owned-values) (commit `f9daffe`) adds `IntoResponseHeader` + `ResponseHeader { Static(&'static str), Owned(Box<str>) }`; `Response::header<H: IntoResponseHeader>` now accepts `&'static str`, `String`, `Box<str>`, `Cow<'static, str>`. Owned values are freed with the response. 3 new unit tests + existing doc test pass; 23+21 existing integration tests unchanged.
+    - BRRTRouter `Cargo.toml` now points at the microscaler fork's `feat/response-header-owned-values` branch (replacing the `feat/configurable-max-headers` pin, which was already merged upstream as PR #21).
+    - All 3 `Box::leak` call sites removed from [`src/server/service.rs`](../src/server/service.rs) and [`src/server/response.rs`](../src/server/response.rs). `AppService::intern_keep_alive` and `INTERN` static deleted. `keep_alive_header: Option<&'static str>` → `Option<Box<str>>`, cloned per response.
+    - `write_json_error` switched from `body.to_string().into_bytes()` to `serde_json::to_vec` (Phase 2.6 bonus — trivial while here).
+    - Verification: `cargo test --lib` 292 / 292 pass, including the CORS 403 round-trip + 415 `Accept-Post` regression guards.
+    - **Upstream PR**: raise a second `may_minihttp` PR against `Xudong-Huang/may_minihttp` using the fork branch, matching the PR #21 workflow.
+- **0.2 — Retire the `feat/configurable-max-headers` fork pin.** ✅ **Subsumed by 0.1.**
+    - Now pinned at `feat/response-header-owned-values` (which is a descendant of the merged `feat/configurable-max-headers` work). When upstream merges 0.1's PR we can switch to the next `may_minihttp` release tag.
+- **0.3 — Bound the metrics path map.** ⏳ **Next.**
+    - In [`src/middleware/metrics.rs`](../src/middleware/metrics.rs) add: (a) a single `__unmatched` key for 404s, (b) a configurable soft cap (`BRRTR_METRICS_PATH_MAX`, default 4096) after which inserts go to `__other`.
 
 **Acceptance criteria for Phase 0:**
 - Soak test: 1k users, 60 min continuous load, RSS growth ≤ 2 % over the last 45 min window (i.e. flat). No `Box::leak` call in the request path (grep-gated in CI).
