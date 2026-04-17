@@ -140,7 +140,13 @@ impl Sanitizer {
 
         let lower = field_name.to_ascii_lowercase();
         if value.len() > 4 && (lower.contains("key") || lower.contains("token")) {
-            format!("{}***", &value[..4])
+            // Use char_indices to find a UTF-8-safe prefix boundary (up to 4 chars).
+            // Byte-slicing (`&value[..4]`) would panic on multi-byte characters.
+            let prefix_end = value
+                .char_indices()
+                .nth(4)
+                .map_or(value.len(), |(idx, _)| idx);
+            format!("{}***", &value[..prefix_end])
         } else {
             "<REDACTED>".to_string()
         }
@@ -337,6 +343,21 @@ mod tests {
         assert_eq!(s.redact_value("api_key", "sk_live_abc123"), "sk_l***");
         assert_eq!(s.redact_value("token", "abcdefghij"), "abcd***");
         assert_eq!(s.redact_value("access_token", "12345678"), "1234***");
+    }
+
+    #[test]
+    fn test_redact_value_multibyte_utf8_no_panic() {
+        let s = Sanitizer::new(RedactionLevel::Credentials);
+        // 3-byte chars: each '€' is 3 bytes, so 5 chars = 15 bytes (> 4).
+        // The old byte-slice approach would panic; char-boundary extraction must work.
+        let euro_token = "€€€€€rest";
+        let result = s.redact_value("token", euro_token);
+        assert_eq!(result, "€€€€***");
+
+        // Mixed ASCII + multi-byte
+        let mixed = "ab🔑🔑rest";
+        let result2 = s.redact_value("api_key", mixed);
+        assert_eq!(result2, "ab🔑🔑***");
     }
 
     #[test]
