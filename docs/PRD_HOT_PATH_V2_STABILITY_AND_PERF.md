@@ -1,9 +1,9 @@
 # PRD: BRRTRouter hot-path v2 — stability, memory, and performance
 
 **Project:** BRRTRouter
-**Document version:** 1.1
-**Date:** 2026-04-17 (Phase 0.1 shipped)
-**Status:** Active — Phase 0.1 shipped; Phase 0.2/0.3 next
+**Document version:** 1.2
+**Date:** 2026-04-18 (Phases 0.1, 2.2, 5.1 shipped)
+**Status:** Active — Phases 0.1 / 2.2 / 5.1 shipped; Phase 0.3 next; upstream `may_minihttp` PR pending
 **Owner:** BRRTRouter core
 **Target branch:** `pre_BFF_work` (lands in phases; merges through small PRs)
 **Primary driver:** Hauliage dev-env stability — eliminate the "microservice keeps needing reboots" class of failure.
@@ -248,7 +248,11 @@ Each phase ships as its own PR. Each PR must include Goose v2 numbers (once Phas
 **Goal:** Zero allocation for the common request (known headers, routed, valid JSON).
 
 - **2.1 — Header-name intern table.** Static `phf::Map<&'static [u8], Arc<str>>` for the ~15 common header names. In `parse_request`, look up first, fall back to `Arc::from(lowercased)` only on miss. Expected effect: eliminate 90 %+ of `String` allocations in the hot path.
-- **2.2 — Gate precomputed debug fields.** Put `http_version`, `header_names`, `size_bytes` etc. behind `tracing::enabled!(Level::DEBUG)` or a new `hot-path-logging` cargo feature. Default OFF in release builds.
+- **2.2 — Demote per-request tracing to `debug!`.** ✅ **SHIPPED (2026-04-18).**
+    - **Motivation**: The Goose smoke against pet_store on 8081 triggered a **SIGABRT (exit 134)** in pet_store after ~152 s under 20-user load, preceded by **~2,800 synchronous `WARN "No route matched"` log writes/sec**. The log pipeline was itself the bottleneck.
+    - **Change**: demoted `warn!("No route matched")` in [`src/router/core.rs`](../src/router/core.rs) to `debug!`; demoted per-request `info!` in [`src/server/service.rs`](../src/server/service.rs) (`RequestLogger` Drop, `Authentication completed`, `Authentication success`), [`src/server/request.rs`](../src/server/request.rs) (`HTTP request parsed`, `Request body read`), and [`src/dispatcher/core.rs`](../src/dispatcher/core.rs) (5 handler-lifecycle events) to `debug!`. Kept startup-time and conditional slow-path `warn!`s. Removed unused `info` imports.
+    - **Verification**: at `RUST_LOG=brrtrouter=warn`, the 90 s / 20-user / ~74 k req/s smoke produced **240 lines of server output total** (vs **1,044,735 bytes** before). `cargo test --lib` 293/293.
+    - **Remaining (future PR)**: gate the precomputed debug fields themselves (`http_version = format!(...)`, `header_names`, `size_bytes`) behind `tracing::enabled!(Level::DEBUG)` so the formatting work itself disappears — this one-line fix was deferred to keep the Phase 2.2 PR scoped.
 - **2.3 — Avoid double path allocation.** Store `raw_path: String` once; keep the pre-`?` slice as `&str` into the stored path until routing is done.
 - **2.4 — Defer radix param `to_string()`** until the terminal branch is known accepted. Walk-to-match first, materialise param values on the accepting branch.
 - **2.5 — Body `Vec::with_capacity`** from `Content-Length` when present.
@@ -288,7 +292,12 @@ Each phase ships as its own PR. Each PR must include Goose v2 numbers (once Phas
 
 **Goal:** Make the metrics surface honest.
 
-- **5.1 — Bounded worker-pool queue.** Replace the unbounded `mpmc::channel` in [`src/worker_pool.rs`](../src/worker_pool.rs) with `crossbeam::queue::ArrayQueue` of size `queue_bound`. `Block` mode: `push` with `may::coroutine::park_timeout(backpressure_timeout_ms)`. `Shed` mode: `try_push` → `record_shed()` + `HandlerResponse::error(429, "…")`.
+- **5.1 — Bounded worker-pool queue.** ✅ **SHIPPED (2026-04-18).**
+    - Kept the existing `may::sync::mpmc` channel (coroutine-friendly blocking `recv`) and added a **soft bound** via the live `WorkerPoolMetrics::queue_depth` atomic. `dispatch_with_shedding` now fails fast with `HandlerResponse::error(429, …)` + `record_shed()` when depth ≥ `queue_bound`. `dispatch_with_blocking` cooperatively yields with `may::coroutine::sleep(1ms)` up to `backpressure_timeout_ms`; on timeout it sheds the same 429 (never hangs the caller).
+    - Shared path: new `send_to_pool` records the dispatch, undoes the counter if the channel is disconnected (→ 503, distinct from a 429).
+    - Behavior preservation: `queue_bound=0` disables the gate (old unbounded behavior); default remains 1024.
+    - Tests: new `shed_mode_rejects_when_queue_full` + 3 pre-existing worker-pool tests pass. Full `cargo test --lib` 293/293.
+    - Combined with 2.2, this eliminates the SIGABRT: the re-run 90 s smoke (same 20-user / same scenarios) now completes cleanly with the server still serving — **73,716 req/s, 3.5 % failures (all `GET /` 404s against an unregistered root route), zero aborted connections**, vs the pre-fix **58,427 req/s, 41.1 % failures including 684 k status=0 aborts + SIGABRT**.
 - **5.2 — Per-handler histograms.** Replace `PathMetrics` avg/min/max with a 10-bucket fixed histogram (same bucket layout as `HISTOGRAM_BUCKETS`) to expose real quantiles per handler.
 - **5.3 — `brrtrouter_box_leak_bytes_total` counter (transitional).** Increments whenever the hot path allocates a leaked header (before Phase 0.1 ships). Removed once leak sites are gone. Guards against regression.
 

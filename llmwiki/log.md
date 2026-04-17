@@ -1,5 +1,13 @@
 # LLM Wiki Log
 
+## [2026-04-18] ship | Phase 2.2 + 5.1 — hot-path logs + bounded queue
+
+- **Trigger**: the port-change Goose smoke (pet_store on 8081, 20 users × 30 s × 3 runs) reproduced the Hauliage reboot pattern in 30 s: **pet_store SIGABRT (exit 134)** under ~58 k req/s, preceded by **~2,800 synchronous `WARN "No route matched"` log writes/sec** flooding stderr (~1 MB of log output).
+- **Phase 2.2 (per-request log demotion)**: `warn!("No route matched")` → `debug!` + per-request `info!` in `server::service` (RequestLogger Drop, auth success/completed), `server::request` (parsed / body read), and `dispatcher::core` (5 handler-lifecycle events) → `debug!`. Unused `info` imports removed. Commit `perf(log): demote per-request tracing to debug (Phase 2.2)`.
+- **Phase 5.1 (bounded queue)**: `WorkerPool::dispatch` now enforces `queue_bound` via the live `queue_depth` atomic. `Shed` mode: fail fast with 429 + `record_shed()`. `Block` mode: cooperative `may::coroutine::sleep(1ms)` up to `backpressure_timeout_ms`, then shed. Added `shed_mode_rejects_when_queue_full` unit test. Commit `feat(worker-pool): real bounded queue with shed/block semantics (Phase 5.1)`.
+- **Verification after both**: re-run of the same 90 s smoke — pet_store **survived all 3 rounds** and remained serving HTTP 200 at end. **73,716 req/s (+26 %), 3.5 % failures (all `GET /` 404s against an unregistered route), zero aborted connections**, log output shrunk from ~1 MB to **240 lines**. `cargo test --lib` 293/293.
+- PRD [`docs/PRD_HOT_PATH_V2_STABILITY_AND_PERF.md`](../docs/PRD_HOT_PATH_V2_STABILITY_AND_PERF.md) updated to v1.2.
+
 ## [2026-04-17] ship | Phase 0.1 — Box::leak removed from the request path
 
 - `may_minihttp` fork branch `feat/response-header-owned-values` (commit `f9daffe`) adds `IntoResponseHeader` + `ResponseHeader { Static, Owned }`; `Response::header` now generic over static/owned inputs. Owned values drop with the response.
