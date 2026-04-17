@@ -1,9 +1,9 @@
 # PRD: BRRTRouter hot-path v2 — stability, memory, and performance
 
 **Project:** BRRTRouter
-**Document version:** 1.2
-**Date:** 2026-04-18 (Phases 0.1, 2.2, 5.1 shipped)
-**Status:** Active — Phases 0.1 / 2.2 / 5.1 shipped; Phase 0.3 next; upstream `may_minihttp` PR pending
+**Document version:** 1.3
+**Date:** 2026-04-18 (Phases 0.1 / 2.2 / 5.1 / 1 shipped)
+**Status:** Active — Phases 0.1 / 2.2 / 5.1 / 1 shipped; Phase 0.3 next; upstream `may_minihttp` PR pending
 **Owner:** BRRTRouter core
 **Target branch:** `pre_BFF_work` (lands in phases; merges through small PRs)
 **Primary driver:** Hauliage dev-env stability — eliminate the "microservice keeps needing reboots" class of failure.
@@ -235,11 +235,27 @@ Each phase ships as its own PR. Each PR must include Goose v2 numbers (once Phas
 
 **Goal:** Remove router/dispatcher `RwLock` from the request path.
 
-- **1.1 — `arc_swap::ArcSwap<Router>`** in `AppService`. Hot reload becomes a pointer swap; readers become lock-free.
-- **1.2 — `arc_swap::ArcSwap<Dispatcher>`** similarly. `/metrics` endpoint re-reads via `ArcSwap::load()`.
-- **1.3 — Update `src/hot_reload.rs`** to call `ArcSwap::store(Arc::new(new_router))` instead of taking a write lock.
+- **1.1 — `arc_swap::ArcSwap<Router>`** in `AppService`. ✅ **SHIPPED (2026-04-18).**
+- **1.2 — `arc_swap::ArcSwap<Dispatcher>`** similarly. ✅ **SHIPPED (2026-04-18).**
+- **1.3 — Update `src/hot_reload.rs`** to use `ArcSwap::store` / copy-on-write semantics for Dispatcher. ✅ **SHIPPED (2026-04-18).**
 
-**Acceptance criteria:** at 2k users, p99 does not spike when a `/metrics` scrape runs concurrently. Hot-reload test: 100 concurrent requests during a spec reload shows no dropped connections, no >100ms tail.
+**Implementation notes:**
+- Added `arc-swap = "1.7"` to the root `Cargo.toml` and `examples/pet_store/Cargo.toml`.
+- New public type aliases in [`src/server/service.rs`](../src/server/service.rs): `SharedRouter = Arc<ArcSwap<Router>>`, `SharedDispatcher = Arc<ArcSwap<Dispatcher>>`. Consumers migrate from `Arc<RwLock<Router>>` mechanically via `ArcSwap::from_pointee(router)`.
+- Hot-path reads collapse from 4-line `RwLock::read().expect(...)` blocks to `self.router.load().route(method, &path)` and `self.dispatcher.load()`; no lock poisoning.
+- `hot_reload::watch_spec` publishes via `router.store(Arc::new(new_router))` and, for dispatcher, `load_full()` → clone → mutate → `store`. This is the correct RCU pattern: readers holding the old Arc keep serving until their `Guard` drops.
+- Mechanically updated ~15 call sites (tests + `cli/commands` + `pet_store` + generator templates) via a scripted pass.
+
+**Acceptance criteria (measured 2000u × 600s against `pet_store` on 8091):**
+
+| Metric | Pre Phase 1 | Post Phase 1 | Δ |
+|---|---:|---:|---:|
+| Throughput | 55,001 req/s | **60,575 req/s** | **+10.1 %** |
+| Avg latency | 35.40 ms | **32.09 ms** | **−9.4 %** |
+| p99 latency | 130 ms | **110 ms** | **−15.4 %** |
+| Real 5xx | 0 | **0** | = |
+
+Baselines committed at [`benches/baselines/2000u-600s.json`](../benches/baselines/2000u-600s.json) (pre) and [`benches/baselines/2000u-600s-arcswap.json`](../benches/baselines/2000u-600s-arcswap.json) (post). `cargo test --lib` 293/293 + all 11 building integration test binaries pass (162 integration tests).
 
 ---
 

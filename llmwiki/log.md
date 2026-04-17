@@ -1,5 +1,24 @@
 # LLM Wiki Log
 
+## [2026-04-18] ship | Phase 1 — lock-free Router / Dispatcher via ArcSwap
+
+- Added `arc-swap = "1.7"` to root `Cargo.toml` + `examples/pet_store/Cargo.toml`. New public type aliases `SharedRouter = Arc<ArcSwap<Router>>` / `SharedDispatcher = Arc<ArcSwap<Dispatcher>>` in [`src/server/service.rs`](../src/server/service.rs).
+- Hot-path reads collapse from `RwLock::read().expect(...)` to `self.router.load().route(...)` and `self.dispatcher.load()`. No lock poisoning.
+- [`src/hot_reload.rs`](../src/hot_reload.rs) publishes via `router.store(Arc::new(new_router))` and (for dispatcher) `load_full` → clone → `on_reload` → `store` (RCU pattern; readers holding the old `Arc` keep serving).
+- Mass-updated ~15 call sites (tests + `cli/commands` + pet_store + generator templates) via scripted `Arc::new(RwLock::new(X))` → `Arc::new(arc_swap::ArcSwap::from_pointee(X))` pass.
+- Commit `perf(router): lock-free Router + Dispatcher via ArcSwap (Phase 1)` + follow-up `perf(petstore): adopt ArcSwap dump_routes / drop RwLock (Phase 1 follow-up)`.
+- `cargo test --lib` 293/293. 11 of 13 integration test binaries pass (162 tests); `multi_response_tests` + `generator_templates_tests` have pre-existing `RouteMeta { request_content_types: ... }` fixture gaps from the earlier 415 work — unrelated to ArcSwap.
+
+## [2026-04-18] bench | 2000 users × 600 s — Phase 1 ArcSwap
+
+Re-run of the headline 2k/600s stress against pet_store on port 8091 (Tilt squatted on 8081 again; confirmed Phase 1 build behaves identically on a free port).
+
+- **37,253,602 requests** (+10.1 % vs pre-Phase-1) — 36,001,118 [200] + 1,252,484 [404] (same `GET /` test scenario).
+- **60,575 req/s** sustained (+10.1 %).
+- Latency: avg **32.09 ms (−9.4 %)** / p50 **28 ms** / p95 **70 ms (−11.4 %)** / p99 **110 ms (−15.4 %)** / max 906 ms (outlier noise over 37 M reqs).
+- **Zero real failures**; server still HTTP-200 at end.
+- Baseline committed: [`benches/baselines/2000u-600s-arcswap.json`](../benches/baselines/2000u-600s-arcswap.json).
+
 ## [2026-04-18] bench | 2000 users × 600 s — post-Phase-2.2/5.1 ceiling
 
 Stress test against `pet_store` on `127.0.0.1:8081`, direct `api_load_test` binary (no averaging): **`--users 2000 --increase-rate 200 --run-time 600s --no-reset-metrics`**. `RUST_LOG=brrtrouter=warn,pet_store=warn`.

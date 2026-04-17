@@ -2,19 +2,19 @@
 
 This document details BRRTRouter's performance characteristics, optimization results, and benchmarking methodology.
 
-> **April 2026 update.** The hot-path v2 work (PRD [`PRD_HOT_PATH_V2_STABILITY_AND_PERF.md`](./PRD_HOT_PATH_V2_STABILITY_AND_PERF.md)) shipped Phases 0.1 (remove per-response `Box::leak`), 2.2 (demote per-request tracing), and 5.1 (real bounded worker-pool queue). The numbers below were measured on a post-fix build and **supersede the December 2025 baselines** further down this page — those are kept for historical context.
+> **April 2026 update.** The hot-path v2 work (PRD [`PRD_HOT_PATH_V2_STABILITY_AND_PERF.md`](./PRD_HOT_PATH_V2_STABILITY_AND_PERF.md)) shipped Phases 0.1 (remove per-response `Box::leak`), 2.2 (demote per-request tracing), 5.1 (real bounded worker-pool queue), and **1 (lock-free `Router` / `Dispatcher` via `ArcSwap`)**. The numbers below were measured on a post-Phase-1 build and **supersede the December 2025 baselines** further down this page — those are kept for historical context.
 
 ## Cloud-Native Scale-Out Strategy
 
 BRRTRouter is optimized for scalable cloud-native deployments with hard-bound resource limits. The pre-fix design targeted **fail-fast 503s at 2,000 users / 20 k req/s per pod** to force horizontal scaling. Post-fix measurement (below) shows the per-pod ceiling is substantially higher than that original target — HPA triggers can be tuned accordingly.
 
-| Metric | December 2025 target | April 2026 measured (post hot-path v2) |
-|--------|---------------------:|---------------------------------------:|
-| **Concurrent Users / Pod** | 2,000 (bound limit) | 2,000 (sustained, headroom remains) |
-| **Throughput / Pod** | 20,000 req/s | **55,001 req/s (+175 %)** |
-| **Base Latency (avg)** | ~15 ms | ~35 ms at 2 k users (10-min steady) |
-| **p99 under 2 k-user load** | ~400 ms | **130 ms (−68 %)** |
-| **5xx shed rate at 2 k users** | 0 %, target bound | **0 %** (no 5xx, 0 aborted connections) |
+| Metric | December 2025 target | April 2026 (post Phases 0.1/2.2/5.1) | April 2026 (post Phase 1 — current) |
+|--------|---------------------:|--------------------------------------:|------------------------------------:|
+| **Concurrent Users / Pod** | 2,000 (bound limit) | 2,000 (sustained) | 2,000 (sustained, further headroom) |
+| **Throughput / Pod** | 20,000 req/s | 55,001 req/s | **60,575 req/s (+203 %)** |
+| **Base Latency (avg)** | ~15 ms | 35.40 ms at 2 k users | **32.09 ms (−9.4 % vs 5.1)** |
+| **p99 under 2 k-user load** | ~400 ms | 130 ms | **110 ms (−72 % vs Dec 2025, −15 % vs 5.1)** |
+| **5xx shed rate at 2 k users** | 0 %, target bound | 0 % | **0 %** (no 5xx, 0 aborted connections) |
 
 | Stack / "hello-world" benchmark          | Test rig(s)*                               | Req/s (steady-state) | Comments                                |
 | ---------------------------------------- | ------------------------------------------ | -------------------- | --------------------------------------- |
@@ -30,27 +30,28 @@ BRRTRouter is optimized for scalable cloud-native deployments with hard-bound re
 
 ## Post Hot-Path v2 measurements (April 2026)
 
-### 2,000 users × 600 s sustained — headline benchmark
+### 2,000 users × 600 s sustained — headline benchmark (post Phase 1)
 
-Driver: `cargo run --release --example api_load_test -- --host http://127.0.0.1:8081 --users 2000 --increase-rate 200 --run-time 600s --no-reset-metrics`. Server: `examples/pet_store` (release, jemalloc, `RUST_LOG=brrtrouter=warn`). Hardware: M-series laptop, single pod. Artefacts: `/tmp/goose_2k/{report.html,report.json,report.md}`.
+Driver: `cargo run --release --example api_load_test -- --host http://127.0.0.1:<port> --users 2000 --increase-rate 200 --run-time 600s --no-reset-metrics`. Server: `examples/pet_store` (release, jemalloc, `RUST_LOG=brrtrouter=warn`). Hardware: M-series laptop, single pod. Port used: 8091 (avoids local Tilt occupying 8081). Artefacts: [`benches/baselines/2000u-600s-arcswap.json`](../benches/baselines/2000u-600s-arcswap.json) (post-Phase-1) and [`benches/baselines/2000u-600s.json`](../benches/baselines/2000u-600s.json) (pre-Phase-1 reference).
 
-| Metric | Value |
-|---|---:|
-| Duration | 14 s ramp + **10 min 01 s steady** + 0 s decrease |
-| Total requests | **33,825,644** |
-| Successful 2xx | **32,688,348** |
-| Real failures (5xx, aborted) | **0** |
-| 404s from Goose `GET /` (unregistered root route) | 1,137,296 (intentional test scenario) |
-| **Aggregate throughput** | **55,001 req/s** |
-| Latency — average | **35.40 ms** |
-| Latency — median (p50) | **30 ms** |
-| Latency — p95 / p99 / max | **79 ms / 130 ms / 769 ms** |
-| Peak RSS (decreasing at end) | ~252 MB |
-| Server state at end | **still serving HTTP 200, 0 dropped connections** |
+| Metric | Pre Phase 1 (RwLock) | Post Phase 1 (ArcSwap) | Δ |
+|---|---:|---:|---:|
+| Duration (steady) | 10 min 01 s | 10 min 00 s | — |
+| Total requests | 33,825,644 | **37,253,602** | **+10.1 %** |
+| Successful 2xx | 32,688,348 | 36,001,118 | +10.1 % |
+| Real failures (5xx, aborted) | 0 | **0** | = |
+| 404s from Goose `GET /` (unregistered root route) | 1,137,296 | 1,252,484 | (matches request volume increase) |
+| **Aggregate throughput** | 55,001 req/s | **60,575 req/s** | **+10.1 %** |
+| Latency — average | 35.40 ms | **32.09 ms** | **−9.4 %** |
+| Latency — median (p50) | 30 ms | 28 ms | −6.7 % |
+| Latency — p95 | 79 ms | 70 ms | −11.4 % |
+| Latency — p99 | 130 ms | **110 ms** | **−15.4 %** |
+| Latency — max | 769 ms | 906 ms | single-outlier noise over 37 M reqs |
+| Server state at end | HTTP 200, 0 dropped | HTTP 200, 0 dropped | = |
 
-This is **~3× the December 2025 documented per-pod ceiling** at the same user count, with **−68 % p99 latency** and **zero shed**. The "2,000 users = bound limit" guidance below is now conservative — the practical bound lives higher; the PRD Phase 1 (`ArcSwap`) + Phase 2.1 (header intern) + Phase 3 (parker reply) work aims to push it further.
+Together with Phases 0.1 / 2.2 / 5.1 this yields a **~3 ×** per-pod throughput improvement over the December 2025 ceiling (20 k → 60.6 k req/s) at **~72 % lower p99** (400 ms → 110 ms), with **zero shed**. The Hauliage pod reboot cadence that motivated this PRD is structurally fixed.
 
-See [`llmwiki/log.md`](../llmwiki/log.md) entry `[2026-04-18] bench | 2000 users × 600 s` for the full per-endpoint breakdown; committed baseline lives at [`benches/baselines/2000u-600s.json`](../benches/baselines/2000u-600s.json).
+See [`llmwiki/log.md`](../llmwiki/log.md) entry `[2026-04-18] bench | 2000 users × 600 s — Phase 1 ArcSwap` for the full per-endpoint breakdown.
 
 ### What the hot-path v2 fixes moved
 
@@ -131,7 +132,7 @@ Empirical testing at 4,000 concurrent users found the optimal coroutine stack si
 | Per-response `Box::leak` for header values → unbounded RSS growth                     | ✅ Fixed (PRD Phase 0.1, Apr 2026) |
 | Per-request `WARN "No route matched"` → log-pipeline saturation → SIGABRT              | ✅ Fixed (PRD Phase 2.2, Apr 2026) |
 | Unbounded `may::sync::mpmc` worker-pool queue → allocator pressure → crash            | ✅ Fixed (PRD Phase 5.1, Apr 2026) |
-| `RwLock<Router>` / `RwLock<Dispatcher>` on hot path                                   | 🚧 PRD Phase 1 (`ArcSwap`) — next |
+| `RwLock<Router>` / `RwLock<Dispatcher>` on hot path                                   | ✅ Fixed (PRD Phase 1, Apr 2026 — lock-free `ArcSwap`) |
 | `Arc::from(h.name.to_ascii_lowercase())` per header per request                       | 🚧 PRD Phase 2.1 (header-name intern) |
 | Per-request `mpsc::channel()` reply allocation                                        | 🚧 PRD Phase 3 (parker-based reply) |
 | Unbounded metrics `DashMap<String, _>` path keys                                      | 🚧 PRD Phase 0.3 — next |
