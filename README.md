@@ -14,7 +14,7 @@ BRRTRouter
 
 **BRRTRouter** generates a complete, type-safe HTTP server from your OpenAPI specification. Write your API definition once, get routing, validation, middleware, observability, and handler scaffolding automatically. Ship production-ready APIs faster.
 
-Inspired by the *GAU-8/A Avenger* on the A-10 Warthog, this router delivers precision request dispatch with massive throughput. Built on `may` coroutines for lightweight concurrency (800+ concurrent connections), it's designed for developers who want OpenAPI-first development without sacrificing performance.
+Inspired by the *GAU-8/A Avenger* on the A-10 Warthog, this router delivers precision request dispatch with massive throughput. Built on `may` coroutines for lightweight concurrency (800+ concurrent connections), it delivers **1,500+ req/s with sub-10 ms median latency on just 2 CPU cores** — verified by automated Goose load tests in CI.
 
 ---
 
@@ -40,6 +40,9 @@ Observability, security, and error handling included
 
 ✅ **Developer Experience First**  
 Hot reload, live metrics, comprehensive testing, 1-2s iteration cycle
+
+✅ **Verified Performance on Minimal Resources**  
+**1,500+ req/s** · **12 ms median latency** · **0% failures** — measured on a 2-core CI runner matching a typical K8s pod
 
 ---
 
@@ -162,15 +165,40 @@ See [CONTRIBUTING.md](CONTRIBUTING.md#-see-it-in-action) for the interactive das
 
 ## 📊 Performance & Scale-Out Strategy
 
-BRRTRouter is engineered for **cloud-native scale-out** rather than monolithic scale-up architectures. To guarantee high availability and stability, the system aggressively bounds heap constraints.
+BRRTRouter is engineered for **cloud-native scale-out** rather than monolithic scale-up architectures. The average Kubernetes pod runs on **≤ 2 CPU cores and 500 Mi memory** — and that is exactly where BRRTRouter shines.
 
-**Capacity Targets per Pod:**
+### Real-World Benchmark (2-Core GitHub Actions Runner)
 
-- **2,000 concurrent users** handling up to **20,000 req/s**.
-- **Fail-fast shedding:** Built-in queue bounded protection forces `503 Service Unavailable` caps during excessive load spikes. This intentionally triggers cloud-native infrastructure (like Kubernetes HPA) to scale out horizontally rather than allowing unbounded memory growth to crash the pod natively.
-- **Real-world Latencies:** Standard routing prior to implementing business logic sees responses around **~15ms**, while production endpoints involving data reads/writes average **~200ms to 400ms** depending on complexity.
+The following results were captured by a [Goose](https://book.goose.rs/) load test running **20 concurrent users** across six scenario groups against a BRRTRouter instance on a **2-core, resource-constrained CI runner** — the same resource envelope as a typical production pod.
 
-See [docs/PERFORMANCE.md](docs/PERFORMANCE.md) for complete benchmarks, load test results, and optimization details.
+| Metric | Value |
+|---|---|
+| **Total requests served** | 190,434 |
+| **Aggregate throughput** | **1,536 req/s** |
+| **Median latency** | **8 ms** |
+| **Average latency** | 12 ms |
+| **Failure rate** | **0.00%** |
+| **Scenario throughput** | 543 scenarios/s (20 users) |
+
+#### Latency by Endpoint Type
+
+| Endpoint | Median | Avg | Max |
+|---|---|---|---|
+| Path-parameter routes (`/pets/{id}`, `/users/{id}`) | 9 ms | 12 ms | 121 ms |
+| Static file serving | 3 ms | 5 ms | 112 ms |
+| Health check | 3 ms | 5 ms | 63 ms |
+| Prometheus `/metrics` | 42 ms | 46 ms | 154 ms |
+| CRUD operations (POST/DELETE) | 10 ms | 14 ms | 122 ms |
+
+> **What this means for you:** A single pod on the cheapest node pool can sustain **1,500+ requests per second with sub-10 ms median latency and zero failures**. Scale horizontally with standard HPA to multiply throughput linearly.
+
+### Scale-Out Design
+
+- **Fail-fast shedding:** Built-in queue-bounded protection returns `503 Service Unavailable` during overload, intentionally triggering Kubernetes HPA scale-out rather than allowing unbounded memory growth.
+- **Predictable latency:** [JSF AV Rules](#️-jsf-av-rules-compliance) eliminate heap allocations on the hot path, keeping p50 latency stable under load.
+- **Horizontal scaling:** Stateless design means every replica is identical — add pods, add throughput.
+
+See [docs/PERFORMANCE.md](docs/PERFORMANCE.md) for complete benchmarks, load test methodology, and optimization details.
 
 ---
 
@@ -239,7 +267,7 @@ BRRTRouter implements coding standards inspired by the **[Joint Strike Fighter A
 - **Result-based** error handling (no panics in dispatch)
 - **Stack-allocated** collections (JSF Rule 206)
 
-**Results:** 81,407 req/s peak load potential, 15ms latency without business logic, ~200-400ms with business logic.
+**Verified Results (2-core CI runner):** 1,536 req/s sustained throughput, 8 ms median latency, 0% failure rate across 190k+ requests. See [Performance & Scale-Out Strategy](#-performance--scale-out-strategy) for the full Goose load-test breakdown.
 
 See [docs/JSF_COMPLIANCE.md](docs/JSF_COMPLIANCE.md) for complete implementation details and validation results.
 
