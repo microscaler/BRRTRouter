@@ -6,7 +6,8 @@ This folder holds pinned Goose JSON reports that we diff against for regression 
 
 | File | Scenario | Notes |
 |---|---|---|
-| [`2000u-600s.json`](./2000u-600s.json) | `api_load_test` example, `--users 2000 --increase-rate 200 --run-time 600s --no-reset-metrics` against `pet_store` on 8081 | Post Phase 0.1 + 2.2 + 5.1 baseline (2026-04-18): 33.8 M requests, 55,001 req/s sustained, 0 real 5xx, p99 130 ms. See [`docs/PERFORMANCE.md`](../../docs/PERFORMANCE.md). |
+| [`2000u-600s.json`](./2000u-600s.json) | `api_load_test` example, `--users 2000 --increase-rate 200 --run-time 600s --no-reset-metrics` against `pet_store` on 8081 | Post Phase 0.1 + 2.2 + 5.1 baseline (2026-04-18): 33.8 M requests, **55,001 req/s**, 0 real 5xx, avg 35.40 ms, p99 130 ms. See [`docs/PERFORMANCE.md`](../../docs/PERFORMANCE.md). |
+| [`2000u-600s-arcswap.json`](./2000u-600s-arcswap.json) | Same scenario but on 8091 (avoid local Tilt conflict on 8081) | Post Phase 1 baseline (2026-04-18): 37.25 M requests, **60,575 req/s (+10.1 %)**, 0 real 5xx, avg 32.09 ms (−9.4 %), p99 110 ms (−15.4 %). Drop-in replacement for `2000u-600s.json` once a Hauliage deployment confirms the stability profile. |
 
 ## How to regenerate
 
