@@ -62,7 +62,7 @@ goose-load-test:
 **Configuration:**
 - **Duration**: 2 minutes
 - **Users**: 20 concurrent
-- **Hatch Rate**: 5 users/second
+- **Increase Rate**: 5 users/second
 - **Endpoints**: All OpenAPI routes + static files
 
 **Artifacts uploaded (7-day retention):**
@@ -109,7 +109,7 @@ cd ../..
 cargo run --release --example api_load_test -- \
   --host http://localhost:8080 \
   --users 20 \
-  --hatch-rate 5 \
+  --increase-rate 5 \
   --run-time 2m \
   --no-reset-metrics \
   --header "X-API-Key: test123" \
@@ -201,7 +201,7 @@ Features:
 According to [Goose metrics documentation](https://book.goose.rs/getting-started/metrics.html):
 
 - `-u`, `--users` - Number of concurrent users (e.g., `-u20`)
-- `-r`, `--hatch-rate` - Users to spawn per second (e.g., `-r5`)
+- `-r`, `--increase-rate` - Users to spawn per second (e.g., `-r5`)
 - `-t`, `--run-time` - Duration (e.g., `-t2m`, `-t30s`, `-t5m`)
 - `--no-reset-metrics` - Include startup metrics (recommended)
 - `--header` - Add global header to all requests
@@ -233,7 +233,7 @@ A summary is automatically generated for PR comments:
 **Test Configuration:**
 - Duration: 2 minutes
 - Users: 20 concurrent
-- Hatch Rate: 5 users/second
+- Increase Rate: 5 users/second
 
 **Endpoints Tested:**
 - ✅ GET /health

@@ -16,9 +16,10 @@
 | `docs/DEVELOPMENT.md` | partially-verified | `just` workflow is documented but `just` was unavailable in this environment; cargo commands still valid |
 | `docs/TEST_DOCUMENTATION.md` | partially-verified | Test categories align broadly; exact counts/coverage claims need recheck against current suite |
 | `docs/CORS_OPERATIONS.md` | verified | Dedicated reconciliation completed in `llmwiki/reconciliation/cors-operations-vs-codebase.md` |
-| `docs/PERFORMANCE.md` | pending | Requires benchmark and load-test artifact reconciliation |
+| `docs/PERFORMANCE.md` | verified | All drift resolved: flamegraph command corrected, Goose flag terminology fixed |
 
 ## Notable drift to fix next
-1. Some architecture prose implies `load_spec` returns parsed spec objects; current signature returns route metadata + slug.
-2. Test-doc numeric assertions should be regenerated from current `tests/` tree + CI targets.
-3. Operational docs should include explicit fallback commands when `just` is not installed.
+1. ✅ Architecture prose `load_spec` return type corrected in `docs/ARCHITECTURE.md` (mermaid diagram + step description).
+2. ✅ Router routing algorithm corrected from regex/O(n) to radix tree/O(k) in `docs/ARCHITECTURE.md`.
+3. Test-doc numeric assertions should be regenerated from current `tests/` tree + CI targets.
+4. Operational docs should include explicit fallback commands when `just` is not installed.
