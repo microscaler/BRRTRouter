@@ -42,3 +42,7 @@
 - **Normalised CI-runner absolute paths** (`/home/runner/work/BRRTRouter/BRRTRouter/...`) to repo-relative across five pre-existing wiki pages: `reconciliation/performance-docs-vs-codebase.md`, `reconciliation/cors-operations-vs-codebase.md`, `flows/code-generation-flow.md`, `flows/runtime-request-flow.md`, `reference/codebase-entry-points.md`. 43 path occurrences updated total. These paths came from the GitHub Actions Copilot workflow that bootstrapped the wiki.
 - Updated `llmwiki/index.md` with new `Reference`, `Entities`, and `Topics` sections.
 - **Convention going forward** (per user's ask): every BRRTRouter PRD / feature commit adds or extends 1–3 wiki pages tied to that work. Same schema (`Status` / `Source docs` / `Code anchors` / `Gaps`). Cross-link between hauliage ADRs and BRRTRouter wiki topics where concepts span both repos.
+
+## [2026-04-17] ingest | canonical vs wip docs policy
+
+- Added [`topics/canonical-docs-vs-wip.md`](./topics/canonical-docs-vs-wip.md); updated [`index.md`](./index.md) and [`docs-catalog.md`](./docs-catalog.md) synthesis table.

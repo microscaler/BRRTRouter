@@ -297,3 +297,4 @@
 | [`entities/request-body-parsing.md`](./entities/request-body-parsing.md) | Content-Type parsing, multipart history |
 | [`reference/openapi-extensions.md`](./reference/openapi-extensions.md) | All supported `x-*` keys |
 | [`reference/codebase-entry-points.md`](./reference/codebase-entry-points.md) | File-level entry points |
+| [`topics/canonical-docs-vs-wip.md`](./topics/canonical-docs-vs-wip.md) | Staleness policy for `docs/wip/` |

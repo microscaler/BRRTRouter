@@ -33,6 +33,7 @@
 - [Runtime stack map](./topics/runtime-stack-map.md) — spec → router → dispatcher → `server/service`
 - [Generator CLI and Askama](./topics/generator-cli-and-askama.md) — `brrtrouter_gen`, templates, Hauliage codegen pointers
 - [Sibling repos and wikis](./topics/sibling-repos-and-wikis.md) — Lifeguard + Hauliage + this repo
+- [Canonical docs vs WIP](./topics/canonical-docs-vs-wip.md) — how to treat `docs/wip/` vs maintained docs
 
 ## Cross-references
 
