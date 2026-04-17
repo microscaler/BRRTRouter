@@ -1,5 +1,12 @@
 # LLM Wiki Log
 
+## [2026-04-17] PRD | hot-path v2 — stability & perf
+
+- Authored [`docs/PRD_HOT_PATH_V2_STABILITY_AND_PERF.md`](../docs/PRD_HOT_PATH_V2_STABILITY_AND_PERF.md). Scope: root-cause the Hauliage dev-env "microservice needs reboot" pattern and collapse previous hot-path findings into a phased plan.
+- Phase 0 (stop the bleeding) removes per-response `Box::leak` (unbounded heap growth), bounds the metrics path `DashMap`, retires the `feat/configurable-max-headers` fork pin (our upstream PR merged: [`Xudong-Huang/may_minihttp#21`](https://github.com/Xudong-Huang/may_minihttp/pull/21)).
+- Phases 1–6: `ArcSwap` router/dispatcher; header-name intern; defer radix `to_string`; parker-based reply channel; validator fast path; bounded worker pool; Goose v2 scenario matrix with JSON baselines.
+- Updated [`index.md`](./index.md) to surface the PRD under a new "PRDs (active)" section.
+
 ## [2026-04-17] ingest | runtime map + generator + sibling wikis
 
 - Added **`topics/runtime-stack-map.md`** — links `spec/` → `router/` → `dispatcher/` → `server/service.rs` with code anchors.

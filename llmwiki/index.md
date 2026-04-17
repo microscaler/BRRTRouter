@@ -35,6 +35,10 @@
 - [Sibling repos and wikis](./topics/sibling-repos-and-wikis.md) — Lifeguard + Hauliage + this repo
 - [Canonical docs vs WIP](./topics/canonical-docs-vs-wip.md) — how to treat `docs/wip/` vs maintained docs
 
+## PRDs (active)
+
+- [Hot-path v2 — stability & perf](../docs/PRD_HOT_PATH_V2_STABILITY_AND_PERF.md) — stops per-response `Box::leak`, unbounded metrics keys, `RwLock` on hot path; adds Goose v2 harness. Targets Hauliage dev-env reboot cadence.
+
 ## Cross-references
 
 - **Lifeguard ORM / migrations:** [`../../lifeguard/docs/llmwiki/`](../../lifeguard/docs/llmwiki/)
