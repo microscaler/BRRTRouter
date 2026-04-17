@@ -20,6 +20,7 @@ fn create_route_meta(method: Method, path: &str, handler: &str) -> RouteMeta {
         parameters: Vec::new(),
         request_schema: None,
         request_body_required: false,
+        request_content_types: Vec::new(),
         response_schema: None,
         example: None,
         responses: HashMap::new(),
