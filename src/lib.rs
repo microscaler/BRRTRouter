@@ -877,6 +877,7 @@ pub mod middleware;
 pub mod otel;
 pub mod router;
 pub mod runtime_config;
+pub mod sanitize;
 pub mod security;
 pub mod server;
 pub mod spec;

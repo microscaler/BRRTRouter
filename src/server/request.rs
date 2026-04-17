@@ -333,9 +333,11 @@ pub fn parse_request(req: Request) -> Result<ParsedRequest, String> {
 
     // R4: Query params parsed
     let query_params = parse_query_params(&raw_path);
+    let sanitizer = crate::sanitize::default_sanitizer();
+    let safe_query = sanitizer.sanitize_params(&query_params);
     debug!(
         param_count = query_params.len(),
-        query_params = ?query_params,
+        query_params = ?safe_query,
         "Query params parsed"
     );
 

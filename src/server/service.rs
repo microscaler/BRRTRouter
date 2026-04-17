@@ -934,14 +934,19 @@ impl HttpService for AppService {
             span: span.clone(),
         };
 
-        // Log incoming request with all headers (for debugging TooManyHeaders)
+        // Log incoming request with sanitized headers (for debugging TooManyHeaders)
+        // Sensitive header/cookie/query values are masked per BRRTR_LOG_REDACT_LEVEL.
+        let sanitizer = crate::sanitize::default_sanitizer();
+        let safe_headers = sanitizer.sanitize_headers(&headers);
+        let safe_cookies = sanitizer.sanitize_headers(&cookies);
+        let safe_query = sanitizer.sanitize_params(&query_params);
         debug!(
             method = %method,
             path = %path,
             header_count = headers.len(),
-            headers = ?headers,
-            query_params = ?query_params,
-            cookies = ?cookies,
+            headers = ?safe_headers,
+            query_params = ?safe_query,
+            cookies = ?safe_cookies,
             body_size = body.as_ref().map(|v| v.as_object().map(|o| o.len())),
             "Request received"
         );
