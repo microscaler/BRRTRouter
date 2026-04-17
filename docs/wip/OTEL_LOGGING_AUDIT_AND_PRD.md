@@ -206,3 +206,33 @@ BRRTRouter needs logs that are simultaneously:
 - Exact masking strategy (strict `<REDACTED>` vs partial fuzzing) should be finalized with security stakeholders.
 - Payload preview size limits should balance debugging utility vs memory/latency overhead.
 - If full OTLP export is required now (not future), a separate OTel exporter integration story is needed.
+
+---
+
+## Iteration Update (2026-04-17)
+
+This iteration re-audits implementation status and refines the immediate backlog after Phase 1 delivery.
+
+### Current Requirement Status
+
+- **FR1 Sensitive field sanitizer**: ✅ Delivered (`src/sanitize.rs`) and wired into request/service debug logging call sites (`src/server/request.rs`, `src/server/service.rs`).
+- **FR2 Request payload logging modes**: ❌ Not delivered. No payload mode config (`off/meta/safe_preview/full`) is currently exposed in `src/otel.rs`.
+- **FR3 Correlation envelope normalization**: 🟡 Partial. `request_id` propagation exists, but completion logs still do not consistently include `route_pattern`/`status`, and no explicit `route_not_found` event is emitted in `src/server/service.rs`.
+- **FR4 Noise suppression policy**: 🟡 Partial. `may_minihttp::http_server=warn` is applied in `src/otel.rs`, but explicit suppression policy for noisy `may::*` targets (including `may::io::sys::select`) is not yet codified.
+- **FR5 JSON schema consistency**: ❌ Not delivered. Canonical event names/field schema are still not standardized in code.
+- **FR6 Validation and tests**: 🟡 Partial. Sanitizer unit coverage is present in `src/sanitize.rs`, but dedicated tests for envelope completeness, route-not-found eventing, and noise directives are still missing.
+
+### Updated Next-Iteration Scope
+
+1. **Finish FR3 first (signal quality):**
+   - Add a single normalized completion envelope with `request_id`, `method`, `path`, `route_pattern`, `status`, `duration_ms`.
+   - Record span `status` before request completion.
+   - Emit explicit `route_not_found` event on unmatched routes.
+2. **Then implement FR4 defaults (noise suppression):**
+   - Add default directives for known noisy `may::*` targets while preserving override behavior.
+   - Document directive precedence between defaults, `RUST_LOG`, and `BRRTR_LOG_TARGET_FILTER`.
+3. **Define FR5 canonical event contract:**
+   - Lock event names and required fields for `request_start`, `auth_result`, `validation_failure`, `route_not_found`, `request_complete`.
+4. **Close FR6 with focused tests:**
+   - Add assertions for required envelope fields and route-not-found logging behavior.
+   - Add tests validating default noise directives and override behavior.
