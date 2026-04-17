@@ -173,11 +173,11 @@ debug-petstore:
 	echo ""
 	echo "✅ Server started in background"
 	echo "   Log file: /tmp/petstore_debug.log"
-	echo "   Health:   curl http://127.0.0.1:8080/health"
+	echo "   Health:   curl http://127.0.0.1:8081/health"
 	echo "   Stop:     pkill -f pet_store"
 	echo ""
 	echo "Verifying server is running..."
-	curl -s http://127.0.0.1:8080/health && echo ""
+	curl -s http://127.0.0.1:8081/health && echo ""
 
 # Stop pet_store server
 stop-petstore:
@@ -198,12 +198,12 @@ goose-test users="10" runtime="30s":
 	echo "🦆 Running Goose load test..."
 	echo "   Users:   {{users}}"
 	echo "   Runtime: {{runtime}}"
-	echo "   Target:  http://127.0.0.1:8080"
+	echo "   Target:  http://127.0.0.1:8081"
 	echo "   Log:     /tmp/goose_test.log"
 	echo ""
 	
 	# Check if server is running
-	if ! curl -s http://127.0.0.1:8080/health > /dev/null 2>&1; then
+	if ! curl -s http://127.0.0.1:8081/health > /dev/null 2>&1; then
 		echo "❌ Server not responding on port 8080"
 		echo "   Start it first with: just debug-petstore"
 		exit 1
@@ -211,7 +211,7 @@ goose-test users="10" runtime="30s":
 	
 	RUST_LOG=warn \
 	cargo run --release --example api_load_test -- \
-		--host http://127.0.0.1:8080 \
+		--host http://127.0.0.1:8081 \
 		--users {{users}} \
 		--run-time {{runtime}} \
 		--no-reset-metrics \
@@ -253,7 +253,7 @@ smoke-test:
 	just goose-test users=5 runtime=10s || true
 	
 	# Check if server crashed
-	if ! curl -s http://127.0.0.1:8080/health > /dev/null 2>&1; then
+	if ! curl -s http://127.0.0.1:8081/health > /dev/null 2>&1; then
 		echo ""
 		echo "❌ SERVER CRASHED during load test!"
 		echo "   Check logs: tail -50 /tmp/petstore_debug.log"
@@ -441,7 +441,7 @@ docs-check:
 # API Testing
 # ============================================================================
 
-# Test Pet Store API endpoints (requires running server on localhost:8080)
+# Test Pet Store API endpoints (requires running server on localhost:8081)
 # Use with: just dev-up (in another terminal), then just curls
 curls:
 	@bash scripts/curls.sh
@@ -585,7 +585,7 @@ dev-registry-wire:
 # Prerequisites: from microscaler/shared-kind-cluster run `just dev-up` once, OR:
 #   kind create cluster --config k8s/cluster/kind-config.yaml --wait 120s
 # Tilt UI: http://localhost:10353 (press 'space' to open)
-# Pet Store API: http://localhost:8080
+# Pet Store API: http://localhost:8081
 dev-up:
 	#!/usr/bin/env bash
 	set -euo pipefail

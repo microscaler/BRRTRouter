@@ -195,7 +195,7 @@ if actual_time > expected_time + 1000 {
 ```bash
 # Quick 1-minute test with 10 concurrent users
 cargo run --release --example performance_metrics_load_test -- \
-  --host http://localhost:8080 \
+  --host http://localhost:8081 \
   --users 10 \
   --run-time 1m
 ```
@@ -205,7 +205,7 @@ cargo run --release --example performance_metrics_load_test -- \
 ```bash
 # 5-minute test with 100 concurrent users
 cargo run --release --example performance_metrics_load_test -- \
-  --host http://localhost:8080 \
+  --host http://localhost:8081 \
   --users 100 \
   --hatch-rate 10 \
   --run-time 5m \
@@ -217,7 +217,7 @@ cargo run --release --example performance_metrics_load_test -- \
 ```bash
 # 10-minute test with 500 concurrent users
 cargo run --release --example performance_metrics_load_test -- \
-  --host http://localhost:8080 \
+  --host http://localhost:8081 \
   --users 500 \
   --hatch-rate 50 \
   --run-time 10m \
@@ -229,7 +229,7 @@ cargo run --release --example performance_metrics_load_test -- \
 ```bash
 # 15-minute test with 1000+ concurrent users (find breaking point)
 cargo run --release --example performance_metrics_load_test -- \
-  --host http://localhost:8080 \
+  --host http://localhost:8081 \
   --users 1000 \
   --hatch-rate 100 \
   --run-time 15m \
@@ -330,7 +330,7 @@ brrtrouter_memory_usage_bytes
 ```bash
 # Run baseline test
 cargo run --release --example performance_metrics_load_test -- \
-  --host http://localhost:8080 \
+  --host http://localhost:8081 \
   --users 100 \
   --run-time 5m
 
@@ -341,7 +341,7 @@ cp metrics-*.json baseline-metrics.json
 
 # Run comparison test
 cargo run --release --example performance_metrics_load_test -- \
-  --host http://localhost:8080 \
+  --host http://localhost:8081 \
   --users 100 \
   --run-time 5m
 
@@ -419,7 +419,7 @@ Set up CI to run performance tests and fail if metrics regress:
 
 # Run test
 cargo run --release --example performance_metrics_load_test -- \
-  --host http://localhost:8080 \
+  --host http://localhost:8081 \
   --users 100 \
   --run-time 2m
 

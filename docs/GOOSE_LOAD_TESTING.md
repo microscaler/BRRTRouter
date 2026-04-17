@@ -102,12 +102,12 @@ Aggregated               |           380 |         0 (0%) |     3.17 |    0.00
 ```bash
 # Start the service
 cd examples/pet_store
-cargo run -- --spec doc/openapi.yaml --port 8080 --test-api-key test123
+cargo run -- --spec doc/openapi.yaml --port 8081 --test-api-key test123
 
 # In another terminal, run load test
 cd ../..
 cargo run --release --example api_load_test -- \
-  --host http://localhost:8080 \
+  --host http://localhost:8081 \
   --users 20 \
   --increase-rate 5 \
   --run-time 2m \
@@ -120,7 +120,7 @@ cargo run --release --example api_load_test -- \
 
 ```bash
 cargo run --release --example api_load_test -- \
-  --host http://localhost:8080 \
+  --host http://localhost:8081 \
   -u10 -r2 -t30s \
   --header "X-API-Key: test123"
 ```
@@ -129,7 +129,7 @@ cargo run --release --example api_load_test -- \
 
 ```bash
 cargo run --release --example api_load_test -- \
-  --host http://localhost:8080 \
+  --host http://localhost:8081 \
   -u100 -r10 -t5m \
   --no-reset-metrics \
   --header "X-API-Key: test123" \
@@ -263,7 +263,7 @@ Goose is particularly effective for detecting memory leaks:
 ```bash
 # Run a 10-minute sustained load test
 cargo run --release --example api_load_test -- \
-  --host http://localhost:8080 \
+  --host http://localhost:8081 \
   -u50 -r10 -t10m \
   --header "X-API-Key: test123"
 
