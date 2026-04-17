@@ -15,7 +15,7 @@ use crate::router::ParamVec;
 use crate::spec::ParameterStyle;
 use http::Method;
 use may_minihttp::Request;
-use serde_json::{json, Map, Number, Value};
+use serde_json::{Map, Number, Value};
 use std::io::Read;
 use std::sync::Arc;
 use tracing::{debug, info};
@@ -213,7 +213,13 @@ pub fn decode_param_value(
     }
 }
 
-fn primary_content_type(content_type: &str) -> &str {
+/// Return the primary media type from a `Content-Type` header value,
+/// dropping any parameters (e.g. `; charset=utf-8`, `; boundary=...`).
+///
+/// Exposed so call sites outside this module (e.g. `server::service`) can
+/// classify the declared Content-Type of an incoming request without
+/// duplicating the trim logic.
+pub fn primary_content_type(content_type: &str) -> &str {
     content_type.split(';').next().unwrap_or("").trim()
 }
 
@@ -256,8 +262,15 @@ fn parse_request_body(raw: &[u8], content_type: &str) -> Option<Value> {
     if ct_lower == "application/x-www-form-urlencoded" {
         return Some(form_urlencoded_body_to_json(raw));
     }
+    // NOTE: `multipart/form-data` and unknown content types are intentionally
+    // not parsed here into a JSON shape. Returning `None` lets the service-level
+    // Content-Type enforcement (see `server::service::call` 415 check) decide
+    // how to respond against the operation's declared `request_content_types`.
+    // Historically this branch returned `Some(json!({}))` for multipart, which
+    // fabricated an empty JSON body and silently bypassed request schema
+    // validation — closed as of this change.
     if ct_lower == "multipart/form-data" {
-        return Some(json!({}));
+        return None;
     }
     serde_json::from_slice(raw).ok()
 }
@@ -459,14 +472,16 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_request_body_multipart_placeholder() {
+    fn test_parse_request_body_multipart_returns_none() {
+        // Multipart no longer fabricates an empty JSON object; it returns None so
+        // that the service-level 415 enforcement (in server::service::call) can
+        // reject it against the operation's declared request_content_types.
+        // See `parse_request_body`'s multipart branch for the rationale.
         let v = parse_request_body(
             b"pretend-binary",
             "multipart/form-data; boundary=----WebKit",
-        )
-        .expect("multipart");
-        assert!(v.is_object());
-        assert!(v.as_object().unwrap().is_empty());
+        );
+        assert!(v.is_none(), "expected multipart body to be None post-fix");
     }
 
     /// `GET /matrix/1;2;3` captures `coords=1;2;3` as one path param; matrix style must split on `;`.

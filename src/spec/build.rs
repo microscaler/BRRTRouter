@@ -240,10 +240,34 @@ pub fn extract_request_schema(
     spec: &OpenApiV3Spec,
     operation: &oas3::spec::Operation,
 ) -> (Option<Value>, bool) {
+    let (schema, required, _content_types) = extract_request_body_details(spec, operation);
+    (schema, required)
+}
+
+/// Like [`extract_request_schema`], but also returns the list of declared content types.
+///
+/// Parses the `requestBody.content` map in an OpenAPI operation and returns:
+/// * `schema`   — the JSON schema for `application/json` (if declared)
+/// * `required` — whether the request body is required
+/// * `content_types` — every content-type key declared in `requestBody.content`
+///   (e.g. `["application/json"]` or `["application/json", "multipart/form-data"]`).
+///   Empty when the operation declares no `requestBody`.
+///
+/// The content-types list is used at request time to enforce **415 Unsupported
+/// Media Type** when a client POSTs with a `Content-Type` the operation did not
+/// declare — closing a class of bypass where e.g. `multipart/form-data` was
+/// silently fabricated into an empty JSON object and bypassed request schema
+/// validation. See `src/server/service.rs` Content-Type enforcement.
+pub fn extract_request_body_details(
+    spec: &OpenApiV3Spec,
+    operation: &oas3::spec::Operation,
+) -> (Option<Value>, bool, Vec<String>) {
     let mut required = false;
+    let mut content_types: Vec<String> = Vec::new();
     let mut schema = operation.request_body.as_ref().and_then(|r| match r {
         ObjectOrReference::Object(req_body) => {
             required = req_body.required.unwrap_or(false);
+            content_types = req_body.content.keys().cloned().collect();
             req_body.content.get("application/json").and_then(|media| {
                 match media.schema.as_ref()? {
                     ObjectOrReference::Object(schema_obj) => serde_json::to_value(schema_obj).ok(),
@@ -257,7 +281,7 @@ pub fn extract_request_schema(
     if let Some(ref mut val) = schema {
         expand_schema_refs(spec, val);
     }
-    (schema, required)
+    (schema, required, content_types)
 }
 
 /// Extract response schemas and examples from an OpenAPI operation
@@ -583,8 +607,8 @@ pub fn build_routes(spec: &OpenApiV3Spec, slug: &str) -> anyhow::Result<Vec<Rout
                     None => continue,
                 };
 
-                let (request_schema, request_body_required) =
-                    extract_request_schema(spec, operation);
+                let (request_schema, request_body_required, request_content_types) =
+                    extract_request_body_details(spec, operation);
                 let (response_schema, example, responses) =
                     extract_response_schema_and_example(spec, operation);
 
@@ -628,6 +652,7 @@ pub fn build_routes(spec: &OpenApiV3Spec, slug: &str) -> anyhow::Result<Vec<Rout
                     parameters,
                     request_schema,
                     request_body_required,
+                    request_content_types,
                     response_schema,
                     example,
                     responses,

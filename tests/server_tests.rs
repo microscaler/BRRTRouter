@@ -203,6 +203,7 @@ impl CustomServerTestFixture {
             parameters: Vec::new(),
             request_schema,
             request_body_required: false,
+            request_content_types: Vec::new(),
             response_schema,
             example: None,
             responses: std::collections::HashMap::new(),

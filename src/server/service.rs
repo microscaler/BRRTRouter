@@ -1286,6 +1286,69 @@ impl HttpService for AppService {
                 }
             }
 
+            // V1a: Content-Type enforcement (415 Unsupported Media Type)
+            //
+            // If the request carries a body, the client's Content-Type must be
+            // one of the content types the operation declared in
+            // `requestBody.content` (e.g. `application/json`). An operation that
+            // declares only `application/json` will reject `multipart/form-data`
+            // here before any further processing, closing the multipart
+            // fabrication bypass that previously produced empty `{}` bodies.
+            //
+            // Empty bodies (body_size_bytes == 0) skip this check — they are
+            // handled by the "V2: Required body missing" step below.
+            //
+            // Operations with no `requestBody` declared
+            // (`request_content_types.is_empty()`) are not affected, to preserve
+            // backward-compatible behavior for GET / DELETE with accidental bodies.
+            if body_size_bytes > 0 && !route_match.route.request_content_types.is_empty() {
+                let client_content_type = headers
+                    .iter()
+                    .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
+                    .map(|(_, v)| {
+                        crate::server::request::primary_content_type(v.as_str())
+                            .to_ascii_lowercase()
+                    })
+                    .unwrap_or_default();
+                if !client_content_type.is_empty() {
+                    let declared = &route_match.route.request_content_types;
+                    let accepted = declared.iter().any(|d| {
+                        crate::server::request::primary_content_type(d)
+                            .eq_ignore_ascii_case(client_content_type.as_str())
+                    });
+                    if !accepted {
+                        warn!(
+                            method = %method,
+                            path = %path,
+                            handler = %route_match.handler_name,
+                            client_content_type = %client_content_type,
+                            declared = ?declared,
+                            "Unsupported Media Type"
+                        );
+                        // Advertise the accepted types via the `Accept-Post` header
+                        // (RFC 7231 §6.5.13 uses Accept-Post to indicate media types
+                        // accepted by the resource for POST — we include it on all
+                        // methods as a diagnostic aid for clients).
+                        let accept_post = declared.join(", ");
+                        res.header(Box::leak(
+                            format!("Accept-Post: {accept_post}").into_boxed_str(),
+                        ));
+                        write_json_error(
+                            res,
+                            415,
+                            json!({
+                                "error": "Unsupported Media Type",
+                                "message": format!(
+                                    "Content-Type '{client_content_type}' not declared by this operation; accepted: {accept_post}"
+                                ),
+                                "accepted": declared,
+                            }),
+                        );
+                        return Ok(());
+                    }
+                }
+            }
+
             // V2: Required body missing
             if route_match.route.request_body_required && body.is_none() {
                 let expected_content_type = "application/json";

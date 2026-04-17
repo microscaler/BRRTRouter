@@ -753,6 +753,7 @@ mod tests {
                 "required": ["name"]
             })),
             request_body_required: true,
+            request_content_types: vec!["application/json".to_string()],
             response_schema: None,
             example: None,
             responses,
@@ -853,6 +854,7 @@ mod tests {
             parameters: vec![],
             request_schema: Some(json!({"type": "object"})),
             request_body_required: true,
+            request_content_types: vec!["application/json".to_string()],
             response_schema: None,
             example: None,
             responses,
@@ -936,6 +938,7 @@ mod tests {
             parameters: vec![],
             request_schema: Some(json!({"type": "object"})),
             request_body_required: true,
+            request_content_types: vec!["application/json".to_string()],
             response_schema: None,
             example: None,
             responses,
