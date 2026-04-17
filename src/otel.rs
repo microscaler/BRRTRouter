@@ -218,9 +218,17 @@ impl LogConfig {
     }
 }
 
-/// Redaction layer: masks sensitive data in logs
+/// Redaction layer: placeholder for tracing subscriber integration.
+///
+/// **Important**: The `tracing` crate's `Layer::on_event` cannot mutate field values
+/// in-flight. Effective redaction must happen at the call-site — see [`crate::sanitize`]
+/// for the canonical field sanitizer used throughout the codebase.
+///
+/// This layer remains in the subscriber stack for future use (e.g. span-attribute
+/// filtering) and to keep the `RedactionLevel` available in the subscriber context.
+/// The actual sensitive-data masking is performed by [`crate::sanitize::Sanitizer`]
+/// at each logging call-site.
 pub struct RedactionLayer {
-    #[allow(dead_code)]
     level: RedactionLevel,
 }
 
@@ -229,63 +237,18 @@ impl RedactionLayer {
         Self { level }
     }
 
-    /// Check if this field should be redacted
-    #[allow(dead_code)]
-    fn should_redact(&self, field_name: &str) -> bool {
-        if self.level == RedactionLevel::None {
-            return false;
-        }
-
-        // Always redact credentials at Credentials and Full levels
-        let credentials_patterns = [
-            "password",
-            "passwd",
-            "pwd",
-            "secret",
-            "api_key",
-            "apikey",
-            "apiKey",
-            "token",
-            "accessToken",
-            "refreshToken",
-            "access_token",
-            "refresh_token",
-            "authorization",
-            "credentials",
-            "ssn",
-            "social_security_number",
-            "credit_card",
-            "creditCard",
-            "ccNumber",
-        ];
-
-        for pattern in &credentials_patterns {
-            if field_name.to_lowercase().contains(pattern) {
-                return true;
-            }
-        }
-
-        // Full level: also redact PII
-        if self.level == RedactionLevel::Full {
-            let pii_patterns = ["email", "ip", "ip_address", "user_id", "phone", "name"];
-            for pattern in &pii_patterns {
-                if field_name.to_lowercase().contains(pattern) {
-                    return true;
-                }
-            }
-        }
-
-        false
+    /// Check if a field name matches the sensitive-field policy.
+    ///
+    /// Delegates to [`crate::sanitize::Sanitizer::should_redact`].
+    pub fn should_redact(&self, field_name: &str) -> bool {
+        crate::sanitize::Sanitizer::new(self.level).should_redact(field_name)
     }
 
-    /// Redact a string value (truncate to first 4 chars for API keys)
-    #[allow(dead_code)]
-    fn redact_value(&self, field_name: &str, value: &str) -> String {
-        if value.len() > 4 && (field_name.contains("key") || field_name.contains("token")) {
-            format!("{}***", &value[..4.min(value.len())])
-        } else {
-            "<REDACTED>".to_string()
-        }
+    /// Mask a sensitive string value.
+    ///
+    /// Delegates to [`crate::sanitize::Sanitizer::redact_value`].
+    pub fn redact_value(&self, field_name: &str, value: &str) -> String {
+        crate::sanitize::Sanitizer::new(self.level).redact_value(field_name, value)
     }
 }
 
@@ -294,11 +257,9 @@ where
     S: Subscriber + for<'a> LookupSpan<'a>,
 {
     fn on_event(&self, _event: &Event<'_>, _ctx: LayerContext<'_, S>) {
-        // Note: Field redaction would require intercepting field values
-        // For now, this is a placeholder. Full implementation would use
-        // tracing-subscriber's Visit trait to intercept and modify field values.
-        // This is complex and may require a custom fmt layer.
-        // For v1, we'll document best practices for not logging sensitive data.
+        // Call-site sanitization via `crate::sanitize::Sanitizer` is the correct
+        // Rust/tracing approach — `on_event` cannot mutate field values in-flight.
+        // See `src/sanitize.rs` for the centralized redaction logic.
     }
 }
 
