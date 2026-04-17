@@ -1,5 +1,18 @@
 # LLM Wiki Log
 
+## [2026-04-18] bench | 2000 users × 600 s — post-Phase-2.2/5.1 ceiling
+
+Stress test against `pet_store` on `127.0.0.1:8081`, direct `api_load_test` binary (no averaging): **`--users 2000 --increase-rate 200 --run-time 600s --no-reset-metrics`**. `RUST_LOG=brrtrouter=warn,pet_store=warn`.
+
+- **33,825,644 requests** handled (32,688,348 [200] + 1,137,296 [404]).
+- The 1.1 M "failures" are all the `test_index` Goose transaction hitting `GET /` — an unregistered root route. **Zero real failures, zero 5xx, zero aborted connections.**
+- **55,001 req/s sustained** at 2000 concurrent users for 10 minutes.
+- **Latency**: avg 35.40 ms / median 30 ms / p95 79 ms / p99 130 ms / max 769 ms.
+- Server **still serving HTTP 200** after the run; peak RSS ~252 MB with decreasing trend.
+- vs [`docs/PERFORMANCE.md`](../docs/PERFORMANCE.md) 2000-user baseline (20 k req/s, ~400 ms latency, scale-out triggered): **+175 % throughput, −92 % avg latency, 0 % shed**.
+- Artefacts: `/tmp/goose_2k/{report.html,report.json,report.md}` — JSON is the Phase 6 baseline candidate.
+- Side observation: Tilt was already listening on IPv6 `[::1]:8081`; our IPv4 `127.0.0.1:8081` bind coexisted cleanly.
+
 ## [2026-04-18] ship | Phase 2.2 + 5.1 — hot-path logs + bounded queue
 
 - **Trigger**: the port-change Goose smoke (pet_store on 8081, 20 users × 30 s × 3 runs) reproduced the Hauliage reboot pattern in 30 s: **pet_store SIGABRT (exit 134)** under ~58 k req/s, preceded by **~2,800 synchronous `WARN "No route matched"` log writes/sec** flooding stderr (~1 MB of log output).
