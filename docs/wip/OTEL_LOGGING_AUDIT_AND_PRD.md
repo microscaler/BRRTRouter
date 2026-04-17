@@ -113,11 +113,12 @@ BRRTRouter needs logs that are simultaneously:
 
 ## Functional Requirements
 
-### FR1: Sensitive field sanitizer (required)
-- Introduce a centralized sanitizer used by service/request/dispatcher logging.
+### FR1: Sensitive field sanitizer (required) ✅ DELIVERED
+- Centralized `Sanitizer` in `src/sanitize.rs` used by service/request/dispatcher logging.
 - Field-name based policy (case-insensitive) for: `password`, `passwd`, `pwd`, `secret`, `token`, `api_key`, `authorization`, etc.
-- JSON body traversal must mask nested sensitive keys.
+- JSON body traversal masks nested sensitive keys (`sanitize_json`).
 - Output mode for sensitive values: deterministic fuzzing/masking (`abcd***` or `<REDACTED>`), never raw.
+- 21 unit tests covering all sanitizer functionality.
 
 ### FR2: Request payload logging modes (required)
 - Add config: payload logging mode with options:
@@ -183,7 +184,7 @@ BRRTRouter needs logs that are simultaneously:
 
 ## Rollout Strategy
 
-1. **Phase 1 (Safety first)**: implement sanitizer + enforce masking in existing events.
+1. **Phase 1 (Safety first)**: implement sanitizer + enforce masking in existing events. ✅ **DELIVERED** — `src/sanitize.rs` + call-site wiring in `service.rs`, `request.rs` (2026-04-17)
 2. **Phase 2 (Signal quality)**: normalize envelope, status recording, route-not-found event.
 3. **Phase 3 (Operational tuning)**: noise filters + configurable span verbosity + payload modes.
 4. **Phase 4 (Hardening)**: exhaustive tests + docs updates + migration notes.
