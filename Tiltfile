@@ -359,7 +359,7 @@ if bundled_observability:
 
 k8s_resource(
     'petstore',
-    port_forwards='8080:8080',
+    port_forwards='8081:8080',
     resource_deps=petstore_deps,
     labels=['app'],
     # Auto-reconnect on pod restart
