@@ -1,100 +1,125 @@
-# BRRTRouter Agent Notes
-# Purpose: quick-start reference for agentic coding assistants
+# BRRTRouter — agent rules
 
-## Repository Overview
+Strict operational rules for AI assistants working in this repository. **Knowledge about how BRRTRouter works is in [`llmwiki/`](./llmwiki/), not here.** This file only holds rules the agent must obey.
+
+---
+
+## Before you do anything
+
+1. Read [`llmwiki/index.md`](./llmwiki/index.md) — the content catalog.
+2. Read [`llmwiki/SCHEMA.md`](./llmwiki/SCHEMA.md) — wiki conventions and workflows.
+3. Tail [`llmwiki/log.md`](./llmwiki/log.md) for recent context from other sessions.
+4. Read the specific topic / entity / reference pages relevant to your work. Drill into prose `docs/` or source only when the wiki flags drift or a gap.
+
+Sessions that skip this waste work. The wiki is the compounding artifact that makes knowledge persist across sessions — see [Karpathy's llm-wiki gist](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f).
+
+---
+
+## Repository shape
+
 - Primary language: Rust (workspace with `brrtrouter`, `brrtrouter_macros`, and `examples/pet_store`).
 - UI demo: SolidJS + Vite in `sample-ui/`.
 - Generated code: `examples/pet_store/` is auto-generated; do not edit directly.
+- Sibling repo: `../hauliage/` is the primary BRRTRouter consumer; its [`docs/llmwiki/`](../hauliage/docs/llmwiki/) cross-references this wiki for shared concepts.
 
-## Build, Lint, Test Commands
+---
+
+## Build, lint, test commands
 
 ### Recommended entry points (justfile)
-- `just dev-up` - Start local dev environment (kind + Tilt).
-- `just dev-down` - Tear down local dev environment.
-- `just dev-status` - Check cluster/pods/services status.
-- `just gen` - Regenerate `examples/pet_store/` from `examples/openapi.yaml`.
-- `just build-ui` - Build SolidJS dashboard to `examples/pet_store/static_site`.
+
+- `just dev-up` / `just dev-down` / `just dev-status` — local dev environment (kind + Tilt).
+- `just gen` — Regenerate `examples/pet_store/` from `examples/openapi.yaml`.
+- `just build-ui` — Build SolidJS dashboard into `examples/pet_store/static_site`.
 
 ### Build
-- `cargo build` - Build default workspace.
-- `cargo build -p pet_store` - Build the generated pet store example.
-- `cargo build --release` - Release build (used by Tilt sync).
 
-### Format / Lint
-- `cargo fmt` - Format Rust code (always run before committing).
-- `cargo clippy --workspace --all-targets --all-features` - Lint (lints are configured in `Cargo.toml`).
+- `cargo build` — Build default workspace.
+- `cargo build -p pet_store` — Build the generated pet store example.
+- `cargo build --release` — Release build (used by Tilt sync).
 
-### Test (full suite)
-- `just test` - Run `cargo test -- --nocapture`.
-- `just nt` - Fast parallel tests with nextest (recommended).
-- `cargo test -- --nocapture` - Standard tests with output.
+### Format / lint
 
-### Run a single test or module
-- `cargo test --test server_tests` - Run a specific integration test module.
-- `cargo test router::tests::test_route_matching` - Run a specific test by name.
-- `cargo test -- --ignored` - Run ignored tests.
+- `cargo fmt` — Format Rust (always run before committing).
+- `cargo clippy --workspace --all-targets --all-features` — Lint. Configured deny-lints in `Cargo.toml`.
 
-### Coverage / Bench / Profiling
-- `just coverage` - Coverage report (must stay ≥80%).
-- `just bench` - Criterion benchmarks.
-- `just flamegraph` - Generate flamegraphs.
+### Test
+
+- `just test` — `cargo test -- --nocapture`.
+- `just nt` — Fast parallel tests with nextest (recommended).
+- `cargo test --test server_tests` — Single integration test module.
+- `cargo test router::tests::test_route_matching` — Single test by name.
+- `cargo test -- --ignored` — Ignored tests.
+
+### Coverage / bench / profiling
+
+- `just coverage` — Coverage report (must stay ≥80%).
+- `just bench` — Criterion benchmarks.
+- `just flamegraph` — Generate flamegraphs.
 
 ### UI (sample dashboard)
-- `yarn install` (in `sample-ui/`)
-- `yarn dev` (in `sample-ui/`) - Dev server.
-- `yarn build:petstore` (in `sample-ui/`) - Build into `examples/pet_store/static_site`.
 
-## Code Style and Conventions
+- `yarn install` (in `sample-ui/`).
+- `yarn dev` — Dev server.
+- `yarn build:petstore` — Build into `examples/pet_store/static_site`.
 
-### Rust formatting
-- Use `cargo fmt` and keep rustfmt defaults.
-- Keep line lengths reasonable; let rustfmt wrap.
+---
 
-### Imports
-- Group imports by standard library, external crates, then local crate modules.
-- Prefer explicit imports over glob unless re-exporting.
-- Keep unused imports out; clippy warnings matter.
+## Core rules the agent must obey
 
-### Types and naming
-- Follow Rust conventions: `snake_case` for functions/modules, `CamelCase` for types, `SCREAMING_SNAKE_CASE` for constants.
-- Prefer domain-specific names over generic ones (especially in generated handler code).
-- Keep public APIs consistent with existing module naming patterns.
+### 1. Do not edit generated code
 
-### Error handling
-- Prefer `Result<T, E>` and error propagation (`?`) over `panic!`.
-- Avoid `unwrap()`/`expect()` in production paths (clippy warns on these).
-- Use structured errors via `anyhow` for CLI and top-level flows.
+`examples/pet_store/` is regenerated from `examples/openapi.yaml`. Any edit will be clobbered. Fix the spec or the template under `templates/` instead, then regenerate with `just gen`.
 
-### JSF AV safety guidance (hot path)
-- Avoid allocations in hot-path routing/dispatch code (use stack allocations like `SmallVec`).
-- Keep dispatch paths deterministic and avoid panics.
-- Prefer preallocation (`with_capacity`) when collections are necessary.
+### 2. Follow Rust conventions
 
-### Unsafe code
-- Unsafe is allowed but should be isolated and well-justified.
-- Prefer safe wrappers and document safety invariants.
+- `snake_case` for fns / modules, `CamelCase` for types, `SCREAMING_SNAKE_CASE` for constants.
+- Group imports: std, external crates, local modules. Prefer explicit imports.
+- `Result<T, E>` + `?` over `panic!` in library paths. No `unwrap()` / `expect()` in production (`clippy::unwrap_used` is deny).
 
-### Documentation expectations
-- Public modules require module-level docs (`//!`) with overview, architecture, and examples.
-- Public functions/structs/enums/traits require `///` docs (purpose, args, returns, examples, panics/safety).
-- Test modules should have `//!` module docs explaining coverage and strategy.
+### 3. Hot-path JSF-AV safety
 
-### Generated code workflow
-- Do not edit `examples/pet_store/` directly.
-- Update templates in `templates/` or generator logic in `src/generator/`.
-- Regenerate with `just gen` and commit template + generated changes together.
+- Avoid allocations on routing / dispatch hot paths (use `SmallVec`).
+- Preallocate (`with_capacity`) when collections are needed.
+- Keep dispatch paths deterministic; no panics.
+- Unsafe is allowed but must be isolated and well-justified (document safety invariants).
 
-### Testing discipline
-- Run `just nt` before submitting changes.
-- Keep tests deterministic; avoid global state where possible.
-- Maintain ≥80% coverage; add tests for new behavior.
+### 4. Documentation expectations
 
-## Useful Files
-- `README.md` - Project overview and links to docs.
-- `CONTRIBUTING.md` - Contributor workflow and documentation standards.
-- `docs/DEVELOPMENT.md` - Development workflow and just commands.
-- `docs/TEST_DOCUMENTATION.md` - Test suite breakdown and execution.
-- `Cargo.toml` - Workspace configuration and lint rules.
+- Public modules require `//!` module-level docs (overview, architecture, examples).
+- Public fns / structs / enums / traits require `///` docs (purpose, args, returns, examples, panics / safety).
+- Test modules have `//!` module docs explaining coverage and strategy.
 
-## Cursor/Copilot Rules
-- No Cursor or Copilot rules were found in `.cursor/rules/`, `.cursorrules`, or `.github/copilot-instructions.md`.
+### 5. Testing discipline
+
+- Run `just nt` before submitting.
+- Keep tests deterministic; avoid global state.
+- Maintain ≥80% coverage; add tests for new behaviour.
+
+---
+
+## Commit discipline
+
+- Commits follow Conventional Commits (`feat(scope):`, `fix(scope):`, `docs(scope):`, `chore(scope):`, `refactor(scope):`).
+- **Never push** without explicit human authorization.
+- **Never use `--no-verify`** or `--no-verify-commit`. Let pre-commit hooks run.
+- **Never commit secrets** (`.env`, credentials, tokens).
+
+---
+
+## Useful files
+
+- [`README.md`](./README.md) — project overview.
+- [`CONTRIBUTING.md`](./CONTRIBUTING.md) — contributor workflow.
+- [`docs/DEVELOPMENT.md`](./docs/DEVELOPMENT.md) — development workflow + `just` commands.
+- [`docs/TEST_DOCUMENTATION.md`](./docs/TEST_DOCUMENTATION.md) — test suite breakdown.
+- [`Cargo.toml`](./Cargo.toml) — workspace config + lint rules.
+- [`llmwiki/docs-catalog.md`](./llmwiki/docs-catalog.md) *(planned)* — inventory of `docs/` sources.
+
+---
+
+## Explicit instruction: read the wiki
+
+**Every session starts with reading [`llmwiki/`](./llmwiki/).** This is not optional.
+
+End-of-session: update the wiki pages your work touched, append a `log.md` entry, flag any `> **Open:**` questions. Leave the wiki one step more useful than you found it. The convention for BRRTRouter features is: every PRD / feature commit adds or extends 1–3 wiki pages tied to the work, cross-linked to hauliage ADRs where concepts span both repos.
