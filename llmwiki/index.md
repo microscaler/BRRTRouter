@@ -7,6 +7,7 @@
 
 ## Reconciliation
 - [Core Docs vs Codebase](./reconciliation/core-docs-vs-codebase.md)
+- [CORS Operations vs Codebase](./reconciliation/cors-operations-vs-codebase.md)
 
 ## Functional Flows
 - [Runtime Request Flow](./flows/runtime-request-flow.md)
