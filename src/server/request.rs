@@ -18,7 +18,7 @@ use may_minihttp::Request;
 use serde_json::{Map, Number, Value};
 use std::io::Read;
 use std::sync::Arc;
-use tracing::{debug, info};
+use tracing::debug;
 use url::form_urlencoded::parse as parse_form_urlencoded;
 
 /// Parsed HTTP request data used by `AppService`.
@@ -346,23 +346,11 @@ pub fn parse_request(req: Request) -> Result<ParsedRequest, String> {
 
     // R4: Query params parsed
     let query_params = parse_query_params(&raw_path);
-    if tracing::enabled!(tracing::Level::DEBUG) {
-        let sanitizer = crate::sanitize::default_sanitizer();
-        if sanitizer.level() == crate::otel::RedactionLevel::None {
-            debug!(
-                param_count = query_params.len(),
-                query_params = ?query_params,
-                "Query params parsed"
-            );
-        } else {
-            let safe_query = sanitizer.sanitize_params(&query_params);
-            debug!(
-                param_count = query_params.len(),
-                query_params = ?safe_query,
-                "Query params parsed"
-            );
-        }
-    }
+    debug!(
+        param_count = query_params.len(),
+        query_params = ?query_params,
+        "Query params parsed"
+    );
 
     // R5 & R6: Request body read and parsed (JSON, form-urlencoded, multipart)
     let parse_start = std::time::Instant::now();
@@ -377,8 +365,8 @@ pub fn parse_request(req: Request) -> Result<ParsedRequest, String> {
                     .map(|(_, v)| v.as_str())
                     .unwrap_or("");
 
-                // R5: Request body read
-                info!(
+                // R5: Request body read — per-request, demoted to debug (PRD 2.2).
+                debug!(
                     content_length = size,
                     content_type = %content_type,
                     body_size_bytes = size,
@@ -410,8 +398,8 @@ pub fn parse_request(req: Request) -> Result<ParsedRequest, String> {
         }
     };
 
-    // R2: HTTP request parsed
-    info!(
+    // R2: HTTP request parsed — per-request, demoted to debug (PRD 2.2).
+    debug!(
         method = %method,
         path = %path,
         http_version = %http_version,
