@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 
 
-def update_impl_cargo_dependencies(impl_cargo_path: Path) -> bool:
+def update_impl_cargo_dependencies(impl_cargo_path: Path) -> bool:  # noqa: C901
     """Update impl Cargo.toml to include rust_decimal/rusty-money if gen crate uses them. Returns True if modified."""
     if not impl_cargo_path.exists():
         return False
@@ -38,6 +38,37 @@ def update_impl_cargo_dependencies(impl_cargo_path: Path) -> bool:
 
     content = impl_cargo_path.read_text()
     modified = False
+
+    # impl_main.rs always uses clap (CLI) and may (coroutine stack); insert each dep independently.
+    needs_clap = "clap =" not in content
+    needs_may = not re.search(r"^\s*may\s*=", content, re.MULTILINE)
+    if needs_clap or needs_may:
+        insert_lines = ""
+        if needs_clap:
+            insert_lines += "clap = { workspace = true }\n"
+        if needs_may:
+            insert_lines += "may = { workspace = true }\n"
+        if "tikv-jemallocator = { workspace = true" in content:
+            content = re.sub(
+                r"(tikv-jemallocator = \{[^\}]+\}\n)",
+                r"\1" + insert_lines,
+                content,
+                count=1,
+            )
+            modified = True
+        elif "tikv-jemallocator = { version" in content and "workspace = true" not in content:
+            insert_lines_legacy = ""
+            if needs_clap:
+                insert_lines_legacy += 'clap = { version = "4.6", features = ["derive"] }\n'
+            if needs_may:
+                insert_lines_legacy += 'may = "0.3"\n'
+            content = re.sub(
+                r"(tikv-jemallocator = \{[^\}]+\}\n)",
+                r"\1" + insert_lines_legacy,
+                content,
+                count=1,
+            )
+            modified = True
 
     if uses_decimal and "rust_decimal" not in content:
         if "tikv-jemallocator" in content:

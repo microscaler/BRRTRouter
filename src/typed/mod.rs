@@ -60,6 +60,12 @@
 //! - Automatic parameter extraction from path/query/body
 //! - Built-in validation through type constraints
 //! - Cleaner, more readable handler code
+//!
+//! ## REST status codes (non-200)
+//!
+//! Handler return types implement [`HandlerResponseOutput`]. Types that implement [`serde::Serialize`]
+//! are sent as **HTTP 200** with a JSON body. Use [`HttpJson`] for an explicit status (e.g. **201**, **404**)
+//! without panicking. See `docs/PRD_TYPED_HANDLER_HTTP_STATUS.md`.
 
 mod core;
 

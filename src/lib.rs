@@ -64,7 +64,8 @@
 //! - **[`router`]** - Path matching and route resolution using regex-based matchers
 //! - **[`dispatcher`]** - Coroutine-based request handler dispatch
 //! - **[`server`]** - HTTP server built on `may_minihttp` with request/response types
-//! - **[`middleware`]** - Pluggable middleware (metrics, CORS, authentication, tracing)
+//! - **[`middleware`]** - Pluggable middleware (metrics, CORS, authentication, tracing); for
+//!   combining handler `Vary` with CORS tokens see [`merge_vary_field_value`](middleware::merge_vary_field_value)
 //! - **[`security`]** - Security provider implementations (API keys, JWT, OAuth2)
 //! - **[`generator`]** - Code generator that creates example projects from OpenAPI specs
 //! - **[`typed`]** - Type-safe request/response handler traits
@@ -498,7 +499,7 @@
 //! **Test conditions:**
 //! - 4 threads, 200 connections, 30 second duration
 //! - Includes: Routing, auth validation, JSON parsing, handler execution
-//! - Default coroutine stack size (16KB)
+//! - Default coroutine stack size (32KB)
 //! - Metrics collection enabled
 //!
 //! ### ApacheBench (ab) Alternative
@@ -583,7 +584,7 @@
 //!
 //! 1. **Reduce stack size** for more concurrent coroutines:
 //!    ```bash
-//!    BRRTR_STACK_SIZE=0x4000 cargo run  # 16KB (default)
+//!    BRRTR_STACK_SIZE=0x8000 cargo run  # 32KB (default)
 //!    BRRTR_STACK_SIZE=0x2000 cargo run  # 8KB (less memory)
 //!    ```
 //!
@@ -622,7 +623,7 @@
 //! - ⚠️ **Regex matching** - O(n) route matching, will add trie-based router
 //! - ⚠️ **JSON parsing** - Each request parses JSON, will add connection-level caching
 //! - ⚠️ **Authentication** - No caching yet, will add token cache
-//! - ⚠️ **Stack size** - Default 16KB may be too large, tuning in progress
+//! - ⚠️ **Stack size** - Default 32KB may be too large, tuning in progress
 //! - ⚠️ **Connection handling** - May runtime has optimization opportunities
 //!
 //! **Target for v1.0 stable:** 100,000+ req/s on Raspberry Pi 5 (single core).
@@ -668,7 +669,16 @@
 //!
 //! ### OpenTelemetry Tracing
 //!
-//! BRRTRouter includes OpenTelemetry support for distributed tracing:
+//! BRRTRouter includes OpenTelemetry-oriented tracing hooks and test utilities. **Production
+//! subscriber setup** lives in the [`otel`](crate::otel) module: see [`otel::init_logging_with_config`].
+//! That function is the **canonical place** to add a global `TracerProvider` and
+//! `tracing_opentelemetry::OpenTelemetryLayer` when OTLP is wired — **one** provider, **one**
+//! `tracing_subscriber::Registry` stack, composed with `.with(...)`.
+//!
+//! If you use **[Lifeguard](https://github.com/microscaler/lifeguard)**, add `lifeguard::channel_layer()`
+//! to that same layer chain (Lifeguard does not call `set_tracer_provider`). See Lifeguard’s
+//! `docs/OBSERVABILITY_APP_INTEGRATION.md`. Tests use `tests/tracing_util.rs` (`TestTracing`) with
+//! `set_default` instead of a second global init.
 //!
 //! ```rust,ignore
 //! use brrtrouter::middleware::TracingMiddleware;
@@ -851,6 +861,8 @@ static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 pub mod cli;
 
+#[doc(hidden)]
+pub mod agent_debug;
 pub mod dispatcher;
 mod dummy_value;
 mod echo;

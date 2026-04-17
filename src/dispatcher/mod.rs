@@ -65,6 +65,6 @@
 mod core;
 
 pub use core::{
-    generate_request_id, Dispatcher, HandlerRequest, HandlerResponse, HandlerSender, HeaderVec,
-    MAX_INLINE_HEADERS,
+    generate_request_id, spawn_untyped_with_stack_size_and_name, Dispatcher, HandlerRequest,
+    HandlerResponse, HandlerSender, HeaderVec, MAX_INLINE_HEADERS,
 };

@@ -9,6 +9,108 @@ import tempfile
 from pathlib import Path
 
 
+def _maybe_prune_dangling(prune_dangling_after: bool | None) -> None:
+    """Optionally run ``docker image prune -f`` after a successful build."""
+    from brrtrouter_tooling.docker import cleanup
+
+    do = (
+        prune_dangling_after
+        if prune_dangling_after is not None
+        else cleanup.env_prune_after_build()
+    )
+    if not do:
+        return
+    print(
+        "🧹 Pruning dangling Docker images "
+        "(set BRRTR_DOCKER_PRUNE_DANGLING_AFTER_BUILD=1 or pass --prune-dangling)…",
+        file=sys.stderr,
+    )
+    cleanup.prune_dangling_images()
+
+
+def _run_dev_sync_only(
+    root: Path,
+    image_name: str,
+    base_image_name: str,
+    kind_cluster_name: str,
+    prune_dangling_after: bool | None,
+) -> int:
+    """Tag base as service image and push or kind load. Used when ``dev_sync_only`` is True."""
+    owner = (
+        os.environ.get("GHCR_OWNER") or os.environ.get("GITHUB_REPOSITORY_OWNER") or "microscaler"
+    )
+    base_image_local = f"{base_image_name}:latest"
+    base_image_ghcr = f"ghcr.io/{owner}/{base_image_name}:latest"
+
+    check_local = subprocess.run(
+        ["docker", "images", "-q", base_image_local],
+        capture_output=True,
+        text=True,
+        cwd=str(root),
+    )
+    check_ghcr = subprocess.run(
+        ["docker", "images", "-q", base_image_ghcr],
+        capture_output=True,
+        text=True,
+        cwd=str(root),
+    )
+
+    target_base = base_image_local
+    if not (check_local.stdout and check_local.stdout.strip()):
+        if check_ghcr.stdout and check_ghcr.stdout.strip():
+            target_base = base_image_ghcr
+        else:
+            print(f"📦 Base image {base_image_local} or {base_image_ghcr} not found")
+            print(f"   Attempting to pull from GHCR: {base_image_ghcr}")
+            pull_result = subprocess.run(
+                ["docker", "pull", base_image_ghcr],
+                capture_output=True,
+                text=True,
+                cwd=str(root),
+            )
+            if pull_result.returncode == 0:
+                target_base = base_image_ghcr
+            else:
+                print(f"   Pull failed, building locally as {base_image_local}...")
+                from brrtrouter_tooling.docker.build_base import run as run_build_base
+
+                if (
+                    run_build_base(root, push=False, dry_run=False, base_image_name=base_image_name)
+                    != 0
+                ):
+                    print("❌ Failed to build base image", file=sys.stderr)
+                    return 1
+                target_base = base_image_local
+
+    tag_name = f"{image_name}:tilt"
+    print(f"🚀 dev-sync-only mode: tagging {target_base} directly to {tag_name}")
+    tr = subprocess.run(["docker", "tag", target_base, tag_name], cwd=str(root))
+    if tr.returncode != 0:
+        print("❌ Failed to alias base image", file=sys.stderr)
+        return 1
+
+    push = subprocess.run(
+        ["docker", "push", tag_name], cwd=str(root), capture_output=True, text=True
+    )
+    if push.returncode == 0:
+        print(f"✅ Docker image pushed to registry: {tag_name}")
+    else:
+        print("⚠️  Registry not available at localhost:5001; loading into Kind cluster...")
+        kind = subprocess.run(
+            ["kind", "load", "docker-image", tag_name, "--name", kind_cluster_name],
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+        )
+        if kind.returncode == 0:
+            print(f"✅ Image loaded into Kind: {tag_name}")
+        else:
+            print(f"⚠️  Could not push or kind load; image tagged as: {tag_name}")
+    print(f"✅ Docker image ready: {tag_name}")
+    _maybe_prune_dangling(prune_dangling_after)
+    return 0
+
+
 def run(
     image_name: str,
     hash_path: Path,
@@ -19,8 +121,11 @@ def run(
     port: int | None = None,
     binary_name: str | None = None,
     dockerfile: Path | None = None,
-    base_image_name: str = "rerp-base",
+    base_image_name: str = "brrtrouter-base",
     kind_cluster_name: str = "rerp",
+    dev_sync_only: bool = False,
+    no_cache: bool = False,
+    prune_dangling_after: bool | None = None,
 ) -> int:
     """Build Docker image using template or static Dockerfile. Returns 0 on success, 1 on error."""
     root = project_root
@@ -36,6 +141,11 @@ def run(
         print(f"❌ Artifact not found: {a}", file=sys.stderr)
         return 1
 
+    if dev_sync_only:
+        return _run_dev_sync_only(
+            root, image_name, base_image_name, kind_cluster_name, prune_dangling_after
+        )
+
     use_template = (
         system is not None and module is not None and port is not None and binary_name is not None
     )
@@ -43,59 +153,20 @@ def run(
     if use_template:
         template_path = root / "docker" / "microservices" / "Dockerfile.template"
         if not template_path.exists():
-            print(f"❌ Template not found: {template_path}", file=sys.stderr)
-            return 1
-
-        owner = (
-            os.environ.get("GHCR_OWNER")
-            or os.environ.get("GITHUB_REPOSITORY_OWNER")
-            or "microscaler"
-        )
-        base_image_local = f"{base_image_name}:latest"
-        base_image_ghcr = f"ghcr.io/{owner}/{base_image_name}:latest"
-
-        check_local = subprocess.run(
-            ["docker", "images", "-q", base_image_local],
-            capture_output=True,
-            text=True,
-            cwd=str(root),
-        )
-        check_ghcr = subprocess.run(
-            ["docker", "images", "-q", base_image_ghcr],
-            capture_output=True,
-            text=True,
-            cwd=str(root),
-        )
-
-        if not (check_local.stdout and check_local.stdout.strip()) and not (
-            check_ghcr.stdout and check_ghcr.stdout.strip()
-        ):
-            print(f"📦 Base image {base_image_local} or {base_image_ghcr} not found")
-            print(f"   Attempting to pull from GHCR: {base_image_ghcr}")
-            pull_result = subprocess.run(
-                ["docker", "pull", base_image_ghcr],
-                capture_output=True,
-                text=True,
-                cwd=str(root),
+            internal_tpl = (
+                Path(__file__).parent.parent
+                / "templates"
+                / "docker"
+                / "microservices"
+                / "Dockerfile.template"
             )
-            if pull_result.returncode != 0:
-                print(f"   Pull failed, building locally as {base_image_local}...")
-                from brrtrouter_tooling.docker.build_base import run as run_build_base
-
-                if (
-                    run_build_base(root, push=False, dry_run=False, base_image_name=base_image_name)
-                    != 0
-                ):
-                    print("❌ Failed to build base image", file=sys.stderr)
-                    return 1
-                tag_result = subprocess.run(
-                    ["docker", "tag", base_image_local, base_image_ghcr],
-                    capture_output=True,
-                    text=True,
-                    cwd=str(root),
+            if internal_tpl.exists():
+                template_path = internal_tpl
+            else:
+                print(
+                    f"❌ Template not found: {template_path} nor bundled template", file=sys.stderr
                 )
-                if tag_result.returncode == 0:
-                    print(f"   Tagged local image as {base_image_ghcr}")
+                return 1
 
         template_content = template_path.read_text()
         entrypoint_literal = f"/app/{binary_name}"
@@ -118,6 +189,8 @@ def run(
             f"PORT={port}",
             "--build-arg",
             f"BINARY_NAME={binary_name}",
+            "--build-arg",
+            f"BASE_IMAGE={base_image_name}:latest",
         ]
     else:
         if dockerfile is None:
@@ -131,7 +204,10 @@ def run(
             print(f"❌ Dockerfile not found: {d}", file=sys.stderr)
             return 1
         dockerfile_path = d
-        build_args = []
+        build_args = [
+            "--build-arg",
+            f"BASE_IMAGE={base_image_name}:latest",
+        ]
         temp_dockerfile_path = None
 
     tag = f"{image_name}:tilt"
@@ -147,6 +223,8 @@ def run(
         *build_args,
         ".",
     ]
+    if no_cache:
+        build_cmd.insert(2, "--no-cache")
     try:
         build = subprocess.run(
             build_cmd,
@@ -175,6 +253,7 @@ def run(
             else:
                 print(f"⚠️  Could not push or kind load; image tagged as: {tag}")
         print(f"✅ Docker image ready: {tag}")
+        _maybe_prune_dangling(prune_dangling_after)
         return 0
     finally:
         if temp_dockerfile_path is not None:

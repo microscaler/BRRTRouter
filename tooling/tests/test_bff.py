@@ -391,10 +391,11 @@ class TestMergeComponentParameters:
 
 
 class TestMergeMultipleErrorSchemas:
-    """When multiple sub-services define a per-service Error schema, merge raises."""
+    """When multiple sub-services define Error, merge keeps prefixed *Error schemas and falls back."""
 
-    def test_multiple_error_schemas_raises(self, tmp_path: Path) -> None:
-        # Both auth and idam define Error; after merge we get AuthError and IdamError -> ambiguous.
+    def test_multiple_error_schemas_use_generic_error_fallback(self, tmp_path: Path) -> None:
+        # Both auth and idam define Error; after merge we get AuthError and IdamError.
+        # _add_error_schema does not raise: with multiple *Error matches it keeps a generic Error.
         auth_spec = tmp_path / "auth.yaml"
         idam_spec = tmp_path / "idam.yaml"
         auth_spec.write_text(
@@ -409,12 +410,11 @@ class TestMergeMultipleErrorSchemas:
             "auth": {"base_path": "/api/auth", "spec_path": auth_spec},
             "idam": {"base_path": "/api/idam", "spec_path": idam_spec},
         }
-        with pytest.raises(ValueError) as exc_info:
-            merge_sub_service_specs(sub_services)
-        msg = str(exc_info.value)
-        assert "Multiple service Error schemas" in msg
-        assert "AuthError" in msg
-        assert "IdamError" in msg
+        bff = merge_sub_service_specs(sub_services)
+        schemas = bff["components"]["schemas"]
+        assert "AuthError" in schemas
+        assert "IdamError" in schemas
+        assert "Error" in schemas
 
 
 # --- discover_sub_services (migrated from RERP) ---

@@ -313,6 +313,7 @@ pub fn generate_project_with_options(
                     &imports,
                     &route.parameters,
                     route.sse,
+                    route.x_service.is_some() && route.x_brrtrouter_downstream_path.is_some(),
                     force,
                 )?;
                 if existed && force {
@@ -376,6 +377,7 @@ pub fn generate_project_with_options(
             controller_struct: controller_struct.clone(),
             parameters: route.parameters.clone(),
             stack_size_bytes,
+            is_proxy: route.x_service.is_some() && route.x_brrtrouter_downstream_path.is_some(),
         });
     }
 

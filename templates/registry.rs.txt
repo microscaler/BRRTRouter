@@ -13,11 +13,23 @@ use brrtrouter::typed::spawn_typed_with_stack_size_and_name;
 #[allow(dead_code)]
 pub unsafe fn register_all(dispatcher: &mut Dispatcher) {
     {% for entry in entries -%}
+    {% if entry.is_proxy %}
+    dispatcher.handlers.insert(
+        "{{ entry.name }}".to_string(),
+        brrtrouter::dispatcher::spawn_untyped_with_stack_size_and_name(
+            crate::controllers::{{ entry.name }}::handle,
+            {{ entry.stack_size_bytes }},
+            Some("{{ entry.name }}"),
+        )
+        .expect("failed to spawn untyped proxy handler coroutine")
+    );
+    {% else %}
     dispatcher.register_typed_with_stack_size(
         "{{ entry.name }}",
         crate::controllers::{{ entry.name }}::{{ entry.controller_struct }},
         {{ entry.stack_size_bytes }},
     );
+    {% endif %}
     {% endfor %}
 }
 
@@ -40,12 +52,22 @@ pub unsafe fn register_from_spec(dispatcher: &mut Dispatcher, routes: &[RouteMet
         match route.handler_name.as_ref() {
             {% for entry in entries -%}
             "{{ entry.name }}" => {
+                {% if entry.is_proxy %}
+                let tx = brrtrouter::dispatcher::spawn_untyped_with_stack_size_and_name(
+                    crate::controllers::{{ entry.name }}::handle,
+                    {{ entry.stack_size_bytes }},
+                    Some(route.handler_name.as_ref()),
+                )
+                .expect("failed to spawn untyped proxy handler coroutine");
+                dispatcher.add_route(route.clone(), tx);
+                {% else %}
                 let tx = spawn_typed_with_stack_size_and_name(
                     crate::controllers::{{ entry.name }}::{{ entry.controller_struct }},
                     {{ entry.stack_size_bytes }},
                     Some(route.handler_name.as_ref()),
                 );
                 dispatcher.add_route(route.clone(), tx);
+                {% endif %}
             }
             {% endfor %}
             _ => {}

@@ -17,11 +17,13 @@ dependencies = [
 dev = [
     "pytest>=9.0.2",
     "pytest-cov>=7.1.0",
-    "ruff>=0.14.14",
+    # Pinned so local venv, pre-commit (tooling/.venv/bin/ruff), and CI stay aligned.
+    "ruff==0.15.9",
     "pre-commit>=4.5.1",
 ]
+# MCP SDK: bounded range so CI resolves a published wheel (not a non-existent floor version).
 mcp = [
-    "mcp[cli]>=1.27.0",
+    "mcp[cli]>=1.27.0,<3",
 ]
 
 [project.scripts]
@@ -95,6 +97,8 @@ max-complexity = 20
 [tool.ruff.lint.per-file-ignores]
 # main: arg-parsing dispatcher; complexity expected
 "src/brrtrouter_tooling/cli/main.py" = ["C901"]
+# Hauliage client CLI (sibling repo hauliage/tooling)
+"src/brrtrouter_tooling/workspace/cli/main.py" = ["C901"]
 # docker_cmd: argv dispatcher; complexity expected
 "src/brrtrouter_tooling/cli/docker_cmd.py" = ["C901"]
 

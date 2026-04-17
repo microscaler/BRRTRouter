@@ -18,6 +18,7 @@ from brrtrouter_tooling.mcp.resources import (
     get_example_openapi_yaml,
     get_extensions_reference,
     get_openapi_spec_guide,
+    get_tilt_setup_guide,
 )
 from brrtrouter_tooling.mcp.tools import (
     check_spec_conformance,
@@ -96,6 +97,7 @@ def test_resources_return_strings() -> None:
     assert len(get_bff_pattern_guide()) > 100
     assert len(get_extensions_reference()) > 100
     assert len(get_example_openapi_yaml()) > 100
+    assert len(get_tilt_setup_guide()) > 100
 
 
 def test_example_openapi_yaml_is_valid_yaml() -> None:
@@ -118,12 +120,33 @@ def test_code_generation_guide_mentions_gen_and_impl() -> None:
     assert "gen crate" in guide
     assert "impl crate" in guide
     assert "generate-stubs" in guide
+    assert "Consumer CLI: host-aware build" in guide
+    assert "bff_traderBFF" in guide
 
 
 def test_bff_guide_mentions_suite_config() -> None:
     guide = get_bff_pattern_guide()
     assert "suite" in guide.lower()
     assert "x-brrtrouter-downstream-path" in guide
+
+
+def test_bff_guide_documents_tilt_scan_for_bff_spec_gen_deps() -> None:
+    guide = get_bff_pattern_guide()
+    assert "bff-spec-gen" in guide
+    assert "tilt scan" in guide
+    assert "TRADER_SERVICES" in guide
+    assert "lib.tilt" in guide
+    assert "tilt-setup" in guide
+
+
+def test_tilt_setup_guide_starlark_boundary_and_lib_tilt_examples() -> None:
+    guide = get_tilt_setup_guide()
+    assert len(guide) > 500
+    assert "lib.tilt" in guide
+    assert "load(" in guide
+    assert "brrtrouter_tooling" in guide
+    assert "cannot" in guide.lower() and "import" in guide.lower()
+    assert "create_bff_spec_gen_deps" in guide
 
 
 def test_extensions_reference_covers_x_sse() -> None:

@@ -63,6 +63,7 @@ mod tests {
             body: Some(body.clone()),
             jwt_claims: None,
             reply_tx: tx,
+            queue_guard: None,
         };
 
         echo_handler(req);

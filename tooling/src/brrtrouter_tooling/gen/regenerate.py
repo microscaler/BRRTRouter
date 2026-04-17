@@ -17,6 +17,7 @@ def regenerate_service(
     brrtrouter_path: Path | None = None,
     fix_cargo_paths_fn: Callable[[Path, Path | None], None] | None = None,
     package_name: str | None = None,
+    openapi_dir: Path | None = None,
 ) -> int:
     """Regenerate a single service from its OpenAPI spec.
 
@@ -28,11 +29,13 @@ def regenerate_service(
     """
     is_bff = bff_service_to_suite(project_root, service_name) == suite
 
+    base_openapi = openapi_dir if openapi_dir is not None else project_root / "openapi"
+
     if is_bff:
-        spec_path = project_root / "openapi" / suite / "openapi_bff.yaml"
-        deps_config_path = project_root / "openapi" / suite / "brrtrouter-dependencies.toml"
+        spec_path = base_openapi / suite / "openapi_bff.yaml"
+        deps_config_path = base_openapi / suite / "brrtrouter-dependencies.toml"
     else:
-        spec_path = project_root / "openapi" / suite / service_name / "openapi.yaml"
+        spec_path = base_openapi / suite / service_name / "openapi.yaml"
         deps_config_path = spec_path.parent / "brrtrouter-dependencies.toml"
 
     output_dir = project_root / "microservices" / suite / service_name / "gen"
@@ -75,6 +78,7 @@ def regenerate_suite_services(
     brrtrouter_path: Path | None = None,
     fix_cargo_paths_fn: Callable[[Path, Path | None], None] | None = None,
     package_name_for_service: Callable[[str, str], str | None] | None = None,
+    openapi_dir: Path | None = None,
 ) -> int:
     """Regenerate all services in a suite. Returns 0 if all succeed, 1 if any fail.
 
@@ -91,6 +95,7 @@ def regenerate_suite_services(
             brrtrouter_path=brrtrouter_path,
             fix_cargo_paths_fn=fix_cargo_paths_fn,
             package_name=pkg,
+            openapi_dir=openapi_dir,
         )
         if rc != 0:
             failed.append(service_name)
@@ -111,6 +116,7 @@ def run_gen_if_missing_for_suite(
     get_service_names_fn: Callable[[Path, str], list[str]],
     fix_cargo_paths_fn: Callable[[Path, Path | None], None] | None = None,
     package_name_for_service: Callable[[str, str], str | None] | None = None,
+    openapi_dir: Path | None = None,
 ) -> None:
     """Generate gen crates for all services in suite if workspace/suite gen crates are missing.
 
@@ -133,11 +139,12 @@ def run_gen_if_missing_for_suite(
     )
     for name in service_names:
         is_bff = bff_service_to_suite(project_root, name) == suite
+        base_openapi = openapi_dir if openapi_dir is not None else project_root / "openapi"
         if is_bff:
-            spec_path = project_root / "openapi" / suite / "openapi_bff.yaml"
-            deps_config_path = project_root / "openapi" / suite / "brrtrouter-dependencies.toml"
+            spec_path = base_openapi / suite / "openapi_bff.yaml"
+            deps_config_path = base_openapi / suite / "brrtrouter-dependencies.toml"
         else:
-            spec_path = project_root / "openapi" / suite / name / "openapi.yaml"
+            spec_path = base_openapi / suite / name / "openapi.yaml"
             deps_config_path = spec_path.parent / "brrtrouter-dependencies.toml"
         if not spec_path.exists():
             continue

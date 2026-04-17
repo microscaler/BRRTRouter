@@ -738,7 +738,9 @@ mod tests {
         );
         responses.insert(200, response_content);
 
-        let route = RouteMeta { x_service: None, x_brrtrouter_downstream_path: None,
+        let route = RouteMeta {
+            x_service: None,
+            x_brrtrouter_downstream_path: None,
             method: Method::POST,
             path_pattern: Arc::from("/test"),
             handler_name: Arc::from("test_handler"),
@@ -842,7 +844,9 @@ mod tests {
         );
         responses.insert(200, response_content);
 
-        let route = RouteMeta { x_service: None, x_brrtrouter_downstream_path: None,
+        let route = RouteMeta {
+            x_service: None,
+            x_brrtrouter_downstream_path: None,
             method: Method::POST,
             path_pattern: Arc::from("/test"),
             handler_name: Arc::from("test_handler"),
@@ -923,7 +927,9 @@ mod tests {
         );
         responses.insert(500, response_500);
 
-        let route = RouteMeta { x_service: None, x_brrtrouter_downstream_path: None,
+        let route = RouteMeta {
+            x_service: None,
+            x_brrtrouter_downstream_path: None,
             method: Method::POST,
             path_pattern: Arc::from("/multi"),
             handler_name: Arc::from("multi_handler"),

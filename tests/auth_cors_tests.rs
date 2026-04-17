@@ -1,5 +1,9 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
+//! Unit-level `AuthMiddleware` + `CorsMiddleware` behavior. For OpenAPI global security + raw TCP
+//! HTTP, see `tests/cors_http_conformance_tests.rs` (API key), `tests/cors_http_security_schemes_tests.rs`
+//! (Bearer / cookie), and `docs/CORS_IMPLEMENTATION_AUDIT.md` §3.
+
 use brrtrouter::dispatcher::{HandlerRequest, HandlerResponse, HeaderVec};
 use brrtrouter::ids::RequestId;
 use brrtrouter::middleware::{AuthMiddleware, CorsMiddleware, Middleware};
@@ -28,6 +32,7 @@ fn test_auth_middleware_allows_valid_token() {
         body: None,
         jwt_claims: None,
         reply_tx: tx,
+        queue_guard: None,
     };
     assert!(mw.before(&req).is_none());
 }
@@ -48,6 +53,7 @@ fn test_auth_middleware_blocks_invalid_token() {
         body: None,
         jwt_claims: None,
         reply_tx: tx,
+        queue_guard: None,
     };
     let resp = mw.before(&req).expect("should produce response");
     assert_eq!(resp.status, 401);
@@ -72,6 +78,7 @@ fn test_cors_middleware_sets_headers() {
         body: None,
         jwt_claims: None,
         reply_tx: tx,
+        queue_guard: None,
     };
     let mut resp = HandlerResponse::new(200, HeaderVec::new(), serde_json::Value::Null);
     mw.after(&req, &mut resp, Duration::from_millis(0));

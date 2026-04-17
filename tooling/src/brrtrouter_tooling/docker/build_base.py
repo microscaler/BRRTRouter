@@ -14,7 +14,7 @@ def run(
     project_root: Path,
     push: bool = False,
     dry_run: bool = False,
-    base_image_name: str = "rerp-base",
+    base_image_name: str = "brrtrouter-base",
     docker_dir: str = "docker",
     tag_kind_registry: bool = True,
     tag_dockerhub: bool = True,
@@ -22,8 +22,15 @@ def run(
     """Build docker/base/Dockerfile and tag with local, ghcr.io, optionally kind registry and Docker Hub. With --push, push to remotes. Returns 0 or 1."""
     dockerfile = project_root / docker_dir / "base" / "Dockerfile"
     if not dockerfile.exists():
-        print(f"❌ {dockerfile} not found", file=sys.stderr)
-        return 1
+        # Fallback to internal brrtrouter_tooling templates
+        internal_dockerfile = (
+            Path(__file__).parent.parent / "templates" / "docker" / "base" / "Dockerfile"
+        )
+        if internal_dockerfile.exists():
+            dockerfile = internal_dockerfile
+        else:
+            print(f"❌ {dockerfile} and internal template not found", file=sys.stderr)
+            return 1
     owner = (
         os.environ.get("GHCR_OWNER") or os.environ.get("GITHUB_REPOSITORY_OWNER") or "microscaler"
     )

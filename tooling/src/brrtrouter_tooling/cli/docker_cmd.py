@@ -1,8 +1,9 @@
-"""`brrtrouter docker` subcommands: generate-dockerfile, copy-binary, build-base, build-image-simple, copy-multiarch, build-multiarch, unpack-build-bins."""
+"""`brrtrouter docker` subcommands: generate-dockerfile, copy-binary, build-base, build-image-simple, prune, copy-multiarch, build-multiarch, unpack-build-bins."""
 
 import sys
 from pathlib import Path
 
+from brrtrouter_tooling.docker import cleanup as docker_cleanup
 from brrtrouter_tooling.docker.build_base import run as run_build_base
 from brrtrouter_tooling.docker.build_image_simple import run as run_build_image_simple
 from brrtrouter_tooling.docker.build_multiarch import run as run_build_multiarch
@@ -19,7 +20,7 @@ def run_docker_argv(argv: list[str] | None = None) -> None:
     if not argv:
         print("brrtrouter docker: missing subcommand", file=sys.stderr)
         print(
-            "  generate-dockerfile, copy-binary, build-base, build-image-simple, copy-multiarch, build-multiarch, unpack-build-bins",
+            "  generate-dockerfile, copy-binary, build-base, build-image-simple, prune, copy-multiarch, build-multiarch, unpack-build-bins",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -68,12 +69,16 @@ def run_docker_argv(argv: list[str] | None = None) -> None:
     if cmd == "build-image-simple":
         if len(rest) < 3:
             print(
-                "Usage: brrtrouter docker build-image-simple <image_name> <hash_path> <artifact_path> [--system S --module M --port N --binary-name B]",
+                "Usage: brrtrouter docker build-image-simple <image_name> <hash_path> <artifact_path> "
+                "[--system S --module M --port N --binary-name B] [--no-cache] [--prune-dangling]",
                 file=sys.stderr,
             )
             sys.exit(1)
         image_name, hash_path, artifact_path = rest[0], Path(rest[1]), Path(rest[2])
         system = module = port = binary_name = None
+        dev_sync_only = False
+        no_cache = "--no-cache" in rest
+        prune_dangling_after = True if "--prune-dangling" in rest else None
         i = 3
         while i < len(rest):
             if rest[i] == "--system" and i + 1 < len(rest):
@@ -88,6 +93,9 @@ def run_docker_argv(argv: list[str] | None = None) -> None:
             elif rest[i] == "--binary-name" and i + 1 < len(rest):
                 binary_name = rest[i + 1]
                 i += 2
+            elif rest[i] == "--dev-sync-only":
+                dev_sync_only = True
+                i += 1
             else:
                 i += 1
         rc = run_build_image_simple(
@@ -99,8 +107,40 @@ def run_docker_argv(argv: list[str] | None = None) -> None:
             module=module,
             port=port,
             binary_name=binary_name,
+            dev_sync_only=dev_sync_only,
+            no_cache=no_cache,
+            prune_dangling_after=prune_dangling_after,
         )
         sys.exit(rc)
+
+    if cmd == "prune":
+        mode = rest[0] if rest else "dev"
+        if mode in ("help", "-h", "--help"):
+            print(
+                "Usage: brrtrouter docker prune <dangling|containers|buildx|dev>",
+                file=sys.stderr,
+            )
+            print(
+                "  dangling   — docker image prune -f (dangling <none> images)",
+                file=sys.stderr,
+            )
+            print("  containers — docker container prune -f (stopped containers)", file=sys.stderr)
+            print("  buildx     — docker buildx prune -f (BuildKit cache)", file=sys.stderr)
+            print(
+                "  dev        — all of the above in order (default)",
+                file=sys.stderr,
+            )
+            sys.exit(0)
+        if mode == "dangling":
+            sys.exit(docker_cleanup.prune_dangling_images())
+        if mode == "containers":
+            sys.exit(docker_cleanup.prune_stopped_containers())
+        if mode == "buildx":
+            sys.exit(docker_cleanup.prune_buildx_cache())
+        if mode == "dev":
+            sys.exit(docker_cleanup.prune_dev_sweep())
+        print(f"Unknown prune mode: {mode}", file=sys.stderr)
+        sys.exit(1)
 
     if cmd == "copy-multiarch":
         if len(rest) < 2:

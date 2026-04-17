@@ -5,6 +5,8 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Typed handlers — REST status without panicking:** `HandlerResponseOutput` and `HttpJson<T>` in `brrtrouter::typed`. Plain `Serialize` return types still produce HTTP 200; use `HttpJson::new(status, body)` (or `not_found`, `ok`) for other status codes. Response mapping is unified across `spawn_typed*`, `register_typed_with_pool`. Tests: `typed::core::tests`, `tests/typed_tests.rs` (`test_spawn_typed_http_json_status_without_panic`).
+- Docs: `docs/MIGRATION_TYPED_HANDLER_HTTP_STATUS.md` — consumer migration from `panic!` to `HttpJson` on typed handlers.
 - Observability: Introduced typed `RequestId` (ULID-backed) with end-to-end correlation.
   - Server now accepts inbound `X-Request-ID` (validated) or generates a ULID.
   - Server always echoes `X-Request-ID` on responses.
@@ -20,6 +22,7 @@ All notable changes to this project will be documented in this file.
   - All per-path metrics now use atomic operations with minimal locking.
 
 ### Changed
+- **Typed `Handler` trait:** `type Response` is now bounded by `HandlerResponseOutput` instead of `Serialize`. Any type that implements `Serialize` still qualifies via a blanket impl (existing handlers unchanged).
 - Metrics test aligned to labeled series format for `brrtrouter_requests_total`.
 - **Breaking**: `path_metrics` and `status_metrics` now use `DashMap` instead of `RwLock<HashMap>`.
   Internal API remains backward compatible for external consumers.

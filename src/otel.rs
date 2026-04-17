@@ -8,6 +8,35 @@
 //! - Async buffered logging for minimal latency impact
 //!
 //! OTLP export will be added in a future phase once we verify the basic logging works.
+//!
+//! # Canonical place for subscriber + (future) OTel provider
+//!
+//! **[`init_logging_with_config`]** is the **single** place that calls
+//! `tracing_subscriber::registry()` and composes layers, then `try_init()` on the subscriber.
+//! When you wire **OpenTelemetry** export, do it **here** (or in a helper called only from here):
+//!
+//! 1. Build **one** OpenTelemetry SDK `TracerProvider` for the process.
+//! 2. Call `opentelemetry::global::set_tracer_provider` **once** (or the API version your stack uses).
+//! 3. Add `tracing_opentelemetry::OpenTelemetryLayer::new(tracer)` to the **same** `.with(...)` chain
+//!    as the existing `EnvFilter`, sampling, redaction, and `fmt` layers.
+//!
+//! Do **not** register a second global provider from a library crate (e.g. Lifeguard).
+//!
+//! # Lifeguard (may-channel logging + DB spans)
+//!
+//! Services that use **[Lifeguard](https://github.com/microscaler/lifeguard)** should depend on it with
+//! the **`tracing`** feature and, if you want the may-channel log path, add
+//! **`lifeguard::channel_layer()`** to the same `.with(...)` chain in [`init_logging_with_config`]
+//! (after `EnvFilter` if you want filtered events only). Lifeguard’s `tracing` spans then share the
+//! host subscriber with BRRTRouter; it does not call `set_tracer_provider`.
+//!
+//! Cross-repo doc: `lifeguard/docs/OBSERVABILITY_APP_INTEGRATION.md`.
+//!
+//! # Tests
+//!
+//! Integration tests use `tests/tracing_util.rs` (`TestTracing`): `tracing::subscriber::set_default`
+//! with a scoped `Registry` + `OpenTelemetryLayer` avoids fighting the global `try_init()` used by
+//! production init.
 
 use anyhow::{Context, Result};
 use std::env;
@@ -100,6 +129,12 @@ pub struct LogConfig {
     pub target_filter: Option<String>,
     /// Include file:line location (dev only)
     pub include_location: bool,
+    /// Merge [`crate::agent_debug::LOG_DIRECTIVE`] into the [`EnvFilter`] so debug-session markers
+    /// are emitted at INFO without hand-editing `RUST_LOG`.
+    ///
+    /// Toggle via env **`BRRTR_DEBUG_SESSION`**: `1`, `true`, `yes`, or `on` (case-insensitive) enables;
+    /// unset or any other value disables. Kubernetes: set in a ConfigMap and reference from the pod.
+    pub enable_debug_session_tracing: bool,
 }
 
 impl LogConfig {
@@ -137,6 +172,14 @@ impl LogConfig {
                 .ok()
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(false),
+            enable_debug_session_tracing: env::var("BRRTR_DEBUG_SESSION")
+                .map(|s| {
+                    matches!(
+                        s.trim().to_ascii_lowercase().as_str(),
+                        "1" | "true" | "yes" | "on"
+                    )
+                })
+                .unwrap_or(false),
         }
     }
 
@@ -153,6 +196,7 @@ impl LogConfig {
             buffer_size: 1024,
             target_filter: None,
             include_location: true,
+            enable_debug_session_tracing: false,
         }
     }
 
@@ -169,6 +213,7 @@ impl LogConfig {
             buffer_size: 8192,
             target_filter: None,
             include_location: false,
+            enable_debug_session_tracing: false,
         }
     }
 }
@@ -380,6 +425,14 @@ pub fn init_logging_with_config(config: &LogConfig) -> Result<()> {
             .expect("valid directive"),
     );
 
+    if config.enable_debug_session_tracing {
+        env_filter = env_filter.add_directive(
+            crate::agent_debug::LOG_DIRECTIVE
+                .parse()
+                .expect("valid debug_session directive"),
+        );
+    }
+
     // Apply custom target filters if provided
     if let Some(target_filter) = &config.target_filter {
         for filter in target_filter.split(',') {
@@ -494,6 +547,7 @@ mod tests {
         assert_eq!(config.sampling_rate, 1.0);
         assert!(!config.async_logging);
         assert!(config.include_location);
+        assert!(!config.enable_debug_session_tracing);
     }
 
     #[test]
@@ -506,6 +560,7 @@ mod tests {
         assert_eq!(config.sampling_rate, 0.1);
         assert!(config.async_logging);
         assert!(!config.include_location);
+        assert!(!config.enable_debug_session_tracing);
     }
 
     #[test]
@@ -766,9 +821,9 @@ mod tests {
     struct TestCallsite;
     impl tracing::callsite::Callsite for TestCallsite {
         fn set_interest(&self, _interest: tracing::subscriber::Interest) {}
+        // Test-only stub: `metadata()` is never invoked in these tests.
+        #[allow(clippy::panic)]
         fn metadata(&self) -> &tracing::Metadata<'_> {
-            // This is a test-only implementation - metadata() is never called in tests
-            #[allow(clippy::panic)] // Test-only code: this method is never called
             panic!("not used in tests")
         }
     }

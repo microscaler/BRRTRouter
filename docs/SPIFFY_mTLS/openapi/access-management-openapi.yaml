@@ -1,0 +1,544 @@
+# Generic Access Management (AM) Service - OpenAPI 3.1
+# From RERP auth/rbac, Generic_Access_Management_Service_Design.md
+# Consuming systems (e.g. RERP Invoice, PriceWhisperer) register roles/permissions; Identity may call AM for JWT enrichment.
+openapi: 3.1.0
+info:
+  title: Access Management Service (AM)
+  version: 1.0.0
+  description: |
+    Generic Access Management: roles, permissions, attributes (RBAC/ABAC).
+    Applications register via manifest load or Registration API; all data in shared tables scoped by app_id. Application slugs SHOULD use dot-notation namespaces (e.g. accounting.invoice, accounting.general_ledger) for suites with multiple microservices.
+    Identity service may call /principal/effective to enrich JWT with roles/permissions.
+    Other microservices may call /authorize or use JWT claims from Identity.
+
+    **SaaS model:** Principals are scoped by **organisation** (legal-entity customer) and **tenant** (demarcation
+    beneath one organisation). Organisational customers may have multiple tenants; assignments and authorization
+    use organization_id + tenant_id so that access respects tenant-under-organisation demarcation.
+  contact:
+    name: Platform / Security
+
+servers:
+  - url: /api/v1/am
+    description: Access Management API
+
+tags:
+  - name: Applications
+    description: Register applications (namespaces for roles/permissions)
+  - name: Roles
+    description: Roles per application
+  - name: Permissions
+    description: Permissions per application
+  - name: Principal
+    description: Assign roles/attributes to principals; effective rights; authorize
+
+security:
+  - BearerAuth: []
+  - ApiKeyHeader: []
+
+paths:
+  # --- Applications (registration) ---
+  /api/v1/am/applications:
+    get:
+      tags: [Applications]
+      summary: List applications
+      operationId: list_applications
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApplicationListResponse'
+    post:
+      tags: [Applications]
+      summary: Register application
+      operationId: create_application
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateApplicationRequest'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Application'
+        '400':
+          description: Invalid request (e.g. slug already exists)
+
+  /api/v1/am/applications/{app_id}:
+    get:
+      tags: [Applications]
+      summary: Get application by id
+      operationId: get_application
+      parameters:
+        - name: app_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Application'
+        '404':
+          description: Not found
+
+  # --- Roles (per application) ---
+  /api/v1/am/applications/{app_id}/roles:
+    get:
+      tags: [Roles]
+      summary: List roles for application
+      operationId: list_roles
+      parameters:
+        - name: app_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleListResponse'
+    post:
+      tags: [Roles]
+      summary: Create role for application
+      operationId: create_role
+      parameters:
+        - name: app_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRoleRequest'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Role'
+        '400':
+          description: Invalid request
+
+  /api/v1/am/applications/{app_id}/roles/{role_id}:
+    get:
+      tags: [Roles]
+      summary: Get role by id
+      operationId: get_role
+      parameters:
+        - name: app_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: role_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Role'
+        '404':
+          description: Not found
+
+  # --- Permissions (per application) ---
+  /api/v1/am/applications/{app_id}/permissions:
+    get:
+      tags: [Permissions]
+      summary: List permissions for application
+      operationId: list_permissions
+      parameters:
+        - name: app_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PermissionListResponse'
+    post:
+      tags: [Permissions]
+      summary: Create permission for application
+      operationId: create_permission
+      parameters:
+        - name: app_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePermissionRequest'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Permission'
+        '400':
+          description: Invalid request
+
+  # --- Role–Permission links ---
+  /api/v1/am/applications/{app_id}/roles/{role_id}/permissions:
+    get:
+      tags: [Roles]
+      summary: Get permissions for role
+      operationId: get_role_permissions
+      parameters:
+        - name: app_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: role_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PermissionListResponse'
+        '404':
+          description: Not found
+    post:
+      tags: [Roles]
+      summary: Assign permission to role
+      operationId: assign_permission_to_role
+      parameters:
+        - name: app_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: role_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignPermissionRequest'
+      responses:
+        '204':
+          description: Assigned
+        '400':
+          description: Invalid request
+        '404':
+          description: Not found
+    delete:
+      tags: [Roles]
+      summary: Revoke permission from role
+      operationId: revoke_permission_from_role
+      parameters:
+        - name: app_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: role_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: permission_id
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204':
+          description: Revoked
+        '404':
+          description: Not found
+
+  # --- Principal assignments ---
+  /api/v1/am/principals/roles:
+    post:
+      tags: [Principal]
+      summary: Assign role to principal (sub + organization_id + tenant_id)
+      operationId: assign_principal_role
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignPrincipalRoleRequest'
+      responses:
+        '204':
+          description: Assigned
+        '400':
+          description: Invalid request
+        '404':
+          description: Application or role not found
+    delete:
+      tags: [Principal]
+      summary: Revoke role from principal
+      operationId: revoke_principal_role
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RevokePrincipalRoleRequest'
+      responses:
+        '204':
+          description: Revoked
+        '404':
+          description: Not found
+
+  /api/v1/am/principals/attributes:
+    post:
+      tags: [Principal]
+      summary: Set attribute for principal (ABAC)
+      operationId: set_principal_attribute
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetPrincipalAttributeRequest'
+      responses:
+        '204':
+          description: Set
+        '400':
+          description: Invalid request
+
+  # --- Authorization (used by Identity for JWT enrichment and by services for per-request check) ---
+  /api/v1/am/principal/effective:
+    post:
+      tags: [Principal]
+      summary: Get effective roles and permissions for principal (e.g. for JWT enrichment)
+      operationId: principal_effective
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EffectiveRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EffectiveResponse'
+        '400':
+          description: Invalid request
+        '404':
+          description: Application not found
+
+  /api/v1/am/authorize:
+    post:
+      tags: [Principal]
+      summary: Check if principal is allowed to perform action on resource
+      operationId: authorize
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthorizeRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthorizeResponse'
+        '400':
+          description: Invalid request
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Access token (from Identity Service)
+    ApiKeyHeader:
+      type: apiKey
+      in: header
+      name: X-API-KEY
+
+  parameters:
+    Page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, default: 1 }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+
+  schemas:
+    Application:
+      type: object
+      required: [id, slug, name, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        slug: { type: string, description: Unique app identifier; use dot notation for suites (e.g. accounting.invoice, accounting.general_ledger, price_whisperer.trader) }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time, nullable: true }
+
+    CreateApplicationRequest:
+      type: object
+      required: [slug, name]
+      properties:
+        slug: { type: string }
+        name: { type: string }
+        description: { type: string }
+
+    ApplicationListResponse:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Application' } }
+        total: { type: integer }
+        page: { type: integer }
+        limit: { type: integer }
+
+    Role:
+      type: object
+      required: [id, app_id, name, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        app_id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string, nullable: true }
+        description: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time, nullable: true }
+
+    CreateRoleRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        slug: { type: string }
+        description: { type: string }
+
+    RoleListResponse:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Role' } }
+        total: { type: integer }
+        page: { type: integer }
+        limit: { type: integer }
+
+    Permission:
+      type: object
+      required: [id, app_id, code, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        app_id: { type: string, format: uuid }
+        code: { type: string, description: e.g. invoices:read, invoices:write }
+        name: { type: string, nullable: true }
+        description: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time, nullable: true }
+
+    CreatePermissionRequest:
+      type: object
+      required: [code]
+      properties:
+        code: { type: string }
+        name: { type: string }
+        description: { type: string }
+
+    PermissionListResponse:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Permission' } }
+        total: { type: integer }
+        page: { type: integer }
+        limit: { type: integer }
+
+    AssignPermissionRequest:
+      type: object
+      required: [permission_id]
+      properties:
+        permission_id: { type: string, format: uuid }
+
+    AssignPrincipalRoleRequest:
+      type: object
+      required: [sub, organization_id, tenant_id, app_id, role_id]
+      properties:
+        sub: { type: string, description: Subject from Identity (user or service id) }
+        organization_id: { type: string, format: uuid, description: Legal-entity customer (individual or organisational); tenant belongs to this org }
+        tenant_id: { type: string, format: uuid, description: Tenant under organisation; demarcation beneath one org }
+        app_id: { type: string, format: uuid }
+        role_id: { type: string, format: uuid }
+
+    RevokePrincipalRoleRequest:
+      type: object
+      required: [sub, organization_id, tenant_id, app_id, role_id]
+      properties:
+        sub: { type: string }
+        organization_id: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        app_id: { type: string, format: uuid }
+        role_id: { type: string, format: uuid }
+
+    SetPrincipalAttributeRequest:
+      type: object
+      required: [sub, organization_id, tenant_id, app_id, key, value]
+      properties:
+        sub: { type: string }
+        organization_id: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        app_id: { type: string, format: uuid }
+        key: { type: string }
+        value: { type: string }
+
+    EffectiveRequest:
+      type: object
+      required: [sub, organization_id, tenant_id, app_id]
+      properties:
+        sub: { type: string }
+        organization_id: { type: string, format: uuid, description: Legal-entity customer; used for org/tenant demarcation }
+        tenant_id: { type: string, format: uuid }
+        app_id: { type: string, format: uuid }
+
+    EffectiveResponse:
+      type: object
+      required: [roles, permissions]
+      properties:
+        roles: { type: array, items: { type: string }, description: Role ids or slugs }
+        permissions: { type: array, items: { type: string }, description: Permission codes }
+        attributes: { type: object, additionalProperties: true, description: ABAC attributes, nullable: true }
+
+    AuthorizeRequest:
+      type: object
+      required: [sub, organization_id, tenant_id, app_id, action]
+      properties:
+        sub: { type: string }
+        organization_id: { type: string, format: uuid, description: Legal-entity customer; enforces tenant-under-org demarcation }
+        tenant_id: { type: string, format: uuid }
+        app_id: { type: string, format: uuid }
+        action: { type: string, description: Permission code or action (e.g. invoices:write) }
+        resource: { type: string, nullable: true, description: Optional resource id for ACL/ABAC }
+
+    AuthorizeResponse:
+      type: object
+      required: [allowed]
+      properties:
+        allowed: { type: boolean }
+        reason: { type: string, nullable: true }

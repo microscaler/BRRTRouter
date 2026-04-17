@@ -107,6 +107,18 @@ pub struct HandlerRequest {
     pub jwt_claims: Option<Value>,
     /// Channel for sending the response back to the dispatcher
     pub reply_tx: mpsc::Sender<HandlerResponse>,
+    /// Guard for tracking queue depth and applying backpressure (decrements on Drop)
+    pub queue_guard: Option<Arc<QueueDepthGuard>>,
+}
+
+/// Guard that decreases queue depth counter when request processing completes and it drops
+#[derive(Debug)]
+pub struct QueueDepthGuard(pub std::sync::Arc<std::sync::atomic::AtomicUsize>);
+
+impl Drop for QueueDepthGuard {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+    }
 }
 
 impl HandlerRequest {
@@ -258,6 +270,123 @@ impl HandlerResponse {
 /// Type alias for a channel sender that dispatches requests to a handler
 pub type HandlerSender = mpsc::Sender<HandlerRequest>;
 
+/// Parse `usize` from an environment variable, accepting optional `0x` hex prefix.
+fn parse_stack_size_from_env(key: &str) -> Option<usize> {
+    std::env::var(key).ok().and_then(|s| {
+        if let Some(hex) = s.strip_prefix("0x") {
+            usize::from_str_radix(hex, 16).ok()
+        } else {
+            s.parse().ok()
+        }
+    })
+}
+
+/// Spawn an untyped handler coroutine with a specific stack size and handler name.
+///
+/// This directly returns a sender channel for dispatcher registration, similarly
+/// to `brrtrouter::typed::spawn_typed_with_stack_size_and_name`, but avoids any
+/// JSON strongly-typed request/response validation overhead.
+///
+/// Returns [`std::io::Error`] if the underlying coroutine runtime cannot spawn the handler
+/// (for example invalid stack configuration).
+///
+/// # Safety
+///
+/// See `register_handler` safety constraints.
+pub unsafe fn spawn_untyped_with_stack_size_and_name<F>(
+    handler_fn: F,
+    stack_size_bytes: usize,
+    handler_name: Option<&str>,
+) -> std::io::Result<mpsc::Sender<HandlerRequest>>
+where
+    F: Fn(HandlerRequest) -> HandlerResponse + Send + 'static + Clone,
+{
+    let (tx, rx) = mpsc::channel::<HandlerRequest>();
+    let effective_name = handler_name.unwrap_or("unknown").to_string();
+    let handler_name_for_logging = effective_name.clone();
+
+    // Apply environment variable overrides
+    let env_var_name = format!("BRRTR_STACK_SIZE__{}", effective_name.to_uppercase());
+    let mut stack_size = parse_stack_size_from_env(&env_var_name)
+        .or_else(|| parse_stack_size_from_env("BRRTR_STACK_SIZE"))
+        .unwrap_or(stack_size_bytes);
+
+    // Apply clamping
+    let min = std::env::var("BRRTR_STACK_MIN_BYTES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(16 * 1024);
+    let max = std::env::var("BRRTR_STACK_MAX_BYTES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(256 * 1024);
+    stack_size = stack_size.clamp(min, max);
+
+    let spawn_result = may::coroutine::Builder::new()
+        .stack_size(stack_size)
+        .name(effective_name.to_string())
+        .spawn(move || {
+            debug!(
+                handler_name = %handler_name_for_logging,
+                stack_size = stack_size,
+                "Untyped handler coroutine start"
+            );
+
+            for req in rx.iter() {
+                let reply_tx = req.reply_tx.clone();
+                let h_name = req.handler_name.clone();
+                let request_id = req.request_id;
+
+                info!(
+                    request_id = %request_id,
+                    handler_name = %h_name,
+                    "Untyped handler execution start"
+                );
+
+                let execution_start = std::time::Instant::now();
+
+                if let Err(panic) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    let response = handler_fn(req);
+                    let _ = reply_tx.send(response);
+                })) {
+                    let panic_message = format!("{panic:?}");
+                    error!(
+                        request_id = %request_id,
+                        handler_name = %h_name,
+                        panic_message = %panic_message,
+                        "Untyped handler panicked - CRITICAL"
+                    );
+                    let error_response = HandlerResponse::error(
+                        500,
+                        &format!("Handler panicked: {}", panic_message),
+                    );
+                    let _ = reply_tx.send(error_response);
+                } else {
+                    let execution_time_ms = execution_start.elapsed().as_millis() as u64;
+                    info!(
+                        request_id = %request_id,
+                        handler_name = %h_name,
+                        execution_time_ms = execution_time_ms,
+                        "Untyped handler execution complete"
+                    );
+                }
+            }
+        });
+
+    match spawn_result {
+        Ok(_) => Ok(tx),
+        Err(e) => {
+            error!(
+                handler = %effective_name,
+                stack_size_bytes = stack_size,
+                error = %e,
+                "Critical: Failed to spawn untyped handler coroutine"
+            );
+            Err(e)
+        }
+    }
+}
+
 /// Dispatcher that routes requests to registered handler coroutines
 ///
 /// Maintains a registry of handler names to their corresponding channel senders,
@@ -273,6 +402,10 @@ pub struct Dispatcher {
     pub worker_pools: HashMap<String, Arc<WorkerPool>>,
     /// Ordered list of middleware to apply to requests/responses
     pub middlewares: Vec<Arc<dyn Middleware>>,
+    /// Map of handler names to active queue limit tracker
+    pub queue_depths: HashMap<String, std::sync::Arc<std::sync::atomic::AtomicUsize>>,
+    /// Global backpressure bound for standard queues
+    pub queue_bound: usize,
 }
 
 impl Default for Dispatcher {
@@ -287,10 +420,17 @@ impl Dispatcher {
     /// Handlers must be registered using `register_handler` or `add_route`.
     #[must_use]
     pub fn new() -> Self {
+        let queue_bound = std::env::var("BRRTR_HANDLER_QUEUE_BOUND")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(1024);
+
         Dispatcher {
             handlers: HashMap::new(),
             worker_pools: HashMap::new(),
             middlewares: Vec::new(),
+            queue_depths: HashMap::new(),
+            queue_bound,
         }
     }
 
@@ -321,7 +461,11 @@ impl Dispatcher {
             "Handler registered successfully"
         );
 
-        self.handlers.insert(handler_name, sender);
+        self.handlers.insert(handler_name.clone(), sender);
+        self.queue_depths.insert(
+            handler_name,
+            std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        );
     }
 
     /// Add middleware to the processing pipeline
@@ -381,7 +525,7 @@ impl Dispatcher {
                     s.parse().ok()
                 }
             })
-            .unwrap_or(0x10000); // 64KB default instead of 16KB
+            .unwrap_or(0x8000); // 32KB default
 
         // SAFETY: may::coroutine::Builder::spawn() is marked unsafe by the may runtime.
         // The unsafety comes from the coroutine runtime's requirements, not from this function's logic.
@@ -610,7 +754,7 @@ impl Dispatcher {
             }
         };
 
-        let request = HandlerRequest {
+        let mut request = HandlerRequest {
             request_id: request_id.parse().unwrap_or_else(|_| RequestId::new()),
             method: route_match.route.method.clone(),
             // JSF P0-2: Convert Arc<str> to String for HandlerRequest
@@ -623,6 +767,7 @@ impl Dispatcher {
             body,
             jwt_claims,
             reply_tx,
+            queue_guard: None,
         };
 
         // D4: Middleware before execution
@@ -684,6 +829,29 @@ impl Dispatcher {
                 }
             } else {
                 // No worker pool - send directly to handler coroutine
+
+                // C1: Apply backpressure limit
+                if let Some(depth) = self.queue_depths.get(&request.handler_name) {
+                    if depth.load(std::sync::atomic::Ordering::Relaxed) >= self.queue_bound {
+                        error!(
+                            request_id = %request_id,
+                            handler_name = %request.handler_name,
+                            queue_depth = depth.load(std::sync::atomic::Ordering::Relaxed),
+                            queue_bound = self.queue_bound,
+                            "Handler queue full - shedding load natively"
+                        );
+                        return Some(HandlerResponse::error(
+                            503,
+                            "Service Unavailable: Handler Queue Full - Request Shed",
+                        ));
+                    }
+                    depth.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    // Attach Drop boundary
+                    let mut req = request.clone();
+                    req.queue_guard = Some(std::sync::Arc::new(QueueDepthGuard(depth.clone())));
+                    request = req;
+                }
+
                 if let Err(e) = tx.send(request.clone()) {
                     error!(
                         request_id = %request_id,

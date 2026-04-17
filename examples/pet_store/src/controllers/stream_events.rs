@@ -1,4 +1,5 @@
 // User-owned controller for handler 'stream_events'.
+
 use crate::handlers::stream_events::{Request, Response};
 use brrtrouter::sse;
 use brrtrouter::typed::TypedHandlerRequest;

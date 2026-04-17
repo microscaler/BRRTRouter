@@ -10,6 +10,13 @@ use super::schema::{
 };
 use crate::spec::{ParameterMeta, RouteMeta};
 
+/// Cargo `package` names may contain `-`. Rust `use` paths use `_` for those segments
+/// (see rustc crate naming). Example: `market-data_service_api` → `market_data_service_api`.
+#[must_use]
+pub fn cargo_pkg_name_to_rust_ident(name: &str) -> String {
+    name.replace('-', "_")
+}
+
 /// Entry in the handler registry for code generation
 ///
 /// Contains all information needed to register a handler in the dispatcher.
@@ -25,6 +32,8 @@ pub struct RegistryEntry {
     pub parameters: Vec<ParameterMeta>,
     /// Computed stack size for the coroutine in bytes
     pub stack_size_bytes: usize,
+    /// Whether this handler executes as a pure bytes-stream proxy (JSF rule isolation)
+    pub is_proxy: bool,
 }
 
 /// Parameters for writing implementation controller stub files
@@ -69,6 +78,29 @@ pub struct RouteDisplay {
 pub struct FormattedDependency {
     pub name: String,
     pub spec: String,
+}
+
+/// Crate names already listed in `templates/Cargo.toml.txt` under `[dependencies]` (both
+/// `use_workspace_deps` branches). Entries in `brrtrouter-dependencies.toml` that repeat these
+/// keys produce **duplicate TOML keys** and break `cargo metadata` / `cargo fmt`.
+pub(crate) fn is_builtin_gen_cargo_dependency(name: &str) -> bool {
+    matches!(
+        name,
+        "anyhow"
+            | "brrtrouter"
+            | "brrtrouter_macros"
+            | "clap"
+            | "config"
+            | "http"
+            | "http_legacy"
+            | "may"
+            | "may_http"
+            | "may_minihttp"
+            | "serde"
+            | "serde_json"
+            | "serde_yaml"
+            | "tikv-jemallocator"
+    )
 }
 
 /// Template data for generating Cargo.toml
@@ -178,6 +210,8 @@ pub struct HandlerTemplateData {
     pub parameters: Vec<ParameterMeta>,
     /// Whether this handler uses Server-Sent Events
     pub sse: bool,
+    /// Whether this handler acts as a transparent proxy
+    pub is_proxy: bool,
 }
 
 /// Template data for generating a controller module
@@ -206,10 +240,12 @@ pub struct ControllerTemplateData {
     pub imports: Vec<String>,
     /// Whether this handler uses Server-Sent Events
     pub sse: bool,
-    /// Upstream target service name explicitly set by x-service OpenAPI macro
-    pub downstream_service: Option<String>,
-    /// Upstream URI explicit proxy path mapped by x-brrtrouter-downstream-path macro
-    pub downstream_path: Option<String>,
+    /// True only when both `x-service` and `x-brrtrouter-downstream-path` are set (Codex P1).
+    pub is_untyped_proxy: bool,
+    /// Service name for proxy template (empty when not `is_untyped_proxy`).
+    pub proxy_service: String,
+    /// Downstream path template for proxy (empty when not `is_untyped_proxy`).
+    pub proxy_path: String,
     /// The HTTP Method for the current path
     pub method: String,
 }
@@ -241,6 +277,7 @@ pub fn write_handler(
     imports: &BTreeSet<String>,
     params: &[ParameterMeta],
     sse: bool,
+    is_proxy: bool,
     force: bool,
 ) -> anyhow::Result<()> {
     if path.exists() && !force {
@@ -256,6 +293,7 @@ pub fn write_handler(
         imports: imports.iter().cloned().collect(),
         parameters: params.to_vec(),
         sse,
+        is_proxy,
     }
     .render()?;
     fs::write(path, rendered)?;
@@ -398,6 +436,9 @@ pub fn write_controller(
         // Not an array response, no array literal needed
         String::new()
     };
+    let is_untyped_proxy = downstream_service.is_some() && downstream_path.is_some();
+    let proxy_service = downstream_service.unwrap_or_default();
+    let proxy_path = downstream_path.unwrap_or_default();
     let context = ControllerTemplateData {
         handler_name: handler.to_string(),
         struct_name: struct_name.to_string(),
@@ -409,8 +450,9 @@ pub fn write_controller(
         response_array_literal: array_literal,
         imports: imports.iter().cloned().collect(),
         sse,
-        downstream_service,
-        downstream_path,
+        is_untyped_proxy,
+        proxy_service,
+        proxy_path,
         method,
     };
     fs::write(path, context.render()?)?;
@@ -623,7 +665,7 @@ brrtrouter-dependencies.toml."
 ///
 /// Converts DependencySpec to a TOML-formatted string suitable for Cargo.toml
 pub fn format_dependency_spec(
-    name: &str,
+    _name: &str,
     spec: &crate::generator::DependencySpec,
     use_workspace_deps: bool,
 ) -> String {
@@ -975,6 +1017,9 @@ pub(crate) fn write_cargo_toml_with_options(
     if let Some(config) = deps_config {
         // Always-included dependencies: use workspace inheritance when listed, else keep explicit spec.
         for (name, spec) in &config.dependencies {
+            if is_builtin_gen_cargo_dependency(name) {
+                continue;
+            }
             let use_ws = use_workspace_flag_for_dep(use_workspace_deps, &workspace_deps, name);
             ensure_dep_spec_allows_non_workspace(name, spec, use_ws)?;
             let formatted = format_dependency_spec(name, spec, use_ws);
@@ -989,6 +1034,9 @@ pub(crate) fn write_cargo_toml_with_options(
         let detected_set = detected_conditional_deps.unwrap_or(&empty_set);
         for (name, cond_dep) in &config.conditional {
             if detected_set.contains(name) {
+                if is_builtin_gen_cargo_dependency(name) {
+                    continue;
+                }
                 let spec = cond_dep.to_spec();
                 let use_ws = use_workspace_flag_for_dep(use_workspace_deps, &workspace_deps, name);
                 ensure_dep_spec_allows_non_workspace(name, &spec, use_ws)?;
@@ -1151,8 +1199,8 @@ pub struct ImplControllerStubTemplateData {
     pub handler_name: String,
     /// Controller struct name
     pub struct_name: String,
-    /// Generated crate name (e.g., "bff")
-    pub crate_name: String,
+    /// Gen crate Rust identifier for `use` paths (hyphens → underscores).
+    pub rust_crate_ident: String,
     /// Request struct fields
     pub request_fields: Vec<FieldDef>,
     /// Response struct fields
@@ -1191,8 +1239,8 @@ pub struct ImplCargoTomlTemplateData {
 #[derive(Template)]
 #[template(path = "impl_main.rs.txt", escape = "none")]
 pub struct ImplMainRsTemplateData {
-    /// Generated crate name (e.g., "bff")
-    pub crate_name: String,
+    /// Gen crate Rust identifier for `use` paths (hyphens → underscores).
+    pub rust_crate_ident: String,
     /// Routes for displaying in comments
     pub routes: Vec<RouteDisplay>,
 }
@@ -1271,7 +1319,7 @@ pub fn write_impl_controller_stub(params: ImplControllerStubParams) -> anyhow::R
     let stub_data = ImplControllerStubTemplateData {
         handler_name: params.handler.to_string(),
         struct_name: params.struct_name.to_string(),
-        crate_name: params.crate_name.to_string(),
+        rust_crate_ident: cargo_pkg_name_to_rust_ident(&params.crate_name),
         request_fields: params.req_fields.to_vec(),
         response_fields: enriched_fields,
         imports: params.imports.iter().cloned().collect(),
@@ -1393,7 +1441,7 @@ pub fn write_impl_main_rs(
         .collect();
 
     let template_data = ImplMainRsTemplateData {
-        crate_name: component_name.to_string(),
+        rust_crate_ident: cargo_pkg_name_to_rust_ident(component_name),
         routes: route_displays,
     };
 
@@ -1532,4 +1580,46 @@ pub fn update_impl_mod_rs(
 
     fs::write(&mod_rs_path, new_content)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod cargo_pkg_name_to_rust_ident_tests {
+    use super::cargo_pkg_name_to_rust_ident;
+
+    #[test]
+    fn kebab_service_name_maps_for_use_paths() {
+        assert_eq!(
+            cargo_pkg_name_to_rust_ident("market-data_service_api"),
+            "market_data_service_api"
+        );
+    }
+
+    #[test]
+    fn plain_snake_unchanged() {
+        assert_eq!(
+            cargo_pkg_name_to_rust_ident("amd_service_api"),
+            "amd_service_api"
+        );
+    }
+
+    #[test]
+    fn multiple_hyphens_all_replaced() {
+        assert_eq!(
+            cargo_pkg_name_to_rust_ident("my-api-v2_service_api"),
+            "my_api_v2_service_api"
+        );
+    }
+
+    #[test]
+    fn empty_string_unchanged() {
+        assert_eq!(cargo_pkg_name_to_rust_ident(""), "");
+    }
+
+    #[test]
+    fn camel_case_bff_style_unchanged() {
+        assert_eq!(
+            cargo_pkg_name_to_rust_ident("traderBFF_service_api"),
+            "traderBFF_service_api"
+        );
+    }
 }

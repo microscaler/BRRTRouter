@@ -23,14 +23,14 @@ def run_mcp_argv() -> None:
 
 def _print_usage() -> None:
     print(
-        "Usage: brrtrouter mcp serve [--transport stdio|sse] [--host HOST] [--port PORT]",
+        "Usage: brrtrouter mcp serve [--transport stdio|sse] [--host HOST] [--port PORT]\n"
+        "\n"
+        "Subcommands:\n"
+        "  serve   Start the BRRTRouter MCP server\n"
+        "\n"
+        "Options for serve:",
         file=sys.stderr,
     )
-    print("", file=sys.stderr)
-    print("Subcommands:", file=sys.stderr)
-    print("  serve   Start the BRRTRouter MCP server", file=sys.stderr)
-    print("", file=sys.stderr)
-    print("Options for serve:", file=sys.stderr)
     print("  --transport stdio|sse   Transport protocol (default: stdio)", file=sys.stderr)
     print(
         "  --host HOST             Bind host for SSE transport (default: 127.0.0.1)",
@@ -57,6 +57,12 @@ def _run_serve(args: list[str]) -> None:
                 port = int(args[i + 1])
             except ValueError:
                 print(f"Error: --port must be an integer, got {args[i + 1]!r}", file=sys.stderr)
+                sys.exit(1)
+            if not (1 <= port <= 65535):
+                print(
+                    f"Error: --port must be between 1 and 65535, got {port}",
+                    file=sys.stderr,
+                )
                 sys.exit(1)
             i += 2
         elif args[i] in ("-h", "--help"):
@@ -86,4 +92,8 @@ def _run_serve(args: list[str]) -> None:
     else:
         print("Starting BRRTRouter MCP server (stdio) ...", file=sys.stderr)
 
-    run_server(transport=transport, host=host, port=port)
+    try:
+        run_server(transport=transport, host=host, port=port)
+    except (OSError, RuntimeError, ValueError) as e:
+        print(f"Error: MCP server failed: {e}", file=sys.stderr)
+        sys.exit(1)

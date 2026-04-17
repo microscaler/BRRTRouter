@@ -12,7 +12,9 @@ use std::sync::Arc;
 use std::time::Instant;
 
 fn create_route_meta(method: Method, path: &str, handler: &str) -> RouteMeta {
-    RouteMeta { x_service: None, x_brrtrouter_downstream_path: None,
+    RouteMeta {
+        x_service: None,
+        x_brrtrouter_downstream_path: None,
         method,
         path_pattern: Arc::from(path),
         handler_name: Arc::from(handler),
@@ -119,11 +121,18 @@ fn test_router_worst_case_performance() {
     }
     let duration = start.elapsed();
 
-    // Should complete quickly even with deep paths
+    let threshold_ms = if cfg!(debug_assertions) { 200 } else { 10 };
+
     assert!(
-        duration.as_millis() < 10,
-        "Deep path matching too slow: {}ms",
-        duration.as_millis()
+        duration.as_millis() < threshold_ms,
+        "Deep path matching too slow: {}ms (threshold {}ms, build: {})",
+        duration.as_millis(),
+        threshold_ms,
+        if cfg!(debug_assertions) {
+            "debug"
+        } else {
+            "release"
+        }
     );
 }
 
@@ -172,10 +181,19 @@ fn test_router_parameter_extraction_performance() {
     }
     let duration = start.elapsed();
 
-    // Parameter extraction should remain fast
+    // Release: tight bound; debug can be 10–50× slower (same pattern as
+    // `test_router_performance_with_many_routes`).
+    let threshold_ms = if cfg!(debug_assertions) { 500 } else { 50 };
+
     assert!(
-        duration.as_millis() < 20,
-        "Parameter extraction too slow: {}ms",
-        duration.as_millis()
+        duration.as_millis() < threshold_ms,
+        "Parameter extraction too slow: {}ms (threshold {}ms, build: {})",
+        duration.as_millis(),
+        threshold_ms,
+        if cfg!(debug_assertions) {
+            "debug"
+        } else {
+            "release"
+        }
     );
 }

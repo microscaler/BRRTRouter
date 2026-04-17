@@ -15,16 +15,16 @@ log = logging.getLogger(__name__)
 
 
 def _openapi_dir(project_root: Path, layout: dict[str, Any] | None = None) -> Path:
-    cfg = resolve_layout(layout)
+    cfg = resolve_layout(layout, project_root)
     return project_root / cfg["openapi_dir"]
 
 
-def _bff_suite_config_name(layout: dict[str, Any] | None) -> str:
-    return resolve_layout(layout)["bff_suite_config_name"]
+def _bff_suite_config_name(layout: dict[str, Any] | None, project_root: Path | None = None) -> str:
+    return resolve_layout(layout, project_root)["bff_suite_config_name"]
 
 
-def _openapi_bff_name(layout: dict[str, Any] | None) -> str:
-    return resolve_layout(layout)["openapi_bff_name"]
+def _openapi_bff_name(layout: dict[str, Any] | None, project_root: Path | None = None) -> str:
+    return resolve_layout(layout, project_root)["openapi_bff_name"]
 
 
 def suites_with_bff(project_root: Path, layout: dict[str, Any] | None = None) -> list[str]:
@@ -32,18 +32,18 @@ def suites_with_bff(project_root: Path, layout: dict[str, Any] | None = None) ->
     d = _openapi_dir(project_root, layout)
     if not d.exists():
         return []
-    config_name = _bff_suite_config_name(layout)
+    config_name = _bff_suite_config_name(layout, project_root)
     return [x.name for x in d.iterdir() if x.is_dir() and (x / config_name).exists()]
 
 
 def bff_suite_config_path(
     project_root: Path, suite: str, layout: dict[str, Any] | None = None
 ) -> Path:
-    return _openapi_dir(project_root, layout) / suite / _bff_suite_config_name(layout)
+    return _openapi_dir(project_root, layout) / suite / _bff_suite_config_name(layout, project_root)
 
 
 def openapi_bff_path(project_root: Path, suite: str, layout: dict[str, Any] | None = None) -> Path:
-    return _openapi_dir(project_root, layout) / suite / _openapi_bff_name(layout)
+    return _openapi_dir(project_root, layout) / suite / _openapi_bff_name(layout, project_root)
 
 
 def service_to_suite(

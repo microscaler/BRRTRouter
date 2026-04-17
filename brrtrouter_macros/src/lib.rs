@@ -68,7 +68,8 @@ pub fn handler(attr: TokenStream, item: TokenStream) -> TokenStream {
             return syn::Error::new_spanned(
                 &input_fn.sig,
                 "handler functions must declare an explicit return type (e.g. `-> crate::handlers::my_op::Response`). \
-Omitting `-> ...` makes the macro use `()` as the response type, which serializes to JSON `null`.",
+Omitting `-> ...` makes the macro use `()` as the response type, which serializes to JSON `null`. \
+The return type must implement `brrtrouter::typed::HandlerResponseOutput` (e.g. `Serialize` types or `HttpJson<T>`).",
             )
             .to_compile_error()
             .into();

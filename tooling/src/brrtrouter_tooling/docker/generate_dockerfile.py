@@ -6,6 +6,17 @@ import sys
 from pathlib import Path
 
 
+def bundled_microservices_template() -> Path:
+    """Default Dockerfile.template shipped with brrtrouter_tooling (microservices layout)."""
+    return (
+        Path(__file__).parent.parent
+        / "templates"
+        / "docker"
+        / "microservices"
+        / "Dockerfile.template"
+    )
+
+
 def generate_dockerfile(
     system: str,
     module: str,
@@ -26,8 +37,12 @@ def generate_dockerfile(
     out = output_path or (root / "docker" / "microservices" / f"Dockerfile.{system}_{module}")
 
     if not tpl.exists():
-        msg = f"Template not found: {tpl}"
-        raise FileNotFoundError(msg)
+        internal_tpl = bundled_microservices_template()
+        if internal_tpl.exists():
+            tpl = internal_tpl
+        else:
+            msg = f"Template not found: {tpl} nor bundled template"
+            raise FileNotFoundError(msg)
 
     binary_name = binary_name_pattern.format(system=system, module=module.replace("-", "_"))
     content = tpl.read_text()

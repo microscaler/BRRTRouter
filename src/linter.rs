@@ -12,6 +12,7 @@
 //! 5. **Missing operationId** - All operations must have operationId
 //! 6. **Schema reference resolution** - All $ref paths must be valid
 //! 7. **Money/decimal format** - Properties that look like monetary amounts (e.g. `*_amount`, `balance`) must use `format: decimal` or `format: money` when `type: number`
+//! 8. **Query vs item `enum` parity** - For operations returning a JSON **array** of a component schema, any **query** parameter that shares a name with a property on that item schema must use the **same** `enum` set (sorted equality). This prevents response-validation drift (e.g. `Job.status` includes `DRAFT` but `?status=` does not).
 //!
 //! ## Usage
 //!
@@ -130,7 +131,152 @@ pub fn lint_spec(spec_path: &Path) -> anyhow::Result<Vec<LintIssue>> {
         }
     }
 
+    // JSON Value pass: query parameter enums vs array item schema property enums
+    if let Ok(spec_v) = serde_json::to_value(&spec) {
+        lint_array_response_query_param_enum_parity(&spec_v, &mut issues);
+    }
+
     Ok(issues)
+}
+
+/// For operations with a 2xx `application/json` **array** response, ensure each query `parameter`
+/// with `schema.enum` matches the **same-named** property `enum` on the resolved **items** schema.
+fn lint_array_response_query_param_enum_parity(spec_v: &Value, issues: &mut Vec<LintIssue>) {
+    let Some(paths) = spec_v.get("paths").and_then(|p| p.as_object()) else {
+        return;
+    };
+
+    for (path_key, path_item) in paths {
+        let Some(path_obj) = path_item.as_object() else {
+            continue;
+        };
+        for method in ["get", "put", "post", "patch", "delete"] {
+            let Some(op) = path_obj.get(method).and_then(|o| o.as_object()) else {
+                continue;
+            };
+            lint_one_operation_query_item_enum_parity(spec_v, issues, path_key, method, op);
+        }
+    }
+}
+
+fn lint_one_operation_query_item_enum_parity(
+    spec_v: &Value,
+    issues: &mut Vec<LintIssue>,
+    path_key: &str,
+    method: &str,
+    op: &serde_json::Map<String, Value>,
+) {
+    let operation_id = op
+        .get("operationId")
+        .and_then(|v| v.as_str())
+        .unwrap_or("?");
+    let location_base = format!("{} {} ({})", path_key, method.to_uppercase(), operation_id);
+
+    let mut query_enums: Vec<(String, Vec<String>)> = Vec::new();
+    if let Some(params) = op.get("parameters").and_then(|p| p.as_array()) {
+        for p in params {
+            if p.get("in").and_then(|x| x.as_str()) != Some("query") {
+                continue;
+            }
+            let Some(name) = p.get("name").and_then(|n| n.as_str()) else {
+                continue;
+            };
+            let Some(arr) = p.pointer("/schema/enum").and_then(|e| e.as_array()) else {
+                continue;
+            };
+            let mut vals: Vec<String> = arr
+                .iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect();
+            if vals.is_empty() {
+                continue;
+            }
+            vals.sort();
+            query_enums.push((name.to_string(), vals));
+        }
+    }
+    if query_enums.is_empty() {
+        return;
+    }
+
+    let Some(responses_obj) = op.get("responses").and_then(|r| r.as_object()) else {
+        return;
+    };
+
+    let mut array_item_schema: Option<&Value> = None;
+    for code in ["200", "201", "202", "default"] {
+        let Some(resp) = responses_obj.get(code) else {
+            continue;
+        };
+        let schema = resp
+            .get("content")
+            .and_then(|c| c.get("application/json"))
+            .and_then(|m| m.get("schema"));
+        let Some(s) = schema else {
+            continue;
+        };
+        let Some(rs) = resolve_schema_value_in_spec(spec_v, s) else {
+            continue;
+        };
+        if rs.get("type").and_then(|t| t.as_str()) != Some("array") {
+            continue;
+        }
+        let Some(items) = rs.get("items") else {
+            continue;
+        };
+        if let Some(resolved_items) = resolve_schema_value_in_spec(spec_v, items) {
+            array_item_schema = Some(resolved_items);
+            break;
+        }
+    }
+
+    let Some(item_schema) = array_item_schema else {
+        return;
+    };
+    let Some(props) = item_schema.get("properties").and_then(|p| p.as_object()) else {
+        return;
+    };
+
+    for (param_name, param_vals) in &query_enums {
+        let Some(prop) = props.get(param_name) else {
+            continue;
+        };
+        let Some(prop_enum) = prop.get("enum").and_then(|e| e.as_array()) else {
+            continue;
+        };
+        let mut item_vals: Vec<String> = prop_enum
+            .iter()
+            .filter_map(|v| v.as_str().map(String::from))
+            .collect();
+        if item_vals.is_empty() {
+            continue;
+        }
+        item_vals.sort();
+
+        if *param_vals != item_vals {
+            issues.push(
+                LintIssue::new(
+                    format!("{location_base} parameter:{param_name}"),
+                    LintSeverity::Error,
+                    "query_enum_mismatch_item_schema",
+                    format!(
+                        "Query parameter '{param_name}' enum {param_vals:?} does not match item schema property '{param_name}' enum {item_vals:?}. Use the same enum sets so filters and response validation stay aligned.",
+                    ),
+                )
+                .with_suggestion(
+                    "Copy the item schema property enum to the query parameter (or vice versa).",
+                ),
+            );
+        }
+    }
+}
+
+fn resolve_schema_value_in_spec<'a>(spec: &'a Value, schema: &'a Value) -> Option<&'a Value> {
+    if let Some(ref_path) = schema.get("$ref").and_then(|r| r.as_str()) {
+        let suffix = ref_path.strip_prefix("#/components/schemas/")?;
+        return spec.get("components")?.get("schemas")?.get(suffix);
+    }
+    Some(schema)
 }
 
 /// HTTP method enum for linting operations

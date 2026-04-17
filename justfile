@@ -497,33 +497,22 @@ backup-before-upgrade:
 # ============================================================================
 # Local Development with Tilt + kind
 # ============================================================================
+# Cluster lifecycle lives in microscaler/shared-kind-cluster (`just dev-up` / `just cluster-create`).
+# This repo only: registry (shared with other app Tilts) + wire nodes + `tilt up` against context kind-kind.
+# Tilt UI port 10353 — avoids 10350 (default Tilt / Tiffany). Must pass `--port` on CLI; Tiltfile `os.putenv(TILT_PORT)` runs too late to bind.
 
-# Start local Docker registry for project images (needed for Tilt)
+# Start local Docker registry on localhost:5001 (same pattern as shared-kind-cluster / hauliage)
 dev-registry:
 	#!/usr/bin/env bash
 	set -euo pipefail
-	echo "Starting local Docker registry..."
-	
-	# Check if registry is already running
-	RUNNING=$(docker inspect -f '{''{ .State.Running }''}' kind-registry 2>/dev/null || echo false)
-	if [ "$RUNNING" = "true" ]; then
+	reg_name='kind-registry'
+	reg_port='5001'
+	if ! docker ps -q -f name=^${reg_name}$ | grep -q .; then
+		echo "Starting local docker registry (${reg_name} on 127.0.0.1:${reg_port})..."
+		docker run -d --restart=always -p "127.0.0.1:${reg_port}:5000" --network bridge --name "${reg_name}" registry:2 || docker start "${reg_name}"
+	else
 		echo "[OK] Registry already running"
-		exit 0
 	fi
-	
-	# Ensure kind network exists
-	docker network create kind 2>/dev/null || true
-	
-	# Start registry on kind network (for local project images only)
-	docker run -d --restart=always \
-		-p "127.0.0.1:5001:5000" \
-		--network kind \
-		--name kind-registry \
-		registry:2
-	
-	echo "[OK] Registry started on localhost:5001"
-	echo "     Registry connected to kind network"
-	echo "     For local project images (localhost:5001/...)"
 
 # Verify local registry setup
 dev-registry-verify:
@@ -546,12 +535,11 @@ dev-registry-verify:
 		exit 1
 	fi
 	
-	# Check if connected to kind
 	if docker network inspect kind >/dev/null 2>&1; then
 		if docker network inspect kind | grep -q kind-registry; then
 			echo "[OK] Registry connected to kind network"
 		else
-			echo "[WARN] Registry not on kind network (will connect on cluster creation)"
+			echo "[INFO] Connect with: docker network connect kind kind-registry"
 		fi
 	fi
 
@@ -575,76 +563,64 @@ dev-observability-verify:
 		fi
 	done
 
-# Start local development environment (kind + Tilt)
-# Tilt UI: http://localhost:10351 (press 'space' to open)
+# Wire localhost:5001 → kind-registry on existing Kind nodes (idempotent)
+dev-registry-wire:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	docker network connect kind kind-registry 2>/dev/null || true
+	REGISTRY_DIR="/etc/containerd/certs.d/localhost:5001"
+	for node in $(kind get nodes -n kind); do
+		docker exec "${node}" mkdir -p "${REGISTRY_DIR}"
+		printf '%s\n' '[host."http://kind-registry:5000"]' | docker exec -i "${node}" sh -c 'cat > /etc/containerd/certs.d/localhost:5001/hosts.toml'
+		docker exec "${node}" systemctl restart containerd || true
+		for _ in $(seq 1 30); do
+			docker exec "${node}" ctr version >/dev/null 2>&1 && break
+			sleep 1
+		done
+	done
+	kubectl apply -f k8s/core/local-registry-hosting.yaml 2>/dev/null || true
+	echo "[OK] Registry wired to Kind nodes"
+
+# Start Tilt against shared Kind (context kind-kind). Does NOT create/delete clusters.
+# Prerequisites: from microscaler/shared-kind-cluster run `just dev-up` once, OR:
+#   kind create cluster --config k8s/cluster/kind-config.yaml --wait 120s
+# Tilt UI: http://localhost:10353 (press 'space' to open)
 # Pet Store API: http://localhost:8080
-# Grafana: http://localhost:3000
-# Prometheus: http://localhost:9090
-# Jaeger: http://localhost:16686
 dev-up:
 	#!/usr/bin/env bash
 	set -euo pipefail
-	echo "Starting BRRTRouter development environment..."
+	echo "Starting BRRTRouter Tilt (expects kubectl context kind-kind)..."
 	echo ""
-	
-	# Start Docker registry (for local project images)
 	just dev-registry
 	echo ""
-	
-	# Create kind cluster if it doesn't exist
-	if ! kind get clusters 2>/dev/null | grep -q '^brrtrouter-dev$'; then
-		echo "Creating kind cluster..."
-		kind create cluster --config k8s/cluster/kind-config.yaml --wait 60s
-		
-		# Map localhost:5001 pulls to kind-registry (same pattern as kind local-registry docs;
-		# avoids inline containerd registry.mirrors which can break node startup on Docker Desktop).
-		REGISTRY_DIR="/etc/containerd/certs.d/localhost:5001"
-		for node in $(kind get nodes -n brrtrouter-dev); do
-			docker exec "${node}" mkdir -p "${REGISTRY_DIR}"
-			printf '%s\n' '[host."http://kind-registry:5000"]' | docker exec -i "${node}" sh -c 'cat > /etc/containerd/certs.d/localhost:5001/hosts.toml'
-			docker exec "${node}" systemctl restart containerd || true
-			for _ in $(seq 1 30); do
-				docker exec "${node}" ctr version >/dev/null 2>&1 && break
-				sleep 1
-			done
-		done
-		
-		# Document the local registry
-		kubectl apply -f k8s/core/local-registry-hosting.yaml
-		echo "[OK] Kind cluster created"
-	else
-		echo "[OK] Kind cluster already exists"
+	if ! kubectl config get-contexts -o name 2>/dev/null | grep -qx 'kind-kind'; then
+		echo "[FAIL] kubectl context kind-kind not found."
+		echo "  Create the shared cluster: cd ../shared-kind-cluster && just dev-up"
+		echo "  Standalone clone: kind create cluster --config k8s/cluster/kind-config.yaml --wait 120s"
+		exit 1
 	fi
+	kubectl config use-context kind-kind
+	just dev-registry-wire
 	echo ""
-	
-	# Start Tilt
-	echo "Starting Tilt (press 'space' to open web UI)..."
-	tilt up
+	echo "Starting Tilt on :10353 (press 'space' to open web UI)..."
+	tilt up --port 10353
 
-# Stop local development environment
+# Stop Tilt only (leaves Kind cluster and kind-registry running for other repos)
 dev-down:
 	#!/usr/bin/env bash
 	set -euo pipefail
 	echo "Stopping Tilt..."
-	tilt down || true
+	tilt down --port 10353 || true
 	echo ""
-	
-	echo "Deleting kind cluster..."
-	kind delete cluster --name brrtrouter-dev || true
-	echo ""
-	
-	echo "Stopping Docker registry..."
-	docker stop kind-registry 2>/dev/null || true
-	docker rm kind-registry 2>/dev/null || true
-	echo ""
-	
-	echo "[OK] Development environment stopped"
-	echo "Note: Observability data under /mnt/* in the kind node is discarded when the cluster is deleted"
+	echo "[OK] Tilt stopped (cluster + registry unchanged; delete cluster from shared-kind-cluster if needed)"
 
 # Check development environment status
 dev-status:
+	@echo "kubectl context (expect kind-kind):"
+	@kubectl config current-context 2>/dev/null || echo "[FAIL] kubectl not configured"
+	@echo ""
 	@echo "KIND cluster status:"
-	@kind get clusters | grep brrtrouter-dev || echo "[FAIL] Cluster not found"
+	@kind get clusters | grep '^kind$$' || echo "[FAIL] Cluster 'kind' not found"
 	@echo ""
 	@echo "Kubernetes pods:"
 	@kubectl get pods -n brrtrouter-dev 2>/dev/null || echo "[FAIL] Namespace not found"
@@ -658,10 +634,10 @@ dev-rebuild:
 	@cargo clean
 	@cargo build --release -p pet_store
 	@echo "Restarting Tilt..."
-	@tilt down || true
-	@tilt up
+	@tilt down --port 10353 || true
+	@tilt up --port 10353
 
-# Clean Docker state (fixes KIND cluster creation issues)
+# Clean Docker state (nuclear — affects ALL kind clusters). Prefer: shared-kind-cluster `just cluster-delete`.
 dev-clean:
 	#!/usr/bin/env bash
 	set -euo pipefail

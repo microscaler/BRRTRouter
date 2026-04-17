@@ -1,4 +1,5 @@
 // User-owned controller for handler 'download_file'.
+
 use crate::handlers::download_file::{Request, Response};
 use brrtrouter::typed::TypedHandlerRequest;
 use brrtrouter_macros::handler;
@@ -10,6 +11,18 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     //   "id": "abc",
     //   "url": "https://cdn.example.com/abc"
     // }
+    match serde_json::from_str::<Response>(
+        r###"{
+  "id": "abc",
+  "url": "https://cdn.example.com/abc"
+}"###,
+    ) {
+        Ok(parsed) => return parsed,
+        Err(e) => {
+            eprintln!("Failed to parse mock example JSON into Response: {}", e);
+            // Fallback to empty default structs below
+        }
+    }
 
     Response {
         id: Some("abc".to_string()),

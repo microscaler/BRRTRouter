@@ -10,7 +10,8 @@ This guide will help you get started quickly with our local development environm
    ```bash
    git clone https://github.com/microscaler/BRRTRouter.git
    cd BRRTRouter
-   just dev-up  # Creates cluster + starts everything
+   kind create cluster --config k8s/cluster/kind-config.yaml --wait 120s   # once; context kind-kind
+   just dev-up   # registry + Tilt (does not create the cluster)
    ```
 
 2. **✅ Verify everything works**:
@@ -66,10 +67,13 @@ We welcome contributions that improve:
 git clone https://github.com/microscaler/BRRTRouter.git
 cd BRRTRouter
 
-# 2. Start development environment (2 minutes)
+# 2. Kind cluster once (context kind-kind); monorepo: use ../shared-kind-cluster `just dev-up` instead
+kind create cluster --config k8s/cluster/kind-config.yaml --wait 120s
+
+# 3. Start Tilt (registry + wire + tilt up)
 just dev-up
 
-# 3. Access your services
+# 4. Access your services
 open http://localhost:8080           # 🎨 Interactive Dashboard
 open http://localhost:8080/docs      # 📖 Swagger UI
 open http://localhost:3000           # 📊 Grafana (admin/admin)
@@ -110,6 +114,10 @@ curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-amd64
 chmod +x ./kind && sudo mv ./kind /usr/local/bin/
 curl -fsSL https://github.com/tilt-dev/tilt/releases/latest/download/tilt.$(uname -s)-$(uname -m).tar.gz | tar -xzv tilt && sudo mv tilt /usr/local/bin/
 ```
+
+### Python tooling (`brrtrouter` CLI)
+
+Install the CLI into the **shared** venv at `~/.local/share/brrtrouter/venv` (override with **`BRRTROUTER_VENV`**). See [tooling/README.md](tooling/README.md). CI continues to use a workspace-local `tooling/.venv` on runners.
 
 See [docs/LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md) for full installation details.
 
@@ -164,7 +172,7 @@ See [docs/LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md) for full installation
 | **Jaeger** | http://localhost:16686 | Distributed tracing |
 | **PostgreSQL** | localhost:5432 | Database (user: brrtrouter, db: brrtrouter, pass: dev_password) |
 | **Redis** | localhost:6379 | Cache/session store |
-| **Tilt Web UI** | http://localhost:10351 | Dev dashboard (press 'space' in terminal) |
+| **Tilt Web UI** | http://localhost:10353 | Dev dashboard (press 'space' in terminal) |
 
 ## 📋 Before Submitting a Pull Request
 

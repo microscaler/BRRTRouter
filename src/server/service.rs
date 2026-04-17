@@ -93,6 +93,8 @@ pub struct AppService {
     pub security_providers: HashMap<String, Arc<dyn SecurityProvider>>,
     /// Optional metrics collection middleware
     pub metrics: Option<Arc<crate::middleware::MetricsMiddleware>>,
+    /// Optional extra Prometheus text (e.g. Lifeguard `lifeguard_*` appended to `/metrics`).
+    pub extra_prometheus: Option<Arc<dyn Fn() -> String + Send + Sync>>,
     /// Optional memory tracking middleware
     pub memory: Option<Arc<crate::middleware::MemoryMiddleware>>,
     /// Path to the OpenAPI specification file
@@ -143,6 +145,7 @@ impl Clone for AppService {
             security_schemes: self.security_schemes.clone(),
             security_providers: self.security_providers.clone(),
             metrics: self.metrics.clone(),
+            extra_prometheus: self.extra_prometheus.clone(),
             memory: self.memory.clone(),
             spec_path: self.spec_path.clone(),
             static_files: self.static_files.clone(),
@@ -201,6 +204,7 @@ impl AppService {
             security_schemes,
             security_providers: HashMap::new(),
             metrics: None,
+            extra_prometheus: None,
             memory: None,
             spec_path,
             static_files: static_dir.map(StaticFiles::new),
@@ -241,6 +245,11 @@ impl AppService {
     /// service.set_metrics_middleware(metrics);
     /// // All paths from OpenAPI spec are now pre-registered
     /// ```
+    /// Append OpenMetrics text from another subsystem (e.g. database pool metrics).
+    pub fn set_extra_prometheus(&mut self, scrape: Option<Arc<dyn Fn() -> String + Send + Sync>>) {
+        self.extra_prometheus = scrape;
+    }
+
     pub fn set_metrics_middleware(&mut self, metrics: Arc<MetricsMiddleware>) {
         // Pre-register all known paths from the router
         if let Ok(router) = self.router.read() {
@@ -434,6 +443,7 @@ pub fn metrics_endpoint(
     metrics: &MetricsMiddleware,
     memory: Option<&crate::middleware::MemoryMiddleware>,
     dispatcher: Option<&Dispatcher>,
+    extra_prometheus: Option<&(dyn Fn() -> String + Send + Sync)>,
 ) -> io::Result<()> {
     let (stack_size, used_stack) = metrics.stack_usage();
 
@@ -513,6 +523,36 @@ pub fn metrics_endpoint(
         body,
         "brrtrouter_auth_failures_total {}",
         metrics.auth_failures()
+    );
+
+    body.push_str(
+        "# HELP brrtrouter_cors_origin_rejections_total CORS rejections: Origin not allowed (403)\n",
+    );
+    body.push_str("# TYPE brrtrouter_cors_origin_rejections_total counter\n");
+    let _ = writeln!(
+        body,
+        "brrtrouter_cors_origin_rejections_total {}",
+        metrics.cors_origin_rejections()
+    );
+
+    body.push_str(
+        "# HELP brrtrouter_cors_preflight_denials_total CORS preflight denied: method or header not allowed (403)\n",
+    );
+    body.push_str("# TYPE brrtrouter_cors_preflight_denials_total counter\n");
+    let _ = writeln!(
+        body,
+        "brrtrouter_cors_preflight_denials_total {}",
+        metrics.cors_preflight_denials()
+    );
+
+    body.push_str(
+        "# HELP brrtrouter_cors_route_disabled_total CORS: per-route policy disabled (x-cors false); no CORS headers\n",
+    );
+    body.push_str("# TYPE brrtrouter_cors_route_disabled_total counter\n");
+    let _ = writeln!(
+        body,
+        "brrtrouter_cors_route_disabled_total {}",
+        metrics.cors_route_disabled()
     );
 
     // Connection metrics
@@ -655,6 +695,11 @@ pub fn metrics_endpoint(
     if let Some(memory_mw) = memory {
         body.push_str("\n# Memory Metrics\n");
         body.push_str(&memory_mw.export_metrics());
+    }
+
+    if let Some(extra) = extra_prometheus {
+        body.push_str("\n");
+        body.push_str(&extra());
     }
 
     use crate::dispatcher::HeaderVec;
@@ -920,7 +965,17 @@ impl HttpService for AppService {
                 // Get dispatcher for worker pool metrics (gracefully handle lock failure)
                 let dispatcher_guard = self.dispatcher.read().ok();
                 let dispatcher_ref = dispatcher_guard.as_deref();
-                return metrics_endpoint(res, metrics, self.memory.as_deref(), dispatcher_ref);
+                let extra = self
+                    .extra_prometheus
+                    .as_ref()
+                    .map(|arc| arc.as_ref() as &(dyn Fn() -> String + Send + Sync));
+                return metrics_endpoint(
+                    res,
+                    metrics,
+                    self.memory.as_deref(),
+                    dispatcher_ref,
+                    extra,
+                );
             } else {
                 write_json_error(
                     res,

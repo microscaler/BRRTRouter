@@ -1,71 +1,82 @@
-"""Setup PersistentVolumes (apply k8s YAML)."""
+"""Setup PersistentVolumes for RERP (k8s/data, k8s/monitoring). Replaces setup-persistent-volumes.sh."""
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 
-def run(
-    project_root: Path,
-    pv_paths: list[tuple[str, Path]] | None = None,
-) -> int:
-    """Apply PV YAML files. Returns 0 or 1."""
+def _skip_persistent_volume_setup() -> bool:
+    v = os.environ.get("BRRTROUTER_SKIP_SETUP_PERSISTENT_VOLUMES", "").strip().lower()
+    return v in ("1", "true", "yes", "on")
+
+
+def _first_existing(*candidates: Path) -> Path | None:
+    for p in candidates:
+        if p.exists():
+            return p
+    return None
+
+
+def run(project_root: Path) -> int:
+    """Apply data + monitoring PersistentVolume manifests. Returns 0 or 1.
+
+    Looks for k8s paths under the project first; PriceWhisperer moved PV YAML to
+    ``shared-kind-cluster/k8s/platform-data/`` (sibling of the app repo).
+    """
+    if _skip_persistent_volume_setup():
+        print("⏭️  Skipping setup-persistent-volumes (BRRTROUTER_SKIP_SETUP_PERSISTENT_VOLUMES=1)")
+        return 0
     if not shutil.which("kubectl"):
-        print("❌ Error: kubectl is not installed", file=sys.stderr)
+        print("❌ Error: kubectl is not installed or not on PATH", file=sys.stderr)
         return 1
-    try:
-        r = subprocess.run(
-            ["kubectl", "cluster-info"],
-            capture_output=True,
-            text=True,
-        )
-    except FileNotFoundError:
-        print("❌ Error: kubectl is not installed", file=sys.stderr)
-        return 1
-    if r.returncode != 0:
+    if subprocess.run(["kubectl", "cluster-info"], capture_output=True).returncode != 0:
         print("❌ Error: Cannot connect to Kubernetes cluster", file=sys.stderr)
         print(
             "   Please ensure your Kind cluster is running: kind get clusters",
             file=sys.stderr,
         )
         return 1
-    if pv_paths is None:
-        pv_paths = [
-            ("data", project_root / "k8s" / "data" / "persistent-volumes.yaml"),
+    sibling_shared_kind = project_root.parent / "shared-kind-cluster" / "k8s" / "platform-data"
+    for label, candidates in (
+        (
+            "data",
             (
-                "monitoring",
-                project_root / "k8s" / "monitoring" / "persistent-volumes.yaml",
+                project_root / "k8s" / "data" / "persistent-volumes.yaml",
+                sibling_shared_kind / "data" / "persistent-volumes.yaml",
             ),
-        ]
-    had_error = False
-    for label, path in pv_paths:
-        if path.exists():
+        ),
+        (
+            "monitoring",
+            (
+                project_root / "k8s" / "monitoring" / "persistent-volumes.yaml",
+                sibling_shared_kind / "monitoring" / "persistent-volumes.yaml",
+            ),
+        ),
+    ):
+        path = _first_existing(*candidates)
+        if path is not None:
             print(f"📦 Creating {label} PersistentVolumes...")
-            try:
-                r = subprocess.run(
-                    ["kubectl", "apply", "-f", str(path)],
-                    capture_output=True,
-                    text=True,
-                )
-            except FileNotFoundError:
-                print("❌ Error: kubectl is not installed", file=sys.stderr)
-                return 1
-            if r.returncode != 0 and "AlreadyExists" not in (r.stderr or ""):
-                print(
-                    f"❌ Error applying {label} PVs from {path}:\n{r.stderr or r.stdout}",
-                    file=sys.stderr,
-                )
-                had_error = True
+            r = subprocess.run(
+                ["kubectl", "apply", "-f", str(path)], capture_output=True, text=True
+            )
+            combined = (r.stderr or "") + (r.stdout or "")
+            if r.returncode != 0:
+                if "AlreadyExists" in combined:
+                    print(f"Info: Some {label} PVs already exist (OK)")
+                else:
+                    print(
+                        f"[ERROR] kubectl apply failed for {path} (exit {r.returncode}):\n{combined}",
+                        file=sys.stderr,
+                    )
+                    return 1
         else:
             print(f"Info:  No {label} PersistentVolumes file found (this is OK for initial setup)")
     print("✅ PersistentVolumes setup complete!")
-    try:
-        r = subprocess.run(["kubectl", "get", "pv"], capture_output=True, text=True)
-    except FileNotFoundError:
-        return 1 if had_error else 0
+    r = subprocess.run(["kubectl", "get", "pv"], capture_output=True, text=True)
     if r.returncode == 0:
         print(r.stdout or "No PersistentVolumes found")
-    return 1 if had_error else 0
+    return 0

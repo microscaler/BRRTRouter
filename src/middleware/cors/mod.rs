@@ -1,13 +1,50 @@
+//! Cross-origin resource sharing (CORS) for the HTTP pipeline.
+//!
+//! Provides preflight handling (`OPTIONS`), `Access-Control-*` response headers, and origin
+//! validation (exact list, wildcard without credentials, regex, or custom predicate). OpenAPI
+//! per-operation policy lives under the `x-cors` extension; see [`extract_route_cors_config`] and
+//! [`merge_route_policies_with_global_origins`].
+//!
+//! # Primary types
+//!
+//! - [`CorsMiddleware`] — [`Middleware`](crate::middleware::Middleware) implementation.
+//! - [`CorsMiddlewareBuilder`] — fluent builder; use [`CorsMiddlewareBuilder::build_with_routes`]
+//!   when loading [`crate::spec::RouteMeta`] from an OpenAPI spec.
+//! - [`OriginValidation`] — internal strategy for [`CorsMiddleware`] (exposed for advanced setups).
+//!
+//! # Metrics
+//!
+//! Call [`CorsMiddleware::with_metrics_sink`] with the same [`MetricsMiddleware`](crate::middleware::MetricsMiddleware)
+//! `Arc` used on the dispatcher so CORS denials increment Prometheus counters (`brrtrouter_cors_*`)
+//! exposed by [`metrics_endpoint`](crate::server::service::metrics_endpoint) on `GET /metrics`.
+//!
+//! # `Vary` merging
+//!
+//! [`CorsMiddleware::after`](CorsMiddleware::after) **merges** any existing handler `Vary` with CORS
+//! tokens via [`merge_vary_field_value`](merge_vary_field_value). For gateways or non-CORS code paths,
+//! call [`merge_vary_field_value`](merge_vary_field_value) yourself when combining values manually.
+//!
+//! # Documentation
+//!
+//! Deployment-focused notes (ingress/`Host`, RFC 7239 `Forwarded`, `X-Forwarded-*`, Private Network
+//! Access, `Vary`, middleware ordering) live in `docs/CORS_OPERATIONS.md`. The architectural audit is
+//! `docs/CORS_IMPLEMENTATION_AUDIT.md`.
+
 mod builder;
 mod error;
+mod forwarded;
 mod route_config;
+mod vary_merge;
 
 pub use builder::CorsMiddlewareBuilder;
 pub use error::CorsConfigError;
 pub use route_config::{
-    build_route_cors_map, extract_route_cors_config, RouteCorsConfig, RouteCorsPolicy,
+    build_route_cors_map, extract_route_cors_config, merge_route_policies_with_global_origins,
+    RouteCorsConfig, RouteCorsPolicy,
 };
+pub use vary_merge::merge_vary_field_value;
 
+use std::borrow::Cow;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -16,12 +53,76 @@ use regex::Regex;
 use tracing::{debug, warn};
 
 use crate::dispatcher::{HandlerRequest, HandlerResponse, HeaderVec};
-use crate::middleware::Middleware;
+use crate::middleware::{MetricsMiddleware, Middleware};
 
-/// CORS (Cross-Origin Resource Sharing) middleware
+/// First comma-separated value from `X-Forwarded-*` headers (typical reverse-proxy chains).
+fn first_forwarded_token(s: &str) -> &str {
+    s.split(',').next().unwrap_or("").trim()
+}
+
+/// Whether `host` already includes an explicit `:port` (handles bracketed IPv6).
+fn host_has_explicit_port(host: &str) -> bool {
+    if host.starts_with('[') {
+        host.contains("]:")
+    } else {
+        host.rfind(':')
+            .is_some_and(|i| host[i + 1..].parse::<u16>().is_ok())
+    }
+}
+
+/// Effective `Host` authority (`host[:port]`) for same-origin checks.
 ///
-/// Handles preflight OPTIONS requests and adds CORS headers to responses.
-/// Configurable with allowed origins, headers, and methods.
+/// When [`CorsMiddleware`] is configured with [`CorsMiddleware::with_trust_forwarded_host`],
+/// uses (in order) RFC 7239 **`Forwarded`** (`host` / `proto`), then **`X-Forwarded-Host`** and
+/// optional **`X-Forwarded-Port`**, when the request is from a trusted edge (configure only when
+/// proxies strip or validate these headers).
+fn effective_server_authority(req: &HandlerRequest, trust_forwarded: bool) -> Option<Cow<'_, str>> {
+    if trust_forwarded {
+        let forwarded_vals: Vec<&str> = req
+            .headers
+            .iter()
+            .filter(|(k, _)| k.eq_ignore_ascii_case("forwarded"))
+            .map(|(_, v)| v.as_str())
+            .collect();
+        if let Some(auth) = forwarded::authority_from_forwarded_field_values(&forwarded_vals) {
+            return Some(Cow::Owned(auth));
+        }
+        if let Some(fh_raw) = req.get_header("x-forwarded-host") {
+            let host = first_forwarded_token(fh_raw);
+            if !host.is_empty() {
+                if !host_has_explicit_port(host) {
+                    if let Some(fp_raw) = req.get_header("x-forwarded-port") {
+                        let port = first_forwarded_token(fp_raw);
+                        if port.parse::<u16>().is_ok() {
+                            return Some(Cow::Owned(format!("{host}:{port}")));
+                        }
+                    }
+                }
+                return Some(Cow::Borrowed(host));
+            }
+        }
+    }
+    req.get_header("host").map(Cow::Borrowed)
+}
+
+/// Tokens CORS adds to `Vary` (stable order for [`vary_merge::merge_vary_field_value`]).
+fn cors_vary_tokens(allow_private_network: bool) -> &'static [&'static str] {
+    if allow_private_network {
+        &["Origin", "Access-Control-Request-Private-Network"]
+    } else {
+        &["Origin"]
+    }
+}
+
+/// CORS ([Cross-Origin Resource Sharing](https://fetch.spec.whatwg.org/#http-cors-protocol)) middleware.
+///
+/// Handles browser preflight (`OPTIONS` with `Origin` + `Access-Control-Request-Method`), adds
+/// `Access-Control-*` headers on cross-origin responses, and can return **403** when the origin or
+/// preflight negotiation fails (rejections are also logged via `tracing`).
+///
+/// OpenAPI route overrides are keyed by handler name; use [`merge_route_policies_with_global_origins`]
+/// or [`CorsMiddlewareBuilder::build_with_routes`] so `x-cors: { ... }` routes receive deployment
+/// origins (the spec object never lists origins).
 ///
 /// # Security
 ///
@@ -69,7 +170,7 @@ use crate::middleware::Middleware;
 ///     Some(3600),  // cache preflight for 1 hour
 /// );
 /// ```
-/// Origin validation strategy
+/// How allowed [`Origin`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Origin) values are matched.
 #[derive(Clone)]
 pub enum OriginValidation {
     /// Exact string matching
@@ -113,6 +214,15 @@ impl OriginValidation {
     }
 }
 
+/// Internal: classify OPTIONS after `Origin` is allowed — preflight success, not a preflight, or denied.
+enum CorsPreflightOutcome {
+    Success(HandlerResponse),
+    /// No `Access-Control-Request-Method` — not a CORS preflight; let the route handler run.
+    NotPreflight,
+    /// Preflight attempted but policy rejects method/headers — respond 403 without CORS success headers.
+    Denied,
+}
+
 pub struct CorsMiddleware {
     pub(crate) origin_validation: OriginValidation,
     pub(crate) allowed_headers: Vec<String>,
@@ -126,9 +236,70 @@ pub struct CorsMiddleware {
     /// - `Disabled`: Disable CORS for this route (no CORS headers)
     /// - `Custom(config)`: Use route-specific CORS configuration
     pub(crate) route_policies: std::collections::HashMap<String, RouteCorsPolicy>,
+    /// When set, CORS denials increment [`MetricsMiddleware`] counters for `/metrics`.
+    pub(crate) metrics_sink: Option<Arc<MetricsMiddleware>>,
+    /// Use [`effective_server_authority`] (`X-Forwarded-Host` / `X-Forwarded-Port`) for same-origin detection.
+    pub(crate) trust_forwarded_host: bool,
+    /// [Private Network Access](https://wicg.github.io/private-network-access/): emit
+    /// `Access-Control-Allow-Private-Network` when enabled and the request participates in PNA.
+    pub(crate) allow_private_network_access: bool,
 }
 
 impl CorsMiddleware {
+    /// Global origin validation for this middleware (exact list, wildcard, regex, or custom).
+    #[must_use]
+    pub fn global_origin_validation(&self) -> &OriginValidation {
+        &self.origin_validation
+    }
+
+    /// Link this middleware to [`MetricsMiddleware`] so CORS events update Prometheus counters
+    /// (`brrtrouter_cors_origin_rejections_total`, `brrtrouter_cors_preflight_denials_total`,
+    /// `brrtrouter_cors_route_disabled_total`) on
+    /// [`GET /metrics`](crate::server::service::metrics_endpoint). Pass the **same** `Arc` used when
+    /// registering [`MetricsMiddleware`] on the [`Dispatcher`](crate::dispatcher::Dispatcher).
+    #[must_use]
+    pub fn with_metrics_sink(mut self, m: Arc<MetricsMiddleware>) -> Self {
+        self.metrics_sink = Some(m);
+        self
+    }
+
+    /// When `true`, same-origin detection uses [`effective_server_authority`]: RFC 7239 **`Forwarded`**
+    /// (`host` / `proto`), then **`X-Forwarded-Host`** / **`X-Forwarded-Port`**, so Envoy/nginx can
+    /// match browser `Origin` to the public authority.
+    ///
+    /// **Security:** enable only when your edge overwrites or strips these headers from untrusted clients.
+    #[must_use]
+    pub fn with_trust_forwarded_host(mut self, trust: bool) -> Self {
+        self.trust_forwarded_host = trust;
+        self
+    }
+
+    /// Enable [Private Network Access](https://wicg.github.io/private-network-access/) response headers
+    /// (`Access-Control-Allow-Private-Network: true`) for eligible preflight and cross-origin responses.
+    #[must_use]
+    pub fn with_allow_private_network_access(mut self, allow: bool) -> Self {
+        self.allow_private_network_access = allow;
+        self
+    }
+
+    fn record_cors_origin_rejection(&self) {
+        if let Some(m) = &self.metrics_sink {
+            m.inc_cors_origin_rejection();
+        }
+    }
+
+    fn record_cors_preflight_denial(&self) {
+        if let Some(m) = &self.metrics_sink {
+            m.inc_cors_preflight_denial();
+        }
+    }
+
+    fn record_cors_route_disabled(&self) {
+        if let Some(m) = &self.metrics_sink {
+            m.inc_cors_route_disabled();
+        }
+    }
+
     /// Create a new CORS middleware with specific configuration
     ///
     /// # Arguments
@@ -200,6 +371,9 @@ impl CorsMiddleware {
             expose_headers,
             max_age,
             route_policies: std::collections::HashMap::new(),
+            metrics_sink: None,
+            trust_forwarded_host: false,
+            allow_private_network_access: false,
         }
     }
 
@@ -242,6 +416,9 @@ impl CorsMiddleware {
             expose_headers: global_config.expose_headers,
             max_age: global_config.max_age,
             route_policies,
+            metrics_sink: global_config.metrics_sink,
+            trust_forwarded_host: global_config.trust_forwarded_host,
+            allow_private_network_access: global_config.allow_private_network_access,
         }
     }
 
@@ -317,6 +494,9 @@ impl CorsMiddleware {
             expose_headers,
             max_age,
             route_policies: std::collections::HashMap::new(),
+            metrics_sink: None,
+            trust_forwarded_host: false,
+            allow_private_network_access: false,
         }
     }
 
@@ -369,6 +549,9 @@ impl CorsMiddleware {
             expose_headers,
             max_age,
             route_policies: std::collections::HashMap::new(),
+            metrics_sink: None,
+            trust_forwarded_host: false,
+            allow_private_network_access: false,
         }
     }
 
@@ -490,11 +673,11 @@ impl CorsMiddleware {
     /// - Host header without port uses default port based on Origin scheme
     /// - Both hostname and port must match for same-origin
     fn is_same_origin(&self, req: &HandlerRequest, origin: &str) -> bool {
-        // Extract server origin from Host header
-        let host_header = match req.get_header("host") {
-            Some(h) => h,
-            None => return false, // No Host header, assume cross-origin
+        let host_header = match effective_server_authority(req, self.trust_forwarded_host) {
+            Some(c) => c,
+            None => return false, // No Host / forwarded authority, assume cross-origin
         };
+        let host_header: &str = host_header.as_ref();
 
         // Parse origin to extract scheme, hostname, and port
         // Origin format: scheme://hostname:port or scheme://hostname
@@ -616,15 +799,16 @@ impl CorsMiddleware {
     ///
     /// # Returns
     ///
-    /// * `Some(response)` - Valid preflight request with CORS headers
-    /// * `None` - Invalid preflight request (should return 403)
-    fn handle_preflight(&self, req: &HandlerRequest, origin: &str) -> Option<HandlerResponse> {
+    /// * [`CorsPreflightOutcome::Success`] — Valid preflight with CORS headers
+    /// * [`CorsPreflightOutcome::NotPreflight`] — Missing `Access-Control-Request-Method` (regular OPTIONS)
+    /// * [`CorsPreflightOutcome::Denied`] — Preflight attempted but method/headers invalid or disallowed
+    fn handle_preflight(&self, req: &HandlerRequest, origin: &str) -> CorsPreflightOutcome {
         // Get route-specific policy first
         let policy = self.get_route_policy(&req.handler_name);
         let (allowed_methods, allowed_headers, allow_credentials, max_age) = match policy {
             RouteCorsPolicy::Disabled => {
-                // CORS is disabled - return None to prevent CORS headers
-                return None;
+                // CORS is disabled — caller should have short-circuited; treat as non-preflight.
+                return CorsPreflightOutcome::NotPreflight;
             }
             RouteCorsPolicy::Inherit => {
                 // Use global config
@@ -645,19 +829,20 @@ impl CorsMiddleware {
                 )
             }
         };
-        // Extract requested method
-        // BUG FIX: Missing Access-Control-Request-Method means it's not a preflight request
-        // Return None to indicate "not a preflight" (not "invalid preflight")
-        // The caller should treat None as "proceed normally" for regular OPTIONS requests
-        let requested_method = req.get_header("access-control-request-method")?;
-        let requested_method = match requested_method.parse::<Method>() {
+        // Missing Access-Control-Request-Method => not a CORS preflight (regular OPTIONS).
+        let acrm = match req.get_header("access-control-request-method") {
+            Some(m) => m,
+            None => return CorsPreflightOutcome::NotPreflight,
+        };
+
+        let requested_method = match acrm.parse::<Method>() {
             Ok(m) => m,
             Err(_) => {
                 warn!(
                     "CORS preflight: invalid Access-Control-Request-Method: {}",
-                    requested_method
+                    acrm
                 );
-                return None;
+                return CorsPreflightOutcome::Denied;
             }
         };
 
@@ -667,7 +852,7 @@ impl CorsMiddleware {
                 "CORS preflight: method {} not in allowed methods",
                 requested_method.as_str()
             );
-            return None;
+            return CorsPreflightOutcome::Denied;
         }
 
         // Extract and validate requested headers
@@ -686,7 +871,7 @@ impl CorsMiddleware {
                         .any(|h| h.eq_ignore_ascii_case(header))
                     {
                         warn!("CORS preflight: header '{}' not in allowed headers", header);
-                        return None;
+                        return CorsPreflightOutcome::Denied;
                     }
                 }
             }
@@ -727,12 +912,26 @@ impl CorsMiddleware {
             ));
         }
 
-        // Add Vary: Origin header for dynamic origin validation
-        headers.push((std::sync::Arc::from("vary"), "Origin".to_string()));
+        let pna_requested = req
+            .get_header("access-control-request-private-network")
+            .is_some_and(|v| v.is_empty() || v.eq_ignore_ascii_case("true"));
+        if self.allow_private_network_access && pna_requested {
+            headers.push((
+                std::sync::Arc::from("access-control-allow-private-network"),
+                "true".to_string(),
+            ));
+        }
+
+        // Vary for caches — merge with any prior tokens (preflight responses are usually fresh)
+        let vary_merged = vary_merge::merge_vary_field_value(
+            None,
+            cors_vary_tokens(self.allow_private_network_access),
+        );
+        headers.push((std::sync::Arc::from("vary"), vary_merged));
 
         // Empty JSON object — not `null` — so OpenAPI response validation (`type: object`) passes
         // when middleware short-circuits OPTIONS (e.g. `options_user` documents `200` + JSON schema).
-        Some(HandlerResponse::new(200, headers, serde_json::json!({})))
+        CorsPreflightOutcome::Success(HandlerResponse::new(200, headers, serde_json::json!({})))
     }
 
     /// Create a permissive CORS middleware for development/testing
@@ -771,6 +970,9 @@ impl CorsMiddleware {
             expose_headers: vec![],
             max_age: None,
             route_policies: std::collections::HashMap::new(),
+            metrics_sink: None,
+            trust_forwarded_host: false,
+            allow_private_network_access: false,
         }
     }
 }
@@ -821,6 +1023,9 @@ impl Default for CorsMiddleware {
             expose_headers: vec![],
             max_age: None,
             route_policies: std::collections::HashMap::new(),
+            metrics_sink: None,
+            trust_forwarded_host: false,
+            allow_private_network_access: false,
         }
     }
 }
@@ -846,6 +1051,7 @@ impl Middleware for CorsMiddleware {
             self.get_route_policy(&req.handler_name),
             RouteCorsPolicy::Disabled
         ) {
+            self.record_cors_route_disabled();
             // CORS is disabled - for OPTIONS requests, return 200 OK without CORS headers
             if req.method == Method::OPTIONS {
                 return Some(HandlerResponse::new(
@@ -882,6 +1088,7 @@ impl Middleware for CorsMiddleware {
                 Some(o) => o,
                 None => {
                     warn!("CORS preflight: invalid origin '{}'", origin);
+                    self.record_cors_origin_rejection();
                     // Return 403 Forbidden for invalid origin (no CORS headers)
                     return Some(HandlerResponse::error(
                         403,
@@ -895,12 +1102,11 @@ impl Middleware for CorsMiddleware {
             // Per CORS spec: Missing Access-Control-Request-Method means it's a regular OPTIONS request,
             // not a preflight. Regular OPTIONS requests should proceed to handler or return 200/204.
             match self.handle_preflight(req, &validated_origin) {
-                Some(response) => Some(response), // Valid preflight response
-                None => {
-                    // None means "not a preflight request" (missing Access-Control-Request-Method)
-                    // This is a regular OPTIONS request - don't short-circuit, let it proceed
-                    // The handler can return 200/204 or handle it as needed
-                    None
+                CorsPreflightOutcome::Success(response) => Some(response),
+                CorsPreflightOutcome::NotPreflight => None, // Regular OPTIONS — handler may respond
+                CorsPreflightOutcome::Denied => {
+                    self.record_cors_preflight_denial();
+                    Some(HandlerResponse::error(403, "CORS preflight request denied"))
                 }
             }
         } else {
@@ -909,6 +1115,7 @@ impl Middleware for CorsMiddleware {
             if let Some(origin) = req.get_header("origin") {
                 if self.validate_origin(origin, &req.handler_name).is_none() {
                     warn!("CORS: invalid origin '{}'", origin);
+                    self.record_cors_origin_rejection();
                     // Return 403 Forbidden for invalid origin
                     return Some(HandlerResponse::error(
                         403,
@@ -1026,8 +1233,15 @@ impl Middleware for CorsMiddleware {
             res.set_header("access-control-expose-headers", exposed);
         }
 
-        // Add Vary: Origin header for dynamic origin validation (RFC requirement)
-        res.set_header("vary", "Origin".to_string());
+        if self.allow_private_network_access {
+            res.set_header("access-control-allow-private-network", "true".to_string());
+        }
+
+        let merged = vary_merge::merge_vary_field_value(
+            res.get_header("vary"),
+            cors_vary_tokens(self.allow_private_network_access),
+        );
+        res.set_header("vary", merged);
     }
 }
 
@@ -1062,6 +1276,7 @@ mod cors_middleware_tests {
             body: None,
             jwt_claims: None,
             reply_tx,
+            queue_guard: None,
         }
     }
 

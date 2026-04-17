@@ -32,6 +32,10 @@ pub struct CorsMiddlewareBuilder {
     allow_credentials: bool,
     expose_headers: Vec<String>,
     max_age: Option<u32>,
+    /// Same as [`CorsMiddleware::with_trust_forwarded_host`].
+    trust_forwarded_host: bool,
+    /// Same as [`CorsMiddleware::with_allow_private_network_access`].
+    allow_private_network_access: bool,
 }
 
 impl CorsMiddlewareBuilder {
@@ -69,7 +73,25 @@ impl CorsMiddlewareBuilder {
             allow_credentials: false,
             expose_headers: vec![],
             max_age: None,
+            trust_forwarded_host: false,
+            allow_private_network_access: false,
         }
+    }
+
+    /// Trust RFC 7239 `Forwarded` and/or `X-Forwarded-Host` / `X-Forwarded-Port` for same-origin detection.
+    ///
+    /// See [`CorsMiddleware::with_trust_forwarded_host`].
+    #[must_use]
+    pub fn trust_forwarded_host(mut self, trust: bool) -> Self {
+        self.trust_forwarded_host = trust;
+        self
+    }
+
+    /// Enable Private Network Access response headers. See [`CorsMiddleware::with_allow_private_network_access`].
+    #[must_use]
+    pub fn allow_private_network_access(mut self, allow: bool) -> Self {
+        self.allow_private_network_access = allow;
+        self
     }
 
     /// Set allowed origins
@@ -347,13 +369,18 @@ impl CorsMiddlewareBuilder {
             ),
         };
 
-        Ok(cors)
+        Ok(cors
+            .with_trust_forwarded_host(self.trust_forwarded_host)
+            .with_allow_private_network_access(self.allow_private_network_access))
     }
 
     /// Build CORS middleware with route-specific configurations from OpenAPI
     ///
     /// This method extracts route-specific CORS configs from route metadata
-    /// and creates a route-aware CORS middleware.
+    /// and creates a route-aware CORS middleware. For each OpenAPI `x-cors` **object** policy
+    /// ([`RouteCorsPolicy::Custom`](crate::middleware::RouteCorsPolicy::Custom)), it **merges global origins** (or regex/custom validators
+    /// from this builder) into the route — OpenAPI never supplies origins, so this avoids empty
+    /// origin lists on custom routes.
     ///
     /// # Arguments
     ///
@@ -374,17 +401,23 @@ impl CorsMiddlewareBuilder {
     ///     .allowed_origins(&["https://example.com"])
     ///     .build_with_routes(&routes)?;
     /// ```
+    ///
+    /// # See also
+    ///
+    /// [`merge_route_policies_with_global_origins`](crate::middleware::merge_route_policies_with_global_origins) — the same merge logic if you build
+    /// [`CorsMiddleware`](crate::middleware::CorsMiddleware) without this builder.
     pub fn build_with_routes(
         self,
         routes: &[crate::spec::RouteMeta],
     ) -> Result<CorsMiddleware, CorsConfigError> {
-        use super::build_route_cors_map;
+        use super::{build_route_cors_map, merge_route_policies_with_global_origins};
         let global_cors = self.build()?;
         let route_policies = build_route_cors_map(routes);
-        Ok(CorsMiddleware::with_route_policies(
-            global_cors,
+        let merged = merge_route_policies_with_global_origins(
+            global_cors.global_origin_validation(),
             route_policies,
-        ))
+        );
+        Ok(CorsMiddleware::with_route_policies(global_cors, merged))
     }
 }
 

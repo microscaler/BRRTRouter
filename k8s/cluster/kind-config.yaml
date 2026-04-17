@@ -1,20 +1,11 @@
-# kind cluster configuration for BRRTRouter local development
-# Creates a single-node cluster with port mappings for services.
+# Kind config for BRRTRouter CI (standalone clone) and local dev when not using ../shared-kind-cluster symlink.
+# Canonical merged config for microscaler: ../../shared-kind-cluster/kind-config.yaml (default cluster `kind` → context `kind-kind`).
 #
-# Kept minimal like octopilot/cronjob-log-monitor: no extraMounts (they break kubelet on
-# Docker Desktop for Mac), and containerd uses certs.d (config_path) — not inline
-# registry.mirrors. After `kind create`, `just dev-up` writes hosts.toml per:
-# https://kind.sigs.k8s.io/docs/user/local-registry/
+# CI (`.github/workflows/ci.yml`): create the cluster with `--name kind` so context is `kind-kind`, matching
+# shared-kind-cluster and app Tiltfiles. Do not use a separate cluster name unless you extend `allow_k8s_contexts`.
+
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
-name: brrtrouter-dev
-# Pin to v1.34.x; default kind image may track newer k8s.
-# Observability PVs use in-node paths under /mnt/... (DirectoryOrCreate); data is
-# ephemeral across cluster deletes unless you add optional mounts yourself (Linux).
-containerdConfigPatches:
-  - |-
-    [plugins."io.containerd.grpc.v1.cri".registry]
-      config_path = "/etc/containerd/certs.d"
 nodes:
   - role: control-plane
     image: kindest/node:v1.34.3
@@ -24,42 +15,65 @@ nodes:
         nodeRegistration:
           kubeletExtraArgs:
             node-labels: "ingress-ready=true"
-    # Port mappings for local access to services
-    # All BRRTRouter services use 31xxx NodePort range (Kubernetes requires 30000-32767)
     extraPortMappings:
-      # Pet Store API (NodePort 31080 -> host 8080)
+      - containerPort: 30080
+        hostPort: 8000
+        protocol: TCP
       - containerPort: 31080
         hostPort: 8080
         protocol: TCP
-      # Grafana UI (NodePort 31300 -> host 3000)
       - containerPort: 31300
         hostPort: 3000
         protocol: TCP
-      # Prometheus UI (NodePort 31090 -> host 9090)
-      - containerPort: 31090
-        hostPort: 9090
+      - containerPort: 30002
+        hostPort: 3002
         protocol: TCP
-      # Jaeger UI (NodePort 31166 -> host 16686)
-      - containerPort: 31166
-        hostPort: 16686
-        protocol: TCP
-      # Loki (NodePort 31310 -> host 3100)
       - containerPort: 31310
         hostPort: 3100
         protocol: TCP
-      # OTEL Collector OTLP gRPC (NodePort 31417 -> host 4317)
-      - containerPort: 31417
-        hostPort: 4317
-        protocol: TCP
-      # OTEL Collector OTLP HTTP (NodePort 31418 -> host 4318)
-      - containerPort: 31418
-        hostPort: 4318
-        protocol: TCP
-      # OTEL Collector Prometheus metrics (NodePort 31889 -> host 8889)
-      - containerPort: 31889
-        hostPort: 8889
-        protocol: TCP
-      # Pyroscope (NodePort 31404 -> host 4040)
       - containerPort: 31404
         hostPort: 4040
         protocol: TCP
+      - containerPort: 31417
+        hostPort: 4317
+        protocol: TCP
+      - containerPort: 31418
+        hostPort: 4318
+        protocol: TCP
+      - containerPort: 31889
+        hostPort: 8889
+        protocol: TCP
+      - containerPort: 30432
+        hostPort: 5433
+        protocol: TCP
+      - containerPort: 30379
+        hostPort: 6379
+        protocol: TCP
+      - containerPort: 30497
+        hostPort: 7497
+        protocol: TCP
+      - containerPort: 30999
+        hostPort: 9999
+        protocol: TCP
+      - containerPort: 30900
+        hostPort: 9000
+        protocol: TCP
+      - containerPort: 30901
+        hostPort: 9001
+        protocol: TCP
+      - containerPort: 30929
+        hostPort: 9292
+        protocol: TCP
+      - containerPort: 31090
+        hostPort: 9090
+        protocol: TCP
+      - containerPort: 30091
+        hostPort: 9091
+        protocol: TCP
+      - containerPort: 31166
+        hostPort: 16686
+        protocol: TCP
+containerdConfigPatches:
+  - |-
+    [plugins."io.containerd.grpc.v1.cri".registry]
+      config_path = "/etc/containerd/certs.d"

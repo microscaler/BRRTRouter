@@ -44,7 +44,9 @@ impl MultiResponseTestServer {
             m
         };
 
-        let route = RouteMeta { x_service: None, x_brrtrouter_downstream_path: None,
+        let route = RouteMeta {
+            x_service: None,
+            x_brrtrouter_downstream_path: None,
             method: Method::POST,
             path_pattern: Arc::from("/resp"),
             handler_name: Arc::from("h"),

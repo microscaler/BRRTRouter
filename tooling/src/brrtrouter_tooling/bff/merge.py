@@ -232,13 +232,13 @@ def _add_error_schema(
         pe = f"{to_pascal_case(sname)}Error"
         if pe in all_schemas:
             matches.append(pe)
-    if len(matches) > 1:
-        msg = "Multiple service Error schemas found: " + ", ".join(matches)
-        raise ValueError(msg)
     if len(matches) == 1:
         pe = matches[0]
         _update_refs_in_paths(all_paths, "Error", pe)
         all_schemas["Error"] = {"$ref": f"#/components/schemas/{pe}"}
+    else:
+        # Just use the generic Error schema we inserted above.
+        _update_refs_in_paths(all_paths, "Error", "Error")
 
 
 def merge_sub_service_specs(

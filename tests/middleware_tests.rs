@@ -35,6 +35,7 @@ fn create_test_request(method: Method, path: &str, headers: HeaderVec) -> Handle
         body: None,
         jwt_claims: None,
         reply_tx: tx,
+        queue_guard: None,
     }
 }
 
@@ -338,6 +339,64 @@ fn test_cors_options_without_preflight_header() {
         None,
         "No CORS headers for non-CORS request"
     );
+}
+
+#[test]
+fn test_cors_preflight_denied_disallowed_method_returns_403() {
+    let mw = CorsMiddleware::permissive();
+    // PATCH is not in permissive() allowed_methods
+    let mut headers = HeaderVec::new();
+    headers.push((Arc::from("origin"), "https://example.com".to_string()));
+    headers.push((
+        Arc::from("access-control-request-method"),
+        "PATCH".to_string(),
+    ));
+    let req = create_test_request(Method::OPTIONS, "/api", headers);
+    let resp = mw
+        .before(&req)
+        .expect("denied preflight must short-circuit");
+    assert_eq!(resp.status, 403);
+    assert_eq!(
+        resp.body.get("error").and_then(serde_json::Value::as_str),
+        Some("CORS preflight request denied")
+    );
+    assert_eq!(resp.get_header("access-control-allow-origin"), None);
+}
+
+#[test]
+fn test_cors_preflight_invalid_acrm_token_returns_403() {
+    let mw = CorsMiddleware::permissive();
+    let mut headers = HeaderVec::new();
+    headers.push((Arc::from("origin"), "https://example.com".to_string()));
+    headers.push((
+        Arc::from("access-control-request-method"),
+        "NOT_A_METHOD".to_string(),
+    ));
+    let req = create_test_request(Method::OPTIONS, "/api", headers);
+    let resp = mw
+        .before(&req)
+        .expect("denied preflight must short-circuit");
+    assert_eq!(resp.status, 403);
+}
+
+#[test]
+fn test_cors_preflight_disallowed_request_header_returns_403() {
+    let mw = CorsMiddleware::permissive();
+    let mut headers = HeaderVec::new();
+    headers.push((Arc::from("origin"), "https://example.com".to_string()));
+    headers.push((
+        Arc::from("access-control-request-method"),
+        "GET".to_string(),
+    ));
+    headers.push((
+        Arc::from("access-control-request-headers"),
+        "X-Not-Whitelisted".to_string(),
+    ));
+    let req = create_test_request(Method::OPTIONS, "/api", headers);
+    let resp = mw
+        .before(&req)
+        .expect("denied preflight must short-circuit");
+    assert_eq!(resp.status, 403);
 }
 
 #[test]
@@ -661,6 +720,199 @@ fn test_cors_builder_basic() {
 }
 
 #[test]
+fn test_build_with_routes_merges_global_origin_and_builds() {
+    use brrtrouter::middleware::{CorsMiddlewareBuilder, OriginValidation};
+
+    let cors = CorsMiddlewareBuilder::new()
+        .allowed_origins(&["https://client.example.com"])
+        .build_with_routes(&[])
+        .expect("build_with_routes");
+
+    match cors.global_origin_validation() {
+        OriginValidation::Exact(v) => assert!(v.iter().any(|o| o == "https://client.example.com")),
+        _ => panic!("expected Exact global origins from builder"),
+    }
+}
+
+#[test]
+fn test_cors_metrics_sink_origin_rejection() {
+    use brrtrouter::middleware::{CorsMiddleware, MetricsMiddleware, Middleware};
+
+    let m = Arc::new(MetricsMiddleware::new());
+    let cors = CorsMiddleware::new(
+        vec!["https://good.com".into()],
+        vec!["Content-Type".into()],
+        vec![Method::GET, Method::POST, Method::OPTIONS],
+        false,
+        vec![],
+        None,
+    )
+    .with_metrics_sink(m.clone());
+
+    let mut headers = HeaderVec::new();
+    headers.push((Arc::from("origin"), "https://evil.com".to_string()));
+    let req = create_test_request(Method::GET, "/", headers);
+    assert!(cors.before(&req).is_some());
+    assert_eq!(m.cors_origin_rejections(), 1);
+    assert_eq!(m.cors_preflight_denials(), 0);
+    assert_eq!(m.cors_route_disabled(), 0);
+}
+
+#[test]
+fn test_cors_metrics_sink_preflight_denial() {
+    use brrtrouter::middleware::{CorsMiddleware, MetricsMiddleware, Middleware};
+
+    let m = Arc::new(MetricsMiddleware::new());
+    let cors = CorsMiddleware::permissive().with_metrics_sink(m.clone());
+    let mut headers = HeaderVec::new();
+    headers.push((Arc::from("origin"), "https://example.com".to_string()));
+    headers.push((
+        Arc::from("access-control-request-method"),
+        "PATCH".to_string(),
+    ));
+    let req = create_test_request(Method::OPTIONS, "/", headers);
+    assert!(cors.before(&req).is_some());
+    assert_eq!(m.cors_preflight_denials(), 1);
+    assert_eq!(m.cors_route_disabled(), 0);
+}
+
+#[test]
+fn test_cors_metrics_sink_route_disabled() {
+    use brrtrouter::middleware::{
+        CorsMiddleware, CorsMiddlewareBuilder, MetricsMiddleware, Middleware,
+    };
+    use std::collections::HashMap;
+
+    let m = Arc::new(MetricsMiddleware::new());
+    let global = CorsMiddlewareBuilder::new()
+        .allowed_origins(&["*"])
+        .allowed_methods(&[Method::GET, Method::OPTIONS])
+        .build()
+        .expect("cors");
+    let mut route_policies = HashMap::new();
+    route_policies.insert("internal_handler".into(), RouteCorsPolicy::Disabled);
+    let cors =
+        CorsMiddleware::with_route_policies(global, route_policies).with_metrics_sink(m.clone());
+
+    let mut headers = HeaderVec::new();
+    headers.push((Arc::from("origin"), "https://example.com".to_string()));
+    let req_get = HandlerRequest {
+        request_id: brrtrouter::ids::RequestId::new(),
+        method: Method::GET,
+        path: "/api/internal".into(),
+        handler_name: "internal_handler".into(),
+        path_params: ParamVec::new(),
+        query_params: ParamVec::new(),
+        headers,
+        cookies: HeaderVec::new(),
+        body: None,
+        jwt_claims: None,
+        reply_tx: mpsc::channel::<HandlerResponse>().0,
+        queue_guard: None,
+    };
+    assert!(cors.before(&req_get).is_none());
+    assert_eq!(m.cors_route_disabled(), 1);
+
+    let mut headers_opt = HeaderVec::new();
+    headers_opt.push((Arc::from("origin"), "https://example.com".to_string()));
+    headers_opt.push((
+        Arc::from("access-control-request-method"),
+        "GET".to_string(),
+    ));
+    let req_opt = HandlerRequest {
+        request_id: brrtrouter::ids::RequestId::new(),
+        method: Method::OPTIONS,
+        path: "/api/internal".into(),
+        handler_name: "internal_handler".into(),
+        path_params: ParamVec::new(),
+        query_params: ParamVec::new(),
+        headers: headers_opt,
+        cookies: HeaderVec::new(),
+        body: None,
+        jwt_claims: None,
+        reply_tx: mpsc::channel::<HandlerResponse>().0,
+        queue_guard: None,
+    };
+    assert!(cors.before(&req_opt).is_some());
+    assert_eq!(m.cors_route_disabled(), 2);
+}
+
+#[test]
+fn test_cors_trust_forwarded_host_same_origin_skips_cors_headers() {
+    use brrtrouter::middleware::CorsMiddlewareBuilder;
+
+    let cors = CorsMiddlewareBuilder::new()
+        .allowed_origins(&["https://api.example.com"])
+        .trust_forwarded_host(true)
+        .build()
+        .expect("cors");
+
+    let mut headers = HeaderVec::new();
+    headers.push((Arc::from("host"), "127.0.0.1:8080".to_string()));
+    headers.push((Arc::from("x-forwarded-host"), "api.example.com".to_string()));
+    headers.push((Arc::from("x-forwarded-port"), "443".to_string()));
+    headers.push((Arc::from("origin"), "https://api.example.com".to_string()));
+    let req = create_test_request(Method::GET, "/", headers);
+    let mut resp = create_test_response(200);
+    cors.after(&req, &mut resp, Duration::from_millis(0));
+    assert_eq!(
+        resp.get_header("access-control-allow-origin"),
+        None,
+        "forwarded public host should match Origin for same-origin (no ACAO)"
+    );
+}
+
+#[test]
+fn test_cors_rfc7239_forwarded_host_proto_same_origin_skips_cors_headers() {
+    use brrtrouter::middleware::CorsMiddlewareBuilder;
+
+    let cors = CorsMiddlewareBuilder::new()
+        .allowed_origins(&["https://api.example.com"])
+        .trust_forwarded_host(true)
+        .build()
+        .expect("cors");
+
+    let mut headers = HeaderVec::new();
+    headers.push((Arc::from("host"), "127.0.0.1:8080".to_string()));
+    headers.push((
+        Arc::from("forwarded"),
+        "proto=https;host=api.example.com".to_string(),
+    ));
+    headers.push((Arc::from("origin"), "https://api.example.com".to_string()));
+    let req = create_test_request(Method::GET, "/", headers);
+    let mut resp = create_test_response(200);
+    cors.after(&req, &mut resp, Duration::from_millis(0));
+    assert_eq!(resp.get_header("access-control-allow-origin"), None);
+}
+
+#[test]
+fn test_cors_rfc7239_forwarded_precedence_over_x_forwarded_host() {
+    use brrtrouter::middleware::CorsMiddlewareBuilder;
+
+    let cors = CorsMiddlewareBuilder::new()
+        .allowed_origins(&["https://api.example.com"])
+        .trust_forwarded_host(true)
+        .build()
+        .expect("cors");
+
+    let mut headers = HeaderVec::new();
+    headers.push((Arc::from("host"), "127.0.0.1:8080".to_string()));
+    headers.push((
+        Arc::from("x-forwarded-host"),
+        "wrong.example.com".to_string(),
+    ));
+    headers.push((
+        Arc::from("forwarded"),
+        "proto=https;host=api.example.com".to_string(),
+    ));
+    headers.push((Arc::from("origin"), "https://api.example.com".to_string()));
+    let req = create_test_request(Method::GET, "/", headers);
+    let mut resp = create_test_response(200);
+    cors.after(&req, &mut resp, Duration::from_millis(0));
+    assert_eq!(resp.get_header("access-control-allow-origin"), None);
+}
+
+#[test]
 fn test_cors_builder_with_credentials() {
     use brrtrouter::middleware::CorsMiddlewareBuilder;
     use http::Method;
@@ -678,6 +930,58 @@ fn test_cors_builder_with_credentials() {
     let mut resp = create_test_response(200);
 
     cors.after(&req, &mut resp, Duration::from_millis(0));
+    assert_eq!(
+        resp.get_header("access-control-allow-credentials"),
+        Some("true")
+    );
+}
+
+#[test]
+fn test_cors_after_merges_existing_vary_with_origin() {
+    use brrtrouter::middleware::CorsMiddlewareBuilder;
+    use http::Method;
+
+    let cors = CorsMiddlewareBuilder::new()
+        .allowed_origins(&["https://example.com"])
+        .allowed_methods(&[Method::GET])
+        .build()
+        .expect("Valid CORS configuration");
+
+    let mut headers = HeaderVec::new();
+    headers.push((Arc::from("origin"), "https://example.com".to_string()));
+    let req = create_test_request(Method::GET, "/", headers);
+    let mut resp = create_test_response(200);
+    resp.set_header("vary", "Accept-Encoding".to_string());
+
+    cors.after(&req, &mut resp, Duration::from_millis(0));
+    assert_eq!(resp.get_header("vary"), Some("Accept-Encoding, Origin"));
+}
+
+#[test]
+fn test_cors_preflight_includes_credentials_when_enabled() {
+    use brrtrouter::middleware::CorsMiddlewareBuilder;
+    use http::Method;
+
+    let cors = CorsMiddlewareBuilder::new()
+        .allowed_origins(&["https://app.example.com"])
+        .allowed_methods(&[Method::GET, Method::OPTIONS])
+        .allow_credentials(true)
+        .build()
+        .expect("valid CORS with credentials");
+
+    let mut headers = HeaderVec::new();
+    headers.push((Arc::from("origin"), "https://app.example.com".to_string()));
+    headers.push((
+        Arc::from("access-control-request-method"),
+        "GET".to_string(),
+    ));
+    let req = create_test_request(Method::OPTIONS, "/resource", headers);
+    let resp = cors.before(&req).expect("preflight short-circuit");
+    assert_eq!(resp.status, 200);
+    assert_eq!(
+        resp.get_header("access-control-allow-origin"),
+        Some("https://app.example.com")
+    );
     assert_eq!(
         resp.get_header("access-control-allow-credentials"),
         Some("true")
@@ -1218,6 +1522,7 @@ fn test_cors_x_cors_false_disables_cors() {
         body: None,
         jwt_claims: None,
         reply_tx: mpsc::channel::<HandlerResponse>().0,
+        queue_guard: None,
     };
 
     let resp = cors
@@ -1254,6 +1559,7 @@ fn test_cors_x_cors_false_disables_cors() {
         body: None,
         jwt_claims: None,
         reply_tx: mpsc::channel::<HandlerResponse>().0,
+        queue_guard: None,
     };
 
     // before() should not short-circuit (CORS disabled, so no validation)
@@ -1317,6 +1623,7 @@ fn test_cors_x_cors_inherit_uses_global_config() {
         body: None,
         jwt_claims: None,
         reply_tx: mpsc::channel::<HandlerResponse>().0,
+        queue_guard: None,
     };
 
     let resp = cors
@@ -1353,6 +1660,7 @@ fn test_cors_x_cors_inherit_uses_global_config() {
         body: None,
         jwt_claims: None,
         reply_tx: mpsc::channel::<HandlerResponse>().0,
+        queue_guard: None,
     };
 
     let mut resp2 = HandlerResponse::new(200, HeaderVec::new(), serde_json::Value::Null);
@@ -1418,6 +1726,7 @@ fn test_cors_x_cors_false_vs_inherit_distinction() {
         body: None,
         jwt_claims: None,
         reply_tx: mpsc::channel::<HandlerResponse>().0,
+        queue_guard: None,
     };
 
     let mut resp_disabled = HandlerResponse::new(200, HeaderVec::new(), serde_json::Value::Null);
@@ -1441,6 +1750,7 @@ fn test_cors_x_cors_false_vs_inherit_distinction() {
         body: None,
         jwt_claims: None,
         reply_tx: mpsc::channel::<HandlerResponse>().0,
+        queue_guard: None,
     };
 
     let mut resp_inherit = HandlerResponse::new(200, HeaderVec::new(), serde_json::Value::Null);

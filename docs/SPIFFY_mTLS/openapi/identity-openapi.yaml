@@ -1,0 +1,685 @@
+# Generic Identity Service (IDAM) - OpenAPI 3.1
+# Unified from RERP auth/idam, PriceWhisperer trader/idam, and Generic_Identity_Service_IDAM_Design.md
+# Identity service may call Access Management for JWT enrichment (roles/permissions).
+openapi: 3.1.0
+info:
+  title: Identity Service (IDAM)
+  version: 1.0.0
+  description: |
+    Generic Identity and Authentication service. Single source of truth for identity, email/phone, sessions.
+    Supports OAuth 2.1/OIDC, tenant-scoped JWTs, refresh/logout, token exchange (RFC 8693).
+    No PII in URIs; use POST + body for email/phone lookups.
+
+    **SaaS customer model:** Customers are **individual** (natural person) or **organisational** (legal entity).
+    Organisational customers may have **multiple tenants** under one organisation (e.g. divisions, regions);
+    tenants are demarcated beneath a single organisation.
+  contact:
+    name: Platform / Security
+
+servers:
+  - url: /api/v1/identity
+    description: Identity API base
+  - url: /auth
+    description: Auth endpoints (login, refresh, logout, token)
+  - url: /
+    description: Discovery (/.well-known)
+
+tags:
+  - name: Organizations
+    description: Legal-entity customers (individual or organisational); parent of tenants
+  - name: Tenants
+    description: Tenants under an organisation; demarcation between tenants beneath one org
+  - name: Identity
+    description: Email, phone, user profile
+  - name: Auth
+    description: Login, refresh, logout, token
+  - name: Discovery
+    description: OIDC/JWKS
+
+security:
+  - BearerAuth: []
+  - ApiKeyHeader: []
+
+paths:
+  # --- Organizations (legal-entity customers: individual or organisational) ---
+  /api/v1/identity/organizations:
+    get:
+      tags: [Organizations]
+      summary: List organizations
+      operationId: list_organizations
+      parameters:
+        - name: customer_type
+          in: query
+          schema: { $ref: '#/components/schemas/CustomerType' }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationListResponse'
+    post:
+      tags: [Organizations]
+      summary: Create organization (individual or organisational customer)
+      operationId: create_organization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrganizationRequest'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+        '400':
+          description: Invalid request
+
+  /api/v1/identity/organizations/{organization_id}:
+    get:
+      tags: [Organizations]
+      summary: Get organization by id
+      operationId: get_organization
+      parameters:
+        - name: organization_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+        '404':
+          description: Not found
+
+  # --- Tenants under an organisation (demarcation between tenants beneath one org) ---
+  /api/v1/identity/organizations/{organization_id}/tenants:
+    get:
+      tags: [Tenants]
+      summary: List tenants under organisation
+      operationId: list_tenants
+      description: Returns all tenants for this organisation; clear demarcation between tenants beneath a single organisation.
+      parameters:
+        - name: organization_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantListResponse'
+        '404':
+          description: Organisation not found
+    post:
+      tags: [Tenants]
+      summary: Create tenant under organisation
+      operationId: create_tenant
+      description: Creates a new tenant (e.g. division, region) under the organisation; enforces demarcation.
+      parameters:
+        - name: organization_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTenantRequest'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tenant'
+        '400':
+          description: Invalid request (e.g. slug already exists in this org)
+        '404':
+          description: Organisation not found
+
+  /api/v1/identity/tenants/{tenant_id}:
+    get:
+      tags: [Tenants]
+      summary: Get tenant by id
+      operationId: get_tenant
+      description: Returns tenant and its organisation_id; used to enforce tenant-under-org demarcation.
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tenant'
+        '404':
+          description: Not found
+
+  # --- Identity: no PII in URI ---
+  /api/v1/identity/email/lookup:
+    post:
+      tags: [Identity]
+      summary: Lookup email by address (body only)
+      operationId: email_lookup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailLookupRequest'
+      responses:
+        '200':
+          description: Email found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmailAddress'
+        '404':
+          description: Not found
+
+  /api/v1/identity/email/upsert:
+    post:
+      tags: [Identity]
+      summary: Upsert email address
+      operationId: email_upsert
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailUpsertRequest'
+      responses:
+        '200':
+          description: Email address ID (created or existing)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmailAddressResponse'
+
+  /api/v1/identity/email/{email_address_id}:
+    get:
+      tags: [Identity]
+      summary: Get email by opaque ID
+      operationId: get_email_by_id
+      parameters:
+        - name: email_address_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmailAddress'
+        '404':
+          description: Not found
+
+  /api/v1/identity/users/me:
+    get:
+      tags: [Identity]
+      summary: Current user profile
+      operationId: users_me_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '401':
+          description: Unauthorized
+    patch:
+      tags: [Identity]
+      summary: Update current user profile
+      operationId: users_me_patch
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserProfileRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '401':
+          description: Unauthorized
+
+  # --- Auth ---
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Login (password)
+      operationId: auth_login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '202':
+          description: MFA required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MfaRequiredResponse'
+        '400':
+          description: Bad request
+        '401':
+          description: Invalid credentials
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh access token
+      operationId: auth_refresh
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '401':
+          description: Invalid or expired refresh token
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Logout (revoke session)
+      operationId: auth_logout
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogoutRequest'
+      responses:
+        '204':
+          description: Logged out
+        '401':
+          description: Unauthorized
+
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Register new user
+      operationId: auth_register
+      security: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          description: Validation error
+
+  /auth/token:
+    post:
+      tags: [Auth]
+      summary: Token endpoint (refresh, client_credentials, token_exchange RFC 8693)
+      operationId: auth_token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '400':
+          description: Invalid grant
+        '401':
+          description: Unauthorized
+
+  /auth/forgot-password:
+    post:
+      tags: [Auth]
+      summary: Request password reset
+      operationId: auth_forgot_password
+      security: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForgotPasswordRequest'
+      responses:
+        '200':
+          description: Reset email sent (or accepted)
+        '400':
+          description: Bad request
+
+  /auth/reset-password:
+    post:
+      tags: [Auth]
+      summary: Confirm password reset
+      operationId: auth_reset_password
+      security: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+      responses:
+        '200':
+          description: Password reset
+        '400':
+          description: Invalid token or request
+
+  # --- Discovery (for gateways and services) ---
+  /.well-known/openid-configuration:
+    get:
+      tags: [Discovery]
+      summary: OIDC discovery
+      operationId: openid_configuration
+      security: []
+      responses:
+        '200':
+          description: OpenID Connect discovery document
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenIDConfiguration'
+
+  /.well-known/jwks.json:
+    get:
+      tags: [Discovery]
+      summary: JWKS for JWT verification
+      operationId: jwks
+      security: []
+      responses:
+        '200':
+          description: JSON Web Key Set
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JWKS'
+
+components:
+  parameters:
+    Page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, default: 1 }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Access token issued by this Identity Service
+    ApiKeyHeader:
+      type: apiKey
+      in: header
+      name: X-API-KEY
+
+  schemas:
+    CustomerType:
+      type: string
+      enum: [individual, organization]
+      description: |
+        individual - Natural person; typically one tenant per customer.
+        organization - Legal entity; may have multiple tenants (e.g. divisions, regions).
+
+    Organization:
+      type: object
+      required: [id, customer_type, name, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        customer_type: { $ref: '#/components/schemas/CustomerType' }
+        name: { type: string }
+        legal_name: { type: string, nullable: true }
+        slug: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time, nullable: true }
+
+    CreateOrganizationRequest:
+      type: object
+      required: [customer_type, name]
+      properties:
+        customer_type: { $ref: '#/components/schemas/CustomerType' }
+        name: { type: string }
+        legal_name: { type: string }
+        slug: { type: string }
+
+    OrganizationListResponse:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Organization' } }
+        total: { type: integer }
+        page: { type: integer }
+        limit: { type: integer }
+
+    Tenant:
+      type: object
+      required: [id, organization_id, name, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        organization_id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time, nullable: true }
+
+    CreateTenantRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        slug: { type: string }
+
+    TenantListResponse:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Tenant' } }
+        total: { type: integer }
+        page: { type: integer }
+        limit: { type: integer }
+
+    EmailLookupRequest:
+      type: object
+      required: [email]
+      properties:
+        email: { type: string, format: email }
+        tenant_id: { type: string, format: uuid, description: Optional tenant scope }
+
+    EmailUpsertRequest:
+      type: object
+      required: [email]
+      properties:
+        email: { type: string, format: email }
+
+    EmailAddressResponse:
+      type: object
+      required: [email_address_id, email, verified, created, created_at]
+      properties:
+        email_address_id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        verified: { type: boolean }
+        created: { type: boolean }
+        created_at: { type: string, format: date-time }
+
+    EmailAddress:
+      type: object
+      required: [id, email, verified, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        verified: { type: boolean }
+        verification_token: { type: string, nullable: true }
+        verification_sent_at: { type: string, format: date-time, nullable: true }
+        verified_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    UserProfile:
+      type: object
+      properties:
+        sub: { type: string, format: uuid }
+        organization_id: { type: string, format: uuid, nullable: true, description: Legal-entity customer (individual or organisational) }
+        tenant_id: { type: string, format: uuid, nullable: true, description: Tenant under organisation; demarcation between tenants beneath one org }
+        email: { type: string, format: email, nullable: true }
+        email_verified: { type: boolean }
+        name: { type: string, nullable: true }
+        preferred_username: { type: string, nullable: true }
+        updated_at: { type: string, format: date-time, nullable: true }
+
+    UpdateUserProfileRequest:
+      type: object
+      properties:
+        name: { type: string }
+        preferred_username: { type: string }
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, format: password }
+        organization_id: { type: string, format: uuid, nullable: true, description: Optional hint; legal-entity customer (individual or organisational) }
+        tenant_id: { type: string, format: uuid, description: Tenant under organisation; required when organisation has multiple tenants (demarcation) }
+
+    LoginResponse:
+      type: object
+      required: [access_token, refresh_token, expires_in, token_type]
+      properties:
+        access_token: { type: string }
+        refresh_token: { type: string }
+        id_token: { type: string, nullable: true }
+        expires_in: { type: integer }
+        token_type: { type: string, enum: [Bearer] }
+        user: { $ref: '#/components/schemas/UserProfile', nullable: true }
+
+    MfaRequiredResponse:
+      type: object
+      properties:
+        session_id: { type: string }
+        mfa_required: { type: boolean, default: true }
+
+    RefreshRequest:
+      type: object
+      required: [refresh_token]
+      properties:
+        refresh_token: { type: string }
+
+    LogoutRequest:
+      type: object
+      properties:
+        refresh_token: { type: string }
+        session_id: { type: string }
+
+    RegisterRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, format: password }
+        organization_id: { type: string, format: uuid, nullable: true, description: Legal-entity customer; if omitted, individual customer with single tenant may be created }
+        tenant_id: { type: string, format: uuid, description: Tenant under organisation; required for organisational signup when org has multiple tenants }
+        name: { type: string }
+
+    TokenRequest:
+      type: object
+      required: [grant_type]
+      properties:
+        grant_type:
+          type: string
+          enum:
+            - refresh_token
+            - client_credentials
+            - urn:ietf:params:oauth:grant-type:token-exchange
+        refresh_token: { type: string }
+        client_id: { type: string }
+        client_secret: { type: string }
+        subject_token: { type: string, description: For token_exchange }
+        subject_token_type: { type: string }
+        audience: { type: string }
+        scope: { type: string }
+
+    TokenResponse:
+      type: object
+      required: [access_token, token_type, expires_in]
+      properties:
+        access_token: { type: string }
+        refresh_token: { type: string, nullable: true }
+        id_token: { type: string, nullable: true }
+        token_type: { type: string, enum: [Bearer] }
+        expires_in: { type: integer }
+        scope: { type: string, nullable: true }
+
+    ForgotPasswordRequest:
+      type: object
+      required: [email]
+      properties:
+        email: { type: string, format: email }
+
+    ResetPasswordRequest:
+      type: object
+      required: [token, new_password]
+      properties:
+        token: { type: string }
+        new_password: { type: string, format: password }
+
+    OpenIDConfiguration:
+      type: object
+      description: OIDC discovery document
+      properties:
+        issuer: { type: string }
+        authorization_endpoint: { type: string }
+        token_endpoint: { type: string }
+        jwks_uri: { type: string }
+        userinfo_endpoint: { type: string, nullable: true }
+        registration_endpoint: { type: string, nullable: true }
+        scopes_supported: { type: array, items: { type: string } }
+        response_types_supported: { type: array, items: { type: string } }
+        subject_types_supported: { type: array, items: { type: string } }
+        id_token_signing_alg_values_supported: { type: array, items: { type: string } }
+
+    JWKS:
+      type: object
+      required: [keys]
+      properties:
+        keys:
+          type: array
+          items:
+            type: object
+            description: JSON Web Key

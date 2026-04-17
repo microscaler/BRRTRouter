@@ -18,14 +18,29 @@
 //! - Decimal: `65536` (64 KB)
 //! - Hexadecimal: `0x10000` (64 KB)
 //!
-//! Default: `0x4000` (16 KB) - Optimal for typical handlers with ~4x safety margin
+//! Default: `0x8000` (32 KB) - Optimal for typical handlers with ~4x safety margin
 //!
 //! **Why this matters:**
 //! - Larger stacks support deeper call chains and larger local variables
 //! - Smaller stacks reduce memory usage for many concurrent coroutines
-//! - 4,500 concurrent requests × 16 KB stack = 72 MB virtual memory
-//! - Typical handler uses ~3.5 KB; 16 KB provides 4x safety margin
+//! - 4,500 concurrent requests × 32 KB stack = 72 MB virtual memory
+//! - Typical handler uses ~3.5 KB; 32 KB provides 4x safety margin
 //! - Tune based on your handler complexity and concurrency needs
+//!
+//! ### `BRRTR_MAY_WORKERS`
+//!
+//! Sets the **may** scheduler worker thread count. Must be called before the first `go!` /
+//! coroutine (see `may::config::set_workers`).
+//!
+//! **Why this matters with Lifeguard + `may_postgres`:** HTTP handlers run on may workers and
+//! block on `PooledLifeExecutor` reply channels. Pool threads run queries that schedule
+//! `may_postgres` I/O as `go!` coroutines on the **same** global may pool. If every may worker is
+//! blocked waiting for Postgres, no thread runs connection I/O — requests hang forever.
+//!
+//! Default when unset: `max(32, available_parallelism + DB_POOL_MAX + 16)` where `DB_POOL_MAX`
+//! defaults to `10` if unset (matching typical Lifeguard pool sizing).
+//!
+//! Override example: `export BRRTR_MAY_WORKERS=64`
 //!
 //! ### `BRRTR_SCHEMA_CACHE`
 //!
@@ -46,7 +61,7 @@
 //! use brrtrouter::runtime_config::RuntimeConfig;
 //!
 //! let config = RuntimeConfig::from_env();
-//! println!("Stack size: {} bytes", config.stack_size);
+//! println!("Stack size: {} bytes, may workers: {}", config.stack_size, config.may_workers);
 //! ```
 //!
 //! ## Example Configuration
@@ -71,7 +86,7 @@
 //!
 //! Recommended values:
 //! - Simple handlers: `0x2000` (8 KB)
-//! - Typical handlers: `0x4000` (16 KB) ← **default, validated at 4,500 concurrent users**
+//! - Typical handlers: `0x8000` (32 KB) ← **default, validated at 4,500 concurrent users**
 //! - Complex logic: `0x8000` (32 KB)
 //! - Deep recursion: `0x10000` (64 KB)
 
@@ -83,12 +98,14 @@ use std::env;
 /// the coroutine runtime behavior.
 #[derive(Debug, Clone, Copy)]
 pub struct RuntimeConfig {
-    /// Stack size for coroutines in bytes (default: 16 KB / 0x4000)
+    /// Stack size for coroutines in bytes (default: 32 KB / 0x8000)
     /// Optimal for typical handlers (~3.5 KB used) with 4x safety margin
     pub stack_size: usize,
     /// Whether to cache JSON Schema validators (default: true)
     /// Eliminates per-request schema compilation overhead
     pub schema_cache_enabled: bool,
+    /// May scheduler worker threads (`may::config().set_workers`). Minimum 2 when applied.
+    pub may_workers: usize,
 }
 
 impl RuntimeConfig {
@@ -101,12 +118,12 @@ impl RuntimeConfig {
         let mut stack_size = match env::var("BRRTR_STACK_SIZE") {
             Ok(val) => {
                 if let Some(hex) = val.strip_prefix("0x") {
-                    usize::from_str_radix(hex, 16).unwrap_or(0x4000)
+                    usize::from_str_radix(hex, 16).unwrap_or(0x8000)
                 } else {
-                    val.parse().unwrap_or(0x4000)
+                    val.parse().unwrap_or(0x8000)
                 }
             }
-            Err(_) => 0x4000, // 16KB default - optimal for typical handlers with 4x safety margin
+            Err(_) => 0x8000, // 32KB default - optimal for typical handlers with 4x safety margin
         };
 
         // Make stack size odd to enable May's stack usage tracking
@@ -128,9 +145,25 @@ impl RuntimeConfig {
             Err(_) => true, // Default to enabled
         };
 
+        let cpus = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(8)
+            .max(1);
+        let db_pool_max = env::var("DB_POOL_MAX")
+            .ok()
+            .and_then(|s| s.parse::<usize>().ok())
+            .filter(|&n| n >= 1)
+            .unwrap_or(10);
+        let default_may_workers = (cpus + db_pool_max + 16).max(32);
+        let may_workers = match env::var("BRRTR_MAY_WORKERS") {
+            Ok(val) => val.parse::<usize>().unwrap_or(default_may_workers).max(2),
+            Err(_) => default_may_workers.max(2),
+        };
+
         RuntimeConfig {
             stack_size,
             schema_cache_enabled,
+            may_workers,
         }
     }
 }

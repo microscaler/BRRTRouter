@@ -146,6 +146,7 @@ fn test_dispatch_post_item() {
         body: Some(body),
         jwt_claims: None,
         reply_tx,
+        queue_guard: None,
     };
 
     dispatcher
@@ -192,6 +193,7 @@ fn test_dispatch_get_pet() {
         body: None,
         jwt_claims: None,
         reply_tx,
+        queue_guard: None,
     };
 
     dispatcher
@@ -242,6 +244,7 @@ fn test_typed_controller_params() {
         body: None,
         jwt_claims: None,
         reply_tx,
+        queue_guard: None,
     };
 
     dispatcher
@@ -283,6 +286,7 @@ fn test_typed_controller_invalid_params() {
         body: None,
         jwt_claims: None,
         reply_tx,
+        queue_guard: None,
     };
 
     dispatcher
@@ -323,6 +327,7 @@ fn test_panic_handler_returns_500() {
         body: None,
         jwt_claims: None,
         reply_tx,
+        queue_guard: None,
     };
 
     dispatcher

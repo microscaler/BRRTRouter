@@ -204,3 +204,48 @@ def fibonacci_backoff_sequence(max_total_seconds: int = 300) -> list[int]:
 def default_binary_name(system: str, module: str) -> str:
     """Default RERP-style binary name: rerp_{system}_{module}_impl."""
     return f"rerp_{system}_{module.replace('-', '_')}_impl"
+
+
+def default_gen_package_name(service_dir_name: str) -> str:
+    """Cargo ``[package].name`` for the generated **gen** crate: ``{snake}_service_api``.
+
+    OpenAPI layouts use kebab-case directory names (e.g. ``market-data``). Cargo/Rust identifiers
+    must not embed a hyphen before ``_service_api``; this normalizes via :func:`to_snake_case`.
+    """
+    return f"{to_snake_case(service_dir_name)}_service_api"
+
+
+def brrtrouter_impl_package_name(module: str) -> str:
+    """Cargo package name for a brrtrouter-gen impl crate: ``{snake}_service_api_impl``."""
+    return f"{to_snake_case(module)}_service_api_impl"
+
+
+def resolve_cargo_impl_package_name(package: str | None, module: str) -> str:
+    """Resolve ``cargo -p`` name for host-aware builds.
+
+    * If ``package`` is ``None``, use :func:`brrtrouter_impl_package_name` with ``module``,
+      unless ``module`` contains uppercase letters (e.g. BFF ``traderBFF``) — then
+      ``{module}_impl`` is used (matches common ``impl/Cargo.toml`` names).
+    * If ``package`` starts with ``rerp_``, return unchanged (legacy RERP workspace layout).
+    * If ``package`` already ends with ``_service_api_impl``, return unchanged.
+    * If ``package`` ends with ``_impl`` but not the full suffix above: when the stem
+      contains uppercase (e.g. ``traderBFF_impl``), return ``package`` unchanged; otherwise
+      expand shorthand ``{name}_impl`` to ``{snake(name)}_service_api_impl``.
+    * Otherwise return ``package`` as-is.
+    """
+    if package is None:
+        if any(c.isupper() for c in module):
+            return f"{module}_impl"
+        return brrtrouter_impl_package_name(module)
+    if package.startswith("rerp_"):
+        return package
+    if package.endswith("_service_api_impl"):
+        return package
+    if package.endswith("_impl"):
+        base = package[: -len("_impl")]
+        if base.endswith("_service_api"):
+            return package
+        if any(c.isupper() for c in base):
+            return package
+        return brrtrouter_impl_package_name(base)
+    return package

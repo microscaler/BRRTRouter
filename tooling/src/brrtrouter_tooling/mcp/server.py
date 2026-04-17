@@ -25,12 +25,13 @@ if TYPE_CHECKING:
 _SERVER_NAME = "BRRTRouter"
 _SERVER_DESCRIPTION = (
     "BRRTRouter MCP server — helps AI assistants build OpenAPI specs conformant to "
-    "BRRTRouter, use brrtrouter-gen, understand the gen/impl directory layout, and "
-    "set up Backend-for-Frontend (BFF) services."
+    "BRRTRouter, use brrtrouter-gen, understand the gen/impl directory layout, "
+    "run consumer `brrtrouter client build` (impl crate `-p` naming: "
+    "*_service_api_impl or camelCase BFF *_impl), and set up Backend-for-Frontend (BFF) services."
 )
 
 
-def create_mcp_server() -> FastMCP:
+def create_mcp_server() -> FastMCP:  # noqa: C901
     """Create and configure the BRRTRouter FastMCP server instance.
 
     Registers all tools, resources, and prompts and returns the server.
@@ -210,6 +211,65 @@ def create_mcp_server() -> FastMCP:
         """
         return _tools.inspect_impl_dir(impl_dir)
 
+    @mcp.tool()
+    def setup_kind_registry(project_root: str) -> str:
+        """Setup local Docker registry for Kind cluster.
+
+        Args:
+            project_root: The root path of the project.
+        """
+        return _tools.setup_kind_registry(project_root)
+
+    @mcp.tool()
+    def setup_persistent_volumes(project_root: str) -> str:
+        """Setup PersistentVolumes in Kubernetes cluster.
+
+        Args:
+            project_root: The root path of the project.
+        """
+        return _tools.setup_persistent_volumes(project_root)
+
+    @mcp.tool()
+    def setup_tilt(project_root: str) -> str:
+        """Setup Tilt environment by creating directories and docker volumes.
+
+        Args:
+            project_root: The root path of the project.
+        """
+        return _tools.setup_tilt(project_root)
+
+    @mcp.tool()
+    def teardown_tilt(
+        project_root: str,
+        remove_images: bool = False,
+        remove_volumes: bool = False,
+        system_prune: bool = False,
+    ) -> str:
+        """Teardown Tilt environment, stop containers, and optionally prune.
+
+        Args:
+            project_root: The root path of the project.
+            remove_images: If True, remove dynamically built images.
+            remove_volumes: If True, remove local docker volumes.
+            system_prune: If True, run docker system prune.
+        """
+        return _tools.teardown_tilt(
+            project_root=project_root,
+            remove_images=remove_images,
+            remove_volumes=remove_volumes,
+            system_prune=system_prune,
+        )
+
+    @mcp.tool()
+    def scan_tilt(openapi_dir: str, base_port: int = 8002) -> str:
+        """Crawl an openapi directory to automatically map service names, crates, and ports.
+
+        Args:
+            openapi_dir: Path to directory tree to scan for openapi.yaml files.
+            base_port: The starting port number.
+        """
+        return _tools.scan_tilt(openapi_dir=openapi_dir, base_port=base_port)
+
     # ------------------------------------------------------------------
     # Resources
     # ------------------------------------------------------------------
@@ -221,12 +281,12 @@ def create_mcp_server() -> FastMCP:
 
     @mcp.resource("brrtrouter://guide/code-generation")
     def code_generation_guide() -> str:
-        """Guide for brrtrouter-gen: gen crate, impl crate, and regeneration workflow."""
+        """Guide for brrtrouter-gen (gen/impl), consumer `client build` / cargo -p naming, and regeneration."""
         return _resources.get_code_generation_guide()
 
     @mcp.resource("brrtrouter://guide/bff-pattern")
     def bff_pattern_guide() -> str:
-        """Guide for setting up a Backend-for-Frontend (BFF) service with BRRTRouter."""
+        """Guide for BFF with BRRTRouter: suite config, generate-system, and Tiltfile bff-spec-gen deps via tilt scan."""
         return _resources.get_bff_pattern_guide()
 
     @mcp.resource("brrtrouter://reference/extensions")
@@ -238,6 +298,11 @@ def create_mcp_server() -> FastMCP:
     def example_openapi_spec() -> str:
         """Minimal conformant OpenAPI 3.1.0 example spec for BRRTRouter."""
         return _resources.get_example_openapi_yaml()
+
+    @mcp.resource("brrtrouter://guide/tilt-setup")
+    def tilt_setup_guide() -> str:
+        """Tilt + BRRTRouter: Starlark vs Python, tilt/lib.tilt load(), CLI-only boundary, loops, bff-spec-gen deps."""
+        return _resources.get_tilt_setup_guide()
 
     # ------------------------------------------------------------------
     # Prompts

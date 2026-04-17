@@ -55,15 +55,19 @@
 //! }
 //! ```
 //!
-//! ## Middleware Ordering
+//! ## Middleware ordering
 //!
-//! Order matters! Typical ordering:
+//! Middleware runs in **registration order** (`Dispatcher::add_middleware`): `before` hooks run
+//! first-to-last, then the handler, then `after` hooks last-to-first.
 //!
-//! 1. **CORS** - Handle preflight requests early
-//! 2. **Tracing** - Start spans for all requests
-//! 3. **Auth** - Authenticate and authorize
-//! 4. **Metrics** - Count authenticated requests
-//! 5. **Handler** - Business logic
+//! There is no single mandatory order; choose based on policy:
+//! - **CORS** should run **before** auth if unauthenticated browser prefights must receive CORS
+//!   headers or a CORS `403` without requiring credentials.
+//! - **[`MetricsMiddleware`]** is often registered early so it observes the full handler latency;
+//!   the `examples/pet_store` crate registers metrics before CORS on the dispatcher.
+//! - **Auth** after tracing is common so spans include auth failures.
+//!
+//! See the repository file `docs/CORS_OPERATIONS.md` for ingress and `OPTIONS` considerations.
 //!
 //! ## Example
 //!
@@ -94,8 +98,9 @@ mod tracing;
 pub use auth::AuthMiddleware;
 pub use core::Middleware;
 pub use cors::{
-    build_route_cors_map, extract_route_cors_config, CorsConfigError, CorsMiddleware,
-    CorsMiddlewareBuilder, RouteCorsConfig, RouteCorsPolicy,
+    build_route_cors_map, extract_route_cors_config, merge_route_policies_with_global_origins,
+    merge_vary_field_value, CorsConfigError, CorsMiddleware, CorsMiddlewareBuilder,
+    OriginValidation, RouteCorsConfig, RouteCorsPolicy,
 };
 pub use memory::MemoryMiddleware;
 pub use metrics::MetricsMiddleware;

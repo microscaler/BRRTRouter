@@ -1,4 +1,5 @@
 // User-owned controller for handler 'list_user_posts'.
+
 use crate::handlers::list_user_posts::{Request, Response};
 use brrtrouter::typed::TypedHandlerRequest;
 use brrtrouter_macros::handler;
@@ -23,6 +24,28 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     //     "title": "Follow-up"
     //   }
     // ]
+    match serde_json::from_str::<Response>(
+        r###"[
+  {
+    "author_id": "abc-123",
+    "body": "Welcome to the blog",
+    "id": "post1",
+    "title": "Intro"
+  },
+  {
+    "author_id": "abc-123",
+    "body": "Thanks for reading",
+    "id": "post2",
+    "title": "Follow-up"
+  }
+]"###,
+    ) {
+        Ok(parsed) => return parsed,
+        Err(e) => {
+            eprintln!("Failed to parse mock example JSON into Response: {}", e);
+            // Fallback to empty default structs below
+        }
+    }
 
     Response(vec![serde_json::from_value::<Post>(serde_json::json!({"author_id":"abc-123","body":"Welcome to the blog","id":"post1","title":"Intro"})).unwrap_or_default(), serde_json::from_value::<Post>(serde_json::json!({"author_id":"abc-123","body":"Thanks for reading","id":"post2","title":"Follow-up"})).unwrap_or_default()])
 }

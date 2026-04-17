@@ -13,9 +13,9 @@
 //! ## Configuration
 //!
 //! - `BRRTR_HANDLER_WORKERS`: Number of worker coroutines per handler (default: 4)
-//! - `BRRTR_HANDLER_QUEUE_BOUND`: Queue depth limit for metrics (not enforced, default: 1024)
-//! - `BRRTR_BACKPRESSURE_MODE`: Backpressure mode setting (not used, kept for compatibility)
-//! - `BRRTR_BACKPRESSURE_TIMEOUT_MS`: Timeout setting (not used, kept for compatibility)
+//! - `BRRTR_HANDLER_QUEUE_BOUND`: Queue depth limit for **metrics** (not used as a hard reject threshold on dispatch; default: 1024)
+//! - `BRRTR_BACKPRESSURE_MODE`: `block` or `shed` — both dispatch to the same **unbounded** channel today; kept for API compatibility and future bounded-queue behavior
+//! - `BRRTR_BACKPRESSURE_TIMEOUT_MS`: Used by **block**-style paths elsewhere; worker pool dispatch does not block on queue depth here
 
 use crate::dispatcher::{HandlerRequest, HandlerResponse};
 use may::sync::mpmc;
@@ -28,7 +28,7 @@ use tracing::{debug, error, info};
 pub enum BackpressureMode {
     /// Block the sender with a timeout, then retry
     Block,
-    /// Shed the request immediately and return 429 (Too Many Requests)
+    /// Reserved for future bounded-queue behavior (currently dispatch is unbounded; see module docs).
     Shed,
 }
 
@@ -96,7 +96,7 @@ impl WorkerPoolConfig {
                     s.parse().ok()
                 }
             })
-            .unwrap_or(0x10000); // 64KB default
+            .unwrap_or(0x8000); // 32KB default
 
         Self {
             num_workers,
@@ -132,7 +132,7 @@ impl Default for WorkerPoolConfig {
             queue_bound: 1024,
             backpressure_mode: BackpressureMode::Block,
             backpressure_timeout_ms: 50,
-            stack_size: 0x10000, // 64KB
+            stack_size: 0x8000, // 32KB
         }
     }
 }
@@ -261,6 +261,7 @@ impl WorkerPool {
 
             let spawn_result = may::coroutine::Builder::new()
                 .stack_size(config.stack_size)
+                .name(format!("{}-worker-{}", handler_name_clone, worker_id))
                 .spawn(move || {
                     debug!(
                         handler_name = %handler_name_clone,
@@ -376,30 +377,14 @@ impl WorkerPool {
         Ok(())
     }
 
-    /// Dispatch to the unbounded channel (shed mode - no actual shedding)
+    /// Dispatch to the unbounded channel (shed mode).
+    ///
+    /// Uses the same acceptance rules as [`Self::dispatch_with_blocking`]: the MPMC queue is
+    /// **unbounded**, so `queue_bound` is tracked for **metrics / monitoring** only (see module
+    /// docs). Per-request shedding when depth exceeds `queue_bound` would contradict that contract
+    /// and the approximate `queue_depth` counter is not a hard capacity limit.
     fn dispatch_with_shedding(&self, req: HandlerRequest) -> Result<(), HandlerResponse> {
-        let request_id = req.request_id;
-
-        // Simply send to the unbounded channel
-        // Note: The channel is unbounded, so this will always succeed unless disconnected
-        self.metrics.record_dispatch();
-
-        if let Err(e) = self.sender.send(req) {
-            // Channel disconnected - workers are gone
-            error!(
-                request_id = %request_id,
-                handler_name = %self.handler_name,
-                error = %e,
-                "Worker pool channel disconnected"
-            );
-
-            return Err(HandlerResponse::error(
-                503,
-                "Handler workers are not responding",
-            ));
-        }
-
-        Ok(())
+        self.dispatch_with_blocking(req)
     }
 
     /// Get the sender for this worker pool
@@ -458,7 +443,7 @@ mod tests {
         assert_eq!(config.queue_bound, 1024);
         assert_eq!(config.backpressure_mode, BackpressureMode::Block);
         assert_eq!(config.backpressure_timeout_ms, 50);
-        assert_eq!(config.stack_size, 0x10000);
+        assert_eq!(config.stack_size, 0x8000);
     }
 
     #[test]

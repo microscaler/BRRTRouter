@@ -1,4 +1,5 @@
 // User-owned controller for handler 'get_pet'.
+
 use crate::handlers::get_pet::{Request, Response};
 use brrtrouter::typed::TypedHandlerRequest;
 use brrtrouter_macros::handler;
@@ -17,6 +18,25 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     //   ],
     //   "vaccinated": true
     // }
+    match serde_json::from_str::<Response>(
+        r###"{
+  "age": 3,
+  "breed": "Golden Retriever",
+  "id": 12345,
+  "name": "Max",
+  "tags": [
+    "friendly",
+    "trained"
+  ],
+  "vaccinated": true
+}"###,
+    ) {
+        Ok(parsed) => return parsed,
+        Err(e) => {
+            eprintln!("Failed to parse mock example JSON into Response: {}", e);
+            // Fallback to empty default structs below
+        }
+    }
 
     Response {
         age: 3,
