@@ -332,7 +332,13 @@ impl Router {
         }
 
         // RT4: No route found (404)
-        warn!(
+        //
+        // Demoted from `warn!` to `debug!`: 404s are a normal part of traffic
+        // (crawlers, misconfigured clients, security scans) and at high RPS a
+        // per-miss WARN produces many thousands of synchronous log writes per
+        // second, which itself can starve the handler coroutines. See PRD
+        // `docs/PRD_HOT_PATH_V2_STABILITY_AND_PERF.md` §Phase 2.2.
+        debug!(
             method = %method,
             path = %path,
             duration_us = match_duration.as_micros(),
