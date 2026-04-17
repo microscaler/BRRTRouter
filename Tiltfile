@@ -56,14 +56,7 @@ pet_build_cmd = 'scripts/host-aware-build.sh pet'
 # Mirrors `just init` / `just build-tooling`: editable install into tooling/.venv
 local_resource(
     'build-brrtrouter-tooling',
-    '''
-set -euo pipefail
-if [ ! -d tooling/.venv ]; then
-  python3 -m venv tooling/.venv
-  tooling/.venv/bin/pip install --upgrade pip
-fi
-tooling/.venv/bin/pip install -e "./tooling[dev]"
-''',
+    'bash -c \'set -euo pipefail; if [ ! -d tooling/.venv ]; then python3 -m venv tooling/.venv && tooling/.venv/bin/pip install --upgrade pip; fi && tooling/.venv/bin/pip install -e "./tooling[dev]"\'',
     deps=[
         'tooling/pyproject.toml',
         'tooling/src',
