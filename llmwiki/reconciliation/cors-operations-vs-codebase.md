@@ -6,19 +6,19 @@
 ## Verified implementation anchors
 
 1. CORS middleware surface and route-policy merge helpers are implemented and exported:
-   - `/home/runner/work/BRRTRouter/BRRTRouter/src/middleware/cors/mod.rs`
+   - `src/middleware/cors/mod.rs`
 2. Builder options in operations docs (`trust_forwarded_host`, `allow_private_network_access`, credentials/origin constraints) are present:
-   - `/home/runner/work/BRRTRouter/BRRTRouter/src/middleware/cors/builder.rs`
+   - `src/middleware/cors/builder.rs`
 3. RFC 7239 `Forwarded` parsing + authority derivation behavior is implemented:
-   - `/home/runner/work/BRRTRouter/BRRTRouter/src/middleware/cors/forwarded.rs`
-   - `/home/runner/work/BRRTRouter/BRRTRouter/src/middleware/cors/mod.rs`
+   - `src/middleware/cors/forwarded.rs`
+   - `src/middleware/cors/mod.rs`
 4. CORS metrics counters and sink integration points are present:
-   - `/home/runner/work/BRRTRouter/BRRTRouter/src/middleware/metrics.rs`
-   - `/home/runner/work/BRRTRouter/BRRTRouter/src/middleware/cors/mod.rs`
+   - `src/middleware/metrics.rs`
+   - `src/middleware/cors/mod.rs`
 5. HTTP-level conformance tests cover forwarded host, PNA, IDN bytes, and preflight auth interactions:
-   - `/home/runner/work/BRRTRouter/BRRTRouter/tests/cors_http_conformance_tests.rs`
-   - `/home/runner/work/BRRTRouter/BRRTRouter/tests/cors_http_security_schemes_tests.rs`
-   - `/home/runner/work/BRRTRouter/BRRTRouter/tests/middleware_tests.rs`
+   - `tests/cors_http_conformance_tests.rs`
+   - `tests/cors_http_security_schemes_tests.rs`
+   - `tests/middleware_tests.rs`
 
 ## Reconciled conclusions
 

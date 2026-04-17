@@ -16,3 +16,11 @@
 
 ## Reference
 - [Codebase Entry Points](./reference/codebase-entry-points.md)
+- [OpenAPI `x-*` Extensions](./reference/openapi-extensions.md)
+
+## Entities
+- [RouteMeta](./entities/route-meta.md)
+- [Request body parsing](./entities/request-body-parsing.md)
+
+## Topics
+- [Schema validation pipeline](./topics/schema-validation-pipeline.md)
