@@ -318,14 +318,14 @@ fn main() -> io::Result<()> {
     // Start the HTTP server on port 8081 (avoids the very common 8080 conflict
     // with local dev tooling), binding to 127.0.0.1 if BRRTR_LOCAL is set.
     // This returns a coroutine JoinHandle; we join on it to keep the server running
-    let router = std::sync::Arc::new(std::sync::RwLock::new(Router::new(routes.clone())));
+    let router = std::sync::Arc::new(arc_swap::ArcSwap::from_pointee(Router::new(routes.clone())));
     // Dump initial route table
     if let Ok(r) = router.read() {
         r.dump_routes();
     } else {
         eprintln!("[startup][warning] router lock poisoned during initialization");
     }
-    let dispatcher = std::sync::Arc::new(std::sync::RwLock::new(dispatcher));
+    let dispatcher = std::sync::Arc::new(arc_swap::ArcSwap::from_pointee(dispatcher));
     let mut service = AppService::new(
         router,
         dispatcher,

@@ -10,7 +10,8 @@ use may::coroutine;
 use may::sync::mpsc;
 use std::io;
 use std::path::PathBuf;
-use std::sync::{Arc, RwLock};
+use arc_swap::ArcSwap;
+use std::sync::Arc;
 
 /// Command-line interface for BRRTRouter
 ///
@@ -250,7 +251,7 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
                 .to_str()
                 .ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 in spec path"))?;
             let (routes, schemes, _slug) = crate::spec::load_spec_full(spec_path)?;
-            let router = Arc::new(RwLock::new(Router::new(routes.clone())));
+            let router = Arc::new(ArcSwap::from_pointee(Router::new(routes.clone())));
             let mut dispatcher = Dispatcher::new();
             for r in &routes {
                 let (tx, rx) = mpsc::channel();
@@ -265,7 +266,7 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 dispatcher.add_route(r.clone(), tx);
             }
-            let dispatcher = Arc::new(RwLock::new(dispatcher));
+            let dispatcher = Arc::new(ArcSwap::from_pointee(dispatcher));
             let mut service = AppService::new(
                 Arc::clone(&router),
                 Arc::clone(&dispatcher),

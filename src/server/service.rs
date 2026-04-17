@@ -8,6 +8,7 @@ use crate::security::{SecurityProvider, SecurityRequest};
 use crate::spec::SecurityScheme;
 use crate::static_files::StaticFiles;
 use crate::validator_cache::ValidatorCache;
+use arc_swap::ArcSwap;
 use http::Method;
 use may_minihttp::{HttpService, Request, Response};
 use serde_json::json;
@@ -16,8 +17,23 @@ use std::collections::HashMap;
 use std::fmt::Write;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use std::time::Duration;
+
+/// Shared, lock-free-read router (PRD Phase 1).
+///
+/// Previously `Arc<RwLock<Router>>` — every request paid one atomic + potential
+/// writer-queue latency for `read()`. With `ArcSwap`, a reader's hot path is a
+/// single atomic load (no queuing), and hot-reload becomes a pointer-swap via
+/// [`ArcSwap::store`].
+pub type SharedRouter = Arc<ArcSwap<Router>>;
+
+/// Shared, lock-free-read dispatcher (PRD Phase 1).
+///
+/// Same rationale as [`SharedRouter`]. Dispatcher state changes (handler
+/// registration, hot-reload) should clone the inner `Dispatcher`, mutate the
+/// clone, and `store` it — `Dispatcher: Clone`.
+pub type SharedDispatcher = Arc<ArcSwap<Dispatcher>>;
 use tracing::info;
 
 fn response_schema_is_binary_string(s: &serde_json::Value) -> bool {
@@ -82,10 +98,12 @@ fn response_body_schema_for_status(
 /// routing, authentication, validation, dispatching, and response generation.
 /// It integrates all major components (router, dispatcher, middleware, security, etc.).
 pub struct AppService {
-    /// Router for matching requests to handlers
-    pub router: Arc<RwLock<Router>>,
-    /// Dispatcher for sending requests to handler coroutines
-    pub dispatcher: Arc<RwLock<Dispatcher>>,
+    /// Router for matching requests to handlers. Lock-free reads on the hot
+    /// path via `ArcSwap` (PRD Phase 1). Hot reload stores a new `Router`.
+    pub router: SharedRouter,
+    /// Dispatcher for sending requests to handler coroutines. Lock-free reads
+    /// via `ArcSwap`. Mutations clone-and-store (`Dispatcher: Clone`).
+    pub dispatcher: SharedDispatcher,
     /// Security schemes defined in the OpenAPI spec
     pub security_schemes: HashMap<String, SecurityScheme>,
     /// Active security provider implementations (API keys, JWT, OAuth2)
@@ -175,8 +193,8 @@ impl AppService {
     ///
     /// A new `AppService` ready to handle requests
     pub fn new(
-        router: Arc<RwLock<Router>>,
-        dispatcher: Arc<RwLock<Dispatcher>>,
+        router: SharedRouter,
+        dispatcher: SharedDispatcher,
         security_schemes: HashMap<String, SecurityScheme>,
         spec_path: PathBuf,
         static_dir: Option<PathBuf>,
@@ -239,16 +257,16 @@ impl AppService {
     }
 
     pub fn set_metrics_middleware(&mut self, metrics: Arc<MetricsMiddleware>) {
-        // Pre-register all known paths from the router
-        if let Ok(router) = self.router.read() {
-            let paths = router.get_all_path_patterns();
-            if !paths.is_empty() {
-                info!(
-                    count = paths.len(),
-                    "Pre-registering paths in metrics middleware"
-                );
-                metrics.pre_register_paths(&paths);
-            }
+        // Pre-register all known paths from the router. ArcSwap::load returns a
+        // `Guard<Arc<Router>>` which auto-derefs to `Router`.
+        let router = self.router.load();
+        let paths = router.get_all_path_patterns();
+        if !paths.is_empty() {
+            info!(
+                count = paths.len(),
+                "Pre-registering paths in metrics middleware"
+            );
+            metrics.pre_register_paths(&paths);
         }
 
         self.metrics = Some(metrics);
@@ -951,9 +969,10 @@ impl HttpService for AppService {
         }
         if method == Method::GET && path == "/metrics" {
             if let Some(metrics) = &self.metrics {
-                // Get dispatcher for worker pool metrics (gracefully handle lock failure)
-                let dispatcher_guard = self.dispatcher.read().ok();
-                let dispatcher_ref = dispatcher_guard.as_deref();
+                // Get dispatcher for worker pool metrics. ArcSwap is never
+                // poisoned — `load` is infallible and lock-free.
+                let dispatcher_guard = self.dispatcher.load();
+                let dispatcher_ref = Some(&**dispatcher_guard);
                 let extra = self
                     .extra_prometheus
                     .as_ref()
@@ -1035,16 +1054,10 @@ impl HttpService for AppService {
             .filter(|s| !s.trim().is_empty());
         let canonical_req_id = RequestId::from_header_or_new(inbound_req_id);
 
-        let route_opt = {
-            // Router lock: panic on poison is appropriate - system is in undefined state
-            let router = self
-                .router
-                .read()
-                .expect("router RwLock poisoned - critical error");
-            // JSF P1: method is already Method enum, no parsing needed
-            // Clone method since router.route() takes ownership and we need it later for logging
-            router.route(method.clone(), &path)
-        };
+        // Router lookup: lock-free ArcSwap load on the request path (PRD Phase 1).
+        // No `RwLock::read()` → no reader queuing behind writers, no poison
+        // surface. `load()` returns a `Guard<Arc<Router>>` that we auto-deref.
+        let route_opt = self.router.load().route(method.clone(), &path);
         if let Some(mut route_match) = route_opt {
             route_match.query_params = query_params.clone();
 
@@ -1433,10 +1446,8 @@ impl HttpService for AppService {
             }
 
             let handler_response = {
-                let dispatcher = self
-                    .dispatcher
-                    .read()
-                    .expect("dispatcher RwLock poisoned - critical error");
+                // Lock-free dispatcher load (PRD Phase 1).
+                let dispatcher = self.dispatcher.load();
                 // Determine or generate request id to pass into dispatcher
                 let req_id = _request_logger
                     .request_id
