@@ -283,8 +283,8 @@ def main():
     )
     parser.add_argument(
         "--host",
-        default=os.environ.get("GOOSE_HOST", "http://localhost:8080"),
-        help="Host to test (default: http://localhost:8080)",
+        default=os.environ.get("GOOSE_HOST", "http://localhost:8081"),
+        help="Host to test (default: http://localhost:8081)",
     )
     parser.add_argument(
         "--users",

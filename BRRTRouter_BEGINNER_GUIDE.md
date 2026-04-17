@@ -247,7 +247,7 @@ BRRTRouter just works:
 
 ```bash
 # Metrics are automatically available
-curl http://localhost:8080/metrics
+curl http://localhost:8081/metrics
 # brrtrouter_requests_total{method="GET",path="/users",status="200"} 42
 # brrtrouter_request_duration_seconds_bucket{method="GET",path="/users",le="0.1"} 40
 # ...
@@ -401,7 +401,7 @@ As a beginner, debugging is hard. When something goes wrong:
 **Example**: If you send an invalid request:
 
 ```bash
-curl -X POST http://localhost:8080/users \
+curl -X POST http://localhost:8081/users \
   -H "Content-Type: application/json" \
   -d '{"email": "not-an-email"}'
 ```

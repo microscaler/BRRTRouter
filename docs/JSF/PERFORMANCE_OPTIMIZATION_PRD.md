@@ -317,7 +317,7 @@ pub fn route(&self, method: Method, path: &str) -> Option<RouteMatch> {
 
 1. **Today:** Run baseline benchmark
    ```bash
-   ab -n 10000 -c 10 http://localhost:8080/pets
+   ab -n 10000 -c 10 http://localhost:8081/pets
    ```
 
 2. **This week:** Disable hot-path logging

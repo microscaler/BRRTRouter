@@ -13,7 +13,7 @@ This guide covers two different load testing strategies using Goose, each design
 
 ```bash
 # Ensure BRRTRouter is running
-kubectl port-forward -n brrtrouter-dev svc/petstore 8080:8080 &
+kubectl port-forward -n brrtrouter-dev svc/petstore 8081:8080 &
 
 # Ensure Prometheus is accessible (for adaptive test)
 kubectl port-forward -n brrtrouter-dev svc/prometheus 9090:9090 &
@@ -39,14 +39,14 @@ Goose load test configuration is done via command-line arguments following the `
 ```bash
 # Quick test: 10 users for 30 seconds
 cargo run --release --example api_load_test -- \
-  --host http://localhost:8080 \
+  --host http://localhost:8081 \
   --users 10 \
   --hatch-rate 2 \
   --run-time 30s
 
 # Standard test: 50 users for 2 minutes with reports
 cargo run --release --example api_load_test -- \
-  --host http://localhost:8080 \
+  --host http://localhost:8081 \
   --users 50 \
   --hatch-rate 10 \
   --run-time 2m \
@@ -55,7 +55,7 @@ cargo run --release --example api_load_test -- \
 
 # High load: 1000 users for 5 minutes
 cargo run --release --example api_load_test -- \
-  --host http://localhost:8080 \
+  --host http://localhost:8081 \
   --users 1000 \
   --hatch-rate 50 \
   --run-time 5m
@@ -78,7 +78,7 @@ cargo run --release --example api_load_test -- \
 ╚══════════════════════════════════════════════════════════════════════════╝
 
 Configuration:
-  Host: http://localhost:8080
+  Host: http://localhost:8081
   Users: 100
   Hatch Rate: 10 users/second (gradual ramp-up)
   Duration: 60s
@@ -112,7 +112,7 @@ This test **runs in a continuous loop**, querying Prometheus after each cycle to
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `GOOSE_HOST` | `http://localhost:8080` | Target host |
+| `GOOSE_HOST` | `http://localhost:8081` | Target host |
 | `PROMETHEUS_URL` | `http://localhost:9090` | Prometheus URL |
 | `START_USERS` | `100` | Starting user count (lowered for faster discovery) |
 | `MAX_USERS` | `50000` | Maximum user count (safety limit) |
@@ -130,27 +130,27 @@ This test **runs in a continuous loop**, querying Prometheus after each cycle to
 # Ramp from 100 → 50,000 users in steps of 500 (60s cycles)
 # Ramp-up time: 0.1s @ 100 users, 5s @ 5000 users
 cargo run --release --example adaptive_load_test -- \
-  --host http://localhost:8080
+  --host http://localhost:8081
 
 # High-load start: Skip low numbers if you know baseline capacity
 START_USERS=2000 RAMP_STEP=1000 \
 cargo run --release --example adaptive_load_test -- \
-  --host http://localhost:8080
+  --host http://localhost:8081
 
 # Sustained load: Test stability over longer periods
 START_USERS=1000 RAMP_STEP=500 STAGE_DURATION=300 \
 cargo run --release --example adaptive_load_test -- \
-  --host http://localhost:8080
+  --host http://localhost:8081
 
 # Aggressive stress: Fast ramp with high hatch rate
 START_USERS=5000 RAMP_STEP=2000 HATCH_RATE=5000 STAGE_DURATION=30 \
 cargo run --release --example adaptive_load_test -- \
-  --host http://localhost:8080
+  --host http://localhost:8081
 
 # Conservative: Gradual ramp with tight SLA thresholds
 START_USERS=50 RAMP_STEP=100 ERROR_RATE_THRESHOLD=1.0 P99_LATENCY_THRESHOLD=0.5 \
 cargo run --release --example adaptive_load_test -- \
-  --host http://localhost:8080
+  --host http://localhost:8081
 
 # Via Tilt UI: Click "run-goose-adaptive" button
 ```
@@ -188,7 +188,7 @@ The test runs continuously until it finds the **exact point where error rate cro
 ╚══════════════════════════════════════════════════════════════════════════╝
 
 Configuration:
-  Target: http://localhost:8080
+  Target: http://localhost:8081
   Prometheus: http://localhost:9090
   Start Users: 100 (increment: 500 per cycle)
   Max Users: 50000 (safety limit)
@@ -401,7 +401,7 @@ curl -s 'http://localhost:9090/api/v1/query?query=brrtrouter_active_requests' | 
 **Solution**:
 ```bash
 # Verify /metrics endpoint works
-curl http://localhost:8080/metrics | grep brrtrouter
+curl http://localhost:8081/metrics | grep brrtrouter
 
 # Check Prometheus scrape config
 kubectl get cm -n monitoring prometheus-config -o yaml | grep brrtrouter
@@ -417,13 +417,13 @@ kubectl rollout restart statefulset -n monitoring prometheus
 **Solution**:
 ```bash
 # Test connectivity
-curl http://localhost:8080/health
+curl http://localhost:8081/health
 
 # Verify port-forward is running
 ps aux | grep port-forward
 
 # Restart port-forward
-kubectl port-forward -n brrtrouter-dev svc/petstore 8080:8080
+kubectl port-forward -n brrtrouter-dev svc/petstore 8081:8080
 ```
 
 ---

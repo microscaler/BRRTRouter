@@ -315,8 +315,8 @@ fn main() -> io::Result<()> {
         registry::register_from_spec(&mut dispatcher, &routes);
     }
 
-    // Start the HTTP server on port 8080, binding to 127.0.0.1 if BRRTR_LOCAL is
-    // set for local testing.
+    // Start the HTTP server on port 8081 (avoids the very common 8080 conflict
+    // with local dev tooling), binding to 127.0.0.1 if BRRTR_LOCAL is set.
     // This returns a coroutine JoinHandle; we join on it to keep the server running
     let router = std::sync::Arc::new(std::sync::RwLock::new(Router::new(routes.clone())));
     // Dump initial route table
@@ -601,8 +601,8 @@ fn main() -> io::Result<()> {
             }
         }
     }
-    // Port selection priority: config.yaml > PORT environment variable > default 8080
-    // This allows Kubernetes ConfigMaps to set the port, with env var as fallback
+    // Port selection priority: config.yaml > PORT environment variable > default 8081
+    // (local-dev default; k8s deployments continue to set PORT=8080 explicitly)
     let port = app_config
         .port
         .or_else(|| {
@@ -610,7 +610,7 @@ fn main() -> io::Result<()> {
                 .ok()
                 .and_then(|p| p.parse::<u16>().ok())
         })
-        .unwrap_or(8080);
+        .unwrap_or(8081);
     let addr = if std::env::var("BRRTR_LOCAL").is_ok() {
         format!("127.0.0.1:{port}")
     } else {

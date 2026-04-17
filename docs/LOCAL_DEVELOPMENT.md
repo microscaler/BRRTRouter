@@ -33,7 +33,7 @@ The local development setup provides:
 └─────────────────────────────────────────────────────────────┘
          ↑                ↑               ↑               ↑
          │                │               │               │
-    localhost:8080   localhost:9090  localhost:3000  localhost:16686
+    localhost:8081   localhost:9090  localhost:3000  localhost:16686
 ```
 
 ## Prerequisites
@@ -117,7 +117,7 @@ Once Tilt reports all services are ready (green checkmarks):
 
 | Service | URL | Credentials |
 |---------|-----|-------------|
-| **Pet Store API** | http://localhost:8080 | X-API-Key: test123 |
+| **Pet Store API** | http://localhost:8081 | X-API-Key: test123 |
 | **Grafana** | http://localhost:3000 | admin / admin |
 | **Prometheus** | http://localhost:9090 | None |
 | **Jaeger UI** | http://localhost:16686 | None |
@@ -126,10 +126,10 @@ Once Tilt reports all services are ready (green checkmarks):
 
 ```bash
 # Health check
-curl http://localhost:8080/health
+curl http://localhost:8081/health
 
 # List pets (requires API key)
-curl -H "X-API-Key: test123" http://localhost:8080/pets
+curl -H "X-API-Key: test123" http://localhost:8081/pets
 
 # Run all curl tests
 just curls
@@ -158,7 +158,7 @@ just dev-down
    - Runs `cargo build --release` locally (fast incremental compilation)
    - Syncs the binary to the container (~1-2 seconds)
    - Restarts the service
-4. **Test immediately** at http://localhost:8080
+4. **Test immediately** at http://localhost:8081
 
 ### Regenerate from OpenAPI Spec
 
@@ -183,7 +183,7 @@ just curls
 
 # Run Goose load test
 cargo run --release --example api_load_test -- \
-  --host http://localhost:8080 \
+  --host http://localhost:8081 \
   --users 10 \
   --hatch-rate 2 \
   --run-time 30s

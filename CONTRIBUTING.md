@@ -16,8 +16,8 @@ This guide will help you get started quickly with our local development environm
 
 2. **✅ Verify everything works**:
    ```bash
-   curl http://localhost:8080/health
-   curl -H "X-API-Key: test123" http://localhost:8080/pets
+   curl http://localhost:8081/health
+   curl -H "X-API-Key: test123" http://localhost:8081/pets
    ```
 
 3. **📖 Read the contribution guide**: [CONTRIBUTING.md](CONTRIBUTING.md)
@@ -74,8 +74,8 @@ kind create cluster --config k8s/cluster/kind-config.yaml --wait 120s
 just dev-up
 
 # 4. Access your services
-open http://localhost:8080           # 🎨 Interactive Dashboard
-open http://localhost:8080/docs      # 📖 Swagger UI
+open http://localhost:8081           # 🎨 Interactive Dashboard
+open http://localhost:8081/docs      # 📖 Swagger UI
 open http://localhost:3000           # 📊 Grafana (admin/admin)
 ```
 
@@ -93,11 +93,11 @@ cd BRRTRouter
 just start-petstore
 
 # Test the API
-curl -H "X-API-Key: test123" http://localhost:8080/pets
-curl http://localhost:8080/health
+curl -H "X-API-Key: test123" http://localhost:8081/pets
+curl http://localhost:8081/health
 
 # Visit the Interactive Demo Dashboard
-open http://localhost:8080/
+open http://localhost:8081/
 ```
 
 ### Prerequisites
@@ -125,7 +125,7 @@ See [docs/LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md) for full installation
 
 1. **Edit code** in `src/` or `examples/pet_store/src/`
 2. **Tilt auto-rebuilds** and syncs changes (~1-2 seconds!)
-3. **Test immediately**: `curl` or visit http://localhost:8080/docs
+3. **Test immediately**: `curl` or visit http://localhost:8081/docs
 4. **View logs**: `kubectl logs -f -n brrtrouter-dev deployment/petstore`
 5. **Check metrics**: http://localhost:3000 (Grafana: admin/admin)
 
@@ -145,7 +145,7 @@ See [docs/LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md) for full installation
 - 🔒 **Authentication UI** - API Key + Bearer Token configuration with visual status
 - 🎯 **Professional Design** - SolidJS + Vite + Tailwind CSS with gradient themes
 
-**Access:** `http://localhost:8080/` after running `just dev-up` or `just start-petstore`
+**Access:** `http://localhost:8081/` after running `just dev-up` or `just start-petstore`
 
 ## 📊 Observability Stack
 
@@ -162,11 +162,11 @@ See [docs/LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md) for full installation
 
 | Service | URL | Purpose |
 |---------|-----|---------|
-| **🎨 Interactive Dashboard** | http://localhost:8080/ | **START HERE** - SolidJS UI with live data, SSE, API testing |
-| **Pet Store API** | http://localhost:8080 | Main API (standard HTTP port) |
-| **Swagger UI** | http://localhost:8080/docs | OpenAPI documentation |
-| **Health Check** | http://localhost:8080/health | Readiness probe |
-| **Metrics** | http://localhost:8080/metrics | Prometheus metrics |
+| **🎨 Interactive Dashboard** | http://localhost:8081/ | **START HERE** - SolidJS UI with live data, SSE, API testing |
+| **Pet Store API** | http://localhost:8081 | Main API (standard HTTP port) |
+| **Swagger UI** | http://localhost:8081/docs | OpenAPI documentation |
+| **Health Check** | http://localhost:8081/health | Readiness probe |
+| **Metrics** | http://localhost:8081/metrics | Prometheus metrics |
 | **Grafana** | http://localhost:3000 | Dashboards (admin/admin) |
 | **Prometheus** | http://localhost:9090 | Metrics database |
 | **Jaeger** | http://localhost:16686 | Distributed tracing |

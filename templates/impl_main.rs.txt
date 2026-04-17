@@ -104,8 +104,9 @@ fn main() -> io::Result<()> {
     service.set_metrics_middleware(metrics);
     service.set_memory_middleware(memory);
 
-    // Start the HTTP server
-    let handle = HttpServer(service).start("0.0.0.0:8080")?;
+    // Start the HTTP server (default local-dev port: 8081 — 8080 is too often
+    // contended by other local services).
+    let handle = HttpServer(service).start("0.0.0.0:8081")?;
     handle.join().map_err(|e| {
         io::Error::other(format!("Server error: {e:?}"))
     })?;

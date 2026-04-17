@@ -12,20 +12,20 @@
 //! ```bash
 //! # Run with default settings (10 users, 1 minute)
 //! cargo run --release --example performance_metrics_load_test -- \
-//!   --host http://localhost:8080 \
+//!   --host http://localhost:8081 \
 //!   --users 10 \
 //!   --run-time 1m
 //!
 //! # High concurrency test (500 users, 5 minutes)
 //! cargo run --release --example performance_metrics_load_test -- \
-//!   --host http://localhost:8080 \
+//!   --host http://localhost:8081 \
 //!   --users 500 \
 //!   --run-time 5m \
 //!   --report-file metrics-report.html
 //!
 //! # Extreme concurrency test (1000+ users)
 //! cargo run --release --example performance_metrics_load_test -- \
-//!   --host http://localhost:8080 \
+//!   --host http://localhost:8081 \
 //!   --users 1000 \
 //!   --increase-rate 100 \
 //!   --run-time 10m \

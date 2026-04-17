@@ -9,17 +9,17 @@
 //! ```bash
 //! # Default: 5-minute cycles, ramp from 10 → 10,000 users
 //! cargo run --release --example adaptive_load_test -- \
-//!   --host http://localhost:8080
+//!   --host http://localhost:8081
 //!
 //! # Quick test: 1-minute cycles, max 100 users
 //! STAGE_DURATION=60 MAX_USERS=100 \
 //! cargo run --release --example adaptive_load_test -- \
-//!   --host http://localhost:8080
+//!   --host http://localhost:8081
 //!
 //! # Custom configuration
 //! START_USERS=20 RAMP_STEP=100 ERROR_RATE_THRESHOLD=3.0 \
 //! cargo run --release --example adaptive_load_test -- \
-//!   --host http://localhost:8080
+//!   --host http://localhost:8081
 //! ```
 //!
 //! # Environment Variables
@@ -270,7 +270,7 @@ impl Default for AdaptiveConfig {
     fn default() -> Self {
         Self {
             host: std::env::var("GOOSE_HOST")
-                .unwrap_or_else(|_| "http://localhost:8080".to_string()),
+                .unwrap_or_else(|_| "http://localhost:8081".to_string()),
             prometheus_url: std::env::var("PROMETHEUS_URL")
                 .unwrap_or_else(|_| "http://localhost:9090".to_string()),
             start_users: std::env::var("START_USERS")

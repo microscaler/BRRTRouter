@@ -10,7 +10,7 @@
 //! ```bash
 //! # Run against local server
 //! cargo run --release --example api_load_test -- \
-//!   --host http://localhost:8080 \
+//!   --host http://localhost:8081 \
 //!   --users 50 \
 //!   --increase-rate 10 \
 //!   --run-time 5m \
@@ -19,7 +19,7 @@
 //!
 //! # Short test for CI
 //! cargo run --release --example api_load_test -- \
-//!   --host http://localhost:8080 \
+//!   --host http://localhost:8081 \
 //!   -u10 -r2 -t30s \
 //!   --no-reset-metrics
 //! ```

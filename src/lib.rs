@@ -353,26 +353,26 @@
 //!
 //! ```bash
 //! # Health check (no auth required)
-//! curl http://localhost:8080/health
+//! curl http://localhost:8081/health
 //!
 //! # List all pets (requires API key)
-//! curl -H "X-API-Key: test123" http://localhost:8080/pets
+//! curl -H "X-API-Key: test123" http://localhost:8081/pets
 //!
 //! # Get a specific pet
-//! curl -H "X-API-Key: test123" http://localhost:8080/pets/123
+//! curl -H "X-API-Key: test123" http://localhost:8081/pets/123
 //!
 //! # Add a new pet
 //! curl -X POST \
 //!   -H "X-API-Key: test123" \
 //!   -H "Content-Type: application/json" \
 //!   -d '{"name":"Fluffy","species":"Cat"}' \
-//!   http://localhost:8080/pets
+//!   http://localhost:8081/pets
 //!
 //! # View metrics
-//! curl http://localhost:8080/metrics
+//! curl http://localhost:8081/metrics
 //!
 //! # View OpenAPI documentation
-//! open http://localhost:8080/doc/openapi.html
+//! open http://localhost:8081/doc/openapi.html
 //! ```
 //!
 //! ### Features Demonstrated
@@ -470,19 +470,19 @@
 //! # Install wrk (if needed): brew install wrk
 //!
 //! # Test health endpoint (no auth)
-//! wrk -t4 -c200 -d30s http://localhost:8080/health
+//! wrk -t4 -c200 -d30s http://localhost:8081/health
 //!
 //! # Test authenticated endpoint
 //! wrk -t4 -c200 -d30s \
 //!   -H "X-API-Key: test123" \
-//!   http://localhost:8080/pets
+//!   http://localhost:8081/pets
 //!
 //! # Test with POST requests
 //! wrk -t4 -c200 -d30s \
 //!   -H "X-API-Key: test123" \
 //!   -H "Content-Type: application/json" \
 //!   -s scripts/post.lua \
-//!   http://localhost:8080/pets
+//!   http://localhost:8081/pets
 //! ```
 //!
 //! ### Current Performance (v0.1.0-alpha.1)
@@ -510,12 +510,12 @@
 //! # Test with keepalive disabled (more realistic)
 //! ab -n 10000 -c 100 \
 //!   -H "X-API-Key: test123" \
-//!   http://127.0.0.1:8080/pets
+//!   http://127.0.0.1:8081/pets
 //!
 //! # With keepalive enabled
 //! ab -n 10000 -c 100 -k \
 //!   -H "X-API-Key: test123" \
-//!   http://127.0.0.1:8080/pets
+//!   http://127.0.0.1:8081/pets
 //! ```
 //!
 //! **Note:** Use `127.0.0.1` instead of `localhost` to avoid DNS resolution overhead.
@@ -529,9 +529,9 @@
 //! just curls
 //!
 //! # Or manually with curl
-//! curl -i -H "X-API-Key: test123" http://localhost:8080/pets
-//! curl -i -H "X-API-Key: test123" http://localhost:8080/users
-//! curl -i -H "X-API-Key: test123" http://localhost:8080/metrics
+//! curl -i -H "X-API-Key: test123" http://localhost:8081/pets
+//! curl -i -H "X-API-Key: test123" http://localhost:8081/users
+//! curl -i -H "X-API-Key: test123" http://localhost:8081/metrics
 //! ```
 //!
 //! ### Profiling with Flamegraph
@@ -552,7 +552,7 @@
 //!
 //! # Generate load in another terminal
 //! wrk -t4 -c200 -d30s -H "X-API-Key: test123" \
-//!   http://localhost:8080/pets
+//!   http://localhost:8081/pets
 //!
 //! # Open the flamegraph
 //! open flamegraph.svg
@@ -638,7 +638,7 @@
 //! All services expose Prometheus-compatible metrics at `/metrics`:
 //!
 //! ```bash
-//! curl http://localhost:8080/metrics
+//! curl http://localhost:8081/metrics
 //! ```
 //!
 //! #### Available Metrics
@@ -728,7 +728,7 @@
 //! Every service includes a built-in health endpoint:
 //!
 //! ```bash
-//! curl http://localhost:8080/health
+//! curl http://localhost:8081/health
 //! ```
 //!
 //! Returns:
@@ -840,7 +840,7 @@
 //! just curls
 //!
 //! # View metrics
-//! curl http://localhost:8080/metrics | grep http_requests_total
+//! curl http://localhost:8081/metrics | grep http_requests_total
 //! ```
 //!
 //! Output:

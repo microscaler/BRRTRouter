@@ -10,11 +10,11 @@ This directory contains comprehensive performance metrics load testing for BRRTR
 # Start your BRRTRouter server first
 cargo run --release --example pet_store -- \
   --spec examples/pet_store/doc/openapi.yaml \
-  --addr 0.0.0.0:8080
+  --addr 0.0.0.0:8081
 
 # In another terminal, run the performance test
 cargo run --release --example performance_metrics_load_test -- \
-  --host http://localhost:8080 \
+  --host http://localhost:8081 \
   --users 100 \
   --run-time 5m
 ```
@@ -72,7 +72,7 @@ Automatically finds the breaking point by gradually increasing load.
 ```bash
 # Run baseline
 cargo run --release --example performance_metrics_load_test -- \
-  --host http://localhost:8080 --users 100 --run-time 5m
+  --host http://localhost:8081 --users 100 --run-time 5m
 
 # Save baseline
 cp metrics-*.json baseline-metrics.json
@@ -81,7 +81,7 @@ cp metrics-*.json baseline-metrics.json
 
 # Run new test
 cargo run --release --example performance_metrics_load_test -- \
-  --host http://localhost:8080 --users 100 --run-time 5m
+  --host http://localhost:8081 --users 100 --run-time 5m
 
 # Compare
 python3 scripts/compare_metrics.py baseline-metrics.json metrics-*.json
@@ -239,7 +239,7 @@ Add to your CI pipeline:
     
     # Run test
     cargo run --release --example performance_metrics_load_test -- \
-      --host http://localhost:8080 \
+      --host http://localhost:8081 \
       --users 50 \
       --run-time 2m
     
@@ -270,7 +270,7 @@ Add to your CI pipeline:
 
 **Problem:** Test fails to connect to server
 
-**Solution:** Ensure server is running: `curl http://localhost:8080/health`
+**Solution:** Ensure server is running: `curl http://localhost:8081/health`
 
 ---
 

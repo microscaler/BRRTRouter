@@ -759,7 +759,7 @@ These components are **already well-optimized** and should NOT be changed:
 #### Scenario 1: Baseline (Current State)
 ```bash
 cargo run --release --example api_load_test -- \
-  --host http://localhost:8080 \
+  --host http://localhost:8081 \
   -u 100 -r 10 -t 2m \
   --header "X-API-Key: test123"
 ```
@@ -769,7 +769,7 @@ cargo run --release --example api_load_test -- \
 ```bash
 # Sustained 5k r/s for 10 minutes
 cargo run --release --example api_load_test -- \
-  --host http://localhost:8080 \
+  --host http://localhost:8081 \
   -u 100 -r 20 -t 10m \
   --header "X-API-Key: test123"
 ```
@@ -779,7 +779,7 @@ cargo run --release --example api_load_test -- \
 ```bash
 # Burst to 10k r/s for 1 minute
 cargo run --release --example api_load_test -- \
-  --host http://localhost:8080 \
+  --host http://localhost:8081 \
   -u 200 -r 50 -t 1m \
   --header "X-API-Key: test123"
 ```
@@ -789,7 +789,7 @@ cargo run --release --example api_load_test -- \
 ```bash
 # Memory leak detection
 cargo run --release --example api_load_test -- \
-  --host http://localhost:8080 \
+  --host http://localhost:8081 \
   -u 100 -r 20 -t 60m \
   --header "X-API-Key: test123"
 ```

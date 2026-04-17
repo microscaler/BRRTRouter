@@ -373,8 +373,8 @@ def main():
     )
     parser.add_argument(
         "--host",
-        default="http://127.0.0.1:8080",
-        help="Target host (default: http://127.0.0.1:8080)",
+        default="http://127.0.0.1:8081",
+        help="Target host (default: http://127.0.0.1:8081)",
     )
     parser.add_argument(
         "--users",

@@ -777,7 +777,7 @@ Goose load tests (`examples/api_load_test.rs`) test authenticated endpoints:
 
 ```bash
 cargo run --release --example api_load_test -- \
-  --host http://localhost:8080 \
+  --host http://localhost:8081 \
   --header "X-API-Key: test123" \
   -u20 -r5 -t2m
 ```
