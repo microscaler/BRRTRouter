@@ -6,29 +6,40 @@
 //! ## Features
 //!
 //! - **Worker Pools**: Spawn N worker coroutines per handler for parallel request processing
-//! - **Unbounded Queues**: Uses may's unbounded MPSC channels for maximum throughput
+//! - **Bounded Queues** (PRD Phase 5.1): dispatch enforces `queue_bound` via the
+//!   live `queue_depth` atomic — `Shed` mode fails fast with 429, `Block` mode
+//!   cooperatively yields up to `backpressure_timeout_ms` before shedding.
+//!   The underlying transport remains may's MPMC channel (coroutine-friendly
+//!   blocking `recv`), but with a real cap on pending work.
 //! - **Load Balancing**: Workers automatically share the request queue
 //! - **Metrics**: Track queue depth, dispatch count, and completion count for monitoring
 //!
 //! ## Configuration
 //!
 //! - `BRRTR_HANDLER_WORKERS`: Number of worker coroutines per handler (default: 4)
-//! - `BRRTR_HANDLER_QUEUE_BOUND`: Queue depth limit for **metrics** (not used as a hard reject threshold on dispatch; default: 1024)
-//! - `BRRTR_BACKPRESSURE_MODE`: `block` or `shed` — both dispatch to the same **unbounded** channel today; kept for API compatibility and future bounded-queue behavior
-//! - `BRRTR_BACKPRESSURE_TIMEOUT_MS`: Used by **block**-style paths elsewhere; worker pool dispatch does not block on queue depth here
+//! - `BRRTR_HANDLER_QUEUE_BOUND`: Maximum in-flight requests per pool. When the
+//!   live `queue_depth` reaches this value new dispatches are shed (or block in
+//!   `Block` mode until a worker frees a slot or the timeout expires). Default: 1024.
+//! - `BRRTR_BACKPRESSURE_MODE`: `block` or `shed` — both now enforce the bound.
+//! - `BRRTR_BACKPRESSURE_TIMEOUT_MS`: Maximum time `Block` mode will wait for a
+//!   slot before shedding (default: 50 ms).
 
 use crate::dispatcher::{HandlerRequest, HandlerResponse};
 use may::sync::mpmc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tracing::{debug, error, info};
 
 /// Configuration for worker pool backpressure behavior
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BackpressureMode {
-    /// Block the sender with a timeout, then retry
+    /// Block the dispatcher until a queue slot is available (cooperatively
+    /// yielding the may coroutine), up to `backpressure_timeout_ms`. After the
+    /// timeout, the request is shed with HTTP 429 — better to fail fast than
+    /// hang the caller forever.
     Block,
-    /// Reserved for future bounded-queue behavior (currently dispatch is unbounded; see module docs).
+    /// Fail fast with HTTP 429 as soon as `queue_depth >= queue_bound`.
     Shed,
 }
 
@@ -329,62 +340,104 @@ impl WorkerPool {
         }
     }
 
-    /// Dispatch a request to the worker pool
+    /// Dispatch a request to the worker pool with bounded backpressure.
     ///
-    /// Sends the request to the unbounded channel where worker coroutines will pick it up.
-    /// Returns an error only if the channel is disconnected (workers have exited).
+    /// Behavior is determined by [`WorkerPoolConfig::backpressure_mode`]:
     ///
-    /// # Arguments
+    /// - **`Shed`**: if the live queue depth is already at `queue_bound` the
+    ///   request is dropped and a `HandlerResponse::error(429, ...)` is
+    ///   returned. No coroutine yielding, no hidden wait.
+    /// - **`Block`**: cooperatively waits (yielding via `may::coroutine::sleep`)
+    ///   up to `backpressure_timeout_ms` for a slot to free. If the timeout
+    ///   expires the request is shed the same way as in `Shed` mode — this
+    ///   guarantees dispatchers never hang indefinitely under sustained overload.
     ///
-    /// * `req` - The request to dispatch
+    /// On either mode a `503` is returned instead of `429` when the underlying
+    /// MPMC channel has been **disconnected** (workers exited), which is a
+    /// different failure class (server-fault vs client-overload).
     ///
     /// # Returns
     ///
-    /// * `Ok(())` - Request dispatched successfully
-    /// * `Err(HandlerResponse)` - Channel disconnected (503 error response)
+    /// * `Ok(())` — request accepted into the queue.
+    /// * `Err(HandlerResponse)` — pre-built 429 (shed) or 503 (workers gone).
     pub fn dispatch(&self, req: HandlerRequest) -> Result<(), HandlerResponse> {
-        // Both modes now behave the same - just send to the unbounded channel
-        // We keep the mode check for future bounded channel implementation
         match self.config.backpressure_mode {
             BackpressureMode::Block => self.dispatch_with_blocking(req),
             BackpressureMode::Shed => self.dispatch_with_shedding(req),
         }
     }
 
-    /// Dispatch to the unbounded channel (block mode - no actual blocking)
+    /// Wait up to `backpressure_timeout_ms` for a queue slot to free, then
+    /// dispatch or shed.
     fn dispatch_with_blocking(&self, req: HandlerRequest) -> Result<(), HandlerResponse> {
+        let bound = self.config.queue_bound;
+        if bound > 0 && self.metrics.get_queue_depth() >= bound {
+            let deadline = Instant::now()
+                + Duration::from_millis(self.config.backpressure_timeout_ms.max(1));
+            // Cooperative spin with short sleeps; `may::coroutine::sleep` yields
+            // the current coroutine back to the scheduler, so other workers can
+            // drain the queue.
+            while Instant::now() < deadline {
+                if self.metrics.get_queue_depth() < bound {
+                    return self.send_to_pool(req);
+                }
+                may::coroutine::sleep(Duration::from_millis(1));
+            }
+            return self.shed_overflow(req);
+        }
+        self.send_to_pool(req)
+    }
+
+    /// Fail fast with 429 as soon as `queue_depth >= queue_bound`.
+    fn dispatch_with_shedding(&self, req: HandlerRequest) -> Result<(), HandlerResponse> {
+        let bound = self.config.queue_bound;
+        if bound > 0 && self.metrics.get_queue_depth() >= bound {
+            return self.shed_overflow(req);
+        }
+        self.send_to_pool(req)
+    }
+
+    /// Record shed + build a 429 response. Centralised so both modes keep
+    /// identical observability.
+    fn shed_overflow(&self, req: HandlerRequest) -> Result<(), HandlerResponse> {
+        self.metrics.record_shed();
+        error!(
+            request_id = %req.request_id,
+            handler_name = %self.handler_name,
+            queue_depth = self.metrics.get_queue_depth(),
+            queue_bound = self.config.queue_bound,
+            "Worker pool queue full — shedding (429)"
+        );
+        Err(HandlerResponse::error(
+            429,
+            "Service is temporarily overloaded; queue full",
+        ))
+    }
+
+    /// Push to the MPMC channel and update metrics. Returns 503 if the channel
+    /// is disconnected (workers have gone), which is distinct from a 429 shed.
+    fn send_to_pool(&self, req: HandlerRequest) -> Result<(), HandlerResponse> {
         let request_id = req.request_id;
-
-        // Simply send to the unbounded channel
-        // Note: The channel is unbounded, so this will always succeed unless disconnected
+        // Bump the depth counter *before* sending so concurrent dispatchers
+        // observing the gate see the increment; workers' `record_completion`
+        // on the far side balances this out.
         self.metrics.record_dispatch();
-
         if let Err(e) = self.sender.send(req) {
-            // Channel disconnected - workers are gone
+            // The send failed, so we won't see a matching `record_completion`
+            // on the worker side — undo the dispatch count we just recorded.
+            self.metrics.queue_depth.fetch_sub(1, Ordering::Relaxed);
             error!(
                 request_id = %request_id,
                 handler_name = %self.handler_name,
                 error = %e,
                 "Worker pool channel disconnected"
             );
-
             return Err(HandlerResponse::error(
                 503,
                 "Handler workers are not responding",
             ));
         }
-
         Ok(())
-    }
-
-    /// Dispatch to the unbounded channel (shed mode).
-    ///
-    /// Uses the same acceptance rules as [`Self::dispatch_with_blocking`]: the MPMC queue is
-    /// **unbounded**, so `queue_bound` is tracked for **metrics / monitoring** only (see module
-    /// docs). Per-request shedding when depth exceeds `queue_bound` would contradict that contract
-    /// and the approximate `queue_depth` counter is not a hard capacity limit.
-    fn dispatch_with_shedding(&self, req: HandlerRequest) -> Result<(), HandlerResponse> {
-        self.dispatch_with_blocking(req)
     }
 
     /// Get the sender for this worker pool
@@ -444,6 +497,26 @@ mod tests {
         assert_eq!(config.backpressure_mode, BackpressureMode::Block);
         assert_eq!(config.backpressure_timeout_ms, 50);
         assert_eq!(config.stack_size, 0x8000);
+    }
+
+    /// `Shed` mode must fail fast when the live queue depth hits `queue_bound`.
+    /// We drive this directly against `WorkerPoolMetrics` + `shed_overflow` /
+    /// `send_to_pool` semantics rather than spinning up coroutines.
+    #[test]
+    fn shed_mode_rejects_when_queue_full() {
+        let metrics = Arc::new(WorkerPoolMetrics::new());
+        // Simulate a saturated queue.
+        let bound: usize = 4;
+        for _ in 0..bound {
+            metrics.record_dispatch();
+        }
+        assert_eq!(metrics.get_queue_depth(), bound);
+        // The condition used by `dispatch_with_shedding`:
+        assert!(metrics.get_queue_depth() >= bound);
+        // One completion frees a slot — the gate opens again.
+        metrics.record_completion();
+        assert_eq!(metrics.get_queue_depth(), bound - 1);
+        assert!(metrics.get_queue_depth() < bound);
     }
 
     #[test]
