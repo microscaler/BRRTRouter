@@ -198,7 +198,7 @@ paths:
         Ok(result) => result,
         Err(e) => panic!("Failed to load spec: {e:?}"),
     };
-    let router = Arc::new(RwLock::new(Router::new(routes)));
+    let router = Arc::new(arc_swap::ArcSwap::from_pointee(Router::new(routes)));
     let mut dispatcher = Dispatcher::new();
     // SAFETY: Test context - handlers are simple closures for testing
     unsafe {
@@ -213,7 +213,7 @@ paths:
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
     let mut service = AppService::new(
         router,
-        Arc::new(RwLock::new(dispatcher)),
+        Arc::new(arc_swap::ArcSwap::from_pointee(dispatcher)),
         schemes,
         PathBuf::from("examples/openapi.yaml"),
         Some(PathBuf::from("examples/pet_store/static_site")),
@@ -269,7 +269,7 @@ paths:
 "#;
     let path = temp_files::create_temp_yaml(SPEC);
     let (routes, schemes, _slug) = load_spec_full(path.to_str().unwrap()).unwrap();
-    let router = Arc::new(RwLock::new(Router::new(routes)));
+    let router = Arc::new(arc_swap::ArcSwap::from_pointee(Router::new(routes)));
     let mut dispatcher = Dispatcher::new();
     // SAFETY: Test context - handlers are simple closures for testing
     unsafe {
@@ -291,7 +291,7 @@ paths:
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
     let mut service = AppService::new(
         router,
-        Arc::new(RwLock::new(dispatcher)),
+        Arc::new(arc_swap::ArcSwap::from_pointee(dispatcher)),
         schemes,
         PathBuf::from("examples/openapi.yaml"),
         Some(PathBuf::from("examples/pet_store/static_site")),
@@ -344,7 +344,7 @@ paths:
 "#;
     let path = temp_files::create_temp_yaml(SPEC);
     let (routes, schemes, _slug) = load_spec_full(path.to_str().unwrap()).unwrap();
-    let router = Arc::new(RwLock::new(Router::new(routes)));
+    let router = Arc::new(arc_swap::ArcSwap::from_pointee(Router::new(routes)));
     let mut dispatcher = Dispatcher::new();
     // SAFETY: Test context - handlers are simple closures for testing
     unsafe {
@@ -366,7 +366,7 @@ paths:
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
     let mut service = AppService::new(
         router,
-        Arc::new(RwLock::new(dispatcher)),
+        Arc::new(arc_swap::ArcSwap::from_pointee(dispatcher)),
         schemes,
         PathBuf::from("examples/openapi.yaml"),
         Some(PathBuf::from("examples/pet_store/static_site")),
@@ -537,7 +537,7 @@ paths:
 "#;
     let path = temp_files::create_temp_yaml(SPEC);
     let (routes, schemes, _slug) = load_spec_full(path.to_str().unwrap()).unwrap();
-    let router = Arc::new(RwLock::new(Router::new(routes)));
+    let router = Arc::new(arc_swap::ArcSwap::from_pointee(Router::new(routes)));
     let mut dispatcher = Dispatcher::new();
     // SAFETY: Test context - handlers are simple closures for testing
     unsafe {
@@ -552,7 +552,7 @@ paths:
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
     let mut service = AppService::new(
         router,
-        Arc::new(RwLock::new(dispatcher)),
+        Arc::new(arc_swap::ArcSwap::from_pointee(dispatcher)),
         schemes,
         PathBuf::from("examples/openapi.yaml"),
         Some(PathBuf::from("examples/pet_store/static_site")),
@@ -653,7 +653,7 @@ paths:
 "#;
     let path = temp_files::create_temp_yaml(SPEC);
     let (routes, schemes, _slug) = load_spec_full(path.to_str().unwrap()).unwrap();
-    let router = Arc::new(RwLock::new(Router::new(routes)));
+    let router = Arc::new(arc_swap::ArcSwap::from_pointee(Router::new(routes)));
     let mut dispatcher = Dispatcher::new();
     // SAFETY: Test context - handlers are simple closures for testing
     unsafe {
@@ -668,7 +668,7 @@ paths:
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
     let mut service = AppService::new(
         router,
-        Arc::new(RwLock::new(dispatcher)),
+        Arc::new(arc_swap::ArcSwap::from_pointee(dispatcher)),
         schemes,
         PathBuf::from("examples/openapi.yaml"),
         Some(PathBuf::from("examples/pet_store/static_site")),
@@ -788,7 +788,7 @@ paths:
 "#;
     let path = temp_files::create_temp_yaml(SPEC);
     let (routes, schemes, _slug) = load_spec_full(path.to_str().unwrap()).unwrap();
-    let router = Arc::new(RwLock::new(Router::new(routes)));
+    let router = Arc::new(arc_swap::ArcSwap::from_pointee(Router::new(routes)));
     let mut dispatcher = Dispatcher::new();
     // SAFETY: Test context - handlers are simple closures for testing
     unsafe {
@@ -803,7 +803,7 @@ paths:
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
     let mut service = AppService::new(
         router,
-        Arc::new(RwLock::new(dispatcher)),
+        Arc::new(arc_swap::ArcSwap::from_pointee(dispatcher)),
         schemes,
         PathBuf::from("examples/openapi.yaml"),
         Some(PathBuf::from("examples/pet_store/static_site")),

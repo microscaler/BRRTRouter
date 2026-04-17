@@ -71,7 +71,7 @@ fn main() -> io::Result<()> {
             std::process::exit(1);
         });
     
-    let router = std::sync::Arc::new(std::sync::RwLock::new(Router::new(routes.clone())));
+    let router = std::sync::Arc::new(arc_swap::ArcSwap::from_pointee(Router::new(routes.clone())));
     if let Ok(r) = router.read() {
         r.dump_routes();
     } else {
@@ -92,7 +92,7 @@ fn main() -> io::Result<()> {
         registry::register_from_spec(&mut dispatcher, &routes);
     }
     
-    let dispatcher = std::sync::Arc::new(std::sync::RwLock::new(dispatcher));
+    let dispatcher = std::sync::Arc::new(arc_swap::ArcSwap::from_pointee(dispatcher));
     let mut service = AppService::new(
         router,
         dispatcher,

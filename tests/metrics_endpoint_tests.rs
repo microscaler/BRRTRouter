@@ -34,7 +34,7 @@ impl MetricsTestServer {
         may::config().set_stack_size(config.stack_size);
         let tracing = TestTracing::init();
         let (routes, schemes, _slug) = brrtrouter::load_spec_full("examples/openapi.yaml").unwrap();
-        let router = Arc::new(RwLock::new(Router::new(routes.clone())));
+        let router = Arc::new(arc_swap::ArcSwap::from_pointee(Router::new(routes.clone())));
         let mut dispatcher = Dispatcher::new();
         unsafe {
             registry::register_from_spec(&mut dispatcher, &routes);
@@ -44,7 +44,7 @@ impl MetricsTestServer {
         dispatcher.add_middleware(Arc::new(TracingMiddleware));
         let mut service = AppService::new(
             router,
-            Arc::new(RwLock::new(dispatcher)),
+            Arc::new(arc_swap::ArcSwap::from_pointee(dispatcher)),
             schemes,
             PathBuf::from("examples/openapi.yaml"),
             Some(PathBuf::from("examples/pet_store/static_site")),

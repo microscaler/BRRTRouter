@@ -87,11 +87,12 @@ use crate::{
     spec::{self, RouteMeta},
     validator_cache::ValidatorCache,
 };
+use arc_swap::ArcSwap;
 use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use std::time::Instant;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 /// Watch an OpenAPI spec file and rebuild the [`Router`] when it changes.
 ///
@@ -107,8 +108,8 @@ use tracing::{debug, error, info, warn};
 /// * `on_reload` - Callback invoked after successful reload
 pub fn watch_spec<P, F>(
     spec_path: P,
-    router: Arc<RwLock<Router>>,
-    dispatcher: Arc<RwLock<Dispatcher>>,
+    router: Arc<ArcSwap<Router>>,
+    dispatcher: Arc<ArcSwap<Dispatcher>>,
     validator_cache: Option<ValidatorCache>,
     mut on_reload: F,
 ) -> notify::Result<RecommendedWatcher>
@@ -158,20 +159,10 @@ where
                                 .map(|r| format!("{} {}", r.method, r.path_pattern))
                                 .collect();
 
-                            // Build new router
+                            // Build new router and publish atomically (PRD Phase 1).
+                            // ArcSwap::store is infallible — no lock poisoning.
                             let new_router = Router::new(routes.clone());
-
-                            // Update router
-                            if let Ok(mut r) = router.write() {
-                                *r = new_router;
-                            } else {
-                                warn!(
-                                    spec_path = %spec_path_str,
-                                    "Failed to acquire router write lock"
-                                );
-                                println!("⚠️  Hot reload: Failed to acquire router write lock");
-                                return;
-                            }
+                            router.store(Arc::new(new_router));
 
                             // Update validator cache with new spec version and hash
                             if let Some(ref cache) = validator_cache {
@@ -200,17 +191,15 @@ where
                                          new_version.version, new_version.hash, cache_size_before);
                             }
 
-                            // Update dispatcher
-                            if let Ok(mut d) = dispatcher.write() {
-                                on_reload(&mut d, routes);
-                            } else {
-                                warn!(
-                                    spec_path = %spec_path_str,
-                                    "Failed to acquire dispatcher write lock"
-                                );
-                                println!("⚠️  Hot reload: Failed to acquire dispatcher write lock");
-                                return;
-                            }
+                            // Dispatcher reload: copy-on-write semantics with ArcSwap.
+                            // Clone the currently-published dispatcher, apply the
+                            // caller's mutations via `on_reload`, then publish the
+                            // new instance. Observers that loaded the old one keep
+                            // using it until their Arc drops.
+                            let current = dispatcher.load_full();
+                            let mut new_disp = (*current).clone();
+                            on_reload(&mut new_disp, routes);
+                            dispatcher.store(Arc::new(new_disp));
 
                             // HR3: Spec reload success
                             let reload_time_ms = reload_start.elapsed().as_millis() as u64;

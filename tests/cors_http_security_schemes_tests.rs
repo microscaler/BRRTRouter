@@ -75,7 +75,7 @@ impl MinimalCorsFixture {
         let spec_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(spec_rel);
         let (routes, schemes, _slug) =
             brrtrouter::load_spec_full(spec_path.to_str().unwrap()).unwrap();
-        let router = Arc::new(RwLock::new(Router::new(routes.clone())));
+        let router = Arc::new(arc_swap::ArcSwap::from_pointee(Router::new(routes.clone())));
         let mut dispatcher = Dispatcher::new();
         let metrics = Arc::new(MetricsMiddleware::new());
         dispatcher.add_middleware(metrics.clone());
@@ -107,7 +107,7 @@ impl MinimalCorsFixture {
         }
         let mut service = AppService::new(
             router,
-            Arc::new(RwLock::new(dispatcher)),
+            Arc::new(arc_swap::ArcSwap::from_pointee(dispatcher)),
             schemes,
             spec_path,
             None,

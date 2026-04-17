@@ -120,8 +120,8 @@ fn test_validator_cache_with_app_service() {
     let (routes, security_schemes, _slug) = load_spec_full(spec_path).expect("Failed to load spec");
 
     // Create service with cache enabled (default)
-    let router = Arc::new(RwLock::new(Router::new(routes)));
-    let dispatcher = Arc::new(RwLock::new(Dispatcher::new()));
+    let router = Arc::new(arc_swap::ArcSwap::from_pointee(Router::new(routes)));
+    let dispatcher = Arc::new(arc_swap::ArcSwap::from_pointee(Dispatcher::new()));
     let service = AppService::new(
         router,
         dispatcher,

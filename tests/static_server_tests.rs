@@ -25,7 +25,7 @@ impl StaticFileTestServer {
         may::config().set_stack_size(0x8000);
 
         let (routes, _slug) = brrtrouter::load_spec("examples/openapi.yaml").unwrap();
-        let router = Arc::new(RwLock::new(Router::new(routes.clone())));
+        let router = Arc::new(arc_swap::ArcSwap::from_pointee(Router::new(routes.clone())));
         let mut dispatcher = Dispatcher::new();
         unsafe {
             registry::register_from_spec(&mut dispatcher, &routes);
@@ -35,7 +35,7 @@ impl StaticFileTestServer {
         // for comprehensive integration testing
         let service = AppService::new(
             router,
-            Arc::new(RwLock::new(dispatcher)),
+            Arc::new(arc_swap::ArcSwap::from_pointee(dispatcher)),
             HashMap::new(),
             PathBuf::from("examples/openapi.yaml"),
             Some(PathBuf::from("tests/staticdata")),

@@ -116,8 +116,8 @@ paths:
     let fixture = HotReloadTestFixture::new(SPEC_V1);
     let path = fixture.path();
     let (routes, _slug) = load_spec(path.to_str().unwrap()).unwrap();
-    let router = Arc::new(RwLock::new(Router::new(routes)));
-    let dispatcher = Arc::new(RwLock::new(Dispatcher::new()));
+    let router = Arc::new(arc_swap::ArcSwap::from_pointee(Router::new(routes)));
+    let dispatcher = Arc::new(arc_swap::ArcSwap::from_pointee(Dispatcher::new()));
 
     let updates: Arc<Mutex<Vec<Vec<String>>>> = Arc::new(Mutex::new(Vec::new()));
     let updates_clone = updates.clone();
@@ -255,8 +255,8 @@ paths:
     let fixture = HotReloadTestFixture::new(SPEC_V1);
     let path = fixture.path();
     let (routes, _slug) = load_spec(path.to_str().unwrap()).unwrap();
-    let router = Arc::new(RwLock::new(Router::new(routes)));
-    let dispatcher = Arc::new(RwLock::new(Dispatcher::new()));
+    let router = Arc::new(arc_swap::ArcSwap::from_pointee(Router::new(routes)));
+    let dispatcher = Arc::new(arc_swap::ArcSwap::from_pointee(Dispatcher::new()));
 
     // Create validator cache and pre-populate it
     let cache = ValidatorCache::new(true);
@@ -421,8 +421,8 @@ paths:
     let fixture = HotReloadTestFixture::new(SPEC_V1);
     let path = fixture.path();
     let (routes, _slug) = load_spec(path.to_str().unwrap()).unwrap();
-    let router = Arc::new(RwLock::new(Router::new(routes.clone())));
-    let dispatcher = Arc::new(RwLock::new(Dispatcher::new()));
+    let router = Arc::new(arc_swap::ArcSwap::from_pointee(Router::new(routes.clone())));
+    let dispatcher = Arc::new(arc_swap::ArcSwap::from_pointee(Dispatcher::new()));
 
     // Create validator cache and precompile initial schemas
     let cache = ValidatorCache::new(true);
@@ -598,8 +598,8 @@ paths:
     let fixture = HotReloadTestFixture::new(SPEC_V1);
     let path = fixture.path();
     let (routes, _slug) = load_spec(path.to_str().unwrap()).unwrap();
-    let router = Arc::new(RwLock::new(Router::new(routes)));
-    let dispatcher = Arc::new(RwLock::new(Dispatcher::new()));
+    let router = Arc::new(arc_swap::ArcSwap::from_pointee(Router::new(routes)));
+    let dispatcher = Arc::new(arc_swap::ArcSwap::from_pointee(Dispatcher::new()));
 
     let cache = ValidatorCache::new(true);
     let initial_version = cache.spec_version();
