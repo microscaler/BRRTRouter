@@ -139,7 +139,7 @@ impl Sanitizer {
         }
 
         let lower = field_name.to_ascii_lowercase();
-        if value.len() > 4 && (lower.contains("key") || lower.contains("token")) {
+        if value.chars().count() > 4 && (lower.contains("key") || lower.contains("token")) {
             // Use char_indices to find a UTF-8-safe prefix boundary (up to 4 chars).
             // Byte-slicing (`&value[..4]`) would panic on multi-byte characters.
             let prefix_end = value
@@ -366,6 +366,9 @@ mod tests {
         assert_eq!(s.redact_value("api_key", "abc"), "<REDACTED>");
         assert_eq!(s.redact_value("token", "ab"), "<REDACTED>");
         assert_eq!(s.redact_value("api_key", "abcd"), "<REDACTED>");
+        // Multi-byte but ≤4 chars — byte len > 4 but char count ≤ 4, must still fully redact
+        assert_eq!(s.redact_value("token", "€€€"), "<REDACTED>");
+        assert_eq!(s.redact_value("api_key", "🔑🔑"), "<REDACTED>");
     }
 
     #[test]
