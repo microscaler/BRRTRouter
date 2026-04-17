@@ -1,5 +1,12 @@
 # LLM Wiki Log
 
+## [2026-04-17] ingest | runtime map + generator + sibling wikis
+
+- Added **`topics/runtime-stack-map.md`** — links `spec/` → `router/` → `dispatcher/` → `server/service.rs` with code anchors.
+- Added **`topics/generator-cli-and-askama.md`** — `brrtrouter_gen`, `src/generator/`, `templates/*.txt`, consumer pointers to Hauliage scaffolding PRD/wiki.
+- Added **`topics/sibling-repos-and-wikis.md`** — how BRRTRouter / Lifeguard / Hauliage wikis divide responsibility.
+- Updated **`index.md`** to list the new topic pages.
+
 ## [2026-04-17] ingest | bootstrap llmwiki from docs + code
 - Created initial `llmwiki/` structure.
 - Imported full `docs/**/*.md` inventory into a catalog.

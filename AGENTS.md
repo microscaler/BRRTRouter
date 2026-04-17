@@ -20,7 +20,7 @@ Sessions that skip this waste work. The wiki is the compounding artifact that ma
 - Primary language: Rust (workspace with `brrtrouter`, `brrtrouter_macros`, and `examples/pet_store`).
 - UI demo: SolidJS + Vite in `sample-ui/`.
 - Generated code: `examples/pet_store/` is auto-generated; do not edit directly.
-- Sibling repo: `../hauliage/` is the primary BRRTRouter consumer; its [`docs/llmwiki/`](../hauliage/docs/llmwiki/) cross-references this wiki for shared concepts.
+- Sibling repos (typical `microscaler/` checkout): **`../hauliage/`** (primary HTTP consumer + BFF) — [`docs/llmwiki/`](../hauliage/docs/llmwiki/). **`../lifeguard/`** (ORM + migrations) — [`docs/llmwiki/`](../lifeguard/docs/llmwiki/). Use [`llmwiki/topics/sibling-repos-and-wikis.md`](./llmwiki/topics/sibling-repos-and-wikis.md) for a responsibility split.
 
 ---
 
