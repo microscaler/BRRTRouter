@@ -39,7 +39,7 @@ sequenceDiagram
     Spec->>Build: build_routes(&spec)
     Build->>Build: Extract paths, methods,<br/>parameters, schemas
     Build-->>Spec: Vec<RouteMeta>
-    Spec-->>CLI: (Spec, Vec<RouteMeta>)
+    Spec-->>CLI: (Vec<RouteMeta>, String slug)
     
     CLI->>Schema: analyze_schemas(&spec)
     Schema->>Schema: Walk schema definitions
@@ -84,7 +84,7 @@ sequenceDiagram
 1. **Specification Loading** (`spec::load_spec`)
    - Reads OpenAPI YAML/JSON file
    - Validates specification structure
-   - Returns parsed `Spec` object
+   - Returns `(Vec<RouteMeta>, String)` — route metadata and URL-safe project slug
 
 2. **Route Building** (`spec::build_routes`)
    - Extracts all path + method combinations
@@ -192,7 +192,7 @@ sequenceDiagram
     ReqVal-->>Server: ✓ Valid Request
     
     Server->>Router: match_route("GET", "/pets/123")
-    Router->>Router: Test regex patterns
+    Router->>Router: Radix tree lookup
     Router->>Router: Extract path params<br/>{id: "123"}
     
     alt No Route Match
@@ -274,7 +274,7 @@ sequenceDiagram
    - Returns RFC 7807 Problem Details on failure
 
 5. **Routing** (`router::Router`)
-   - Tests request path against compiled regex patterns
+   - Matches request path against radix tree for O(k) lookup
    - Extracts path parameters from matched pattern
    - Returns `RouteMatch` with handler name and params
    - Returns 404 if no route matches
@@ -307,9 +307,9 @@ sequenceDiagram
 
 ### Router
 - **Purpose**: Match incoming requests to handlers
-- **Implementation**: Regex-based path matching
-- **Performance**: O(n) where n = number of routes
-- **Key Operations**: Compile patterns, match paths, extract params
+- **Implementation**: Radix tree path matching
+- **Performance**: O(k) where k is the path length
+- **Key Operations**: Build radix tree at startup, match paths, extract params
 
 ### Dispatcher
 - **Purpose**: Route requests to handler coroutines
@@ -378,9 +378,9 @@ sequenceDiagram
 ## Performance Considerations
 
 ### Routing
-- O(n) route matching where n = number of routes
-- Regex compilation happens once at startup
-- Path parameter extraction uses regex captures
+- O(k) route matching via radix tree where k is the path length
+- Radix tree built once at startup
+- Path parameter extraction via tree node captures
 
 ### Dispatching
 - Lock-free MPSC channels
@@ -442,7 +442,7 @@ BRRTRouter instruments all critical paths with structured logging:
 | Component | Touchpoints | Description |
 |-----------|-------------|-------------|
 | **Request Lifecycle** | 8 | HTTP parsing, headers, body, query params |
-| **Routing** | 6 | Route matching, regex evaluation, 404s |
+| **Routing** | 6 | Route matching, radix tree lookup, 404s |
 | **Security** | 7 | Auth validation, provider lookup, 401/403 |
 | **Validation** | 5 | Request/response schema validation |
 | **Dispatcher** | 7 | Handler lookup, dispatch, timeouts |

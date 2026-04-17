@@ -55,7 +55,7 @@ See [CONTRIBUTING.md](../CONTRIBUTING.md) for detailed development guide.
 
 ### Environment Variables
 
-BRRTRouter reads `BRRTR_STACK_SIZE` to determine the stack size for coroutines. The value can be a decimal number or a hex string like `0x8000`. If unset, the default stack size is `0x4000` bytes.
+BRRTRouter reads `BRRTR_STACK_SIZE` to determine the stack size for coroutines. The value can be a decimal number or a hex string like `0x8000`. If unset, the default stack size is `0x8000` (32 KiB).
 
 ## Working with Generated Code
 

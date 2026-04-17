@@ -108,7 +108,7 @@ Recent profiling with `flamegraph` highlighted regex capture and `HashMap` alloc
 ## Generating Flamegraphs
 
 ```bash
-just flamegraph  # Produces flamegraph.svg in target/flamegraphs/
+cargo flamegraph -p brrtrouter  # Produces flamegraph.svg in the current directory
 ```
 
 See [docs/flamegraph.md](flamegraph.md) for tips on reading the output.
