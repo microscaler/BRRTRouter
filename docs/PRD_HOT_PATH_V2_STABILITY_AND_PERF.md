@@ -1,9 +1,9 @@
 # PRD: BRRTRouter hot-path v2 — stability, memory, and performance
 
 **Project:** BRRTRouter
-**Document version:** 1.3
-**Date:** 2026-04-18 (Phases 0.1 / 2.2 / 5.1 / 1 shipped)
-**Status:** Active — Phases 0.1 / 2.2 / 5.1 / 1 shipped; Phase 0.3 next; upstream `may_minihttp` PR pending
+**Document version:** 1.4
+**Date:** 2026-04-18 (Phases 0.1 / 2.2 / 5.1 / 1 / 0.3 / 2.1 shipped)
+**Status:** Active — Phases 0.1 / 2.2 / 5.1 / 1 / 0.3 / 2.1 shipped; upstream `may_minihttp` [`#24`](https://github.com/Xudong-Huang/may_minihttp/pull/24) open; Phase 3 (parker reply) next
 **Owner:** BRRTRouter core
 **Target branch:** `pre_BFF_work` (lands in phases; merges through small PRs)
 **Primary driver:** Hauliage dev-env stability — eliminate the "microservice keeps needing reboots" class of failure.
@@ -222,8 +222,10 @@ Each phase ships as its own PR. Each PR must include Goose v2 numbers (once Phas
     - **Upstream PR**: [`Xudong-Huang/may_minihttp#24`](https://github.com/Xudong-Huang/may_minihttp/pull/24) raised 2026-04-18. While it is in review, BRRTRouter continues to consume the branch from the microscaler fork.
 - **0.2 — Retire the `feat/configurable-max-headers` fork pin.** ✅ **Subsumed by 0.1.**
     - Now pinned at `feat/response-header-owned-values` (which is a descendant of the merged `feat/configurable-max-headers` work). When upstream merges 0.1's PR we can switch to the next `may_minihttp` release tag.
-- **0.3 — Bound the metrics path map.** ⏳ **Next.**
-    - In [`src/middleware/metrics.rs`](../src/middleware/metrics.rs) add: (a) a single `__unmatched` key for 404s, (b) a configurable soft cap (`BRRTR_METRICS_PATH_MAX`, default 4096) after which inserts go to `__other`.
+- **0.3 — Bound the metrics path map.** ✅ **SHIPPED (2026-04-18).**
+    - Soft cap via `BRRTR_METRICS_PATH_MAX` (default 4096) on both `path_metrics` and `status_metrics`. Novel keys beyond the cap collapse into the `PATH_OVERFLOW_LABEL = "__other"` bucket; the `brrtrouter_metrics_path_overflow_total` Prometheus counter tracks occurrences.
+    - **Hot-path design** (learned the hard way — the first shipped version did a `contains_key` + `entry` combo per call and regressed 2 k-user throughput by −62 %): `record_path_metrics` / `record_status` now use `DashMap::get()` (**read lock**, multi-reader) on the hit path, and `entry()` (**write lock**) only when inserting. An `AtomicUsize` key-count (not `DashMap::len()`) backs the O(1) cap check on the miss path. The retained-read pattern is what lets us sustain 60 k+ req/s at 2 k users under the cap guard.
+    - 404s against unregistered routes (e.g. `GET /` in Goose) don't reach `record_*` — they fail routing before the dispatcher runs — so the map is naturally bounded by the registered route count. The cap is defense in depth against misconfigured callers.
 
 **Acceptance criteria for Phase 0:**
 - Soak test: 1k users, 60 min continuous load, RSS growth ≤ 2 % over the last 45 min window (i.e. flat). No `Box::leak` call in the request path (grep-gated in CI).
@@ -263,7 +265,11 @@ Baselines committed at [`benches/baselines/2000u-600s.json`](../benches/baseline
 
 **Goal:** Zero allocation for the common request (known headers, routed, valid JSON).
 
-- **2.1 — Header-name intern table.** Static `phf::Map<&'static [u8], Arc<str>>` for the ~15 common header names. In `parse_request`, look up first, fall back to `Arc::from(lowercased)` only on miss. Expected effect: eliminate 90 %+ of `String` allocations in the hot path.
+- **2.1 — Header-name intern table.** ✅ **SHIPPED (2026-04-18).**
+    - New module [`src/server/header_intern.rs`](../src/server/header_intern.rs) with a `Lazy<Vec<(&'static [u8], Arc<str>)>>` of ~24 canonical lowercased common HTTP header names.
+    - `intern_header_name(raw_name)` does a case-insensitive byte-compare against the table. **Hit (>95 % of real traffic)**: `Arc::clone` of the pre-made `Arc<str>` — zero heap allocation. **Miss (custom headers)**: falls back to the original `lowercase + Arc::from(&str)` path, behavior unchanged.
+    - Before: two heap allocations per header per request (`to_ascii_lowercase` string + `Arc::from(&str)`). With ~10 headers/request at 60 k req/s that was ~1.2 M allocations/s purely for header naming.
+    - 4 new unit tests in `header_intern::tests` (hit path returns shared `Arc`, miss path allocates, every canonical name round-trips, length-guard rejects prefix collisions like `content` vs `content-type`).
 - **2.2 — Demote per-request tracing to `debug!`.** ✅ **SHIPPED (2026-04-18).**
     - **Motivation**: The Goose smoke against pet_store on 8081 triggered a **SIGABRT (exit 134)** in pet_store after ~152 s under 20-user load, preceded by **~2,800 synchronous `WARN "No route matched"` log writes/sec**. The log pipeline was itself the bottleneck.
     - **Change**: demoted `warn!("No route matched")` in [`src/router/core.rs`](../src/router/core.rs) to `debug!`; demoted per-request `info!` in [`src/server/service.rs`](../src/server/service.rs) (`RequestLogger` Drop, `Authentication completed`, `Authentication success`), [`src/server/request.rs`](../src/server/request.rs) (`HTTP request parsed`, `Request body read`), and [`src/dispatcher/core.rs`](../src/dispatcher/core.rs) (5 handler-lifecycle events) to `debug!`. Kept startup-time and conditional slow-path `warn!`s. Removed unused `info` imports.

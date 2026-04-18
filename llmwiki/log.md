@@ -1,5 +1,13 @@
 # LLM Wiki Log
 
+## [2026-04-18] ship | Phase 0.3 + 2.1 — bounded metrics maps + header intern
+
+- **Upstream**: `may_minihttp` PR [`#24`](https://github.com/Xudong-Huang/may_minihttp/pull/24) (owned-header values, PRD Phase 0.1 upstreaming) raised.
+- **Phase 0.3**: soft cap on `MetricsMiddleware::{path_metrics, status_metrics}` keys via `BRRTR_METRICS_PATH_MAX` (default 4096). Novel keys beyond cap collapse to `"__other"` bucket with `brrtrouter_metrics_path_overflow_total` Prometheus counter. **First shipped version used `contains_key + entry` per call and cost 62 % throughput at 2 k users**; refactored to `DashMap::get()` (read lock) for the hit path and `entry()` + `AtomicUsize` counter only on the miss path. Commit `perf(metrics): bound path/status DashMap keys with __other overflow (Phase 0.3)` + refactor `perf(metrics): read-first hot path for cap-bounded path maps (Phase 0.3 refactor)`.
+- **Phase 2.1**: new [`src/server/header_intern.rs`](../src/server/header_intern.rs) module with 24-entry pre-allocated `Arc<str>` table for common HTTP header names. Hit path (>95 % of real traffic) is an `Arc::clone`, zero allocation; miss path unchanged. Replaces 2 heap allocations per header (`to_ascii_lowercase` + `Arc::from(&str)`) with a refcount bump on the hit. Commit `perf(request): intern common HTTP header names (Phase 2.1)`.
+- **2000u × 600s re-bench** (post-refactor, on pet_store:8091): **40.82 M requests → 66,484 req/s (+9.7 % vs Phase 1, +232 % vs Dec 2025)**. Avg latency **29.21 ms (−9 %)**, p50 **26 ms**, p95 **64 ms**, p99 **98 ms**, max 794 ms. 0 real failures. Server still HTTP-200. Committed baseline [`benches/baselines/2000u-600s-phase-0-3-2-1.json`](../benches/baselines/2000u-600s-phase-0-3-2-1.json).
+- `cargo test --lib` 299/299 (4 new header_intern tests + 2 new path-cap tests).
+
 ## [2026-04-18] ship | Phase 1 — lock-free Router / Dispatcher via ArcSwap
 
 - Added `arc-swap = "1.7"` to root `Cargo.toml` + `examples/pet_store/Cargo.toml`. New public type aliases `SharedRouter = Arc<ArcSwap<Router>>` / `SharedDispatcher = Arc<ArcSwap<Dispatcher>>` in [`src/server/service.rs`](../src/server/service.rs).
