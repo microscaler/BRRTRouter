@@ -309,14 +309,17 @@ pub fn parse_request(req: Request) -> Result<ParsedRequest, String> {
     // So we format once (acceptable as it's not in the hot path per-request allocation)
     let http_version = format!("{:?}", req.version());
 
-    // R3: Headers extracted - using SmallVec for stack allocation
-    // JSF P2: Use Arc::from for header names (O(1) clone instead of O(n) string copy)
+    // R3: Headers extracted — using SmallVec for stack allocation.
+    // PRD Phase 2.1: `intern_header_name` returns a shared `Arc<str>` for the
+    // ~24 common HTTP header names (`content-type`, `authorization`, …)
+    // without any heap allocation on the hit path, which is >95 % of traffic.
+    // Falls back to the previous `Arc::from(lowercased)` on miss.
     let headers: HeaderVec = req
         .headers()
         .iter()
         .map(|h| {
             (
-                Arc::from(h.name.to_ascii_lowercase().as_str()),
+                super::header_intern::intern_header_name(h.name.as_bytes()),
                 String::from_utf8_lossy(h.value).to_string(),
             )
         })
