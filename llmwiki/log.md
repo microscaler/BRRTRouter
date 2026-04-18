@@ -1,5 +1,17 @@
 # LLM Wiki Log
 
+## [2026-04-18] experiment | Phase 3 (parker reply slot) — attempted, reverted
+
+Tried to replace the per-request `may::sync::mpsc::channel()` with a custom `Arc<ReplySlot>` one-shot (atomic state + UnsafeCell + captured `Coroutine::unpark`). Landed on `pre_BFF_work` as `9748dcd`, then measured on the 2000u × 600s bench:
+
+| Metric | Phase 0.3 + 2.1 | Phase 3 prototype | Δ |
+|---|---:|---:|---:|
+| Throughput | 66,484 req/s | 61,362 req/s | **−7.7 %** |
+| Avg latency | 29.21 ms | 31.73 ms | +8.6 % |
+| p99 | 98 ms | 110 ms | +12 % |
+
+Reverted. Why it failed: the slot is still wrapped in `Arc<ReplySlot>` — same single heap allocation per request as `may::sync::mpsc::channel()`'s `Arc<Inner>`, so we didn't eliminate the alloc. `may`'s coroutine park/unpark is comparable (or slightly worse) to its internal mpsc signal pair for this workload. The `Arc::strong_count` check inside `recv` adds a relaxed load per park/re-check iteration. PRD [`PRD_HOT_PATH_V2_STABILITY_AND_PERF.md`](../docs/PRD_HOT_PATH_V2_STABILITY_AND_PERF.md) §Phase 3 now documents the negative result; 3.1–3.4 are deferred. `cargo test --lib` 299/299 restored post-revert.
+
 ## [2026-04-18] ship | Phase 0.3 + 2.1 — bounded metrics maps + header intern
 
 - **Upstream**: `may_minihttp` PR [`#24`](https://github.com/Xudong-Huang/may_minihttp/pull/24) (owned-header values, PRD Phase 0.1 upstreaming) raised.

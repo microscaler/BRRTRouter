@@ -17,8 +17,7 @@ use std::time::Duration;
 #[test]
 fn test_auth_middleware_allows_valid_token() {
     let mw = AuthMiddleware::new("secret".into());
-    let (__tx_raw, _rx) = mpsc::channel::<HandlerResponse>();
-    let tx = brrtrouter::dispatcher::HandlerReplySender::channel(__tx_raw);
+    let (tx, _rx) = mpsc::channel::<HandlerResponse>();
     // JSF P2: HeaderVec now uses Arc<str> for keys
     let headers: HeaderVec = smallvec![(Arc::from("authorization"), "secret".to_string())];
     let req = HandlerRequest {
@@ -41,8 +40,7 @@ fn test_auth_middleware_allows_valid_token() {
 #[test]
 fn test_auth_middleware_blocks_invalid_token() {
     let mw = AuthMiddleware::new("secret".into());
-    let (__tx_raw, _rx) = mpsc::channel::<HandlerResponse>();
-    let tx = brrtrouter::dispatcher::HandlerReplySender::channel(__tx_raw);
+    let (tx, _rx) = mpsc::channel::<HandlerResponse>();
     let req = HandlerRequest {
         request_id: RequestId::new(),
         method: Method::GET,
@@ -65,8 +63,7 @@ fn test_auth_middleware_blocks_invalid_token() {
 #[test]
 fn test_cors_middleware_sets_headers() {
     let mw = CorsMiddleware::permissive();
-    let (__tx_raw, _rx) = mpsc::channel::<HandlerResponse>();
-    let tx = brrtrouter::dispatcher::HandlerReplySender::channel(__tx_raw);
+    let (tx, _rx) = mpsc::channel::<HandlerResponse>();
     // Add Origin header for CORS validation
     let headers: HeaderVec = smallvec![(Arc::from("origin"), "https://example.com".to_string())];
     let req = HandlerRequest {

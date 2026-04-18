@@ -185,7 +185,7 @@ fn test_cors_with_jwks_bearer_provider_preflight() {
         cookies: HeaderVec::new(),
         body: None,
         jwt_claims: None,
-        reply_tx: brrtrouter::dispatcher::HandlerReplySender::channel(tx),
+        reply_tx: tx,
         queue_guard: None,
     };
 
@@ -248,7 +248,7 @@ fn test_cors_with_jwks_bearer_provider_authenticated_request() {
         cookies: HeaderVec::new(),
         body: None,
         jwt_claims: None,
-        reply_tx: brrtrouter::dispatcher::HandlerReplySender::channel(tx),
+        reply_tx: tx,
         queue_guard: None,
     };
 
@@ -333,7 +333,7 @@ fn test_cors_invalid_origin_before_jwks_validation() {
         cookies: HeaderVec::new(),
         body: None,
         jwt_claims: None,
-        reply_tx: brrtrouter::dispatcher::HandlerReplySender::channel(tx),
+        reply_tx: tx,
         queue_guard: None,
     };
 
@@ -391,7 +391,7 @@ fn test_cors_with_spiffe_provider_preflight() {
         cookies: HeaderVec::new(),
         body: None,
         jwt_claims: None,
-        reply_tx: brrtrouter::dispatcher::HandlerReplySender::channel(tx),
+        reply_tx: tx,
         queue_guard: None,
     };
 
@@ -455,7 +455,7 @@ fn test_cors_with_spiffe_provider_authenticated_request() {
         cookies: HeaderVec::new(),
         body: None,
         jwt_claims: None,
-        reply_tx: brrtrouter::dispatcher::HandlerReplySender::channel(tx),
+        reply_tx: tx,
         queue_guard: None,
     };
 
@@ -540,7 +540,7 @@ fn test_cors_invalid_origin_before_spiffe_validation() {
         cookies: HeaderVec::new(),
         body: None,
         jwt_claims: None,
-        reply_tx: brrtrouter::dispatcher::HandlerReplySender::channel(tx),
+        reply_tx: tx,
         queue_guard: None,
     };
 
@@ -598,7 +598,7 @@ fn test_jwks_independent_usage() {
         cookies: HeaderVec::new(),
         body: None,
         jwt_claims: None,
-        reply_tx: brrtrouter::dispatcher::HandlerReplySender::channel(tx),
+        reply_tx: tx,
         queue_guard: None,
     };
 
@@ -672,7 +672,7 @@ fn test_spiffe_requires_jwks_url() {
         cookies: HeaderVec::new(),
         body: None,
         jwt_claims: None,
-        reply_tx: brrtrouter::dispatcher::HandlerReplySender::channel(tx),
+        reply_tx: tx,
         queue_guard: None,
     };
 
@@ -735,7 +735,7 @@ fn test_spiffe_succeeds_with_jwks_url() {
         cookies: HeaderVec::new(),
         body: None,
         jwt_claims: None,
-        reply_tx: brrtrouter::dispatcher::HandlerReplySender::channel(tx),
+        reply_tx: tx,
         queue_guard: None,
     };
 
@@ -819,7 +819,7 @@ fn test_spiffe_algorithm_mismatch_validation() {
         cookies: HeaderVec::new(),
         body: None,
         jwt_claims: None,
-        reply_tx: brrtrouter::dispatcher::HandlerReplySender::channel(tx),
+        reply_tx: tx,
         queue_guard: None,
     };
 

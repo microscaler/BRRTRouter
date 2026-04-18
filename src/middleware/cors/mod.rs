@@ -1259,8 +1259,7 @@ mod cors_middleware_tests {
         handler_name: &str,
         headers: Vec<(&str, &str)>,
     ) -> HandlerRequest {
-        let (__reply_raw, _) = mpsc::channel();
-        let reply_tx = crate::dispatcher::HandlerReplySender::channel(__reply_raw);
+        let (reply_tx, _) = mpsc::channel();
         let mut hv = HeaderVec::new();
         for (k, v) in headers {
             hv.push((Arc::from(k), v.to_string()));
