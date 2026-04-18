@@ -46,6 +46,7 @@ mod tests {
     #[test]
     fn test_echo_handler() {
         let (tx, rx) = mpsc::channel::<HandlerResponse>();
+        let tx = crate::dispatcher::HandlerReplySender::channel(tx);
         // JSF: Use Arc<str> for param names
         let params: ParamVec = smallvec![(Arc::from("id"), "123".to_string())];
         let query: ParamVec = smallvec![(Arc::from("debug"), "true".to_string())];

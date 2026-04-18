@@ -126,7 +126,8 @@ fn test_dispatch_post_item() {
     // JSF P0-2: Convert Arc<str> to String for test compatibility
     let handler_name = route.handler_name.to_string();
 
-    let (reply_tx, reply_rx) = mpsc::channel();
+    let (__reply_raw, reply_rx) = mpsc::channel();
+    let reply_tx = brrtrouter::dispatcher::HandlerReplySender::channel(__reply_raw);
     let mut path_params: ParamVec = ParamVec::new();
     path_params.push((Arc::from("id"), "item-001".to_string()));
     let mut query_params: ParamVec = ParamVec::new();
@@ -174,7 +175,8 @@ fn test_dispatch_get_pet() {
     // JSF P0-2: Convert Arc<str> to String for test compatibility
     let handler_name = route.handler_name.to_string();
 
-    let (reply_tx, reply_rx) = mpsc::channel();
+    let (__reply_raw, reply_rx) = mpsc::channel();
+    let reply_tx = brrtrouter::dispatcher::HandlerReplySender::channel(__reply_raw);
     let mut path_params: ParamVec = ParamVec::new();
     path_params.push((Arc::from("id"), "12345".to_string()));
     let mut query_params: ParamVec = ParamVec::new();
@@ -226,7 +228,8 @@ fn test_typed_controller_params() {
     }
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
 
-    let (reply_tx, reply_rx) = mpsc::channel();
+    let (__reply_raw, reply_rx) = mpsc::channel();
+    let reply_tx = brrtrouter::dispatcher::HandlerReplySender::channel(__reply_raw);
     let mut path_params: ParamVec = ParamVec::new();
     path_params.push((Arc::from("id"), "42".to_string()));
     let mut query_params: ParamVec = ParamVec::new();
@@ -267,7 +270,8 @@ fn test_typed_controller_invalid_params() {
     }
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
 
-    let (reply_tx, reply_rx) = mpsc::channel();
+    let (__reply_raw, reply_rx) = mpsc::channel();
+    let reply_tx = brrtrouter::dispatcher::HandlerReplySender::channel(__reply_raw);
     let mut path_params: ParamVec = ParamVec::new();
     // invalid integer value for id
     path_params.push((Arc::from("id"), "not_an_int".to_string()));
@@ -313,7 +317,8 @@ fn test_panic_handler_returns_500() {
     }
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
 
-    let (reply_tx, reply_rx) = mpsc::channel();
+    let (__reply_raw, reply_rx) = mpsc::channel();
+    let reply_tx = brrtrouter::dispatcher::HandlerReplySender::channel(__reply_raw);
 
     let request = HandlerRequest {
         request_id: RequestId::new(),

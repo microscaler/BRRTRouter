@@ -105,8 +105,12 @@ pub struct HandlerRequest {
     /// }
     /// ```
     pub jwt_claims: Option<Value>,
-    /// Channel for sending the response back to the dispatcher
-    pub reply_tx: mpsc::Sender<HandlerResponse>,
+    /// Reply back-channel. PRD Phase 3: on the production dispatch path this
+    /// is a zero-alloc parker slot ([`HandlerReplySender::Slot`]); test code
+    /// can still construct an mpsc-backed sender via
+    /// [`HandlerReplySender::channel`]. Internal handlers call `send`
+    /// uniformly via the enum.
+    pub reply_tx: super::reply_slot::HandlerReplySender,
     /// Guard for tracking queue depth and applying backpressure (decrements on Drop)
     pub queue_guard: Option<Arc<QueueDepthGuard>>,
 }
@@ -733,7 +737,25 @@ impl Dispatcher {
         request_id: String,
         jwt_claims: Option<Value>,
     ) -> Option<HandlerResponse> {
-        let (reply_tx, reply_rx) = mpsc::channel();
+        // PRD Phase 3: zero-alloc parker slot instead of per-request
+        // `mpsc::channel()`. The slot captures the current coroutine so the
+        // handler can unpark us directly when it fills the slot.
+        //
+        // Outside a `may` coroutine context (e.g. synchronous tests that call
+        // `Dispatcher::dispatch_with_request_id` directly from a `std::thread`)
+        // `may::coroutine::current()` would panic. In that case we fall back
+        // to the legacy `mpsc::channel()` path — it's slower per request but
+        // correct from any thread.
+        let use_parker_slot = may::coroutine::is_coroutine();
+        let (slot, legacy_rx, reply_tx) = if use_parker_slot {
+            let slot = Arc::new(super::reply_slot::ReplySlot::for_current());
+            let tx = super::reply_slot::HandlerReplySender::slot(Arc::clone(&slot));
+            (Some(slot), None, tx)
+        } else {
+            let (raw_tx, raw_rx) = mpsc::channel();
+            let tx = super::reply_slot::HandlerReplySender::channel(raw_tx);
+            (None, Some(raw_rx), tx)
+        };
 
         // D1: Handler lookup
         debug!(
@@ -872,12 +894,17 @@ impl Dispatcher {
                 "Waiting for handler response"
             );
 
-            // Receive response with timeout detection
-            // Note: may::sync::mpsc doesn't have recv_timeout, so we use recv()
-            // and rely on handler-side timeouts and panic recovery
-            let r = match reply_rx.recv() {
-                Ok(response) => {
-                    // Per-request — demoted to debug (PRD 2.2).
+            // PRD Phase 3: receive via the parker slot (hot path) or fall
+            // back to the legacy mpsc channel if we were called outside a
+            // coroutine context. Both paths map "sender gone without reply"
+            // → 503, preserving the pre-Phase-3 error semantics.
+            let response_opt = match (slot.as_ref(), legacy_rx) {
+                (Some(slot), _) => slot.recv(),
+                (None, Some(rx)) => rx.recv().ok(),
+                (None, None) => None,
+            };
+            let r = match response_opt {
+                Some(response) => {
                     let elapsed = start.elapsed();
                     debug!(
                         request_id = %request_id,
@@ -888,19 +915,14 @@ impl Dispatcher {
                     );
                     response
                 }
-                Err(e) => {
-                    // D7: Handler channel closed - likely handler panic or resource exhaustion
+                None => {
                     let elapsed = start.elapsed();
                     error!(
                         request_id = %request_id,
                         handler_name = %request.handler_name,
                         elapsed_ms = elapsed.as_millis() as u64,
-                        error = %e,
-                        "Handler channel closed - handler may have crashed"
+                        "Handler reply dropped without response — possible crash or resource exhaustion"
                     );
-
-                    // Return a 503 Service Unavailable response instead of None
-                    // This prevents connection drops and indicates server issue
                     return Some(HandlerResponse::error(
                         503,
                         &format!(
