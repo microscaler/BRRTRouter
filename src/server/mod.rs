@@ -69,6 +69,7 @@
 //! ```
 
 /// HTTP server implementation using may_minihttp
+pub mod header_intern;
 pub mod http_server;
 /// Request parsing and parameter extraction
 pub mod request;
