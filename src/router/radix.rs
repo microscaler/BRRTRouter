@@ -59,20 +59,75 @@
 #![deny(clippy::unnecessary_to_owned)]
 
 use http::Method;
-use smallvec::SmallVec;
 use std::borrow::Cow;
 use std::sync::Arc;
 
 use super::core::ParamVec;
 use crate::spec::RouteMeta;
 
-/// Maximum segments in a path before heap allocation.
-/// Most REST APIs have ≤8 segments (e.g., /api/v1/users/{id}/posts/{postId}).
-/// JSF Rule 206: No heap allocations in the hot path for common cases.
-const MAX_INLINE_SEGMENTS: usize = 16;
+/// Lazy path-segment iterator (PRD Phase R.2).
+///
+/// Before R.2 the router collected the entire path into a `SegmentVec`
+/// up front via `path.trim_start_matches('/').split('/').filter(...)
+/// .collect()`. That allocated a SmallVec on stack for typical paths but
+/// still walked **every byte of the path** before the tree traversal
+/// began — even for 404s that would fail at depth 2 of a 7-segment path.
+///
+/// `PathCursor` exposes `next_segment()` to the search walker one segment
+/// at a time. A 404 at depth 2 costs two advances plus the pre-existing
+/// fanout scan; segments 3..N are never touched. The cursor is `Copy`
+/// (just `(&'a [u8], usize)` = 16 bytes on 64-bit), so backtrack across
+/// param-branch attempts is a register-level snapshot — no shared
+/// iterator state to rewind.
+///
+/// Empty segments from consecutive `/` runs (e.g. `GET /pets//123`) are
+/// silently skipped, matching the original `.filter(|s| !s.is_empty())`
+/// behaviour.
+#[derive(Copy, Clone)]
+struct PathCursor<'a> {
+    bytes: &'a [u8],
+    pos: usize,
+}
 
-/// Stack-allocated segment storage for path splitting in the hot path.
-type SegmentVec<'a> = SmallVec<[&'a str; MAX_INLINE_SEGMENTS]>;
+impl<'a> PathCursor<'a> {
+    #[inline]
+    fn new(path: &'a str) -> Self {
+        let bytes = path.as_bytes();
+        let mut pos = 0;
+        // Skip leading '/' run so the first `next_segment` yields the first
+        // real segment (matches the pre-R.2 `trim_start_matches('/')`).
+        while pos < bytes.len() && bytes[pos] == b'/' {
+            pos += 1;
+        }
+        Self { bytes, pos }
+    }
+
+    /// Yield the next non-empty segment, or `None` at end of path.
+    #[inline]
+    fn next_segment(&mut self) -> Option<&'a str> {
+        while self.pos < self.bytes.len() {
+            let start = self.pos;
+            while self.pos < self.bytes.len() && self.bytes[self.pos] != b'/' {
+                self.pos += 1;
+            }
+            let end = self.pos;
+            // Skip any trailing '/' run so the *next* call starts on a segment.
+            while self.pos < self.bytes.len() && self.bytes[self.pos] == b'/' {
+                self.pos += 1;
+            }
+            if start < end {
+                // SAFETY: `bytes` came from `&str::as_bytes()` so the whole
+                // slice is valid UTF-8. `/` (0x2F) is a single-byte ASCII
+                // boundary, so splitting on it preserves UTF-8 alignment.
+                return Some(unsafe {
+                    std::str::from_utf8_unchecked(&self.bytes[start..end])
+                });
+            }
+            // Empty segment (e.g. `//`) — keep scanning.
+        }
+        None
+    }
+}
 
 /// Fixed-size terminal-route table indexed by HTTP method (PRD Phase R.1).
 ///
@@ -244,48 +299,48 @@ impl RadixNode {
         self.children.push(new_child);
     }
 
-    /// Search for a matching route in the tree
-    /// Uses ParamVec (SmallVec) for stack-allocated params in hot path
+    /// Search for a matching route in the tree.
+    ///
+    /// Consumes segments **lazily** via [`PathCursor`] (PRD Phase R.2):
+    /// a 404 at depth N stops scanning after segment N instead of walking
+    /// the entire path up front. `PathCursor` is `Copy`, so backtrack across
+    /// param-branch attempts is a register-level snapshot — we pass by value
+    /// into each child `search` so the caller's cursor is unchanged on
+    /// return.
     #[inline]
     fn search(
         &self,
-        segments: &[&str],
+        mut segments: PathCursor<'_>,
         method: &Method,
         params: &mut ParamVec,
     ) -> Option<Arc<RouteMeta>> {
-        if segments.is_empty() {
-            // We've consumed all segments, check if this node has a route for
-            // the method. O(1) array index (PRD Phase R.1) in place of the
-            // pre-existing `HashMap::get`.
+        let Some(segment) = segments.next_segment() else {
+            // End of path — check if this node has a route for the method.
+            // O(1) array index (PRD Phase R.1) in place of the pre-R.1 HashMap.
             return self.routes.get(method).cloned();
-        }
+        };
 
-        let segment = segments[0];
-        let remaining = &segments[1..];
-
-        // First, try exact match with static children
+        // First, try exact match with static children. Pass `segments` by
+        // value — its `Copy` impl gives each branch an independent cursor.
         for child in &self.children {
             if child.segment == segment {
-                if let Some(route) = child.search(remaining, method, params) {
+                if let Some(route) = child.search(segments, method, params) {
                     return Some(route);
                 }
             }
         }
 
-        // If no exact match, try all parameter children
+        // If no exact match, try all parameter children. Each attempt pushes
+        // a param, recurses on its own cursor, and pops on failure.
         for param_child in &self.param_children {
             if let Some(ref param_name) = param_child.param_name {
-                // Push the param for this branch
-                // Note: duplicate param names will result in multiple entries;
-                // use get_path_param() which returns the last occurrence (last write wins)
-                //
                 // JSF Optimization (P0): Arc::clone() is O(1) atomic increment
-                // vs O(n) string copy for param names
+                // vs O(n) string copy for param names.
                 params.push((Arc::clone(param_name), segment.to_string()));
-                if let Some(route) = param_child.search(remaining, method, params) {
+                if let Some(route) = param_child.search(segments, method, params) {
                     return Some(route);
                 }
-                // Backtrack: remove the param we just pushed
+                // Backtrack.
                 params.pop();
             }
         }
@@ -390,19 +445,17 @@ impl RadixRouter {
     ///
     /// Uses ParamVec (SmallVec) for stack-allocated parameters, avoiding heap
     /// allocation for routes with ≤8 params (the common case).
-    /// Uses SegmentVec (SmallVec) for stack-allocated path segments, avoiding heap
-    /// allocation for paths with ≤16 segments (the common case).
+    ///
+    /// PRD Phase R.2: path segmentation is now **lazy** via [`PathCursor`] —
+    /// we no longer collect into `SegmentVec` up front. The previous
+    /// implementation walked every byte of the path before tree descent
+    /// began; the cursor yields one segment at a time so a 404 at depth 2
+    /// never touches segments 3..N.
     #[inline]
     pub fn route(&self, method: Method, path: &str) -> Option<(Arc<RouteMeta>, ParamVec)> {
-        // JSF: Use SmallVec to avoid heap allocation for typical paths (≤16 segments)
-        let segments: SegmentVec = path
-            .trim_start_matches('/')
-            .split('/')
-            .filter(|s| !s.is_empty())
-            .collect();
-
+        let cursor = PathCursor::new(path);
         let mut params = ParamVec::new();
-        let route = self.root.search(&segments, &method, &mut params)?;
+        let route = self.root.search(cursor, &method, &mut params)?;
         Some((route, params))
     }
 }
