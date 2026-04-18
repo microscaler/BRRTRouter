@@ -185,6 +185,12 @@ pub struct MetricsMiddleware {
     /// [`PATH_OVERFLOW_LABEL`] bucket rather than inserting new keys. A value
     /// of `0` disables the cap.
     path_cap: usize,
+    /// O(1) live counter of distinct `path_metrics` keys. Used for the cap
+    /// check on the miss path — avoids `DashMap::len()` which scans all shards.
+    /// Incremented only when we actually insert a new key.
+    path_count: AtomicUsize,
+    /// Same for `status_metrics`.
+    status_path_count: AtomicUsize,
     /// Count of requests that landed in the overflow bucket (PRD Phase 0.3).
     /// Exposed on `/metrics` as `brrtrouter_metrics_path_overflow_total`.
     path_overflow_total: AtomicU64,
@@ -226,6 +232,8 @@ impl Default for MetricsMiddleware {
             path_metrics: Arc::new(DashMap::new()),
             status_metrics: Arc::new(DashMap::new()),
             path_cap,
+            path_count: AtomicUsize::new(0),
+            status_path_count: AtomicUsize::new(0),
             path_overflow_total: AtomicU64::new(0),
             duration_histogram: Arc::new(HistogramMetric::new()),
             connection_closes: AtomicUsize::new(0),
@@ -374,44 +382,53 @@ impl MetricsMiddleware {
 
     /// Record metrics for a specific path.
     ///
-    /// This is called internally by the middleware to track per-path statistics.
-    /// Uses lock-free DashMap for concurrent access without contention.
+    /// Hot-path design (PRD Phase 0.3):
+    /// * **Hit (99 %+ of real traffic)** — `DashMap::get()` returns a `Ref`
+    ///   holding only a **read** lock on the relevant shard. Multi-reader
+    ///   concurrency; no contention with other readers.
+    /// * **Miss** — the path is not yet registered. Consult the cheap
+    ///   `AtomicUsize` `path_count` against `path_cap`; if over, route to
+    ///   the [`PATH_OVERFLOW_LABEL`] bucket. Otherwise take the write lock
+    ///   on the shard to insert exactly once (idempotent via `entry()`).
     ///
-    /// # Overflow handling (PRD Phase 0.3)
-    ///
-    /// If inserting this path would exceed `path_cap` distinct keys, the sample
-    /// is recorded against the [`PATH_OVERFLOW_LABEL`] bucket instead. The live
-    /// request volume is preserved; only the per-path breakdown collapses.
+    /// Previously this did a single `entry()` call, which takes a **write**
+    /// lock unconditionally — even on the steady-state hit path. That
+    /// serialized concurrent dispatchers on the hot path and caused a
+    /// measured −62 % throughput regression at 2000 concurrent users.
     pub(crate) fn record_path_metrics(&self, path: &str, latency_ns: u64) {
-        let effective_path = self.path_key_or_overflow(path, &self.path_metrics);
-        let metrics = self
-            .path_metrics
-            .entry(effective_path.to_string())
-            .or_insert_with(|| Arc::new(PathMetrics::new()))
-            .clone();
-
-        metrics.record(latency_ns);
-    }
-
-    /// Return the input `path` if the map already contains it or has capacity;
-    /// otherwise return [`PATH_OVERFLOW_LABEL`] and increment the overflow
-    /// counter. The two-step check tolerates a small benign race where two
-    /// callers both observe `len() < cap` and insert — the resulting overrun
-    /// is bounded by the number of concurrent writers, not by traffic.
-    fn path_key_or_overflow<'a, V>(
-        &self,
-        path: &'a str,
-        map: &Arc<DashMap<String, V>>,
-    ) -> std::borrow::Cow<'a, str> {
-        if self.path_cap == 0 {
-            return std::borrow::Cow::Borrowed(path);
+        // Fast path: read-locked lookup.
+        if let Some(m) = self.path_metrics.get(path) {
+            m.record(latency_ns);
+            return;
         }
-        if map.contains_key(path) || map.len() < self.path_cap {
-            std::borrow::Cow::Borrowed(path)
-        } else {
+        // Slow path: path not registered yet. Consult the soft cap.
+        if self.path_cap > 0
+            && self.path_count.load(Ordering::Relaxed) >= self.path_cap
+        {
             self.path_overflow_total.fetch_add(1, Ordering::Relaxed);
-            std::borrow::Cow::Borrowed(PATH_OVERFLOW_LABEL)
+            let over = self
+                .path_metrics
+                .entry(PATH_OVERFLOW_LABEL.to_string())
+                .or_insert_with(|| Arc::new(PathMetrics::new()))
+                .clone();
+            over.record(latency_ns);
+            return;
         }
+        // Idempotent insert. `entry` auto-handles a race with another thread
+        // that inserted the same key between our `get()` and `entry()`.
+        let mut inserted = false;
+        let m = self
+            .path_metrics
+            .entry(path.to_string())
+            .or_insert_with(|| {
+                inserted = true;
+                Arc::new(PathMetrics::new())
+            })
+            .clone();
+        if inserted {
+            self.path_count.fetch_add(1, Ordering::Relaxed);
+        }
+        m.record(latency_ns);
     }
 
     /// Read the current overflow counter (PRD Phase 0.3).
@@ -500,35 +517,40 @@ impl MetricsMiddleware {
         }
     }
 
-    /// Record status code for a request
+    /// Record status code for a request.
     ///
-    /// Uses lock-free DashMap for concurrent access without contention.
-    /// Applies the same `path_cap` / overflow behavior as
-    /// [`record_path_metrics`] (PRD Phase 0.3) so the `(path, status)` map
-    /// cannot grow unbounded either.
+    /// Same read-first hot-path pattern as [`record_path_metrics`] (PRD
+    /// Phase 0.3). `DashMap::get()` holds only a read lock on the relevant
+    /// shard, so concurrent dispatchers observing the same `(path, status)`
+    /// combination do not serialize against each other.
     fn record_status(&self, path: &str, status: u16) {
-        let effective_path = if self.path_cap == 0 {
-            std::borrow::Cow::Borrowed(path)
-        } else {
-            // Cheap probe: if the path is already in path_metrics *or* the
-            // status map has capacity, keep the real key. Otherwise collapse
-            // to the overflow bucket. Using path_metrics as the gate keeps
-            // the two maps' key sets aligned for rendering.
-            if self.path_metrics.contains_key(path)
-                || self.status_metrics.len() < self.path_cap
-            {
-                std::borrow::Cow::Borrowed(path)
-            } else {
-                self.path_overflow_total.fetch_add(1, Ordering::Relaxed);
-                std::borrow::Cow::Borrowed(PATH_OVERFLOW_LABEL)
-            }
-        };
-        let key = (effective_path.to_string(), status);
-
+        // Fast path.
+        if let Some(count) = self.status_metrics.get(&(path.to_string(), status)) {
+            count.fetch_add(1, Ordering::Relaxed);
+            return;
+        }
+        // Miss: consult cap via O(1) atomic counter.
+        if self.path_cap > 0
+            && self.status_path_count.load(Ordering::Relaxed) >= self.path_cap
+        {
+            self.path_overflow_total.fetch_add(1, Ordering::Relaxed);
+            self.status_metrics
+                .entry((PATH_OVERFLOW_LABEL.to_string(), status))
+                .or_insert_with(|| AtomicUsize::new(0))
+                .fetch_add(1, Ordering::Relaxed);
+            return;
+        }
+        let mut inserted = false;
         self.status_metrics
-            .entry(key)
-            .or_insert_with(|| AtomicUsize::new(0))
+            .entry((path.to_string(), status))
+            .or_insert_with(|| {
+                inserted = true;
+                AtomicUsize::new(0)
+            })
             .fetch_add(1, Ordering::Relaxed);
+        if inserted {
+            self.status_path_count.fetch_add(1, Ordering::Relaxed);
+        }
     }
 }
 
