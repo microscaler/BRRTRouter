@@ -219,7 +219,7 @@ Each phase ships as its own PR. Each PR must include Goose v2 numbers (once Phas
     - All 3 `Box::leak` call sites removed from [`src/server/service.rs`](../src/server/service.rs) and [`src/server/response.rs`](../src/server/response.rs). `AppService::intern_keep_alive` and `INTERN` static deleted. `keep_alive_header: Option<&'static str>` → `Option<Box<str>>`, cloned per response.
     - `write_json_error` switched from `body.to_string().into_bytes()` to `serde_json::to_vec` (Phase 2.6 bonus — trivial while here).
     - Verification: `cargo test --lib` 292 / 292 pass, including the CORS 403 round-trip + 415 `Accept-Post` regression guards.
-    - **Upstream PR**: raise a second `may_minihttp` PR against `Xudong-Huang/may_minihttp` using the fork branch, matching the PR #21 workflow.
+    - **Upstream PR**: [`Xudong-Huang/may_minihttp#24`](https://github.com/Xudong-Huang/may_minihttp/pull/24) raised 2026-04-18. While it is in review, BRRTRouter continues to consume the branch from the microscaler fork.
 - **0.2 — Retire the `feat/configurable-max-headers` fork pin.** ✅ **Subsumed by 0.1.**
     - Now pinned at `feat/response-header-owned-values` (which is a descendant of the merged `feat/configurable-max-headers` work). When upstream merges 0.1's PR we can switch to the next `may_minihttp` release tag.
 - **0.3 — Bound the metrics path map.** ⏳ **Next.**
