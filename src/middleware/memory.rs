@@ -273,24 +273,29 @@ impl MemoryMiddleware {
         let current = self.current_stats();
         let growth = self.growth_bytes();
 
-        // Phase 2.2 hygiene: a normal 2000u ramp trivially crosses +100 MB
-        // RSS just from coroutine stacks + connection buffers — this is not
-        // a warn-level condition on BRRTRouter startup or soak. Demote to
-        // debug! so it's available via RUST_LOG=debug without flooding the
-        // log pipeline on every 10s poll during legitimate traffic. The
-        // memory-leak regression we actually care about is detected by the
-        // RSS-over-time soak chart (PRD Phase 6.7), not by this per-poll
-        // warn.
+        // BRRTRouter telemetry architecture: runtime events flow through
+        // `tracing` → stdout (JSON) → Promtail → Loki. The 10 s cadence of
+        // this poll is perfectly appropriate for Loki, so we keep the
+        // `warn!` — it's exactly the operational signal operators want.
+        //
+        // What we _do_ fix is the threshold. The previous `> 100 MB`
+        // trigger fired on every legitimate 2000u ramp (coroutine stacks
+        // alone are ~70 MB at default config, plus connection buffers,
+        // plus may internal state), generating false-positive alerts
+        // every 10 s for the first minute of every bench. Raise to
+        // `> 500 MB` so the warn only fires on genuinely anomalous
+        // growth. Sustained-growth / rate-based leak detection is
+        // tracked separately by the Phase 6.7 soak harness.
         let growth_mb = growth / (1024 * 1024);
-        if growth_mb > 100 {
-            tracing::debug!(
+        if growth_mb > 500 {
+            tracing::warn!(
                 rss_mb = current.rss_bytes / (1024 * 1024),
                 heap_mb = current.heap_bytes / (1024 * 1024),
                 growth_mb = growth_mb,
                 "High memory growth detected"
             );
         } else {
-            tracing::debug!(
+            tracing::info!(
                 rss_mb = current.rss_bytes / (1024 * 1024),
                 heap_mb = current.heap_bytes / (1024 * 1024),
                 growth_mb = growth_mb,

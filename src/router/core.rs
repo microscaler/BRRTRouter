@@ -298,13 +298,22 @@ impl Router {
             let handler_name = route.handler_name.to_string();
 
             // Phase 2.2 hygiene: never emit per-request events at warn!/info!.
-            // The previous 1 ms threshold is below the noise floor of a loaded
-            // macOS scheduler — it trivially fires for every multi-segment
-            // dynamic path under real load, flooding stdout and triggering
-            // the exact log-pipeline-saturation → SIGABRT failure Phase 5.1
-            // fought on the request path. Demote to debug! with a higher
-            // threshold (10 ms) so genuinely pathological lookups still show
-            // up when explicitly enabled via RUST_LOG=debug.
+            //
+            // BRRTRouter telemetry flows via `tracing` → stdout (JSON) →
+            // Promtail → Loki. At 2000u+ load, per-request WARN events
+            // pollute Loki with millions of duplicate alerts per minute —
+            // useless to operators — while also back-pressuring the local
+            // tracing dispatcher, serialization buffers, and stdout write
+            // path (exactly the log-pipeline-saturation pattern Phase 5.1
+            // fought on the request path). The previous 1 ms threshold
+            // was below the noise floor of a loaded macOS scheduler, so
+            // it trivially fired for every multi-segment dynamic path.
+            //
+            // Demote to debug! and raise threshold to 10 ms: genuinely
+            // pathological lookups (parser bug, pathological trie walk)
+            // still surface when operators explicitly opt into
+            // `RUST_LOG=brrtrouter::router=debug`, without flooding
+            // steady-state traffic.
             if match_duration > std::time::Duration::from_millis(10) {
                 debug!(
                     method = %method,
