@@ -96,6 +96,7 @@ fn test_template_writers() {
         parameters: vec![],
         request_schema: None,
         request_body_required: false,
+        request_content_types: Vec::new(),
         response_schema: None,
         example: None,
         responses: HashMap::new(),
