@@ -2,19 +2,20 @@
 
 This document details BRRTRouter's performance characteristics, optimization results, and benchmarking methodology.
 
-> **April 2026 update.** The hot-path v2 work (PRD [`PRD_HOT_PATH_V2_STABILITY_AND_PERF.md`](./PRD_HOT_PATH_V2_STABILITY_AND_PERF.md)) shipped Phases 0.1 (remove per-response `Box::leak`), 2.2 (demote per-request tracing), 5.1 (real bounded worker-pool queue), and **1 (lock-free `Router` / `Dispatcher` via `ArcSwap`)**. The numbers below were measured on a post-Phase-1 build and **supersede the December 2025 baselines** further down this page — those are kept for historical context.
+> **April 2026 update.** The hot-path v2 work (PRD [`PRD_HOT_PATH_V2_STABILITY_AND_PERF.md`](./PRD_HOT_PATH_V2_STABILITY_AND_PERF.md)) has shipped Phases 0.1 (remove per-response `Box::leak`), 2.2 (demote per-request tracing), 5.1 (real bounded worker-pool queue), 1 (lock-free `Router` / `Dispatcher` via `ArcSwap`), **0.3 (bounded metrics path maps)**, and **2.1 (header-name intern)**. Numbers below reflect the post-0.3+2.1 build and **supersede** both the December 2025 baselines and the earlier April 2026 intermediate numbers further down this page.
 
 ## Cloud-Native Scale-Out Strategy
 
 BRRTRouter is optimized for scalable cloud-native deployments with hard-bound resource limits. The pre-fix design targeted **fail-fast 503s at 2,000 users / 20 k req/s per pod** to force horizontal scaling. Post-fix measurement (below) shows the per-pod ceiling is substantially higher than that original target — HPA triggers can be tuned accordingly.
 
-| Metric | December 2025 target | April 2026 (post Phases 0.1/2.2/5.1) | April 2026 (post Phase 1 — current) |
-|--------|---------------------:|--------------------------------------:|------------------------------------:|
-| **Concurrent Users / Pod** | 2,000 (bound limit) | 2,000 (sustained) | 2,000 (sustained, further headroom) |
-| **Throughput / Pod** | 20,000 req/s | 55,001 req/s | **60,575 req/s (+203 %)** |
-| **Base Latency (avg)** | ~15 ms | 35.40 ms at 2 k users | **32.09 ms (−9.4 % vs 5.1)** |
-| **p99 under 2 k-user load** | ~400 ms | 130 ms | **110 ms (−72 % vs Dec 2025, −15 % vs 5.1)** |
-| **5xx shed rate at 2 k users** | 0 %, target bound | 0 % | **0 %** (no 5xx, 0 aborted connections) |
+| Metric | December 2025 target | Post Phases 0.1/2.2/5.1 | Post Phase 1 (ArcSwap) | Post Phases 0.3 + 2.1 — **current** |
+|--------|---------------------:|-------------------------:|------------------------:|-------------------------------------:|
+| **Concurrent Users / Pod** | 2,000 (bound limit) | 2,000 | 2,000 | 2,000 (sustained, further headroom) |
+| **Throughput / Pod** | 20,000 req/s | 55,001 req/s | 60,575 req/s | **66,484 req/s (+232 %)** |
+| **Base Latency (avg)** | ~15 ms | 35.40 ms | 32.09 ms | **29.21 ms (−17.4 % vs 5.1)** |
+| **p99 under 2 k-user load** | ~400 ms | 130 ms | 110 ms | **98 ms (−75.5 % vs Dec 2025)** |
+| **p50 under 2 k-user load** | n/a | 30 ms | 28 ms | **26 ms** |
+| **5xx shed rate at 2 k users** | 0 %, target bound | 0 % | 0 % | **0 %** (no 5xx, 0 aborted connections) |
 
 | Stack / "hello-world" benchmark          | Test rig(s)*                               | Req/s (steady-state) | Comments                                |
 | ---------------------------------------- | ------------------------------------------ | -------------------- | --------------------------------------- |
