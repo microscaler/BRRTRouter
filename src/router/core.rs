@@ -20,7 +20,7 @@ use regex::Regex;
 use smallvec::SmallVec;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use super::radix::RadixRouter;
 
@@ -297,8 +297,16 @@ impl Router {
             // JSF P0-2: Convert Arc<str> to String for RouteMatch
             let handler_name = route.handler_name.to_string();
 
-            if match_duration > std::time::Duration::from_millis(1) {
-                warn!(
+            // Phase 2.2 hygiene: never emit per-request events at warn!/info!.
+            // The previous 1 ms threshold is below the noise floor of a loaded
+            // macOS scheduler — it trivially fires for every multi-segment
+            // dynamic path under real load, flooding stdout and triggering
+            // the exact log-pipeline-saturation → SIGABRT failure Phase 5.1
+            // fought on the request path. Demote to debug! with a higher
+            // threshold (10 ms) so genuinely pathological lookups still show
+            // up when explicitly enabled via RUST_LOG=debug.
+            if match_duration > std::time::Duration::from_millis(10) {
+                debug!(
                     method = %method,
                     path = %path,
                     handler_name = %handler_name,
@@ -309,8 +317,6 @@ impl Router {
                     "Slow route matching detected"
                 );
             } else {
-                // Only log at debug level to avoid accumulating events in performance tests
-                // Use debug! instead of info! to reduce tracing overhead
                 debug!(
                     method = %method,
                     path = %path,

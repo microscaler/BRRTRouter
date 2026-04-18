@@ -1,9 +1,9 @@
 # PRD: BRRTRouter hot-path v2 — stability, memory, and performance
 
 **Project:** BRRTRouter
-**Document version:** 1.6
-**Date:** 2026-04-18 (Phases 0.1 / 2.2 / 5.1 / 1 / 0.3 / 2.1 / R.1 shipped; Phase 3 attempted & reverted)
-**Status:** Active — Phases 0.1 / 2.2 / 5.1 / 1 / 0.3 / 2.1 / R.1 shipped; Phase 3 attempted and reverted (−7.7 % regression at 2000u — see §Phase 3); benchmark harness thermal-variance caveat documented in §Phase R.1; upstream `may_minihttp` [`#24`](https://github.com/Xudong-Huang/may_minihttp/pull/24) open
+**Document version:** 1.7
+**Date:** 2026-04-18 (Phases 0.1 / 2.2 / 5.1 / 1 / 0.3 / 2.1 / R.1 / R.2 shipped; Phase 3 attempted & reverted; Phase R rerun documents +15.6 % vs 0.3+2.1 baseline with SIGABRT / log-flood diagnosis)
+**Status:** Active — Phases 0.1 / 2.2 / 5.1 / 1 / 0.3 / 2.1 / R.1 / R.2 shipped; Phase 3 attempted and reverted (−7.7 % regression at 2000u — see §Phase 3); Phase R rerun (2026-04-18 post-log-cleanup) shows **76,860 req/s ±1.9 %** vs 66,484 baseline (+15.6 %); thermal-drift theory from §Phase R.1 disproven — true cause was hot-path `warn!` spam → `SIGABRT`; upstream `may_minihttp` [`#24`](https://github.com/Xudong-Huang/may_minihttp/pull/24) open
 **Owner:** BRRTRouter core
 **Target branch:** `pre_BFF_work` (lands in phases; merges through small PRs)
 **Primary driver:** Hauliage dev-env stability — eliminate the "microservice keeps needing reboots" class of failure.
@@ -320,10 +320,34 @@ Scope outside the original 0–6 numbering — PRD reviewer noted the radix walk
 - **Change:** `RadixNode::routes` moved from `HashMap<Method, Arc<RouteMeta>>` to a new `MethodRouteTable { slots: [Option<Arc<RouteMeta>>; 9] }`, indexed by a const `match` on [`http::Method`]. Extension methods (non-indexed) are treated as "no route" — same semantics as the pre-R.1 filter behavior.
 - **Justification:** HTTP methods are a small closed set; HashMap hasher + bucket + Arc lookup per terminal match is strictly more work than an array index. 49 router tests + full 299 lib pass unchanged.
 - **Measurement:** 2000u × 600s post-R.1 bench returned **60,611 req/s / p50 28ms / p95 70ms / p99 110ms** vs the 66,484 / 26 / 64 / 98 baseline captured earlier the same day.
-    - **Honest interpretation:** the latency shifts are **~10 % uniform across every endpoint**, including `/health` which never touches `self.routes.get(method)`. A real router slowdown would show locally (params / multi-method terminals) and spare the static short-circuits. We therefore attribute the number to **laptop thermal / scheduling drift between runs captured hours apart**, not to R.1 — but we cannot prove a positive gain either.
-    - **Benchmark-harness caveat:** at the current ±10 % run-to-run variance on an unmanaged macOS laptop, the 2000u × 600s bench cannot reliably differentiate changes under ~15 %. Future sub-10 % optimisations need either (a) a tighter harness (fixed CPU clock, back-to-back A/B runs in a single session, explicit warm-up windows), or (b) a `criterion` microbench that doesn't involve the full server. Captured as a new action in Phase 6 (Goose v2 harness).
+    - **Initial interpretation (2026-04-18, later corrected):** the latency shifts looked **~10 % uniform across every endpoint**, including `/health` which never touches `self.routes.get(method)`. A real router slowdown would show locally (params / multi-method terminals) and spare the static short-circuits. We therefore attributed the number to **laptop thermal / scheduling drift between runs captured hours apart**, not to R.1 — but could not prove a positive gain either.
+    - **Correct diagnosis (2026-04-18, post-R.2 rerun — see §Phase R rerun below):** the apparent "regression" was **not** thermal at all. It was log-pipeline saturation → `SIGABRT` (exit 134). Three sources flooded stdout during heavy load: (a) `router/core.rs` emitted `warn!("Slow route matching detected")` per-request whenever radix lookup > 1 ms — trivially true for multi-segment dynamic paths on a loaded macOS scheduler; (b) `middleware/memory.rs` emitted `warn!("High memory growth detected")` every 10 s during any legitimate 2000u ramp (coroutine stacks + connection buffers); (c) `runtime_config.rs` forced an odd stack size, triggering `may`'s per-coroutine `println!("coroutine name = ... stack size = ...")`. The combined write volume (2000u × hundreds of writes/s) pinned the logger thread, pressured the allocator, and ended the process with `SIGABRT` mid-run. Goose kept pushing 2000u at a dead socket, reporting the remaining failures as latency. The "thermal drift" was a red herring — the machine was fine, the server was crashing.
 - **Commit:** `perf(router): radix terminal lookup via method array (Phase R.1)`.
-- **Decision to keep:** retained despite unclear bench signal because (1) the code is smaller + simpler, (2) no HashMap allocator per terminal node, (3) correctness tests pass. If a later criterion microbench shows a clear regression we'll reconsider.
+- **Decision to keep:** retained — validated by the post-log-cleanup rerun (see §Phase R rerun below) which shows R.1 + R.2 + log hygiene together deliver **+15.6 %** throughput over the Phase 0.3+2.1 arcswap baseline.
+
+#### R — Phase R rerun (2026-04-18, post-log-cleanup) ✅ **THERMAL THEORY DISPROVEN**
+
+After three sources of hot-path logging were demoted from `warn!` to `debug!` (or gated behind `BRRTR_TRACK_STACK_USAGE` env var), we reran the same 3×2000u×600s harness against an otherwise identical tree (R.1 + R.2 + `may_minihttp` pinned to `integration/microscaler-fork`):
+
+| Metric | Pre-arcswap (baseline) | Phase 0.3 + 2.1 arcswap | R.1 (crashed, mis-diagnosed as thermal) | **R.2 + log hygiene (2026-04-18, this rerun)** |
+|---|---|---|---|---|
+| Throughput (req/s)     | —          | 66,484   | 60,611   | **76,860** (±1.9 % across 3 runs) |
+| Avg latency (ms)       | —          | 29.21    | 28       | **25.23** |
+| Median latency (ms)    | —          | 26       | 28       | **~23** |
+| Max latency (ms)       | —          | —        | —        | 689 (stable across runs) |
+| Connection errors      | —          | —        | 59 % → 100 % (crash) | **0 %** |
+| Expected 404s (GET /, /docs) | —    | —        | —        | 6.7 % (only `GET /` + `GET /docs` return 404 by design) |
+
+**Δ vs Phase 0.3+2.1 arcswap:** +15.6 % throughput, −13.6 % avg latency, −11.5 % p50.
+**Run-to-run spread:** 75,525 / 76,626 / 78,430 req/s → σ ≈ 1.2k rps, **±1.9 %** — well inside the ±5 % target.
+
+**Lesson for the benchmark harness (update to §Phase R.1 caveat):** the ±10 % variance we previously attributed to "unmanaged macOS scheduler noise" was mostly a SIGABRT-and-retry artefact. With the hot-path log sources fixed, the same harness now produces ±1.9 % variance on the same hardware. The surviving Phase 6 actions (JSON output, per-scenario baselines, server-side quantiles) are still worthwhile but the "laptop is too noisy" argument for rewriting the harness was overstated.
+
+**Fixes committed on `pre_BFF_work` as part of this rerun:**
+
+1. `src/router/core.rs` — `warn!("Slow route matching detected")` → `debug!` with threshold raised 1 ms → 10 ms (explained inline with reference to Phase 2.2).
+2. `src/middleware/memory.rs` — both `High memory growth detected` and `Memory statistics` → `debug!` (a +100 MB RSS delta is a normal ramp signal, not a warn-level condition; real leak detection is the Phase 6.7 soak chart).
+3. `src/runtime_config.rs` — odd-stack-size opt-in gated behind `BRRTR_TRACK_STACK_USAGE=1` so `may`'s per-coroutine `println!` only fires when explicitly requested.
 
 #### R.2 — Zero-allocation lazy path splitting 🧭 **NEXT**
 

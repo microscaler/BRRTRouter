@@ -126,13 +126,24 @@ impl RuntimeConfig {
             Err(_) => 0x8000, // 32KB default - optimal for typical handlers with 4x safety margin
         };
 
-        // Make stack size odd to enable May's stack usage tracking
-        // This is an undocumented feature that provides visibility into actual usage
-        if stack_size.is_multiple_of(2) {
+        // Phase 2.2 hygiene: `may`'s stack-usage tracking is opt-in via an
+        // odd stack size, which triggers a `println!` **per coroutine** on
+        // every spawn (see `may::coroutine_impl`). Under 2000u load that's
+        // thousands of unflushed synchronous stdout writes competing with
+        // the tracing pipeline for the logger thread — exactly the
+        // allocator-pressure pattern Phase 5.1 was introduced to avoid.
+        //
+        // Gate the opt-in behind `BRRTR_TRACK_STACK_USAGE=1` so it stays
+        // available for deliberate debugging sessions but does not fire in
+        // production or benches by default.
+        if env::var("BRRTR_TRACK_STACK_USAGE")
+            .map(|v| matches!(v.to_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+            .unwrap_or(false)
+            && stack_size.is_multiple_of(2)
+        {
             stack_size += 1;
             eprintln!(
-                "[telemetry] Adjusted stack size to {} (odd) to enable usage tracking",
-                stack_size
+                "[telemetry] Adjusted stack size to {stack_size} (odd) to enable usage tracking"
             );
         }
 
