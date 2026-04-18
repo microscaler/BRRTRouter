@@ -34,7 +34,7 @@ fn create_test_request(method: Method, path: &str, headers: HeaderVec) -> Handle
         cookies: HeaderVec::new(),
         body: None,
         jwt_claims: None,
-        reply_tx: tx,
+        reply_tx: brrtrouter::dispatcher::HandlerReplySender::channel(tx),
         queue_guard: None,
     }
 }
@@ -807,7 +807,7 @@ fn test_cors_metrics_sink_route_disabled() {
         cookies: HeaderVec::new(),
         body: None,
         jwt_claims: None,
-        reply_tx: mpsc::channel::<HandlerResponse>().0,
+        reply_tx: brrtrouter::dispatcher::HandlerReplySender::channel(mpsc::channel::<HandlerResponse>().0),
         queue_guard: None,
     };
     assert!(cors.before(&req_get).is_none());
@@ -830,7 +830,7 @@ fn test_cors_metrics_sink_route_disabled() {
         cookies: HeaderVec::new(),
         body: None,
         jwt_claims: None,
-        reply_tx: mpsc::channel::<HandlerResponse>().0,
+        reply_tx: brrtrouter::dispatcher::HandlerReplySender::channel(mpsc::channel::<HandlerResponse>().0),
         queue_guard: None,
     };
     assert!(cors.before(&req_opt).is_some());
@@ -1521,7 +1521,7 @@ fn test_cors_x_cors_false_disables_cors() {
         cookies: HeaderVec::new(),
         body: None,
         jwt_claims: None,
-        reply_tx: mpsc::channel::<HandlerResponse>().0,
+        reply_tx: brrtrouter::dispatcher::HandlerReplySender::channel(mpsc::channel::<HandlerResponse>().0),
         queue_guard: None,
     };
 
@@ -1558,7 +1558,7 @@ fn test_cors_x_cors_false_disables_cors() {
         cookies: HeaderVec::new(),
         body: None,
         jwt_claims: None,
-        reply_tx: mpsc::channel::<HandlerResponse>().0,
+        reply_tx: brrtrouter::dispatcher::HandlerReplySender::channel(mpsc::channel::<HandlerResponse>().0),
         queue_guard: None,
     };
 
@@ -1622,7 +1622,7 @@ fn test_cors_x_cors_inherit_uses_global_config() {
         cookies: HeaderVec::new(),
         body: None,
         jwt_claims: None,
-        reply_tx: mpsc::channel::<HandlerResponse>().0,
+        reply_tx: brrtrouter::dispatcher::HandlerReplySender::channel(mpsc::channel::<HandlerResponse>().0),
         queue_guard: None,
     };
 
@@ -1659,7 +1659,7 @@ fn test_cors_x_cors_inherit_uses_global_config() {
         cookies: HeaderVec::new(),
         body: None,
         jwt_claims: None,
-        reply_tx: mpsc::channel::<HandlerResponse>().0,
+        reply_tx: brrtrouter::dispatcher::HandlerReplySender::channel(mpsc::channel::<HandlerResponse>().0),
         queue_guard: None,
     };
 
@@ -1725,7 +1725,7 @@ fn test_cors_x_cors_false_vs_inherit_distinction() {
         cookies: HeaderVec::new(),
         body: None,
         jwt_claims: None,
-        reply_tx: mpsc::channel::<HandlerResponse>().0,
+        reply_tx: brrtrouter::dispatcher::HandlerReplySender::channel(mpsc::channel::<HandlerResponse>().0),
         queue_guard: None,
     };
 
@@ -1749,7 +1749,7 @@ fn test_cors_x_cors_false_vs_inherit_distinction() {
         cookies: HeaderVec::new(),
         body: None,
         jwt_claims: None,
-        reply_tx: mpsc::channel::<HandlerResponse>().0,
+        reply_tx: brrtrouter::dispatcher::HandlerReplySender::channel(mpsc::channel::<HandlerResponse>().0),
         queue_guard: None,
     };
 

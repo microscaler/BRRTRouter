@@ -63,8 +63,10 @@
 //! - Default stack size is 1MB per coroutine
 
 mod core;
+pub mod reply_slot;
 
 pub use core::{
     generate_request_id, spawn_untyped_with_stack_size_and_name, Dispatcher, HandlerRequest,
     HandlerResponse, HandlerSender, HeaderVec, MAX_INLINE_HEADERS,
 };
+pub use reply_slot::{HandlerReplySender, ReplySlot};
