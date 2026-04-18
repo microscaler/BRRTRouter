@@ -61,7 +61,6 @@
 use http::Method;
 use smallvec::SmallVec;
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use super::core::ParamVec;
@@ -75,6 +74,69 @@ const MAX_INLINE_SEGMENTS: usize = 16;
 /// Stack-allocated segment storage for path splitting in the hot path.
 type SegmentVec<'a> = SmallVec<[&'a str; MAX_INLINE_SEGMENTS]>;
 
+/// Fixed-size terminal-route table indexed by HTTP method (PRD Phase R.1).
+///
+/// Before this type, [`RadixNode`] stored `HashMap<Method, Arc<RouteMeta>>`
+/// at every terminal node. Hot-path lookup paid a hash + bucket traversal
+/// on every matched request (one call per route match at ~66 k req/s). Since
+/// the set of HTTP methods is small and closed, a 9-slot `Option` array
+/// indexed by a cheap `match` on [`Method`] is strictly faster *and* smaller
+/// than the `HashMap` (72 bytes of padded `Option<Arc<_>>` slots vs
+/// `HashMap`'s allocator-backed buckets + hasher state).
+///
+/// `None` for every method means "no terminal route at this node for any
+/// method" — i.e. the node is a prefix, not a destination. Unknown
+/// extension methods yield `None` from [`method_index`] and are therefore
+/// treated as non-matches, preserving the previous behaviour where only
+/// the 8 filter-listed methods plus `CONNECT` were stored.
+#[derive(Clone, Default)]
+struct MethodRouteTable {
+    slots: [Option<Arc<RouteMeta>>; N_METHOD_SLOTS],
+}
+
+/// Number of indexed HTTP method slots. Matches [`method_index`] / the
+/// supported-method filter in [`RadixRouter::new`] / [`super::core::Router::new`].
+const N_METHOD_SLOTS: usize = 9;
+
+/// Map a canonical HTTP method to its slot index. Returns `None` for any
+/// extension method so callers treat it as "no route" — matching the
+/// pre-Phase-R.1 behaviour where unsupported methods were not insertable.
+#[inline]
+fn method_index(m: &Method) -> Option<usize> {
+    // Order kept stable with the `supported_methods` list in both Router and
+    // RadixRouter builders so insertions and lookups agree.
+    match *m {
+        Method::GET => Some(0),
+        Method::POST => Some(1),
+        Method::PUT => Some(2),
+        Method::DELETE => Some(3),
+        Method::PATCH => Some(4),
+        Method::OPTIONS => Some(5),
+        Method::HEAD => Some(6),
+        Method::TRACE => Some(7),
+        Method::CONNECT => Some(8),
+        _ => None,
+    }
+}
+
+impl MethodRouteTable {
+    /// Lookup the route for the given method, if present.
+    #[inline]
+    fn get(&self, method: &Method) -> Option<&Arc<RouteMeta>> {
+        method_index(method).and_then(|i| self.slots[i].as_ref())
+    }
+
+    /// Insert a route for the given method. Extension methods (index None)
+    /// are silently skipped — matching the pre-R.1 filter behaviour where
+    /// only the supported methods made it past the builder.
+    #[inline]
+    fn insert(&mut self, method: Method, route: Arc<RouteMeta>) {
+        if let Some(i) = method_index(&method) {
+            self.slots[i] = Some(route);
+        }
+    }
+}
+
 /// Node in the radix tree for efficient route matching
 ///
 /// Each node represents a segment of a URL path and can have children
@@ -84,8 +146,9 @@ type SegmentVec<'a> = SmallVec<[&'a str; MAX_INLINE_SEGMENTS]>;
 struct RadixNode {
     /// The path segment this node represents (without leading /)
     segment: Cow<'static, str>,
-    /// If this node is a terminal (end of a route), stores the route metadata per HTTP method
-    routes: HashMap<Method, Arc<RouteMeta>>,
+    /// Terminal routes per HTTP method (PRD Phase R.1). Empty table means
+    /// the node is a prefix-only node, not a destination.
+    routes: MethodRouteTable,
     /// Parameter name if this segment is a path parameter (e.g., "{id}" -> Some("id"))
     ///
     /// # JSF Optimization (P0)
@@ -105,7 +168,7 @@ impl RadixNode {
     fn new(segment: Cow<'static, str>) -> Self {
         Self {
             segment,
-            routes: HashMap::new(),
+            routes: MethodRouteTable::default(),
             param_name: None,
             children: Vec::new(),
             param_children: Vec::new(),
@@ -119,7 +182,7 @@ impl RadixNode {
     fn new_param(param_name: Arc<str>) -> Self {
         Self {
             segment: Cow::Borrowed(""),
-            routes: HashMap::new(),
+            routes: MethodRouteTable::default(),
             param_name: Some(param_name),
             children: Vec::new(),
             param_children: Vec::new(),
@@ -191,7 +254,9 @@ impl RadixNode {
         params: &mut ParamVec,
     ) -> Option<Arc<RouteMeta>> {
         if segments.is_empty() {
-            // We've consumed all segments, check if this node has a route for the method
+            // We've consumed all segments, check if this node has a route for
+            // the method. O(1) array index (PRD Phase R.1) in place of the
+            // pre-existing `HashMap::get`.
             return self.routes.get(method).cloned();
         }
 
