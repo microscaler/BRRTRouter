@@ -1,5 +1,12 @@
 # LLM Wiki Log
 
+## [2026-04-18] ship | Phase R.1 — radix terminal method array
+
+- `RadixNode::routes` changed from `HashMap<Method, Arc<RouteMeta>>` to a 9-slot `MethodRouteTable` indexed by a const match on `http::Method`. Same semantics (extension methods yield no route, matching the pre-R.1 supported-method filter); smaller node struct; no HashMap allocator per terminal.
+- Commit `perf(router): radix terminal lookup via method array (Phase R.1)`. 49 router tests + 299 lib tests pass.
+- **Bench finding (honest):** 2000u × 600s returned 60,611 req/s vs 66,484 in the Phase 0.3+2.1 baseline captured earlier the same day — but the latency percentiles shifted **~10 % uniformly across every endpoint**, including `/health` which never touches the terminal table. A real router slowdown would be localised. Attributed to laptop thermal / scheduling drift between runs hours apart. **The current bench harness cannot reliably resolve sub-~15 % changes.** Captured as an action in PRD Phase 6: either tighten the harness (fixed CPU clock, back-to-back A/B in a single session) or add criterion microbenches for router-internal timings.
+- Retained on code-quality grounds (simpler, smaller, correctness-tested) per PRD decision framework; if a tighter bench later shows a regression we'll revisit.
+
 ## [2026-04-18] experiment | Phase 3 (parker reply slot) — attempted, reverted
 
 Tried to replace the per-request `may::sync::mpsc::channel()` with a custom `Arc<ReplySlot>` one-shot (atomic state + UnsafeCell + captured `Coroutine::unpark`). Landed on `pre_BFF_work` as `9748dcd`, then measured on the 2000u × 600s bench:
