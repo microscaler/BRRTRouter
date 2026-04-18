@@ -1,9 +1,9 @@
 # PRD: BRRTRouter hot-path v2 — stability, memory, and performance
 
 **Project:** BRRTRouter
-**Document version:** 1.5
-**Date:** 2026-04-18 (Phases 0.1 / 2.2 / 5.1 / 1 / 0.3 / 2.1 shipped; Phase 3 attempted & reverted)
-**Status:** Active — Phases 0.1 / 2.2 / 5.1 / 1 / 0.3 / 2.1 shipped; Phase 3 attempted and reverted (−7.7 % regression at 2000u — see §Phase 3 for the negative-result write-up); upstream `may_minihttp` [`#24`](https://github.com/Xudong-Huang/may_minihttp/pull/24) open
+**Document version:** 1.6
+**Date:** 2026-04-18 (Phases 0.1 / 2.2 / 5.1 / 1 / 0.3 / 2.1 / R.1 shipped; Phase 3 attempted & reverted)
+**Status:** Active — Phases 0.1 / 2.2 / 5.1 / 1 / 0.3 / 2.1 / R.1 shipped; Phase 3 attempted and reverted (−7.7 % regression at 2000u — see §Phase 3); benchmark harness thermal-variance caveat documented in §Phase R.1; upstream `may_minihttp` [`#24`](https://github.com/Xudong-Huang/may_minihttp/pull/24) open
 **Owner:** BRRTRouter core
 **Target branch:** `pre_BFF_work` (lands in phases; merges through small PRs)
 **Primary driver:** Hauliage dev-env stability — eliminate the "microservice keeps needing reboots" class of failure.
@@ -308,6 +308,31 @@ Baselines committed at [`benches/baselines/2000u-600s.json`](../benches/baseline
     - 3.4 — Replace `HandlerResponse::set_header` `String` insert with an append-only model.
 
 **Acceptance criteria (unchanged, but not met by the attempted prototype):** at 2k users, allocator count/request drops to within 2× the theoretical minimum (body bytes + JSON output only). `dispatch_with_request_id` no longer appears as a top-10 allocator in a `dhat` trace.
+
+---
+
+### Phase R — Radix trie hot-path (branch added 2026-04-18)
+
+Scope outside the original 0–6 numbering — PRD reviewer noted the radix walk as a candidate for further tuning. Split into three sub-items (R.1–R.3) by implementation risk.
+
+#### R.1 — Terminal `HashMap<Method, RouteMeta>` → 9-slot method array ✅ **SHIPPED (2026-04-18)**
+
+- **Change:** `RadixNode::routes` moved from `HashMap<Method, Arc<RouteMeta>>` to a new `MethodRouteTable { slots: [Option<Arc<RouteMeta>>; 9] }`, indexed by a const `match` on [`http::Method`]. Extension methods (non-indexed) are treated as "no route" — same semantics as the pre-R.1 filter behavior.
+- **Justification:** HTTP methods are a small closed set; HashMap hasher + bucket + Arc lookup per terminal match is strictly more work than an array index. 49 router tests + full 299 lib pass unchanged.
+- **Measurement:** 2000u × 600s post-R.1 bench returned **60,611 req/s / p50 28ms / p95 70ms / p99 110ms** vs the 66,484 / 26 / 64 / 98 baseline captured earlier the same day.
+    - **Honest interpretation:** the latency shifts are **~10 % uniform across every endpoint**, including `/health` which never touches `self.routes.get(method)`. A real router slowdown would show locally (params / multi-method terminals) and spare the static short-circuits. We therefore attribute the number to **laptop thermal / scheduling drift between runs captured hours apart**, not to R.1 — but we cannot prove a positive gain either.
+    - **Benchmark-harness caveat:** at the current ±10 % run-to-run variance on an unmanaged macOS laptop, the 2000u × 600s bench cannot reliably differentiate changes under ~15 %. Future sub-10 % optimisations need either (a) a tighter harness (fixed CPU clock, back-to-back A/B runs in a single session, explicit warm-up windows), or (b) a `criterion` microbench that doesn't involve the full server. Captured as a new action in Phase 6 (Goose v2 harness).
+- **Commit:** `perf(router): radix terminal lookup via method array (Phase R.1)`.
+- **Decision to keep:** retained despite unclear bench signal because (1) the code is smaller + simpler, (2) no HashMap allocator per terminal node, (3) correctness tests pass. If a later criterion microbench shows a clear regression we'll reconsider.
+
+#### R.2 — Zero-allocation lazy path splitting 🧭 **NEXT**
+
+- **Plan:** replace the upfront `path.trim_start_matches('/').split('/').filter(...).collect::<SegmentVec>()` with a lazy byte iterator that yields one segment at a time during tree descent. A 404 at depth 2 of a 7-segment path stops scanning after segment 2 instead of walking the full path. Keeps the public `RadixRouter::route(method, path)` signature unchanged.
+- **Expected impact:** biggest on 404-heavy traffic and deep paths; marginal on shallow well-formed requests.
+
+#### R.3 — Defer `segment.to_string()` to terminal accept (PRD Phase 2.4 parallel) 🧭 **DEFERRED**
+
+- Previously scoped under Phase 2.4. On re-examination: the only savings are on **failed-then-rewound param branches**, which are rare in well-shaped OpenAPI specs (most routes match the first attempted param child). Kept as a note; not expected to move the 2000u bench.
 
 ---
 
