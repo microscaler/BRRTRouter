@@ -35,7 +35,7 @@ anyhow = "1.0"
 http = "1.0"  # Do not update to newer version, it that is not compatible with may_minihttp
 may = "0.3"  # generator-rs is patched via [patch.crates-io] section at the end of this file
 # Using our fork until PR #21 is merged upstream
-may_minihttp = { git = "https://github.com/microscaler/may_minihttp.git", branch = "feat/response-header-owned-values" }
+may_minihttp = { git = "https://github.com/microscaler/may_minihttp.git", branch = "integration/microscaler-fork" }
 regex = "1.12.3"
 smallvec = { version = "1.13", features = ["serde"] }  # Stack-allocated vectors for hot path (JSF: no heap in dispatch)
 url = "2.5.8"
