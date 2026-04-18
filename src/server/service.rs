@@ -528,6 +528,19 @@ pub fn metrics_endpoint(
         metrics.auth_failures()
     );
 
+    // PRD Phase 0.3: visibility into the path-metrics soft cap (see
+    // BRRTR_METRICS_PATH_MAX). Non-zero means one or more requests were
+    // recorded against the `__other` bucket because the cap was reached.
+    body.push_str(
+        "# HELP brrtrouter_metrics_path_overflow_total Requests folded into the __other path bucket when the path-metrics soft cap was exceeded\n",
+    );
+    body.push_str("# TYPE brrtrouter_metrics_path_overflow_total counter\n");
+    let _ = writeln!(
+        body,
+        "brrtrouter_metrics_path_overflow_total {}",
+        metrics.path_overflow_total()
+    );
+
     body.push_str(
         "# HELP brrtrouter_cors_origin_rejections_total CORS rejections: Origin not allowed (403)\n",
     );
