@@ -56,7 +56,7 @@ fn test_from_handler_non_string_params() {
         cookies: HeaderVec::new(),
         body: None,
         jwt_claims: None,
-        reply_tx: brrtrouter::dispatcher::HandlerReplySender::channel(tx),
+        reply_tx: tx,
         queue_guard: None,
     };
 
@@ -105,7 +105,7 @@ fn test_header_cookie_params() {
         cookies,
         body: None,
         jwt_claims: None,
-        reply_tx: brrtrouter::dispatcher::HandlerReplySender::channel(tx),
+        reply_tx: tx,
         queue_guard: None,
     };
 
@@ -157,8 +157,7 @@ impl brrtrouter::typed::Handler for SumHandler {
 #[test]
 fn test_spawn_typed_success_and_error() {
     let tx = unsafe { brrtrouter::typed::spawn_typed(SumHandler) };
-    let (__reply_raw, reply_rx) = mpsc::channel();
-    let reply_tx = brrtrouter::dispatcher::HandlerReplySender::channel(__reply_raw);
+    let (reply_tx, reply_rx) = mpsc::channel();
     let q: ParamVec = smallvec![
         (Arc::from("a"), "2".to_string()),
         (Arc::from("b"), "3".to_string())
@@ -182,8 +181,7 @@ fn test_spawn_typed_success_and_error() {
     assert_eq!(resp.status, 200);
     assert_eq!(resp.body["total"], 5);
 
-    let (__reply_raw, reply_rx) = mpsc::channel();
-    let reply_tx = brrtrouter::dispatcher::HandlerReplySender::channel(__reply_raw);
+    let (reply_tx, reply_rx) = mpsc::channel();
     let bad_q: ParamVec = smallvec![(Arc::from("a"), "2".to_string())];
     tx.send(HandlerRequest {
         request_id: brrtrouter::ids::RequestId::new(),
@@ -232,8 +230,7 @@ impl brrtrouter::typed::Handler for HttpJson404Handler {
 #[test]
 fn test_spawn_typed_http_json_status_without_panic() {
     let tx = unsafe { brrtrouter::typed::spawn_typed(HttpJson404Handler) };
-    let (__reply_raw, reply_rx) = mpsc::channel();
-    let reply_tx = brrtrouter::dispatcher::HandlerReplySender::channel(__reply_raw);
+    let (reply_tx, reply_rx) = mpsc::channel();
     let q: ParamVec = smallvec![
         (Arc::from("a"), "2".to_string()),
         (Arc::from("b"), "3".to_string())

@@ -103,13 +103,10 @@ fn test_worker_pool_shed_mode() {
         .expect("Pool not found")
         .clone();
 
-    // Phase 5.1: the queue is bounded and `Shed` now fails fast with 429
-    // once depth >= queue_bound. Count both outcomes and assert the sum.
+    // Send requests - all should be accepted since queue is unbounded
     let mut success_count = 0;
-    let mut shed_count = 0;
     for _i in 0..10 {
-        let (__reply_raw, _reply_rx) = mpsc::channel();
-    let reply_tx = brrtrouter::dispatcher::HandlerReplySender::channel(__reply_raw);
+        let (reply_tx, _reply_rx) = mpsc::channel();
         let req = HandlerRequest {
             request_id: RequestId::new(),
             method: Method::GET,
@@ -130,29 +127,14 @@ fn test_worker_pool_shed_mode() {
                 success_count += 1;
             }
             Err(response) => {
-                // Phase 5.1: 429 on queue-full shed; 503 on channel disconnect.
-                // We only expect shed here (workers alive, queue saturated).
-                assert_eq!(
-                    response.status, 429,
-                    "Shed responses should be HTTP 429 (got {})",
-                    response.status
-                );
-                shed_count += 1;
+                // Channel disconnected - should not happen in this test
+                panic!("Unexpected error response: status={}", response.status);
             }
         }
     }
 
-    // Either every request was accepted (workers drained fast enough) or
-    // some were shed with 429 once the bounded queue filled; both are valid.
-    assert_eq!(
-        success_count + shed_count,
-        10,
-        "Every dispatch must map to either success or 429-shed"
-    );
-    assert!(
-        success_count >= 1,
-        "At least one request should succeed before the queue fills"
-    );
+    // All requests should be accepted since queue is unbounded
+    assert_eq!(success_count, 10, "Expected all 10 requests to be accepted");
 }
 
 /// Test that backpressure in block mode waits and retries
@@ -203,8 +185,7 @@ fn test_worker_pool_block_mode() {
     let mut _timeout_count = 0;
 
     for _i in 0..20 {
-        let (__reply_raw, _reply_rx) = mpsc::channel();
-    let reply_tx = brrtrouter::dispatcher::HandlerReplySender::channel(__reply_raw);
+        let (reply_tx, _reply_rx) = mpsc::channel();
         let req = HandlerRequest {
             request_id: RequestId::new(),
             method: Method::GET,
@@ -279,8 +260,7 @@ fn test_worker_pool_metrics() {
 
     // Send some requests
     for _i in 0..5 {
-        let (__reply_raw, _reply_rx) = mpsc::channel();
-    let reply_tx = brrtrouter::dispatcher::HandlerReplySender::channel(__reply_raw);
+        let (reply_tx, _reply_rx) = mpsc::channel();
         let req = HandlerRequest {
             request_id: RequestId::new(),
             method: Method::GET,

@@ -1,9 +1,9 @@
 # PRD: BRRTRouter hot-path v2 — stability, memory, and performance
 
 **Project:** BRRTRouter
-**Document version:** 1.4
-**Date:** 2026-04-18 (Phases 0.1 / 2.2 / 5.1 / 1 / 0.3 / 2.1 shipped)
-**Status:** Active — Phases 0.1 / 2.2 / 5.1 / 1 / 0.3 / 2.1 shipped; upstream `may_minihttp` [`#24`](https://github.com/Xudong-Huang/may_minihttp/pull/24) open; Phase 3 (parker reply) next
+**Document version:** 1.5
+**Date:** 2026-04-18 (Phases 0.1 / 2.2 / 5.1 / 1 / 0.3 / 2.1 shipped; Phase 3 attempted & reverted)
+**Status:** Active — Phases 0.1 / 2.2 / 5.1 / 1 / 0.3 / 2.1 shipped; Phase 3 attempted and reverted (−7.7 % regression at 2000u — see §Phase 3 for the negative-result write-up); upstream `may_minihttp` [`#24`](https://github.com/Xudong-Huang/may_minihttp/pull/24) open
 **Owner:** BRRTRouter core
 **Target branch:** `pre_BFF_work` (lands in phases; merges through small PRs)
 **Primary driver:** Hauliage dev-env stability — eliminate the "microservice keeps needing reboots" class of failure.
@@ -287,14 +287,27 @@ Baselines committed at [`benches/baselines/2000u-600s.json`](../benches/baseline
 
 ### Phase 3 — Zero per-request channel
 
-**Goal:** Eliminate the per-request reply-channel allocation.
+**Status (2026-04-18):** ❌ **ATTEMPTED, REVERTED — did not deliver.**
 
-- **3.1 — Reuse reply channel per dispatch caller.** Server coroutine holds a channel it reuses; or better:
-- **3.2 — Replace reply channel with a parker.** Handler writes into a `UnsafeCell<Option<HandlerResponse>>` protected by an `AtomicU32` state flag, then `may::coroutine::park`/`unpark`. Dispatcher allocates this "slot" once per connection (on first use), reuses it across requests on that connection.
-- **3.3 — Stop cloning `HandlerRequest`.** Move the request into `tx.send`, keep `handler_name: Arc<str>` and `path: Arc<str>` separately in the dispatcher state machine to preserve logs without cloning.
-- **3.4 — Replace `HandlerResponse::set_header` `String` insert** with an append-only model; `write_handler_response` is the only consumer and does not need remove semantics.
+- **3.2 (parker slot) prototype** landed briefly on `pre_BFF_work` as commit `9748dcd` (`perf(dispatcher): zero-alloc parker reply slot (Phase 3)`): new `src/dispatcher/reply_slot.rs` with `ReplySlot` (one-shot `AtomicU8` state + `UnsafeCell<Option<HandlerResponse>>` + captured `may::coroutine::Coroutine` for targeted `unpark`) and a `HandlerReplySender` enum that let tests keep `mpsc::Sender` while production used the slot. `HandlerRequest::reply_tx` was re-typed to the enum; ~20 call sites updated; 4 new unit tests (`slot_roundtrip_in_coroutine`, `slot_send_before_recv_does_not_deadlock`, `slot_sender_dropped_without_send_returns_none`, `handler_reply_sender_channel_legacy`) + `may::coroutine::is_coroutine()` fallback for callers on plain `std::thread`.
+- **Measured 2000u × 600s** against pet_store on 8091: **61,362 req/s, avg 31.73 ms, p99 110 ms**.
+- **vs Phase 0.3 + 2.1 baseline** (66,484 req/s, 29.21 ms, p99 98 ms): **−7.7 % throughput, +8.6 % avg latency, +12 % p99**.
+- **Root cause of the negative result:**
+    1. The slot is still wrapped in `Arc<ReplySlot>` — **same single allocation per request** as `may::sync::mpsc::channel()`'s `Arc<Inner>`. We did not eliminate the alloc; we swapped one for another.
+    2. `may::coroutine::park` / `Coroutine::unpark` atomics end up **as costly as may's internal `mpsc` Mutex+Condvar signal pair** for this workload. may's mpsc is already well-tuned for coroutine handoff.
+    3. Extra per-iteration `Arc::strong_count` in `recv` (to detect sender-dropped-without-send) added a relaxed atomic load on the park/re-check loop.
+- **Reverted 2026-04-18** with `revert "perf(dispatcher): zero-alloc parker reply slot (Phase 3)"`. `cargo test --lib` 299/299 restored.
+- **Conclusion**: the Phase 3 optimisation as specified ("parker replaces mpsc") is ineffective on `may` + `may_minihttp` at our scale. A real win would require either:
+    - a **zero-alloc** variant (stack-pinned slot accessible via `*const ReplySlot` from the handler request), or
+    - a **channel pool** keyed on caller coroutine — but caller coroutines don't have stable identity here, and sender drop semantics make reuse non-trivial.
+    Both are substantial redesigns, not tuning. Deferred until a concrete follow-up PRD exists.
+- **Original plan preserved for reference below; all sub-items 3.1–3.4 are deferred.**
+    - 3.1 — Reuse reply channel per dispatch caller.
+    - 3.2 — Replace reply channel with a parker.
+    - 3.3 — Stop cloning `HandlerRequest`.
+    - 3.4 — Replace `HandlerResponse::set_header` `String` insert with an append-only model.
 
-**Acceptance criteria:** at 2k users, allocator count/request drops to within 2× the theoretical minimum (body bytes + JSON output only). `dispatch_with_request_id` no longer appears as a top-10 allocator in a `dhat` trace.
+**Acceptance criteria (unchanged, but not met by the attempted prototype):** at 2k users, allocator count/request drops to within 2× the theoretical minimum (body bytes + JSON output only). `dispatch_with_request_id` no longer appears as a top-10 allocator in a `dhat` trace.
 
 ---
 
