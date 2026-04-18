@@ -28,8 +28,49 @@
 //!
 //! Authenticated endpoints (pets, users) automatically include the X-API-Key header.
 //! The API key is hardcoded in the test functions for simplicity.
+//!
+//! # Scope control (`BRRTR_BENCH_SCOPE`)
+//!
+//! By default this harness measures **only** endpoints that traverse
+//! BRRTRouter's OpenAPI pipeline — that is, the full
+//! `radix → param extract → dispatcher → handler coroutine → schema
+//! validation → typed serde → response` path. It deliberately excludes
+//! the three endpoints that `AppService` short-circuits before the
+//! dispatcher (`/health`, `/metrics`, `/openapi.yaml`) and the `/`,
+//! `/docs` root/docs paths whose only router work is an early radix
+//! miss — these give inflated aggregate numbers because they never
+//! exercise the schema / handler / serde stack that real traffic does.
+//!
+//! Set `BRRTR_BENCH_SCOPE=full` to enable the "Built-in Endpoints" and
+//! "Static Files" scenarios as well (useful for smoke / CI
+//! end-to-end sanity, not for perf numbers). Default is `openapi`.
 
 use goose::prelude::*;
+
+/// Bench scope: which scenarios to register.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BenchScope {
+    /// Only OpenAPI-dispatched endpoints (default). Excludes the three
+    /// short-circuits (/health, /metrics, /openapi.yaml) and the
+    /// radix-miss-only /, /docs paths.
+    OpenApi,
+    /// All scenarios, including built-ins and static files. For smoke
+    /// testing; inflates aggregate req/s by ~15–20 % vs real workload.
+    Full,
+}
+
+impl BenchScope {
+    fn from_env() -> Self {
+        match std::env::var("BRRTR_BENCH_SCOPE")
+            .unwrap_or_default()
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "full" | "all" => BenchScope::Full,
+            _ => BenchScope::OpenApi,
+        }
+    }
+}
 
 /// Test GET /health endpoint (built-in, no auth required)
 async fn test_health(user: &mut GooseUser) -> TransactionResult {
@@ -259,14 +300,25 @@ async fn test_delete_user(user: &mut GooseUser) -> TransactionResult {
 
 #[tokio::main]
 async fn main() -> Result<(), GooseError> {
-    GooseAttack::initialize()?
-        // Built-in endpoints (10% weight) - no auth required
-        .register_scenario(
+    let scope = BenchScope::from_env();
+    eprintln!("[bench] scope = {scope:?} (set BRRTR_BENCH_SCOPE=full to include short-circuits)");
+
+    let mut attack = GooseAttack::initialize()?;
+
+    // Built-in Endpoints (10 % weight in Full scope) — `/health`, `/metrics`
+    // short-circuit in `AppService` before the dispatcher, so they never
+    // exercise the radix → params → handler → schema → serde pipeline that
+    // BRRTRouter is about. Only register in Full scope.
+    if scope == BenchScope::Full {
+        attack = attack.register_scenario(
             scenario!("Built-in Endpoints")
                 .set_weight(10)?
                 .register_transaction(transaction!(test_health).set_name("GET /health"))
                 .register_transaction(transaction!(test_metrics).set_name("GET /metrics")),
-        )
+        );
+    }
+
+    attack = attack
         // Pet API (25% weight) - requires API key
         .register_scenario(
             scenario!("Pet API")
@@ -334,9 +386,14 @@ async fn main() -> Result<(), GooseError> {
                 .register_transaction(
                     transaction!(test_label_path).set_name("GET /labels/{color} (label-style)"),
                 ),
-        )
-        // Static Files (10% weight)
-        .register_scenario(
+        );
+
+    // Static Files (10 % weight in Full scope) — `/openapi.yaml` is served
+    // from disk via a dedicated short-circuit (not the dispatcher), and
+    // `/`, `/docs` exit on the first radix miss as 404s without ever
+    // reaching handler / schema / serde. Only register in Full scope.
+    if scope == BenchScope::Full {
+        attack = attack.register_scenario(
             scenario!("Static Files")
                 .set_weight(10)?
                 .register_transaction(transaction!(test_openapi_spec).set_name("GET /openapi.yaml"))
@@ -344,9 +401,10 @@ async fn main() -> Result<(), GooseError> {
                     transaction!(test_swagger_ui).set_name("GET /docs (Swagger UI)"),
                 )
                 .register_transaction(transaction!(test_index).set_name("GET / (root)")),
-        )
-        .execute()
-        .await?;
+        );
+    }
+
+    attack.execute().await?;
 
     Ok(())
 }

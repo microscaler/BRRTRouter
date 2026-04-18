@@ -1,9 +1,9 @@
 # PRD: BRRTRouter hot-path v2 — stability, memory, and performance
 
 **Project:** BRRTRouter
-**Document version:** 1.7
-**Date:** 2026-04-18 (Phases 0.1 / 2.2 / 5.1 / 1 / 0.3 / 2.1 / R.1 / R.2 shipped; Phase 3 attempted & reverted; Phase R rerun documents +15.6 % vs 0.3+2.1 baseline with SIGABRT / log-flood diagnosis)
-**Status:** Active — Phases 0.1 / 2.2 / 5.1 / 1 / 0.3 / 2.1 / R.1 / R.2 shipped; Phase 3 attempted and reverted (−7.7 % regression at 2000u — see §Phase 3); Phase R rerun (2026-04-18 post-log-cleanup) shows **76,860 req/s ±1.9 %** vs 66,484 baseline (+15.6 %); thermal-drift theory from §Phase R.1 disproven — true cause was hot-path `warn!` spam → `SIGABRT`; upstream `may_minihttp` [`#24`](https://github.com/Xudong-Huang/may_minihttp/pull/24) open
+**Document version:** 1.8
+**Date:** 2026-04-18 (Phases 0.1 / 2.2 / 5.1 / 1 / 0.3 / 2.1 / R.1 / R.2 shipped; Phase 3 attempted & reverted; Phase R rerun with methodology correction captured under §Phase R)
+**Status:** Active — Phases 0.1 / 2.2 / 5.1 / 1 / 0.3 / 2.1 / R.1 / R.2 shipped; Phase 3 attempted and reverted (−7.7 % regression at 2000u — see §Phase 3); Phase R rerun (2026-04-18 post-log-cleanup) shows **81,560 req/s ±3.8 %** at `BRRTR_BENCH_SCOPE=openapi` vs 66,484 mixed-scope baseline (+22.7 %, noting cross-scope caveat); thermal-drift theory from §Phase R.1 disproven — true cause was hot-path `warn!` spam → `SIGABRT`; `api_load_test` scope-control added to measure OpenAPI-dispatched endpoints only by default; upstream `may_minihttp` [`#24`](https://github.com/Xudong-Huang/may_minihttp/pull/24) open
 **Owner:** BRRTRouter core
 **Target branch:** `pre_BFF_work` (lands in phases; merges through small PRs)
 **Primary driver:** Hauliage dev-env stability — eliminate the "microservice keeps needing reboots" class of failure.
@@ -329,23 +329,32 @@ Scope outside the original 0–6 numbering — PRD reviewer noted the radix walk
 - **Commit:** `perf(router): radix terminal lookup via method array (Phase R.1)`.
 - **Decision to keep:** retained — validated by the post-log-cleanup rerun (see §Phase R rerun below) which shows R.1 + R.2 + log hygiene together deliver **+15.6 %** throughput over the Phase 0.3+2.1 arcswap baseline.
 
-#### R — Phase R rerun (2026-04-18, post-log-cleanup) ✅ **THERMAL THEORY DISPROVEN**
+#### R — Phase R rerun (2026-04-18, post-log-cleanup) ✅ **THERMAL THEORY DISPROVEN + METHODOLOGY CORRECTED**
 
-After three sources of hot-path logging were demoted from `warn!` to `debug!` (or gated behind `BRRTR_TRACK_STACK_USAGE` env var), we reran the same 3×2000u×600s harness against an otherwise identical tree (R.1 + R.2 + `may_minihttp` pinned to `integration/microscaler-fork`):
+After three sources of hot-path logging were demoted or gated behind `BRRTR_TRACK_STACK_USAGE` env var, we reran the 3×2000u×600s harness against an otherwise identical tree (R.1 + R.2 + `may_minihttp` pinned to `integration/microscaler-fork`). The first rerun produced the numbers in the **"Full scope"** column below. A methodology review immediately after (see "Scope correction" below) exposed that those numbers mixed two fundamentally different code paths, so we added a `BRRTR_BENCH_SCOPE` control to `examples/api_load_test.rs` and reran with `openapi` scope (the default going forward). Both numbers are kept here for honesty:
 
-| Metric | Pre-arcswap (baseline) | Phase 0.3 + 2.1 arcswap | R.1 (crashed, mis-diagnosed as thermal) | **R.2 + log hygiene (2026-04-18, this rerun)** |
-|---|---|---|---|---|
-| Throughput (req/s)     | —          | 66,484   | 60,611   | **76,860** (±1.9 % across 3 runs) |
-| Avg latency (ms)       | —          | 29.21    | 28       | **25.23** |
-| Median latency (ms)    | —          | 26       | 28       | **~23** |
-| Max latency (ms)       | —          | —        | —        | 689 (stable across runs) |
-| Connection errors      | —          | —        | 59 % → 100 % (crash) | **0 %** |
-| Expected 404s (GET /, /docs) | —    | —        | —        | 6.7 % (only `GET /` + `GET /docs` return 404 by design) |
+| Metric | Pre-arcswap (baseline) | Phase 0.3 + 2.1 arcswap (mixed) | R.1 (crashed, mis-diagnosed as thermal) | Full scope, post-log-cleanup | **OpenAPI-only scope, post-log-cleanup (canonical)** |
+|---|---|---|---|---|---|
+| Throughput (req/s)     | —          | 66,484   | 60,611   | 76,860 (±1.9 %)             | **81,560 (±3.8 %)** |
+| Avg latency (ms)       | —          | 29.21    | 28       | 25.23                       | **23.74**           |
+| Median latency (ms)    | —          | 26       | 28       | ~23                         | **~21**             |
+| Max latency (ms)       | —          | —        | —        | 689                         | **758** (single-sample tail) |
+| Connection errors      | —          | —        | 59 % → 100 % (crash) | **0 %**           | **0 %**             |
+| Non-200 status codes   | —          | —        | —        | 6.7 % (expected 404s on `GET /` + `GET /docs`) | **0 %** |
 
-**Δ vs Phase 0.3+2.1 arcswap:** +15.6 % throughput, −13.6 % avg latency, −11.5 % p50.
-**Run-to-run spread:** 75,525 / 76,626 / 78,430 req/s → σ ≈ 1.2k rps, **±1.9 %** — well inside the ±5 % target.
+**Scope correction.** The "Full scope" mix devoted ~20 % of traffic to endpoints that do **not** traverse the OpenAPI pipeline — `/health` and `/metrics` are short-circuits in `AppService` (documented in `src/server/service.rs:772-794` as "bypass the dispatcher for performance"), `/openapi.yaml` is served from disk by a dedicated handler, and `/` + `/docs` exit on the first radix miss without reaching handler, schema validation, or serde. Reporting a single aggregate number that mixes radix-miss 404s, static file serves, and full `radix → param extract → dispatcher → handler coroutine → schema validate → typed serde → response` traversals inflates the headline figure. The correction is the new `BRRTR_BENCH_SCOPE=openapi` (default) mode in `examples/api_load_test.rs`, which registers only scenarios whose traffic exercises the full OpenAPI stack. `BRRTR_BENCH_SCOPE=full` is preserved for smoke-test use where end-to-end coverage matters more than perf fidelity.
 
-**Lesson for the benchmark harness (update to §Phase R.1 caveat):** the ±10 % variance we previously attributed to "unmanaged macOS scheduler noise" was mostly a SIGABRT-and-retry artefact. With the hot-path log sources fixed, the same harness now produces ±1.9 % variance on the same hardware. The surviving Phase 6 actions (JSON output, per-scenario baselines, server-side quantiles) are still worthwhile but the "laptop is too noisy" argument for rewriting the harness was overstated.
+**Surprise:** the OpenAPI-only number was **higher**, not lower (81,560 vs 76,860). `/metrics` in particular is not a cheap endpoint at scale — it iterates the `path_metrics` and `status_metrics` DashMaps (thousands of entries under 2000u load), and `/` + `/docs` hit the error-response formatting path. These were server-side tax, not free short-circuits.
+
+**Δ vs Phase 0.3+2.1 arcswap baseline (also mixed-scope, so cross-scope caveat applies):** +22.7 % throughput, −18.7 % avg latency, −19.2 % p50. The improvement is real (same code on both sides); the absolute baseline number was also inflated by ~20 % short-circuit traffic, so the ratio is the honest comparison.
+
+**Run-to-run spread:** OpenAPI-only 77,710 / 83,036 / 83,933 req/s → σ ≈ 3.4k, **±3.8 %** — wider than the Full-scope ±1.9 % because per-scenario throughput is now dominated by handler work (where kernel scheduling and tracing-serialization jitter shows up) rather than the mostly-fixed-cost short-circuits. Still comfortably inside the 5 % target for a useful regression gate.
+
+**Lessons for the benchmark harness (update to §Phase R.1 caveat):**
+
+1. The ±10 % variance we previously attributed to "unmanaged macOS scheduler noise" was mostly a SIGABRT-and-retry artefact. With the hot-path log sources fixed, the same harness now produces 1.9–3.8 % variance on the same hardware. The "laptop too noisy" argument for rewriting Phase 6 was overstated.
+2. Historical BRRTRouter perf numbers in this PRD (pre-arcswap baseline, Phase 0.3+2.1 baseline, Phase R.1 "regression") were all captured on the **Full-scope mix**. They remain comparable against each other (same mix → apples to apples) but **overstate the absolute OpenAPI-pipeline throughput by ~5–10 %**. Future entries should use `BRRTR_BENCH_SCOPE=openapi` numbers as the primary and Full-scope as a secondary smoke check.
+3. Uniform ~25 ms avg latency across every endpoint in the Full-scope run (including `/health` at 25.20 ms, which should be sub-ms on the server) strongly suggested a **client-side bottleneck** — the Goose user pool was saturated long before the server pipeline was. The drop to 5.4 ms avg latency on the 500u × 60s OpenAPI-only smoke confirms this. At 2000u the client is running at its ceiling; a proper Phase 6.2 L0–L5 scenario matrix (keep-alive on/off, pipelined 2/4/8) is needed to find the server's actual ceiling.
 
 **Fixes committed on `pre_BFF_work` as part of this rerun** (aligned with the `tracing` → stdout → Promtail → Loki telemetry architecture — console is *not* a human surface, it is the Promtail source):
 
