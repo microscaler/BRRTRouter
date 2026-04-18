@@ -273,17 +273,24 @@ impl MemoryMiddleware {
         let current = self.current_stats();
         let growth = self.growth_bytes();
 
-        // Warn if memory is growing rapidly
+        // Phase 2.2 hygiene: a normal 2000u ramp trivially crosses +100 MB
+        // RSS just from coroutine stacks + connection buffers — this is not
+        // a warn-level condition on BRRTRouter startup or soak. Demote to
+        // debug! so it's available via RUST_LOG=debug without flooding the
+        // log pipeline on every 10s poll during legitimate traffic. The
+        // memory-leak regression we actually care about is detected by the
+        // RSS-over-time soak chart (PRD Phase 6.7), not by this per-poll
+        // warn.
         let growth_mb = growth / (1024 * 1024);
         if growth_mb > 100 {
-            tracing::warn!(
+            tracing::debug!(
                 rss_mb = current.rss_bytes / (1024 * 1024),
                 heap_mb = current.heap_bytes / (1024 * 1024),
                 growth_mb = growth_mb,
                 "High memory growth detected"
             );
         } else {
-            tracing::info!(
+            tracing::debug!(
                 rss_mb = current.rss_bytes / (1024 * 1024),
                 heap_mb = current.heap_bytes / (1024 * 1024),
                 growth_mb = growth_mb,
