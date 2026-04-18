@@ -107,7 +107,7 @@ fn main() -> io::Result<()> {
     // Start the HTTP server (default local-dev port: 8081 — 8080 is too often
     // contended by other local services).
     let handle = HttpServer(service).start("0.0.0.0:8081")?;
-    handle.join().map_err(|e| {
+    handle.run_until_shutdown().map_err(|e| {
         io::Error::other(format!("Server error: {e:?}"))
     })?;
     

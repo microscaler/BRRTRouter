@@ -50,6 +50,14 @@
 //!
 //! The server automatically provides a `/health` endpoint that returns service status.
 //!
+//! ## Graceful shutdown (Kubernetes)
+//!
+//! After [`HttpServer::start`](HttpServer::start), prefer [`ServerHandle::run_until_shutdown`]
+//! instead of [`ServerHandle::join`]. On Unix the process blocks until **SIGTERM** or **SIGINT**,
+//! stops the listener, then calls [`crate::otel::shutdown`] so OpenTelemetry batch exporters flush
+//! before the container exits. Configure an adequate Pod **`terminationGracePeriodSeconds`** for
+//! in-flight HTTP work during rollouts and scale-down.
+//!
 //! ## Example
 //!
 //! ```rust,ignore

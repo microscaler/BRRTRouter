@@ -300,7 +300,7 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
                 service.watcher = Some(watcher);
             }
             let handle = HttpServer(service).start(addr)?;
-            handle.join().map_err(|e| {
+            handle.run_until_shutdown().map_err(|e| {
                 Box::<dyn std::error::Error>::from(io::Error::other(format!("{e:?}")))
             })?;
             Ok(())
