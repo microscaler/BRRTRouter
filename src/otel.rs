@@ -7,20 +7,19 @@
 //! - Rate limiting per endpoint
 //! - Async buffered logging for minimal latency impact
 //!
-//! OTLP export will be added in a future phase once we verify the basic logging works.
+//! When **`OTEL_EXPORTER_OTLP_ENDPOINT`** is set, OTLP traces and logs are initialized via
+//! **`microscaler_observability::init`**. The shutdown guard is stored internally and flushed from
+//! [`shutdown`].
 //!
-//! # Canonical place for subscriber + (future) OTel provider
+//! # Canonical place for subscriber + OTel provider
 //!
-//! **[`init_logging_with_config`]** is the **single** place that calls
-//! `tracing_subscriber::registry()` and composes layers, then `try_init()` on the subscriber.
-//! When you wire **OpenTelemetry** export, do it **here** (or in a helper called only from here):
+//! **[`init_logging_with_config`]** is the **single** place that calls `try_init()` on the process
+//! `tracing` subscriber:
 //!
-//! 1. Build **one** OpenTelemetry SDK `TracerProvider` for the process.
-//! 2. Call `opentelemetry::global::set_tracer_provider` **once** (or the API version your stack uses).
-//! 3. Add `tracing_opentelemetry::OpenTelemetryLayer::new(tracer)` to the **same** `.with(...)` chain
-//!    as the existing `EnvFilter`, sampling, redaction, and `fmt` layers.
+//! - **OTLP path** — delegates to **`microscaler-observability`** (tracer + logger + propagator).
+//! - **Stdout-only path** — composes `EnvFilter`, sampling, redaction, and `fmt` layers here.
 //!
-//! Do **not** register a second global provider from a library crate (e.g. Lifeguard).
+//! Do **not** register a second global OpenTelemetry provider from a library crate (e.g. Lifeguard).
 //!
 //! # Lifeguard (may-channel logging + DB spans)
 //!
@@ -39,14 +38,47 @@
 //! production init.
 
 use anyhow::{Context, Result};
+use once_cell::sync::OnceCell;
 use std::env;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 use tracing::Level;
 use tracing::{Event, Metadata, Subscriber};
 use tracing_subscriber::layer::{Context as LayerContext, SubscriberExt};
 use tracing_subscriber::registry::LookupSpan;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, Layer};
+
+/// When `OTEL_EXPORTER_OTLP_ENDPOINT` is set, [`init_logging_with_config`] stores the
+/// [`microscaler_observability::ShutdownGuard`] here so callers keep a stable `Result<()>`
+/// signature; flush runs on [`shutdown`] or process teardown.
+static OTEL_SHUTDOWN: OnceCell<Mutex<Option<microscaler_observability::ShutdownGuard>>> =
+    OnceCell::new();
+
+/// Merge BRRTRouter [`LogConfig`] into OTEL env (`RUST_LOG`, `may_minihttp`, debug-session).
+fn merge_observability_config(log_config: &LogConfig) -> microscaler_observability::ObservabilityConfig {
+    let mut obs = microscaler_observability::ObservabilityConfig::from_env();
+    let mut merged = obs
+        .rust_log
+        .clone()
+        .unwrap_or_else(|| log_config.log_level.clone());
+    merged.push_str(",may_minihttp::http_server=warn");
+    if log_config.enable_debug_session_tracing {
+        merged.push(',');
+        merged.push_str(crate::agent_debug::LOG_DIRECTIVE);
+    }
+    if let Some(tf) = &log_config.target_filter {
+        for filter in tf.split(',') {
+            let filter = filter.trim();
+            if !filter.is_empty() {
+                merged.push(',');
+                merged.push_str(filter);
+            }
+        }
+    }
+    obs.rust_log = Some(merged);
+    obs
+}
 
 /// Log format: JSON for production, pretty-print for development
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -364,6 +396,22 @@ pub fn init_logging(
 ///     .expect("Failed to initialize logging");
 /// ```
 pub fn init_logging_with_config(config: &LogConfig) -> Result<()> {
+    let use_otlp = env::var("OTEL_EXPORTER_OTLP_ENDPOINT")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .is_some();
+
+    if use_otlp {
+        let obs = merge_observability_config(config);
+        let guard = microscaler_observability::init(obs).map_err(anyhow::Error::msg)?;
+        OTEL_SHUTDOWN
+            .get_or_init(|| Mutex::new(None))
+            .lock()
+            .map_err(|e| anyhow::anyhow!("OTEL shutdown mutex poisoned: {e}"))?
+            .replace(guard);
+        return Ok(());
+    }
+
     // Parse log level
     let level = match config.log_level.to_lowercase().as_str() {
         "trace" => Level::TRACE,
@@ -482,12 +530,16 @@ pub fn init_logging_with_config(config: &LogConfig) -> Result<()> {
     Ok(())
 }
 
-/// Shutdown telemetry (no-op for now, reserved for future OTLP)
+/// Shutdown telemetry: flushes OTLP batch processors when the OTLP path was used.
 ///
-/// Call this before application exit to flush any pending spans.
-/// Currently a no-op until OTLP is integrated.
+/// Call this before application exit (e.g. SIGTERM handler) so spans and logs
+/// are exported. Safe to call multiple times.
 pub fn shutdown() {
-    // No-op for now - will flush OTLP spans in future
+    if let Some(lock) = OTEL_SHUTDOWN.get() {
+        if let Ok(mut slot) = lock.lock() {
+            slot.take();
+        }
+    }
 }
 
 #[cfg(test)]

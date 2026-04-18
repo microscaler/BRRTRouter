@@ -317,7 +317,7 @@ fn main() -> io::Result<()> {
 
     // Start the HTTP server on port 8081 (avoids the very common 8080 conflict
     // with local dev tooling), binding to 127.0.0.1 if BRRTR_LOCAL is set.
-    // This returns a coroutine JoinHandle; we join on it to keep the server running
+    // `ServerHandle::run_until_shutdown` waits for SIGTERM/SIGINT (k8s scale-down), stops the server, flushes OTLP
     let router =
         std::sync::Arc::new(arc_swap::ArcSwap::from_pointee(Router::new(routes.clone())));
     // Dump initial route table — ArcSwap load is infallible.
@@ -535,7 +535,7 @@ fn main() -> io::Result<()> {
     println!("Server started successfully on {addr}");
 
     server
-        .join()
+        .run_until_shutdown()
         .map_err(|e| io::Error::other(format!("Server encountered an error: {e:?}")))?;
     Ok(())
 }
