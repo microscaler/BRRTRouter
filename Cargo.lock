@@ -529,7 +529,7 @@ dependencies = [
  "libc",
  "lru",
  "may",
- "may_minihttp 0.1.11 (git+https://github.com/microscaler/may_minihttp.git?branch=feat%2Fresponse-header-owned-values)",
+ "may_minihttp 0.1.11 (git+https://github.com/microscaler/may_minihttp.git?branch=integration%2Fmicroscaler-fork)",
  "memory-stats",
  "minijinja",
  "notify",
@@ -2745,7 +2745,7 @@ dependencies = [
 [[package]]
 name = "may_minihttp"
 version = "0.1.11"
-source = "git+https://github.com/microscaler/may_minihttp.git?branch=feat%2Fresponse-header-owned-values#f9daffe0b2911fa8ac8aa537b90f9ff6c0863793"
+source = "git+https://github.com/microscaler/may_minihttp.git?branch=integration%2Fmicroscaler-fork#9175f9a202a0ccb52d5f13f18b06be5aca3f305f"
 dependencies = [
  "bytes 1.11.1",
  "httparse",
