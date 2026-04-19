@@ -28,6 +28,7 @@ use_zigbuild=true
 if [[ ${os_name} == Linux && ${arch} == x86_64 ]]; then
   use_zigbuild=false
 fi
+use_zigbuild=true
 
 if [[ ${target} == "brr" ]]; then
   if [[ ${use_zigbuild} == true ]]; then
