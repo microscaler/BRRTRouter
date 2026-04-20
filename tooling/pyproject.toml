@@ -18,7 +18,7 @@ dev = [
     "pytest>=9.0.2",
     "pytest-cov>=7.1.0",
     # Pinned so local venv, pre-commit (tooling/.venv/bin/ruff), and CI stay aligned.
-    "ruff==0.15.9",
+    "ruff==0.15.11",
     "pre-commit>=4.5.1",
 ]
 # MCP SDK: bounded range so CI resolves a published wheel (not a non-existent floor version).
