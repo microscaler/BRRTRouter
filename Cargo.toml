@@ -117,6 +117,10 @@ harness = false
 name = "jwt_cache_performance"
 harness = false
 
+[[bench]]
+name = "schema_validation_hot_path"
+harness = false
+
 [features]
 default = []
 jemalloc = ["tikv-jemallocator", "tikv-jemalloc-ctl"]  # Enable jemalloc for accurate heap tracking
@@ -128,6 +132,10 @@ members = [
     "examples/pet_store",
     "brrtrouter-validator-python"
 ]
+
+# Used by generated service `Cargo.toml` when `use_workspace_deps` is enabled (`templates/Cargo.toml.txt`).
+[workspace.dependencies]
+arc-swap = "1.7"
 
 [profile.release]
 # Ensure optimized, compatible with musl when building with target=x86_64-unknown-linux-musl

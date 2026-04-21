@@ -284,6 +284,63 @@ coverage:
 bench:
 	cargo bench
 
+# Save Criterion baseline `ms02-<git-short-sha>-<YYYYMMDD>` for schema_validation_hot_path.
+# Writes the tag to `benches/baselines/.ms02-criterion-baseline` (gitignored) for `just bench-against-ms02`.
+bench-baseline-ms02:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	SHORT=$(git rev-parse --short HEAD)
+	DATE=$(date +%Y%m%d)
+	TAG="ms02-${SHORT}-${DATE}"
+	echo "Criterion baseline tag: ${TAG}"
+	cargo bench -p brrtrouter --bench schema_validation_hot_path -- --save-baseline "${TAG}"
+	mkdir -p benches/baselines
+	printf '%s' "${TAG}" > benches/baselines/.ms02-criterion-baseline
+	echo "Recorded in benches/baselines/.ms02-criterion-baseline — run: just bench-against-ms02"
+
+# Same tag for all Criterion bench targets (throughput, JWT, schema).
+bench-baseline-ms02-all:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	SHORT=$(git rev-parse --short HEAD)
+	DATE=$(date +%Y%m%d)
+	TAG="ms02-${SHORT}-${DATE}"
+	echo "Criterion baseline tag: ${TAG}"
+	cargo bench -p brrtrouter --bench schema_validation_hot_path -- --save-baseline "${TAG}"
+	cargo bench -p brrtrouter --bench throughput -- --save-baseline "${TAG}"
+	cargo bench -p brrtrouter --bench jwt_cache_performance -- --save-baseline "${TAG}"
+	mkdir -p benches/baselines
+	printf '%s' "${TAG}" > benches/baselines/.ms02-criterion-baseline
+	echo "Recorded in benches/baselines/.ms02-criterion-baseline — run: just bench-against-ms02-all"
+
+# Compare schema_validation_hot_path to the last baseline tag saved by `just bench-baseline-ms02*`.
+bench-against-ms02:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	F="benches/baselines/.ms02-criterion-baseline"
+	if [[ ! -f "${F}" ]]; then
+		echo "No baseline tag file. Run: just bench-baseline-ms02" >&2
+		exit 1
+	fi
+	TAG=$(tr -d '\n' < "${F}")
+	echo "Comparing against baseline: ${TAG}"
+	cargo bench -p brrtrouter --bench schema_validation_hot_path -- --baseline "${TAG}"
+
+# Compare all three benches to the last saved tag (same order as bench-baseline-ms02-all).
+bench-against-ms02-all:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	F="benches/baselines/.ms02-criterion-baseline"
+	if [[ ! -f "${F}" ]]; then
+		echo "No baseline tag file. Run: just bench-baseline-ms02-all" >&2
+		exit 1
+	fi
+	TAG=$(tr -d '\n' < "${F}")
+	echo "Comparing against baseline: ${TAG}"
+	cargo bench -p brrtrouter --bench schema_validation_hot_path -- --baseline "${TAG}"
+	cargo bench -p brrtrouter --bench throughput -- --baseline "${TAG}"
+	cargo bench -p brrtrouter --bench jwt_cache_performance -- --baseline "${TAG}"
+
 
 # ============================================================================
 # Instrumentation & Profiling (cargo-instruments)

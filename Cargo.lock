@@ -3416,6 +3416,7 @@ name = "pet_store"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "arc-swap",
  "brrtrouter",
  "brrtrouter_macros",
  "clap",
