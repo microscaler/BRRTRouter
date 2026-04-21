@@ -106,13 +106,15 @@ Reasons:
 
 ### Phase 4 — Validator fast path (TODO)
 
-Optimize the schema validation pipeline for the common-case path. See `llmwiki/topics/schema-validation-pipeline.md` for the full pipeline description and code anchors.
+Optimize the schema validation pipeline for the common-case path. **Map and anchors:** [`docs/llmwiki/topics/schema-validation-pipeline.md`](./llmwiki/topics/schema-validation-pipeline.md) (`ValidatorCache`, `AppService::call` V1a/V2/V1&V3, `parse_request_body`). Implementation work remains **TODO**; measure with Phase 6 harness before micro-optimizing.
 
 ### Phase 6 — Bench harness tightening + Goose v2
 
 - Tighten the 2000u × 600s stress harness: fixed CPU clock, back-to-back A/B runs in a single session to eliminate thermal/scheduling drift.
 - Criterion microbenches for router-internal timings (replaces or augments the macro stress test for sub-15% signal).
 - Goose v2 scenario matrix with JSON baselines.
+
+**Checklist and code anchors:** [`docs/llmwiki/topics/bench-harness-phase-6.md`](./llmwiki/topics/bench-harness-phase-6.md).
 
 ---
 
@@ -137,6 +139,6 @@ Baseline file: `benches/baselines/2000u-600s-phase-0-3-2-1.json`
 
 ## Open items
 
-- **Bench harness reliability:** Need tighter harness before pursuing further micro-optimizations. Phase 6.
-- **Phase 4 (validator fast path):** Not yet explored. See `llmwiki/topics/schema-validation-pipeline.md`.
+- **Bench harness reliability:** Need tighter harness before pursuing further micro-optimizations. Phase 6 — see [`docs/llmwiki/topics/bench-harness-phase-6.md`](./llmwiki/topics/bench-harness-phase-6.md).
+- **Phase 4 (validator fast path):** Pipeline mapped; optimizations not yet explored — see [`docs/llmwiki/topics/schema-validation-pipeline.md`](./llmwiki/topics/schema-validation-pipeline.md).
 - **Phase 3.1–3.4:** Deferred indefinitely. See rationale above.

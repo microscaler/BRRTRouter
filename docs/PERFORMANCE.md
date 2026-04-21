@@ -3,6 +3,8 @@
 This document details BRRTRouter's performance characteristics, optimization results, and benchmarking methodology.
 
 > **April 2026 update.** The hot-path v2 work (PRD [`PRD_HOT_PATH_V2_STABILITY_AND_PERF.md`](./PRD_HOT_PATH_V2_STABILITY_AND_PERF.md)) has shipped Phases 0.1 (remove per-response `Box::leak`), 2.2 (demote per-request tracing), 5.1 (real bounded worker-pool queue), 1 (lock-free `Router` / `Dispatcher` via `ArcSwap`), **0.3 (bounded metrics path maps)**, and **2.1 (header-name intern)**. Numbers below reflect the post-0.3+2.1 build and **supersede** both the December 2025 baselines and the earlier April 2026 intermediate numbers further down this page.
+>
+> **Follow-up work** is tracked in the PRD open items. For the validation hot path and reproducible benches, see [`llmwiki/topics/schema-validation-pipeline.md`](./llmwiki/topics/schema-validation-pipeline.md) and [`llmwiki/topics/bench-harness-phase-6.md`](./llmwiki/topics/bench-harness-phase-6.md).
 
 ## Cloud-Native Scale-Out Strategy
 
@@ -52,7 +54,7 @@ Driver: `cargo run --release --example api_load_test -- --host http://127.0.0.1:
 
 Together with Phases 0.1 / 2.2 / 5.1 this yields a **~3 ×** per-pod throughput improvement over the December 2025 ceiling (20 k → 60.6 k req/s) at **~72 % lower p99** (400 ms → 110 ms), with **zero shed**. The Hauliage pod reboot cadence that motivated this PRD is structurally fixed.
 
-See [`llmwiki/log.md`](../llmwiki/log.md) entry `[2026-04-18] bench | 2000 users × 600 s — Phase 1 ArcSwap` for the full per-endpoint breakdown.
+See [`llmwiki/log.md`](./llmwiki/log.md) (append-only log; add your bench session there) and historical context in the PRD baseline section.
 
 ### What the hot-path v2 fixes moved
 

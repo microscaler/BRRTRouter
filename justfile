@@ -602,8 +602,8 @@ dev-up:
 	kubectl config use-context kind-kind
 	just dev-registry-wire
 	echo ""
-	echo "Starting Tilt on :10353 (press 'space' to open web UI)..."
-	tilt up --port 10353
+	echo "Starting Tilt on 0.0.0.0:10353 (LAN: http://<this-host>:10353/) (press 'space' to open web UI)..."
+	tilt up --host 0.0.0.0 --port 10353
 
 # Stop Tilt only (leaves Kind cluster and kind-registry running for other repos)
 dev-down:
@@ -635,7 +635,7 @@ dev-rebuild:
 	@cargo build --release -p pet_store
 	@echo "Restarting Tilt..."
 	@tilt down --port 10353 || true
-	@tilt up --port 10353
+	@tilt up --host 0.0.0.0 --port 10353
 
 # Clean Docker state (nuclear — affects ALL kind clusters). Prefer: shared-kind-cluster `just cluster-delete`.
 dev-clean:
