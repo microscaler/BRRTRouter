@@ -36,6 +36,10 @@ pub type SharedRouter = Arc<ArcSwap<Router>>;
 pub type SharedDispatcher = Arc<ArcSwap<Dispatcher>>;
 use tracing::info;
 
+/// Maximum JSON Schema validation errors collected per request/response (hot-path Phase 4).
+/// Bounds CPU and allocations on pathological invalid bodies; the HTTP `details` array is truncated accordingly.
+const MAX_JSON_SCHEMA_ERRORS: usize = 64;
+
 fn response_schema_is_binary_string(s: &serde_json::Value) -> bool {
     s.get("type").and_then(|t| t.as_str()) == Some("string")
         && s.get("format").and_then(|f| f.as_str()) == Some("binary")
@@ -1382,20 +1386,11 @@ impl HttpService for AppService {
             if let (Some(schema), Some(body_val)) = (&route_match.route.request_schema, &body) {
                 // V1: Request validation start (schema is operation requestBody, not necessarily #/components/schemas/*)
                 let schema_path = "(operation requestBody)";
-                let required_fields: Vec<String> = schema
-                    .get("required")
-                    .and_then(|r| r.as_array())
-                    .map(|arr| {
-                        arr.iter()
-                            .filter_map(|v| v.as_str().map(String::from))
-                            .collect()
-                    })
-                    .unwrap_or_default();
-
+                // Avoid allocating `Vec<String>` for `required` on every request — log the raw JSON slice only at DEBUG.
                 debug!(
                     handler = %route_match.handler_name,
                     schema_present = true,
-                    required_fields = ?required_fields,
+                    required = ?schema.get("required"),
                     "Request validation start"
                 );
 
@@ -1421,8 +1416,11 @@ impl HttpService for AppService {
                         return Ok(());
                     }
                 };
-                // Use iter_errors() to get all validation errors
-                let errors: Vec<_> = compiled.iter_errors(body_val).collect();
+                // Collect up to MAX_JSON_SCHEMA_ERRORS — pathological invalid bodies cannot burn unbounded CPU.
+                let errors: Vec<_> = compiled
+                    .iter_errors(body_val)
+                    .take(MAX_JSON_SCHEMA_ERRORS)
+                    .collect();
                 if !errors.is_empty() {
                     // V3: Schema validation failed
                     let error_details: Vec<String> = errors.iter().map(|e| e.to_string()).collect();
@@ -1535,8 +1533,10 @@ impl HttpService for AppService {
                             Some(hr.status),
                             schema,
                         ) {
-                            // Use iter_errors() to get all validation errors
-                            let errors: Vec<_> = compiled.iter_errors(&hr.body).collect();
+                            let errors: Vec<_> = compiled
+                                .iter_errors(&hr.body)
+                                .take(MAX_JSON_SCHEMA_ERRORS)
+                                .collect();
                             if !errors.is_empty() {
                                 // V7: Response validation failed
                                 let error_details: Vec<String> =

@@ -34,14 +34,20 @@
 | Body parse | [`src/server/request.rs`](../../../src/server/request.rs) — `parse_request_body`, `parse_request`, `primary_content_type` |
 | Spec-level validation | [`src/validator.rs`](../../../src/validator.rs) — not the per-request pipeline |
 
-## Phase 4 — optimization ideas (not yet implemented)
+## Phase 4 — optimizations (in progress)
 
-Measure before changing: harness noise is ~15% on macro stress tests ([`PRD_HOT_PATH_V2` §Phase 6](../../PRD_HOT_PATH_V2_STABILITY_AND_PERF.md)).
+Measure before claiming macro wins: harness noise is ~15% on stress tests ([`PRD_HOT_PATH_V2` §Phase 6](../../PRD_HOT_PATH_V2_STABILITY_AND_PERF.md)).
 
-- **Happy path:** avoid allocating `Vec` of all errors when the first error is enough for 400 responses (trade-off: fewer details).
-- **Known shapes:** if an operation’s schema is trivial (e.g. empty object), skip `iter_errors` or use a cheaper check (must remain spec-correct).
-- **Cache:** ensure startup `precompile_schemas` covers all hot routes so the first real request never pays compile on the latency tail.
-- **Microbench:** add Criterion cases that only exercise `ValidatorCache::get_or_compile` + `iter_errors` on representative `Value` sizes (see [`topics/bench-harness-phase-6.md`](./bench-harness-phase-6.md)).
+**Implemented in `AppService::call`:**
+
+- **DEBUG logging:** `required` is logged as `?schema.get("required")` (cheap `Option<&Value>`) instead of allocating a `Vec<String>` of required field names on **every** validated request.
+- **Bounded error collection:** `iter_errors(...).take(64)` for request and response bodies — caps CPU and allocations on pathological invalid JSON; `details` in 400/500 may truncate (constant `MAX_JSON_SCHEMA_ERRORS` in `server/service.rs`).
+
+**Still optional / future:**
+
+- **Known shapes:** trivial-schema fast paths (higher risk; profile first).
+- **Cache:** ensure startup `precompile_schemas` covers hot routes so the first real request never pays compile on the latency tail.
+- **Microbench:** [`benches/schema_validation_hot_path.rs`](../../../benches/schema_validation_hot_path.rs) — compare with `--baseline ms02` after changes.
 
 ## See also
 

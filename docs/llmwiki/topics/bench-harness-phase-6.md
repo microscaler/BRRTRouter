@@ -13,14 +13,38 @@
 |-------|---------|
 | [`benches/throughput.rs`](../../../benches/throughput.rs) | Radix / `Router` routing throughput (Verb Zoo spec) |
 | [`benches/jwt_cache_performance.rs`](../../../benches/jwt_cache_performance.rs) | JWT / security provider path |
+| [`benches/schema_validation_hot_path.rs`](../../../benches/schema_validation_hot_path.rs) | `ValidatorCache` hit + `jsonschema::Validator::iter_errors` (Phase 4 hot path) |
 
 Run:
 
 ```bash
 cargo bench -p brrtrouter --bench throughput
+cargo bench -p brrtrouter --bench schema_validation_hot_path
 ```
 
-Document saved baselines beside `benches/baselines/` JSON from Goose stress tests.
+**Compare vs a saved baseline:** Criterion stores data under `target/criterion/`. You must **`--save-baseline <tag>`** before **`--baseline <tag>`** on this machine (new clone / `cargo clean` → save again).
+
+### MS02 — `just` workflows (SHA + date in the tag)
+
+The **`justfile`** expands **`ms02-<git-short-sha>-<YYYYMMDD>`** so you never type SHA/date by hand. It writes the tag to **`benches/baselines/.ms02-criterion-baseline`** (gitignored) for compares.
+
+| Recipe | What it does |
+|--------|----------------|
+| `just bench-baseline-ms02` | Save baseline for `schema_validation_hot_path` only |
+| `just bench-baseline-ms02-all` | Save the **same** tag for schema + throughput + JWT benches |
+| `just bench-against-ms02` | Compare `schema_validation_hot_path` to the **last** saved tag |
+| `just bench-against-ms02-all` | Compare all three benches to the **last** saved tag |
+
+**Raw cargo** (equivalent tag — replace `TAG` with printed output from a save run, e.g. `ms02-a1b2c3d-20260418`):
+
+```bash
+cargo bench -p brrtrouter --bench schema_validation_hot_path -- --save-baseline TAG
+cargo bench -p brrtrouter --bench schema_validation_hot_path -- --baseline TAG
+```
+
+Record **git SHA**, **date**, **`rustc -Vv`**, **`uname -a`** in [`log.md`](../log.md) when you establish a new host baseline.
+
+**Note:** The tag encodes **commit + calendar day** (local timezone). Re-save after **`cargo clean`** (Criterion data lives under `target/`).
 
 ## Macro stress checklist
 
