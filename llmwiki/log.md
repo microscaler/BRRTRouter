@@ -1,5 +1,20 @@
 # LLM Wiki Log
 
+## [2026-04-21] decision | Phase 3.1–3.4 deferred indefinitely — reply slot infeasible
+
+Investigated deferred follow-ups to Phase 3 (custom reply slot replacing `may::sync::mpsc::channel()`). PRD file had been cleared; reconstructed from log.md and codebase analysis.
+
+**Why Phase 3 failed (from 2026-04-18 log):** Custom `Arc<ReplySlot>` still used `Arc<ReplySlot>` wrapper — same single heap allocation per request as `may::sync::mpsc::channel()`'s `Arc<Inner>`. `Arc::strong_count` check inside `recv` added overhead per park/re-check. Bench result: −7.7% throughput, +8.6% latency.
+
+**Why 3.1–3.4 are deferred indefinitely:**
+1. Any async comm scheme between dispatcher and handler coroutine needs *some* heap-backed state; slab-based pre-allocation adds contention on top of what `may` provides. Stack-alloc synchronization is not viable with `may`'s coroutine model. In-band signaling breaks fire-and-forget.
+2. 66,484 req/s / 29.21ms avg — already 232% improvement over baseline. Diminishing returns are steep.
+3. Benchmark harness can't resolve sub-~15% changes. Tightening (Phase 6) is prerequisite.
+4. Complexity risk of custom sync vs well-tested `may::sync::mpsc::channel()` is not justified.
+
+> **Code anchors:** `src/dispatcher/core.rs:736` (current `mpsc::channel()`), `src/dispatcher/core.rs:109` (`reply_tx`), `src/worker_pool.rs` (worker pool with backpressure), `pre_BFF_work` branch commit `9748dcd` (reverted Phase 3 prototype)
+> **PRD:** `docs/PRD_HOT_PATH_V2_STABILITY_AND_PERF.md` — fully restored with all shipped phases, decisions, and open items.
+
 ## [2026-04-18] ship | Phase R.1 — radix terminal method array
 
 - `RadixNode::routes` changed from `HashMap<Method, Arc<RouteMeta>>` to a 9-slot `MethodRouteTable` indexed by a const match on `http::Method`. Same semantics (extension methods yield no route, matching the pre-R.1 supported-method filter); smaller node struct; no HashMap allocator per terminal.
