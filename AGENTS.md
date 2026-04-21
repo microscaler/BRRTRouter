@@ -126,6 +126,7 @@ Sessions that skip this waste work. The wiki is the compounding artifact that ma
 - [`docs/DEVELOPMENT.md`](./docs/DEVELOPMENT.md) — development workflow + `just` commands.
 - [`docs/TEST_DOCUMENTATION.md`](./docs/TEST_DOCUMENTATION.md) — test suite breakdown.
 - [`Cargo.toml`](./Cargo.toml) — workspace config + lint rules.
+- [`docs/llmwiki/index.md`](./docs/llmwiki/index.md) — wiki catalog (performance, validation pipeline, bench harness).
 - [`llmwiki/docs-catalog.md`](./llmwiki/docs-catalog.md) *(planned)* — inventory of `docs/` sources.
 
 ---
