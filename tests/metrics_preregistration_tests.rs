@@ -55,7 +55,9 @@ fn test_metrics_middleware_auto_preregisters_paths() {
     let router = Arc::new(arc_swap::ArcSwap::from_pointee(router));
 
     // Create an empty dispatcher (we won't actually use it)
-    let dispatcher = Arc::new(arc_swap::ArcSwap::from_pointee(brrtrouter::dispatcher::Dispatcher::new()));
+    let dispatcher = Arc::new(arc_swap::ArcSwap::from_pointee(
+        brrtrouter::dispatcher::Dispatcher::new(),
+    ));
 
     // Create the service
     let mut service = AppService::new(
@@ -111,7 +113,9 @@ fn test_metrics_middleware_preregistration_with_base_path() {
     let router = Router::new(routes);
     let router = Arc::new(arc_swap::ArcSwap::from_pointee(router));
 
-    let dispatcher = Arc::new(arc_swap::ArcSwap::from_pointee(brrtrouter::dispatcher::Dispatcher::new()));
+    let dispatcher = Arc::new(arc_swap::ArcSwap::from_pointee(
+        brrtrouter::dispatcher::Dispatcher::new(),
+    ));
 
     let mut service = AppService::new(
         router,
@@ -150,7 +154,9 @@ fn test_metrics_middleware_preregisters_parameterized_paths() {
     let router = Router::new(routes);
     let router = Arc::new(arc_swap::ArcSwap::from_pointee(router));
 
-    let dispatcher = Arc::new(arc_swap::ArcSwap::from_pointee(brrtrouter::dispatcher::Dispatcher::new()));
+    let dispatcher = Arc::new(arc_swap::ArcSwap::from_pointee(
+        brrtrouter::dispatcher::Dispatcher::new(),
+    ));
 
     let mut service = AppService::new(
         router,
@@ -187,7 +193,9 @@ fn test_metrics_middleware_empty_router() {
     let router = Router::new(vec![]);
     let router = Arc::new(arc_swap::ArcSwap::from_pointee(router));
 
-    let dispatcher = Arc::new(arc_swap::ArcSwap::from_pointee(brrtrouter::dispatcher::Dispatcher::new()));
+    let dispatcher = Arc::new(arc_swap::ArcSwap::from_pointee(
+        brrtrouter::dispatcher::Dispatcher::new(),
+    ));
 
     let mut service = AppService::new(
         router,

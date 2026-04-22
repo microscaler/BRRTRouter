@@ -372,8 +372,8 @@ impl WorkerPool {
     fn dispatch_with_blocking(&self, req: HandlerRequest) -> Result<(), HandlerResponse> {
         let bound = self.config.queue_bound;
         if bound > 0 && self.metrics.get_queue_depth() >= bound {
-            let deadline = Instant::now()
-                + Duration::from_millis(self.config.backpressure_timeout_ms.max(1));
+            let deadline =
+                Instant::now() + Duration::from_millis(self.config.backpressure_timeout_ms.max(1));
             // Cooperative spin with short sleeps; `may::coroutine::sleep` yields
             // the current coroutine back to the scheduler, so other workers can
             // drain the queue.

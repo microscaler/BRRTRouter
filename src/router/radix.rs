@@ -119,9 +119,7 @@ impl<'a> PathCursor<'a> {
                 // SAFETY: `bytes` came from `&str::as_bytes()` so the whole
                 // slice is valid UTF-8. `/` (0x2F) is a single-byte ASCII
                 // boundary, so splitting on it preserves UTF-8 alignment.
-                return Some(unsafe {
-                    std::str::from_utf8_unchecked(&self.bytes[start..end])
-                });
+                return Some(unsafe { std::str::from_utf8_unchecked(&self.bytes[start..end]) });
             }
             // Empty segment (e.g. `//`) — keep scanning.
         }

@@ -71,7 +71,8 @@ static INTERNED: Lazy<Vec<(&'static [u8], Arc<str>)>> = Lazy::new(|| {
 #[inline]
 pub fn intern_header_name(raw_name: &[u8]) -> Arc<str> {
     for (lower_bytes, arc) in INTERNED.iter() {
-        if raw_name.len() == lower_bytes.len() && eq_ignore_ascii_case_bytes(raw_name, lower_bytes) {
+        if raw_name.len() == lower_bytes.len() && eq_ignore_ascii_case_bytes(raw_name, lower_bytes)
+        {
             return Arc::clone(arc);
         }
     }

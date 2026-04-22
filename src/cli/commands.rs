@@ -5,12 +5,12 @@ use crate::{
     router::Router,
     server::{AppService, HttpServer},
 };
+use arc_swap::ArcSwap;
 use clap::{Parser, Subcommand, ValueEnum};
 use may::coroutine;
 use may::sync::mpsc;
 use std::io;
 use std::path::PathBuf;
-use arc_swap::ArcSwap;
 use std::sync::Arc;
 
 /// Command-line interface for BRRTRouter
