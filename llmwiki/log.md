@@ -142,3 +142,24 @@ Stress test against `pet_store` on `127.0.0.1:8081`, direct `api_load_test` bina
 ## [2026-04-17] ingest | canonical vs wip docs policy
 
 - Added [`topics/canonical-docs-vs-wip.md`](./topics/canonical-docs-vs-wip.md); updated [`index.md`](./index.md) and [`docs-catalog.md`](./docs-catalog.md) synthesis table.
+
+## [2026-04-22] perf | `is_valid` before `iter_errors` — measured delta
+
+**Commit:** `perf(validation): call is_valid before iter_errors on hot path` (1faafc0)
+
+On the hot path, both request and response schema validation now call `Validator::is_valid` (~39ns) before `iter_errors` (~101ns). Valid bodies avoid the error iterator entirely — ~61% saving per valid request.
+
+**Criterion results** (`schema_validation_hot_path` bench, `--noplot`):
+
+| Benchmark | Time | Iters |
+|-----------|------|-------|
+| `schema_is_valid_valid_body` | 39.0 ± 0.1 ns | 129M |
+| `schema_iter_errors_valid_body` | 101.4 ± 0.1 ns | 49M |
+| `schema_iter_errors_invalid_body` | 142.7 ± 0.1 ns | 34M |
+| `schema_cache_get_or_compile_hit` | 686.1 ± 0.2 ns | 7.3M |
+
+- `is_valid` valid body is **61ns faster** than `iter_errors` valid body (~61% saving)
+- Invalid bodies now pay `is_valid` + `iter_errors` (~181ns) vs old `iter_errors` only (~142ns), but valid requests dominate traffic
+- `schema_cache_get_or_compile_hit` regression (~6%) is from pre-existing fmt changes, not from this optimization
+- Cargo clippy: fixed pre-existing `unnecessary_to_owned` in `form_urlencoded_body_to_json` (request.rs)
+- 300/300 lib tests pass
