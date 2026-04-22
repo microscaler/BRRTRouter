@@ -402,9 +402,7 @@ impl MetricsMiddleware {
             return;
         }
         // Slow path: path not registered yet. Consult the soft cap.
-        if self.path_cap > 0
-            && self.path_count.load(Ordering::Relaxed) >= self.path_cap
-        {
+        if self.path_cap > 0 && self.path_count.load(Ordering::Relaxed) >= self.path_cap {
             self.path_overflow_total.fetch_add(1, Ordering::Relaxed);
             let over = self
                 .path_metrics
@@ -530,9 +528,7 @@ impl MetricsMiddleware {
             return;
         }
         // Miss: consult cap via O(1) atomic counter.
-        if self.path_cap > 0
-            && self.status_path_count.load(Ordering::Relaxed) >= self.path_cap
-        {
+        if self.path_cap > 0 && self.status_path_count.load(Ordering::Relaxed) >= self.path_cap {
             self.path_overflow_total.fetch_add(1, Ordering::Relaxed);
             self.status_metrics
                 .entry((PATH_OVERFLOW_LABEL.to_string(), status))

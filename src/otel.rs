@@ -56,7 +56,9 @@ static OTEL_SHUTDOWN: OnceCell<Mutex<Option<microscaler_observability::ShutdownG
     OnceCell::new();
 
 /// Merge BRRTRouter [`LogConfig`] into OTEL env (`RUST_LOG`, `may_minihttp`, debug-session).
-fn merge_observability_config(log_config: &LogConfig) -> microscaler_observability::ObservabilityConfig {
+fn merge_observability_config(
+    log_config: &LogConfig,
+) -> microscaler_observability::ObservabilityConfig {
     let mut obs = microscaler_observability::ObservabilityConfig::from_env();
     let mut merged = obs
         .rust_log
