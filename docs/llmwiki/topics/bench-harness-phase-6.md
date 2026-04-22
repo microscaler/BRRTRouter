@@ -61,3 +61,10 @@ When migrating to **Goose v2** JSON reports, store outputs next to baselines and
 ## Open
 
 - Automated “same-session A/B” script (optional; keep in `justfile` or docs only until stable).
+
+## Autonomous perf loop (charter + log)
+
+For **≥ 30 minute** iterations (Tilt + lint + full tests + benches), the **control surface**, **experiment log**, and **commit-forward / no-PR** policy live under **`auto-research/docs/`**:
+
+- [`auto-research/docs/PERF_CONTROL_SURFACE_AND_LOG.md`](../../../auto-research/docs/PERF_CONTROL_SURFACE_AND_LOG.md)
+- How to conduct: [`llmwiki/topics/auto-research-perf-loop.md`](../../../llmwiki/topics/auto-research-perf-loop.md) (repo-root wiki)

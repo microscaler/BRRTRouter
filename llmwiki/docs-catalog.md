@@ -7,6 +7,7 @@
 
 | Area | Count | Notes |
 |---|---:|---|
+| `auto-research/` | — | Perf charter + scripts; canonical [`auto-research/docs/PERF_CONTROL_SURFACE_AND_LOG.md`](../auto-research/docs/PERF_CONTROL_SURFACE_AND_LOG.md); see [`topics/auto-research-perf-loop.md`](./topics/auto-research-perf-loop.md) |
 | `docs/wip` | 154 | Historical and work-in-progress material; high staleness risk |
 | `docs/EPICS` | 42 | Planning/spec material; partial implementation overlap |
 | `docs/SPIFFY_mTLS` | 10 | Security architecture/design docs |

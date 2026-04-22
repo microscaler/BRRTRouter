@@ -22,6 +22,7 @@ Strict operational rules for AI assistants working in this repository. **Knowled
 2. Read [`llmwiki/SCHEMA.md`](./llmwiki/SCHEMA.md) — wiki conventions and workflows.
 3. Tail [`llmwiki/log.md`](./llmwiki/log.md) for recent context from other sessions.
 4. Read the specific topic / entity / reference pages relevant to your work. Drill into prose `docs/` or source only when the wiki flags drift or a gap.
+5. If the task is **scheduled / autonomous perf research**, read [`llmwiki/topics/auto-research-perf-loop.md`](./llmwiki/topics/auto-research-perf-loop.md) and the charter in [`auto-research/docs/PERF_CONTROL_SURFACE_AND_LOG.md`](./auto-research/docs/PERF_CONTROL_SURFACE_AND_LOG.md).
 
 Sessions that skip this waste work. The wiki is the compounding artifact that makes knowledge persist across sessions — see [Karpathy's llm-wiki gist](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f).
 
@@ -119,6 +120,22 @@ Sessions that skip this waste work. The wiki is the compounding artifact that ma
 
 ---
 
+## Autonomous perf research (`auto-research/`)
+
+Background or **cron** perf iterations use the **`auto-research/`** tree (charter + scripts), not ad-hoc notes in random `docs/` files.
+
+| Path | Purpose |
+|------|---------|
+| [`auto-research/README.md`](./auto-research/README.md) | Index of the tree |
+| [`auto-research/docs/PERF_CONTROL_SURFACE_AND_LOG.md`](./auto-research/docs/PERF_CONTROL_SURFACE_AND_LOG.md) | **Control surface** table, **≥ 30 min** phase budget (Tilt + lint + tests + benches), **experiment log**, **no-PR / commit-forward** policy |
+| [`auto-research/scripts/perf_iteration.py`](./auto-research/scripts/perf_iteration.py) | Printable checklist; `--verify-root`; optional `--run-local-gates` (fmt + clippy + workspace tests) |
+
+**Conduct:** follow [`llmwiki/topics/auto-research-perf-loop.md`](./llmwiki/topics/auto-research-perf-loop.md) end-to-end (read charter → gates → measure → commit on **current branch** → append log → `llmwiki/log.md`).
+
+**Measurement:** Criterion / MS02 — [`docs/llmwiki/topics/bench-harness-phase-6.md`](./docs/llmwiki/topics/bench-harness-phase-6.md).
+
+---
+
 ## Useful files
 
 - [`README.md`](./README.md) — project overview.
@@ -127,6 +144,7 @@ Sessions that skip this waste work. The wiki is the compounding artifact that ma
 - [`docs/TEST_DOCUMENTATION.md`](./docs/TEST_DOCUMENTATION.md) — test suite breakdown.
 - [`Cargo.toml`](./Cargo.toml) — workspace config + lint rules.
 - [`docs/llmwiki/index.md`](./docs/llmwiki/index.md) — wiki catalog (performance, validation pipeline, bench harness).
+- [`auto-research/docs/PERF_CONTROL_SURFACE_AND_LOG.md`](./auto-research/docs/PERF_CONTROL_SURFACE_AND_LOG.md) — perf auto-research charter (control surface + experiment log).
 - [`llmwiki/docs-catalog.md`](./llmwiki/docs-catalog.md) *(planned)* — inventory of `docs/` sources.
 
 ---
