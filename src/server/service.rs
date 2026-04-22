@@ -38,6 +38,9 @@ use tracing::info;
 
 /// Maximum JSON Schema validation errors collected per request/response (hot-path Phase 4).
 /// Bounds CPU and allocations on pathological invalid bodies; the HTTP `details` array is truncated accordingly.
+///
+/// Valid instances call `jsonschema::Validator::is_valid` first (cheaper than `iter_errors` when there are no errors);
+/// this limit applies only to the failure path when we build the `details` array.
 const MAX_JSON_SCHEMA_ERRORS: usize = 64;
 
 fn response_schema_is_binary_string(s: &serde_json::Value) -> bool {
@@ -295,8 +298,7 @@ impl AppService {
     pub fn set_keep_alive(&mut self, enable: bool, timeout_secs: u64, max_requests: u64) {
         if enable {
             self.keep_alive_header = Some(
-                format!("Keep-Alive: timeout={timeout_secs}, max={max_requests}")
-                    .into_boxed_str(),
+                format!("Keep-Alive: timeout={timeout_secs}, max={max_requests}").into_boxed_str(),
             );
         } else {
             self.keep_alive_header = None;
@@ -1416,14 +1418,15 @@ impl HttpService for AppService {
                         return Ok(());
                     }
                 };
-                // Collect up to MAX_JSON_SCHEMA_ERRORS — pathological invalid bodies cannot burn unbounded CPU.
-                let errors: Vec<_> = compiled
-                    .iter_errors(body_val)
-                    .take(MAX_JSON_SCHEMA_ERRORS)
-                    .collect();
-                if !errors.is_empty() {
+                // Valid bodies: `is_valid` avoids constructing error iterators/objects (jsonschema docs).
+                // Invalid: collect up to MAX_JSON_SCHEMA_ERRORS — pathological bodies cannot burn unbounded CPU.
+                if !compiled.is_valid(body_val) {
                     // V3: Schema validation failed
-                    let error_details: Vec<String> = errors.iter().map(|e| e.to_string()).collect();
+                    let error_details: Vec<String> = compiled
+                        .iter_errors(body_val)
+                        .take(MAX_JSON_SCHEMA_ERRORS)
+                        .map(|e| e.to_string())
+                        .collect();
                     let invalid_fields: Vec<String> = error_details
                         .iter()
                         .filter_map(|e| {
@@ -1533,14 +1536,13 @@ impl HttpService for AppService {
                             Some(hr.status),
                             schema,
                         ) {
-                            let errors: Vec<_> = compiled
-                                .iter_errors(&hr.body)
-                                .take(MAX_JSON_SCHEMA_ERRORS)
-                                .collect();
-                            if !errors.is_empty() {
+                            if !compiled.is_valid(&hr.body) {
                                 // V7: Response validation failed
-                                let error_details: Vec<String> =
-                                    errors.iter().map(|e| e.to_string()).collect();
+                                let error_details: Vec<String> = compiled
+                                    .iter_errors(&hr.body)
+                                    .take(MAX_JSON_SCHEMA_ERRORS)
+                                    .map(|e| e.to_string())
+                                    .collect();
                                 let schema_path = "(operation response schema)";
 
                                 error!(
