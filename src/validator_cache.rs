@@ -90,7 +90,6 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use tracing::{debug, info};
-
 /// Version identifier for an OpenAPI specification
 ///
 /// Combines a monotonic version counter with a content hash to uniquely identify
@@ -225,6 +224,9 @@ pub struct ValidatorCache {
     /// Current spec version with hash (updated on each hot reload)
     /// Wrapped in RwLock to allow updating during hot reload
     spec_version: Arc<RwLock<SpecVersion>>,
+    /// Pre-computed schema digests keyed by (handler_name, kind, status) for fast hot-path lookups.
+    /// Eliminates per-request serde_json serialize + SHA-256 + hex format on cache hits.
+    schema_digests: Arc<RwLock<HashMap<String, String>>>,
 }
 
 impl ValidatorCache {
@@ -246,6 +248,7 @@ impl ValidatorCache {
             cache: Arc::new(RwLock::new(HashMap::new())),
             enabled,
             spec_version: Arc::new(RwLock::new(SpecVersion::default())),
+            schema_digests: Arc::new(RwLock::new(HashMap::with_capacity(256))),
         }
     }
 
@@ -283,6 +286,29 @@ impl ValidatorCache {
         match status {
             Some(s) => format!("{}:{}:{}:{}:{}", version_key, handler_name, kind, s, digest),
             None => format!("{}:{}:{}:{}", version_key, handler_name, kind, digest),
+        }
+    }
+
+    /// Generate a cache key using a pre-computed digest (avoids per-request hashing).
+    fn cache_key_with_digest(
+        spec_version: &SpecVersion,
+        handler_name: &str,
+        kind: &str,
+        status: Option<u16>,
+        digest: &str,
+    ) -> String {
+        let version_key = spec_version.to_key();
+        match status {
+            Some(s) => format!("{}:{}:{}:{}:{}", version_key, handler_name, kind, s, digest),
+            None => format!("{}:{}:{}:{}", version_key, handler_name, kind, digest),
+        }
+    }
+
+    /// Lookup key for the pre-computed digest map.
+    fn digest_lookup_key(handler_name: &str, kind: &str, status: Option<u16>) -> String {
+        match status {
+            Some(s) => format!("{}:{}:{}", handler_name, kind, s),
+            None => format!("{}:{}", handler_name, kind),
         }
     }
 
@@ -324,7 +350,21 @@ impl ValidatorCache {
             .read()
             .expect("spec version lock poisoned")
             .clone();
-        let key = Self::cache_key(&spec_version, handler_name, kind, status, schema);
+
+        // Fast path: look up pre-computed digest to avoid per-request serde_json + SHA-256
+        let digest = {
+            let digests = self.schema_digests.read().expect("digest lock poisoned");
+            let lookup = Self::digest_lookup_key(handler_name, kind, status);
+            digests.get(&lookup).cloned()
+        };
+
+        let key = if let Some(ref d) = digest {
+            // Use pre-computed digest — no serde_json serialize + SHA-256 on hot path
+            Self::cache_key_with_digest(&spec_version, handler_name, kind, status, d)
+        } else {
+            // Fallback: compute digest (should only happen if digest map not populated)
+            Self::cache_key(&spec_version, handler_name, kind, status, schema)
+        };
 
         // Fast path: Check if validator is already cached (read lock only)
         {
@@ -425,6 +465,10 @@ impl ValidatorCache {
         let new_version = version.clone();
 
         cache.clear();
+        self.schema_digests
+            .write()
+            .expect("digest lock poisoned")
+            .clear();
         info!(
             old_version = old_version.version,
             old_hash = %old_version.hash,
@@ -517,10 +561,15 @@ impl ValidatorCache {
         }
 
         let mut compiled_count = 0;
-
+        // Pre-compute digests locally to avoid holding the digest lock across get_or_compile
+        // (which also reads schema_digests — would deadlock with an active write lock).
+        let mut local_digests: HashMap<String, String> = HashMap::with_capacity(routes.len() * 4);
         for route in routes {
-            // Compile request schema if present
             if let Some(ref request_schema) = route.request_schema {
+                local_digests.insert(
+                    Self::digest_lookup_key(&route.handler_name, "request", None),
+                    Self::schema_digest(request_schema),
+                );
                 if self
                     .get_or_compile(&route.handler_name, "request", None, request_schema)
                     .is_some()
@@ -529,10 +578,17 @@ impl ValidatorCache {
                 }
             }
 
-            // Compile response schemas for all status codes
             for (status_code, content_types) in &route.responses {
                 for response_spec in content_types.values() {
                     if let Some(ref response_schema) = response_spec.schema {
+                        local_digests.insert(
+                            Self::digest_lookup_key(
+                                &route.handler_name,
+                                "response",
+                                Some(*status_code),
+                            ),
+                            Self::schema_digest(response_schema),
+                        );
                         if self
                             .get_or_compile(
                                 &route.handler_name,
@@ -549,10 +605,19 @@ impl ValidatorCache {
             }
         }
 
+        // Now populate the digest map in a single write — no lock held during get_or_compile.
+        let digest_count = local_digests.len();
+        {
+            let mut digests = self.schema_digests.write().expect("digest lock poisoned");
+            digests.clear();
+            digests.extend(local_digests);
+        }
+
         info!(
             compiled_count = compiled_count,
             cache_size = self.size(),
             routes_count = routes.len(),
+            digest_entries = digest_count,
             "Precompiled schemas at startup"
         );
 
