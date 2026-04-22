@@ -1019,6 +1019,32 @@ mod tests {
         assert!(validator_v2.validate(&invalid_v2).is_err());
     }
 
+    /// `AppService` uses `Validator::is_valid` on the hot path; `iter_errors` runs only on failure.
+    /// Sanity-check that a valid instance has no iterator errors and an invalid one does.
+    #[test]
+    fn is_valid_matches_iter_errors_empty_on_success() {
+        let cache = ValidatorCache::new(true);
+        let schema = json!({
+            "type": "object",
+            "required": ["name", "photoUrls"],
+            "properties": {
+                "name": { "type": "string" },
+                "photoUrls": { "type": "array", "items": { "type": "string" } }
+            }
+        });
+        let v = cache
+            .get_or_compile("pet", "request", None, &schema)
+            .expect("schema must compile");
+
+        let ok = json!({"name": "x", "photoUrls": ["https://a"]});
+        assert!(v.is_valid(&ok));
+        assert!(v.iter_errors(&ok).next().is_none());
+
+        let bad = json!({"name": 1, "photoUrls": []});
+        assert!(!v.is_valid(&bad));
+        assert!(v.iter_errors(&bad).next().is_some());
+    }
+
     #[test]
     fn test_spec_version_struct() {
         let v1 = SpecVersion::new(1, "abc123");

@@ -1,5 +1,6 @@
 //! Criterion microbench for the JSON Schema **runtime** validation path used in
-//! `AppService::call` (`ValidatorCache::get_or_compile` + `Validator::iter_errors`).
+//! `AppService::call` (`ValidatorCache::get_or_compile` + `Validator::is_valid` /
+//! `Validator::iter_errors` on failure).
 //!
 //! Complements the macro **2000 users × 600 s** stress test: use this for sub-~15 %
 //! comparisons without thermal drift (see `docs/llmwiki/topics/bench-harness-phase-6.md`).
@@ -47,6 +48,13 @@ fn bench_iter_errors(c: &mut Criterion) {
         .expect("schema must compile for bench");
 
     let ok = valid_body();
+    c.bench_function("schema_is_valid_valid_body", |b| {
+        b.iter(|| {
+            let v = black_box(validator.as_ref()).is_valid(black_box(&ok));
+            black_box(v);
+        })
+    });
+
     c.bench_function("schema_iter_errors_valid_body", |b| {
         b.iter(|| {
             let n = black_box(validator.as_ref())

@@ -244,7 +244,7 @@ fn loose_json_scalar(s: &str) -> Value {
 fn form_urlencoded_body_to_json(raw: &[u8]) -> Value {
     let mut map = Map::new();
     for (k, v) in parse_form_urlencoded(raw) {
-        map.insert(k.into_owned(), loose_json_scalar(&v.into_owned()));
+        map.insert(k.into_owned(), loose_json_scalar(v.as_ref()));
     }
     Value::Object(map)
 }
