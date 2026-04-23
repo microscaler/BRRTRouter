@@ -24,7 +24,8 @@ pub struct Request {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-
+// Newtype wrapping the array: must be transparent so JSON matches OpenAPI `type: array` (not `{"0":[...]}`).
+#[serde(transparent)]
 pub struct Response(pub Vec<Pet>);
 
 impl TryFrom<HandlerRequest> for Request {

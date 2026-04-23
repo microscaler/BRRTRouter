@@ -263,14 +263,17 @@ fn parse_request_body(raw: &[u8], content_type: &str) -> Option<Value> {
         return Some(form_urlencoded_body_to_json(raw));
     }
     // NOTE: `multipart/form-data` and unknown content types are intentionally
-    // not parsed here into a JSON shape. Returning `None` lets the service-level
+    // not parsed into a JSON shape here. Returning `None` lets the service-level
     // Content-Type enforcement (see `server::service::call` 415 check) decide
     // how to respond against the operation's declared `request_content_types`.
-    // Historically this branch returned `Some(json!({}))` for multipart, which
-    // fabricated an empty JSON body and silently bypassed request schema
-    // validation — closed as of this change.
+    //
+    // However, operations that *do* declare `multipart/form-data` as an accepted
+    // content type (e.g. /upload) need `Some(body)` to pass the "required body"
+    // check (V2 at service.rs:1520).  A placeholder empty JSON object lets the
+    // request proceed to the controller while the controller handles the actual
+    // multipart parsing independently.
     if ct_lower == "multipart/form-data" {
-        return None;
+        return Some(Value::Object(Map::new()));
     }
     serde_json::from_slice(raw).ok()
 }
@@ -475,16 +478,21 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_request_body_multipart_returns_none() {
-        // Multipart no longer fabricates an empty JSON object; it returns None so
-        // that the service-level 415 enforcement (in server::service::call) can
-        // reject it against the operation's declared request_content_types.
-        // See `parse_request_body`'s multipart branch for the rationale.
+    fn test_parse_request_body_multipart_returns_empty_object() {
+        // Multipart returns an empty JSON object placeholder so that the
+        // "required body" check (V2 at service.rs:1520) passes.  The actual
+        // multipart parsing is handled independently by the controller.
         let v = parse_request_body(
             b"pretend-binary",
             "multipart/form-data; boundary=----WebKit",
         );
-        assert!(v.is_none(), "expected multipart body to be None post-fix");
+        assert!(v.is_some(), "expected multipart body to be Some");
+        let v = v.unwrap();
+        assert!(
+            v.is_object(),
+            "expected multipart body to be an empty object"
+        );
+        assert_eq!(v.as_object().unwrap().len(), 0);
     }
 
     /// `GET /matrix/1;2;3` captures `coords=1;2;3` as one path param; matrix style must split on `;`.

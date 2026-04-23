@@ -27,6 +27,8 @@ pub struct Request {
 {% if sse %}
 pub struct Response(pub String);
 {% elif response_is_array %}
+// Newtype wrapping the array: must be transparent so JSON matches OpenAPI `type: array` (not `{"0":[...]}`).
+#[serde(transparent)]
 pub struct Response(pub {{ response_array_type }});
 {% else %}
 pub struct Response {
