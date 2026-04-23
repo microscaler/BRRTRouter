@@ -12,7 +12,6 @@ use arc_swap::ArcSwap;
 use http::Method;
 use may_minihttp::{HttpService, Request, Response};
 use serde_json::json;
-use smallvec::SmallVec;
 use std::collections::HashMap;
 use std::fmt::Write;
 use std::io;
@@ -99,6 +98,34 @@ fn response_body_schema_for_status(
     }
 }
 
+/// Pre-resolved security requirement for a route.
+///
+/// Created at startup by resolving scheme names from [`crate::spec::SecurityRequirement`]
+/// to concrete [`SecurityScheme`] + [`SecurityProvider`] references.
+/// This eliminates per-request HashMap lookups on the hot path.
+#[derive(Clone)]
+pub struct ResolvedSecurityRequirement {
+    /// Original scheme name from the OpenAPI spec
+    pub scheme_name: String,
+    /// The concrete security scheme definition
+    pub scheme: Arc<SecurityScheme>,
+    /// Scopes required for this scheme
+    pub scopes: Vec<String>,
+    /// The concrete security provider for this scheme
+    pub provider: Arc<dyn SecurityProvider>,
+}
+
+/// Pre-resolved security requirements for a route.
+///
+/// `requirements` is a list of OR-groups: each inner `Vec` must ALL validate (AND),
+/// but any group succeeding validates the request (OR). This mirrors the
+/// OpenAPI `security` field semantics.
+#[derive(Clone)]
+pub struct ResolvedSecurity {
+    /// OR groups of AND'd resolved security requirements
+    pub requirements: Vec<Vec<ResolvedSecurityRequirement>>,
+}
+
 /// HTTP application service that handles all incoming requests
 ///
 /// This is the core service that processes HTTP requests through the full pipeline:
@@ -136,6 +163,8 @@ pub struct AppService {
     pub keep_alive_header: Option<Box<str>>,
     /// JSON Schema validator cache for eliminating per-request compilation
     pub validator_cache: ValidatorCache,
+    /// Pre-resolved security by handler name (populated after providers are registered).
+    pub security_lookup: Arc<HashMap<String, Arc<ResolvedSecurity>>>,
 }
 
 /// Clone implementation for `AppService`
@@ -180,6 +209,7 @@ impl Clone for AppService {
             watcher: None,
             keep_alive_header: self.keep_alive_header.clone(),
             validator_cache: self.validator_cache.clone(),
+            security_lookup: self.security_lookup.clone(),
         }
     }
 }
@@ -225,6 +255,7 @@ impl AppService {
             watcher: None,
             keep_alive_header: None,
             validator_cache,
+            security_lookup: Arc::new(HashMap::new()),
         }
     }
 
@@ -328,6 +359,69 @@ impl AppService {
     /// ```
     pub fn precompile_schemas(&self, routes: &[crate::spec::RouteMeta]) -> usize {
         self.validator_cache.precompile_schemas(routes)
+    }
+
+    /// Pre-resolve all security requirements for routes at startup.
+    ///
+    /// This replaces per-request HashMap lookups (`security_schemes.get()`,
+    /// `security_providers.get()`) with pre-computed concrete references.
+    /// Call this after [`register_default_security_providers_from_env`].
+    ///
+    /// # Safety
+    ///
+    /// Panics if a route references a security scheme name that has no
+    /// corresponding scheme or provider registered. This is a server
+    /// configuration error.
+    pub fn resolve_security(&mut self, routes: &[crate::spec::RouteMeta]) {
+        let mut lookup = HashMap::with_capacity(routes.len() * 2);
+
+        for route in routes {
+            if route.security.is_empty() {
+                continue;
+            }
+
+            let requirements: Vec<Vec<ResolvedSecurityRequirement>> = route
+                .security
+                .iter()
+                .map(|req| {
+                    req.0.iter()
+                        .map(|(scheme_name, scopes)| {
+                            let scheme = self.security_schemes.get(scheme_name)
+                                .unwrap_or_else(|| panic!(
+                                    "Security scheme '{}' registered for route '{}' not found in security_schemes",
+                                    scheme_name, route.handler_name
+                                ));
+                            let provider = self.security_providers.get(scheme_name)
+                                .unwrap_or_else(|| panic!(
+                                    "Security provider '{}' registered for route '{}' not found in security_providers",
+                                    scheme_name, route.handler_name
+                                ));
+
+                            ResolvedSecurityRequirement {
+                                scheme_name: scheme_name.clone(),
+                                scheme: Arc::new(scheme.clone()),
+                                scopes: scopes.clone(),
+                                provider: Arc::clone(provider),
+                            }
+                        })
+                        .collect()
+                })
+                .collect();
+
+            if !requirements.is_empty() {
+                lookup.insert(
+                    route.handler_name.to_string(),
+                    Arc::new(ResolvedSecurity { requirements }),
+                );
+            }
+        }
+
+        let count = lookup.len();
+        self.security_lookup = Arc::new(lookup);
+        info!(
+            resolved_routes = count,
+            "Pre-resolved security requirements at startup"
+        );
     }
 
     /// Register default security providers based on loaded OpenAPI security schemes.
@@ -1088,127 +1182,56 @@ impl HttpService for AppService {
             }
 
             // Perform security validation first
-            if !route_match.route.security.is_empty() {
-                // S1: Security check start
-                // JSF P1: Use SmallVec for security scheme collection (stack-allocated for ≤4 schemes)
-                let schemes_required: SmallVec<[String; 4]> = route_match
-                    .route
-                    .security
-                    .iter()
-                    .flat_map(|req| req.0.keys().cloned())
-                    .collect();
-                let scopes_required: SmallVec<[String; 4]> = route_match
-                    .route
-                    .security
-                    .iter()
-                    .flat_map(|req| req.0.values().flatten().cloned())
-                    .collect();
+            // JSF P2: Use pre-resolved security (security_lookup) to eliminate per-request
+            // HashMap lookups. Falls back to original per-request HashMap lookup if the
+            // pre-resolution table wasn't populated (backward-compatible with tests that
+            // don't call resolve_security at startup).
+            let use_preresolved = self
+                .security_lookup
+                .get(&route_match.handler_name)
+                .map(Arc::clone)
+                .filter(|rs| !rs.requirements.is_empty());
 
-                debug!(
-                    handler = %route_match.handler_name,
-                    schemes_required = ?schemes_required,
-                    scopes_required = ?scopes_required,
-                    "Security check start"
-                );
+            let mut authorized = route_match.route.security.is_empty();
+            let mut insufficient_scope = false;
 
-                let sec_req = SecurityRequest {
-                    headers: &headers,
-                    query: &query_params,
-                    cookies: &cookies,
-                };
-                let mut authorized = false;
-                let mut insufficient_scope = false;
-                let mut attempted_schemes: Vec<String> = Vec::new();
-
-                'outer: for requirement in &route_match.route.security {
+            // Helper to perform the actual auth check for both pre-resolved and raw paths
+            fn validate_requirements(
+                requirements: &[Vec<ResolvedSecurityRequirement>],
+                sec_req: &SecurityRequest,
+                insufficient_scope: &mut bool,
+            ) -> bool {
+                for req_group in requirements {
                     let mut ok = true;
-                    for (scheme_name, scopes) in &requirement.0 {
-                        attempted_schemes.push(scheme_name.clone());
-
-                        // S2: Security scheme lookup
-                        debug!(
-                            scheme_name = %scheme_name,
-                            scheme_type = "lookup",
-                            "Security scheme lookup"
+                    for resolved in req_group {
+                        let auth_result = resolved.provider.validate(
+                            resolved.scheme.as_ref(),
+                            &resolved.scopes,
+                            sec_req,
                         );
-
-                        let scheme = match self.security_schemes.get(scheme_name) {
-                            Some(s) => s,
-                            None => {
-                                // S3: Provider not found
-                                let available_providers: Vec<&String> =
-                                    self.security_providers.keys().collect();
-                                warn!(
-                                    scheme_name = %scheme_name,
-                                    available_providers = ?available_providers,
-                                    "Security provider not found"
-                                );
-                                ok = false;
-                                break;
-                            }
-                        };
-                        let provider = match self.security_providers.get(scheme_name) {
-                            Some(p) => p,
-                            None => {
-                                // S3: Provider not found (duplicate logging for consistency)
-                                let available_providers: Vec<&String> =
-                                    self.security_providers.keys().collect();
-                                warn!(
-                                    scheme_name = %scheme_name,
-                                    available_providers = ?available_providers,
-                                    "Security provider not found"
-                                );
-                                ok = false;
-                                break;
-                            }
-                        };
-
-                        // S4: Provider validation start
-                        debug!(
-                            provider_type = %scheme_name,
-                            scopes = ?scopes,
-                            "Provider validation start"
-                        );
-
-                        // Measure authentication/authorization performance
-                        let auth_start = std::time::Instant::now();
-                        let auth_result = provider.validate(scheme, scopes, &sec_req);
-                        let auth_duration = auth_start.elapsed();
-
-                        // Log slow authentication
-                        if auth_duration > Duration::from_millis(100) {
-                            warn!(
-                                provider_type = %scheme_name,
-                                duration_ms = auth_duration.as_millis(),
-                                success = auth_result,
-                                "Slow authentication detected"
-                            );
-                        } else {
-                            // Per-auth-request; demoted to debug (PRD 2.2).
-                            // The `Slow authentication detected` warn above still
-                            // fires when the slow-path threshold is crossed.
-                            debug!(
-                                provider_type = %scheme_name,
-                                duration_us = auth_duration.as_micros(),
-                                success = auth_result,
-                                "Authentication completed"
-                            );
-                        }
 
                         if !auth_result {
                             // Detect insufficient scope for Bearer/OAuth2: token valid but scopes missing
-                            match scheme {
+                            match resolved.scheme.as_ref() {
                                 SecurityScheme::Http {
                                     scheme: http_scheme,
                                     ..
                                 } if http_scheme.eq_ignore_ascii_case("bearer") => {
-                                    if provider.validate(scheme, &[], &sec_req) {
-                                        insufficient_scope = true;
+                                    if resolved.provider.validate(
+                                        resolved.scheme.as_ref(),
+                                        &[],
+                                        sec_req,
+                                    ) {
+                                        *insufficient_scope = true;
                                     }
                                 }
                                 SecurityScheme::OAuth2 { .. } => {
-                                    if provider.validate(scheme, &[], &sec_req) {
-                                        insufficient_scope = true;
+                                    if resolved.provider.validate(
+                                        resolved.scheme.as_ref(),
+                                        &[],
+                                        sec_req,
+                                    ) {
+                                        *insufficient_scope = true;
                                     }
                                 }
                                 _ => {}
@@ -1218,95 +1241,218 @@ impl HttpService for AppService {
                         }
                     }
                     if ok {
-                        authorized = true;
-                        break 'outer;
+                        return true;
                     }
                 }
+                false
+            }
 
-                if !authorized {
-                    if let Some(metrics) = &self.metrics {
-                        metrics.inc_auth_failure();
+            if !route_match.route.security.is_empty() {
+                // S1: Security check start
+                debug!(
+                    handler = %route_match.handler_name,
+                    "Security check start"
+                );
+
+                let sec_req = SecurityRequest {
+                    headers: &headers,
+                    query: &query_params,
+                    cookies: &cookies,
+                };
+
+                if let Some(resolved) = use_preresolved {
+                    // JSF P2: Pre-resolved path — zero HashMap lookups, already have scheme/provider
+                    debug!(
+                        handler = %route_match.handler_name,
+                        scheme_type = "pre-resolved",
+                        "Using pre-resolved security"
+                    );
+
+                    if validate_requirements(
+                        &resolved.requirements,
+                        &sec_req,
+                        &mut insufficient_scope,
+                    ) {
+                        authorized = true;
                     }
-
-                    let status = if insufficient_scope { 403 } else { 401 };
-                    let title = if status == 403 {
-                        "Forbidden"
-                    } else {
-                        "Unauthorized"
-                    };
-                    let detail = if status == 403 {
-                        "Insufficient scope or permissions"
-                    } else {
-                        "Missing or invalid credentials"
-                    };
-
-                    // S7: Validation failed (401) or S8: Insufficient scope (403)
-                    if status == 403 {
-                        // S8: Insufficient scope (403)
-                        warn!(
-                            method = %method,
-                            path = %path,
-                            handler = %route_match.handler_name,
-                            status = 403,
-                            reason = "insufficient_scope",
-                            schemes_required = ?schemes_required,
-                            scopes_required = ?scopes_required,
-                            attempted_schemes = ?attempted_schemes,
-                            "Insufficient scope (403 forbidden)"
-                        );
-                    } else {
-                        // S7: Validation failed (401)
-                        warn!(
-                            method = %method,
-                            path = %path,
-                            handler = %route_match.handler_name,
-                            status = 401,
-                            reason = "invalid_credentials",
-                            schemes_required = ?schemes_required,
-                            attempted_schemes = ?attempted_schemes,
-                            "Authentication failed (401 unauthorized)"
-                        );
-                    }
-
-                    let debug = std::env::var("BRRTR_DEBUG_VALIDATION")
-                        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-                        .unwrap_or(false);
-
-                    if status == 401 {
-                        res.header("WWW-Authenticate: Bearer error=\"invalid_token\"");
-                    } else {
-                        res.header("WWW-Authenticate: Bearer error=\"insufficient_scope\"");
-                    }
-                    let mut body = serde_json::json!({
-                        "type": "about:blank",
-                        "title": title,
-                        "status": status,
-                        "detail": detail
-                    });
-                    if debug {
-                        if let Some(map) = body.as_object_mut() {
-                            map.insert("method".to_string(), json!(method.to_string()));
-                            map.insert("path".to_string(), json!(path));
-                            map.insert(
-                                "handler".to_string(),
-                                // Convert Arc<str> to &str for JSON serialization
-                                json!(route_match.route.handler_name.as_ref()),
+                } else {
+                    // Fallback: per-request HashMap lookup (original behavior for backward compat)
+                    for req in &route_match.route.security {
+                        if req.0.is_empty() {
+                            continue;
+                        }
+                        let mut ok = true;
+                        for (scheme_name, scopes) in &req.0 {
+                            // S2: Security scheme lookup
+                            debug!(
+                                scheme_name = %scheme_name,
+                                scheme_type = "lookup",
+                                "Security scheme lookup"
                             );
+
+                            let scheme = match self.security_schemes.get(scheme_name.as_str()) {
+                                Some(s) => s,
+                                None => {
+                                    warn!(
+                                        handler = %route_match.handler_name,
+                                        scheme_name = %scheme_name,
+                                        "Security scheme not found"
+                                    );
+                                    ok = false;
+                                    break;
+                                }
+                            };
+
+                            // S3: Provider lookup
+                            let provider = match self.security_providers.get(scheme_name.as_str()) {
+                                Some(p) => p,
+                                None => {
+                                    warn!(
+                                        handler = %route_match.handler_name,
+                                        scheme_name = %scheme_name,
+                                        "Security provider not found"
+                                    );
+                                    ok = false;
+                                    break;
+                                }
+                            };
+
+                            // S4: Provider validation start
+                            debug!(
+                                provider_type = %scheme_name,
+                                scopes = ?scopes,
+                                "Provider validation start"
+                            );
+
+                            // Measure authentication/authorization performance
+                            let auth_start = std::time::Instant::now();
+                            let auth_result = provider.validate(scheme, scopes, &sec_req);
+                            let auth_duration = auth_start.elapsed();
+
+                            // Log slow authentication
+                            if auth_duration > Duration::from_millis(100) {
+                                warn!(
+                                    provider_type = %scheme_name,
+                                    duration_ms = auth_duration.as_millis(),
+                                    success = auth_result,
+                                    "Slow authentication detected"
+                                );
+                            } else {
+                                // Per-auth-request; demoted to debug (PRD 2.2).
+                                debug!(
+                                    provider_type = %scheme_name,
+                                    duration_us = auth_duration.as_micros(),
+                                    success = auth_result,
+                                    "Authentication completed"
+                                );
+                            }
+
+                            if !auth_result {
+                                // Detect insufficient scope for Bearer/OAuth2
+                                match scheme {
+                                    SecurityScheme::Http {
+                                        scheme: http_scheme,
+                                        ..
+                                    } if http_scheme.eq_ignore_ascii_case("bearer") => {
+                                        if provider.validate(scheme, &[], &sec_req) {
+                                            insufficient_scope = true;
+                                        }
+                                    }
+                                    SecurityScheme::OAuth2 { .. } => {
+                                        if provider.validate(scheme, &[], &sec_req) {
+                                            insufficient_scope = true;
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                                ok = false;
+                                break;
+                            }
+                        }
+                        if ok {
+                            authorized = true;
+                            break;
                         }
                     }
-                    write_json_error(res, status as u16, body);
-                    return Ok(());
+                }
+            }
+
+            if !authorized {
+                if let Some(metrics) = &self.metrics {
+                    metrics.inc_auth_failure();
+                }
+
+                let status = if insufficient_scope { 403 } else { 401 };
+                let title = if status == 403 {
+                    "Forbidden"
                 } else {
-                    // S6: Validation success — per-request, demoted to debug (PRD 2.2).
-                    debug!(
+                    "Unauthorized"
+                };
+                let detail = if status == 403 {
+                    "Insufficient scope or permissions"
+                } else {
+                    "Missing or invalid credentials"
+                };
+
+                // S7: Validation failed (401) or S8: Insufficient scope (403)
+                if status == 403 {
+                    // S8: Insufficient scope (403)
+                    warn!(
                         method = %method,
                         path = %path,
                         handler = %route_match.handler_name,
-                        scheme_name = ?attempted_schemes.last(),
-                        scopes_granted = ?scopes_required,
-                        "Authentication success"
+                        status = 403,
+                        reason = "insufficient_scope",
+                        "Insufficient scope (403 forbidden)"
+                    );
+                } else {
+                    // S7: Validation failed (401)
+                    warn!(
+                        method = %method,
+                        path = %path,
+                        handler = %route_match.handler_name,
+                        status = 401,
+                        reason = "invalid_credentials",
+                        "Authentication failed (401 unauthorized)"
                     );
                 }
+
+                let debug = std::env::var("BRRTR_DEBUG_VALIDATION")
+                    .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                    .unwrap_or(false);
+
+                if status == 401 {
+                    res.header("WWW-Authenticate: Bearer error=\"invalid_token\"");
+                } else {
+                    res.header("WWW-Authenticate: Bearer error=\"insufficient_scope\"");
+                }
+                let mut body = serde_json::json!({
+                    "type": "about:blank",
+                    "title": title,
+                    "status": status,
+                    "detail": detail
+                });
+                if debug {
+                    if let Some(map) = body.as_object_mut() {
+                        map.insert("method".to_string(), json!(method.to_string()));
+                        map.insert("path".to_string(), json!(path));
+                        map.insert(
+                            "handler".to_string(),
+                            // Convert Arc<str> to &str for JSON serialization
+                            json!(route_match.route.handler_name.as_ref()),
+                        );
+                    }
+                }
+                write_json_error(res, status as u16, body);
+                return Ok(());
+            } else {
+                // S6: Validation success — per-request, demoted to debug (PRD 2.2).
+                debug!(
+                    method = %method,
+                    path = %path,
+                    handler = %route_match.handler_name,
+                    "Authentication success"
+                );
             }
 
             // V1a: Content-Type enforcement (415 Unsupported Media Type)
