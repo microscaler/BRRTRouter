@@ -16,6 +16,7 @@
 //! - `docker` — Artifact copying and validation
 //! - `ci` — Post-gen fixes (Cargo.toml path rewriting)
 
+pub mod build;
 pub mod ci;
 pub mod discovery;
 pub mod docker;
