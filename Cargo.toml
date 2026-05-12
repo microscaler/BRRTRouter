@@ -130,7 +130,8 @@ stack_usage = []
 members = [
     "brrtrouter_macros",
     "examples/pet_store",
-    "brrtrouter-validator-python"
+    "brrtrouter-validator-python",
+    "crates/brrtrouter-tooling",
 ]
 
 # Used by generated service `Cargo.toml` when `use_workspace_deps` is enabled (`templates/Cargo.toml.txt`).
