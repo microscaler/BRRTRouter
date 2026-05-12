@@ -6,9 +6,8 @@
 //! This is the most complex module due to cross-compilation toolchain
 //! management, jemalloc opt-in, and workspace vs single-package builds.
 
-use std::collections::HashMap;
 use std::env;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 
 /// Architecture target triples
@@ -373,8 +372,8 @@ fn get_workspace_packages(manifest: &Path, project_root: &Path) -> Vec<String> {
     match output {
         Ok(o) if o.status.success() => {
             let stdout = String::from_utf8_lossy(&o.stdout);
-            let meta: serde_json::Value = serde_json::from_str(&stdout).ok();
-            if let Some(workspaces) = meta.and_then(|m| m.get("workspace_members")) {
+            let meta: serde_json::Value = serde_json::from_str(&stdout).ok().unwrap_or_default();
+            if let Some(workspaces) = meta.get("workspace_members") {
                 workspaces
                     .as_array()
                     .into_iter()
