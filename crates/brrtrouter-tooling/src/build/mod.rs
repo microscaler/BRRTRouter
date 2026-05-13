@@ -396,3 +396,6 @@ fn get_workspace_packages(manifest: &Path, project_root: &Path) -> Vec<String> {
         _ => Vec::new(),
     }
 }
+
+#[cfg(test)]
+mod tests;
