@@ -78,3 +78,6 @@ pub fn discover_brrtrouter_root(project_root: &Path) -> PathBuf {
 pub fn is_brrtrouter_root(path: &Path) -> bool {
     path.join("Cargo.toml").exists()
 }
+
+#[cfg(test)]
+mod tests;
