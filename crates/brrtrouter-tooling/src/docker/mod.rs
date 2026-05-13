@@ -220,3 +220,6 @@ pub fn copy_artifacts_for_suite(
 
     copy_artifacts(arch, project_root, &filtered_pkgs, &filtered_bins, workspace_dir)
 }
+
+#[cfg(test)]
+mod tests;
