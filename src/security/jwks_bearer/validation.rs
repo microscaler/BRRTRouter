@@ -58,6 +58,8 @@ pub(super) enum ValidationError {
     },
     /// Security scheme doesn't match (not HTTP Bearer)
     InvalidSecurityScheme { scheme: String },
+    /// Token typ claim does not match expected value
+    InvalidTokenType { expected: String, actual: String },
 }
 
 impl ValidationError {
@@ -78,6 +80,7 @@ impl ValidationError {
             ValidationError::JwksFetchError { .. } => "JWKS fetch failed",
             ValidationError::InsufficientScopes { .. } => "insufficient scopes",
             ValidationError::InvalidSecurityScheme { .. } => "invalid security scheme",
+            ValidationError::InvalidTokenType { .. } => "invalid token type",
         }
     }
 
@@ -142,6 +145,12 @@ impl ValidationError {
                 debug!(
                     "JWT validation failed: invalid security scheme '{}'",
                     scheme
+                );
+            }
+            ValidationError::InvalidTokenType { expected, actual } => {
+                warn!(
+                    "JWT validation failed: invalid token type (expected: '{}', got: '{}')",
+                    expected, actual
                 );
             }
         }
@@ -210,6 +219,19 @@ fn validate_token_internal(
         Some(k) => k,
         None => return Err(ValidationError::MissingKeyId),
     };
+
+    // STORY 8.1: Enforce JWT typ claim (at+jwt) per RFC 7519 / RFC 9068
+    // This check occurs AFTER header parsing but BEFORE any cache or signature validation.
+    // Prevents type confusion attacks where a refresh token or ID token is accepted as an access token.
+    // Uses exact string comparison (case-sensitive, no trimming) per HACK-814/815 requirements.
+    let expected_typ = super::EXPECTED_TYP;
+    let actual_typ = header.typ.as_deref().unwrap_or("");
+    if actual_typ != expected_typ {
+        return Err(ValidationError::InvalidTokenType {
+            expected: expected_typ.to_string(),
+            actual: actual_typ.to_string(),
+        });
+    }
 
     // SECURITY: Include kid in cache key so cache invalidates on key rotation
     // Format: "token|kid" ensures different cache entries for same token with different keys

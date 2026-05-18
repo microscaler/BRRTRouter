@@ -40,8 +40,8 @@ def test_merge_components_null_no_typeerror(tmp_path: Path) -> None:
     sub_services = {"svc": {"base_path": "/api/svc", "spec_path": spec_path}}
     bff = merge_sub_service_specs(sub_services)
     assert "paths" in bff
-    assert "/ping" in bff["paths"]
-    assert bff["paths"]["/ping"]["get"]["x-service"] == "svc"
+    assert "/api/svc/ping" in bff["paths"]
+    assert bff["paths"]["/api/svc/ping"]["get"]["x-service"] == "svc"
 
 
 def test_merge_sets_proxy_extensions(tmp_path: Path) -> None:
@@ -55,8 +55,8 @@ def test_merge_sets_proxy_extensions(tmp_path: Path) -> None:
     }
     bff = merge_sub_service_specs(sub_services)
     assert "paths" in bff
-    assert "/invoices/{id}" in bff["paths"]
-    get_op = bff["paths"]["/invoices/{id}"].get("get")
+    assert "/api/invoice/invoices/{id}" in bff["paths"]
+    get_op = bff["paths"]["/api/invoice/invoices/{id}"].get("get")
     assert get_op is not None
     assert get_op.get("x-service") == "invoice"
     assert get_op.get("x-service-base-path") == "/api/invoice"
@@ -79,8 +79,8 @@ def test_generate_bff_spec(tmp_path: Path) -> None:
     with out.open() as f:
         spec = yaml.safe_load(f)
     assert spec["openapi"] == "3.1.0"
-    assert "/invoices" in spec["paths"]
-    get_op = spec["paths"]["/invoices"].get("get")
+    assert "/api/invoice/invoices" in spec["paths"]
+    get_op = spec["paths"]["/api/invoice/invoices"].get("get")
     assert get_op is not None
     assert get_op.get("x-service") == "invoice"
     assert get_op.get("x-brrtrouter-downstream-path") == "/api/invoice/invoices"
@@ -204,10 +204,10 @@ class TestMergeOverlappingPrefixes:
 
 
 class TestMergePathsPerMethod:
-    """Paths are merged per HTTP method; duplicate path+method from different services raises."""
+    """Paths are namespaced by base_path; duplicate public path+method raises."""
 
-    def test_same_path_different_methods_merged(self, tmp_path: Path) -> None:
-        # Service A: GET /items; Service B: POST /items -> merged path has both.
+    def test_same_local_path_different_services_is_namespaced(self, tmp_path: Path) -> None:
+        # Service A and B both own /items, but BFF public paths include base_path.
         a_spec = tmp_path / "a.yaml"
         b_spec = tmp_path / "b.yaml"
         a_spec.write_text(
@@ -221,13 +221,15 @@ class TestMergePathsPerMethod:
             "beta": {"base_path": "/api/beta", "spec_path": b_spec},
         }
         bff = merge_sub_service_specs(sub_services)
-        path_def = bff["paths"].get("/items")
-        assert path_def is not None
-        assert "get" in path_def and path_def["get"].get("x-service") == "alpha"
-        assert "post" in path_def and path_def["post"].get("x-service") == "beta"
+        alpha_path_def = bff["paths"].get("/api/alpha/items")
+        beta_path_def = bff["paths"].get("/api/beta/items")
+        assert alpha_path_def is not None
+        assert beta_path_def is not None
+        assert "get" in alpha_path_def and alpha_path_def["get"].get("x-service") == "alpha"
+        assert "post" in beta_path_def and beta_path_def["post"].get("x-service") == "beta"
 
-    def test_same_path_same_method_different_services_raises(self, tmp_path: Path) -> None:
-        # Both services define GET /items -> ValueError.
+    def test_same_public_path_same_method_different_services_raises(self, tmp_path: Path) -> None:
+        # Same base_path + local path + method is still ambiguous.
         a_spec = tmp_path / "a.yaml"
         b_spec = tmp_path / "b.yaml"
         a_spec.write_text(
@@ -238,11 +240,11 @@ class TestMergePathsPerMethod:
         )
         sub_services = {
             "alpha": {"base_path": "/api/alpha", "spec_path": a_spec},
-            "beta": {"base_path": "/api/beta", "spec_path": b_spec},
+            "beta": {"base_path": "/api/alpha", "spec_path": b_spec},
         }
         with pytest.raises(ValueError) as exc_info:
             merge_sub_service_specs(sub_services)
-        assert "/items" in str(exc_info.value)
+        assert "/api/alpha/items" in str(exc_info.value)
         assert "get" in str(exc_info.value).lower() or "method" in str(exc_info.value).lower()
 
 
@@ -568,7 +570,7 @@ class TestGenerateSystemBffSpec:
         data = yaml.safe_load(out.read_text())
         assert data["openapi"] == "3.1.0"
         assert "paths" in data
-        assert "/items" in data["paths"]
+        assert "/api/v1/sys/svc/items" in data["paths"]
         assert "components" in data
         assert "schemas" in data["components"]
 

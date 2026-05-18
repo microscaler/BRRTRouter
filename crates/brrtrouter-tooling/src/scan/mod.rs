@@ -144,10 +144,7 @@ pub fn get_suite_names(catalog: &ServiceCatalog) -> Vec<String> {
 }
 
 /// Get all services in a suite.
-pub fn get_suite_services<'a>(
-    catalog: &'a ServiceCatalog,
-    suite: &str,
-) -> Vec<&'a ServiceEntry> {
+pub fn get_suite_services<'a>(catalog: &'a ServiceCatalog, suite: &str) -> Vec<&'a ServiceEntry> {
     catalog
         .services
         .iter()
@@ -163,3 +160,6 @@ pub fn get_package_names(catalog: &ServiceCatalog) -> HashMap<String, String> {
         .map(|s| (s.name.clone(), s.package_name.clone()))
         .collect()
 }
+
+#[cfg(test)]
+mod tests;

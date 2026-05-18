@@ -13,6 +13,9 @@ use std::time::{Duration, Instant};
 use tracing::{debug, warn};
 use url::Url;
 
+// Expected JWT typ claim for access tokens (RFC 7519, RFC 9068)
+pub(super) const EXPECTED_TYP: &str = "at+jwt";
+
 // P3: Supported JWT algorithms - whitelist for security and code simplification
 pub(super) const SUPPORTED_ALGORITHMS: &[jsonwebtoken::Algorithm] = &[
     jsonwebtoken::Algorithm::HS256,

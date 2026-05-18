@@ -604,8 +604,7 @@ impl ValidatorCache {
         for route in routes {
             if let Some(ref request_schema) = route.request_schema {
                 let digest = Self::schema_digest(request_schema);
-                let lookup =
-                    Self::digest_lookup_key(&route.handler_name, "request", None, &digest);
+                let lookup = Self::digest_lookup_key(&route.handler_name, "request", None, &digest);
                 local_digests.insert(lookup.clone(), digest.clone());
                 local_suffixes.insert(
                     lookup,
@@ -634,7 +633,10 @@ impl ValidatorCache {
                         let kind = "response";
                         local_suffixes.insert(
                             lookup,
-                            format!("{}:{}:{}:{}:{}", route.handler_name, kind, status_code, digest, kind),
+                            format!(
+                                "{}:{}:{}:{}:{}",
+                                route.handler_name, kind, status_code, digest, kind
+                            ),
                         );
                         if self
                             .get_or_compile(

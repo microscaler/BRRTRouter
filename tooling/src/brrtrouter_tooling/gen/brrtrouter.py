@@ -2,8 +2,27 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 from pathlib import Path
+
+
+def _find_cargo() -> str:
+    """Locate the ``cargo`` binary, falling back to a well-known user path.
+
+    When invoked from Tilt or similar environments the shell profile (which
+    adds ``~/.cargo/bin`` to PATH) may not have been sourced, so ``shutil.which``
+    returns None even though cargo is installed.
+    """
+    found = shutil.which("cargo")
+    if found is not None:
+        return found
+    import os
+    home = os.environ.get("HOME", os.path.expanduser("~"))
+    fallback = os.path.join(home, ".cargo", "bin", "cargo")
+    if os.path.isfile(fallback):
+        return fallback
+    return "cargo"  # Let subprocess fail with a more informative message
 
 
 def find_brrtrouter(project_root: Path, brrtrouter_path: Path | None = None) -> tuple[Path, Path]:
@@ -59,7 +78,7 @@ def call_brrtrouter_generate(
         package_name_arg = ["--package-name", package_name]
 
     cmd = [
-        "cargo",
+        _find_cargo(),
         "run",
         "--manifest-path",
         str(manifest),
@@ -113,7 +132,7 @@ def call_brrtrouter_generate_stubs(
     _brrtrouter_bin, manifest = find_brrtrouter(project_root, brrtrouter_path)
 
     cmd = [
-        "cargo",
+        _find_cargo(),
         "run",
         "--manifest-path",
         str(manifest),

@@ -91,7 +91,8 @@ def _merge_one_sub_service(
         for path, path_def in spec["paths"].items():
             if not isinstance(path_def, dict):
                 continue
-            existing = all_paths.get(path)
+            public_path = downstream_path(base_path, path)
+            existing = all_paths.get(public_path)
             if existing is None:
                 existing = {}
             path_def = dict(path_def)
@@ -104,7 +105,7 @@ def _merge_one_sub_service(
                         logger.warning(
                             "Path-level property %r conflict for %s, keeping first",
                             key,
-                            path,
+                            public_path,
                         )
                     continue
                 method = key
@@ -119,12 +120,12 @@ def _merge_one_sub_service(
                     existing_service = (existing.get(method) or {}).get("x-service")
                     if existing_service is not None and existing_service != sname:
                         msg = (
-                            f"Path conflict: {path!r} method {method!r} already "
+                            f"Path conflict: {public_path!r} method {method!r} already "
                             f"defined by service {existing_service!r}, duplicate from {sname!r}"
                         )
                         raise ValueError(msg)
                 existing[method] = op
-            all_paths[path] = existing
+            all_paths[public_path] = existing
 
     if "schemas" in components:
         _merge_schemas(all_schemas, sname, components["schemas"])

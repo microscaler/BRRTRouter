@@ -291,16 +291,20 @@ if velero_enabled:
     )
 
 # Data stores (only when manifests are loaded above)
+# NOTE: When use_shared_kind_infra is true, postgres/redis are managed by shared-kind-cluster
+# (port_forward 5432:5432 and 6545:6379 respectively). When bundled, we do NOT declare
+# port_forwards here because:
+#   - port 5432 is already bound by shared-kind-cluster's postgres-primary
+#   - port 6379 conflicts with kind-config.yaml hostPort mapping (container 30379 → host 6379)
+#   - The shared-kind-cluster stack already exposes these on well-known ports
 if bundled_postgres_redis:
     k8s_resource(
         'postgres',
-        port_forwards=['5432:5432'],
         labels=['data'],
     )
 
     k8s_resource(
         'redis',
-        port_forwards=['6379:6379'],
         labels=['data'],
     )
 

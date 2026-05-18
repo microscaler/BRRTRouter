@@ -50,13 +50,7 @@ fn test_copy_artifacts_succeeds_for_amd64() {
     let pkg_names = make_package_names();
     let bin_names = make_binary_names();
 
-    let result = copy_artifacts(
-        "amd64",
-        dir.path(),
-        &pkg_names,
-        &bin_names,
-        "microservices",
-    );
+    let result = copy_artifacts("amd64", dir.path(), &pkg_names, &bin_names, "microservices");
     assert_eq!(result, 0);
 
     // Verify files were copied
@@ -84,13 +78,7 @@ fn test_copy_artifacts_succeeds_for_arm64() {
     let mut bin_names = HashMap::new();
     bin_names.insert("identity".to_string(), "hauliage_identity".to_string());
 
-    let result = copy_artifacts(
-        "arm64",
-        dir.path(),
-        &pkg_names,
-        &bin_names,
-        "microservices",
-    );
+    let result = copy_artifacts("arm64", dir.path(), &pkg_names, &bin_names, "microservices");
     assert_eq!(result, 0);
 }
 
@@ -116,13 +104,7 @@ fn test_copy_artifacts_fails_when_binaries_missing() {
     let mut bin_names = HashMap::new();
     bin_names.insert("identity".to_string(), "nonexistent_binary".to_string());
 
-    let result = copy_artifacts(
-        "amd64",
-        dir.path(),
-        &pkg_names,
-        &bin_names,
-        "microservices",
-    );
+    let result = copy_artifacts("amd64", dir.path(), &pkg_names, &bin_names, "microservices");
     assert_eq!(result, 1);
 }
 
@@ -132,13 +114,7 @@ fn test_copy_artifacts_sets_executable_permissions() {
     let pkg_names = make_package_names();
     let bin_names = make_binary_names();
 
-    copy_artifacts(
-        "amd64",
-        dir.path(),
-        &pkg_names,
-        &bin_names,
-        "microservices",
-    );
+    copy_artifacts("amd64", dir.path(), &pkg_names, &bin_names, "microservices");
 
     let out = dir.path().join("build_artifacts").join("amd64");
     let perms = fs::metadata(out.join("hauliage_identity"))
@@ -157,13 +133,7 @@ fn test_copy_artifacts_uses_custom_workspace_dir() {
     let pkg_names = make_package_names();
     let bin_names = make_binary_names();
 
-    let result = copy_artifacts(
-        "amd64",
-        dir.path(),
-        &pkg_names,
-        &bin_names,
-        "custom_ws",
-    );
+    let result = copy_artifacts("amd64", dir.path(), &pkg_names, &bin_names, "custom_ws");
     assert_eq!(result, 0);
 }
 
@@ -175,13 +145,7 @@ fn test_copy_artifacts_uses_binary_names_over_package_names() {
     let mut bin_names = HashMap::new();
     bin_names.insert("identity".to_string(), "custom_identity".to_string());
 
-    copy_artifacts(
-        "amd64",
-        dir.path(),
-        &pkg_names,
-        &bin_names,
-        "microservices",
-    );
+    copy_artifacts("amd64", dir.path(), &pkg_names, &bin_names, "microservices");
 
     // Should copy to custom_identity, not hauliage_identity
     let out = dir.path().join("build_artifacts").join("amd64");
@@ -196,10 +160,16 @@ fn test_copy_artifacts_for_suite_filters_by_hauliage_prefix() {
     // copy_artifacts_for_suite filters by keys starting with "hauliage_"
     // Package names must have "hauliage_" prefixed keys for the filter to match
     let mut pkg_names = HashMap::new();
-    pkg_names.insert("hauliage_identity".to_string(), "hauliage_identity".to_string());
+    pkg_names.insert(
+        "hauliage_identity".to_string(),
+        "hauliage_identity".to_string(),
+    );
     pkg_names.insert("hauliage_auth".to_string(), "hauliage_auth".to_string());
     let mut bin_names = HashMap::new();
-    bin_names.insert("hauliage_identity".to_string(), "hauliage_identity".to_string());
+    bin_names.insert(
+        "hauliage_identity".to_string(),
+        "hauliage_identity".to_string(),
+    );
     bin_names.insert("hauliage_auth".to_string(), "hauliage_auth".to_string());
 
     let result = copy_artifacts_for_suite(
@@ -222,11 +192,17 @@ fn test_copy_artifacts_for_suite_no_filter_copies_all() {
     let dir = create_docker_fixture();
     // No suite filter — all packages copied
     let mut pkg_names = HashMap::new();
-    pkg_names.insert("hauliage_identity".to_string(), "hauliage_identity".to_string());
+    pkg_names.insert(
+        "hauliage_identity".to_string(),
+        "hauliage_identity".to_string(),
+    );
     pkg_names.insert("hauliage_auth".to_string(), "hauliage_auth".to_string());
     pkg_names.insert("trader_orders".to_string(), "trader_orders".to_string());
     let mut bin_names = HashMap::new();
-    bin_names.insert("hauliage_identity".to_string(), "hauliage_identity".to_string());
+    bin_names.insert(
+        "hauliage_identity".to_string(),
+        "hauliage_identity".to_string(),
+    );
     bin_names.insert("hauliage_auth".to_string(), "hauliage_auth".to_string());
     bin_names.insert("trader_orders".to_string(), "trader_orders".to_string());
 
@@ -260,9 +236,15 @@ fn test_copy_artifacts_for_suite_normalizes_underscore_to_hyphen() {
 
     // Keys must start with "hauliage_" to pass the suite filter
     let mut pkg_names = HashMap::new();
-    pkg_names.insert("hauliage_my_service".to_string(), "hauliage_my_service".to_string());
+    pkg_names.insert(
+        "hauliage_my_service".to_string(),
+        "hauliage_my_service".to_string(),
+    );
     let mut bin_names = HashMap::new();
-    bin_names.insert("hauliage_my_service".to_string(), "hauliage_my_service".to_string());
+    bin_names.insert(
+        "hauliage_my_service".to_string(),
+        "hauliage_my_service".to_string(),
+    );
 
     let result = copy_artifacts_for_suite(
         "amd64",

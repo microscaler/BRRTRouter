@@ -9,8 +9,6 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-
-
 /// A discovered suite with its services
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SuiteInfo {
@@ -87,10 +85,7 @@ pub fn discover_suites(project_root: &Path, openapi_dir: &Path) -> Vec<SuiteInfo
             // Skip config files
             if matches!(
                 service_name.as_str(),
-                "bff-suite-config.yaml"
-                    | "bff-suite-config.yml"
-                    | "openapi.yaml"
-                    | "openapi.yml"
+                "bff-suite-config.yaml" | "bff-suite-config.yml" | "openapi.yaml" | "openapi.yml"
             ) {
                 continue;
             }
@@ -108,7 +103,10 @@ pub fn discover_suites(project_root: &Path, openapi_dir: &Path) -> Vec<SuiteInfo
                     .join(&service_name)
                     .join("impl");
 
-                let deps_config_path = openapi_path.parent().unwrap().join("brrtrouter-dependencies.toml");
+                let deps_config_path = openapi_path
+                    .parent()
+                    .unwrap()
+                    .join("brrtrouter-dependencies.toml");
 
                 services.push(FileInfo {
                     name: service_name,
@@ -154,10 +152,7 @@ pub fn get_package_names(project_root: &Path, suite: Option<&str>) -> HashMap<St
 
         for service in &suite_info.services {
             let snake = service.name.replace('-', "_");
-            out.insert(
-                service.name.clone(),
-                format!("hauliage_{}", snake),
-            );
+            out.insert(service.name.clone(), format!("hauliage_{}", snake));
         }
 
         // Also include BFF if present
@@ -184,10 +179,7 @@ pub fn get_binary_names(project_root: &Path, suite: Option<&str>) -> HashMap<Str
         }
 
         for service in &suite_info.services {
-            out.insert(
-                service.name.clone(),
-                service.name.replace('-', "_"),
-            );
+            out.insert(service.name.clone(), service.name.replace('-', "_"));
         }
 
         if suite_info.has_bff {
@@ -199,11 +191,7 @@ pub fn get_binary_names(project_root: &Path, suite: Option<&str>) -> HashMap<Str
 }
 
 /// Get suite info for a single service.
-pub fn get_service_info(
-    project_root: &Path,
-    suite: &str,
-    service_name: &str,
-) -> Option<FileInfo> {
+pub fn get_service_info(project_root: &Path, suite: &str, service_name: &str) -> Option<FileInfo> {
     for suite_info in discover_suites(project_root, &project_root.join("openapi")) {
         if suite_info.name != suite {
             continue;
@@ -239,17 +227,26 @@ pub fn service_spec_path(project_root: &Path, suite: &str, service_name: &str) -
     if is_bff_service(project_root, suite, service_name) {
         openapi_dir.join("openapi_bff.yaml")
     } else {
-        openapi_dir.join(suite).join(service_name).join("openapi.yaml")
+        openapi_dir
+            .join(suite)
+            .join(service_name)
+            .join("openapi.yaml")
     }
 }
 
 /// Return the BFF suite config path if it exists.
 pub fn bff_suite_config_path(project_root: &Path, suite: &str) -> Option<PathBuf> {
-    let config = project_root.join("openapi").join(suite).join("bff-suite-config.yaml");
+    let config = project_root
+        .join("openapi")
+        .join(suite)
+        .join("bff-suite-config.yaml");
     if config.exists() {
         Some(config)
     } else {
-        let config_yml = project_root.join("openapi").join(suite).join("bff-suite-config.yml");
+        let config_yml = project_root
+            .join("openapi")
+            .join(suite)
+            .join("bff-suite-config.yml");
         if config_yml.exists() {
             Some(config_yml)
         } else {

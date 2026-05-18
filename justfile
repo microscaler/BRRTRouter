@@ -659,8 +659,19 @@ dev-up:
 	kubectl config use-context kind-kind
 	just dev-registry-wire
 	echo ""
-	echo "Starting Tilt on 0.0.0.0:10353 (LAN: http://<this-host>:10353/) (press 'space' to open web UI)..."
-	tilt up --host 0.0.0.0 --port 10353
+	# Start Tilt via systemd (port 10353, avoids 10350 default Tilt / Tiffany)
+	echo "Starting BRRTRouter Tilt via systemd (port 10353)..."
+	systemctl --user start tilt-brrtrouter.service
+	echo "Tilt UI on http://0.0.0.0:10353 (waiting for ready)..."
+	for i in $(seq 1 60); do
+		if curl -sf http://localhost:10353/api/v1/info >/dev/null 2>&1; then
+			echo "Tilt is ready at http://0.0.0.0:10353"
+			exit 0
+		fi
+		sleep 2
+	done
+	echo "WARNING: Tilt did not become ready within 2 minutes"
+	exit 1
 
 # Stop Tilt only (leaves Kind cluster and kind-registry running for other repos)
 dev-down:
@@ -694,39 +705,16 @@ dev-rebuild:
 	@tilt down --port 10353 || true
 	@tilt up --host 0.0.0.0 --port 10353
 
-# Clean Docker state (nuclear — affects ALL kind clusters). Prefer: shared-kind-cluster `just cluster-delete`.
+# NOTE: DEPRECATED — standalone clusters are no longer supported.
+# Use `just dev-rebuild` to rebuild/restart Tilt for this repo.
 dev-clean:
-	#!/usr/bin/env bash
-	set -euo pipefail
-	echo "Cleaning Docker state for KIND..."
-	echo ""
-	
-	# Stop any running KIND clusters
-	echo "Stopping KIND clusters..."
-	kind delete clusters --all 2>/dev/null || true
-	
-	# Kill any orphaned containers
-	echo "Killing orphaned containers..."
-	docker kill $(docker ps -q) 2>/dev/null || true
-	
-	# Remove all stopped containers
-	echo "Removing stopped containers..."
-	docker rm -f $(docker ps -aq) 2>/dev/null || true
-	
-	# Remove KIND network
-	echo "Removing KIND network..."
-	docker network rm kind 2>/dev/null || true
-	
-	# Remove registry if it exists
-	echo "Removing registry container..."
-	docker rm -f kind-registry 2>/dev/null || true
-	
-	# Prune system (keeps volumes)
-	echo "Pruning Docker system..."
-	docker system prune -f
-	
-	echo ""
-	echo "[OK] Docker state cleaned"
-	echo "[OK] Volumes preserved for data persistence"
-	echo ""
-	echo "Now run: just dev-up"
+    @echo "❌ DEPRECATED: Docker cleanup recipe removed."
+    @echo "   In a shared-cluster setup, killing all Docker containers"
+    @echo "   would break other services (shared Kind cluster, registry, etc.)."
+    @echo ""
+    @echo "   To clean THIS repo's Tilt resources:"
+    @echo "     just dev-down   (stops Tilt on port 10353)"
+    @echo ""
+    @echo "   To delete the shared Kind cluster (requires all repos stopped first):"
+    @echo "     cd ../shared-kind-cluster && just dev-down"
+    @exit 1
