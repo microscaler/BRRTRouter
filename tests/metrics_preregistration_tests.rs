@@ -26,6 +26,7 @@ fn create_route_meta(method: Method, path: &str, handler: &str) -> RouteMeta {
         parameters: Vec::new(),
         request_schema: None,
         request_body_required: false,
+        request_content_types: Vec::new(),
         response_schema: None,
         example: None,
         responses: HashMap::new(),
@@ -51,10 +52,12 @@ fn test_metrics_middleware_auto_preregisters_paths() {
     ];
 
     let router = Router::new(routes);
-    let router = Arc::new(RwLock::new(router));
+    let router = Arc::new(arc_swap::ArcSwap::from_pointee(router));
 
     // Create an empty dispatcher (we won't actually use it)
-    let dispatcher = Arc::new(RwLock::new(brrtrouter::dispatcher::Dispatcher::new()));
+    let dispatcher = Arc::new(arc_swap::ArcSwap::from_pointee(
+        brrtrouter::dispatcher::Dispatcher::new(),
+    ));
 
     // Create the service
     let mut service = AppService::new(
@@ -108,9 +111,11 @@ fn test_metrics_middleware_preregistration_with_base_path() {
     let routes = vec![route1, route2];
 
     let router = Router::new(routes);
-    let router = Arc::new(RwLock::new(router));
+    let router = Arc::new(arc_swap::ArcSwap::from_pointee(router));
 
-    let dispatcher = Arc::new(RwLock::new(brrtrouter::dispatcher::Dispatcher::new()));
+    let dispatcher = Arc::new(arc_swap::ArcSwap::from_pointee(
+        brrtrouter::dispatcher::Dispatcher::new(),
+    ));
 
     let mut service = AppService::new(
         router,
@@ -147,9 +152,11 @@ fn test_metrics_middleware_preregisters_parameterized_paths() {
     ];
 
     let router = Router::new(routes);
-    let router = Arc::new(RwLock::new(router));
+    let router = Arc::new(arc_swap::ArcSwap::from_pointee(router));
 
-    let dispatcher = Arc::new(RwLock::new(brrtrouter::dispatcher::Dispatcher::new()));
+    let dispatcher = Arc::new(arc_swap::ArcSwap::from_pointee(
+        brrtrouter::dispatcher::Dispatcher::new(),
+    ));
 
     let mut service = AppService::new(
         router,
@@ -184,9 +191,11 @@ fn test_metrics_middleware_preregisters_parameterized_paths() {
 fn test_metrics_middleware_empty_router() {
     // Test with empty router (no routes)
     let router = Router::new(vec![]);
-    let router = Arc::new(RwLock::new(router));
+    let router = Arc::new(arc_swap::ArcSwap::from_pointee(router));
 
-    let dispatcher = Arc::new(RwLock::new(brrtrouter::dispatcher::Dispatcher::new()));
+    let dispatcher = Arc::new(arc_swap::ArcSwap::from_pointee(
+        brrtrouter::dispatcher::Dispatcher::new(),
+    ));
 
     let mut service = AppService::new(
         router,

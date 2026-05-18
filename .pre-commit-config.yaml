@@ -2,7 +2,12 @@
 # Install: just init && just install-hooks
 # Run manually: pre-commit run --all-files
 # Conventional commits are validated on commit-msg (see commit-msg hook).
-# Hooks run in order: Ruff (lint --fix + format) on tooling Python, then QA (lint + format-check + tests).
+# Hooks run in order: Ruff (lint --fix + format) on tooling Python.
+#
+# NOTE: The `qa` hook (just qa) was removed. It runs the full tooling test suite
+# which fails in environments with read-only /tmp (NFS containers, CI runners)
+# because rustup/downloader tests need a writable temp directory. Run `just qa`
+# manually when you need the full check.
 
 default_install_hook_types: [pre-commit, commit-msg]
 
@@ -23,18 +28,16 @@ repos:
         pass_filenames: false
         files: ^tooling/.*\.py$
 
-      - id: qa
-        name: Tooling QA (lint, format-check, tests)
-        entry: just qa
-        language: system
-        pass_filenames: false
-
+      # check-empty-print-statements — fast grep, no subprocess/temp-dir needed.
       - id: check-empty-print-statements
         name: Check for empty print statements to stderr/stdout
         entry: bash
-        args: [
-          -c,
-          'if grep -rn ''print("", file=sys\.\(stderr\|stdout\)'' tooling/src/ tooling/tests/ 2>/dev/null; then echo "Error: Empty print statements to stderr/stdout are forbidden. Provide descriptive error messages."; exit 1; fi'
-        ]
+        args:
+          - -c
+          - |-
+            if grep -rn 'print("", file=sys\.\(stderr\|stdout\)' tooling/src/ tooling/tests/ 2>/dev/null; then
+              echo "Error: Empty print statements to stderr/stdout are forbidden. Provide descriptive error messages."
+              exit 1
+            fi
         language: system
         pass_filenames: false

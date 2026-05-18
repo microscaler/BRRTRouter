@@ -222,10 +222,15 @@ pub struct RouteMeta {
     pub handler_name: Arc<str>,
     /// Parameters extracted from path, query, headers, and cookies
     pub parameters: Vec<ParameterMeta>,
-    /// JSON Schema for request body validation
+    /// JSON Schema for request body validation (parsed from `application/json` media type)
     pub request_schema: Option<Value>,
     /// Whether the request body is required
     pub request_body_required: bool,
+    /// Content types declared in the operation's `requestBody.content` map
+    /// (e.g. `["application/json", "multipart/form-data"]`). Used to enforce 415
+    /// Unsupported Media Type when the request's `Content-Type` is not declared.
+    /// Empty means no `requestBody` was declared on the operation.
+    pub request_content_types: Vec<String>,
     /// JSON Schema for response body validation
     pub response_schema: Option<Value>,
     /// Example response data from OpenAPI spec

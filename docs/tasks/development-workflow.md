@@ -153,78 +153,78 @@ python scripts/manage_service.py status
 #### Infrastructure Endpoints
 ```bash
 echo "=== TESTING INFRASTRUCTURE ==="
-curl -s -w "Status: %{http_code}\n" -H "X-API-Key: test123" http://localhost:8080/health
-curl -s -w "Status: %{http_code}\n" -H "X-API-Key: test123" http://localhost:8080/docs
+curl -s -w "Status: %{http_code}\n" -H "X-API-Key: test123" http://localhost:8081/health
+curl -s -w "Status: %{http_code}\n" -H "X-API-Key: test123" http://localhost:8081/docs
 ```
 
 #### Pet Endpoints
 ```bash
 echo "=== TESTING PET ENDPOINTS ==="
 # GET /pets - List all pets
-curl -s -w "Status: %{http_code}\n" -H "X-API-Key: test123" http://localhost:8080/pets
+curl -s -w "Status: %{http_code}\n" -H "X-API-Key: test123" http://localhost:8081/pets
 
 # GET /pets/{petId} - Get specific pet
-curl -s -w "Status: %{http_code}\n" -H "X-API-Key: test123" http://localhost:8080/pets/1
+curl -s -w "Status: %{http_code}\n" -H "X-API-Key: test123" http://localhost:8081/pets/1
 
 # POST /pets - Add new pet
 curl -s -w "Status: %{http_code}\n" -X POST -H "X-API-Key: test123" -H "Content-Type: application/json" \
-  -d '{"name":"Fluffy","status":"available"}' http://localhost:8080/pets
+  -d '{"name":"Fluffy","status":"available"}' http://localhost:8081/pets
 ```
 
 #### User Endpoints
 ```bash
 echo "=== TESTING USER ENDPOINTS ==="
 # GET /users - List all users
-curl -s -w "Status: %{http_code}\n" -H "X-API-Key: test123" http://localhost:8080/users
+curl -s -w "Status: %{http_code}\n" -H "X-API-Key: test123" http://localhost:8081/users
 
 # GET /users/{user_id} - Get specific user
-curl -s -w "Status: %{http_code}\n" -H "X-API-Key: test123" http://localhost:8080/users/123
+curl -s -w "Status: %{http_code}\n" -H "X-API-Key: test123" http://localhost:8081/users/123
 
 # GET /users/{user_id}/posts - List user posts
-curl -s -w "Status: %{http_code}\n" -H "X-API-Key: test123" http://localhost:8080/users/123/posts
+curl -s -w "Status: %{http_code}\n" -H "X-API-Key: test123" http://localhost:8081/users/123/posts
 ```
 
 #### Post Endpoints
 ```bash
 echo "=== TESTING POST ENDPOINTS ==="
 # GET /posts/{post_id} - Get specific post
-curl -s -w "Status: %{http_code}\n" -H "X-API-Key: test123" http://localhost:8080/posts/456
+curl -s -w "Status: %{http_code}\n" -H "X-API-Key: test123" http://localhost:8081/posts/456
 ```
 
 #### Item Endpoints
 ```bash
 echo "=== TESTING ITEM ENDPOINTS ==="
 # GET /items/{item_id} - Get specific item
-curl -s -w "Status: %{http_code}\n" -H "X-API-Key: test123" http://localhost:8080/items/789
+curl -s -w "Status: %{http_code}\n" -H "X-API-Key: test123" http://localhost:8081/items/789
 
 # POST /items - Create new item
 curl -s -w "Status: %{http_code}\n" -X POST -H "X-API-Key: test123" -H "Content-Type: application/json" \
-  -d '{"name":"Test Item","category":"electronics"}' http://localhost:8080/items
+  -d '{"name":"Test Item","category":"electronics"}' http://localhost:8081/items
 ```
 
 #### Admin Endpoints
 ```bash
 echo "=== TESTING ADMIN ENDPOINTS ==="
 # GET /admin/settings - Admin settings
-curl -s -w "Status: %{http_code}\n" -H "X-API-Key: test123" http://localhost:8080/admin/settings
+curl -s -w "Status: %{http_code}\n" -H "X-API-Key: test123" http://localhost:8081/admin/settings
 ```
 
 #### SSE Endpoints
 ```bash
 echo "=== TESTING SSE ENDPOINTS ==="
 # GET /events - Server-sent events (test for 3 seconds max)
-timeout 3s curl -s -H "X-API-Key: test123" http://localhost:8080/events || echo "SSE test completed"
+timeout 3s curl -s -H "X-API-Key: test123" http://localhost:8081/events || echo "SSE test completed"
 ```
 
 #### Authentication Tests
 ```bash
 echo "=== TESTING AUTHENTICATION ==="
 # Test without API key (should get 401)
-NO_AUTH=$(curl -s -w "%{http_code}" -o /dev/null http://localhost:8080/pets)
+NO_AUTH=$(curl -s -w "%{http_code}" -o /dev/null http://localhost:8081/pets)
 echo "No auth: $NO_AUTH (should be 401)"
 
 # Test with invalid API key (should get 401)
-INVALID_AUTH=$(curl -s -w "%{http_code}" -o /dev/null -H "X-API-Key: invalid" http://localhost:8080/pets)
+INVALID_AUTH=$(curl -s -w "%{http_code}" -o /dev/null -H "X-API-Key: invalid" http://localhost:8081/pets)
 echo "Invalid auth: $INVALID_AUTH (should be 401)"
 ```
 
@@ -232,9 +232,9 @@ echo "Invalid auth: $INVALID_AUTH (should be 401)"
 ```bash
 echo "=== VALIDATING JSON RESPONSES ==="
 # Validate JSON structure for key endpoints
-curl -s -H "X-API-Key: test123" http://localhost:8080/pets | jq empty || { echo "❌ Invalid JSON from /pets"; exit 1; }
-curl -s -H "X-API-Key: test123" http://localhost:8080/users | jq empty || { echo "❌ Invalid JSON from /users"; exit 1; }
-curl -s -H "X-API-Key: test123" http://localhost:8080/users/123 | jq empty || { echo "❌ Invalid JSON from /users/123"; exit 1; }
+curl -s -H "X-API-Key: test123" http://localhost:8081/pets | jq empty || { echo "❌ Invalid JSON from /pets"; exit 1; }
+curl -s -H "X-API-Key: test123" http://localhost:8081/users | jq empty || { echo "❌ Invalid JSON from /users"; exit 1; }
+curl -s -H "X-API-Key: test123" http://localhost:8081/users/123 | jq empty || { echo "❌ Invalid JSON from /users/123"; exit 1; }
 ```
 
 ### Service Cleanup

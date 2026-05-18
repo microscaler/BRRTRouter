@@ -90,7 +90,6 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use tracing::{debug, info};
-
 /// Version identifier for an OpenAPI specification
 ///
 /// Combines a monotonic version counter with a content hash to uniquely identify
@@ -225,6 +224,13 @@ pub struct ValidatorCache {
     /// Current spec version with hash (updated on each hot reload)
     /// Wrapped in RwLock to allow updating during hot reload
     spec_version: Arc<RwLock<SpecVersion>>,
+    /// Pre-computed schema digests keyed by (handler_name, kind, status) for fast hot-path lookups.
+    /// Eliminates per-request serde_json serialize + SHA-256 + hex format on cache hits.
+    schema_digests: Arc<RwLock<HashMap<String, String>>>,
+    /// Pre-built "stable suffix" for each (handler, kind, status) key.
+    /// Format: "{handler_name}:{kind}[:{status}]:{digest}"
+    /// The spec_version prefix is prepended on the hot path, avoiding re-formatting the stable parts.
+    stable_suffixes: Arc<RwLock<HashMap<String, String>>>,
 }
 
 impl ValidatorCache {
@@ -246,6 +252,8 @@ impl ValidatorCache {
             cache: Arc::new(RwLock::new(HashMap::new())),
             enabled,
             spec_version: Arc::new(RwLock::new(SpecVersion::default())),
+            schema_digests: Arc::new(RwLock::new(HashMap::with_capacity(256))),
+            stable_suffixes: Arc::new(RwLock::new(HashMap::with_capacity(256))),
         }
     }
 
@@ -271,7 +279,7 @@ impl ValidatorCache {
     /// # Returns
     ///
     /// Cache key string including a schema digest so different schemas never collide.
-    fn cache_key(
+    pub fn cache_key(
         spec_version: &SpecVersion,
         handler_name: &str,
         kind: &str,
@@ -283,6 +291,38 @@ impl ValidatorCache {
         match status {
             Some(s) => format!("{}:{}:{}:{}:{}", version_key, handler_name, kind, s, digest),
             None => format!("{}:{}:{}:{}", version_key, handler_name, kind, digest),
+        }
+    }
+
+    /// Generate a cache key using a pre-computed digest (avoids per-request hashing).
+    pub fn cache_key_with_digest(
+        spec_version: &SpecVersion,
+        handler_name: &str,
+        kind: &str,
+        status: Option<u16>,
+        digest: &str,
+    ) -> String {
+        let version_key = spec_version.to_key();
+        match status {
+            Some(s) => format!("{}:{}:{}:{}:{}", version_key, handler_name, kind, s, digest),
+            None => format!("{}:{}:{}:{}", version_key, handler_name, kind, digest),
+        }
+    }
+
+    /// Lookup key for the pre-computed digest map.
+    ///
+    /// **Must include the schema digest** — different response schemas (e.g.
+    /// `image/png` vs `application/json`) may share the same status code but
+    /// must never overwrite each other in the suffix/digest maps.
+    fn digest_lookup_key(
+        handler_name: &str,
+        kind: &str,
+        status: Option<u16>,
+        digest: &str,
+    ) -> String {
+        match status {
+            Some(s) => format!("{}:{}:{}:{}", handler_name, kind, s, digest),
+            None => format!("{}:{}:{}", handler_name, kind, digest),
         }
     }
 
@@ -324,7 +364,39 @@ impl ValidatorCache {
             .read()
             .expect("spec version lock poisoned")
             .clone();
-        let key = Self::cache_key(&spec_version, handler_name, kind, status, schema);
+
+        // Fast path: look up pre-built stable suffix to avoid per-request format! allocations
+        // Cache key format: "{spec_version}:{spec_hash}:{handler_name}:{kind}[:{status}]:{digest}"
+        // The stable suffix (handler_name:kind[:status]:digest) is pre-built at startup.
+        let key = {
+            let suffixes = self.stable_suffixes.read().expect("suffix lock poisoned");
+            let digest = Self::schema_digest(schema);
+            let lookup = Self::digest_lookup_key(handler_name, kind, status, &digest);
+            match suffixes.get(&lookup) {
+                Some(suffix) => format!("{}:{}", spec_version.to_key(), suffix),
+                None => {
+                    // Fallback: compute digest if suffix not found
+                    let digest = Self::schema_digest(schema);
+                    match status {
+                        Some(s) => format!(
+                            "{}:{}:{}:{}:{}",
+                            spec_version.to_key(),
+                            handler_name,
+                            kind,
+                            s,
+                            digest
+                        ),
+                        None => format!(
+                            "{}:{}:{}:{}",
+                            spec_version.to_key(),
+                            handler_name,
+                            kind,
+                            digest
+                        ),
+                    }
+                }
+            }
+        };
 
         // Fast path: Check if validator is already cached (read lock only)
         {
@@ -425,6 +497,14 @@ impl ValidatorCache {
         let new_version = version.clone();
 
         cache.clear();
+        self.schema_digests
+            .write()
+            .expect("digest lock poisoned")
+            .clear();
+        self.stable_suffixes
+            .write()
+            .expect("suffix lock poisoned")
+            .clear();
         info!(
             old_version = old_version.version,
             old_hash = %old_version.hash,
@@ -517,10 +597,20 @@ impl ValidatorCache {
         }
 
         let mut compiled_count = 0;
-
+        // Pre-compute digests and stable suffixes locally to avoid holding the locks
+        // across get_or_compile (would deadlock with an active write lock).
+        let mut local_digests: HashMap<String, String> = HashMap::with_capacity(routes.len() * 4);
+        let mut local_suffixes: HashMap<String, String> = HashMap::with_capacity(routes.len() * 4);
         for route in routes {
-            // Compile request schema if present
             if let Some(ref request_schema) = route.request_schema {
+                let digest = Self::schema_digest(request_schema);
+                let lookup =
+                    Self::digest_lookup_key(&route.handler_name, "request", None, &digest);
+                local_digests.insert(lookup.clone(), digest.clone());
+                local_suffixes.insert(
+                    lookup,
+                    format!("{}:{}:{}", route.handler_name, "request", digest),
+                );
                 if self
                     .get_or_compile(&route.handler_name, "request", None, request_schema)
                     .is_some()
@@ -529,10 +619,23 @@ impl ValidatorCache {
                 }
             }
 
-            // Compile response schemas for all status codes
             for (status_code, content_types) in &route.responses {
                 for response_spec in content_types.values() {
                     if let Some(ref response_schema) = response_spec.schema {
+                        let digest = Self::schema_digest(response_schema);
+                        let lookup = Self::digest_lookup_key(
+                            &route.handler_name,
+                            "response",
+                            Some(*status_code),
+                            &digest,
+                        );
+                        let lookup_key = lookup.clone();
+                        local_digests.insert(lookup_key, digest.clone());
+                        let kind = "response";
+                        local_suffixes.insert(
+                            lookup,
+                            format!("{}:{}:{}:{}:{}", route.handler_name, kind, status_code, digest, kind),
+                        );
                         if self
                             .get_or_compile(
                                 &route.handler_name,
@@ -549,10 +652,25 @@ impl ValidatorCache {
             }
         }
 
+        // Now populate both maps in a single write — no lock held during get_or_compile.
+        let digest_count = local_digests.len();
+        let _suffix_count = local_suffixes.len();
+        {
+            let mut digests = self.schema_digests.write().expect("digest lock poisoned");
+            digests.clear();
+            digests.extend(local_digests);
+        }
+        {
+            let mut suffixes = self.stable_suffixes.write().expect("suffix lock poisoned");
+            suffixes.clear();
+            suffixes.extend(local_suffixes);
+        }
+
         info!(
             compiled_count = compiled_count,
             cache_size = self.size(),
             routes_count = routes.len(),
+            digest_entries = digest_count,
             "Precompiled schemas at startup"
         );
 
@@ -634,16 +752,24 @@ mod tests {
         let d_a = ValidatorCache::schema_digest(&schema_a);
         let d_b = ValidatorCache::schema_digest(&schema_b);
 
+        // Cache key format: "{version}:{hash}:{handler_name}:{kind}[:{status}]:{digest}"
         assert_eq!(
-            ValidatorCache::cache_key(&v1, "list_pets", "request", None, &schema_a),
+            format!("{}:{}:{}:{}", v1.to_key(), "list_pets", "request", d_a),
             format!("1:abc123:list_pets:request:{d_a}")
         );
         assert_eq!(
-            ValidatorCache::cache_key(&v1, "get_pet", "response", Some(200), &schema_a),
+            format!(
+                "{}:{}:{}:{}:{}",
+                v1.to_key(),
+                "get_pet",
+                "response",
+                200,
+                d_a
+            ),
             format!("1:abc123:get_pet:response:200:{d_a}")
         );
         assert_eq!(
-            ValidatorCache::cache_key(&v2, "list_pets", "request", None, &schema_a),
+            format!("{}:{}:{}:{}", v2.to_key(), "list_pets", "request", d_a),
             format!("2:def456:list_pets:request:{d_a}")
         );
         assert_ne!(d_a, d_b); // different schemas → different digests
@@ -753,6 +879,7 @@ mod tests {
                 "required": ["name"]
             })),
             request_body_required: true,
+            request_content_types: vec!["application/json".to_string()],
             response_schema: None,
             example: None,
             responses,
@@ -853,6 +980,7 @@ mod tests {
             parameters: vec![],
             request_schema: Some(json!({"type": "object"})),
             request_body_required: true,
+            request_content_types: vec!["application/json".to_string()],
             response_schema: None,
             example: None,
             responses,
@@ -936,6 +1064,7 @@ mod tests {
             parameters: vec![],
             request_schema: Some(json!({"type": "object"})),
             request_body_required: true,
+            request_content_types: vec!["application/json".to_string()],
             response_schema: None,
             example: None,
             responses,
@@ -1014,6 +1143,32 @@ mod tests {
 
         let invalid_v2 = json!({"name": "Bob"}); // Missing age
         assert!(validator_v2.validate(&invalid_v2).is_err());
+    }
+
+    /// `AppService` uses `Validator::is_valid` on the hot path; `iter_errors` runs only on failure.
+    /// Sanity-check that a valid instance has no iterator errors and an invalid one does.
+    #[test]
+    fn is_valid_matches_iter_errors_empty_on_success() {
+        let cache = ValidatorCache::new(true);
+        let schema = json!({
+            "type": "object",
+            "required": ["name", "photoUrls"],
+            "properties": {
+                "name": { "type": "string" },
+                "photoUrls": { "type": "array", "items": { "type": "string" } }
+            }
+        });
+        let v = cache
+            .get_or_compile("pet", "request", None, &schema)
+            .expect("schema must compile");
+
+        let ok = json!({"name": "x", "photoUrls": ["https://a"]});
+        assert!(v.is_valid(&ok));
+        assert!(v.iter_errors(&ok).next().is_none());
+
+        let bad = json!({"name": 1, "photoUrls": []});
+        assert!(!v.is_valid(&bad));
+        assert!(v.iter_errors(&bad).next().is_some());
     }
 
     #[test]

@@ -12,6 +12,19 @@ use crate::dispatcher::{HandlerRequest, HandlerResponse};
 /// Buckets: 1ms, 5ms, 10ms, 50ms, 100ms, 500ms, 1s, 5s, 10s, +Inf
 const HISTOGRAM_BUCKETS: &[f64] = &[0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 10.0];
 
+/// Default soft cap on distinct path keys in [`MetricsMiddleware::path_metrics`]
+/// / [`status_metrics`]. Overridable via `BRRTR_METRICS_PATH_MAX`. (PRD Phase 0.3.)
+///
+/// In normal BRRTRouter use the key cardinality is already bounded by the
+/// number of registered route patterns (Router gives the dispatcher the
+/// `path_pattern`, not the raw URL). This cap is defense-in-depth against
+/// misconfigured callers that record raw URLs.
+const DEFAULT_PATH_METRICS_CAP: usize = 4096;
+
+/// Overflow bucket label used once the path-metrics soft cap is exceeded.
+/// Exposed on `/metrics` as `path="__other"` on the per-path series.
+pub(crate) const PATH_OVERFLOW_LABEL: &str = "__other";
+
 /// Histogram metric for tracking request duration distribution
 struct HistogramMetric {
     /// Bucket counts (one per bucket + one for +Inf)
@@ -167,6 +180,20 @@ pub struct MetricsMiddleware {
     path_metrics: Arc<DashMap<String, Arc<PathMetrics>>>,
     /// Per-(path, status) request counts for status code tracking (lock-free concurrent map)
     status_metrics: Arc<DashMap<(String, u16), AtomicUsize>>,
+    /// Soft cap on distinct path keys across `path_metrics` and `status_metrics`
+    /// (PRD Phase 0.3). Novel paths beyond this are folded into the
+    /// [`PATH_OVERFLOW_LABEL`] bucket rather than inserting new keys. A value
+    /// of `0` disables the cap.
+    path_cap: usize,
+    /// O(1) live counter of distinct `path_metrics` keys. Used for the cap
+    /// check on the miss path — avoids `DashMap::len()` which scans all shards.
+    /// Incremented only when we actually insert a new key.
+    path_count: AtomicUsize,
+    /// Same for `status_metrics`.
+    status_path_count: AtomicUsize,
+    /// Count of requests that landed in the overflow bucket (PRD Phase 0.3).
+    /// Exposed on `/metrics` as `brrtrouter_metrics_path_overflow_total`.
+    path_overflow_total: AtomicU64,
     /// Histogram for request duration (for percentile calculations)
     duration_histogram: Arc<HistogramMetric>,
     /// Connection close events (client disconnects, timeouts, etc.)
@@ -190,6 +217,10 @@ impl Default for MetricsMiddleware {
     ///
     /// All metrics start at zero and increment as requests are processed.
     fn default() -> Self {
+        let path_cap = std::env::var("BRRTR_METRICS_PATH_MAX")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(DEFAULT_PATH_METRICS_CAP);
         Self {
             request_count: AtomicUsize::new(0),
             total_latency_ns: AtomicU64::new(0),
@@ -200,6 +231,10 @@ impl Default for MetricsMiddleware {
             active_requests: AtomicI64::new(0),
             path_metrics: Arc::new(DashMap::new()),
             status_metrics: Arc::new(DashMap::new()),
+            path_cap,
+            path_count: AtomicUsize::new(0),
+            status_path_count: AtomicUsize::new(0),
+            path_overflow_total: AtomicU64::new(0),
             duration_histogram: Arc::new(HistogramMetric::new()),
             connection_closes: AtomicUsize::new(0),
             connection_errors: AtomicUsize::new(0),
@@ -345,19 +380,58 @@ impl MetricsMiddleware {
         }
     }
 
-    /// Record metrics for a specific path
+    /// Record metrics for a specific path.
     ///
-    /// This is called internally by the middleware to track per-path statistics.
-    /// Uses lock-free DashMap for concurrent access without contention.
+    /// Hot-path design (PRD Phase 0.3):
+    /// * **Hit (99 %+ of real traffic)** — `DashMap::get()` returns a `Ref`
+    ///   holding only a **read** lock on the relevant shard. Multi-reader
+    ///   concurrency; no contention with other readers.
+    /// * **Miss** — the path is not yet registered. Consult the cheap
+    ///   `AtomicUsize` `path_count` against `path_cap`; if over, route to
+    ///   the [`PATH_OVERFLOW_LABEL`] bucket. Otherwise take the write lock
+    ///   on the shard to insert exactly once (idempotent via `entry()`).
+    ///
+    /// Previously this did a single `entry()` call, which takes a **write**
+    /// lock unconditionally — even on the steady-state hit path. That
+    /// serialized concurrent dispatchers on the hot path and caused a
+    /// measured −62 % throughput regression at 2000 concurrent users.
     pub(crate) fn record_path_metrics(&self, path: &str, latency_ns: u64) {
-        // Use DashMap's entry API for lock-free get-or-insert
-        let metrics = self
+        // Fast path: read-locked lookup.
+        if let Some(m) = self.path_metrics.get(path) {
+            m.record(latency_ns);
+            return;
+        }
+        // Slow path: path not registered yet. Consult the soft cap.
+        if self.path_cap > 0 && self.path_count.load(Ordering::Relaxed) >= self.path_cap {
+            self.path_overflow_total.fetch_add(1, Ordering::Relaxed);
+            let over = self
+                .path_metrics
+                .entry(PATH_OVERFLOW_LABEL.to_string())
+                .or_insert_with(|| Arc::new(PathMetrics::new()))
+                .clone();
+            over.record(latency_ns);
+            return;
+        }
+        // Idempotent insert. `entry` auto-handles a race with another thread
+        // that inserted the same key between our `get()` and `entry()`.
+        let mut inserted = false;
+        let m = self
             .path_metrics
             .entry(path.to_string())
-            .or_insert_with(|| Arc::new(PathMetrics::new()))
+            .or_insert_with(|| {
+                inserted = true;
+                Arc::new(PathMetrics::new())
+            })
             .clone();
+        if inserted {
+            self.path_count.fetch_add(1, Ordering::Relaxed);
+        }
+        m.record(latency_ns);
+    }
 
-        metrics.record(latency_ns);
+    /// Read the current overflow counter (PRD Phase 0.3).
+    pub fn path_overflow_total(&self) -> u64 {
+        self.path_overflow_total.load(Ordering::Relaxed)
     }
 
     /// Get all per-path metrics for Prometheus export
@@ -441,17 +515,38 @@ impl MetricsMiddleware {
         }
     }
 
-    /// Record status code for a request
+    /// Record status code for a request.
     ///
-    /// Uses lock-free DashMap for concurrent access without contention.
+    /// Same read-first hot-path pattern as [`record_path_metrics`] (PRD
+    /// Phase 0.3). `DashMap::get()` holds only a read lock on the relevant
+    /// shard, so concurrent dispatchers observing the same `(path, status)`
+    /// combination do not serialize against each other.
     fn record_status(&self, path: &str, status: u16) {
-        let key = (path.to_string(), status);
-
-        // Use DashMap's entry API for lock-free get-or-insert
+        // Fast path.
+        if let Some(count) = self.status_metrics.get(&(path.to_string(), status)) {
+            count.fetch_add(1, Ordering::Relaxed);
+            return;
+        }
+        // Miss: consult cap via O(1) atomic counter.
+        if self.path_cap > 0 && self.status_path_count.load(Ordering::Relaxed) >= self.path_cap {
+            self.path_overflow_total.fetch_add(1, Ordering::Relaxed);
+            self.status_metrics
+                .entry((PATH_OVERFLOW_LABEL.to_string(), status))
+                .or_insert_with(|| AtomicUsize::new(0))
+                .fetch_add(1, Ordering::Relaxed);
+            return;
+        }
+        let mut inserted = false;
         self.status_metrics
-            .entry(key)
-            .or_insert_with(|| AtomicUsize::new(0))
+            .entry((path.to_string(), status))
+            .or_insert_with(|| {
+                inserted = true;
+                AtomicUsize::new(0)
+            })
             .fetch_add(1, Ordering::Relaxed);
+        if inserted {
+            self.status_path_count.fetch_add(1, Ordering::Relaxed);
+        }
     }
 }
 
@@ -572,6 +667,46 @@ mod tests {
         assert_eq!(*avg, 2000); // (1000 + 2000 + 3000) / 3
         assert_eq!(*min, 1000);
         assert_eq!(*max, 3000);
+    }
+
+    /// PRD Phase 0.3: novel paths beyond `path_cap` must collapse to the
+    /// `__other` bucket and bump the overflow counter, so a 404-storm against
+    /// random URLs can't grow the DashMap unboundedly.
+    #[test]
+    fn record_path_metrics_respects_path_cap() {
+        let mut metrics = MetricsMiddleware::new();
+        metrics.path_cap = 2;
+
+        metrics.record_path_metrics("/a", 100);
+        metrics.record_path_metrics("/b", 200);
+        assert_eq!(metrics.path_overflow_total(), 0);
+
+        // Third distinct path overflows.
+        metrics.record_path_metrics("/c", 300);
+        metrics.record_path_metrics("/d", 400);
+        // Existing keys still accepted at their full fidelity.
+        metrics.record_path_metrics("/a", 500);
+
+        let stats = metrics.path_stats();
+        assert!(stats.contains_key("/a"));
+        assert!(stats.contains_key("/b"));
+        assert!(stats.contains_key(PATH_OVERFLOW_LABEL));
+        assert!(!stats.contains_key("/c"));
+        assert!(!stats.contains_key("/d"));
+        assert_eq!(metrics.path_overflow_total(), 2);
+    }
+
+    /// Disabling the cap (cap = 0) preserves the pre-Phase-0.3 behavior.
+    #[test]
+    fn record_path_metrics_cap_zero_disables_overflow() {
+        let mut metrics = MetricsMiddleware::new();
+        metrics.path_cap = 0;
+        for i in 0..10 {
+            let p = format!("/p{i}");
+            metrics.record_path_metrics(&p, 100);
+        }
+        assert_eq!(metrics.path_overflow_total(), 0);
+        assert_eq!(metrics.path_stats().len(), 10);
     }
 
     #[test]

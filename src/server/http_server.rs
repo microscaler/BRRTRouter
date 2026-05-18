@@ -21,6 +21,30 @@ pub struct ServerHandle {
 }
 
 impl ServerHandle {
+    /// Block until **SIGTERM** or **SIGINT**, then stop the HTTP listener and run a clean shutdown
+    /// path suitable for Kubernetes (scale-down, rolling updates) and local Ctrl+C.
+    ///
+    /// On Unix this registers `signal-hook` handlers, waits for the first terminating signal,
+    /// calls [`Self::stop`] (cancels the server coroutine and joins it), then
+    /// [`crate::otel::shutdown`] to flush OpenTelemetry batch exporters.
+    ///
+    /// On non-Unix platforms this falls back to [`Self::join`] (wait forever unless the server
+    /// thread exits on its own).
+    ///
+    /// # Returns
+    ///
+    /// Same as [`Self::join`] when the underlying server thread panicked (`Err` holds the panic
+    /// payload). On Unix, registration failures fall back to [`Self::join`].
+    ///
+    /// # Kubernetes
+    ///
+    /// Ensure `terminationGracePeriodSeconds` on the Pod is large enough for in-flight requests
+    /// to complete after SIGTERM (default is often 30s). The kubelet sends SIGTERM, waits for the
+    /// grace period, then SIGKILL.
+    pub fn run_until_shutdown(self) -> std::thread::Result<()> {
+        wait_for_signal_and_shutdown(self)
+    }
+
     /// Wait for the server to be ready to accept connections
     ///
     /// Polls the server address by attempting TCP connections until successful.
@@ -74,6 +98,43 @@ impl ServerHandle {
     pub fn join(self) -> std::thread::Result<()> {
         self.handle.join()
     }
+}
+
+#[cfg(unix)]
+fn wait_for_signal_and_shutdown(server: ServerHandle) -> std::thread::Result<()> {
+    use signal_hook::consts::{SIGINT, SIGTERM};
+    use signal_hook::iterator::Signals;
+
+    let mut signals = match Signals::new([SIGTERM, SIGINT]) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!(
+                target: "brrtrouter::server",
+                error = %e,
+                "could not register SIGTERM/SIGINT; blocking on server thread instead"
+            );
+            return server.join();
+        }
+    };
+
+    let sig = signals.forever().next();
+    drop(signals);
+    if let Some(sig) = sig {
+        tracing::info!(
+            target: "brrtrouter::server",
+            signal = sig,
+            "shutdown signal received; stopping HTTP server"
+        );
+    }
+
+    server.stop();
+    crate::otel::shutdown();
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn wait_for_signal_and_shutdown(server: ServerHandle) -> std::thread::Result<()> {
+    server.join()
 }
 
 impl<T: HttpService + Clone + Send + Sync + 'static> HttpServer<T> {

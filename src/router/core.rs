@@ -20,7 +20,7 @@ use regex::Regex;
 use smallvec::SmallVec;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use super::radix::RadixRouter;
 
@@ -297,8 +297,25 @@ impl Router {
             // JSF P0-2: Convert Arc<str> to String for RouteMatch
             let handler_name = route.handler_name.to_string();
 
-            if match_duration > std::time::Duration::from_millis(1) {
-                warn!(
+            // Phase 2.2 hygiene: never emit per-request events at warn!/info!.
+            //
+            // BRRTRouter telemetry flows via `tracing` → stdout (JSON) →
+            // Promtail → Loki. At 2000u+ load, per-request WARN events
+            // pollute Loki with millions of duplicate alerts per minute —
+            // useless to operators — while also back-pressuring the local
+            // tracing dispatcher, serialization buffers, and stdout write
+            // path (exactly the log-pipeline-saturation pattern Phase 5.1
+            // fought on the request path). The previous 1 ms threshold
+            // was below the noise floor of a loaded macOS scheduler, so
+            // it trivially fired for every multi-segment dynamic path.
+            //
+            // Demote to debug! and raise threshold to 10 ms: genuinely
+            // pathological lookups (parser bug, pathological trie walk)
+            // still surface when operators explicitly opt into
+            // `RUST_LOG=brrtrouter::router=debug`, without flooding
+            // steady-state traffic.
+            if match_duration > std::time::Duration::from_millis(10) {
+                debug!(
                     method = %method,
                     path = %path,
                     handler_name = %handler_name,
@@ -309,8 +326,6 @@ impl Router {
                     "Slow route matching detected"
                 );
             } else {
-                // Only log at debug level to avoid accumulating events in performance tests
-                // Use debug! instead of info! to reduce tracing overhead
                 debug!(
                     method = %method,
                     path = %path,
@@ -332,7 +347,13 @@ impl Router {
         }
 
         // RT4: No route found (404)
-        warn!(
+        //
+        // Demoted from `warn!` to `debug!`: 404s are a normal part of traffic
+        // (crawlers, misconfigured clients, security scans) and at high RPS a
+        // per-miss WARN produces many thousands of synchronous log writes per
+        // second, which itself can starve the handler coroutines. See PRD
+        // `docs/PRD_HOT_PATH_V2_STABILITY_AND_PERF.md` §Phase 2.2.
+        debug!(
             method = %method,
             path = %path,
             duration_us = match_duration.as_micros(),

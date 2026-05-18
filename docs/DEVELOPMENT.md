@@ -41,11 +41,11 @@ See [CONTRIBUTING.md](../CONTRIBUTING.md) for detailed development guide.
 
 | Service | URL | Purpose |
 |---------|-----|---------|
-| **🎨 Interactive Dashboard** | http://localhost:8080/ | **START HERE** - SolidJS UI with live data, SSE, API testing |
-| **Pet Store API** | http://localhost:8080 | Main API (standard HTTP port) |
-| **Swagger UI** | http://localhost:8080/docs | OpenAPI documentation |
-| **Health Check** | http://localhost:8080/health | Readiness probe |
-| **Metrics** | http://localhost:8080/metrics | Prometheus metrics |
+| **🎨 Interactive Dashboard** | http://localhost:8081/ | **START HERE** - SolidJS UI with live data, SSE, API testing |
+| **Pet Store API** | http://localhost:8081 | Main API (local-dev default; k8s still uses 8080 via `PORT` env) |
+| **Swagger UI** | http://localhost:8081/docs | OpenAPI documentation |
+| **Health Check** | http://localhost:8081/health | Readiness probe |
+| **Metrics** | http://localhost:8081/metrics | Prometheus metrics |
 | **Grafana** | http://localhost:3000 | Dashboards (admin/admin) |
 | **Prometheus** | http://localhost:9090 | Metrics database |
 | **Jaeger** | http://localhost:16686 | Distributed tracing |

@@ -71,7 +71,7 @@ fn main() -> io::Result<()> {
             std::process::exit(1);
         });
     
-    let router = std::sync::Arc::new(std::sync::RwLock::new(Router::new(routes.clone())));
+    let router = std::sync::Arc::new(arc_swap::ArcSwap::from_pointee(Router::new(routes.clone())));
     if let Ok(r) = router.read() {
         r.dump_routes();
     } else {
@@ -92,7 +92,7 @@ fn main() -> io::Result<()> {
         registry::register_from_spec(&mut dispatcher, &routes);
     }
     
-    let dispatcher = std::sync::Arc::new(std::sync::RwLock::new(dispatcher));
+    let dispatcher = std::sync::Arc::new(arc_swap::ArcSwap::from_pointee(dispatcher));
     let mut service = AppService::new(
         router,
         dispatcher,
@@ -104,9 +104,10 @@ fn main() -> io::Result<()> {
     service.set_metrics_middleware(metrics);
     service.set_memory_middleware(memory);
 
-    // Start the HTTP server
-    let handle = HttpServer(service).start("0.0.0.0:8080")?;
-    handle.join().map_err(|e| {
+    // Start the HTTP server (default local-dev port: 8081 — 8080 is too often
+    // contended by other local services).
+    let handle = HttpServer(service).start("0.0.0.0:8081")?;
+    handle.run_until_shutdown().map_err(|e| {
         io::Error::other(format!("Server error: {e:?}"))
     })?;
     

@@ -337,7 +337,8 @@ where
                 let h_name = req.handler_name.clone();
                 let request_id = req.request_id;
 
-                info!(
+                // Per-request — demoted to debug (PRD 2.2).
+                debug!(
                     request_id = %request_id,
                     handler_name = %h_name,
                     "Untyped handler execution start"
@@ -362,8 +363,9 @@ where
                     );
                     let _ = reply_tx.send(error_response);
                 } else {
+                    // Per-request — demoted to debug (PRD 2.2).
                     let execution_time_ms = execution_start.elapsed().as_millis() as u64;
-                    info!(
+                    debug!(
                         request_id = %request_id,
                         handler_name = %h_name,
                         execution_time_ms = execution_time_ms,
@@ -550,8 +552,8 @@ impl Dispatcher {
                         let handler_name = req.handler_name.clone();
                         let request_id = req.request_id;
 
-                        // H2: Handler execution start
-                        info!(
+                        // H2: Handler execution start — per-request, demoted to debug (PRD 2.2).
+                        debug!(
                             request_id = %request_id,
                             handler_name = %handler_name,
                             path_params = ?req.path_params,
@@ -585,9 +587,9 @@ impl Dispatcher {
                             );
                             let _ = reply_tx.send(error_response);
                         } else {
-                            // H4: Handler execution complete
+                            // H4: Handler execution complete — per-request, demoted to debug (PRD 2.2).
                             let execution_time_ms = execution_start.elapsed().as_millis() as u64;
-                            info!(
+                            debug!(
                                 request_id = %request_id,
                                 handler_name = %handler_name,
                                 execution_time_ms = execution_time_ms,
@@ -798,8 +800,8 @@ impl Dispatcher {
         let (mut resp, latency) = if let Some(r) = early_resp {
             (r, Duration::from_millis(0))
         } else {
-            // D3: Request dispatched to handler
-            info!(
+            // D3: Request dispatched to handler — per-request, demoted to debug (PRD 2.2).
+            debug!(
                 request_id = %request_id,
                 handler_name = %request.handler_name,
                 method = %request.method,
@@ -875,8 +877,9 @@ impl Dispatcher {
             // and rely on handler-side timeouts and panic recovery
             let r = match reply_rx.recv() {
                 Ok(response) => {
+                    // Per-request — demoted to debug (PRD 2.2).
                     let elapsed = start.elapsed();
-                    info!(
+                    debug!(
                         request_id = %request_id,
                         handler_name = %request.handler_name,
                         latency_ms = elapsed.as_millis() as u64,

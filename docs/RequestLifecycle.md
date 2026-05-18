@@ -271,7 +271,7 @@ pub fn {{handler_name}}(req: HandlerRequest) {
 cd my-service
 cargo build        # Compile the service
 cargo run          # Run the service
-curl http://localhost:8080/health
+curl http://localhost:8081/health
 ```
 
 **Code Reference:** `src/generator/project/generate.rs`
@@ -2073,7 +2073,7 @@ pub fn validate_email(email: &str) -> bool {
 ```bash
 # Check routing table
 just dev-up
-curl http://localhost:8080/pets/123
+curl http://localhost:8081/pets/123
 
 # View logs for route registration
 grep "\[route\]" logs/brrtrouter.log
@@ -2118,7 +2118,7 @@ grep "\[auth\]" logs/brrtrouter.log
 echo $BRRTR_API_KEY
 
 # Test with curl
-curl -H "X-API-Key: test123" http://localhost:8080/pets
+curl -H "X-API-Key: test123" http://localhost:8081/pets
 ```
 
 #### Issue 3: Handler Panics / 500 Internal Server Error

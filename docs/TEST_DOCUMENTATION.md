@@ -290,13 +290,13 @@ BRRTRouter includes comprehensive load testing using [Goose](https://book.goose.
 ```bash
 # Quick 30-second load test
 cargo run --release --example api_load_test -- \
-  --host http://localhost:8080 \
+  --host http://localhost:8081 \
   -u10 -r2 -t30s \
   --header "X-API-Key: test123"
 
 # Full load test with HTML report
 cargo run --release --example api_load_test -- \
-  --host http://localhost:8080 \
+  --host http://localhost:8081 \
   -u20 -r5 -t2m \
   --no-reset-metrics \
   --header "X-API-Key: test123" \

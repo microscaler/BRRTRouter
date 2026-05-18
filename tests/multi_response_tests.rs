@@ -53,6 +53,7 @@ impl MultiResponseTestServer {
             parameters: vec![],
             request_schema: None,
             request_body_required: false,
+            request_content_types: Vec::new(),
             response_schema: None,
             example: None,
             responses,
@@ -67,7 +68,7 @@ impl MultiResponseTestServer {
             cors_policy: brrtrouter::middleware::RouteCorsPolicy::Inherit,
         };
 
-        let router = Arc::new(RwLock::new(Router::new(vec![route])));
+        let router = Arc::new(arc_swap::ArcSwap::from_pointee(Router::new(vec![route])));
         let mut dispatcher = Dispatcher::new();
         unsafe {
             dispatcher.register_handler("h", |_req: HandlerRequest| {
@@ -79,7 +80,7 @@ impl MultiResponseTestServer {
         // Include static and doc directories for comprehensive integration testing
         let service = AppService::new(
             router,
-            Arc::new(RwLock::new(dispatcher)),
+            Arc::new(arc_swap::ArcSwap::from_pointee(dispatcher)),
             HashMap::new(),
             PathBuf::from("examples/openapi.yaml"),
             Some(PathBuf::from("examples/pet_store/static_site")),

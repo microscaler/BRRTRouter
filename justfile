@@ -173,11 +173,11 @@ debug-petstore:
 	echo ""
 	echo "✅ Server started in background"
 	echo "   Log file: /tmp/petstore_debug.log"
-	echo "   Health:   curl http://127.0.0.1:8080/health"
+	echo "   Health:   curl http://127.0.0.1:8081/health"
 	echo "   Stop:     pkill -f pet_store"
 	echo ""
 	echo "Verifying server is running..."
-	curl -s http://127.0.0.1:8080/health && echo ""
+	curl -s http://127.0.0.1:8081/health && echo ""
 
 # Stop pet_store server
 stop-petstore:
@@ -198,12 +198,12 @@ goose-test users="10" runtime="30s":
 	echo "🦆 Running Goose load test..."
 	echo "   Users:   {{users}}"
 	echo "   Runtime: {{runtime}}"
-	echo "   Target:  http://127.0.0.1:8080"
+	echo "   Target:  http://127.0.0.1:8081"
 	echo "   Log:     /tmp/goose_test.log"
 	echo ""
 	
 	# Check if server is running
-	if ! curl -s http://127.0.0.1:8080/health > /dev/null 2>&1; then
+	if ! curl -s http://127.0.0.1:8081/health > /dev/null 2>&1; then
 		echo "❌ Server not responding on port 8080"
 		echo "   Start it first with: just debug-petstore"
 		exit 1
@@ -211,7 +211,7 @@ goose-test users="10" runtime="30s":
 	
 	RUST_LOG=warn \
 	cargo run --release --example api_load_test -- \
-		--host http://127.0.0.1:8080 \
+		--host http://127.0.0.1:8081 \
 		--users {{users}} \
 		--run-time {{runtime}} \
 		--no-reset-metrics \
@@ -253,7 +253,7 @@ smoke-test:
 	just goose-test users=5 runtime=10s || true
 	
 	# Check if server crashed
-	if ! curl -s http://127.0.0.1:8080/health > /dev/null 2>&1; then
+	if ! curl -s http://127.0.0.1:8081/health > /dev/null 2>&1; then
 		echo ""
 		echo "❌ SERVER CRASHED during load test!"
 		echo "   Check logs: tail -50 /tmp/petstore_debug.log"
@@ -283,6 +283,63 @@ coverage:
 # Run benchmarks
 bench:
 	cargo bench
+
+# Save Criterion baseline `ms02-<git-short-sha>-<YYYYMMDD>` for schema_validation_hot_path.
+# Writes the tag to `benches/baselines/.ms02-criterion-baseline` (gitignored) for `just bench-against-ms02`.
+bench-baseline-ms02:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	SHORT=$(git rev-parse --short HEAD)
+	DATE=$(date +%Y%m%d)
+	TAG="ms02-${SHORT}-${DATE}"
+	echo "Criterion baseline tag: ${TAG}"
+	cargo bench -p brrtrouter --bench schema_validation_hot_path -- --save-baseline "${TAG}"
+	mkdir -p benches/baselines
+	printf '%s' "${TAG}" > benches/baselines/.ms02-criterion-baseline
+	echo "Recorded in benches/baselines/.ms02-criterion-baseline — run: just bench-against-ms02"
+
+# Same tag for all Criterion bench targets (throughput, JWT, schema).
+bench-baseline-ms02-all:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	SHORT=$(git rev-parse --short HEAD)
+	DATE=$(date +%Y%m%d)
+	TAG="ms02-${SHORT}-${DATE}"
+	echo "Criterion baseline tag: ${TAG}"
+	cargo bench -p brrtrouter --bench schema_validation_hot_path -- --save-baseline "${TAG}"
+	cargo bench -p brrtrouter --bench throughput -- --save-baseline "${TAG}"
+	cargo bench -p brrtrouter --bench jwt_cache_performance -- --save-baseline "${TAG}"
+	mkdir -p benches/baselines
+	printf '%s' "${TAG}" > benches/baselines/.ms02-criterion-baseline
+	echo "Recorded in benches/baselines/.ms02-criterion-baseline — run: just bench-against-ms02-all"
+
+# Compare schema_validation_hot_path to the last baseline tag saved by `just bench-baseline-ms02*`.
+bench-against-ms02:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	F="benches/baselines/.ms02-criterion-baseline"
+	if [[ ! -f "${F}" ]]; then
+		echo "No baseline tag file. Run: just bench-baseline-ms02" >&2
+		exit 1
+	fi
+	TAG=$(tr -d '\n' < "${F}")
+	echo "Comparing against baseline: ${TAG}"
+	cargo bench -p brrtrouter --bench schema_validation_hot_path -- --baseline "${TAG}"
+
+# Compare all three benches to the last saved tag (same order as bench-baseline-ms02-all).
+bench-against-ms02-all:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	F="benches/baselines/.ms02-criterion-baseline"
+	if [[ ! -f "${F}" ]]; then
+		echo "No baseline tag file. Run: just bench-baseline-ms02-all" >&2
+		exit 1
+	fi
+	TAG=$(tr -d '\n' < "${F}")
+	echo "Comparing against baseline: ${TAG}"
+	cargo bench -p brrtrouter --bench schema_validation_hot_path -- --baseline "${TAG}"
+	cargo bench -p brrtrouter --bench throughput -- --baseline "${TAG}"
+	cargo bench -p brrtrouter --bench jwt_cache_performance -- --baseline "${TAG}"
 
 
 # ============================================================================
@@ -441,7 +498,7 @@ docs-check:
 # API Testing
 # ============================================================================
 
-# Test Pet Store API endpoints (requires running server on localhost:8080)
+# Test Pet Store API endpoints (requires running server on localhost:8081)
 # Use with: just dev-up (in another terminal), then just curls
 curls:
 	@bash scripts/curls.sh
@@ -585,7 +642,7 @@ dev-registry-wire:
 # Prerequisites: from microscaler/shared-kind-cluster run `just dev-up` once, OR:
 #   kind create cluster --config k8s/cluster/kind-config.yaml --wait 120s
 # Tilt UI: http://localhost:10353 (press 'space' to open)
-# Pet Store API: http://localhost:8080
+# Pet Store API: http://localhost:8081
 dev-up:
 	#!/usr/bin/env bash
 	set -euo pipefail
@@ -602,8 +659,8 @@ dev-up:
 	kubectl config use-context kind-kind
 	just dev-registry-wire
 	echo ""
-	echo "Starting Tilt on :10353 (press 'space' to open web UI)..."
-	tilt up --port 10353
+	echo "Starting Tilt on 0.0.0.0:10353 (LAN: http://<this-host>:10353/) (press 'space' to open web UI)..."
+	tilt up --host 0.0.0.0 --port 10353
 
 # Stop Tilt only (leaves Kind cluster and kind-registry running for other repos)
 dev-down:
@@ -635,7 +692,7 @@ dev-rebuild:
 	@cargo build --release -p pet_store
 	@echo "Restarting Tilt..."
 	@tilt down --port 10353 || true
-	@tilt up --port 10353
+	@tilt up --host 0.0.0.0 --port 10353
 
 # Clean Docker state (nuclear — affects ALL kind clusters). Prefer: shared-kind-cluster `just cluster-delete`.
 dev-clean:

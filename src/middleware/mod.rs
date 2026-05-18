@@ -91,6 +91,7 @@
 mod auth;
 mod core;
 mod cors;
+pub mod jwks;
 pub mod memory;
 mod metrics;
 mod tracing;
@@ -102,6 +103,7 @@ pub use cors::{
     merge_vary_field_value, CorsConfigError, CorsMiddleware, CorsMiddlewareBuilder,
     OriginValidation, RouteCorsConfig, RouteCorsPolicy,
 };
+pub use jwks::JwksHeadersMiddleware;
 pub use memory::MemoryMiddleware;
 pub use metrics::MetricsMiddleware;
 pub use tracing::TracingMiddleware;

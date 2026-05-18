@@ -8,18 +8,39 @@ use crate::security::{SecurityProvider, SecurityRequest};
 use crate::spec::SecurityScheme;
 use crate::static_files::StaticFiles;
 use crate::validator_cache::ValidatorCache;
+use arc_swap::ArcSwap;
 use http::Method;
 use may_minihttp::{HttpService, Request, Response};
 use serde_json::json;
-use smallvec::SmallVec;
 use std::collections::HashMap;
 use std::fmt::Write;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use std::time::Duration;
+
+/// Shared, lock-free-read router (PRD Phase 1).
+///
+/// Previously `Arc<RwLock<Router>>` — every request paid one atomic + potential
+/// writer-queue latency for `read()`. With `ArcSwap`, a reader's hot path is a
+/// single atomic load (no queuing), and hot-reload becomes a pointer-swap via
+/// [`ArcSwap::store`].
+pub type SharedRouter = Arc<ArcSwap<Router>>;
+
+/// Shared, lock-free-read dispatcher (PRD Phase 1).
+///
+/// Same rationale as [`SharedRouter`]. Dispatcher state changes (handler
+/// registration, hot-reload) should clone the inner `Dispatcher`, mutate the
+/// clone, and `store` it — `Dispatcher: Clone`.
+pub type SharedDispatcher = Arc<ArcSwap<Dispatcher>>;
 use tracing::info;
+
+/// Maximum JSON Schema validation errors collected per request/response (hot-path Phase 4).
+/// Bounds CPU and allocations on pathological invalid bodies; the HTTP `details` array is truncated accordingly.
+///
+/// Valid instances call `jsonschema::Validator::is_valid` first (cheaper than `iter_errors` when there are no errors);
+/// this limit applies only to the failure path when we build the `details` array.
+const MAX_JSON_SCHEMA_ERRORS: usize = 64;
 
 fn response_schema_is_binary_string(s: &serde_json::Value) -> bool {
     s.get("type").and_then(|t| t.as_str()) == Some("string")
@@ -77,16 +98,46 @@ fn response_body_schema_for_status(
     }
 }
 
+/// Pre-resolved security requirement for a route.
+///
+/// Created at startup by resolving scheme names from [`crate::spec::SecurityRequirement`]
+/// to concrete [`SecurityScheme`] + [`SecurityProvider`] references.
+/// This eliminates per-request HashMap lookups on the hot path.
+#[derive(Clone)]
+pub struct ResolvedSecurityRequirement {
+    /// Original scheme name from the OpenAPI spec
+    pub scheme_name: String,
+    /// The concrete security scheme definition
+    pub scheme: Arc<SecurityScheme>,
+    /// Scopes required for this scheme
+    pub scopes: Vec<String>,
+    /// The concrete security provider for this scheme
+    pub provider: Arc<dyn SecurityProvider>,
+}
+
+/// Pre-resolved security requirements for a route.
+///
+/// `requirements` is a list of OR-groups: each inner `Vec` must ALL validate (AND),
+/// but any group succeeding validates the request (OR). This mirrors the
+/// OpenAPI `security` field semantics.
+#[derive(Clone)]
+pub struct ResolvedSecurity {
+    /// OR groups of AND'd resolved security requirements
+    pub requirements: Vec<Vec<ResolvedSecurityRequirement>>,
+}
+
 /// HTTP application service that handles all incoming requests
 ///
 /// This is the core service that processes HTTP requests through the full pipeline:
 /// routing, authentication, validation, dispatching, and response generation.
 /// It integrates all major components (router, dispatcher, middleware, security, etc.).
 pub struct AppService {
-    /// Router for matching requests to handlers
-    pub router: Arc<RwLock<Router>>,
-    /// Dispatcher for sending requests to handler coroutines
-    pub dispatcher: Arc<RwLock<Dispatcher>>,
+    /// Router for matching requests to handlers. Lock-free reads on the hot
+    /// path via `ArcSwap` (PRD Phase 1). Hot reload stores a new `Router`.
+    pub router: SharedRouter,
+    /// Dispatcher for sending requests to handler coroutines. Lock-free reads
+    /// via `ArcSwap`. Mutations clone-and-store (`Dispatcher: Clone`).
+    pub dispatcher: SharedDispatcher,
     /// Security schemes defined in the OpenAPI spec
     pub security_schemes: HashMap<String, SecurityScheme>,
     /// Active security provider implementations (API keys, JWT, OAuth2)
@@ -105,10 +156,15 @@ pub struct AppService {
     pub doc_files: Option<StaticFiles>,
     /// Optional file watcher for hot reloading
     pub watcher: Option<notify::RecommendedWatcher>,
-    /// Precomputed Keep-Alive header (to avoid per-request allocations/leaks)
-    pub keep_alive_header: Option<&'static str>,
+    /// Precomputed `Keep-Alive: …` header line, set once via [`set_keep_alive`].
+    /// Cloned (O(1) `Arc`-free `String::clone`? — just a `Box<str>` copy) per
+    /// response; no `Box::leak` needed since `may_minihttp::Response::header`
+    /// now accepts owned values.
+    pub keep_alive_header: Option<Box<str>>,
     /// JSON Schema validator cache for eliminating per-request compilation
     pub validator_cache: ValidatorCache,
+    /// Pre-resolved security by handler name (populated after providers are registered).
+    pub security_lookup: Arc<HashMap<String, Arc<ResolvedSecurity>>>,
 }
 
 /// Clone implementation for `AppService`
@@ -151,27 +207,14 @@ impl Clone for AppService {
             static_files: self.static_files.clone(),
             doc_files: self.doc_files.clone(),
             watcher: None,
-            keep_alive_header: self.keep_alive_header,
+            keep_alive_header: self.keep_alive_header.clone(),
             validator_cache: self.validator_cache.clone(),
+            security_lookup: self.security_lookup.clone(),
         }
     }
 }
 
 impl AppService {
-    /// Intern table for keep-alive header values to avoid repeated leaks
-    fn intern_keep_alive(value: String) -> &'static str {
-        static INTERN: OnceLock<RwLock<HashMap<String, &'static str>>> = OnceLock::new();
-        let map = INTERN.get_or_init(|| RwLock::new(HashMap::new()));
-        // Acquire write lock to make race-free and avoid leaking duplicates.
-        let mut write = map.write().expect("keep-alive interner poisoned");
-        if let Some(existing) = write.get(&value).copied() {
-            return existing;
-        }
-        let leaked: &'static str = Box::leak(value.into_boxed_str());
-        write.insert(leaked.to_string(), leaked);
-        leaked
-    }
-
     /// Create a new application service
     ///
     /// # Arguments
@@ -187,8 +230,8 @@ impl AppService {
     ///
     /// A new `AppService` ready to handle requests
     pub fn new(
-        router: Arc<RwLock<Router>>,
-        dispatcher: Arc<RwLock<Dispatcher>>,
+        router: SharedRouter,
+        dispatcher: SharedDispatcher,
         security_schemes: HashMap<String, SecurityScheme>,
         spec_path: PathBuf,
         static_dir: Option<PathBuf>,
@@ -212,6 +255,7 @@ impl AppService {
             watcher: None,
             keep_alive_header: None,
             validator_cache,
+            security_lookup: Arc::new(HashMap::new()),
         }
     }
 
@@ -251,16 +295,16 @@ impl AppService {
     }
 
     pub fn set_metrics_middleware(&mut self, metrics: Arc<MetricsMiddleware>) {
-        // Pre-register all known paths from the router
-        if let Ok(router) = self.router.read() {
-            let paths = router.get_all_path_patterns();
-            if !paths.is_empty() {
-                info!(
-                    count = paths.len(),
-                    "Pre-registering paths in metrics middleware"
-                );
-                metrics.pre_register_paths(&paths);
-            }
+        // Pre-register all known paths from the router. ArcSwap::load returns a
+        // `Guard<Arc<Router>>` which auto-derefs to `Router`.
+        let router = self.router.load();
+        let paths = router.get_all_path_patterns();
+        if !paths.is_empty() {
+            info!(
+                count = paths.len(),
+                "Pre-registering paths in metrics middleware"
+            );
+            metrics.pre_register_paths(&paths);
         }
 
         self.metrics = Some(metrics);
@@ -284,13 +328,9 @@ impl AppService {
     /// allocate once and leak a single header string here to avoid per-request leaks.
     pub fn set_keep_alive(&mut self, enable: bool, timeout_secs: u64, max_requests: u64) {
         if enable {
-            // Build the desired header value and intern it to reuse any previously leaked instance.
-            let new_value = format!("Keep-Alive: timeout={timeout_secs}, max={max_requests}");
-            let interned = Self::intern_keep_alive(new_value);
-            if self.keep_alive_header == Some(interned) {
-                return;
-            }
-            self.keep_alive_header = Some(interned);
+            self.keep_alive_header = Some(
+                format!("Keep-Alive: timeout={timeout_secs}, max={max_requests}").into_boxed_str(),
+            );
         } else {
             self.keep_alive_header = None;
         }
@@ -319,6 +359,69 @@ impl AppService {
     /// ```
     pub fn precompile_schemas(&self, routes: &[crate::spec::RouteMeta]) -> usize {
         self.validator_cache.precompile_schemas(routes)
+    }
+
+    /// Pre-resolve all security requirements for routes at startup.
+    ///
+    /// This replaces per-request HashMap lookups (`security_schemes.get()`,
+    /// `security_providers.get()`) with pre-computed concrete references.
+    /// Call this after [`register_default_security_providers_from_env`].
+    ///
+    /// # Safety
+    ///
+    /// Panics if a route references a security scheme name that has no
+    /// corresponding scheme or provider registered. This is a server
+    /// configuration error.
+    pub fn resolve_security(&mut self, routes: &[crate::spec::RouteMeta]) {
+        let mut lookup = HashMap::with_capacity(routes.len() * 2);
+
+        for route in routes {
+            if route.security.is_empty() {
+                continue;
+            }
+
+            let requirements: Vec<Vec<ResolvedSecurityRequirement>> = route
+                .security
+                .iter()
+                .map(|req| {
+                    req.0.iter()
+                        .map(|(scheme_name, scopes)| {
+                            let scheme = self.security_schemes.get(scheme_name)
+                                .unwrap_or_else(|| panic!(
+                                    "Security scheme '{}' registered for route '{}' not found in security_schemes",
+                                    scheme_name, route.handler_name
+                                ));
+                            let provider = self.security_providers.get(scheme_name)
+                                .unwrap_or_else(|| panic!(
+                                    "Security provider '{}' registered for route '{}' not found in security_providers",
+                                    scheme_name, route.handler_name
+                                ));
+
+                            ResolvedSecurityRequirement {
+                                scheme_name: scheme_name.clone(),
+                                scheme: Arc::new(scheme.clone()),
+                                scopes: scopes.clone(),
+                                provider: Arc::clone(provider),
+                            }
+                        })
+                        .collect()
+                })
+                .collect();
+
+            if !requirements.is_empty() {
+                lookup.insert(
+                    route.handler_name.to_string(),
+                    Arc::new(ResolvedSecurity { requirements }),
+                );
+            }
+        }
+
+        let count = lookup.len();
+        self.security_lookup = Arc::new(lookup);
+        info!(
+            resolved_routes = count,
+            "Pre-resolved security requirements at startup"
+        );
     }
 
     /// Register default security providers based on loaded OpenAPI security schemes.
@@ -523,6 +626,19 @@ pub fn metrics_endpoint(
         body,
         "brrtrouter_auth_failures_total {}",
         metrics.auth_failures()
+    );
+
+    // PRD Phase 0.3: visibility into the path-metrics soft cap (see
+    // BRRTR_METRICS_PATH_MAX). Non-zero means one or more requests were
+    // recorded against the `__other` bucket because the cap was reached.
+    body.push_str(
+        "# HELP brrtrouter_metrics_path_overflow_total Requests folded into the __other path bucket when the path-metrics soft cap was exceeded\n",
+    );
+    body.push_str("# TYPE brrtrouter_metrics_path_overflow_total counter\n");
+    let _ = writeln!(
+        body,
+        "brrtrouter_metrics_path_overflow_total {}",
+        metrics.path_overflow_total()
     );
 
     body.push_str(
@@ -815,7 +931,7 @@ impl HttpService for AppService {
     /// This method is called from multiple coroutines concurrently.
     /// All shared state (Router, Dispatcher, etc.) uses Arc + Mutex/RwLock.
     fn call(&mut self, req: Request, res: &mut Response) -> io::Result<()> {
-        use tracing::{debug, error, info, info_span, warn, Span};
+        use tracing::{debug, error, info_span, warn, Span};
 
         /// Helper struct that logs request completion when dropped
         /// This ensures we log timing even if we return early
@@ -846,9 +962,12 @@ impl HttpService for AppService {
                 self.span.record("duration_ms", duration_ms);
                 self.span.record("stack_used_kb", stack_used_kb);
 
-                // R8: Request complete - Critical logging with full context
+                // R8: Request complete - per-request, demoted to `debug!` for the
+                // hot path (PRD Phase 2.2). The span already captures
+                // `duration_ms` / `stack_used_kb` for distributed tracing;
+                // developers who want completion logs set `RUST_LOG=…=debug`.
                 if let Some(ref request_id) = self.request_id {
-                    info!(
+                    debug!(
                         request_id = %request_id,
                         method = %self.method,
                         path = %self.path,
@@ -858,7 +977,7 @@ impl HttpService for AppService {
                         "Request completed"
                     );
                 } else {
-                    info!(
+                    debug!(
                         method = %self.method,
                         path = %self.path,
                         duration_ms = duration_ms,
@@ -934,43 +1053,23 @@ impl HttpService for AppService {
             span: span.clone(),
         };
 
-        // Log incoming request with sanitized headers (for debugging TooManyHeaders)
-        // Sensitive header/cookie/query values are masked per BRRTR_LOG_REDACT_LEVEL.
-        // Guard sanitization behind debug-enabled check to avoid hot-path cloning in production.
-        if tracing::enabled!(tracing::Level::DEBUG) {
-            let sanitizer = crate::sanitize::default_sanitizer();
-            if sanitizer.level() == crate::otel::RedactionLevel::None {
-                debug!(
-                    method = %method,
-                    path = %path,
-                    header_count = headers.len(),
-                    headers = ?headers,
-                    query_params = ?query_params,
-                    cookies = ?cookies,
-                    body_size = body.as_ref().map(|v| v.as_object().map(|o| o.len())),
-                    "Request received"
-                );
-            } else {
-                let safe_headers = sanitizer.sanitize_headers(&headers);
-                let safe_cookies = sanitizer.sanitize_headers(&cookies);
-                let safe_query = sanitizer.sanitize_params(&query_params);
-                debug!(
-                    method = %method,
-                    path = %path,
-                    header_count = headers.len(),
-                    headers = ?safe_headers,
-                    query_params = ?safe_query,
-                    cookies = ?safe_cookies,
-                    body_size = body.as_ref().map(|v| v.as_object().map(|o| o.len())),
-                    "Request received"
-                );
-            }
-        }
+        // Log incoming request with all headers (for debugging TooManyHeaders)
+        debug!(
+            method = %method,
+            path = %path,
+            header_count = headers.len(),
+            headers = ?headers,
+            query_params = ?query_params,
+            cookies = ?cookies,
+            body_size = body.as_ref().map(|v| v.as_object().map(|o| o.len())),
+            "Request received"
+        );
 
-        // Apply keep-alive headers early so all responses inherit them
-        if let Some(ka) = self.keep_alive_header {
+        // Apply keep-alive headers early so all responses inherit them.
+        // Owned `Box<str>` clone per response — freed with the response, no leak.
+        if let Some(ka) = &self.keep_alive_header {
             res.header("Connection: keep-alive");
-            res.header(ka);
+            res.header(ka.clone());
         }
 
         // Count every incoming request at top-level (even those short-circuited before dispatch)
@@ -983,9 +1082,10 @@ impl HttpService for AppService {
         }
         if method == Method::GET && path == "/metrics" {
             if let Some(metrics) = &self.metrics {
-                // Get dispatcher for worker pool metrics (gracefully handle lock failure)
-                let dispatcher_guard = self.dispatcher.read().ok();
-                let dispatcher_ref = dispatcher_guard.as_deref();
+                // Get dispatcher for worker pool metrics. ArcSwap is never
+                // poisoned — `load` is infallible and lock-free.
+                let dispatcher_guard = self.dispatcher.load();
+                let dispatcher_ref = Some(&**dispatcher_guard);
                 let extra = self
                     .extra_prometheus
                     .as_ref()
@@ -1050,9 +1150,8 @@ impl HttpService for AppService {
                         };
                         res.header(header);
                     } else {
-                        // Fallback for uncommon types (rare case)
-                        let header = format!("Content-Type: {ct}").into_boxed_str();
-                        res.header(Box::leak(header));
+                        // Uncommon MIME — owned header, freed with the response.
+                        res.header(format!("Content-Type: {ct}"));
                     }
                     res.body_vec(bytes);
                     return Ok(());
@@ -1068,16 +1167,10 @@ impl HttpService for AppService {
             .filter(|s| !s.trim().is_empty());
         let canonical_req_id = RequestId::from_header_or_new(inbound_req_id);
 
-        let route_opt = {
-            // Router lock: panic on poison is appropriate - system is in undefined state
-            let router = self
-                .router
-                .read()
-                .expect("router RwLock poisoned - critical error");
-            // JSF P1: method is already Method enum, no parsing needed
-            // Clone method since router.route() takes ownership and we need it later for logging
-            router.route(method.clone(), &path)
-        };
+        // Router lookup: lock-free ArcSwap load on the request path (PRD Phase 1).
+        // No `RwLock::read()` → no reader queuing behind writers, no poison
+        // surface. `load()` returns a `Guard<Arc<Router>>` that we auto-deref.
+        let route_opt = self.router.load().route(method.clone(), &path);
         if let Some(mut route_match) = route_opt {
             route_match.query_params = query_params.clone();
 
@@ -1089,124 +1182,56 @@ impl HttpService for AppService {
             }
 
             // Perform security validation first
-            if !route_match.route.security.is_empty() {
-                // S1: Security check start
-                // JSF P1: Use SmallVec for security scheme collection (stack-allocated for ≤4 schemes)
-                let schemes_required: SmallVec<[String; 4]> = route_match
-                    .route
-                    .security
-                    .iter()
-                    .flat_map(|req| req.0.keys().cloned())
-                    .collect();
-                let scopes_required: SmallVec<[String; 4]> = route_match
-                    .route
-                    .security
-                    .iter()
-                    .flat_map(|req| req.0.values().flatten().cloned())
-                    .collect();
+            // JSF P2: Use pre-resolved security (security_lookup) to eliminate per-request
+            // HashMap lookups. Falls back to original per-request HashMap lookup if the
+            // pre-resolution table wasn't populated (backward-compatible with tests that
+            // don't call resolve_security at startup).
+            let use_preresolved = self
+                .security_lookup
+                .get(&route_match.handler_name)
+                .map(Arc::clone)
+                .filter(|rs| !rs.requirements.is_empty());
 
-                debug!(
-                    handler = %route_match.handler_name,
-                    schemes_required = ?schemes_required,
-                    scopes_required = ?scopes_required,
-                    "Security check start"
-                );
+            let mut authorized = route_match.route.security.is_empty();
+            let mut insufficient_scope = false;
 
-                let sec_req = SecurityRequest {
-                    headers: &headers,
-                    query: &query_params,
-                    cookies: &cookies,
-                };
-                let mut authorized = false;
-                let mut insufficient_scope = false;
-                let mut attempted_schemes: Vec<String> = Vec::new();
-
-                'outer: for requirement in &route_match.route.security {
+            // Helper to perform the actual auth check for both pre-resolved and raw paths
+            fn validate_requirements(
+                requirements: &[Vec<ResolvedSecurityRequirement>],
+                sec_req: &SecurityRequest,
+                insufficient_scope: &mut bool,
+            ) -> bool {
+                for req_group in requirements {
                     let mut ok = true;
-                    for (scheme_name, scopes) in &requirement.0 {
-                        attempted_schemes.push(scheme_name.clone());
-
-                        // S2: Security scheme lookup
-                        debug!(
-                            scheme_name = %scheme_name,
-                            scheme_type = "lookup",
-                            "Security scheme lookup"
+                    for resolved in req_group {
+                        let auth_result = resolved.provider.validate(
+                            resolved.scheme.as_ref(),
+                            &resolved.scopes,
+                            sec_req,
                         );
-
-                        let scheme = match self.security_schemes.get(scheme_name) {
-                            Some(s) => s,
-                            None => {
-                                // S3: Provider not found
-                                let available_providers: Vec<&String> =
-                                    self.security_providers.keys().collect();
-                                warn!(
-                                    scheme_name = %scheme_name,
-                                    available_providers = ?available_providers,
-                                    "Security provider not found"
-                                );
-                                ok = false;
-                                break;
-                            }
-                        };
-                        let provider = match self.security_providers.get(scheme_name) {
-                            Some(p) => p,
-                            None => {
-                                // S3: Provider not found (duplicate logging for consistency)
-                                let available_providers: Vec<&String> =
-                                    self.security_providers.keys().collect();
-                                warn!(
-                                    scheme_name = %scheme_name,
-                                    available_providers = ?available_providers,
-                                    "Security provider not found"
-                                );
-                                ok = false;
-                                break;
-                            }
-                        };
-
-                        // S4: Provider validation start
-                        debug!(
-                            provider_type = %scheme_name,
-                            scopes = ?scopes,
-                            "Provider validation start"
-                        );
-
-                        // Measure authentication/authorization performance
-                        let auth_start = std::time::Instant::now();
-                        let auth_result = provider.validate(scheme, scopes, &sec_req);
-                        let auth_duration = auth_start.elapsed();
-
-                        // Log slow authentication
-                        if auth_duration > Duration::from_millis(100) {
-                            warn!(
-                                provider_type = %scheme_name,
-                                duration_ms = auth_duration.as_millis(),
-                                success = auth_result,
-                                "Slow authentication detected"
-                            );
-                        } else {
-                            info!(
-                                provider_type = %scheme_name,
-                                duration_us = auth_duration.as_micros(),
-                                success = auth_result,
-                                "Authentication completed"
-                            );
-                        }
 
                         if !auth_result {
                             // Detect insufficient scope for Bearer/OAuth2: token valid but scopes missing
-                            match scheme {
+                            match resolved.scheme.as_ref() {
                                 SecurityScheme::Http {
                                     scheme: http_scheme,
                                     ..
                                 } if http_scheme.eq_ignore_ascii_case("bearer") => {
-                                    if provider.validate(scheme, &[], &sec_req) {
-                                        insufficient_scope = true;
+                                    if resolved.provider.validate(
+                                        resolved.scheme.as_ref(),
+                                        &[],
+                                        sec_req,
+                                    ) {
+                                        *insufficient_scope = true;
                                     }
                                 }
                                 SecurityScheme::OAuth2 { .. } => {
-                                    if provider.validate(scheme, &[], &sec_req) {
-                                        insufficient_scope = true;
+                                    if resolved.provider.validate(
+                                        resolved.scheme.as_ref(),
+                                        &[],
+                                        sec_req,
+                                    ) {
+                                        *insufficient_scope = true;
                                     }
                                 }
                                 _ => {}
@@ -1216,94 +1241,278 @@ impl HttpService for AppService {
                         }
                     }
                     if ok {
-                        authorized = true;
-                        break 'outer;
+                        return true;
                     }
                 }
+                false
+            }
 
-                if !authorized {
-                    if let Some(metrics) = &self.metrics {
-                        metrics.inc_auth_failure();
+            if !route_match.route.security.is_empty() {
+                // S1: Security check start
+                debug!(
+                    handler = %route_match.handler_name,
+                    "Security check start"
+                );
+
+                let sec_req = SecurityRequest {
+                    headers: &headers,
+                    query: &query_params,
+                    cookies: &cookies,
+                };
+
+                if let Some(resolved) = use_preresolved {
+                    // JSF P2: Pre-resolved path — zero HashMap lookups, already have scheme/provider
+                    debug!(
+                        handler = %route_match.handler_name,
+                        scheme_type = "pre-resolved",
+                        "Using pre-resolved security"
+                    );
+
+                    if validate_requirements(
+                        &resolved.requirements,
+                        &sec_req,
+                        &mut insufficient_scope,
+                    ) {
+                        authorized = true;
                     }
-
-                    let status = if insufficient_scope { 403 } else { 401 };
-                    let title = if status == 403 {
-                        "Forbidden"
-                    } else {
-                        "Unauthorized"
-                    };
-                    let detail = if status == 403 {
-                        "Insufficient scope or permissions"
-                    } else {
-                        "Missing or invalid credentials"
-                    };
-
-                    // S7: Validation failed (401) or S8: Insufficient scope (403)
-                    if status == 403 {
-                        // S8: Insufficient scope (403)
-                        warn!(
-                            method = %method,
-                            path = %path,
-                            handler = %route_match.handler_name,
-                            status = 403,
-                            reason = "insufficient_scope",
-                            schemes_required = ?schemes_required,
-                            scopes_required = ?scopes_required,
-                            attempted_schemes = ?attempted_schemes,
-                            "Insufficient scope (403 forbidden)"
-                        );
-                    } else {
-                        // S7: Validation failed (401)
-                        warn!(
-                            method = %method,
-                            path = %path,
-                            handler = %route_match.handler_name,
-                            status = 401,
-                            reason = "invalid_credentials",
-                            schemes_required = ?schemes_required,
-                            attempted_schemes = ?attempted_schemes,
-                            "Authentication failed (401 unauthorized)"
-                        );
-                    }
-
-                    let debug = std::env::var("BRRTR_DEBUG_VALIDATION")
-                        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-                        .unwrap_or(false);
-
-                    if status == 401 {
-                        res.header("WWW-Authenticate: Bearer error=\"invalid_token\"");
-                    } else {
-                        res.header("WWW-Authenticate: Bearer error=\"insufficient_scope\"");
-                    }
-                    let mut body = serde_json::json!({
-                        "type": "about:blank",
-                        "title": title,
-                        "status": status,
-                        "detail": detail
-                    });
-                    if debug {
-                        if let Some(map) = body.as_object_mut() {
-                            map.insert("method".to_string(), json!(method.to_string()));
-                            map.insert("path".to_string(), json!(path));
-                            map.insert(
-                                "handler".to_string(),
-                                // Convert Arc<str> to &str for JSON serialization
-                                json!(route_match.route.handler_name.as_ref()),
+                } else {
+                    // Fallback: per-request HashMap lookup (original behavior for backward compat)
+                    for req in &route_match.route.security {
+                        if req.0.is_empty() {
+                            continue;
+                        }
+                        let mut ok = true;
+                        for (scheme_name, scopes) in &req.0 {
+                            // S2: Security scheme lookup
+                            debug!(
+                                scheme_name = %scheme_name,
+                                scheme_type = "lookup",
+                                "Security scheme lookup"
                             );
+
+                            let scheme = match self.security_schemes.get(scheme_name.as_str()) {
+                                Some(s) => s,
+                                None => {
+                                    warn!(
+                                        handler = %route_match.handler_name,
+                                        scheme_name = %scheme_name,
+                                        "Security scheme not found"
+                                    );
+                                    ok = false;
+                                    break;
+                                }
+                            };
+
+                            // S3: Provider lookup
+                            let provider = match self.security_providers.get(scheme_name.as_str()) {
+                                Some(p) => p,
+                                None => {
+                                    warn!(
+                                        handler = %route_match.handler_name,
+                                        scheme_name = %scheme_name,
+                                        "Security provider not found"
+                                    );
+                                    ok = false;
+                                    break;
+                                }
+                            };
+
+                            // S4: Provider validation start
+                            debug!(
+                                provider_type = %scheme_name,
+                                scopes = ?scopes,
+                                "Provider validation start"
+                            );
+
+                            // Measure authentication/authorization performance
+                            let auth_start = std::time::Instant::now();
+                            let auth_result = provider.validate(scheme, scopes, &sec_req);
+                            let auth_duration = auth_start.elapsed();
+
+                            // Log slow authentication
+                            if auth_duration > Duration::from_millis(100) {
+                                warn!(
+                                    provider_type = %scheme_name,
+                                    duration_ms = auth_duration.as_millis(),
+                                    success = auth_result,
+                                    "Slow authentication detected"
+                                );
+                            } else {
+                                // Per-auth-request; demoted to debug (PRD 2.2).
+                                debug!(
+                                    provider_type = %scheme_name,
+                                    duration_us = auth_duration.as_micros(),
+                                    success = auth_result,
+                                    "Authentication completed"
+                                );
+                            }
+
+                            if !auth_result {
+                                // Detect insufficient scope for Bearer/OAuth2
+                                match scheme {
+                                    SecurityScheme::Http {
+                                        scheme: http_scheme,
+                                        ..
+                                    } if http_scheme.eq_ignore_ascii_case("bearer") => {
+                                        if provider.validate(scheme, &[], &sec_req) {
+                                            insufficient_scope = true;
+                                        }
+                                    }
+                                    SecurityScheme::OAuth2 { .. } => {
+                                        if provider.validate(scheme, &[], &sec_req) {
+                                            insufficient_scope = true;
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                                ok = false;
+                                break;
+                            }
+                        }
+                        if ok {
+                            authorized = true;
+                            break;
                         }
                     }
-                    write_json_error(res, status as u16, body);
-                    return Ok(());
+                }
+            }
+
+            if !authorized {
+                if let Some(metrics) = &self.metrics {
+                    metrics.inc_auth_failure();
+                }
+
+                let status = if insufficient_scope { 403 } else { 401 };
+                let title = if status == 403 {
+                    "Forbidden"
                 } else {
-                    // S6: Validation success
-                    info!(
+                    "Unauthorized"
+                };
+                let detail = if status == 403 {
+                    "Insufficient scope or permissions"
+                } else {
+                    "Missing or invalid credentials"
+                };
+
+                // S7: Validation failed (401) or S8: Insufficient scope (403)
+                if status == 403 {
+                    // S8: Insufficient scope (403)
+                    warn!(
                         method = %method,
                         path = %path,
                         handler = %route_match.handler_name,
-                        scheme_name = ?attempted_schemes.last(),
-                        scopes_granted = ?scopes_required,
-                        "Authentication success"
+                        status = 403,
+                        reason = "insufficient_scope",
+                        "Insufficient scope (403 forbidden)"
                     );
+                } else {
+                    // S7: Validation failed (401)
+                    warn!(
+                        method = %method,
+                        path = %path,
+                        handler = %route_match.handler_name,
+                        status = 401,
+                        reason = "invalid_credentials",
+                        "Authentication failed (401 unauthorized)"
+                    );
+                }
+
+                let debug = std::env::var("BRRTR_DEBUG_VALIDATION")
+                    .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                    .unwrap_or(false);
+
+                if status == 401 {
+                    res.header("WWW-Authenticate: Bearer error=\"invalid_token\"");
+                } else {
+                    res.header("WWW-Authenticate: Bearer error=\"insufficient_scope\"");
+                }
+                let mut body = serde_json::json!({
+                    "type": "about:blank",
+                    "title": title,
+                    "status": status,
+                    "detail": detail
+                });
+                if debug {
+                    if let Some(map) = body.as_object_mut() {
+                        map.insert("method".to_string(), json!(method.to_string()));
+                        map.insert("path".to_string(), json!(path));
+                        map.insert(
+                            "handler".to_string(),
+                            // Convert Arc<str> to &str for JSON serialization
+                            json!(route_match.route.handler_name.as_ref()),
+                        );
+                    }
+                }
+                write_json_error(res, status as u16, body);
+                return Ok(());
+            } else {
+                // S6: Validation success — per-request, demoted to debug (PRD 2.2).
+                debug!(
+                    method = %method,
+                    path = %path,
+                    handler = %route_match.handler_name,
+                    "Authentication success"
+                );
+            }
+
+            // V1a: Content-Type enforcement (415 Unsupported Media Type)
+            //
+            // If the request carries a body, the client's Content-Type must be
+            // one of the content types the operation declared in
+            // `requestBody.content` (e.g. `application/json`). An operation that
+            // declares only `application/json` will reject `multipart/form-data`
+            // here before any further processing, closing the multipart
+            // fabrication bypass that previously produced empty `{}` bodies.
+            //
+            // Empty bodies (body_size_bytes == 0) skip this check — they are
+            // handled by the "V2: Required body missing" step below.
+            //
+            // Operations with no `requestBody` declared
+            // (`request_content_types.is_empty()`) are not affected, to preserve
+            // backward-compatible behavior for GET / DELETE with accidental bodies.
+            if body_size_bytes > 0 && !route_match.route.request_content_types.is_empty() {
+                let client_content_type = headers
+                    .iter()
+                    .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
+                    .map(|(_, v)| {
+                        crate::server::request::primary_content_type(v.as_str())
+                            .to_ascii_lowercase()
+                    })
+                    .unwrap_or_default();
+                if !client_content_type.is_empty() {
+                    let declared = &route_match.route.request_content_types;
+                    let accepted = declared.iter().any(|d| {
+                        crate::server::request::primary_content_type(d)
+                            .eq_ignore_ascii_case(client_content_type.as_str())
+                    });
+                    if !accepted {
+                        warn!(
+                            method = %method,
+                            path = %path,
+                            handler = %route_match.handler_name,
+                            client_content_type = %client_content_type,
+                            declared = ?declared,
+                            "Unsupported Media Type"
+                        );
+                        // Advertise the accepted types via the `Accept-Post` header
+                        // (RFC 7231 §6.5.13 uses Accept-Post to indicate media types
+                        // accepted by the resource for POST — we include it on all
+                        // methods as a diagnostic aid for clients).
+                        let accept_post = declared.join(", ");
+                        res.header(format!("Accept-Post: {accept_post}"));
+                        write_json_error(
+                            res,
+                            415,
+                            json!({
+                                "error": "Unsupported Media Type",
+                                "message": format!(
+                                    "Content-Type '{client_content_type}' not declared by this operation; accepted: {accept_post}"
+                                ),
+                                "accepted": declared,
+                            }),
+                        );
+                        return Ok(());
+                    }
                 }
             }
 
@@ -1325,20 +1534,11 @@ impl HttpService for AppService {
             if let (Some(schema), Some(body_val)) = (&route_match.route.request_schema, &body) {
                 // V1: Request validation start (schema is operation requestBody, not necessarily #/components/schemas/*)
                 let schema_path = "(operation requestBody)";
-                let required_fields: Vec<String> = schema
-                    .get("required")
-                    .and_then(|r| r.as_array())
-                    .map(|arr| {
-                        arr.iter()
-                            .filter_map(|v| v.as_str().map(String::from))
-                            .collect()
-                    })
-                    .unwrap_or_default();
-
+                // Avoid allocating `Vec<String>` for `required` on every request — log the raw JSON slice only at DEBUG.
                 debug!(
                     handler = %route_match.handler_name,
                     schema_present = true,
-                    required_fields = ?required_fields,
+                    required = ?schema.get("required"),
                     "Request validation start"
                 );
 
@@ -1364,11 +1564,15 @@ impl HttpService for AppService {
                         return Ok(());
                     }
                 };
-                // Use iter_errors() to get all validation errors
-                let errors: Vec<_> = compiled.iter_errors(body_val).collect();
-                if !errors.is_empty() {
+                // Valid bodies: `is_valid` avoids constructing error iterators/objects (jsonschema docs).
+                // Invalid: collect up to MAX_JSON_SCHEMA_ERRORS — pathological bodies cannot burn unbounded CPU.
+                if !compiled.is_valid(body_val) {
                     // V3: Schema validation failed
-                    let error_details: Vec<String> = errors.iter().map(|e| e.to_string()).collect();
+                    let error_details: Vec<String> = compiled
+                        .iter_errors(body_val)
+                        .take(MAX_JSON_SCHEMA_ERRORS)
+                        .map(|e| e.to_string())
+                        .collect();
                     let invalid_fields: Vec<String> = error_details
                         .iter()
                         .filter_map(|e| {
@@ -1402,10 +1606,8 @@ impl HttpService for AppService {
             }
 
             let handler_response = {
-                let dispatcher = self
-                    .dispatcher
-                    .read()
-                    .expect("dispatcher RwLock poisoned - critical error");
+                // Lock-free dispatcher load (PRD Phase 1).
+                let dispatcher = self.dispatcher.load();
                 // Determine or generate request id to pass into dispatcher
                 let req_id = _request_logger
                     .request_id
@@ -1480,12 +1682,13 @@ impl HttpService for AppService {
                             Some(hr.status),
                             schema,
                         ) {
-                            // Use iter_errors() to get all validation errors
-                            let errors: Vec<_> = compiled.iter_errors(&hr.body).collect();
-                            if !errors.is_empty() {
+                            if !compiled.is_valid(&hr.body) {
                                 // V7: Response validation failed
-                                let error_details: Vec<String> =
-                                    errors.iter().map(|e| e.to_string()).collect();
+                                let error_details: Vec<String> = compiled
+                                    .iter_errors(&hr.body)
+                                    .take(MAX_JSON_SCHEMA_ERRORS)
+                                    .map(|e| e.to_string())
+                                    .collect();
                                 let schema_path = "(operation response schema)";
 
                                 error!(

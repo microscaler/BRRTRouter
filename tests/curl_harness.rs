@@ -665,6 +665,8 @@ impl ContainerHarness {
             .args([
                 "run",
                 "-d",
+                "-e",
+                "PORT=8080",
                 "-p",
                 "127.0.0.1::8080", // random host port, loopback only
                 "--name",

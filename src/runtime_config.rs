@@ -126,13 +126,27 @@ impl RuntimeConfig {
             Err(_) => 0x8000, // 32KB default - optimal for typical handlers with 4x safety margin
         };
 
-        // Make stack size odd to enable May's stack usage tracking
-        // This is an undocumented feature that provides visibility into actual usage
-        if stack_size.is_multiple_of(2) {
+        // Phase 2.2 hygiene: `may`'s stack-usage tracking is opt-in via an
+        // odd stack size, which triggers a raw `println!` **per coroutine**
+        // on every spawn (see `may::coroutine_impl`). This output is *not*
+        // routed through `tracing` — it bypasses Promtail/Loki entirely
+        // and lands as unstructured text directly on stdout.
+        //
+        // Under 2000u load that's thousands of synchronous stdout writes
+        // per second — pure bench debris with no operational value, and
+        // the write-lock contention on the stdout FD was a measurable
+        // contributor to the SIGABRT we saw before this fix. Gate behind
+        // `BRRTR_TRACK_STACK_USAGE=1` so it stays available for deliberate
+        // stack-tuning sessions but does not fire in production or benches
+        // by default.
+        if env::var("BRRTR_TRACK_STACK_USAGE")
+            .map(|v| matches!(v.to_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+            .unwrap_or(false)
+            && stack_size.is_multiple_of(2)
+        {
             stack_size += 1;
             eprintln!(
-                "[telemetry] Adjusted stack size to {} (odd) to enable usage tracking",
-                stack_size
+                "[telemetry] Adjusted stack size to {stack_size} (odd) to enable usage tracking"
             );
         }
 

@@ -37,5 +37,7 @@ may_minihttp = "0.1"
 may_http = { git = "https://github.com/rust-may/may_http.git" }
 http_legacy = { package = "http", version = "0.2" }
 anyhow = "1.0"
+# Same pin as `brrtrouter` — generated `main.rs` uses `arc_swap::ArcSwap` (Phase 1).
+arc-swap = "1.7"
 clap = { version = "4.5.39", features = ["derive"] }
 tikv-jemallocator = { version = "0.6", features = ["profiling"], optional = true }

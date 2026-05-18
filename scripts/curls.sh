@@ -3,7 +3,7 @@
 # Tests all endpoints exposed by the OpenAPI spec
 set -euo pipefail
 
-BASE_URL="${BASE_URL:-http://localhost:8080}"
+BASE_URL="${BASE_URL:-http://localhost:8081}"
 API_KEY="${API_KEY:-test123}"
 
 echo "🧪 Testing BRRTRouter Pet Store API"

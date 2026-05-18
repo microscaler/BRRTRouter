@@ -15,10 +15,10 @@ use crate::router::ParamVec;
 use crate::spec::ParameterStyle;
 use http::Method;
 use may_minihttp::Request;
-use serde_json::{json, Map, Number, Value};
+use serde_json::{Map, Number, Value};
 use std::io::Read;
 use std::sync::Arc;
-use tracing::{debug, info};
+use tracing::debug;
 use url::form_urlencoded::parse as parse_form_urlencoded;
 
 /// Parsed HTTP request data used by `AppService`.
@@ -213,7 +213,13 @@ pub fn decode_param_value(
     }
 }
 
-fn primary_content_type(content_type: &str) -> &str {
+/// Return the primary media type from a `Content-Type` header value,
+/// dropping any parameters (e.g. `; charset=utf-8`, `; boundary=...`).
+///
+/// Exposed so call sites outside this module (e.g. `server::service`) can
+/// classify the declared Content-Type of an incoming request without
+/// duplicating the trim logic.
+pub fn primary_content_type(content_type: &str) -> &str {
     content_type.split(';').next().unwrap_or("").trim()
 }
 
@@ -238,7 +244,7 @@ fn loose_json_scalar(s: &str) -> Value {
 fn form_urlencoded_body_to_json(raw: &[u8]) -> Value {
     let mut map = Map::new();
     for (k, v) in parse_form_urlencoded(raw) {
-        map.insert(k.into_owned(), loose_json_scalar(&v.into_owned()));
+        map.insert(k.into_owned(), loose_json_scalar(v.as_ref()));
     }
     Value::Object(map)
 }
@@ -256,8 +262,18 @@ fn parse_request_body(raw: &[u8], content_type: &str) -> Option<Value> {
     if ct_lower == "application/x-www-form-urlencoded" {
         return Some(form_urlencoded_body_to_json(raw));
     }
+    // NOTE: `multipart/form-data` and unknown content types are intentionally
+    // not parsed into a JSON shape here. Returning `None` lets the service-level
+    // Content-Type enforcement (see `server::service::call` 415 check) decide
+    // how to respond against the operation's declared `request_content_types`.
+    //
+    // However, operations that *do* declare `multipart/form-data` as an accepted
+    // content type (e.g. /upload) need `Some(body)` to pass the "required body"
+    // check (V2 at service.rs:1520).  A placeholder empty JSON object lets the
+    // request proceed to the controller while the controller handles the actual
+    // multipart parsing independently.
     if ct_lower == "multipart/form-data" {
-        return Some(json!({}));
+        return Some(Value::Object(Map::new()));
     }
     serde_json::from_slice(raw).ok()
 }
@@ -296,14 +312,17 @@ pub fn parse_request(req: Request) -> Result<ParsedRequest, String> {
     // So we format once (acceptable as it's not in the hot path per-request allocation)
     let http_version = format!("{:?}", req.version());
 
-    // R3: Headers extracted - using SmallVec for stack allocation
-    // JSF P2: Use Arc::from for header names (O(1) clone instead of O(n) string copy)
+    // R3: Headers extracted — using SmallVec for stack allocation.
+    // PRD Phase 2.1: `intern_header_name` returns a shared `Arc<str>` for the
+    // ~24 common HTTP header names (`content-type`, `authorization`, …)
+    // without any heap allocation on the hit path, which is >95 % of traffic.
+    // Falls back to the previous `Arc::from(lowercased)` on miss.
     let headers: HeaderVec = req
         .headers()
         .iter()
         .map(|h| {
             (
-                Arc::from(h.name.to_ascii_lowercase().as_str()),
+                super::header_intern::intern_header_name(h.name.as_bytes()),
                 String::from_utf8_lossy(h.value).to_string(),
             )
         })
@@ -333,23 +352,11 @@ pub fn parse_request(req: Request) -> Result<ParsedRequest, String> {
 
     // R4: Query params parsed
     let query_params = parse_query_params(&raw_path);
-    if tracing::enabled!(tracing::Level::DEBUG) {
-        let sanitizer = crate::sanitize::default_sanitizer();
-        if sanitizer.level() == crate::otel::RedactionLevel::None {
-            debug!(
-                param_count = query_params.len(),
-                query_params = ?query_params,
-                "Query params parsed"
-            );
-        } else {
-            let safe_query = sanitizer.sanitize_params(&query_params);
-            debug!(
-                param_count = query_params.len(),
-                query_params = ?safe_query,
-                "Query params parsed"
-            );
-        }
-    }
+    debug!(
+        param_count = query_params.len(),
+        query_params = ?query_params,
+        "Query params parsed"
+    );
 
     // R5 & R6: Request body read and parsed (JSON, form-urlencoded, multipart)
     let parse_start = std::time::Instant::now();
@@ -364,8 +371,8 @@ pub fn parse_request(req: Request) -> Result<ParsedRequest, String> {
                     .map(|(_, v)| v.as_str())
                     .unwrap_or("");
 
-                // R5: Request body read
-                info!(
+                // R5: Request body read — per-request, demoted to debug (PRD 2.2).
+                debug!(
                     content_length = size,
                     content_type = %content_type,
                     body_size_bytes = size,
@@ -397,8 +404,8 @@ pub fn parse_request(req: Request) -> Result<ParsedRequest, String> {
         }
     };
 
-    // R2: HTTP request parsed
-    info!(
+    // R2: HTTP request parsed — per-request, demoted to debug (PRD 2.2).
+    debug!(
         method = %method,
         path = %path,
         http_version = %http_version,
@@ -471,14 +478,21 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_request_body_multipart_placeholder() {
+    fn test_parse_request_body_multipart_returns_empty_object() {
+        // Multipart returns an empty JSON object placeholder so that the
+        // "required body" check (V2 at service.rs:1520) passes.  The actual
+        // multipart parsing is handled independently by the controller.
         let v = parse_request_body(
             b"pretend-binary",
             "multipart/form-data; boundary=----WebKit",
-        )
-        .expect("multipart");
-        assert!(v.is_object());
-        assert!(v.as_object().unwrap().is_empty());
+        );
+        assert!(v.is_some(), "expected multipart body to be Some");
+        let v = v.unwrap();
+        assert!(
+            v.is_object(),
+            "expected multipart body to be an empty object"
+        );
+        assert_eq!(v.as_object().unwrap().len(), 0);
     }
 
     /// `GET /matrix/1;2;3` captures `coords=1;2;3` as one path param; matrix style must split on `;`.

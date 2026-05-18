@@ -7,6 +7,7 @@
 
 | Area | Count | Notes |
 |---|---:|---|
+| `auto-research/` | — | Perf charter + scripts; canonical [`auto-research/docs/PERF_CONTROL_SURFACE_AND_LOG.md`](../auto-research/docs/PERF_CONTROL_SURFACE_AND_LOG.md); see [`topics/auto-research-perf-loop.md`](./topics/auto-research-perf-loop.md) |
 | `docs/wip` | 154 | Historical and work-in-progress material; high staleness risk |
 | `docs/EPICS` | 42 | Planning/spec material; partial implementation overlap |
 | `docs/SPIFFY_mTLS` | 10 | Security architecture/design docs |
@@ -284,3 +285,17 @@
 - `docs/wip/WARNINGS_FIX_PLAN.md`
 - `docs/wip/ignored_tests_analysis.md`
 - `docs/wip/pipelineControlledReconcilliationGate.md`
+
+## LLM wiki synthesis index (2026-04-17)
+
+| Wiki page | Maps to |
+|-----------|---------|
+| [`topics/runtime-stack-map.md`](./topics/runtime-stack-map.md) | `spec/` → `router/` → `dispatcher/` → `server/service.rs` |
+| [`topics/schema-validation-pipeline.md`](./topics/schema-validation-pipeline.md) | V1a/V1/V2/V6/V7 validation gates |
+| [`topics/generator-cli-and-askama.md`](./topics/generator-cli-and-askama.md) | `brrtrouter_gen`, `src/generator/`, `templates/*.txt` |
+| [`topics/sibling-repos-and-wikis.md`](./topics/sibling-repos-and-wikis.md) | Lifeguard + Hauliage wikis and responsibility split |
+| [`entities/route-meta.md`](./entities/route-meta.md) | `RouteMeta` fields including `request_content_types` |
+| [`entities/request-body-parsing.md`](./entities/request-body-parsing.md) | Content-Type parsing, multipart history |
+| [`reference/openapi-extensions.md`](./reference/openapi-extensions.md) | All supported `x-*` keys |
+| [`reference/codebase-entry-points.md`](./reference/codebase-entry-points.md) | File-level entry points |
+| [`topics/canonical-docs-vs-wip.md`](./topics/canonical-docs-vs-wip.md) | Staleness policy for `docs/wip/` |
