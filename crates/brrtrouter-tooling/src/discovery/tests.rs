@@ -129,8 +129,12 @@ fn test_file_info_paths() {
     assert!(identity
         .openapi_path
         .ends_with("openapi/hauliage/identity/openapi.yaml"));
-    assert!(identity.gen_dir.ends_with("microservices/hauliage/identity/gen"));
-    assert!(identity.impl_dir.ends_with("microservices/hauliage/identity/impl"));
+    assert!(identity
+        .gen_dir
+        .ends_with("microservices/hauliage/identity/gen"));
+    assert!(identity
+        .impl_dir
+        .ends_with("microservices/hauliage/identity/impl"));
     assert!(identity
         .deps_config_path
         .ends_with("openapi/hauliage/identity/brrtrouter-dependencies.toml"));

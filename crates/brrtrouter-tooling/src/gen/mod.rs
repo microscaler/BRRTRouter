@@ -63,9 +63,14 @@ pub fn regenerate_service(
 
     // Determine deps config
     let deps_config_path = if discovery::is_bff_service(project_root, suite, service_name) {
-        project_root.join("openapi").join("brrtrouter-dependencies.toml")
+        project_root
+            .join("openapi")
+            .join("brrtrouter-dependencies.toml")
     } else {
-        spec_path.parent().unwrap().join("brrtrouter-dependencies.toml")
+        spec_path
+            .parent()
+            .unwrap()
+            .join("brrtrouter-dependencies.toml")
     };
 
     let cargo_bin = find_cargo();
@@ -162,14 +167,9 @@ pub fn regenerate_suite_services(
     brrtrouter_path: Option<&Path>,
 ) -> usize {
     let services: Vec<String> = if service_names.is_empty() {
-        let suite_infos =
-            discovery::discover_suites(project_root, &project_root.join("openapi"));
+        let suite_infos = discovery::discover_suites(project_root, &project_root.join("openapi"));
         if let Some(suite_info) = suite_infos.iter().find(|s| s.name == suite) {
-            suite_info
-                .services
-                .iter()
-                .map(|s| s.name.clone())
-                .collect()
+            suite_info.services.iter().map(|s| s.name.clone()).collect()
         } else {
             eprintln!("❌ Suite '{}' not found", suite);
             return 1;

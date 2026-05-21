@@ -387,7 +387,7 @@ paths:
 
 fn make_token(scope: &str) -> String {
     use base64::{engine::general_purpose, Engine as _};
-    let header = general_purpose::STANDARD.encode(r#"{"alg":"HS256","typ":"JWT"}"#);
+    let header = general_purpose::STANDARD.encode(r#"{"alg":"HS256","typ":"at+jwt"}"#);
     let payload = general_purpose::STANDARD.encode(format!(r#"{{"scope":"{scope}"}}"#));
     format!("{}.{}.{}", header, payload, "sig")
 }
@@ -611,6 +611,7 @@ fn make_hs256_jwt(secret: &[u8], iss: &str, aud: &str, kid: &str, exp_secs: i64)
     let header = Header {
         kid: Some(kid.to_string()),
         alg: Algorithm::HS256,
+        typ: Some("at+jwt".to_string()),
         ..Default::default()
     };
     let now = std::time::SystemTime::now()
@@ -1625,6 +1626,7 @@ fn test_jwks_cache_invalidation_does_not_clear_other_tokens() {
         let header = Header {
             kid: Some("k1".to_string()),
             alg: Algorithm::HS256,
+            typ: Some("at+jwt".to_string()),
             ..Default::default()
         };
         let now = std::time::SystemTime::now()
@@ -1646,6 +1648,7 @@ fn test_jwks_cache_invalidation_does_not_clear_other_tokens() {
         let header = Header {
             kid: Some("k1".to_string()),
             alg: Algorithm::HS256,
+            typ: Some("at+jwt".to_string()),
             ..Default::default()
         };
         let now = std::time::SystemTime::now()
@@ -1847,6 +1850,7 @@ fn test_jwks_cache_eviction() {
         let header = Header {
             kid: Some("k1".to_string()),
             alg: Algorithm::HS256,
+            typ: Some("at+jwt".to_string()),
             ..Default::default()
         };
         let claims = json!({
@@ -1862,6 +1866,7 @@ fn test_jwks_cache_eviction() {
         let header = Header {
             kid: Some("k1".to_string()),
             alg: Algorithm::HS256,
+            typ: Some("at+jwt".to_string()),
             ..Default::default()
         };
         let claims = json!({
@@ -1877,6 +1882,7 @@ fn test_jwks_cache_eviction() {
         let header = Header {
             kid: Some("k1".to_string()),
             alg: Algorithm::HS256,
+            typ: Some("at+jwt".to_string()),
             ..Default::default()
         };
         let claims = json!({
@@ -1970,6 +1976,7 @@ fn test_jwks_cache_evictions_counter() {
         let header = Header {
             kid: Some("k1".to_string()),
             alg: Algorithm::HS256,
+            typ: Some("at+jwt".to_string()),
             ..Default::default()
         };
         let claims = json!({
@@ -1985,6 +1992,7 @@ fn test_jwks_cache_evictions_counter() {
         let header = Header {
             kid: Some("k1".to_string()),
             alg: Algorithm::HS256,
+            typ: Some("at+jwt".to_string()),
             ..Default::default()
         };
         let claims = json!({
@@ -2028,6 +2036,7 @@ fn test_jwks_cache_evictions_counter() {
         let header = Header {
             kid: Some("k1".to_string()),
             alg: Algorithm::HS256,
+            typ: Some("at+jwt".to_string()),
             ..Default::default()
         };
         let claims = json!({
@@ -2064,6 +2073,7 @@ fn test_jwks_cache_evictions_counter() {
         let header = Header {
             kid: Some("k1".to_string()),
             alg: Algorithm::HS256,
+            typ: Some("at+jwt".to_string()),
             ..Default::default()
         };
         let claims = json!({

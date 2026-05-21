@@ -2,7 +2,12 @@
 //!
 //! This module contains the core validation logic for JWKS-based JWT validation,
 //! including token validation, claims extraction, and cache management.
+//!
+//! Story 9.6: Structured JWT logging is integrated at key decision points.
+//! All JWT fields (issuer, subject, client_id, session_id, jti, token_version,
+//! actor_subject) are extracted from claims and logged with appropriate log levels.
 
+use crate::security::jwks_bearer::{DecisionSource, JwtLogFields, JwtStructuredLogger};
 use crate::security::SecurityRequest;
 use crate::spec::SecurityScheme;
 use jsonwebtoken;
@@ -48,6 +53,11 @@ pub(super) enum ValidationError {
     MissingRequiredClaim { claim: String },
     /// Token uses an unsupported algorithm
     UnsupportedAlgorithm { alg: String },
+    /// Token has wrong or missing typ claim (RFC 9068)
+    InvalidTokenType {
+        expected: String,
+        got: Option<String>,
+    },
     /// JWKS fetch failed
     #[allow(dead_code)] // Reserved for future use when JWKS fetch errors are tracked
     JwksFetchError { url: String, error: String },
@@ -75,9 +85,45 @@ impl ValidationError {
             ValidationError::InvalidAudience { .. } => "invalid audience",
             ValidationError::MissingRequiredClaim { .. } => "missing required claim",
             ValidationError::UnsupportedAlgorithm { .. } => "unsupported algorithm",
+            ValidationError::InvalidTokenType { .. } => "invalid token type",
             ValidationError::JwksFetchError { .. } => "JWKS fetch failed",
             ValidationError::InsufficientScopes { .. } => "insufficient scopes",
             ValidationError::InvalidSecurityScheme { .. } => "invalid security scheme",
+        }
+    }
+
+    /// Get a structured error reason for logging
+    fn error_reason(&self) -> String {
+        match self {
+            ValidationError::MissingToken => "missing_token".to_string(),
+            ValidationError::InvalidTokenFormat { error } => {
+                format!("invalid_token_format: {}", error)
+            }
+            ValidationError::MissingKeyId => "missing_kid".to_string(),
+            ValidationError::MissingKey { kid } => format!("key_not_found: {}", kid),
+            ValidationError::InvalidSignature => "invalid_signature".to_string(),
+            ValidationError::ExpiredToken { exp: _, now: _ } => "token_expired".to_string(),
+            ValidationError::InvalidIssuer {
+                expected: _,
+                got: _,
+            } => "invalid_issuer".to_string(),
+            ValidationError::InvalidAudience {
+                expected: _,
+                got: _,
+            } => "invalid_audience".to_string(),
+            ValidationError::MissingRequiredClaim { claim } => {
+                format!("missing_required_claim: {}", claim)
+            }
+            ValidationError::UnsupportedAlgorithm { alg } => {
+                format!("unsupported_algorithm: {}", alg)
+            }
+            ValidationError::InvalidTokenType {
+                expected: _,
+                got: _,
+            } => "invalid_token_type".to_string(),
+            ValidationError::JwksFetchError { url: _, error: _ } => "jwks_fetch_error".to_string(),
+            ValidationError::InsufficientScopes { .. } => "insufficient_scopes".to_string(),
+            ValidationError::InvalidSecurityScheme { .. } => "invalid_security_scheme".to_string(),
         }
     }
 
@@ -126,6 +172,12 @@ impl ValidationError {
             ValidationError::UnsupportedAlgorithm { alg } => {
                 warn!("JWT validation failed: unsupported algorithm '{}'", alg);
             }
+            ValidationError::InvalidTokenType { expected, got } => {
+                warn!(
+                    "JWT validation failed: invalid token type (expected: '{}', got: {:?})",
+                    expected, got
+                );
+            }
             ValidationError::JwksFetchError { url, error } => {
                 warn!(
                     "JWT validation failed: JWKS fetch error for {} - {}",
@@ -152,6 +204,7 @@ impl ValidationError {
 ///
 /// Returns `bool` for backward compatibility, but uses structured error types
 /// internally for better observability via logging.
+/// Story 9.6: Structured JWT logging is called at all decision points.
 pub(super) fn validate_token_impl(
     provider: &super::JwksBearerProvider,
     scheme: &SecurityScheme,
@@ -163,6 +216,49 @@ pub(super) fn validate_token_impl(
         Err(e) => {
             e.log();
             false
+        }
+    }
+}
+
+/// Extract and log structured JWT fields from claims.
+///
+/// Story 9.6: This function extracts all standard JWT fields from claims
+/// and logs them via the provider's structured logger.
+/// Returns None if claims extraction fails (malformed, no token, etc.).
+fn extract_and_log_jwt_fields(
+    provider: &super::JwksBearerProvider,
+    token: &str,
+    claims: &Value,
+    decision_source: DecisionSource,
+    result: &str,
+    error_reason: Option<&str>,
+) {
+    let fields = JwtLogFields::from_claims(claims);
+    let logger = &provider.structured_logger;
+
+    match result {
+        "allowed" => {
+            logger.log_allowed(&fields, decision_source, None, None, token);
+        }
+        "denied" => {
+            logger.log_denied(
+                &fields,
+                decision_source,
+                None,
+                None,
+                error_reason.unwrap_or("unknown"),
+                token,
+            );
+        }
+        _ => {
+            logger.log_failure(
+                &fields,
+                decision_source,
+                None,
+                None,
+                error_reason.unwrap_or("unknown"),
+                token,
+            );
         }
     }
 }
@@ -210,6 +306,22 @@ fn validate_token_internal(
         Some(k) => k,
         None => return Err(ValidationError::MissingKeyId),
     };
+
+    // SECURITY: Enforce JWT typ claim (RFC 9068) - reject type confusion attacks
+    // This check must occur AFTER header parsing but BEFORE any trust decision
+    // Accepts only "at+jwt" for access tokens; rejects refresh tokens, API keys, ID tokens
+    const EXPECTED_TYP: &str = "at+jwt";
+    let header_typ = header.typ.as_deref().unwrap_or("");
+    if header_typ != EXPECTED_TYP {
+        return Err(ValidationError::InvalidTokenType {
+            expected: EXPECTED_TYP.to_string(),
+            got: if header_typ.is_empty() {
+                None
+            } else {
+                Some(header_typ.to_string())
+            },
+        });
+    }
 
     // SECURITY: Include kid in cache key so cache invalidates on key rotation
     // Format: "token|kid" ensures different cache entries for same token with different keys
@@ -267,9 +379,7 @@ fn validate_token_internal(
                     // P2: Track cache hit
                     provider.cache_hits.fetch_add(1, Ordering::Relaxed);
 
-                    // SECURITY: Key verified, expiration checked, use cached claims
-                    // Note: We skip signature/issuer/audience re-validation here for performance,
-                    // but the key existence check ensures rotation is detected
+                    // Story 9.6: Log cache-hit validation (decision_source = jwt_claims)
                     let token_scopes = cached_claims_clone
                         .get("scope")
                         .and_then(|v| v.as_str())
@@ -279,7 +389,14 @@ fn validate_token_internal(
                         .all(|s| token_scopes.split_whitespace().any(|ts| ts == s));
 
                     if has_all_scopes {
-                        debug!("JWT validation succeeded: cache hit, key verified, scopes valid");
+                        extract_and_log_jwt_fields(
+                            provider,
+                            token,
+                            &cached_claims_clone,
+                            DecisionSource::JwtClaims,
+                            "allowed",
+                            None,
+                        );
                         return Ok(true);
                     } else {
                         let required: Vec<String> = scopes.to_vec();
@@ -287,6 +404,18 @@ fn validate_token_internal(
                             .split_whitespace()
                             .map(|s| s.to_string())
                             .collect();
+                        // Story 9.6: Log cache-hit denial (insufficient scopes)
+                        extract_and_log_jwt_fields(
+                            provider,
+                            token,
+                            &cached_claims_clone,
+                            DecisionSource::JwtClaims,
+                            "denied",
+                            Some(&format!(
+                                "insufficient_scopes: required={:?} got={:?}",
+                                required, got
+                            )),
+                        );
                         return Err(ValidationError::InsufficientScopes { required, got });
                     }
                 } else {
@@ -341,7 +470,7 @@ fn validate_token_internal(
         Ok(d) => d.claims,
         Err(e) => {
             // Map jsonwebtoken errors to our structured error types
-            return Err(match e.kind() {
+            let error_result = match e.kind() {
                 jsonwebtoken::errors::ErrorKind::ExpiredSignature => {
                     let now = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
@@ -374,7 +503,16 @@ fn validate_token_internal(
                 _ => ValidationError::InvalidTokenFormat {
                     error: format!("{:?}", e),
                 },
-            });
+            };
+
+            // Story 9.6: Log validation failure with error details
+            // We cannot extract claims from the failed token, so we log minimal info
+            debug!(
+                "JWT validation failed: {:?} (token not cached, will not log structured fields)",
+                error_result
+            );
+
+            return Err(error_result);
         }
     };
 
@@ -417,6 +555,15 @@ fn validate_token_internal(
         .all(|s| token_scopes.split_whitespace().any(|ts| ts == s));
 
     if has_all_scopes {
+        // Story 9.6: Log successful cache-miss validation
+        extract_and_log_jwt_fields(
+            provider,
+            token,
+            &claims,
+            DecisionSource::JwtClaims,
+            "allowed",
+            None,
+        );
         debug!("JWT validation succeeded: token valid, scopes present");
         Ok(true)
     } else {
@@ -425,6 +572,18 @@ fn validate_token_internal(
             .split_whitespace()
             .map(|s| s.to_string())
             .collect();
+        // Story 9.6: Log cache-miss denial (insufficient scopes)
+        extract_and_log_jwt_fields(
+            provider,
+            token,
+            &claims,
+            DecisionSource::JwtClaims,
+            "denied",
+            Some(&format!(
+                "insufficient_scopes: required={:?} got={:?}",
+                required, got
+            )),
+        );
         Err(ValidationError::InsufficientScopes { required, got })
     }
 }
@@ -447,6 +606,13 @@ pub(super) fn extract_claims_impl(
         Ok(h) => h,
         Err(_) => return None,
     };
+
+    // SECURITY: Enforce JWT typ claim (RFC 9068) - reject type confusion attacks
+    // Same check as validate_token_internal for consistency
+    const EXPECTED_TYP: &str = "at+jwt";
+    if header.typ.as_deref() != Some(EXPECTED_TYP) {
+        return None;
+    }
 
     let kid = header.kid?;
 
@@ -484,14 +650,14 @@ pub(super) fn extract_claims_impl(
             if provider.get_key_for(&cached_kid_clone).is_none() {
                 // Key no longer exists (rotated/revoked), remove from cache
                 debug!(
-                    "JWT cache: key '{}' no longer in JWKS, invalidating cache entry",
+                    "JWT cache: key '{}' no longer in JWKS, invalidating cache entry for claims extraction",
                     cached_kid_clone
                 );
                 // Re-acquire lock to remove cache entry
                 if let Ok(mut cache_guard) = provider.claims_cache.write() {
                     cache_guard.pop(&token_key);
                 }
-                // Fall through to full decode below
+                // Fall through to full validation below
             } else {
                 // Key still exists, check expiration
                 let now = std::time::SystemTime::now()
@@ -500,13 +666,12 @@ pub(super) fn extract_claims_impl(
                     .as_secs() as i64;
 
                 if now < exp_timestamp_clone {
-                    // SECURITY: Key verified, expiration checked, use cached claims
-                    // Note: We skip signature/issuer/audience re-validation here for performance,
-                    // but the key existence check ensures rotation is detected
+                    // P2: Track cache hit
+                    provider.cache_hits.fetch_add(1, Ordering::Relaxed);
                     return Some(cached_claims_clone);
                 } else {
                     // Token expired, remove from cache
-                    debug!("JWT cache: token expired, removing from cache");
+                    debug!("JWT cache: token expired for claims extraction, removing from cache");
                     // Re-acquire lock to remove expired entry
                     if let Ok(mut cache_guard) = provider.claims_cache.write() {
                         cache_guard.pop(&token_key);
@@ -516,15 +681,26 @@ pub(super) fn extract_claims_impl(
         }
     }
 
-    // Cache miss - decode token (same logic as validate, but we return claims)
-    let key = provider.get_key_for(&kid)?;
+    // Cache miss - validate and decode token
+    provider.cache_misses.fetch_add(1, Ordering::Relaxed);
 
-    // P3: Simplified algorithm selection using whitelist
+    // Calculate SystemTime only when needed (cache miss)
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+
+    // Get key for validation
+    let key = match provider.get_key_for(&kid) {
+        Some(k) => k,
+        None => return None,
+    };
+
+    // Validate algorithm
     if !SUPPORTED_ALGORITHMS.contains(&header.alg) {
         return None;
     }
     let selected_alg = header.alg;
-
     let mut validation = jsonwebtoken::Validation::new(selected_alg);
     validation.validate_exp = true;
     validation.set_required_spec_claims(&["exp"]);
@@ -535,9 +711,192 @@ pub(super) fn extract_claims_impl(
     if let Some(ref aud) = provider.aud {
         validation.set_audience(&[aud]);
     }
+    let data: Result<jsonwebtoken::TokenData<Value>, jsonwebtoken::errors::Error> =
+        jsonwebtoken::decode(token, &key, &validation);
+    let claims = match data {
+        Ok(d) => d.claims,
+        Err(e) => {
+            debug!("JWT claims extraction failed: {:?}", e);
+            return None;
+        }
+    };
 
-    match jsonwebtoken::decode(token, &key, &validation) {
-        Ok(data) => Some(data.claims),
-        Err(_) => None,
+    // Store in cache
+    if let Some(exp_value) = claims.get("exp") {
+        if let Some(exp_timestamp) = exp_value.as_i64() {
+            let exp_timestamp_with_leeway = exp_timestamp + provider.leeway_secs as i64;
+            if now < exp_timestamp_with_leeway {
+                if let Ok(mut cache_guard) = provider.claims_cache.write() {
+                    cache_guard.put(token_key, (exp_timestamp_with_leeway, claims.clone(), kid));
+                }
+            }
+        }
+    }
+
+    Some(claims)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::security::jwks_bearer::JwtLogFields;
+
+    /// Unit: JwtLogFields extracts all fields from claims.
+    #[test]
+    fn test_extract_jwt_log_fields() {
+        let claims = serde_json::json!({
+            "iss": "https://idam.example.com",
+            "sub": "user_123",
+            "aud": "web-portal",
+            "sid": "ses_01JV8W",
+            "jti": "tok_abc123",
+            "ver": 42,
+            "act": {
+                "sub": "support_agent_456"
+            }
+        });
+
+        let fields = JwtLogFields::from_claims(&claims);
+        assert_eq!(fields.issuer, Some("https://idam.example.com".to_string()));
+        assert_eq!(fields.subject, Some("user_123".to_string()));
+        assert_eq!(fields.client_id, Some("web-portal".to_string()));
+        assert_eq!(fields.session_id, Some("ses_01JV8W".to_string()));
+        assert_eq!(fields.token_id, Some("tok_abc123".to_string()));
+        assert_eq!(fields.token_version, Some(42));
+        assert_eq!(fields.actor_subject, Some("support_agent_456".to_string()));
+    }
+
+    /// Unit: JwtLogFields handles missing claims.
+    #[test]
+    fn test_extract_jwt_log_fields_minimal() {
+        let claims = serde_json::json!({
+            "iss": "https://idam.example.com",
+            "sub": "user_123"
+        });
+
+        let fields = JwtLogFields::from_claims(&claims);
+        assert_eq!(fields.issuer, Some("https://idam.example.com".to_string()));
+        assert_eq!(fields.subject, Some("user_123".to_string()));
+        assert_eq!(fields.client_id, None);
+        assert_eq!(fields.session_id, None);
+        assert_eq!(fields.token_id, None);
+        assert_eq!(fields.token_version, None);
+        assert_eq!(fields.actor_subject, None);
+    }
+
+    /// Security: No raw token in fields.
+    #[test]
+    fn test_no_raw_token_in_fields() {
+        let claims = serde_json::json!({
+            "iss": "https://idam.example.com",
+            "sub": "user_123"
+        });
+        let fields = JwtLogFields::from_claims(&claims);
+        let raw_token = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c";
+        assert!(fields.validate_no_raw_token(raw_token));
+    }
+
+    /// Security: No PII in fields.
+    #[test]
+    fn test_no_pii_in_fields() {
+        let claims = serde_json::json!({
+            "iss": "https://idam.example.com",
+            "sub": "user_123"
+        });
+        let fields = JwtLogFields::from_claims(&claims);
+        assert!(fields.validate_no_pii());
+    }
+
+    /// Unit: DecisionSource has correct string representations.
+    #[test]
+    fn test_decision_source_strings() {
+        assert_eq!(DecisionSource::JwtClaims.as_str(), "jwt_claims");
+        assert_eq!(DecisionSource::FallbackCached.as_str(), "fallback_cached");
+        assert_eq!(DecisionSource::FallbackOnline.as_str(), "fallback_online");
+        assert_eq!(DecisionSource::Denylist.as_str(), "denylist");
+        assert_eq!(DecisionSource::VersionMismatch.as_str(), "version_mismatch");
+        assert_eq!(DecisionSource::OnlineOnly.as_str(), "online_only");
+    }
+
+    /// Unit: ValidationError has error_reason method.
+    #[test]
+    fn test_validation_error_reason() {
+        let e = ValidationError::MissingToken;
+        assert_eq!(e.error_reason(), "missing_token");
+
+        let e = ValidationError::InvalidSignature;
+        assert_eq!(e.error_reason(), "invalid_signature");
+
+        let e = ValidationError::ExpiredToken { exp: 100, now: 200 };
+        assert_eq!(e.error_reason(), "token_expired");
+    }
+
+    /// Unit: JwtLogFields from empty claims returns all None.
+    #[test]
+    fn test_extract_fields_empty() {
+        let fields = JwtLogFields::from_claims(&serde_json::Value::Null);
+        assert_eq!(fields.issuer, None);
+        assert_eq!(fields.subject, None);
+        assert_eq!(fields.client_id, None);
+        assert_eq!(fields.session_id, None);
+        assert_eq!(fields.token_id, None);
+        assert_eq!(fields.token_version, None);
+        assert_eq!(fields.actor_subject, None);
+    }
+
+    /// Unit: actor_subject extracted from act.claim properly.
+    #[test]
+    fn test_actor_subject_from_act() {
+        let claims = serde_json::json!({
+            "iss": "https://idam.example.com",
+            "sub": "user_123",
+            "act": {
+                "sub": "support_agent_456",
+                "roles": ["admin"]
+            }
+        });
+        let fields = JwtLogFields::from_claims(&claims);
+        assert_eq!(fields.actor_subject, Some("support_agent_456".to_string()));
+    }
+
+    /// Unit: client_id uses aud first, falls back to client_id.
+    #[test]
+    fn test_client_id_priority() {
+        let claims_with_aud = serde_json::json!({
+            "iss": "https://idam.example.com",
+            "sub": "user_123",
+            "aud": "web-portal",
+            "client_id": "mobile-app"
+        });
+        let fields = JwtLogFields::from_claims(&claims_with_aud);
+        assert_eq!(fields.client_id, Some("web-portal".to_string()));
+
+        let claims_with_client_id = serde_json::json!({
+            "iss": "https://idam.example.com",
+            "sub": "user_123",
+            "client_id": "mobile-app"
+        });
+        let fields = JwtLogFields::from_claims(&claims_with_client_id);
+        assert_eq!(fields.client_id, Some("mobile-app".to_string()));
+    }
+
+    /// Unit: token_version as number vs string.
+    #[test]
+    fn test_token_version_types() {
+        let claims_number = serde_json::json!({
+            "iss": "https://idam.example.com",
+            "sub": "user_123",
+            "ver": 42
+        });
+        let fields = JwtLogFields::from_claims(&claims_number);
+        assert_eq!(fields.token_version, Some(42));
+
+        let claims_string = serde_json::json!({
+            "iss": "https://idam.example.com",
+            "sub": "user_123",
+            "ver": "42"
+        });
+        let fields = JwtLogFields::from_claims(&claims_string);
+        assert_eq!(fields.token_version, None); // strings are not parsed as u64
     }
 }

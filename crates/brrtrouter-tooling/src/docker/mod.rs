@@ -5,8 +5,8 @@
 //! to `build_artifacts/{arch}/`.
 
 use std::collections::HashMap;
-use std::path::Path;
 use std::fs;
+use std::path::Path;
 
 /// Arch -> target triple mapping
 pub const ARCH_TARGETS: &[(&str, &str)] = &[
@@ -16,11 +16,8 @@ pub const ARCH_TARGETS: &[(&str, &str)] = &[
 ];
 
 /// Arch -> artifact directory in build_artifacts
-pub const ARCH_TO_ARTIFACT_DIR: &[(&str, &str)] = &[
-    ("amd64", "amd64"),
-    ("arm64", "arm64"),
-    ("arm7", "arm"),
-];
+pub const ARCH_TO_ARTIFACT_DIR: &[(&str, &str)] =
+    &[("amd64", "amd64"), ("arm64", "arm64"), ("arm7", "arm")];
 
 /// Copy built binaries from microservices/target/{triple}/release/
 /// to build_artifacts/{arch}/.
@@ -94,10 +91,7 @@ pub fn copy_artifacts(
             fs::set_permissions(&dst, permissions).ok();
         }
 
-        let rel_dst = dst
-            .strip_prefix(project_root)
-            .unwrap_or(&dst)
-            .display();
+        let rel_dst = dst.strip_prefix(project_root).unwrap_or(&dst).display();
         println!("📦 Copying {}: {} -> {}", service_name, pkg, rel_dst);
     }
 
@@ -118,10 +112,7 @@ pub fn copy_artifacts(
 ///
 /// # Returns
 /// 0 on success, 1 on failure.
-pub fn validate_artifacts(
-    project_root: &Path,
-    binary_names: &HashMap<String, String>,
-) -> i32 {
+pub fn validate_artifacts(project_root: &Path, binary_names: &HashMap<String, String>) -> i32 {
     let required: Vec<&str> = binary_names.values().map(|v| v.as_str()).collect();
     let required_set: std::collections::HashSet<&str> = required.iter().copied().collect();
 
@@ -130,7 +121,10 @@ pub fn validate_artifacts(
     for arch_dir in &["amd64", "arm64", "arm"] {
         let d = project_root.join("build_artifacts").join(arch_dir);
         if !d.is_dir() {
-            eprintln!("❌ Missing: {}", d.strip_prefix(project_root).unwrap_or(&d).display());
+            eprintln!(
+                "❌ Missing: {}",
+                d.strip_prefix(project_root).unwrap_or(&d).display()
+            );
             errors += 1;
             continue;
         }
@@ -160,7 +154,12 @@ pub fn validate_artifacts(
             );
             errors += 1;
         } else {
-            println!("✅ {}: {}/{} binaries", arch_dir, found.len(), required_set.len());
+            println!(
+                "✅ {}: {}/{} binaries",
+                arch_dir,
+                found.len(),
+                required_set.len()
+            );
         }
     }
 
@@ -218,7 +217,13 @@ pub fn copy_artifacts_for_suite(
         (package_names.clone(), binary_names.clone())
     };
 
-    copy_artifacts(arch, project_root, &filtered_pkgs, &filtered_bins, workspace_dir)
+    copy_artifacts(
+        arch,
+        project_root,
+        &filtered_pkgs,
+        &filtered_bins,
+        workspace_dir,
+    )
 }
 
 #[cfg(test)]

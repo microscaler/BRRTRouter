@@ -23,16 +23,12 @@ const ARM7_TRIPLE: &str = "armv7-unknown-linux-musleabihf";
 
 /// Detect host architecture as a canonical name.
 pub fn detect_host_architecture() -> &'static str {
-    let machine = std::env::var("CARGO_TARGET_ARCH")
-        .ok()
-        .unwrap_or_else(|| {
-            std::env::var("TARGET")
-                .ok()
-                .unwrap_or_else(|| {
-                    // Fallback to uname
-                    String::from("x86_64")
-                })
-        });
+    let machine = std::env::var("CARGO_TARGET_ARCH").ok().unwrap_or_else(|| {
+        std::env::var("TARGET").ok().unwrap_or_else(|| {
+            // Fallback to uname
+            String::from("x86_64")
+        })
+    });
 
     match machine.to_lowercase().as_str() {
         "x86_64" | "amd64" => "amd64",
@@ -83,10 +79,7 @@ fn get_linker_env(rust_target: &str) -> Vec<(&str, &str)> {
     match rust_target {
         "x86_64-unknown-linux-musl" => vec![
             ("CC_x86_64_unknown_linux_musl", "musl-gcc"),
-            (
-                "CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER",
-                "musl-gcc",
-            ),
+            ("CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER", "musl-gcc"),
         ],
         "aarch64-unknown-linux-musl" => vec![
             ("CC_aarch64_unknown_linux_musl", "aarch64-linux-musl-gcc"),
@@ -151,12 +144,7 @@ fn install_rust_target(rust_target: &str) -> bool {
 ///
 /// # Returns
 /// 0 on success, 1 on failure.
-pub fn build_workspace(
-    project_root: &Path,
-    arch: &str,
-    release: bool,
-    jemalloc: bool,
-) -> i32 {
+pub fn build_workspace(project_root: &Path, arch: &str, release: bool, jemalloc: bool) -> i32 {
     let target = match ARCH_TARGETS.iter().find(|(a, _)| *a == arch) {
         Some((_, triple)) => *triple,
         None => {
@@ -173,7 +161,10 @@ pub fn build_workspace(
 
     let manifest = project_root.join("microservices").join("Cargo.toml");
     if !manifest.exists() {
-        eprintln!("❌ Cargo.toml not found in {}", project_root.join("microservices").display());
+        eprintln!(
+            "❌ Cargo.toml not found in {}",
+            project_root.join("microservices").display()
+        );
         return 1;
     }
 
@@ -271,19 +262,14 @@ pub fn build_package(
     let crate_dir = project_root.join("microservices");
     if let Some(callback) = gen_if_missing {
         // Simple check: look for any gen/Cargo.toml
-        let probe = crate_dir.read_dir()
-            .into_iter()
-            .flatten()
-            .find(|e| {
-                e.as_ref().map_or(false, |e| {
-                    e.file_type().map_or(false, |ft| ft.is_dir())
-                        && e.path().join("gen").join("Cargo.toml").exists()
-                })
-            });
+        let probe = crate_dir.read_dir().into_iter().flatten().find(|e| {
+            e.as_ref().map_or(false, |e| {
+                e.file_type().map_or(false, |ft| ft.is_dir())
+                    && e.path().join("gen").join("Cargo.toml").exists()
+            })
+        });
         if probe.is_none() {
-            println!(
-                "📦 Gen crates missing; running generation for all services..."
-            );
+            println!("📦 Gen crates missing; running generation for all services...");
             callback();
         }
     }

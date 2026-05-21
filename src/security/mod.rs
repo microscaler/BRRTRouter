@@ -377,6 +377,13 @@ pub use spiffe::{
     SpiffeProvider,
 };
 
+// Decision types (Story 9.4 — shadow decision observability)
+pub mod decision;
+pub mod shadow;
+
+// JWT common-path middleware types (Story 4.2 — hybrid authz model)
+pub mod jwt_auth;
+
 // Provider modules
 mod bearer_jwt;
 mod jwks_bearer;

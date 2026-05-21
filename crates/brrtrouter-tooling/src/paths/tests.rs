@@ -1,6 +1,4 @@
-use crate::paths::{
-    brrtrouter_venv_root, discover_brrtrouter_root, is_brrtrouter_root, venv_bin,
-};
+use crate::paths::{brrtrouter_venv_root, discover_brrtrouter_root, is_brrtrouter_root, venv_bin};
 use std::fs;
 use tempfile::TempDir;
 

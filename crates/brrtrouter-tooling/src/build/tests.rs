@@ -9,10 +9,7 @@ fn test_arch_targets_has_three_entries() {
     assert_eq!(ARCH_TARGETS.len(), 3);
     assert_eq!(ARCH_TARGETS[0], ("amd64", "x86_64-unknown-linux-musl"));
     assert_eq!(ARCH_TARGETS[1], ("arm64", "aarch64-unknown-linux-musl"));
-    assert_eq!(
-        ARCH_TARGETS[2],
-        ("arm7", "armv7-unknown-linux-musleabihf")
-    );
+    assert_eq!(ARCH_TARGETS[2], ("arm7", "armv7-unknown-linux-musleabihf"));
 }
 
 // ── detect_host_architecture tests ────────────────────────────────────
@@ -123,17 +120,26 @@ fn test_get_linker_env_x86_64() {
     let env = get_linker_env("x86_64-unknown-linux-musl");
     assert_eq!(env.len(), 2);
     assert_eq!(env[0], ("CC_x86_64_unknown_linux_musl", "musl-gcc"));
-    assert_eq!(env[1], ("CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER", "musl-gcc"));
+    assert_eq!(
+        env[1],
+        ("CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER", "musl-gcc")
+    );
 }
 
 #[test]
 fn test_get_linker_env_aarch64() {
     let env = get_linker_env("aarch64-unknown-linux-musl");
     assert_eq!(env.len(), 2);
-    assert_eq!(env[0], ("CC_aarch64_unknown_linux_musl", "aarch64-linux-musl-gcc"));
+    assert_eq!(
+        env[0],
+        ("CC_aarch64_unknown_linux_musl", "aarch64-linux-musl-gcc")
+    );
     assert_eq!(
         env[1],
-        ("CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER", "aarch64-linux-musl-gcc")
+        (
+            "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER",
+            "aarch64-linux-musl-gcc"
+        )
     );
 }
 
@@ -143,11 +149,17 @@ fn test_get_linker_env_armv7() {
     assert_eq!(env.len(), 2);
     assert_eq!(
         env[0],
-        ("CC_armv7_unknown_linux_musleabihf", "arm-linux-musleabihf-gcc")
+        (
+            "CC_armv7_unknown_linux_musleabihf",
+            "arm-linux-musleabihf-gcc"
+        )
     );
     assert_eq!(
         env[1],
-        ("CARGO_TARGET_ARMV7_UNKNOWN_LINUX_MUSLEABIHF_LINKER", "arm-linux-musleabihf-gcc")
+        (
+            "CARGO_TARGET_ARMV7_UNKNOWN_LINUX_MUSLEABIHF_LINKER",
+            "arm-linux-musleabihf-gcc"
+        )
     );
 }
 

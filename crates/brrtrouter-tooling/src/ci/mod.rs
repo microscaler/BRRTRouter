@@ -9,8 +9,9 @@ use std::path::Path;
 use crate::paths;
 
 /// Regex to match a path dependency line for brrtrouter or brrtrouter_macros.
-static BRRTRouter_PATH_RE: std::sync::LazyLock<regex::Regex> =
-    std::sync::LazyLock::new(|| regex::Regex::new(r#"brrtrouter(?:_macros)? = \{ path = "[^"]+" }"#).unwrap());
+static BRRTRouter_PATH_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new(r#"brrtrouter(?:_macros)? = \{ path = "[^"]+" }"#).unwrap()
+});
 
 /// Check if a Cargo.toml is under microservices/.../gen (workspace member).
 fn is_microservices_gen_crate(cargo_toml_dir: &Path) -> bool {
@@ -54,15 +55,14 @@ pub fn fix_cargo_toml(
     let cargo_toml_dir = cargo_toml_path.parent().unwrap();
 
     if is_microservices_gen_crate(cargo_toml_dir) {
-        let fixed = BRRTRouter_PATH_RE
-            .replace_all(&content, |caps: &regex::Captures| {
-                let original = caps.get(0).unwrap().as_str();
-                if original.contains("brrtrouter_macros") {
-                    "brrtrouter_macros = { workspace = true }"
-                } else {
-                    "brrtrouter = { workspace = true }"
-                }
-            });
+        let fixed = BRRTRouter_PATH_RE.replace_all(&content, |caps: &regex::Captures| {
+            let original = caps.get(0).unwrap().as_str();
+            if original.contains("brrtrouter_macros") {
+                "brrtrouter_macros = { workspace = true }"
+            } else {
+                "brrtrouter = { workspace = true }"
+            }
+        });
         let fixed = fixed.to_string();
 
         if fixed != content {
@@ -105,18 +105,14 @@ pub fn fix_cargo_toml(
             Err(_) => brrtrouter_rel.clone(),
         };
 
-        let fixed = BRRTRouter_PATH_RE
-            .replace_all(&content, |caps: &regex::Captures| {
-                let original = caps.get(0).unwrap().as_str();
-                if original.contains("brrtrouter_macros") {
-                    format!(
-                        "brrtrouter_macros = {{ path = \"{}\" }}",
-                        macros_rel
-                    )
-                } else {
-                    format!("brrtrouter = {{ path = \"{}\" }}", brrtrouter_rel)
-                }
-            });
+        let fixed = BRRTRouter_PATH_RE.replace_all(&content, |caps: &regex::Captures| {
+            let original = caps.get(0).unwrap().as_str();
+            if original.contains("brrtrouter_macros") {
+                format!("brrtrouter_macros = {{ path = \"{}\" }}", macros_rel)
+            } else {
+                format!("brrtrouter = {{ path = \"{}\" }}", brrtrouter_rel)
+            }
+        });
         let fixed = fixed.to_string();
 
         if fixed != content {

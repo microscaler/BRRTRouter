@@ -1,4 +1,7 @@
+mod jwt_logger;
 mod validation;
+
+pub use jwt_logger::{DecisionSource, JwtLogFields, JwtStructuredLogger};
 
 use crate::security::{CacheStats, SecurityProvider, SecurityRequest};
 use crate::spec::SecurityScheme;
@@ -10,10 +13,11 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, RwLock};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
-use tracing::{debug, warn};
+use tracing::{debug, warn, Level};
 use url::Url;
 
 // P3: Supported JWT algorithms - whitelist for security and code simplification
+// Includes EC (ES256) and EdDSA (Ed25519) for asymmetric signing per Epic 1 design.
 pub(super) const SUPPORTED_ALGORITHMS: &[jsonwebtoken::Algorithm] = &[
     jsonwebtoken::Algorithm::HS256,
     jsonwebtoken::Algorithm::HS384,
@@ -21,6 +25,8 @@ pub(super) const SUPPORTED_ALGORITHMS: &[jsonwebtoken::Algorithm] = &[
     jsonwebtoken::Algorithm::RS256,
     jsonwebtoken::Algorithm::RS384,
     jsonwebtoken::Algorithm::RS512,
+    jsonwebtoken::Algorithm::ES256,
+    jsonwebtoken::Algorithm::EdDSA,
 ];
 
 /// JWKS-based Bearer provider for production integrations.
@@ -60,6 +66,8 @@ pub struct JwksBearerProvider {
     pub(super) cache_hits: AtomicU64,
     pub(super) cache_misses: AtomicU64,
     pub(super) cache_evictions: AtomicU64,
+    // Story 9.6: Structured JWT logging for audit trail
+    pub(super) structured_logger: JwtStructuredLogger,
 }
 
 impl JwksBearerProvider {
@@ -146,6 +154,7 @@ impl JwksBearerProvider {
             cache_hits: AtomicU64::new(0),
             cache_misses: AtomicU64::new(0),
             cache_evictions: AtomicU64::new(0),
+            structured_logger: JwtStructuredLogger::new(),
             background_handle: Some(background_handle.clone()),
             shutdown: shutdown.clone(),
         };
@@ -922,14 +931,35 @@ impl JwksBearerProvider {
     /// P1: Non-blocking - uses lock-free reads (RwLock) and triggers refresh in background.
     /// If refresh fails, uses stale cache (graceful degradation).
     pub(super) fn get_key_for(&self, kid: &str) -> Option<jsonwebtoken::DecodingKey> {
+        let span = tracing::span!(Level::DEBUG, "jwks_cache", kid = kid,);
+        let _guard = span.enter();
+
         // Trigger refresh if needed (non-blocking)
         self.refresh_jwks_if_needed();
 
         // Lock-free read (RwLock allows concurrent reads)
+        let cache_hit = if let Ok(guard) = self.cache.read() {
+            let result = guard.1.get(kid).cloned();
+            span.record("cache_hit", result.is_some());
+            result.is_some()
+        } else {
+            span.record("cache_hit", false);
+            false
+        };
+
+        if cache_hit {
+            span.record("cache_hit", true);
+            // Record cache age from the cache timestamp
+            if let Ok(guard) = self.cache.read() {
+                let age = guard.0.elapsed();
+                span.record("cache_age_seconds", age.as_secs_f64());
+            }
+        }
+
+        // Re-read to return the actual key
         if let Ok(guard) = self.cache.read() {
             guard.1.get(kid).cloned()
         } else {
-            // Lock poisoned, return None
             None
         }
     }
@@ -1023,7 +1053,60 @@ impl SecurityProvider for JwksBearerProvider {
     /// 5. Check `iss`, `aud`, `exp` claims
     /// 6. Verify scopes
     fn validate(&self, scheme: &SecurityScheme, scopes: &[String], req: &SecurityRequest) -> bool {
-        validation::validate_token_impl(self, scheme, scopes, req)
+        // Story 9.5: token.validation span — child of jwt_validation (if available)
+        // Records token_size_bytes, header_size_bytes, token_version, result
+        let token = self.extract_token(req);
+        let token_size = token.as_ref().map_or(0f64, |t| t.len() as f64);
+        let header_size = req
+            .get_header("Authorization")
+            .map_or(0f64, |h| h.len() as f64);
+
+        let span = tracing::span!(
+            tracing::Level::DEBUG,
+            "token.validation",
+            token_size_bytes = token_size,
+            header_size_bytes = header_size,
+            token_version = 0u64,
+            result = tracing::field::Empty,
+        );
+        let _guard = span.enter();
+
+        let result = validation::validate_token_impl(self, scheme, scopes, req);
+
+        // Record result in span attribute
+        span.record("result", if result { "valid" } else { "invalid" });
+
+        // Record token version from claims if available
+        if let Some(t) = &token {
+            if let Ok(header) = jsonwebtoken::decode_header(t) {
+                if let Some(kid) = &header.kid {
+                    // Try to get token version from claims cache
+                    if let Ok(mut cache) = self.claims_cache.write() {
+                        let cache_key: Arc<str> = Arc::from(format!("{}|{}", t, kid));
+                        if let Some((_, claims, _)) = cache.get::<Arc<str>>(&cache_key.into()) {
+                            if let Some(ver) = claims.get("ver") {
+                                if let Some(v) = ver.as_u64() {
+                                    span.record("token_version", v);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Structured log on validation failure (WARN level)
+        if !result {
+            tracing::warn!(
+                event = "token_validation_failed",
+                token_size_bytes = token_size,
+                header_size_bytes = header_size,
+                route = tracing::field::Empty, // would need route context
+                "Token validation failed"
+            );
+        }
+
+        result
     }
 
     /// Extract JWT claims from a validated request.
