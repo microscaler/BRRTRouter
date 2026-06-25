@@ -28,6 +28,7 @@
   * **BRRTRouter**: An OpenAPI-first coroutine-native HTTP router.
   * **Lifeguard**: A coroutine-native Postgres ORM built for the `may` stackful coroutine runtime.
 * **Core Advantages**:
+  * **Blistering Concurrency Without Threading Concerns**: Eliminates mutex locks, synchronization overhead, and data races via thread-local cooperative coroutine scheduling.
   * Eliminates Tokio in favor of assembly-level context switching (<20ns switch overhead).
   * Direct execution of blocking-style operations without thread blocking.
   * Configurable lightweight stack size (`BRRTR_STACK_SIZE`), minimizing memory overhead.
@@ -36,9 +37,10 @@
 
 ### Slide 4: BRRTRouter: OpenAPI-First Generation
 * **Design Once, Deploy Instantly**:
-  * Code generator (`brrtrouter-gen`) converts OpenAPI 3.1.0 specifications into type-safe DTOs, JSON Schema validators, and handler stubs.
-  * Integrates an $O(k)$ Radix Tree matcher for zero-heap routing lookup.
-  * FS watcher watches spec changes to enable **Hot Reload** without restarting the server or dropping connections.
+  * **Source of Truth Specification**: The OpenAPI doc is the actual source of truth for the microservice, rather than an documentation afterthought.
+  * **Parallel UI Development**: Frontend designers can start building UI interfaces immediately against live, spec-conforming mock responses (such as `echo_handler` or schema mocks) long before the backend database queries are completed.
+  * Code generator (`brrtrouter-gen`) converts specifications into type-safe DTOs, JSON Schema validators, and handler stubs.
+  * Integrates an $O(k)$ Radix Tree matcher for zero-heap routing lookup and supports Hot Spec Reload.
 * **Result**: Zero configuration drift, complete API security compliance, and an instantaneous feedback loop.
 
 ---

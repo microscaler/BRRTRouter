@@ -42,8 +42,8 @@ The BRRTRouter & Lifeguard stack eliminates the friction between high-performanc
   └────────────────────────────────────────────────────────┘
 ```
 
-* **OpenAPI-First Production Line**: Developers write the API specification once. The code generator (`brrtrouter-gen`) automatically builds request/response DTOs, JSON Schema request validators, and handler stubs. This eliminates routing boilerplates and guarantees API compliance.
-* **Coroutine Concurrency**: Unlike async frameworks that rely on state machines and complex pollers, the stack runs on stackful coroutines. Threads are never blocked during network or database operations; instead, the coroutine yields at the assembly level (<20ns), allowing other requests to occupy the CPU slot.
+* **OpenAPI-First Production Line (Parallel UI Prototyping)**: The OpenAPI specification is the absolute source of truth, rather than an afterthought. The code generator (`brrtrouter-gen`) automatically compiles requests, schemas, validators, and handler stubs. This allows frontend designers and UI engineers to start their work in parallel: they can query live, conforming mock endpoints (via mock responses or the default `echo_handler`) immediately before the backend database code or business logic is even written.
+* **Blistering Concurrency Without Threading Concerns**: Unlike legacy async frameworks that require complex multi-threaded future synchronization and polling machinery, the stack runs on stackful coroutines cooperatively scheduled over thread-local workers. Threads are never blocked during network or database I/O, context switches cost just ~20ns, and application-level code is freed from synchronization locks, mutexes, and thread-safety races.
 * **SolidJS Developer Console**: Includes a built-in admin dashboard that serves as a central cockpit for local testing. It features a live metrics stream, API explorer, Server-Sent Events (SSE) logs, and auth token configuration.
 
 ---
