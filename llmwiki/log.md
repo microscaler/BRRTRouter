@@ -121,8 +121,8 @@ Stress test against `pet_store` on `127.0.0.1:8081`, direct `api_load_test` bina
 
 ## [2026-06-25] fix | keep local sibling dep, rewrite to git in GitHub Actions
 
-- Restored `microscaler-observability` in [`/home/runner/work/BRRTRouter/BRRTRouter/Cargo.toml`](/home/runner/work/BRRTRouter/BRRTRouter/Cargo.toml) to the local sibling path (`../microscaler-observability`) so contributor builds continue to use the adjacent checkout.
-- Added workflow-local rewrite steps in [`/home/runner/work/BRRTRouter/BRRTRouter/.github/workflows/ci.yml`](/home/runner/work/BRRTRouter/BRRTRouter/.github/workflows/ci.yml) and [`/home/runner/work/BRRTRouter/BRRTRouter/.github/workflows/docs.yml`](/home/runner/work/BRRTRouter/BRRTRouter/.github/workflows/docs.yml) that `sed` the dependency to `git = "https://github.com/microscaler/microscaler-observability.git"` on GitHub runners before Cargo commands execute.
+- Restored `microscaler-observability` in [`../Cargo.toml`](../Cargo.toml) to the local sibling path (`../microscaler-observability`) so contributor builds continue to use the adjacent checkout.
+- Added workflow-local rewrite steps in [`../.github/workflows/ci.yml`](../.github/workflows/ci.yml) and [`../.github/workflows/docs.yml`](../.github/workflows/docs.yml) that `sed` the dependency to `git = "https://github.com/microscaler/microscaler-observability.git"` on GitHub runners before Cargo commands execute.
 - Adjusted `Cargo.lock` back to the path-dependency state by removing the git `source` entry for `microscaler-observability`.
 
 ## [2026-04-17] ingest | bootstrap llmwiki from docs + code
