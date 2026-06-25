@@ -2870,6 +2870,7 @@ dependencies = [
 [[package]]
 name = "microscaler-observability"
 version = "0.1.0"
+source = "git+https://github.com/microscaler/microscaler-observability.git?branch=main#7f6e6563b2704072cc2411d947ccf82910276be8"
 dependencies = [
  "opentelemetry",
  "opentelemetry-appender-tracing",
