@@ -27,6 +27,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
+      - name: Switch microscaler-observability to git dependency
+        run: |
+          sed -i 's|microscaler-observability = { path = "../microscaler-observability" }|microscaler-observability = { git = "https://github.com/microscaler/microscaler-observability.git", branch = "main" }|' Cargo.toml
+          grep 'microscaler-observability' Cargo.toml
+
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
