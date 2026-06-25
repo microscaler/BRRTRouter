@@ -61,7 +61,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-appender = "0.2"
 
 # Hexagonal OTEL adapter — OTLP tracer/logger + propagator (shared with Hauliage / Lifeguard).
-microscaler-observability = { path = "../microscaler-observability" }
+microscaler-observability = { git = "https://github.com/microscaler/microscaler-observability.git", branch = "main" }
 
 # gRPC dependencies for OTLP (compatible with opentelemetry 0.31)
 tonic = "0.14"

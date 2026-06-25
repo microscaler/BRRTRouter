@@ -73,13 +73,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Checkout microscaler-observability (sibling path dep)
-        uses: actions/checkout@v6
-        with:
-          repository: microscaler/microscaler-observability
-          ref: main
-          path: ${{ github.workspace }}/../microscaler-observability
-
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -210,13 +203,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
-
-      - name: Checkout microscaler-observability (sibling path dep)
-        uses: actions/checkout@v6
-        with:
-          repository: microscaler/microscaler-observability
-          ref: main
-          path: ${{ github.workspace }}/../microscaler-observability
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
