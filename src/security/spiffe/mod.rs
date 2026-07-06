@@ -280,8 +280,8 @@ impl SpiffeProvider {
     ///
     /// # Security
     ///
-    /// JWKS URL must use HTTPS (validated in this method). HTTP URLs are rejected for security,
-    /// except for localhost/127.0.0.1 for testing.
+    /// JWKS URL must use HTTPS (validated in this method). HTTP is limited to loopback and
+    /// in-cluster `.svc.cluster.local` hosts.
     ///
     /// JSF Compliance: Panics only during initialization, never on hot path
     /// This method is only called during provider construction (startup)
@@ -312,8 +312,8 @@ impl SpiffeProvider {
             };
 
             // This panic is intentional: invalid configuration should fail fast at startup
-            if host != "localhost" && host != "127.0.0.1" {
-                panic!("JWKS URL must use HTTPS for security (HTTP only allowed for localhost/127.0.0.1). Got: {}", url_str);
+            if !crate::security::jwks_bearer::jwks_http_host_allowed(host) {
+                panic!("JWKS URL must use HTTPS for security (HTTP only allowed for localhost/127.0.0.1 or *.svc.cluster.local). Got: {}", url_str);
             }
         } else {
             // This panic is intentional: invalid configuration should fail fast at startup

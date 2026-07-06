@@ -29,6 +29,14 @@ pub(super) const SUPPORTED_ALGORITHMS: &[jsonwebtoken::Algorithm] = &[
     jsonwebtoken::Algorithm::EdDSA,
 ];
 
+/// Whether an HTTP (non-TLS) JWKS URL host is permitted.
+///
+/// Loopback is allowed for local dev; `.svc.cluster.local` for in-cluster Kubernetes
+/// service DNS (same trust boundary as the pod network).
+pub(crate) fn jwks_http_host_allowed(host: &str) -> bool {
+    host == "localhost" || host == "127.0.0.1" || host.ends_with(".svc.cluster.local")
+}
+
 /// JWKS-based Bearer provider for production integrations.
 /// Fetches keys from a JWKS URL and validates JWTs (signature and claims).
 pub struct JwksBearerProvider {
@@ -86,7 +94,8 @@ impl JwksBearerProvider {
     ///
     /// # Security
     ///
-    /// JWKS URL must use HTTPS (validated in `new()`). HTTP URLs are rejected for security.
+    /// JWKS URL must use HTTPS (validated in `new()`). HTTP is limited to loopback and
+    /// in-cluster `.svc.cluster.local` hosts.
     ///
     /// JSF Compliance: Panics only during initialization, never on hot path
     /// This method is only called during provider construction (startup)
@@ -117,10 +126,9 @@ impl JwksBearerProvider {
                 }
             };
 
-            // Only allow exact "localhost" or "127.0.0.1" - reject subdomains like "localhost.attacker.com"
-            // This panic is intentional: invalid configuration should fail fast at startup
-            if host != "localhost" && host != "127.0.0.1" {
-                panic!("JWKS URL must use HTTPS for security (HTTP only allowed for localhost/127.0.0.1). Got: {}", url_str);
+            // Only allow exact loopback or Kubernetes in-cluster service DNS.
+            if !jwks_http_host_allowed(host) {
+                panic!("JWKS URL must use HTTPS for security (HTTP only allowed for localhost/127.0.0.1 or *.svc.cluster.local). Got: {}", url_str);
             }
         } else {
             // This panic is intentional: invalid configuration should fail fast at startup

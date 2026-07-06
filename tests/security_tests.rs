@@ -1491,6 +1491,13 @@ fn test_jwks_cookie_support() {
 }
 
 #[test]
+fn test_jwks_url_kubernetes_cluster_local_allowed() {
+    let _provider = brrtrouter::security::JwksBearerProvider::new(
+        "http://identity-session-service.sesame-idam.svc.cluster.local:8105/idam/v1/.well-known/jwks.json",
+    );
+}
+
+#[test]
 #[should_panic(expected = "JWKS URL must use HTTPS")]
 fn test_jwks_url_https_validation() {
     // Test that HTTP URLs (except localhost) are rejected
