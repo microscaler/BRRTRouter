@@ -53,3 +53,10 @@ When benches move to a **new ms02** or new CPU, reset Criterion baselines on tha
 - **Next staged:** **BR-1** — `security: []` must mean public (fix `src/spec/build.rs` + oas3 presence tracking). Symptom: sesame in-cluster login 401 until global security removed from OpenAPI specs.
 - Cross-linked from sesame [`topic-brrtrouter-refactor-backlog.md`](../../seasame-idam/docs/llmwiki/topics/topic-brrtrouter-refactor-backlog.md) and hauliage [`sesame-idam-brrtrouter-integration.md`](../../hauliage/docs/llmwiki/topics/sesame-idam-brrtrouter-integration.md).
 - Phase 1 `brrtrouter::http` migration documented as complete; BR-5..BR-7 track platform hygiene (may::go refresh, reqwest shed, JWT sub-spans).
+
+## [2026-07-06] fix | BR-1 — security:[] semantics
+
+- Implemented `OperationSecurityPresence` + `resolve_operation_security` in `src/spec/security_presence.rs`.
+- `load_spec` / `load_spec_full` pass presence into `build_routes_with_security_presence`.
+- Added `tests/spec_security_tests.rs` (3 tests). Sesame restored global security on login/session specs.
+- See sesame [`topic-brrtrouter-refactor-backlog.md`](../../seasame-idam/docs/llmwiki/topics/topic-brrtrouter-refactor-backlog.md) pm13 entry.

@@ -1,3 +1,4 @@
+use super::security_presence::{resolve_operation_security, OperationSecurityPresence};
 use super::types::{
     ParameterLocation, ParameterMeta, ParameterStyle, ResponseSpec, Responses, RouteMeta,
 };
@@ -576,6 +577,18 @@ pub fn extract_stack_size_override(operation: &oas3::spec::Operation) -> Option<
 /// Returns an error if critical validation issues are found that prevent
 /// code generation (e.g., missing handler names, invalid parameters).
 pub fn build_routes(spec: &OpenApiV3Spec, slug: &str) -> anyhow::Result<Vec<RouteMeta>> {
+    build_routes_with_security_presence(spec, slug, None)
+}
+
+/// Build route metadata with optional explicit-operation security presence tracking.
+///
+/// When `security_presence` is provided, operation-level `security: []` is treated as
+/// public (no auth) per OpenAPI 3, instead of inheriting global security.
+pub fn build_routes_with_security_presence(
+    spec: &OpenApiV3Spec,
+    slug: &str,
+    security_presence: Option<&OperationSecurityPresence>,
+) -> anyhow::Result<Vec<RouteMeta>> {
     let mut routes = Vec::new();
     let mut issues = Vec::new();
 
@@ -612,11 +625,13 @@ pub fn build_routes(spec: &OpenApiV3Spec, slug: &str) -> anyhow::Result<Vec<Rout
                 let (response_schema, example, responses) =
                     extract_response_schema_and_example(spec, operation);
 
-                let security = if !operation.security.is_empty() {
-                    operation.security.clone()
-                } else {
-                    spec.security.clone()
-                };
+                let security = resolve_operation_security(
+                    path,
+                    method.as_str(),
+                    operation,
+                    spec,
+                    security_presence,
+                );
 
                 let mut parameters = Vec::new();
                 parameters.extend(extract_parameters(spec, &item.parameters));

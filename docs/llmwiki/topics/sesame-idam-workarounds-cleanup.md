@@ -14,35 +14,17 @@ Sesame-IDAM auth implementation (2026-07-06) exposed four framework gaps. Phase 
 
 ---
 
-## BR-1 — `security: []` means public (P1)
+## BR-1 — `security: []` means public (P1) ✅
 
-**Problem:** OpenAPI 3 defines `security: []` on an operation as *no authentication required*. Codegen currently treats empty operation security as “inherit spec-level global security”:
+**Status:** Landed 2026-07-06.
 
-```rust
-// src/spec/build.rs (~615)
-let security = if !operation.security.is_empty() {
-    operation.security.clone()
-} else {
-    spec.security.clone()
-};
-```
+**Implementation:** `src/spec/security_presence.rs` scans raw JSON/YAML for explicit operation `security` keys before `oas3` deserialization erases the distinction. `load_spec` passes presence into `build_routes_with_security_presence`.
 
-Because `oas3` deserializes both *omitted* and *explicit `[]`* to `Vec::default()` (empty), BRRTRouter cannot distinguish them today.
+**Tests:** `tests/spec_security_tests.rs`, sesame `openapi_security.rs`.
 
-**Symptom:** In-cluster `POST /idam/v1/auth/login` returned 401 until sesame-idam removed global `security` from login/session specs (commit `26b4aba` on sesame-idam).
+**Unblocks:** sesame global security restored; hauliage mixed public/protected specs (**HI-5** audit).
 
-**Fix options (pick one):**
-
-1. **oas3 + build.rs:** Use `Option<Vec<SecurityRequirement>>` with serde presence tracking (`#[serde(default, skip_serializing_if = "Option::is_none")]`) — `None` = inherit global, `Some([])` = public.
-2. **Vendor extension:** `x-brrtrouter-public: true` on operations (fallback if oas3 change is too invasive).
-
-**Acceptance:**
-
-- Spec with global `security: [BearerAuth]` + operation `security: []` generates route with **no** auth middleware.
-- Spec with global security + operation security **omitted** still inherits global.
-- Unit test in `brrtrouter-gen` or build.rs tests with fixture YAML.
-
-**Unblocks:** sesame **SI-1** — restore global security on IDAM specs.
+**Historical context:** Before BR-1, in-cluster `POST /idam/v1/auth/login` returned 401 until sesame-idam removed global `security` (commit `26b4aba`). That workaround is reverted after BR-1.
 
 ---
 
@@ -129,8 +111,8 @@ See sesame [`topic-http-client-policy.md`](../../../../seasame-idam/docs/llmwiki
 
 | Order | ID | Effort | Blocker for |
 |-------|-----|--------|-------------|
-| 1 | **BR-1** | Small | sesame global security restore, hauliage mixed public/protected specs |
-| 2 | **BR-4** | Small | Deploy smoke provider drift |
+| ~~1~~ | ~~**BR-1**~~ | ~~Small~~ | ✅ Done 2026-07-06 |
+| 1 | **BR-4** | Small | Deploy smoke provider drift |
 | 3 | **BR-2** | Medium | Raw handler removal |
 | 4 | **BR-3** | Medium | OAuth status codes |
 | 5 | **BR-5..BR-7** | Large | Platform hygiene |

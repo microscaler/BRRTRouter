@@ -87,8 +87,12 @@
 pub use oas3::spec::{SecurityRequirement, SecurityScheme};
 mod build;
 mod load;
+mod security_presence;
 mod types;
 
 pub use build::*;
 pub use load::*;
+pub use security_presence::{
+    extract_operation_security_presence, resolve_operation_security, OperationSecurityPresence,
+};
 pub use types::*;

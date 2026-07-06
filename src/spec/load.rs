@@ -1,4 +1,5 @@
-use super::build::{build_routes, extract_security_schemes};
+use super::build::{build_routes_with_security_presence, extract_security_schemes};
+use super::security_presence::extract_operation_security_presence;
 use super::types::RouteMeta;
 use super::SecurityScheme;
 use oas3::OpenApiV3Spec;
@@ -60,6 +61,7 @@ pub fn load_spec(file_path: &str) -> anyhow::Result<(Vec<RouteMeta>, String)> {
         };
 
     strip_unknown_verbs(&mut value);
+    let security_presence = extract_operation_security_presence(&value);
     let spec: OpenApiV3Spec = serde_json::from_value(value)?;
 
     let title = spec
@@ -70,7 +72,7 @@ pub fn load_spec(file_path: &str) -> anyhow::Result<(Vec<RouteMeta>, String)> {
         .trim_matches('_')
         .to_string();
 
-    let routes = build_routes(&spec, &title)?;
+    let routes = build_routes_with_security_presence(&spec, &title, Some(&security_presence))?;
     Ok((routes, title))
 }
 
@@ -100,11 +102,16 @@ pub fn load_spec_full(
     String,
 )> {
     let content = std::fs::read_to_string(file_path)?;
-    let spec: OpenApiV3Spec = if file_path.ends_with(".yaml") || file_path.ends_with(".yml") {
-        serde_yaml::from_str(&content)?
-    } else {
-        serde_json::from_str(&content)?
-    };
+    let mut value: serde_json::Value =
+        if file_path.ends_with(".yaml") || file_path.ends_with(".yml") {
+            serde_yaml::from_str(&content)?
+        } else {
+            serde_json::from_str(&content)?
+        };
+
+    strip_unknown_verbs(&mut value);
+    let security_presence = extract_operation_security_presence(&value);
+    let spec: OpenApiV3Spec = serde_json::from_value(value)?;
 
     let title = spec
         .info
@@ -114,7 +121,7 @@ pub fn load_spec_full(
         .trim_matches('_')
         .to_string();
 
-    let routes = build_routes(&spec, &title)?;
+    let routes = build_routes_with_security_presence(&spec, &title, Some(&security_presence))?;
     let schemes = extract_security_schemes(&spec);
     Ok((routes, schemes, title))
 }
@@ -129,7 +136,7 @@ pub fn load_spec_from_spec(spec: OpenApiV3Spec) -> anyhow::Result<Vec<RouteMeta>
         .trim_matches('_')
         .to_string();
 
-    let routes = build_routes(&spec, &slug)?;
+    let routes = build_routes_with_security_presence(&spec, &slug, None)?;
     Ok(routes)
 }
 
@@ -164,7 +171,7 @@ pub fn load_spec_from_spec_full(
         .replace(|c: char| !c.is_ascii_alphanumeric(), "_")
         .trim_matches('_')
         .to_string();
-    let routes = build_routes(&spec, &slug)?;
+    let routes = build_routes_with_security_presence(&spec, &slug, None)?;
     let schemes = extract_security_schemes(&spec);
     Ok((routes, schemes))
 }
