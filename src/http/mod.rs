@@ -6,4 +6,4 @@
 
 mod fetch;
 
-pub use fetch::{fetch_get, fetch_get_text_with_retry, HttpFetchError, HttpFetchOptions};
+pub use fetch::{fetch_get, fetch_get_text_with_retry, fetch_post, HttpFetchError, HttpFetchOptions};

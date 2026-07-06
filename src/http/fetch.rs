@@ -7,6 +7,7 @@ use std::time::Duration;
 use http_legacy::{Method, Uri};
 use may_http::client::HttpClient;
 use rustls::pki_types::ServerName;
+use rustls_platform_verifier::BuilderVerifierExt;
 use url::Url;
 
 /// Options for outbound GET requests from security providers.
@@ -110,6 +111,151 @@ pub fn fetch_get_text_with_retry(
     None
 }
 
+/// Perform a bounded HTTP POST and return `(status_code, body)`.
+///
+/// Supports `http://` via `may_http` and `https://` via rustls on `may::net::TcpStream`.
+///
+/// # Errors
+///
+/// Returns [`HttpFetchError`] on URL parse failure, network/TLS errors, or oversize body.
+pub fn fetch_post(
+    url: &str,
+    body: &[u8],
+    options: &HttpFetchOptions,
+) -> Result<(u16, Vec<u8>), HttpFetchError> {
+    let parsed = Url::parse(url).map_err(|e| HttpFetchError::InvalidUrl(e.to_string()))?;
+    match parsed.scheme() {
+        "http" => fetch_post_http(&parsed, body, options),
+        "https" => fetch_post_https(&parsed, body, options),
+        other => Err(HttpFetchError::InvalidUrl(format!("unsupported scheme: {other}"))),
+    }
+}
+
+fn url_path_and_host_header(url: &Url) -> (String, String) {
+    let host = url.host_str().unwrap_or("localhost");
+    let port = url.port().unwrap_or(if url.scheme() == "https" { 443 } else { 80 });
+    let path = if url.query().is_some() {
+        format!("{}?{}", url.path(), url.query().unwrap_or_default())
+    } else {
+        url.path().to_string()
+    };
+    let host_header = if (url.scheme() == "https" && port == 443)
+        || (url.scheme() == "http" && port == 80)
+    {
+        host.to_string()
+    } else {
+        format!("{host}:{port}")
+    };
+    (path, host_header)
+}
+
+/// Path (+ query) URI for `may_http::Client` — must not include scheme/host (unlike HTTPS raw socket).
+fn request_uri_for_may_http(url: &Url) -> Result<Uri, HttpFetchError> {
+    let (mut path, _) = url_path_and_host_header(url);
+    if path.is_empty() {
+        path = "/".to_string();
+    }
+    path.parse()
+        .map_err(|e| HttpFetchError::InvalidUrl(format!("path uri: {e}")))
+}
+
+fn fetch_post_http(
+    url: &Url,
+    body: &[u8],
+    options: &HttpFetchOptions,
+) -> Result<(u16, Vec<u8>), HttpFetchError> {
+    let host = url
+        .host_str()
+        .ok_or_else(|| HttpFetchError::InvalidUrl("missing host".to_string()))?;
+    let port = url.port().unwrap_or(80);
+
+    let mut client = HttpClient::connect((host, port))
+        .map_err(|e| HttpFetchError::Connect(format!("{host}:{port}: {e}")))?;
+    client.set_timeout(Some(options.timeout));
+
+    let uri: Uri = request_uri_for_may_http(url)?;
+
+    let mut req = client.new_request(Method::POST, uri);
+    for (name, value) in &options.extra_headers {
+        if let (Ok(header_name), Ok(header_value)) = (
+            http_legacy::HeaderName::try_from(name.as_str()),
+            http_legacy::HeaderValue::from_str(value),
+        ) {
+            req.headers_mut().insert(header_name, header_value);
+        }
+    }
+    req.send(body)
+        .map_err(|e| HttpFetchError::Request(e.to_string()))?;
+
+    let mut response = client
+        .send_request(req)
+        .map_err(|e| HttpFetchError::Response(e.to_string()))?;
+
+    let status = response.status().as_u16();
+    read_bounded_body(&mut response, options.max_body_bytes).map(|b| (status, b))
+}
+
+fn fetch_post_https(
+    url: &Url,
+    body: &[u8],
+    options: &HttpFetchOptions,
+) -> Result<(u16, Vec<u8>), HttpFetchError> {
+    use may::net::TcpStream;
+
+    let host = url
+        .host_str()
+        .ok_or_else(|| HttpFetchError::InvalidUrl("missing host".to_string()))?;
+    let port = url.port().unwrap_or(443);
+
+    let mut tcp = TcpStream::connect((host, port))
+        .map_err(|e| HttpFetchError::Connect(format!("{host}:{port}: {e}")))?;
+    tcp.set_read_timeout(Some(options.timeout))
+        .map_err(|e| HttpFetchError::Connect(e.to_string()))?;
+    tcp.set_write_timeout(Some(options.timeout))
+        .map_err(|e| HttpFetchError::Connect(e.to_string()))?;
+
+    let config = rustls::ClientConfig::builder()
+        .with_platform_verifier()
+        .map_err(|e| HttpFetchError::Tls(e.to_string()))?
+        .with_no_client_auth();
+
+    let server_name = ServerName::try_from(host.to_string())
+        .map_err(|e| HttpFetchError::Tls(format!("server name: {e}")))?;
+
+    let mut tls = rustls::ClientConnection::new(Arc::new(config), server_name)
+        .map_err(|e| HttpFetchError::Tls(e.to_string()))?;
+    let mut tls_stream = rustls::Stream::new(&mut tls, &mut tcp);
+
+    let (path, host_header) = url_path_and_host_header(url);
+
+    let mut request = format!(
+        "POST {path} HTTP/1.1\r\nHost: {host_header}\r\nConnection: close\r\nContent-Length: {}\r\nUser-Agent: brrtrouter/0.1\r\n",
+        body.len()
+    );
+    for (name, value) in &options.extra_headers {
+        request.push_str(name);
+        request.push_str(": ");
+        request.push_str(value);
+        request.push_str("\r\n");
+    }
+    request.push_str("\r\n");
+
+    tls_stream
+        .write_all(request.as_bytes())
+        .map_err(|e| HttpFetchError::Request(e.to_string()))?;
+    tls_stream
+        .write_all(body)
+        .map_err(|e| HttpFetchError::Request(e.to_string()))?;
+
+    let mut raw = Vec::new();
+    tls_stream
+        .take(options.max_body_bytes as u64 + 8192)
+        .read_to_end(&mut raw)
+        .map_err(|e| HttpFetchError::Read(e.to_string()))?;
+
+    parse_http_response(&raw, options.max_body_bytes)
+}
+
 fn fetch_get_http(url: &Url, options: &HttpFetchOptions) -> Result<(u16, Vec<u8>), HttpFetchError> {
     let host = url
         .host_str()
@@ -120,15 +266,15 @@ fn fetch_get_http(url: &Url, options: &HttpFetchOptions) -> Result<(u16, Vec<u8>
         .map_err(|e| HttpFetchError::Connect(format!("{host}:{port}: {e}")))?;
     client.set_timeout(Some(options.timeout));
 
-    let uri: Uri = url
-        .as_str()
-        .parse()
-        .map_err(|e| HttpFetchError::InvalidUrl(format!("uri: {e}")))?;
+    let uri: Uri = request_uri_for_may_http(url)?;
 
     let mut req = client.new_request(Method::GET, uri);
     for (name, value) in &options.extra_headers {
-        if let Ok(header_value) = http_legacy::HeaderValue::from_str(value) {
-            req.headers_mut().insert(name.as_str(), header_value);
+        if let (Ok(header_name), Ok(header_value)) = (
+            http_legacy::HeaderName::try_from(name.as_str()),
+            http_legacy::HeaderValue::from_str(value),
+        ) {
+            req.headers_mut().insert(header_name, header_value);
         }
     }
 
@@ -168,21 +314,7 @@ fn fetch_get_https(url: &Url, options: &HttpFetchOptions) -> Result<(u16, Vec<u8
             .map_err(|e| HttpFetchError::Tls(e.to_string()))?;
     let mut tls_stream = rustls::Stream::new(&mut tls, &mut tcp);
 
-    let path = if url.query().is_some() {
-        format!(
-            "{}?{}",
-            url.path(),
-            url.query().unwrap_or_default()
-        )
-    } else {
-        url.path().to_string()
-    };
-
-    let host_header = if port == 443 {
-        host.to_string()
-    } else {
-        format!("{host}:{port}")
-    };
+    let (path, host_header) = url_path_and_host_header(url);
 
     let mut request = format!(
         "GET {path} HTTP/1.1\r\nHost: {host_header}\r\nConnection: close\r\nUser-Agent: brrtrouter/0.1\r\n"
@@ -290,6 +422,19 @@ mod tests {
         let data = b"12345";
         let err = read_bounded_body(&mut &data[..], 3).unwrap_err();
         assert_eq!(err, HttpFetchError::BodyTooLarge);
+    }
+
+    #[test]
+    fn request_uri_for_may_http_uses_path_not_full_url() {
+        let url = Url::parse(
+            "http://identity-session-service.sesame-idam.svc.cluster.local:8105/idam/v1/.well-known/jwks.json",
+        )
+        .unwrap();
+        let uri = request_uri_for_may_http(&url).unwrap();
+        assert_eq!(
+            uri.to_string(),
+            "/idam/v1/.well-known/jwks.json"
+        );
     }
 
     #[test]

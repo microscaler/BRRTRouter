@@ -296,6 +296,35 @@ fn jwks_bearer_provider_loads_keys_via_http_fetch() {
 }
 
 #[test]
+fn fetch_post_http_sends_json_body() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let url = format!("http://{}:{}/authz/principals/effective", addr.ip(), addr.port());
+    let server = thread::spawn(move || {
+        if let Ok((mut stream, _)) = listener.accept() {
+            let req = read_request(&mut stream);
+            assert!(req.starts_with("POST "));
+            assert!(req.to_ascii_lowercase().contains("content-type: application/json"));
+            write_response(&mut stream, 200, r#"{"roles":[{"role":"OWNER"}]}"#);
+        }
+    });
+
+    let options = HttpFetchOptions {
+        timeout: Duration::from_secs(2),
+        max_body_bytes: 4096,
+        extra_headers: vec![(
+            "content-type".to_string(),
+            "application/json".to_string(),
+        )],
+    };
+    let (status, body) =
+        brrtrouter::http::fetch_post(&url, br#"{"user_id":"u1"}"#, &options).unwrap();
+    assert_eq!(status, 200);
+    assert!(body.windows(7).any(|w| w == b"\"OWNER\""));
+    server.join().ok();
+}
+
+#[test]
 fn fetch_get_connect_error_on_dead_port() {
     let options = HttpFetchOptions {
         timeout: Duration::from_millis(200),
