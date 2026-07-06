@@ -60,3 +60,16 @@ When benches move to a **new ms02** or new CPU, reset Criterion baselines on tha
 - `load_spec` / `load_spec_full` pass presence into `build_routes_with_security_presence`.
 - Added `tests/spec_security_tests.rs` (3 tests). Sesame restored global security on login/session specs.
 - See sesame [`topic-brrtrouter-refactor-backlog.md`](../../seasame-idam/docs/llmwiki/topics/topic-brrtrouter-refactor-backlog.md) pm13 entry.
+
+## [2026-07-06] fix | BR-1b — in-cluster HTTP JWKS URLs
+
+- Allow `http://*.svc.cluster.local` JWKS URLs (`085e67e`). Unblocks hauliage fleet pod JWKS fetch in Kind.
+
+## [2026-07-07] fix | BR-1c — HTTP fetch path-only URI
+
+- `fetch_get_http` / `fetch_post_http` send path+query only to `may_http` (`73744df`). Fixes in-cluster JWKS GET from hauliage pods.
+- Tests: `tests/http_fetch_tests.rs`. Hauliage `sesame_jwks_smoke` 3/3 on ms02 after redeploy.
+
+## [2026-07-07] docs | Wave 2 staged
+
+- Wiki sync: BR-1b/BR-1c done; consumer Wave 2 = HI-7 pin + company/bff redeploy. Cross-ref hauliage integration wiki.

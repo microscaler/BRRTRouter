@@ -1,7 +1,7 @@
 ---
 title: Sesame-IDAM Workarounds — BRRTRouter Cleanup Tasks
 status: verified
-updated: 2026-07-06
+updated: 2026-07-07
 ---
 
 # Sesame-IDAM Workarounds — BRRTRouter Cleanup Tasks
@@ -22,9 +22,33 @@ Sesame-IDAM auth implementation (2026-07-06) exposed four framework gaps. Phase 
 
 **Tests:** `tests/spec_security_tests.rs`, sesame `openapi_security.rs`.
 
-**Unblocks:** sesame global security restored; hauliage mixed public/protected specs (**HI-5** audit).
+**Unblocks:** sesame global security restored; hauliage mixed public/protected specs (**HI-5** audit — ✅ hauliage `16fae98`).
 
-**Historical context:** Before BR-1, in-cluster `POST /idam/v1/auth/login` returned 401 until sesame-idam removed global `security` (commit `26b4aba`). That workaround is reverted after BR-1.
+---
+
+## BR-1b — In-cluster HTTP JWKS URLs (P1) ✅
+
+**Status:** Landed 2026-07-06 (`085e67e`).
+
+**Problem:** `JwksBearerProvider` rejected `http://*.svc.cluster.local` JWKS URLs → hauliage fleet pod crash-loop.
+
+**Fix:** Allow HTTP JWKS fetch for Kubernetes cluster DNS suffixes.
+
+**Unblocks:** hauliage HI-1 fleet JWKS in Kind.
+
+---
+
+## BR-1c — HTTP fetch path-only URI (P1) ✅
+
+**Status:** Landed 2026-07-07 (`73744df`).
+
+**Problem:** `fetch_get_http` / `fetch_post_http` passed the full URL as the HTTP path to `may_http`, breaking in-cluster JWKS GET from hauliage pods.
+
+**Fix:** Parse URL; send `path + query` only to the client.
+
+**Tests:** `tests/http_fetch_tests.rs`.
+
+**Unblocks:** hauliage HI-3 E2E green; resolves **HI-9** fetch compile/runtime path.
 
 ---
 
@@ -107,15 +131,19 @@ See sesame [`topic-http-client-policy.md`](../../../../seasame-idam/docs/llmwiki
 
 ---
 
-## Next staged work (this repo)
+## Next staged work (Wave 2)
 
 | Order | ID | Effort | Blocker for |
 |-------|-----|--------|-------------|
-| ~~1~~ | ~~**BR-1**~~ | ~~Small~~ | ✅ Done 2026-07-06 |
+| ~~1~~ | ~~**BR-1**~~ | ~~Small~~ | ✅ `a6aa511` |
+| ~~2~~ | ~~**BR-1b**~~ | ~~Small~~ | ✅ `085e67e` |
+| ~~3~~ | ~~**BR-1c**~~ | ~~Small~~ | ✅ `73744df` |
 | 1 | **BR-4** | Small | Deploy smoke provider drift |
-| 3 | **BR-2** | Medium | Raw handler removal |
-| 4 | **BR-3** | Medium | OAuth status codes |
-| 5 | **BR-5..BR-7** | Large | Platform hygiene |
+| 2 | **BR-2** | Medium | Raw handler removal (SI-3) |
+| 3 | **BR-3** | Medium | OAuth status codes (SI-4) |
+| 4 | **BR-5..BR-7** | Large | Platform hygiene |
+
+**Consumer next:** hauliage **HI-7** pin `73744df`; redeploy company/bff with JWKS config.
 
 ## Code anchors
 
@@ -124,7 +152,7 @@ See sesame [`topic-http-client-policy.md`](../../../../seasame-idam/docs/llmwiki
 | `src/spec/build.rs` | BR-1 security inheritance |
 | `src/typed/` | BR-2, BR-3 typed dispatch |
 | `src/security/jwks_bearer/mod.rs` | BR-5, BR-7 |
-| `src/http/fetch.rs` | Phase 1 complete |
+| `src/http/fetch.rs` | BR-1c complete (`73744df`); path-only URI for may_http |
 
 ## Related
 
