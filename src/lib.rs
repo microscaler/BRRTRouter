@@ -868,6 +868,7 @@ mod dummy_value;
 mod echo;
 pub mod generator;
 pub mod hot_reload;
+pub mod http;
 pub mod ids;
 pub mod linter;
 #[cfg(test)]

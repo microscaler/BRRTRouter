@@ -6,6 +6,7 @@ Read [`SCHEMA.md`](./SCHEMA.md) first. Tail [`log.md`](./log.md) for recent work
 
 | Topic | Summary |
 |-------|---------|
+| [`topics/sesame-idam-workarounds-cleanup.md`](./topics/sesame-idam-workarounds-cleanup.md) | **Next staged:** BR-1..BR-7 — fix `security: []`, jwt_claims in typed handlers, OAuth status codes, init_security codegen |
 | [`topics/schema-validation-pipeline.md`](./topics/schema-validation-pipeline.md) | Runtime JSON Schema path: parse → 415/400 gates → `ValidatorCache` → dispatch — **Phase 4** (`PRD_HOT_PATH_V2`) |
 | [`topics/bench-harness-phase-6.md`](./topics/bench-harness-phase-6.md) | Reproducible stress + Criterion baselines — **Phase 6** (includes `schema_validation_hot_path` bench) |
 | [`../../llmwiki/topics/auto-research-perf-loop.md`](../../llmwiki/topics/auto-research-perf-loop.md) | How to run **auto-research** perf iterations (cron); charter in `auto-research/docs/` |

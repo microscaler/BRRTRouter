@@ -301,7 +301,7 @@ mod tests {
         let d6 = AuthDecision::jwt_common_path(None);
         let d7 = AuthDecision::jwt_common_path(Some("fallback".to_string()));
         assert_eq!(d5, d6);
-        assert_eq!(d5, d7); // reason is Option, so None == Some(_) for equality? No, let's be strict
+        assert_ne!(d5, d7); // reason field makes them different
         assert_ne!(d5, d1);
     }
 }

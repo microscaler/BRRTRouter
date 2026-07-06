@@ -44,3 +44,12 @@ When benches move to a **new ms02** or new CPU, reset Criterion baselines on tha
 - **Rust:** `rustc -Vv` →
 - **Commit:** `git rev-parse HEAD` →
 - **Criterion baseline tag:** (paste from `just` output, e.g. `ms02-a1b2c3d-20260418`)
+
+---
+
+## [2026-07-06] docs | Sesame-IDAM workaround cleanup backlog
+
+- Added [`topics/sesame-idam-workarounds-cleanup.md`](./topics/sesame-idam-workarounds-cleanup.md) — implementation tasks **BR-1** through **BR-7** to remove sesame-idam / hauliage workarounds.
+- **Next staged:** **BR-1** — `security: []` must mean public (fix `src/spec/build.rs` + oas3 presence tracking). Symptom: sesame in-cluster login 401 until global security removed from OpenAPI specs.
+- Cross-linked from sesame [`topic-brrtrouter-refactor-backlog.md`](../../seasame-idam/docs/llmwiki/topics/topic-brrtrouter-refactor-backlog.md) and hauliage [`sesame-idam-brrtrouter-integration.md`](../../hauliage/docs/llmwiki/topics/sesame-idam-brrtrouter-integration.md).
+- Phase 1 `brrtrouter::http` migration documented as complete; BR-5..BR-7 track platform hygiene (may::go refresh, reqwest shed, JWT sub-spans).

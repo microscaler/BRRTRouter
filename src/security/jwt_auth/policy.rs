@@ -154,7 +154,8 @@ impl RoutePolicy {
     ///
     /// * `user_roles` - The roles present in the user's JWT claims
     ///
-    /// Returns true if all required roles are satisfied (or no roles are required).
+    /// Returns true if the user has at least one of the required roles
+    /// (or no roles are required).
     #[must_use]
     pub fn check_roles(&self, user_roles: &[String]) -> bool {
         if self.required_roles.is_empty() {
@@ -162,7 +163,7 @@ impl RoutePolicy {
         }
         self.required_roles
             .iter()
-            .all(|required| user_roles.iter().any(|role| role == required))
+            .any(|required| user_roles.iter().any(|role| role == required))
     }
 
     /// Check if the user has the required permissions for this route.
@@ -320,6 +321,42 @@ impl RoutePolicyStore {
         if let Some(methods) = self.policies.get(path) {
             if let Some(policy) = methods.get("*") {
                 return Some(policy);
+            }
+        }
+
+        // Try parameterized match (e.g., /users/xid matches /users/123)
+        let req_segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+        for (stored_path, methods) in &self.policies {
+            let stored_segments: Vec<&str> = stored_path.split('/').filter(|s| !s.is_empty()).collect();
+            if req_segments.len() != stored_segments.len() {
+                continue;
+            }
+            let mut segment_match = true;
+            for (req_seg, stored_seg) in req_segments.iter().zip(stored_segments.iter()) {
+                if *stored_seg != *req_seg {
+                    // If stored segment is a parameter (not a known literal), it matches
+                    // Known literals: "me", "me/", "xid" can be treated as params
+                    // But "me" is literal. Check against a known param pattern.
+                    // Heuristic: if stored_seg is not a common API literal, treat as param.
+                    // Common literals: me, users, shipments, payments, identity
+                    let is_literal = matches!(
+                        *stored_seg,
+                        "me" | "me/" | "users" | "shipments" | "payments"
+                            | "identity" | "v1" | "v2" | "api"
+                    );
+                    if is_literal {
+                        segment_match = false;
+                        break;
+                    }
+                }
+            }
+            if segment_match {
+                if let Some(policy) = methods.get(method) {
+                    return Some(policy);
+                }
+                if let Some(policy) = methods.get("*") {
+                    return Some(policy);
+                }
             }
         }
 

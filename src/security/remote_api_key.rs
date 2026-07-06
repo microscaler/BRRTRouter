@@ -170,17 +170,15 @@ impl SecurityProvider for RemoteApiKeyProvider {
                 return ok;
             }
         }
-        // Remote verify
-        let client = reqwest::blocking::Client::builder()
-            .timeout(Duration::from_millis(self.timeout_ms))
-            .build();
-        let ok = match client {
-            Ok(c) => match c.get(&self.verify_url).header("X-API-Key", key).send() {
-                Ok(r) => r.status().is_success(),
-                Err(_) => false,
-            },
-            Err(_) => false,
+        // Remote verify via coroutine-compatible HTTP client (may_http / rustls)
+        let options = crate::http::HttpFetchOptions {
+            timeout: Duration::from_millis(self.timeout_ms),
+            max_body_bytes: 4096,
+            extra_headers: vec![("X-API-Key".to_string(), key.to_string())],
         };
+        let ok = crate::http::fetch_get(&self.verify_url, &options)
+            .map(|(status, _)| (200..300).contains(&status))
+            .unwrap_or(false);
         self.cache
             .lock()
             .expect("API key cache Mutex poisoned - critical error")

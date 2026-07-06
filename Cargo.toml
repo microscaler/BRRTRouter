@@ -68,12 +68,17 @@ tonic = "0.14"
 prost = "0.14"
 tokio = { version = "1.51.1", features = ["rt-multi-thread", "macros"] }
 
-# Production JWT/JWKS validation and HTTP fetch (for external providers like PropelAuth)
+# Coroutine HTTP client — replaces reqwest::blocking in security providers
+may_http = { git = "https://github.com/rust-may/may_http.git" }
+http_legacy = { package = "http", version = "0.2" }
+httparse = "1.2"
+rustls = { version = "0.23", default-features = false, features = ["std", "tls12"] }
+rustls-platform-verifier = "0.7"
 # Note: jsonwebtoken 10.3.0 still uses rsa 0.9.10 (RUSTSEC-2023-0071) - timing sidechannel vulnerability
 # No patched version available yet. Risk is mitigated by using rust_crypto feature and limiting
 # exposure to trusted environments. Monitor for updates to jsonwebtoken/rsa.
 jsonwebtoken = { version = "10.3.0", features = ["rust_crypto"] }  # rust_crypto enables RSA/EC algorithms
-# jsonschema + OpenTelemetry (git patch) + goose (git) share reqwest 0.13.x.
+# OTEL / jsonschema still pull reqwest transitively; security fetch uses may_http + rustls.
 reqwest = { version = "0.13.2", default-features = false, features = ["json", "rustls", "blocking", "multipart"] }
 urlencoding = "2.1"
 ulid = "1.1"

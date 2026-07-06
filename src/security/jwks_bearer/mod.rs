@@ -66,6 +66,10 @@ pub struct JwksBearerProvider {
     pub(super) cache_hits: AtomicU64,
     pub(super) cache_misses: AtomicU64,
     pub(super) cache_evictions: AtomicU64,
+    // JWKS fetch metrics (HACK-101: poisoning defense)
+    jwks_fetch_success: AtomicU64,
+    jwks_fetch_failure: AtomicU64,
+    jwks_poisoning_rejected: AtomicU64,
     // Story 9.6: Structured JWT logging for audit trail
     pub(super) structured_logger: JwtStructuredLogger,
 }
@@ -157,6 +161,9 @@ impl JwksBearerProvider {
             structured_logger: JwtStructuredLogger::new(),
             background_handle: Some(background_handle.clone()),
             shutdown: shutdown.clone(),
+            jwks_fetch_success: AtomicU64::new(0),
+            jwks_fetch_failure: AtomicU64::new(0),
+            jwks_poisoning_rejected: AtomicU64::new(0),
         };
 
         // Start background refresh task
@@ -521,32 +528,12 @@ impl JwksBearerProvider {
         }
 
         let refresh_start = Instant::now();
-        let client = match reqwest::blocking::Client::builder()
-            .timeout(Duration::from_millis(200))
-            .build()
-        {
-            Ok(c) => c,
-            Err(_) => {
-                refresh_in_progress.store(false, Ordering::Release);
-                // Notify waiting threads even on failure so they don't wait forever
-                let (lock, cvar) = &**refresh_complete;
-                let _guard = lock.lock().unwrap();
-                cvar.notify_all();
-                return;
-            }
+        let fetch_options = crate::http::HttpFetchOptions {
+            timeout: Duration::from_millis(200),
+            max_body_bytes: 256 * 1024,
+            extra_headers: Vec::new(),
         };
-
-        let mut body_opt: Option<String> = None;
-        for _ in 0..2 {
-            if let Ok(r) = client.get(jwks_url).send() {
-                if let Ok(t) = r.text() {
-                    body_opt = Some(t);
-                    break;
-                }
-            }
-        }
-
-        let body = match body_opt {
+        let body = match crate::http::fetch_get_text_with_retry(jwks_url, &fetch_options, 2) {
             Some(b) => b,
             None => {
                 refresh_in_progress.store(false, Ordering::Release);
@@ -609,6 +596,38 @@ impl JwksBearerProvider {
                         None => continue,
                     };
                     if let Ok(dk) = jsonwebtoken::DecodingKey::from_rsa_components(n, e) {
+                        new_map.insert(kid.to_string(), dk);
+                    }
+                    continue;
+                }
+
+                // EC public keys for ES* algorithms
+                if kty.eq_ignore_ascii_case("EC")
+                    && (alg.eq_ignore_ascii_case("ES256")
+                        || alg.eq_ignore_ascii_case("ES384")
+                        || alg.eq_ignore_ascii_case("ES512"))
+                {
+                    let x = match k.get("x").and_then(|v| v.as_str()) {
+                        Some(v) => v,
+                        None => continue,
+                    };
+                    let y = match k.get("y").and_then(|v| v.as_str()) {
+                        Some(v) => v,
+                        None => continue,
+                    };
+                    if let Ok(dk) = jsonwebtoken::DecodingKey::from_ec_components(x, y) {
+                        new_map.insert(kid.to_string(), dk);
+                    }
+                    continue;
+                }
+
+                // OKP public keys for EdDSA (Ed25519)
+                if kty.eq_ignore_ascii_case("OKP") && alg.eq_ignore_ascii_case("EdDSA") {
+                    let x = match k.get("x").and_then(|v| v.as_str()) {
+                        Some(v) => v,
+                        None => continue,
+                    };
+                    if let Ok(dk) = jsonwebtoken::DecodingKey::from_ed_components(x) {
                         new_map.insert(kid.to_string(), dk);
                     }
                     continue;

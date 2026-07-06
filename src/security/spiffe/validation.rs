@@ -314,53 +314,12 @@ pub(super) fn refresh_jwks_internal(
     }
 
     let refresh_start = Instant::now();
-    let client = match reqwest::blocking::Client::builder()
-        .timeout(Duration::from_millis(200))
-        .build()
-    {
-        Ok(c) => c,
-        Err(_) => {
-            refresh_in_progress.store(false, Ordering::Release);
-            let (lock, cvar) = &**refresh_complete;
-            let _guard = lock.lock().unwrap();
-            cvar.notify_all();
-            return;
-        }
+    let fetch_options = crate::http::HttpFetchOptions {
+        timeout: Duration::from_millis(200),
+        max_body_bytes: 256 * 1024,
+        extra_headers: Vec::new(),
     };
-
-    let mut body_opt: Option<String> = None;
-    for attempt in 0..2 {
-        match client.get(jwks_url).send() {
-            Ok(r) => {
-                if r.status().is_success() {
-                    if let Ok(t) = r.text() {
-                        body_opt = Some(t);
-                        break;
-                    } else {
-                        debug!(
-                            "SPIFFE JWKS fetch attempt {}: failed to read response body",
-                            attempt + 1
-                        );
-                    }
-                } else {
-                    debug!(
-                        "SPIFFE JWKS fetch attempt {}: HTTP status {}",
-                        attempt + 1,
-                        r.status()
-                    );
-                }
-            }
-            Err(e) => {
-                debug!(
-                    "SPIFFE JWKS fetch attempt {}: request failed: {:?}",
-                    attempt + 1,
-                    e
-                );
-            }
-        }
-    }
-
-    let body = match body_opt {
+    let body = match crate::http::fetch_get_text_with_retry(jwks_url, &fetch_options, 2) {
         Some(b) => b,
         None => {
             refresh_in_progress.store(false, Ordering::Release);

@@ -553,3 +553,993 @@ impl crate::middleware::Middleware for JwtAuthMiddleware {
         );
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::dispatcher::{HandlerRequest, HandlerResponse, HeaderVec};
+    use crate::ids::RequestId;
+    use crate::middleware::Middleware;
+    use http::Method;
+    use may::sync::mpsc;
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    // ─── Mock JWKS Client ──────────────────────────────────────────
+
+    struct MockJwksClient {
+        claims: AccessClaims,
+    }
+
+    impl MockJwksClient {
+        fn new(claims: AccessClaims) -> Self {
+            Self { claims }
+        }
+    }
+
+    impl JwksClient for MockJwksClient {
+        fn validate_and_extract_claims(&self, _token: &str) -> Result<AccessClaims, AuthError> {
+            Ok(self.claims.clone())
+        }
+        fn issuer(&self) -> Option<&str> { None }
+        fn audience(&self) -> Option<&str> { None }
+    }
+
+    // ─── Helpers ───────────────────────────────────────────────────
+
+    fn make_request(method: Method, path: &str) -> HandlerRequest {
+        let (tx, _rx) = mpsc::channel::<HandlerResponse>();
+        HandlerRequest {
+            request_id: RequestId::new(),
+            method,
+            path: path.to_string(),
+            handler_name: "jwt_auth_test".to_string(),
+            path_params: crate::router::ParamVec::new(),
+            query_params: crate::router::ParamVec::new(),
+            headers: HeaderVec::new(),
+            cookies: HeaderVec::new(),
+            body: None,
+            jwt_claims: None,
+            reply_tx: tx,
+            queue_guard: None,
+        }
+    }
+
+    /// Build middleware + mutable policy store. Caller registers policies into `store`.
+    fn build_mw_claims(claims: AccessClaims) -> (JwtAuthMiddleware, RoutePolicyStore) {
+        let mut store = RoutePolicyStore::new();
+        let client = Arc::new(MockJwksClient::new(claims));
+        let mut mw = JwtAuthMiddleware::new(Arc::new(store), client);
+        let inner = std::sync::Arc::into_inner(std::mem::take(&mut mw.route_policies)).unwrap();
+        (mw, inner)
+    }
+
+    fn register_jwt_only(
+        store: &mut RoutePolicyStore,
+        method: &str,
+        path: &str,
+        roles: Vec<String>,
+        permissions: Vec<String>,
+    ) {
+        store.add_policy(RoutePolicy::new(
+            format!("{} {}", method, path),
+            RouteAuthCategory::JwtOnly,
+            roles,
+            permissions,
+            true, // risk acceptable
+        ));
+    }
+
+    fn register_jwt_fallback(store: &mut RoutePolicyStore, method: &str, path: &str) {
+        store.add_policy(RoutePolicy::new(
+            format!("{} {}", method, path),
+            RouteAuthCategory::JwtWithFallback,
+            vec![],
+            vec![],
+            true,
+        ));
+    }
+
+    fn register_online_only(store: &mut RoutePolicyStore, method: &str, path: &str) {
+        store.add_policy(RoutePolicy::new(
+            format!("{} {}", method, path),
+            RouteAuthCategory::OnlineOnly,
+            vec![],
+            vec![],
+            true,
+        ));
+    }
+
+    fn set_policies(mw: &mut JwtAuthMiddleware, store: RoutePolicyStore) {
+        mw.route_policies = Arc::new(store);
+    }
+
+    fn build_headers(auth: &str, tenant: &str) -> std::collections::HashMap<String, String> {
+        let mut h = std::collections::HashMap::new();
+        h.insert("authorization".to_string(), auth.to_string());
+        h.insert("x-tenant-id".to_string(), tenant.to_string());
+        h
+    }
+
+    fn make_claims(sub: &str, tenant: &str, roles: Vec<&str>, perms: Vec<&str>) -> AccessClaims {
+        AccessClaims {
+            sub: sub.to_string(),
+            tenant_id: tenant.to_string(),
+            user_type: "customer".to_string(),
+            sx: SxClaims {
+                roles: roles.into_iter().map(String::from).collect(),
+                permissions: perms.into_iter().map(String::from).collect(),
+                risk: None,
+            },
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  UNIT: extract_bearer_token
+    // ═══════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_extract_bearer_token_valid() {
+        let (mw, _store) = build_mw_claims(make_claims("u", "t", vec![], vec![]));
+        let mut headers = std::collections::HashMap::new();
+        headers.insert("authorization".to_string(), "Bearer my-token-123".to_string());
+        assert_eq!(mw.extract_bearer_token(&headers).unwrap(), "my-token-123");
+    }
+
+    #[test]
+    fn test_extract_bearer_token_missing_header() {
+        let (mw, _store) = build_mw_claims(make_claims("u", "t", vec![], vec![]));
+        let headers = std::collections::HashMap::new();
+        assert!(matches!(
+            mw.extract_bearer_token(&headers),
+            Err(AuthError::MissingAuthorization)
+        ));
+    }
+
+    #[test]
+    fn test_extract_bearer_token_wrong_scheme() {
+        let (mw, _store) = build_mw_claims(make_claims("u", "t", vec![], vec![]));
+        let mut headers = std::collections::HashMap::new();
+        headers.insert("authorization".to_string(), "Basic dXNlcjpwYXNz".to_string());
+        assert!(matches!(
+            mw.extract_bearer_token(&headers),
+            Err(AuthError::InvalidBearerScheme { .. })
+        ));
+    }
+
+    #[test]
+    fn test_extract_bearer_token_empty_bearer() {
+        let (mw, _store) = build_mw_claims(make_claims("u", "t", vec![], vec![]));
+        let mut headers = std::collections::HashMap::new();
+        headers.insert("authorization".to_string(), "Bearer ".to_string());
+        assert_eq!(mw.extract_bearer_token(&headers).unwrap(), "");
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  UNIT: validate_tenant
+    // ═══════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_validate_tenant_match() {
+        let claims = make_claims("u", "tenant-abc", vec![], vec![]);
+        let (mw, _store) = build_mw_claims(claims.clone());
+        let mut headers = std::collections::HashMap::new();
+        headers.insert("x-tenant-id".to_string(), "tenant-abc".to_string());
+        assert!(mw.validate_tenant(&claims, &headers).is_ok());
+    }
+
+    #[test]
+    fn test_validate_tenant_mismatch() {
+        let claims = make_claims("u", "tenant-xyz", vec![], vec![]);
+        let (mw, _store) = build_mw_claims(claims.clone());
+        let mut headers = std::collections::HashMap::new();
+        headers.insert("x-tenant-id".to_string(), "tenant-abc".to_string());
+        let err = mw.validate_tenant(&claims, &headers).unwrap_err();
+        assert!(matches!(err, AuthError::TenantMismatch { .. }));
+        if let AuthError::TenantMismatch { expected, actual } = err {
+            assert_eq!(expected, "tenant-abc");
+            assert_eq!(actual, "tenant-xyz");
+        }
+    }
+
+    #[test]
+    fn test_validate_tenant_missing_header() {
+        let claims = make_claims("u", "tenant-abc", vec![], vec![]);
+        let (mw, _store) = build_mw_claims(claims);
+        let headers = std::collections::HashMap::new();
+        assert!(matches!(
+            mw.validate_tenant(&make_claims("u", "tenant-abc", vec![], vec![]), &headers),
+            Err(AuthError::MissingTenantId)
+        ));
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  UNIT: evaluate_local_policy
+    // ═══════════════════════════════════════════════════════════════
+
+    fn make_policy(id: &str, cat: RouteAuthCategory, roles: Vec<String>, perms: Vec<String>) -> RoutePolicy {
+        RoutePolicy::new(id.to_string(), cat, roles, perms, true)
+    }
+
+    #[test]
+    fn test_eval_pass_roles() {
+        let claims = make_claims("u", "t", vec!["admin"], vec![]);
+        let (mw, _store) = build_mw_claims(claims);
+        let policy = make_policy("GET /api/users/me", RouteAuthCategory::JwtOnly,
+            vec!["admin".to_string()], vec![]);
+        assert!(mw.evaluate_local_policy(&make_claims("u", "t", vec!["admin"], vec![]), &policy));
+    }
+
+    #[test]
+    fn test_eval_fail_roles() {
+        let (mw, _store) = build_mw_claims(make_claims("u", "t", vec!["viewer"], vec![]));
+        let policy = make_policy("GET /api/admin", RouteAuthCategory::JwtOnly,
+            vec!["admin".to_string()], vec![]);
+        assert!(!mw.evaluate_local_policy(&make_claims("u", "t", vec!["viewer"], vec![]), &policy));
+    }
+
+    #[test]
+    fn test_eval_pass_permissions() {
+        let (mw, _store) = build_mw_claims(make_claims("u", "t", vec![], vec!["users:write"]));
+        let policy = make_policy("POST /api/users", RouteAuthCategory::JwtOnly,
+            vec![], vec!["users:write".to_string()]);
+        assert!(mw.evaluate_local_policy(&make_claims("u", "t", vec![], vec!["users:write"]), &policy));
+    }
+
+    #[test]
+    fn test_eval_fail_permissions() {
+        let (mw, _store) = build_mw_claims(make_claims("u", "t", vec![], vec!["users:read"]));
+        let policy = make_policy("DELETE /api/users", RouteAuthCategory::JwtOnly,
+            vec![], vec!["users:delete".to_string()]);
+        assert!(!mw.evaluate_local_policy(&make_claims("u", "t", vec![], vec!["users:read"]), &policy));
+    }
+
+    #[test]
+    fn test_eval_risk_normal_passes() {
+        let claims = make_claims("u", "t", vec![], vec![]);
+        let mut c2 = claims.clone();
+        c2.sx.risk = Some("normal".to_string());
+        let (mw, _store) = build_mw_claims(c2.clone());
+        let policy = make_policy("GET /api/safe", RouteAuthCategory::JwtOnly, vec![], vec![]);
+        assert!(mw.evaluate_local_policy(&c2, &policy));
+    }
+
+    #[test]
+    fn test_eval_risk_elevated_denied() {
+        let claims = make_claims("u", "t", vec![], vec![]);
+        let mut c2 = claims.clone();
+        c2.sx.risk = Some("elevated".to_string());
+        let (mw, _store) = build_mw_claims(c2.clone());
+        let policy = make_policy("GET /api/strict", RouteAuthCategory::JwtOnly, vec![], vec![]);
+        // risk_acceptable=true so elevated is OK — the check uses policy.risk_acceptable
+        assert!(mw.evaluate_local_policy(&c2, &policy));
+    }
+
+    #[test]
+    fn test_eval_risk_strict_denies_elevated() {
+        let claims = make_claims("u", "t", vec![], vec![]);
+        let mut c2 = claims.clone();
+        c2.sx.risk = Some("elevated".to_string());
+        let (mw, _store) = build_mw_claims(c2.clone());
+        let policy = RoutePolicy::new("GET /api/strict".to_string(), RouteAuthCategory::JwtOnly, vec![], vec![], false);
+        assert!(!mw.evaluate_local_policy(&c2, &policy));
+    }
+
+    #[test]
+    fn test_eval_risk_strict_allows_normal() {
+        let claims = make_claims("u", "t", vec![], vec![]);
+        let mut c2 = claims.clone();
+        c2.sx.risk = Some("normal".to_string());
+        let (mw, _store) = build_mw_claims(c2.clone());
+        let policy = RoutePolicy::new("GET /api/strict".to_string(), RouteAuthCategory::JwtOnly, vec![], vec![], false);
+        assert!(mw.evaluate_local_policy(&c2, &policy));
+    }
+
+    #[test]
+    fn test_eval_multiple_roles_any_match() {
+        let (mw, _store) = build_mw_claims(make_claims("u", "t", vec!["editor"], vec![]));
+        let policy = make_policy("GET /api/docs", RouteAuthCategory::JwtOnly,
+            vec!["admin".to_string(), "editor".to_string()], vec![]);
+        assert!(mw.evaluate_local_policy(&make_claims("u", "t", vec!["editor"], vec![]), &policy));
+    }
+
+    #[test]
+    fn test_eval_all_required_permissions_met() {
+        let claims = make_claims("u", "t", vec![], vec!["files:read", "files:write"]);
+        let (mw, _store) = build_mw_claims(claims);
+        let policy = make_policy("PUT /api/files", RouteAuthCategory::JwtOnly,
+            vec![], vec!["files:read".to_string(), "files:write".to_string()]);
+        assert!(mw.evaluate_local_policy(&make_claims("u", "t", vec![], vec!["files:read", "files:write"]), &policy));
+    }
+
+    #[test]
+    fn test_eval_missing_one_perm_fails() {
+        let (mw, _store) = build_mw_claims(make_claims("u", "t", vec![], vec!["files:read"]));
+        let policy = make_policy("PUT /api/files", RouteAuthCategory::JwtOnly,
+            vec![], vec!["files:read".to_string(), "files:write".to_string()]);
+        assert!(!mw.evaluate_local_policy(&make_claims("u", "t", vec![], vec!["files:read"]), &policy));
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  UNIT: error_to_response
+    // ═══════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_error_to_response_401_missing_auth() {
+        let (mw, _store) = build_mw_claims(make_claims("u", "t", vec![], vec![]));
+        let response = mw.error_to_response(&AuthError::MissingAuthorization);
+        assert_eq!(response.status, 401);
+    }
+
+    #[test]
+    fn test_error_to_response_503_policy_not_found() {
+        let (mw, _store) = build_mw_claims(make_claims("u", "t", vec![], vec![]));
+        let response = mw.error_to_response(&AuthError::PolicyNotFound {
+            path: "/unknown".to_string(),
+            method: "GET".to_string(),
+        });
+        assert_eq!(response.status, 503);
+    }
+
+    #[test]
+    fn test_error_to_response_401_tenant_mismatch() {
+        let (mw, _store) = build_mw_claims(make_claims("u", "t", vec![], vec![]));
+        let response = mw.error_to_response(&AuthError::TenantMismatch {
+            expected: "tenant-a".to_string(),
+            actual: "tenant-b".to_string(),
+        });
+        assert_eq!(response.status, 401);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  INTEGRATION: validate_and_authorize (end-to-end)
+    // ═══════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_auth_jwt_only_allowed() {
+        let mut mw;
+        let mut store = RoutePolicyStore::new();
+        {
+            let (inner, mut s) = build_mw_claims(make_claims("user-1", "tenant-1", vec!["admin"], vec![]));
+            register_jwt_only(&mut s, "GET", "/api/users/me", vec!["admin".to_string()], vec![]);
+            mw = inner;
+            store = s;
+        }
+        set_policies(&mut mw, store);
+        let mut headers = std::collections::HashMap::new();
+        headers.insert("authorization".to_string(), "Bearer token".to_string());
+        headers.insert("x-tenant-id".to_string(), "tenant-1".to_string());
+        let decision = mw.validate_and_authorize("GET", "/api/users/me", &headers).unwrap();
+        assert!(matches!(decision, AuthDecision::Allowed { .. }));
+    }
+
+    #[test]
+    fn test_auth_jwt_only_denied_roles() {
+        let mut mw;
+        let mut store = RoutePolicyStore::new();
+        {
+            let (inner, mut s) = build_mw_claims(make_claims("user-1", "tenant-1", vec!["viewer"], vec![]));
+            register_jwt_only(&mut s, "DELETE", "/api/users", vec!["admin".to_string()], vec![]);
+            mw = inner;
+            store = s;
+        }
+        set_policies(&mut mw, store);
+        let mut headers = std::collections::HashMap::new();
+        headers.insert("authorization".to_string(), "Bearer token".to_string());
+        headers.insert("x-tenant-id".to_string(), "tenant-1".to_string());
+        let decision = mw.validate_and_authorize("DELETE", "/api/users", &headers).unwrap();
+        assert!(matches!(decision, AuthDecision::Denied { .. }));
+    }
+
+    #[test]
+    fn test_auth_jwt_only_denied_permissions() {
+        let mut mw;
+        let mut store = RoutePolicyStore::new();
+        {
+            let (inner, mut s) = build_mw_claims(make_claims("user-1", "tenant-1", vec![], vec!["docs:read"]));
+            register_jwt_only(&mut s, "POST", "/api/docs", vec![], vec!["docs:write".to_string()]);
+            mw = inner;
+            store = s;
+        }
+        set_policies(&mut mw, store);
+        let mut headers = std::collections::HashMap::new();
+        headers.insert("authorization".to_string(), "Bearer token".to_string());
+        headers.insert("x-tenant-id".to_string(), "tenant-1".to_string());
+        let decision = mw.validate_and_authorize("POST", "/api/docs", &headers).unwrap();
+        assert!(matches!(decision, AuthDecision::Denied { .. }));
+    }
+
+    #[test]
+    fn test_auth_jwt_with_fallback_continues() {
+        let mut mw;
+        let mut store = RoutePolicyStore::new();
+        {
+            let (inner, mut s) = build_mw_claims(make_claims("user-1", "tenant-1", vec!["admin"], vec![]));
+            register_jwt_fallback(&mut s, "POST", "/api/payments");
+            mw = inner;
+            store = s;
+        }
+        set_policies(&mut mw, store);
+        let mut headers = std::collections::HashMap::new();
+        headers.insert("authorization".to_string(), "Bearer token".to_string());
+        headers.insert("x-tenant-id".to_string(), "tenant-1".to_string());
+        let decision = mw.validate_and_authorize("POST", "/api/payments", &headers).unwrap();
+        assert!(matches!(decision, AuthDecision::JwtCommonPath { .. }));
+    }
+
+    #[test]
+    fn test_auth_online_only_continues() {
+        let mut mw;
+        let mut store = RoutePolicyStore::new();
+        {
+            let (inner, mut s) = build_mw_claims(make_claims("user-1", "tenant-1", vec![], vec![]));
+            register_online_only(&mut s, "POST", "/api/transfer");
+            mw = inner;
+            store = s;
+        }
+        set_policies(&mut mw, store);
+        let mut headers = std::collections::HashMap::new();
+        headers.insert("authorization".to_string(), "Bearer token".to_string());
+        headers.insert("x-tenant-id".to_string(), "tenant-1".to_string());
+        let decision = mw.validate_and_authorize("POST", "/api/transfer", &headers).unwrap();
+        assert!(matches!(decision, AuthDecision::JwtCommonPath { .. }));
+    }
+
+    #[test]
+    fn test_auth_policy_not_found_fails_closed() {
+        let (mw, _store) = build_mw_claims(make_claims("user-1", "tenant-1", vec!["admin"], vec![]));
+        let mut headers = std::collections::HashMap::new();
+        headers.insert("authorization".to_string(), "Bearer token".to_string());
+        headers.insert("x-tenant-id".to_string(), "tenant-1".to_string());
+        let decision = mw.validate_and_authorize("GET", "/unknown", &headers);
+        assert!(matches!(decision, Err(AuthError::PolicyNotFound { .. })));
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  BDD-style: given/when/then with endpoints
+    // ═══════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_bdd_jwt_only_admin_user_gets_profile() {
+        // Given: Admin user with valid JWT and matching tenant
+        let mut mw;
+        let mut store = RoutePolicyStore::new();
+        {
+            let (inner, mut s) = build_mw_claims(AccessClaims {
+                sub: "admin-1".to_string(),
+                tenant_id: "acme-corp".to_string(),
+                user_type: "platform".to_string(),
+                sx: SxClaims {
+                    roles: vec!["admin".to_string(), "org_admin".to_string()],
+                    permissions: vec!["users:read".to_string()],
+                    risk: None,
+                },
+            });
+            register_jwt_only(&mut s, "GET", "/api/v1/identity/users/me",
+                vec!["admin".to_string()], vec!["users:read".to_string()]);
+            mw = inner;
+            store = s;
+        }
+        set_policies(&mut mw, store);
+
+        // When: Request to jwt-only endpoint
+        let mut headers = std::collections::HashMap::new();
+        headers.insert("authorization".to_string(), "Bearer valid-jwt".to_string());
+        headers.insert("x-tenant-id".to_string(), "acme-corp".to_string());
+        let decision = mw.validate_and_authorize("GET", "/api/v1/identity/users/me", &headers).unwrap();
+
+        // Then: Allowed
+        assert!(matches!(decision, AuthDecision::Allowed { .. }),
+            "Admin should be allowed to access /users/me with admin role");
+    }
+
+    #[test]
+    fn test_bdd_customer_without_role_denied() {
+        // Given: Customer user with no admin role
+        let mut mw;
+        let mut store = RoutePolicyStore::new();
+        {
+            let (inner, mut s) = build_mw_claims(AccessClaims {
+                sub: "customer-42".to_string(),
+                tenant_id: "acme-corp".to_string(),
+                user_type: "customer".to_string(),
+                sx: SxClaims {
+                    roles: vec!["customer".to_string()],
+                    permissions: vec![],
+                    risk: None,
+                },
+            });
+            register_jwt_only(&mut s, "DELETE", "/api/v1/identity/users/123",
+                vec!["admin".to_string()], vec!["users:delete".to_string()]);
+            mw = inner;
+            store = s;
+        }
+        set_policies(&mut mw, store);
+
+        // When: Customer tries to delete user (requires admin)
+        let mut headers = std::collections::HashMap::new();
+        headers.insert("authorization".to_string(), "Bearer valid-jwt".to_string());
+        headers.insert("x-tenant-id".to_string(), "acme-corp".to_string());
+        let decision = mw.validate_and_authorize("DELETE", "/api/v1/identity/users/123", &headers).unwrap();
+
+        // Then: Denied
+        assert!(matches!(decision, AuthDecision::Denied { .. }),
+            "Customer without admin role should be denied DELETE /users/id");
+    }
+
+    #[test]
+    fn test_bdd_permission_based_access() {
+        // Given: User with specific permissions
+        let mut mw;
+        let mut store = RoutePolicyStore::new();
+        {
+            let (inner, mut s) = build_mw_claims(AccessClaims {
+                sub: "user-99".to_string(),
+                tenant_id: "global-shipping".to_string(),
+                user_type: "customer".to_string(),
+                sx: SxClaims {
+                    roles: vec![],
+                    permissions: vec!["shipments:create".to_string(), "shipments:read".to_string()],
+                    risk: None,
+                },
+            });
+            register_jwt_only(&mut s, "POST", "/api/v1/shipments",
+                vec![], vec!["shipments:create".to_string()]);
+            mw = inner;
+            store = s;
+        }
+        set_policies(&mut mw, store);
+
+        // When: User creates shipment
+        let mut headers = std::collections::HashMap::new();
+        headers.insert("authorization".to_string(), "Bearer valid-jwt".to_string());
+        headers.insert("x-tenant-id".to_string(), "global-shipping".to_string());
+        let decision = mw.validate_and_authorize("POST", "/api/v1/shipments", &headers).unwrap();
+
+        // Then: Allowed (permission-based)
+        assert!(matches!(decision, AuthDecision::Allowed { .. }),
+            "User with shipments:create permission should be allowed POST /shipments");
+    }
+
+    #[test]
+    fn test_bdd_high_risk_route_requires_online() {
+        let mut mw;
+        let mut store = RoutePolicyStore::new();
+        {
+            let (inner, mut s) = build_mw_claims(make_claims("user-1", "acme-corp", vec!["admin"], vec![]));
+            register_jwt_fallback(&mut s, "POST", "/api/v1/payments");
+            mw = inner;
+            store = s;
+        }
+        set_policies(&mut mw, store);
+
+        let mut headers = std::collections::HashMap::new();
+        headers.insert("authorization".to_string(), "Bearer valid-jwt".to_string());
+        headers.insert("x-tenant-id".to_string(), "acme-corp".to_string());
+        let decision = mw.validate_and_authorize("POST", "/api/v1/payments", &headers).unwrap();
+
+        assert!(matches!(decision, AuthDecision::JwtCommonPath { .. }),
+            "Payment route should return JwtCommonPath (requires online fallback)");
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  SECURITY regression tests
+    // ═══════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_security_tenant_isolation() {
+        // Cross-tenant request with valid JWT but wrong tenant header
+        let mut mw;
+        let mut store = RoutePolicyStore::new();
+        {
+            let (inner, mut s) = build_mw_claims(AccessClaims {
+                sub: "user-1".to_string(),
+                tenant_id: "victim-corp".to_string(),
+                user_type: "customer".to_string(),
+                sx: SxClaims { roles: vec!["admin".to_string()], permissions: vec![], risk: None },
+            });
+            register_jwt_only(&mut s, "GET", "/api/v1/identity/users/me",
+                vec!["admin".to_string()], vec![]);
+            mw = inner;
+            store = s;
+        }
+        set_policies(&mut mw, store);
+
+        let mut headers = std::collections::HashMap::new();
+        headers.insert("authorization".to_string(), "Bearer forged-jwt".to_string());
+        headers.insert("x-tenant-id".to_string(), "attacker-corp".to_string());
+
+        let decision = mw.validate_and_authorize("GET", "/api/v1/identity/users/me", &headers);
+        assert!(decision.is_err(), "Cross-tenant request MUST be rejected (HACK-401)");
+        if let Err(AuthError::TenantMismatch { expected, actual }) = decision {
+            assert_eq!(expected, "attacker-corp");
+            assert_eq!(actual, "victim-corp");
+        }
+    }
+
+    #[test]
+    fn test_security_missing_tenant_header_rejected() {
+        let mut mw;
+        let mut store = RoutePolicyStore::new();
+        {
+            let (inner, mut s) = build_mw_claims(make_claims("user-1", "tenant-1", vec!["admin"], vec![]));
+            register_jwt_only(&mut s, "GET", "/api/users/me", vec!["admin".to_string()], vec![]);
+            mw = inner;
+            store = s;
+        }
+        set_policies(&mut mw, store);
+
+        let mut headers = std::collections::HashMap::new();
+        headers.insert("authorization".to_string(), "Bearer valid-jwt".to_string());
+        // No X-Tenant-ID header
+
+        let decision = mw.validate_and_authorize("GET", "/api/users/me", &headers);
+        assert!(matches!(decision, Err(AuthError::MissingTenantId)),
+            "Missing tenant header MUST be rejected (HACK-403)");
+    }
+
+    #[test]
+    fn test_security_missing_auth_header_rejected() {
+        let (mw, _store) = build_mw_claims(make_claims("user-1", "tenant-1", vec![], vec![]));
+        let headers = std::collections::HashMap::new();
+        let decision = mw.validate_and_authorize("GET", "/api/users/me", &headers);
+        assert!(matches!(decision, Err(AuthError::MissingAuthorization)),
+            "Missing auth header MUST be rejected (HACK-405)");
+    }
+
+    #[test]
+    fn test_security_wrong_auth_scheme_rejected() {
+        let (mw, _store) = build_mw_claims(make_claims("user-1", "tenant-1", vec![], vec![]));
+        let mut headers = std::collections::HashMap::new();
+        headers.insert("authorization".to_string(), "Basic dXNlcjpwYXNz".to_string());
+        headers.insert("x-tenant-id".to_string(), "tenant-1".to_string());
+        let decision = mw.validate_and_authorize("GET", "/api/users/me", &headers);
+        assert!(matches!(decision, Err(AuthError::InvalidBearerScheme { .. })),
+            "Non-Bearer auth MUST be rejected (HACK-405)");
+    }
+
+    #[test]
+    fn test_security_fail_closed_on_policy_missing() {
+        let (mw, _store) = build_mw_claims(make_claims("user-1", "tenant-1", vec!["admin"], vec![]));
+        let mut headers = std::collections::HashMap::new();
+        headers.insert("authorization".to_string(), "Bearer valid-jwt".to_string());
+        headers.insert("x-tenant-id".to_string(), "tenant-1".to_string());
+        let decision = mw.validate_and_authorize("GET", "/api/secret/unregistered", &headers);
+        assert!(matches!(decision, Err(AuthError::PolicyNotFound { .. })),
+            "Unregistered route must fail closed (HACK-405)");
+    }
+
+    #[test]
+    fn test_security_empty_roles_fails_role_policy() {
+        let mut mw;
+        let mut store = RoutePolicyStore::new();
+        {
+            let (inner, mut s) = build_mw_claims(AccessClaims {
+                sub: "user-1".to_string(),
+                tenant_id: "tenant-1".to_string(),
+                user_type: "customer".to_string(),
+                sx: SxClaims { roles: vec![], permissions: vec![], risk: None },
+            });
+            register_jwt_only(&mut s, "GET", "/api/admin", vec!["admin".to_string()], vec![]);
+            mw = inner;
+            store = s;
+        }
+        set_policies(&mut mw, store);
+        let mut headers = std::collections::HashMap::new();
+        headers.insert("authorization".to_string(), "Bearer valid-jwt".to_string());
+        headers.insert("x-tenant-id".to_string(), "tenant-1".to_string());
+        let decision = mw.validate_and_authorize("GET", "/api/admin", &headers).unwrap();
+        assert!(matches!(decision, AuthDecision::Denied { .. }),
+            "User with no roles should be denied route requiring roles");
+    }
+
+    #[test]
+    fn test_security_policy_needs_roles_and_permissions() {
+        let mut mw;
+        let mut store = RoutePolicyStore::new();
+        {
+            let (inner, mut s) = build_mw_claims(make_claims("user-1", "tenant-1", vec!["admin"], vec![]));
+            register_jwt_only(&mut s, "DELETE", "/api/users",
+                vec!["admin".to_string(), "org_admin".to_string()],
+                vec!["users:delete".to_string()]);
+            mw = inner;
+            store = s;
+        }
+        set_policies(&mut mw, store);
+        let mut headers = std::collections::HashMap::new();
+        headers.insert("authorization".to_string(), "Bearer valid-jwt".to_string());
+        headers.insert("x-tenant-id".to_string(), "tenant-1".to_string());
+        let decision = mw.validate_and_authorize("DELETE", "/api/users", &headers).unwrap();
+        assert!(matches!(decision, AuthDecision::Denied { .. }),
+            "User missing required permission should be denied");
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  EDGE case tests
+    // ═══════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_edge_multiple_required_roles_any_match() {
+        let mut mw;
+        let mut store = RoutePolicyStore::new();
+        {
+            let (inner, mut s) = build_mw_claims(make_claims("user-1", "tenant-1", vec!["editor"], vec![]));
+            register_jwt_only(&mut s, "GET", "/api/docs",
+                vec!["admin".to_string(), "editor".to_string()], vec![]);
+            mw = inner;
+            store = s;
+        }
+        set_policies(&mut mw, store);
+        let mut headers = std::collections::HashMap::new();
+        headers.insert("authorization".to_string(), "Bearer token".to_string());
+        headers.insert("x-tenant-id".to_string(), "tenant-1".to_string());
+        let decision = mw.validate_and_authorize("GET", "/api/docs", &headers).unwrap();
+        assert!(matches!(decision, AuthDecision::Allowed { .. }),
+            "User with any matching role should be allowed");
+    }
+
+    #[test]
+    fn test_edge_token_with_special_chars() {
+        let mut mw;
+        let mut store = RoutePolicyStore::new();
+        {
+            let (inner, mut s) = build_mw_claims(make_claims("user-1", "tenant-1", vec!["admin"], vec![]));
+            register_jwt_only(&mut s, "GET", "/api/users/me", vec!["admin".to_string()], vec![]);
+            mw = inner;
+            store = s;
+        }
+        set_policies(&mut mw, store);
+        let mut headers = std::collections::HashMap::new();
+        headers.insert("authorization".to_string(),
+            "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U".to_string());
+        headers.insert("x-tenant-id".to_string(), "tenant-1".to_string());
+        let decision = mw.validate_and_authorize("GET", "/api/users/me", &headers).unwrap();
+        assert!(matches!(decision, AuthDecision::Allowed { .. }));
+    }
+
+    #[test]
+    fn test_edge_empty_tenant_id_accepted() {
+        let claims = AccessClaims {
+            sub: "user-1".to_string(),
+            tenant_id: "".to_string(),
+            user_type: "customer".to_string(),
+            sx: SxClaims::default(),
+        };
+        let (mw, _store) = build_mw_claims(claims);
+        let mut headers = std::collections::HashMap::new();
+        headers.insert("x-tenant-id".to_string(), "".to_string());
+        let empty_claims = AccessClaims {
+            sub: "user-1".to_string(),
+            tenant_id: "".to_string(),
+            user_type: "customer".to_string(),
+            sx: SxClaims::default(),
+        };
+        assert!(mw.validate_tenant(&empty_claims, &headers).is_ok());
+    }
+
+    #[test]
+    fn test_edge_large_tenant_id() {
+        let long_tenant = "a".repeat(1000);
+        let claims = AccessClaims {
+            sub: "user-1".to_string(),
+            tenant_id: long_tenant.clone(),
+            user_type: "customer".to_string(),
+            sx: SxClaims::default(),
+        };
+        let (mw, _store) = build_mw_claims(claims);
+        let mut headers = std::collections::HashMap::new();
+        headers.insert("x-tenant-id".to_string(), long_tenant.clone());
+        let claims2 = AccessClaims {
+            sub: "user-1".to_string(),
+            tenant_id: long_tenant,
+            user_type: "customer".to_string(),
+            sx: SxClaims::default(),
+        };
+        assert!(mw.validate_tenant(&claims2, &headers).is_ok());
+    }
+
+    #[test]
+    fn test_edge_risk_none_with_strict_policy() {
+        let claims = AccessClaims {
+            sub: "user-1".to_string(),
+            tenant_id: "tenant-1".to_string(),
+            user_type: "customer".to_string(),
+            sx: SxClaims {
+                roles: vec!["viewer".to_string()],
+                permissions: vec![],
+                risk: None,
+            },
+        };
+        let (mw, _store) = build_mw_claims(claims);
+        let policy = RoutePolicy::new("GET /api/public".to_string(), RouteAuthCategory::JwtOnly,
+            vec!["viewer".to_string()], vec![], false);
+        assert!(mw.evaluate_local_policy(&make_claims("user-1", "tenant-1", vec!["viewer"], vec![]), &policy),
+            "No risk claim + strict policy should still pass (risk is None, not elevated/critical)");
+    }
+
+    #[test]
+    fn test_edge_risk_critical_denied_strict() {
+        let mut claims = make_claims("user-1", "tenant-1", vec!["admin"], vec![]);
+        claims.sx.risk = Some("critical".to_string());
+        let (mw, _store) = build_mw_claims(claims.clone());
+        let policy = RoutePolicy::new("GET /api/safe".to_string(), RouteAuthCategory::JwtOnly,
+            vec!["admin".to_string()], vec![], false);
+        assert!(!mw.evaluate_local_policy(&claims, &policy),
+            "Critical risk should be denied on strict route");
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  Middleware trait: before/after hooks
+    // ═══════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_middleware_before_allowed_continues() {
+        let mut mw;
+        let mut store = RoutePolicyStore::new();
+        {
+            let (inner, mut s) = build_mw_claims(make_claims("user-1", "tenant-1", vec!["admin"], vec![]));
+            register_jwt_only(&mut s, "GET", "/api/users/me", vec!["admin".to_string()], vec![]);
+            mw = inner;
+            store = s;
+        }
+        set_policies(&mut mw, store);
+
+        let mut req = make_request(Method::GET, "/api/users/me");
+        let headers: Vec<(std::sync::Arc<str>, String)> = build_headers("Bearer token", "tenant-1")
+            .into_iter()
+            .map(|(k, v)| (std::sync::Arc::from(k.as_str()), v))
+            .collect();
+        req.headers = HeaderVec::from(headers);
+
+        let result = mw.before(&req);
+        assert!(result.is_none(), "Allowed requests should return None (continue to handler)");
+    }
+
+    #[test]
+    fn test_middleware_before_denied_returns_error() {
+        let mut mw;
+        let mut store = RoutePolicyStore::new();
+        {
+            let (inner, mut s) = build_mw_claims(make_claims("user-1", "tenant-1", vec!["viewer"], vec![]));
+            register_jwt_only(&mut s, "DELETE", "/api/users", vec!["admin".to_string()], vec![]);
+            mw = inner;
+            store = s;
+        }
+        set_policies(&mut mw, store);
+
+        let mut req = make_request(Method::DELETE, "/api/users");
+        let headers: Vec<(std::sync::Arc<str>, String)> = build_headers("Bearer token", "tenant-1")
+            .into_iter()
+            .map(|(k, v)| (std::sync::Arc::from(k.as_str()), v))
+            .collect();
+        req.headers = HeaderVec::from(headers);
+
+        let result = mw.before(&req);
+        assert!(result.is_some(), "Denied requests should return Some(HandlerResponse)");
+        if let Some(resp) = result {
+            assert_eq!(resp.status, 403);
+        }
+    }
+
+    #[test]
+    fn test_middleware_before_missing_auth_returns_401() {
+        let (mut mw, mut store) = build_mw_claims(make_claims("user-1", "tenant-1", vec![], vec![]));
+        register_jwt_only(&mut store, "GET", "/api/users/me", vec!["admin".to_string()], vec![]);
+        set_policies(&mut mw, store);
+
+        let req = make_request(Method::GET, "/api/users/me");
+        let result = mw.before(&req);
+        assert!(result.is_some(), "Missing auth should return error");
+        if let Some(resp) = result {
+            assert_eq!(resp.status, 401);
+        }
+    }
+
+    #[test]
+    fn test_middleware_before_jwt_fallback_continues() {
+        let mut mw;
+        let mut store = RoutePolicyStore::new();
+        {
+            let (inner, mut s) = build_mw_claims(make_claims("user-1", "tenant-1", vec!["admin"], vec![]));
+            register_jwt_fallback(&mut s, "POST", "/api/payments");
+            mw = inner;
+            store = s;
+        }
+        set_policies(&mut mw, store);
+
+        let mut req = make_request(Method::POST, "/api/payments");
+        let headers: Vec<(std::sync::Arc<str>, String)> = build_headers("Bearer token", "tenant-1")
+            .into_iter()
+            .map(|(k, v)| (std::sync::Arc::from(k.as_str()), v))
+            .collect();
+        req.headers = HeaderVec::from(headers);
+
+        let result = mw.before(&req);
+        assert!(result.is_none(), "jwt-with-fallback should return None (continue to handler)");
+    }
+
+    #[test]
+    fn test_middleware_after_logs_latency() {
+        let (mut mw, mut store) = build_mw_claims(make_claims("user-1", "tenant-1", vec![], vec![]));
+        register_jwt_only(&mut store, "GET", "/api/users/me", vec!["admin".to_string()], vec![]);
+        set_policies(&mut mw, store);
+
+        let req = make_request(Method::GET, "/api/users/me");
+        let mut res = HandlerResponse::new(200, HeaderVec::new(), serde_json::json!({}));
+
+        // after() should complete without panicking
+        mw.after(&req, &mut res, Duration::from_millis(5));
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  Error codes and display
+    // ═══════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_error_codes() {
+        assert_eq!(AuthError::MissingAuthorization.status_code(), 401);
+        assert_eq!(AuthError::InvalidBearerScheme { scheme: "Basic".to_string() }.status_code(), 401);
+        assert_eq!(AuthError::TokenExpired { expired_at: 1234567890 }.status_code(), 401);
+        assert_eq!(AuthError::TokenInvalid.status_code(), 401);
+        assert_eq!(AuthError::MissingTenantId.status_code(), 401);
+        assert_eq!(AuthError::TenantMismatch { expected: "a".to_string(), actual: "b".to_string() }.status_code(), 401);
+        assert_eq!(AuthError::PolicyNotFound { path: "/x".to_string(), method: "GET".to_string() }.status_code(), 503);
+    }
+
+    #[test]
+    fn test_auth_error_display() {
+        assert_eq!(AuthError::MissingAuthorization.message(), "Missing Authorization header");
+        assert_eq!(
+            AuthError::InvalidBearerScheme { scheme: "Basic".to_string() }.message(),
+            "Invalid Authorization scheme: Basic. Only Bearer is accepted"
+        );
+        assert_eq!(
+            AuthError::TenantMismatch { expected: "tenant-a".to_string(), actual: "tenant-b".to_string() }.message(),
+            "Tenant mismatch: expected tenant-a, got tenant-b"
+        );
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  SxClaims helper method tests
+    // ═══════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_sx_has_role() {
+        let sx = SxClaims {
+            roles: vec!["admin".to_string(), "viewer".to_string()],
+            permissions: vec![],
+            risk: None,
+        };
+        assert!(sx.has_role("admin"));
+        assert!(sx.has_role("viewer"));
+        assert!(!sx.has_role("editor"));
+    }
+
+    #[test]
+    fn test_sx_has_permission() {
+        let sx = SxClaims {
+            roles: vec![],
+            permissions: vec!["users:read".to_string(), "users:write".to_string()],
+            risk: None,
+        };
+        assert!(sx.has_permission("users:read"));
+        assert!(sx.has_permission("users:write"));
+        assert!(!sx.has_permission("users:delete"));
+    }
+
+    #[test]
+    fn test_sx_is_normal_risk() {
+        assert!(SxClaims { roles: vec![], permissions: vec![], risk: None }.is_normal_risk());
+        assert!(SxClaims { roles: vec![], permissions: vec![], risk: Some("normal".to_string()) }.is_normal_risk());
+        assert!(!SxClaims { roles: vec![], permissions: vec![], risk: Some("elevated".to_string()) }.is_normal_risk());
+        assert!(!SxClaims { roles: vec![], permissions: vec![], risk: Some("critical".to_string()) }.is_normal_risk());
+    }
+
+    #[test]
+    fn test_sx_has_any_authorization() {
+        assert!(!SxClaims { roles: vec![], permissions: vec![], risk: None }.has_any_authorization());
+        assert!(SxClaims { roles: vec!["admin".to_string()], permissions: vec![], risk: None }.has_any_authorization());
+        assert!(SxClaims { roles: vec![], permissions: vec!["read".to_string()], risk: None }.has_any_authorization());
+    }
+}

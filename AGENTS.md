@@ -10,6 +10,45 @@
 > - GitHub: [`cylon-local-infra/docs/desktop-dev-environment.md`](https://github.com/microscaler/cylon-local-infra/blob/main/docs/desktop-dev-environment.md)
 > - On ms02 NFS: `~/Workspace/microscaler/cylon-local-infra/docs/desktop-dev-environment.md`
 
+## CRITICAL: Microscaler Dependencies
+
+**We do NOT publish to crates.io. We consume from microscaler forks.**
+
+When analyzing Cargo.toml dependencies, NEVER assume crates.io is the source for any dependency that has a microscaler fork. The crates.io versions are stale or abandoned.
+
+### Microscaler Fork Inventory
+
+These repos exist in `microscaler/` as forks with custom changes:
+
+| Fork Repo | Upstream | Purpose |
+|-----------|----------|---------|
+| `microscaler/may` | Xudong-Huang/may | Core stackful coroutine runtime. Foundation of BRRTRouter. |
+| `microscaler/may_minihttp` | Xudong-Huang/may_minihttp | Mini HTTP server. Fork until PR #21 merged upstream. Provides `TestClient`. |
+| `microscaler/may_postgres` | (no direct upstream) | Postgres driver for may coroutines. Custom features. |
+| `microscaler/generator-rs` | Xudong-Huang/generator-rs | Coroutine generator. Patched via `[patch.crates-io]` for Rust 1.90 macOS thread-local bug. |
+| `microscaler/mayfly` | (no upstream) | Separate project. |
+
+### Dependency Resolution Rules
+
+- `may` → `git = "https://github.com/microscaler/may.git"` (NOT crates.io)
+- `may_minihttp` → `git = "https://github.com/microscaler/may_minihttp.git", branch = "integration/microscaler-fork"` (NOT crates.io — forks add `TestClient`)
+- `may_postgres` → `git = "https://github.com/microscaler/may_postgres.git", branch = "master"` (NOT crates.io)
+- `generator` → patched via `[patch.crates-io]` to `git = "https://github.com/microscaler/generator-rs.git"`
+- `may_http` → `git = "https://github.com/rust-may/may_http.git"` (upstream fork, not microscaler-owned)
+- `lifeguard` → local path (sibling repo) — **see below**
+- `microscaler-observability` → local path (sibling repo)
+
+**Never guess. If you see `may`, `may_minihttp`, `may_postgres`, `generator`, or any microscaler-related crate, verify the source by checking the Cargo.toml — never assume crates.io.**
+
+### Why Some Deps Use `path =` Instead of `git =`
+
+**lifeguard** and **BRRTRouter** are sibling repos that share remotes — they ARE pushed remotely and CI switches them to git pins. They use `path =` locally for co-development convenience:
+
+- When editing a dependency repo (lifeguard, BRRTRouter) and a consumer (hauliage, sesame-idam) simultaneously, path deps avoid the commit-push-update dance. With a path dep, you see changes compile immediately. With a git dep, you have to commit, push, update `Cargo.toml`, run `cargo update`.
+- CI validates the other direction: git dep pins verify a consumer actually works against the *published* version, catching "works locally but not on published version" drift.
+
+This is not about NFS, shared mounts, or missing remotes. lifeguard and BRRTRouter have full remotes, CI uses git pins, and they are actively co-developed across all repos.
+
 ---
 
 Strict operational rules for AI assistants working in this repository. **Knowledge about how BRRTRouter works is in [`llmwiki/`](./llmwiki/), not here.** This file only holds rules the agent must obey.
