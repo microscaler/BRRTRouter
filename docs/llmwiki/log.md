@@ -73,3 +73,7 @@ When benches move to a **new ms02** or new CPU, reset Criterion baselines on tha
 ## [2026-07-07] docs | Wave 2 staged
 
 - Wiki sync: BR-1b/BR-1c done; consumer Wave 2 = HI-7 pin + company/bff redeploy. Cross-ref hauliage integration wiki.
+
+## [2026-07-07] Hauliage Wave 2 complete
+
+HI-7 verified (`73744df`), company smoke 2/2, consignments JWKS, BFF login 200 (30s client timeout for ~10s bcrypt login).

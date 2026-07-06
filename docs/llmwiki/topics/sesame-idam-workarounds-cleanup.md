@@ -143,7 +143,9 @@ See sesame [`topic-http-client-policy.md`](../../../../seasame-idam/docs/llmwiki
 | 3 | **BR-3** | Medium | OAuth status codes (SI-4) |
 | 4 | **BR-5..BR-7** | Large | Platform hygiene |
 
-**Consumer next:** hauliage **HI-7** pin `73744df`; redeploy company/bff with JWKS config.
+**Consumer next:** hauliage Wave 3 — OpenAPI client, fleet ownership WIP, BR-2/BR-3.
+
+> **Open:** BFF login to sesame takes ~10s (bcrypt); hauliage client uses 30s HTTP fetch timeout.
 
 ## Code anchors
 
