@@ -63,6 +63,80 @@ def test_merge_sets_proxy_extensions(tmp_path: Path) -> None:
     assert get_op.get("x-brrtrouter-downstream-path") == "/api/invoice/invoices/{id}"
 
 
+def test_merge_prefixed_gateway_paths(tmp_path: Path) -> None:
+    """prefixed gateway_path_style exposes /{service}{path} on the BFF."""
+    spec_path = tmp_path / "openapi.yaml"
+    spec_path.write_text(
+        "openapi: 3.1.0\ninfo: { title: S, version: 1.0 }\npaths:\n"
+        "  /jobs:\n    get:\n      operationId: listJobs\n      responses: { '200': { description: OK } }\n"
+        "  /jobs/summary:\n    get:\n      operationId: jobsSummary\n      responses: { '200': { description: OK } }\n"
+    )
+    sub_services = {
+        "consignments": {
+            "base_path": "/api/v1/consignments",
+            "spec_path": spec_path,
+            "gateway_path_style": "prefixed",
+        },
+    }
+    bff = merge_sub_service_specs(sub_services)
+    assert "/consignments/jobs" in bff["paths"]
+    assert "/consignments/jobs/summary" in bff["paths"]
+    get_op = bff["paths"]["/consignments/jobs"]["get"]
+    assert get_op["x-brrtrouter-downstream-path"] == "/api/v1/consignments/jobs"
+
+
+def test_merge_as_spec_keeps_product_paths(tmp_path: Path) -> None:
+    """as_spec keeps company/marketing-style paths without a service prefix."""
+    spec_path = tmp_path / "openapi.yaml"
+    spec_path.write_text(
+        "openapi: 3.1.0\ninfo: { title: S, version: 1.0 }\npaths:\n"
+        "  /organizations/me:\n    get:\n      operationId: getOrg\n      responses: { '200': { description: OK } }\n"
+    )
+    sub_services = {
+        "company": {
+            "base_path": "/api/v1/company",
+            "spec_path": spec_path,
+            "gateway_path_style": "as_spec",
+        },
+    }
+    bff = merge_sub_service_specs(sub_services)
+    assert "/organizations/me" in bff["paths"]
+    assert "/company/organizations/me" not in bff["paths"]
+
+
+class TestGatewayPublicPath:
+    def test_normalize_strips_api_v1_prefix(self) -> None:
+        from brrtrouter_tooling.helpers import normalize_spec_path
+
+        assert normalize_spec_path("/api/v1/reviews") == "/reviews"
+        assert normalize_spec_path("/api/v1/reviews/stats") == "/reviews/stats"
+
+    def test_prefixed_service_resource(self) -> None:
+        from brrtrouter_tooling.helpers import gateway_public_path
+
+        assert (
+            gateway_public_path("/api/v1/bidding", "/quotes", gateway_path_style="prefixed")
+            == "/bidding/quotes"
+        )
+
+    def test_prefixed_root_maps_to_service_suffix(self) -> None:
+        from brrtrouter_tooling.helpers import gateway_public_path
+
+        assert (
+            gateway_public_path("/api/v1/reviews", "/", gateway_path_style="prefixed") == "/reviews"
+        )
+
+    def test_as_spec_unchanged(self) -> None:
+        from brrtrouter_tooling.helpers import gateway_public_path
+
+        assert (
+            gateway_public_path(
+                "/api/v1/company", "/organizations/me", gateway_path_style="as_spec"
+            )
+            == "/organizations/me"
+        )
+
+
 def test_generate_bff_spec(tmp_path: Path) -> None:
     """generate_bff_spec produces a valid merged spec with proxy extensions."""
     (tmp_path / "openapi" / "suite" / "invoice").mkdir(parents=True)

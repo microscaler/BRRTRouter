@@ -40,6 +40,9 @@ pub fn write_handler_response(
     // Owned headers are freed with the `Response` — `may_minihttp` accepts
     // `String` via `IntoResponseHeader` on our fork, so no `Box::leak`.
     for (k, v) in headers {
+        if k.eq_ignore_ascii_case("content-length") {
+            continue;
+        }
         res.header(format!("{k}: {v}"));
     }
     match body {
@@ -315,6 +318,47 @@ mod tests {
         assert_eq!(status, 404);
         assert_eq!(ct, "application/json");
         assert_eq!(body, "{\"error\":\"nope\"}");
+    }
+
+    #[derive(Clone)]
+    struct DuplicateContentLengthService;
+
+    impl HttpService for DuplicateContentLengthService {
+        fn call(&mut self, _req: Request, res: &mut Response) -> std::io::Result<()> {
+            let mut headers: HeaderVec = HeaderVec::new();
+            headers.push((Arc::from("content-length"), "999".to_string()));
+            write_handler_response(res, 200, serde_json::json!({"ok": true}), false, &headers);
+            Ok(())
+        }
+    }
+
+    fn count_header(resp: &str, name: &str) -> usize {
+        resp.lines()
+            .filter(|line| {
+                line.split_once(':')
+                    .map(|(n, _)| n.eq_ignore_ascii_case(name))
+                    .unwrap_or(false)
+            })
+            .count()
+    }
+
+    #[test]
+    fn test_write_handler_response_ignores_incoming_content_length() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        drop(listener);
+        let handle = HttpServer(DuplicateContentLengthService)
+            .start(addr)
+            .unwrap();
+        let resp = send_request(&addr, "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n");
+        unsafe { handle.coroutine().cancel() };
+        assert_eq!(
+            count_header(&resp, "content-length"),
+            1,
+            "response must not duplicate Content-Length"
+        );
+        let (_, _, body) = parse_parts(&resp);
+        assert_eq!(body, "{\"ok\":true}");
     }
 
     #[test]

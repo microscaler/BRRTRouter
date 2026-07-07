@@ -240,13 +240,23 @@ def generate_system_bff_spec(
     system: str,
     output_path: Path | None = None,
 ) -> None:
-    """Generate system BFF OpenAPI at output_path (default: openapi_dir/system/openapi.yaml).
+    """Generate system BFF OpenAPI at output_path (default: openapi_dir/openapi_bff.yaml).
 
-    Discovers sub-services from openapi_dir/system/{service}/openapi.yaml,
-    merges paths and schemas (prefixing schemas to avoid clashes), updates $refs,
-    writes deterministic YAML. Idempotent; clobbers output.
-    If no sub-services, does not write.
+    When ``openapi_dir/bff-suite-config.yaml`` exists (Hauliage layout), delegates to the
+    suite-config merge pipeline so gateway paths match frontend routes (e.g.
+    ``/bidding/quotes`` not bare ``/quotes``).
+
+    Otherwise discovers sub-services from ``openapi_dir/{service}/openapi.yaml`` and merges
+    with legacy path keys (sub-service paths as-is).
     """
+    suite_config = openapi_dir / "bff-suite-config.yaml"
+    if suite_config.is_file():
+        from brrtrouter_tooling.bff.generate import generate_bff_spec
+
+        out = output_path if output_path is not None else (openapi_dir / "openapi_bff.yaml")
+        generate_bff_spec(suite_config, output_path=out, base_dir=openapi_dir.parent)
+        return
+
     sub_services = discover_sub_services(openapi_dir, system)
     if not sub_services:
         return

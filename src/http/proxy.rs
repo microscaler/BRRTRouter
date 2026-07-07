@@ -124,6 +124,7 @@ pub fn skip_forward_request_header(name: &str) -> bool {
 #[must_use]
 pub fn skip_forward_response_header(name: &str) -> bool {
     name.eq_ignore_ascii_case("connection")
+        || name.eq_ignore_ascii_case("content-length")
         || name.eq_ignore_ascii_case("transfer-encoding")
         || name.eq_ignore_ascii_case("keep-alive")
         || name.eq_ignore_ascii_case("upgrade")
@@ -367,6 +368,7 @@ mod tests {
     #[test]
     fn skip_forward_response_header_blocks_hop_by_hop() {
         assert!(skip_forward_response_header("Transfer-Encoding"));
+        assert!(skip_forward_response_header("Content-Length"));
         assert!(!skip_forward_response_header("Content-Type"));
     }
 

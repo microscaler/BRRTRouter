@@ -231,3 +231,41 @@ class TestGenerateSystemBffSpec:
         # Original 'Item' should be prefixed as MySvcItem
         assert "MySvcItem" in schemas
         assert schemas["MySvcItem"].get("type") == "object"
+
+    def test_suite_config_uses_prefixed_gateway_paths(self, tmp_path: Path) -> None:
+        from brrtrouter_tooling.workspace.bff.generate_system import generate_system_bff_spec
+
+        openapi_dir = tmp_path / "openapi"
+        (openapi_dir / "bidding").mkdir(parents=True)
+        (openapi_dir / "bidding" / "openapi.yaml").write_text(
+            _minimal_spec(
+                paths={
+                    "/quotes": {
+                        "get": {"summary": "List", "responses": {"200": {"description": "ok"}}}
+                    }
+                }
+            )
+        )
+        (openapi_dir / "bff-suite-config.yaml").write_text(
+            "openapi_base_dir: openapi\n"
+            "output_path: openapi/openapi_bff.yaml\n"
+            "services:\n"
+            "  bidding:\n"
+            "    base_path: /api/v1/bidding\n"
+            "    gateway_path_style: prefixed\n"
+            "    spec_path: bidding/openapi.yaml\n"
+        )
+        out = openapi_dir / "openapi_bff.yaml"
+        generate_system_bff_spec(openapi_dir, "hauliage", output_path=out)
+        import yaml
+
+        data = yaml.safe_load(out.read_text())
+        assert "/bidding/quotes" in data["paths"]
+        assert "/quotes" not in data["paths"]
+
+    def test_reviews_root_path_maps_to_service_prefix(self, tmp_path: Path) -> None:
+        from brrtrouter_tooling.helpers import gateway_public_path
+
+        assert (
+            gateway_public_path("/api/v1/reviews", "/", gateway_path_style="prefixed") == "/reviews"
+        )

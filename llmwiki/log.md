@@ -179,3 +179,12 @@ On the hot path, both request and response schema validation now call `Validator
 - `schema_cache_get_or_compile_hit` regression (~6%) is from pre-existing fmt changes, not from this optimization
 - Cargo clippy: fixed pre-existing `unnecessary_to_owned` in `form_urlencoded_body_to_json` (request.rs)
 - 300/300 lib tests pass
+
+## [2026-07-07] feat | BFF gateway path merge + proxy Content-Length fix
+
+Hauliage Phase 3 unblockers for Vite dev proxy and frontend-aligned BFF routes.
+
+- **Tooling:** `gateway_path_style` (`prefixed` / `as_spec`); `gateway_public_path()` / `normalize_spec_path()`; `hauliage bff generate-system` uses `bff-suite-config.yaml` when present.
+- **Runtime:** `proxy.rs` — do not forward downstream `Content-Length`; `write_handler_response()` skips handler-supplied `content-length` before `body_vec()` (fixes Node/Vite `Duplicate Content-Length` → 502).
+- **Tests:** Python `TestGatewayPublicPath`, merge tests; Rust `test_write_handler_response_ignores_incoming_content_length`.
+- **Wiki:** [`topics/bff-gateway-merge-and-proxy-headers.md`](./topics/bff-gateway-merge-and-proxy-headers.md).

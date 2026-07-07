@@ -52,6 +52,7 @@ def load_suite_config(config_path: Path, base_dir: Path | None = None) -> dict[s
             "base_path": svc.get("base_path", f"/api/{name}"),
             "spec_path": full_spec,
             "port": svc.get("port"),
+            "gateway_path_style": svc.get("gateway_path_style", "as_spec"),
         }
 
     data["_resolved"] = resolved

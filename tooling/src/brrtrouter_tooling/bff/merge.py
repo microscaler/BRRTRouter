@@ -11,6 +11,7 @@ from typing import Any
 
 from brrtrouter_tooling.helpers import (
     downstream_path,
+    gateway_public_path,
     load_yaml_spec,
     to_pascal_case,
 )
@@ -66,6 +67,7 @@ def _merge_one_sub_service(
     all_paths: dict[str, Any],
     merged_params: dict[str, Any],
     param_origin: dict[str, str],
+    gateway_path_style: str = "as_spec",
 ) -> None:
     if not spec_path.exists():
         logger.warning("Spec file not found for service %r: %s", sname, spec_path)
@@ -91,7 +93,12 @@ def _merge_one_sub_service(
         for path, path_def in spec["paths"].items():
             if not isinstance(path_def, dict):
                 continue
-            existing = all_paths.get(path)
+            gateway_path = gateway_public_path(
+                base_path,
+                path,
+                gateway_path_style=gateway_path_style,
+            )
+            existing = all_paths.get(gateway_path)
             if existing is None:
                 existing = {}
             path_def = dict(path_def)
@@ -104,7 +111,7 @@ def _merge_one_sub_service(
                         logger.warning(
                             "Path-level property %r conflict for %s, keeping first",
                             key,
-                            path,
+                            gateway_path,
                         )
                     continue
                 method = key
@@ -119,12 +126,12 @@ def _merge_one_sub_service(
                     existing_service = (existing.get(method) or {}).get("x-service")
                     if existing_service is not None and existing_service != sname:
                         msg = (
-                            f"Path conflict: {path!r} method {method!r} already "
+                            f"Path conflict: {gateway_path!r} method {method!r} already "
                             f"defined by service {existing_service!r}, duplicate from {sname!r}"
                         )
                         raise ValueError(msg)
                 existing[method] = op
-            all_paths[path] = existing
+            all_paths[gateway_path] = existing
 
     if "schemas" in components:
         _merge_schemas(all_schemas, sname, components["schemas"])
@@ -288,6 +295,7 @@ def merge_sub_service_specs(
             all_paths,
             merged_params,
             param_origin,
+            gateway_path_style=cfg.get("gateway_path_style", "as_spec"),
         )
 
     bff["components"]["parameters"] = merged_params

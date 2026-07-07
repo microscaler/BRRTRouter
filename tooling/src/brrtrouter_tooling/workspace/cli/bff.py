@@ -35,17 +35,28 @@ def _run_generate_system(project_root: Path, args) -> None:
             f"🔄 Generating {system} system BFF OpenAPI specification ({len(subs)} sub-services)..."
         )
         generate_system_bff_spec(openapi_dir, system, output_path=out_path)
-        out = (
-            Path(output).expanduser().resolve()
-            if output
-            else (openapi_dir / system / "openapi.yaml")
-        )
+        if (openapi_dir / "bff-suite-config.yaml").is_file():
+            out = (
+                Path(output).expanduser().resolve()
+                if output
+                else (openapi_dir / "openapi_bff.yaml")
+            )
+        else:
+            out = (
+                Path(output).expanduser().resolve()
+                if output
+                else (openapi_dir / system / "openapi.yaml")
+            )
         print(f"✅ Generated {system} BFF spec: {out}")
     else:
         systems = list_systems_with_sub_services(openapi_dir)
         print(
             f"🔄 Generating system BFF specs for all systems ({len(systems)} with sub-services)..."
         )
+        suite_config = openapi_dir / "bff-suite-config.yaml"
         for s in systems:
             generate_system_bff_spec(openapi_dir, s, output_path=None)
-            print(f"✅ {s} → openapi/{s}/openapi.yaml")
+            if suite_config.is_file():
+                print(f"✅ {s} → {openapi_dir / 'openapi_bff.yaml'}")
+            else:
+                print(f"✅ {s} → {openapi_dir / s / 'openapi.yaml'}")

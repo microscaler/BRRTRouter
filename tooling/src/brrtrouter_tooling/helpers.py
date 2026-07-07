@@ -104,10 +104,53 @@ def resolve_layout_with_defaults(
 # --- Path ---
 
 
+def normalize_spec_path(path: str) -> str:
+    """Normalize a path from a sub-service OpenAPI spec for BFF mounting under /api/v1."""
+    if not path.startswith("/"):
+        path = f"/{path}"
+    if path.startswith("/api/v1/"):
+        return path[len("/api/v1") :]
+    if path == "/api/v1":
+        return "/"
+    return path
+
+
+def gateway_public_path(
+    base_path: str,
+    service_path: str,
+    *,
+    gateway_path_style: str = "as_spec",
+) -> str:
+    """Public path on the BFF (server mounted at /api/v1).
+
+    ``as_spec`` — use the sub-service path as-is (after ``normalize_spec_path``).
+    ``prefixed`` — prepend the service segment from ``base_path`` (e.g. ``/api/v1/consignments`` + ``/jobs`` → ``/consignments/jobs``).
+    """
+    path = normalize_spec_path(service_path)
+    if gateway_path_style == "as_spec":
+        return path
+
+    base = base_path.rstrip("/")
+    if base.startswith("/api/v1"):
+        suffix = base[len("/api/v1") :]
+    elif base.startswith("/api"):
+        suffix = base[len("/api") :]
+    else:
+        suffix = base
+
+    if not suffix or suffix == "/":
+        return path
+    if path == "/":
+        return suffix
+    if path == suffix or path.startswith(f"{suffix}/"):
+        return path
+    return suffix.rstrip("/") + path
+
+
 def downstream_path(base_path: str, bff_path: str) -> str:
     """Exact path on downstream: base_path + path (normalized)."""
     base = base_path.rstrip("/")
-    path = bff_path.strip("/")
+    path = normalize_spec_path(bff_path).strip("/")
     return f"{base}/{path}" if path else base
 
 
