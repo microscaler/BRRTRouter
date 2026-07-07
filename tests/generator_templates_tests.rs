@@ -215,3 +215,41 @@ fn impl_main_rs_plain_snake_package_unchanged_in_use_line() {
 
     fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn proxy_controller_template_delegates_to_shared_module() {
+    let dir = temp_dir();
+    let controllers_dir = dir.join("controllers");
+    fs::create_dir_all(&controllers_dir).unwrap();
+
+    let res_fields = vec![FieldDef {
+        name: "ok".into(),
+        original_name: "ok".into(),
+        ty: "bool".into(),
+        optional: false,
+        value: "true".into(),
+    }];
+
+    write_controller(
+        &controllers_dir.join("list_fleet.rs"),
+        "list_fleet",
+        "ListFleetController",
+        &res_fields,
+        None,
+        false,
+        true,
+        Some("fleet".to_string()),
+        Some("/api/v1/fleet/vehicles".to_string()),
+        "GET".to_string(),
+    )
+    .unwrap();
+
+    let content = fs::read_to_string(controllers_dir.join("list_fleet.rs")).unwrap();
+    assert!(content.contains("proxy_untyped"));
+    assert!(content.contains("\"fleet\""));
+    assert!(content.contains("\"/api/v1/fleet/vehicles\""));
+    assert!(!content.contains("thread_local"));
+    assert!(!content.contains("_PORT"));
+
+    fs::remove_dir_all(&dir).unwrap();
+}
