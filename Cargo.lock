@@ -531,8 +531,7 @@ dependencies = [
  "libc",
  "lru",
  "may",
- "may_http",
- "may_minihttp 0.1.11 (git+https://github.com/microscaler/may_minihttp.git?branch=integration%2Fmicroscaler-fork)",
+ "may_minihttp 0.1.11",
  "memory-stats",
  "microscaler-observability",
  "minijinja",
@@ -2838,10 +2837,9 @@ dependencies = [
 [[package]]
 name = "may_minihttp"
 version = "0.1.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "710fda59b93aa204a26bfc7ba9c349d90035bd1b30df10df46d7c552d107291e"
 dependencies = [
  "bytes 1.11.1",
+ "http 0.2.12",
  "httparse",
  "httpdate",
  "itoa",
@@ -2853,7 +2851,8 @@ dependencies = [
 [[package]]
 name = "may_minihttp"
 version = "0.1.11"
-source = "git+https://github.com/microscaler/may_minihttp.git?branch=integration%2Fmicroscaler-fork#9175f9a202a0ccb52d5f13f18b06be5aca3f305f"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "710fda59b93aa204a26bfc7ba9c349d90035bd1b30df10df46d7c552d107291e"
 dependencies = [
  "bytes 1.11.1",
  "httparse",

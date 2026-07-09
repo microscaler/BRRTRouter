@@ -3,7 +3,7 @@
 //! Replaces generated inline proxy logic in `templates/controller.rs.txt`.
 //! Downstream targets are resolved by OpenAPI `x-service` (Kubernetes Service name)
 //! and `HAULIAGE_SERVICE_HTTP_PORT` (default 8080). Each request opens a fresh
-//! `may_http` connection to avoid cross-service client reuse (FR-26).
+//! `may_minihttp` connection to avoid cross-service client reuse (FR-26).
 
 use std::io::Read;
 use std::net::ToSocketAddrs;
@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use http_legacy::{Method, Uri};
-use may_http::client::HttpClient;
+use may_minihttp::client::HttpClient;
 use serde_json::Value;
 
 use crate::dispatcher::{HandlerRequest, HandlerResponse, HeaderVec};

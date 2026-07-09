@@ -1162,7 +1162,7 @@ serde = "1.0"
     fs::remove_dir_all(&root).unwrap();
 }
 
-/// `brrtrouter-dependencies.toml` must not repeat keys already in templates/Cargo.toml.txt (e.g. may_http).
+/// `brrtrouter-dependencies.toml` must not repeat keys already in templates/Cargo.toml.txt (e.g. may_minihttp).
 #[test]
 fn test_write_cargo_toml_skips_builtin_deps_repeated_in_config() {
     let root = temp_dir();
@@ -1174,7 +1174,7 @@ fn test_write_cargo_toml_skips_builtin_deps_repeated_in_config() {
 members = []
 
 [workspace.dependencies]
-may_http = { git = "https://github.com/rust-may/may_http.git" }
+may_minihttp = { git = "https://github.com/microscaler/may_minihttp.git", branch = "integration/microscaler-fork", features = ["client"] }
 serde = "1.0"
 "#,
     )
@@ -1185,14 +1185,14 @@ serde = "1.0"
 
     let mut deps_config = DependenciesConfig::default();
     deps_config.dependencies.insert(
-        "may_http".to_string(),
+        "may_minihttp".to_string(),
         DependencySpec::Full {
             version: None,
             package: None,
             path: None,
-            git: Some("https://github.com/rust-may/may_http.git".to_string()),
-            branch: None,
-            features: None,
+            git: Some("https://github.com/microscaler/may_minihttp.git".to_string()),
+            branch: Some("integration/microscaler-fork".to_string()),
+            features: Some(vec!["client".to_string()]),
             default_features: None,
             workspace: None,
         },
@@ -1215,9 +1215,9 @@ serde = "1.0"
 
     let cargo_toml = fs::read_to_string(gen_dir.join("Cargo.toml")).unwrap();
     assert_eq!(
-        cargo_toml.matches("may_http").count(),
+        cargo_toml.matches("may_minihttp").count(),
         1,
-        "expected exactly one may_http line from template, got:\n{cargo_toml}"
+        "expected exactly one may_minihttp line from template, got:\n{cargo_toml}"
     );
     assert!(
         cargo_toml.contains("tracing = \"0.1\""),

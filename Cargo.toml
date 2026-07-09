@@ -34,8 +34,8 @@ oas3 = { version = "0.21", features = ["yaml-spec"] }
 anyhow = "1.0"
 http = "1.0"  # Do not update to newer version, it that is not compatible with may_minihttp
 may = "0.3"  # generator-rs is patched via [patch.crates-io] section at the end of this file
-# Using our fork until PR #21 is merged upstream
-may_minihttp = { git = "https://github.com/microscaler/may_minihttp.git", branch = "integration/microscaler-fork" }
+# Using our fork until PR #21 is merged upstream; `client` feature for BFF proxy / fetch.
+may_minihttp = { git = "https://github.com/microscaler/may_minihttp.git", branch = "integration/microscaler-fork", features = ["client"] }
 regex = "1.12.3"
 smallvec = { version = "1.13", features = ["serde"] }  # Stack-allocated vectors for hot path (JSF: no heap in dispatch)
 url = "2.5.8"
@@ -68,10 +68,6 @@ tonic = "0.14"
 prost = "0.14"
 tokio = { version = "1.51.1", features = ["rt-multi-thread", "macros"] }
 
-# Coroutine HTTP client — replaces reqwest::blocking in security providers + BFF proxy.
-# Pinned to microscaler fork: upstream rust-may/may_http panics on DELETE/PUT/PATCH
-# (write_head unimplemented!) — see hauliage postmortem-may-http-delete-panic-2026-07-09.md
-may_http = { git = "https://github.com/microscaler/may_http.git" }
 http_legacy = { package = "http", version = "0.2" }
 httparse = "1.2"
 rustls = { version = "0.23", default-features = false, features = ["std", "tls12"] }
@@ -80,7 +76,7 @@ rustls-platform-verifier = "0.7"
 # No patched version available yet. Risk is mitigated by using rust_crypto feature and limiting
 # exposure to trusted environments. Monitor for updates to jsonwebtoken/rsa.
 jsonwebtoken = { version = "10.3.0", features = ["rust_crypto"] }  # rust_crypto enables RSA/EC algorithms
-# OTEL / jsonschema still pull reqwest transitively; security fetch uses may_http + rustls.
+# OTEL / jsonschema still pull reqwest transitively; security fetch uses may_minihttp client + rustls.
 reqwest = { version = "0.13.2", default-features = false, features = ["json", "rustls", "blocking", "multipart"] }
 urlencoding = "2.1"
 ulid = "1.1"
@@ -216,3 +212,6 @@ opentelemetry-http = { git = "https://github.com/open-telemetry/opentelemetry-ru
 opentelemetry-otlp = { git = "https://github.com/open-telemetry/opentelemetry-rust", rev = "965078315b58ae14725721735f1c8e2bc2d3b445" }
 opentelemetry-proto = { git = "https://github.com/open-telemetry/opentelemetry-rust", rev = "965078315b58ae14725721735f1c8e2bc2d3b445" }
 opentelemetry-semantic-conventions = { git = "https://github.com/open-telemetry/opentelemetry-rust", rev = "965078315b58ae14725721735f1c8e2bc2d3b445" }
+
+[patch."https://github.com/microscaler/may_minihttp.git"]
+may_minihttp = { path = "../may_minihttp" }

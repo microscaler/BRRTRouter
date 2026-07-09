@@ -94,7 +94,6 @@ pub(crate) fn is_builtin_gen_cargo_dependency(name: &str) -> bool {
             | "http"
             | "http_legacy"
             | "may"
-            | "may_http"
             | "may_minihttp"
             | "serde"
             | "serde_json"

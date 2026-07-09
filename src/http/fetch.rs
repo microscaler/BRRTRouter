@@ -1,11 +1,11 @@
-//! Bounded GET fetch over HTTP/1.1 using `may_http` (plain) or rustls (HTTPS).
+//! Bounded GET fetch over HTTP/1.1 using `may_minihttp::client` (plain) or rustls (HTTPS).
 
 use std::io::{Read, Write};
 use std::sync::Arc;
 use std::time::Duration;
 
 use http_legacy::{Method, Uri};
-use may_http::client::HttpClient;
+use may_minihttp::client::HttpClient;
 use rustls::pki_types::ServerName;
 use rustls_platform_verifier::BuilderVerifierExt;
 use url::Url;
@@ -63,7 +63,7 @@ impl std::error::Error for HttpFetchError {}
 
 /// Perform a bounded HTTP GET and return `(status_code, body)`.
 ///
-/// Supports `http://` via `may_http` and `https://` via rustls on `may::net::TcpStream`.
+/// Supports `http://` via `may_minihttp::client` and `https://` via rustls on `may::net::TcpStream`.
 ///
 /// # Errors
 ///
@@ -113,7 +113,7 @@ pub fn fetch_get_text_with_retry(
 
 /// Perform a bounded HTTP POST and return `(status_code, body)`.
 ///
-/// Supports `http://` via `may_http` and `https://` via rustls on `may::net::TcpStream`.
+/// Supports `http://` via `may_minihttp::client` and `https://` via rustls on `may::net::TcpStream`.
 ///
 /// # Errors
 ///
