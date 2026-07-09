@@ -2,8 +2,8 @@
 
 use brrtrouter::generator::FieldDef;
 use brrtrouter::generator::{
-    write_controller, write_handler, write_impl_controller_stub, write_impl_main_rs, write_main_rs,
-    write_registry_rs, ImplControllerStubParams, RegistryEntry,
+    write_controller, write_handler, write_impl_controller_stub, write_impl_main_rs, write_impl_registry_rs,
+    write_main_rs, write_registry_rs, ImplControllerStubParams, RegistryEntry,
 };
 use brrtrouter::spec::{ParameterMeta, RouteMeta};
 use http::Method;
@@ -90,6 +90,7 @@ fn test_template_writers() {
     let route = RouteMeta {
         x_service: None,
         x_brrtrouter_downstream_path: None,
+        x_brrtrouter_impl: None,
         method: Method::GET,
         path_pattern: "/test".into(),
         handler_name: "test".into(),
@@ -140,9 +141,13 @@ fn impl_main_rs_maps_hyphenated_package_to_rust_crate_ident() {
 
     let main_content = fs::read_to_string(src_dir.join("main.rs")).unwrap();
     assert!(
-        main_content.contains("use market_data_service_api::registry;"),
+        main_content.contains("use market_data_service_api::registry as gen_registry"),
         "expected canonical Rust crate path in use line, got excerpt: {}",
         &main_content[..main_content.len().min(400)]
+    );
+    assert!(
+        main_content.contains("RunAppBuilder"),
+        "impl main should use Fix B run_app bootstrap"
     );
     assert!(
         !main_content.contains("use market-data_service_api::"),
@@ -211,7 +216,8 @@ fn impl_main_rs_plain_snake_package_unchanged_in_use_line() {
     write_impl_main_rs(&src_dir, "amd_service_api", &[]).unwrap();
 
     let main_content = fs::read_to_string(src_dir.join("main.rs")).unwrap();
-    assert!(main_content.contains("use amd_service_api::registry;"));
+    assert!(main_content.contains("use amd_service_api::registry as gen_registry"));
+    assert!(main_content.contains("RunAppBuilder"));
 
     fs::remove_dir_all(&dir).unwrap();
 }
@@ -250,6 +256,121 @@ fn proxy_controller_template_delegates_to_shared_module() {
     assert!(content.contains("\"/api/v1/fleet/vehicles\""));
     assert!(!content.contains("thread_local"));
     assert!(!content.contains("_PORT"));
+
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn impl_registry_renders_arms_for_discovered_controllers() {
+    let dir = temp_dir();
+    let impl_src = dir.join("src");
+    let controllers_dir = impl_src.join("controllers");
+    fs::create_dir_all(&controllers_dir).unwrap();
+
+    fs::write(
+        controllers_dir.join("list_pets.rs"),
+        "#[handler(ListPetsController)]\npub fn handle(_req: TypedHandlerRequest<Request>) -> Response { todo!() }",
+    )
+    .unwrap();
+    fs::write(
+        controllers_dir.join("add_pet.rs"),
+        "#[handler(AddPetController)]\npub fn handle(_req: TypedHandlerRequest<Request>) -> Response { todo!() }",
+    )
+    .unwrap();
+
+    let routes = vec![
+        RouteMeta {
+            method: Method::GET,
+            path_pattern: "/pets".into(),
+            handler_name: "list_pets".into(),
+            parameters: vec![],
+            request_schema: None,
+            request_body_required: false,
+            request_content_types: Vec::new(),
+            response_schema: None,
+            example: None,
+            responses: HashMap::new(),
+            security: vec![],
+            example_name: String::new(),
+            project_slug: String::new(),
+            output_dir: PathBuf::new(),
+            base_path: String::new(),
+            sse: false,
+            estimated_request_body_bytes: None,
+            x_brrtrouter_stack_size: None,
+            cors_policy: brrtrouter::middleware::RouteCorsPolicy::Inherit,
+            x_service: None,
+            x_brrtrouter_downstream_path: None,
+            x_brrtrouter_impl: Some(true),
+        },
+        RouteMeta {
+            method: Method::POST,
+            path_pattern: "/pets".into(),
+            handler_name: "add_pet".into(),
+            parameters: vec![],
+            request_schema: None,
+            request_body_required: false,
+            request_content_types: Vec::new(),
+            response_schema: None,
+            example: None,
+            responses: HashMap::new(),
+            security: vec![],
+            example_name: String::new(),
+            project_slug: String::new(),
+            output_dir: PathBuf::new(),
+            base_path: String::new(),
+            sse: false,
+            estimated_request_body_bytes: None,
+            x_brrtrouter_stack_size: None,
+            cors_policy: brrtrouter::middleware::RouteCorsPolicy::Inherit,
+            x_service: None,
+            x_brrtrouter_downstream_path: None,
+            x_brrtrouter_impl: Some(true),
+        },
+    ];
+
+    write_impl_registry_rs(&impl_src, &routes).unwrap();
+
+    let registry = fs::read_to_string(impl_src.join("impl_registry.rs")).unwrap();
+    assert!(registry.contains("pub unsafe fn register_impl"));
+    assert!(registry.contains("\"list_pets\""));
+    assert!(registry.contains("ListPetsController"));
+    assert!(registry.contains("\"add_pet\""));
+    assert!(registry.contains("AddPetController"));
+
+    let mod_rs = fs::read_to_string(controllers_dir.join("mod.rs")).unwrap();
+    assert!(mod_rs.contains("pub mod add_pet;"));
+    assert!(mod_rs.contains("pub mod list_pets;"));
+
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn generate_stubs_force_preserves_sentinel_file() {
+    let dir = temp_dir();
+    let impl_dir = dir.join("impl");
+    let controllers_dir = impl_dir.join("src").join("controllers");
+    fs::create_dir_all(&controllers_dir).unwrap();
+
+    let stub_path = controllers_dir.join("get_item.rs");
+    let protected_body = "// BRRTRouter: user-owned\npub fn handle() { /* real logic */ }";
+    fs::write(&stub_path, protected_body).unwrap();
+
+    let spec = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/pet_store/doc/openapi.yaml");
+    assert!(spec.exists(), "pet_store openapi spec required for this test");
+
+    brrtrouter::generator::generate_impl_stubs(
+        &spec,
+        &impl_dir,
+        Some("pet_store"),
+        Some("get_item"),
+        true,
+        false,
+    )
+    .unwrap();
+
+    let after = fs::read_to_string(&stub_path).unwrap();
+    assert_eq!(after, protected_body);
 
     fs::remove_dir_all(&dir).unwrap();
 }

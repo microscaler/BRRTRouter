@@ -68,6 +68,7 @@ def _merge_one_sub_service(
     merged_params: dict[str, Any],
     param_origin: dict[str, str],
     gateway_path_style: str = "as_spec",
+    bff_impl_operations: set[str] | None = None,
 ) -> None:
     if not spec_path.exists():
         logger.warning("Spec file not found for service %r: %s", sname, spec_path)
@@ -122,6 +123,10 @@ def _merge_one_sub_service(
                 op["x-service"] = sname
                 op["x-service-base-path"] = base_path
                 op["x-brrtrouter-downstream-path"] = downstream_path(base_path, path)
+                # BFF gen owns proxy routes; only listed operations get impl overrides.
+                oid = op.get("operationId", "")
+                impl_ops = bff_impl_operations or set()
+                op["x-brrtrouter-impl"] = oid in impl_ops
                 if method in existing:
                     existing_service = (existing.get(method) or {}).get("x-service")
                     if existing_service is not None and existing_service != sname:
@@ -251,6 +256,7 @@ def _add_error_schema(
 def merge_sub_service_specs(
     sub_services: dict[str, dict[str, Any]],
     info: dict[str, Any] | None = None,
+    bff_impl_operations: set[str] | None = None,
 ) -> dict[str, Any]:
     """Merge sub-service specs into one BFF spec with prefixed schemas and proxy extensions.
 
@@ -296,6 +302,7 @@ def merge_sub_service_specs(
             merged_params,
             param_origin,
             gateway_path_style=cfg.get("gateway_path_style", "as_spec"),
+            bff_impl_operations=bff_impl_operations,
         )
 
     bff["components"]["parameters"] = merged_params

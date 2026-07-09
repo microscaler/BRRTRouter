@@ -1,4 +1,4 @@
-"""Regenerate services from OpenAPI specs (flattened layout)."""
+"""Regenerate services from OpenAPI specs (flat or nested suite layout)."""
 
 from pathlib import Path
 
@@ -6,6 +6,10 @@ from brrtrouter_tooling.discovery import bff_service_to_suite
 from brrtrouter_tooling.gen.brrtrouter import call_brrtrouter_generate
 from brrtrouter_tooling.workspace.build.constants import get_package_names
 from brrtrouter_tooling.workspace.ci.fix_cargo_paths import run as run_fix_cargo_paths
+from brrtrouter_tooling.workspace.discovery.suites import (
+    resolve_service_microservice_dir,
+    resolve_service_openapi_spec_path,
+)
 from brrtrouter_tooling.workspace.env_paths import discover_brrtrouter_root
 
 
@@ -31,16 +35,9 @@ def regenerate_service(
     if brrtrouter_path is None:
         brrtrouter_path = discover_brrtrouter_root(project_root)
 
-    is_bff = bff_service_to_suite(project_root, service_name) == suite
-
-    if is_bff:
-        spec_path = project_root / "openapi" / "openapi_bff.yaml"
-        deps_config_path = project_root / "openapi" / "brrtrouter-dependencies.toml"
-    else:
-        spec_path = project_root / "openapi" / service_name / "openapi.yaml"
-        deps_config_path = spec_path.parent / "brrtrouter-dependencies.toml"
-
-    output_dir = project_root / "microservices" / service_name / "gen"
+    spec_path = resolve_service_openapi_spec_path(project_root, suite, service_name)
+    deps_config_path = spec_path.parent / "brrtrouter-dependencies.toml"
+    output_dir = resolve_service_microservice_dir(project_root, suite, service_name) / "gen"
 
     if not spec_path.exists():
         print(f"❌ OpenAPI spec not found: {spec_path}")

@@ -119,6 +119,7 @@ fn bench_route_scalability(c: &mut Criterion) {
             routes.push(RouteMeta {
                 x_service: None,
                 x_brrtrouter_downstream_path: None,
+                x_brrtrouter_impl: None,
                 method: Method::GET,
                 path_pattern: Arc::from(format!("/api/v1/resource{i}/{{id}}").as_str()),
                 handler_name: Arc::from(format!("handler_{i}").as_str()),

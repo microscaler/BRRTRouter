@@ -466,7 +466,11 @@ def _ensure_impl_scaffold(project_root: Path, suite: str, service_name: str) -> 
     Used when impl was deleted and user runs 'hauliage gen stubs'; allows stubs to be
     generated without full bootstrap. Requires gen/ to exist (for main.rs and types).
     """
-    crate_dir = project_root / "microservices" / suite / service_name
+    from brrtrouter_tooling.workspace.discovery.suites import (
+        resolve_service_microservice_dir,
+    )
+
+    crate_dir = resolve_service_microservice_dir(project_root, suite, service_name)
     gen_dir = crate_dir / "gen"
     impl_dir = crate_dir / "impl"
     if impl_dir.exists():
@@ -548,9 +552,9 @@ def regenerate_impl_stubs(
     Returns 0 on success, 1 on error.
     """
     from brrtrouter_tooling.workspace.discovery import (
-        bff_service_to_suite,
         iter_bffs,
-        openapi_bff_path,
+        resolve_service_microservice_dir,
+        resolve_service_openapi_spec_path,
         suite_sub_service_names,
     )
 
@@ -566,12 +570,8 @@ def regenerate_impl_stubs(
         print(f"⚠️  No services found for suite: {suite}")
         return 1
     for svc in services:
-        # BFF spec is at openapi/{suite}/openapi_bff.yaml, not openapi/{suite}/bff/openapi.yaml
-        if bff_service_to_suite(project_root, svc) == suite:
-            spec_path = openapi_bff_path(project_root, suite)
-        else:
-            spec_path = project_root / "openapi" / suite / svc / "openapi.yaml"
-        impl_dir = project_root / "microservices" / suite / svc / "impl"
+        spec_path = resolve_service_openapi_spec_path(project_root, suite, svc)
+        impl_dir = resolve_service_microservice_dir(project_root, suite, svc) / "impl"
         if not spec_path.exists():
             print(f"⚠️  Skipping {svc}: spec not found at {spec_path}")
             continue

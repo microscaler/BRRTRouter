@@ -217,11 +217,11 @@ class TestEnsureImplScaffold:
     """When impl/ was deleted, 'hauliage gen stubs' should recreate it via _ensure_impl_scaffold."""
 
     def test_creates_impl_when_gen_exists_and_impl_missing(self, tmp_path: Path) -> None:
-        (tmp_path / "openapi" / "hauliage" / "company").mkdir(parents=True)
-        (tmp_path / "openapi" / "hauliage" / "company" / "openapi.yaml").write_text(
+        (tmp_path / "openapi" / "company").mkdir(parents=True)
+        (tmp_path / "openapi" / "company" / "openapi.yaml").write_text(
             "openapi: 3.1.0\ninfo:\n  title: company\n"
         )
-        gen_dir = tmp_path / "microservices" / "hauliage" / "company" / "gen"
+        gen_dir = tmp_path / "microservices" / "company" / "gen"
         gen_dir.mkdir(parents=True)
         (gen_dir / "Cargo.toml").write_text('[package]\nname = "hauliage_company_gen"\n')
         (gen_dir / "src").mkdir(parents=True)
@@ -229,7 +229,7 @@ class TestEnsureImplScaffold:
         (tmp_path / "microservices" / "Cargo.toml").write_text(
             '[workspace]\nmembers = ["company/gen"]\n'
         )
-        impl_dir = tmp_path / "microservices" / "hauliage" / "company" / "impl"
+        impl_dir = tmp_path / "microservices" / "company" / "impl"
         assert not impl_dir.exists()
 
         _ensure_impl_scaffold(tmp_path, "hauliage", "company")
@@ -246,8 +246,8 @@ class TestEnsureImplScaffold:
         assert "company/impl" in workspace
 
     def test_raises_when_gen_missing(self, tmp_path: Path) -> None:
-        (tmp_path / "openapi" / "hauliage" / "company").mkdir(parents=True)
-        (tmp_path / "openapi" / "hauliage" / "company" / "openapi.yaml").write_text(
+        (tmp_path / "openapi" / "company").mkdir(parents=True)
+        (tmp_path / "openapi" / "company" / "openapi.yaml").write_text(
             "openapi: 3.1.0\ninfo:\n  title: Company\n"
         )
         # No gen/ directory
@@ -257,10 +257,10 @@ class TestEnsureImplScaffold:
             _ensure_impl_scaffold(tmp_path, "hauliage", "company")
 
     def test_no_op_when_impl_already_exists(self, tmp_path: Path) -> None:
-        impl_dir = tmp_path / "microservices" / "hauliage" / "company" / "impl"
+        impl_dir = tmp_path / "microservices" / "company" / "impl"
         impl_dir.mkdir(parents=True)
         (impl_dir / "Cargo.toml").write_text("existing")
-        gen_dir = tmp_path / "microservices" / "hauliage" / "company" / "gen"
+        gen_dir = tmp_path / "microservices" / "company" / "gen"
         gen_dir.mkdir(parents=True)
         (gen_dir / "src").mkdir(parents=True)
         (gen_dir / "src" / "main.rs").write_text("fn main() {}")
@@ -278,11 +278,11 @@ class TestRegenerateImplStubsCreatesImplWhenMissing:
 
         from brrtrouter_tooling.workspace.bootstrap.microservice import regenerate_impl_stubs
 
-        (tmp_path / "openapi" / "hauliage" / "company").mkdir(parents=True)
-        (tmp_path / "openapi" / "hauliage" / "company" / "openapi.yaml").write_text(
+        (tmp_path / "openapi" / "company").mkdir(parents=True)
+        (tmp_path / "openapi" / "company" / "openapi.yaml").write_text(
             "openapi: 3.1.0\ninfo:\n  title: Company\n"
         )
-        gen_dir = tmp_path / "microservices" / "hauliage" / "company" / "gen"
+        gen_dir = tmp_path / "microservices" / "company" / "gen"
         gen_dir.mkdir(parents=True)
         (gen_dir / "Cargo.toml").write_text('[package]\nname = "hauliage_company_gen"\n')
         (gen_dir / "src").mkdir(parents=True)
@@ -290,7 +290,7 @@ class TestRegenerateImplStubsCreatesImplWhenMissing:
         (tmp_path / "microservices" / "Cargo.toml").write_text(
             '[workspace]\nmembers = ["company/gen"]\n'
         )
-        impl_dir = tmp_path / "microservices" / "hauliage" / "company" / "impl"
+        impl_dir = tmp_path / "microservices" / "company" / "impl"
         assert not impl_dir.exists()
 
         with patch(
@@ -305,18 +305,19 @@ class TestRegenerateImplStubsCreatesImplWhenMissing:
         assert (impl_dir / "config" / "config.yaml").exists()
         m_stubs.assert_called_once()
         call_args, _call_kw = m_stubs.call_args
+        assert str(call_args[0]).endswith("openapi/company/openapi.yaml")
         assert call_args[3] == "company"  # 4th positional is svc (service_name)
         assert call_args[1] == impl_dir
 
     def test_skips_when_gen_missing_and_impl_missing(self, tmp_path: Path) -> None:
         from brrtrouter_tooling.workspace.bootstrap.microservice import regenerate_impl_stubs
 
-        (tmp_path / "openapi" / "hauliage" / "company").mkdir(parents=True)
-        (tmp_path / "openapi" / "hauliage" / "company" / "openapi.yaml").write_text(
+        (tmp_path / "openapi" / "company").mkdir(parents=True)
+        (tmp_path / "openapi" / "company" / "openapi.yaml").write_text(
             "openapi: 3.1.0\ninfo:\n  title: Company\n"
         )
         # No gen/, no impl/
-        impl_dir = tmp_path / "microservices" / "hauliage" / "company" / "impl"
+        impl_dir = tmp_path / "microservices" / "company" / "impl"
         assert not impl_dir.exists()
 
         rc = regenerate_impl_stubs(tmp_path, "hauliage", service="company")
