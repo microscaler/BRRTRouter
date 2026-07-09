@@ -647,7 +647,11 @@ pub fn generate_project_with_options(
 }
 
 /// Sentinels that mark a handler as user-owned; when present, --force does not overwrite the body.
-pub const USER_OWNED_SENTINELS: &[&str] = &["// BRRTRouter: user-owned", "// Implemented"];
+pub const USER_OWNED_SENTINELS: &[&str] = &[
+    "// BRRTRouter: user-owned",
+    "// BRRTROUTER_USER_OWNED",
+    "// Implemented",
+];
 
 /// Returns true if the file content contains a user-owned sentinel (handler is protected from overwrite).
 fn file_has_user_owned_sentinel(content: &str) -> bool {
@@ -705,6 +709,7 @@ pub fn generate_impl_stubs(
     use crate::generator::templates::{
         update_impl_mod_rs, write_impl_cargo_toml, write_impl_controller_stub, write_impl_main_rs,
     };
+    use crate::generator::write_impl_registry_rs;
 
     // Load spec and routes
     let spec_str = spec_path
@@ -931,6 +936,12 @@ pub fn generate_impl_stubs(
             skipped.len(),
             skipped
         );
+    }
+
+    // Tier 1: always regenerate impl registry + controllers/mod.rs from disk (skip in --sync-only).
+    if !sync {
+        let impl_src_dir = impl_output_dir.join("src");
+        write_impl_registry_rs(&impl_src_dir, &routes)?;
     }
 
     Ok(())

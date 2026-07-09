@@ -104,12 +104,16 @@
 //! - `handler.rs.txt` - Handler function template
 //! - `controller.rs.txt` - Controller function template
 //! - `main.rs.txt` - Main binary template
-//! - `registry.rs.txt` - Handler registry template
+//! - `registry.rs.txt` - **Gen** crate mock handler registration (`register_from_spec`)
+//! - `impl_registry.rs.txt` - **Impl** crate business-logic registration (`register_impl`)
 //! - `Cargo.toml.txt` - Cargo manifest template
 //!
 //! Modify these templates to customize code generation.
 
 mod dependencies_config;
+mod impl_registry;
+mod migrate_main;
+mod migrate_registration;
 mod project;
 mod schema;
 mod stack_size;
@@ -118,6 +122,20 @@ mod templates;
 mod tests;
 
 pub use dependencies_config::*;
+pub use impl_registry::{
+    discover_impl_controllers, plan_impl_registry, plan_impl_registry_for_migration,
+    print_impl_registry_plan, regen_impl_registry, regen_impl_registry_from_routes,
+    write_impl_registry_from_plan, write_impl_registry_rs,
+    ImplRegistryEntry, ImplRegistryPlan,
+};
+pub use migrate_main::{
+    analyze_main_rs, migrate_main, print_main_migration_plan, MainMigrationPlan,
+    MigrateMainOptions,
+};
+pub use migrate_registration::{
+    analyze_migration, extract_main_match_handlers, migrate_registration, print_migration_report,
+    MigrateRegistrationOptions, MigrationReport,
+};
 pub use project::*;
 pub use schema::*;
 pub use stack_size::*;

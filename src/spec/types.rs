@@ -264,6 +264,10 @@ pub struct RouteMeta {
     pub x_service: Option<String>,
     /// Upstream target path derived from the x-brrtrouter-downstream-path extension
     pub x_brrtrouter_downstream_path: Option<String>,
+    /// Tri-state impl lifecycle marker from OpenAPI `x-brrtrouter-impl`.
+    /// `Some(true)` ⇒ real impl controller required; `Some(false)` ⇒ gen stub only;
+    /// `None` ⇒ legacy (warn if impl file exists on disk).
+    pub x_brrtrouter_impl: Option<bool>,
 }
 
 impl RouteMeta {

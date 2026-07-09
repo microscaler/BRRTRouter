@@ -172,7 +172,7 @@ pub struct ModRsTemplateData {
     pub modules: Vec<String>,
 }
 
-/// Template data for generating registry.rs (handler registration)
+/// Template data for generating **gen** crate `registry.rs` (mock controller registration).
 #[derive(Template)]
 #[template(path = "registry.rs.txt")]
 pub struct RegistryTemplateData {

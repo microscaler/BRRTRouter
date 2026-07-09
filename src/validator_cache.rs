@@ -869,6 +869,7 @@ mod tests {
         let route = RouteMeta {
             x_service: None,
             x_brrtrouter_downstream_path: None,
+            x_brrtrouter_impl: None,
             method: Method::POST,
             path_pattern: Arc::from("/test"),
             handler_name: Arc::from("test_handler"),
@@ -976,6 +977,7 @@ mod tests {
         let route = RouteMeta {
             x_service: None,
             x_brrtrouter_downstream_path: None,
+            x_brrtrouter_impl: None,
             method: Method::POST,
             path_pattern: Arc::from("/test"),
             handler_name: Arc::from("test_handler"),
@@ -1060,6 +1062,7 @@ mod tests {
         let route = RouteMeta {
             x_service: None,
             x_brrtrouter_downstream_path: None,
+            x_brrtrouter_impl: None,
             method: Method::POST,
             path_pattern: Arc::from("/multi"),
             handler_name: Arc::from("multi_handler"),

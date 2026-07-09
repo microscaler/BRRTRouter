@@ -77,16 +77,27 @@
 //! ```
 
 /// HTTP server implementation using may_minihttp
+pub mod app_config;
+pub mod cors_setup;
 pub mod header_intern;
 pub mod http_server;
 /// Request parsing and parameter extraction
 pub mod request;
 /// Response building and serialization
 pub mod response;
+/// Security provider registration from config.yaml
+pub mod security_setup;
 /// Core application service that handles requests
 pub mod service;
+/// Fix B: shared service bootstrap
+pub mod run_app;
 
 pub use request::{decode_param_value, parse_request, ParsedRequest};
 
+pub use app_config::{
+    load_app_config, ApiKeyConfig, AppConfig, BearerConfig, CorsConfig, HttpConfig, JwksConfig,
+    OAuth2Config, PropelAuthConfig, RemoteApiKeyConfig, SecurityConfig,
+};
 pub use http_server::{HttpServer, ServerHandle};
+pub use run_app::{RegisterHandlersFn, RunAppArgs, RunAppBuilder, RunAppHooks};
 pub use service::{health_endpoint, AppService};

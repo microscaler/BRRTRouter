@@ -99,6 +99,84 @@ pub enum Commands {
         #[arg(long, default_value_t = false)]
         sync: bool,
     },
+    /// Dry-run report for impl stub generation and registry (Tier 1 plan precursor)
+    PlanImpl {
+        /// Path to the OpenAPI specification file (YAML or JSON)
+        #[arg(short, long)]
+        spec: PathBuf,
+
+        /// Path to impl crate (e.g., microservices/fleet/impl)
+        #[arg(short, long)]
+        output: PathBuf,
+    },
+    /// Regenerate `impl/src/impl_registry.rs` from all controllers on disk (FR-REG-01).
+    ///
+    /// Does **not** overwrite controller bodies or stubs. Use when a new impl controller
+    /// exists on disk but was omitted by scoped `migrate-registration` (e.g. bidding
+    /// `save_draft_quote`). Default dry-run; pass `--apply` to write.
+    RegenImplRegistry {
+        /// Path to the OpenAPI specification file (YAML or JSON)
+        #[arg(short, long)]
+        spec: PathBuf,
+
+        /// Path to impl crate (e.g., microservices/bidding/impl)
+        #[arg(short, long)]
+        output: PathBuf,
+
+        /// Write impl_registry.rs (default: dry-run plan only)
+        #[arg(long, default_value_t = false)]
+        apply: bool,
+
+        /// Also regenerate controllers/mod.rs from disk (default: preserve existing mod.rs)
+        #[arg(long, default_value_t = false)]
+        regen_mod: bool,
+    },
+    /// Collapse legacy impl `main.rs` to Fix B `RunAppBuilder` (FR-MIG-05).
+    ///
+    /// Detects default port, lifeguard hooks, and DB warm from existing main.
+    /// Default dry-run; pass `--apply` to write. Skips if already migrated.
+    MigrateMain {
+        /// Path to impl crate (e.g., microservices/reviews/impl)
+        #[arg(short, long)]
+        output: PathBuf,
+
+        /// Write slim main.rs
+        #[arg(long, default_value_t = false)]
+        apply: bool,
+
+        /// Override detected default port
+        #[arg(long)]
+        default_port: Option<u16>,
+
+        /// Override detected startup banner name
+        #[arg(long)]
+        service_name: Option<String>,
+    },
+    /// Parity report and optional apply for impl_registry migration (FR-MIG-02)
+    ///
+    /// Compares manual main.rs match arms with disk-discovered controllers.
+    /// With `--apply`, writes impl_registry.rs and patches simple main.rs registration blocks.
+    MigrateRegistration {
+        /// Path to the OpenAPI specification file (YAML or JSON)
+        #[arg(short, long)]
+        spec: PathBuf,
+
+        /// Path to impl crate (e.g., microservices/fleet/impl)
+        #[arg(short, long)]
+        output: PathBuf,
+
+        /// Gen crate package name for import hints (optional)
+        #[arg(long)]
+        component_name: Option<String>,
+
+        /// Write impl_registry.rs, regenerate controllers/mod.rs, patch main.rs
+        #[arg(long, default_value_t = false)]
+        apply: bool,
+
+        /// Patch main.rs even when complex registration heuristics fire
+        #[arg(long, default_value_t = false)]
+        force_main: bool,
+    },
     /// Lint an OpenAPI specification
     ///
     /// Checks the specification for common issues and best practices:
@@ -218,6 +296,76 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
             )?;
             // Format generated stubs using the same implementation as generate
             crate::generator::format_project(output.as_path())?;
+            Ok(())
+        }
+        Commands::PlanImpl { spec, output } => {
+            let spec_str = spec
+                .to_str()
+                .ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 in spec path"))?;
+            let (routes, _slug) = crate::spec::load_spec(spec_str)?;
+            let controllers_dir = output.join("src").join("controllers");
+            let plan = crate::generator::plan_impl_registry(&routes, &controllers_dir)?;
+            crate::generator::print_impl_registry_plan(&plan, &controllers_dir);
+            if !plan.errors.is_empty() {
+                return Err(anyhow::anyhow!("plan failed with {} error(s)", plan.errors.len()).into());
+            }
+            Ok(())
+        }
+        Commands::RegenImplRegistry {
+            spec,
+            output,
+            apply,
+            regen_mod,
+        } => {
+            let plan = crate::generator::regen_impl_registry(
+                spec.as_path(),
+                output.as_path(),
+                *regen_mod,
+                !apply,
+            )?;
+            if *apply {
+                crate::generator::format_project(output.as_path())?;
+                println!(
+                    "✅ regen-impl-registry applied ({} controller(s))",
+                    plan.registry_entries.len()
+                );
+            }
+            Ok(())
+        }
+        Commands::MigrateMain {
+            output,
+            apply,
+            default_port,
+            service_name,
+        } => {
+            crate::generator::migrate_main(&crate::generator::MigrateMainOptions {
+                impl_output_dir: output.clone(),
+                apply: *apply,
+                default_port: *default_port,
+                service_name: service_name.clone(),
+            })?;
+            if *apply {
+                crate::generator::format_project(output.as_path())?;
+            }
+            Ok(())
+        }
+        Commands::MigrateRegistration {
+            spec,
+            output,
+            component_name,
+            apply,
+            force_main,
+        } => {
+            crate::generator::migrate_registration(&crate::generator::MigrateRegistrationOptions {
+                spec_path: spec.clone(),
+                impl_output_dir: output.clone(),
+                component_name: component_name.clone(),
+                apply: *apply,
+                force_main: *force_main,
+            })?;
+            if *apply {
+                crate::generator::format_project(output.as_path())?;
+            }
             Ok(())
         }
         Commands::Lint {

@@ -557,6 +557,24 @@ pub fn extract_stack_size_override(operation: &oas3::spec::Operation) -> Option<
         })
 }
 
+/// Extract the `x-brrtrouter-impl` tri-state marker from an OpenAPI operation.
+///
+/// Returns `Some(true)` when real impl is required, `Some(false)` for gen-stub-only,
+/// or `None` when omitted (legacy).
+pub fn extract_brrtrouter_impl(operation: &oas3::spec::Operation) -> Option<bool> {
+    operation
+        .extensions
+        .get("x-brrtrouter-impl")
+        .or_else(|| operation.extensions.get("brrtrouter-impl"))
+        .and_then(|v| {
+            if let Some(b) = v.as_bool() {
+                Some(b)
+            } else {
+                v.as_str().map(|s| s.eq_ignore_ascii_case("true"))
+            }
+        })
+}
+
 /// Build route metadata for all operations in an OpenAPI specification
 ///
 /// This is the main function that processes an OpenAPI spec and extracts all the
@@ -659,6 +677,8 @@ pub fn build_routes_with_security_presence(
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
 
+                let x_brrtrouter_impl = extract_brrtrouter_impl(operation);
+
                 routes.push(RouteMeta {
                     method,
                     // JSF P0-2: Use Arc<str> for O(1) cloning
@@ -682,6 +702,7 @@ pub fn build_routes_with_security_presence(
                     cors_policy,
                     x_service,
                     x_brrtrouter_downstream_path,
+                    x_brrtrouter_impl,
                 });
             }
         }

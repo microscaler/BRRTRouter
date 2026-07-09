@@ -255,6 +255,7 @@ mod tests {
         RouteMeta {
             x_service: None,
             x_brrtrouter_downstream_path: None,
+            x_brrtrouter_impl: None,
             method: Method::GET,
             path_pattern: Arc::from("/test"),
             handler_name: Arc::from("test_handler"),
