@@ -1,5 +1,30 @@
 # LLM Wiki Log
 
+## [2026-07-08] ship | Bidding Fix B migration (638 → 67 lines)
+
+- **`hauliage_bidding` impl main** now uses `RunAppBuilder`; lifeguard prometheus + DB warm hooks preserved.
+- All 6 quote controllers still in `impl_registry.rs` (incl. `save_draft_quote`); controller bodies untouched.
+- **Tier 1 Fix B complete** for all 17 hauliage impl services.
+
+## [2026-07-08] ship | Fix B rollout — migrate-main + 16 hauliage services
+
+- **`migrate-main` CLI:** analyzes legacy main (port, lifeguard, DB warm) and writes `RunAppBuilder` main.
+- **16/17 hauliage impls migrated** (~57–66 lines each); **bidding deferred**.
+- **Consignments fix:** lib-qualified `impl_registry` via `regen-impl-registry` (controllers use `crate::handlers`).
+
+## [2026-07-08] ship | Fix B `run_app()` pilot on hauliage customs
+
+- **`brrtrouter::server::run_app`:** full bootstrap (config, CORS, metrics, auth, HTTP server). Submodules: `cors_setup`, `security_setup`, `app_config`.
+- **Customs pilot:** `impl/src/main.rs` 636 → **66 lines**; `cargo check` OK on ms02. Lifeguard prometheus + DB warm via `RunAppHooks`.
+- **Template:** `templates/impl_main.rs.txt` emits `RunAppBuilder` for new impl crates.
+- **Bidding main still deferred** — use same hook pattern when rolled out after more pilots (reviews, telemetry, …).
+
+- **`regen-impl-registry`** CLI: full disk discovery; rewrites `impl_registry.rs` only (never controller bodies). Used to wire bidding `save_draft_quote` after scoped `migrate-registration` omitted it.
+- **Bidding:** all 6 quote controllers registered; `save_draft_quote.rs` DB upsert logic untouched. `impl/src/main.rs` (~638 lines) **deferred** for Fix B `run_app()` — see [`topics/impl-controller-lifecycle-rollout.md`](./topics/impl-controller-lifecycle-rollout.md).
+- **Decision:** modular bidding main **later** — pilot `run_app()` on customs/reviews first; bidding last (lifeguard prometheus hook, lib+bin, quoting-critical).
+- **Fix B foundation:** `brrtrouter::server::app_config`, `run_app::RunAppBuilder` (bootstrap extraction not complete).
+- **PRD:** [`docs/PRD_IMPL_CONTROLLER_LIFECYCLE.md`](../docs/PRD_IMPL_CONTROLLER_LIFECYCLE.md) — FR-MIG-04 shipped.
+
 ## [2026-04-21] decision | Phase 3.1–3.4 deferred indefinitely — reply slot infeasible
 
 Investigated deferred follow-ups to Phase 3 (custom reply slot replacing `may::sync::mpsc::channel()`). PRD file had been cleared; reconstructed from log.md and codebase analysis.

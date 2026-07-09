@@ -33,7 +33,7 @@ These are added to merged BFF specs by `brrtrouter_tooling.workspace.bff.generat
 
 | Extension | Where declared | Intended consumer (not yet wired) | Notes |
 |---|---|---|---|
-| `x-brrtrouter-impl` | Operation | BRRTRouter `impl_registry.rs.txt` template (planned — see hauliage `PRD_BFF_SCAFFOLDING_REMEDIATION.md` §7.6 Fix A) | `true` ⇒ impl controller wired + compile-time error if no impl file on disk; `false` ⇒ gen stub serves `example` payload intentionally (scaffold state). Already used as a convention in hauliage service OpenAPIs (152 ops covered; 144 `true`, 8 `false`). Enforcement ships when Fix A lands. |
+| `x-brrtrouter-impl` | Operation | BRRTRouter `impl_registry.rs.txt` template (Fix A — shipped 2026-07-08) | `true` ⇒ impl controller wired + codegen error if no impl file on disk; `false` ⇒ gen stub serves `example` payload intentionally (scaffold state). Already used as a convention in hauliage service OpenAPIs (152 ops covered; 144 `true`, 8 `false`). |
 
 ## Not recognised — common mistakes
 

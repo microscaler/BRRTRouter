@@ -4,9 +4,23 @@
 # Set minimum Tilt version
 version_settings(constraint='>=0.33.0')
 
-# Default cluster name `kind` → kubectl context `kind-kind` (see microscaler/shared-kind-cluster).
-# Legacy dedicated cluster context (older docs/scripts).
-allow_k8s_contexts(['kind-kind', 'kind-brrtrouter-dev'])
+# Default cluster: shared-k8s (Multipass k3s) when kubeconfig exists; legacy Kind otherwise.
+_SHARED_K8S_KCFG = os.path.abspath('../shared-k8s-cluster/kubeconfig/shared-k8s.yaml')
+_SHARED_K8S_REGISTRY = '10.177.76.220:5000'
+_k8s_mode = os.environ.get('TILT_K8S_CLUSTER', '').strip().lower()
+if _k8s_mode in ('kind', 'kind-kind'):
+    _use_shared_k8s = False
+elif _k8s_mode in ('shared-k8s', 'k3s'):
+    _use_shared_k8s = True
+else:
+    _use_shared_k8s = os.path.exists(_SHARED_K8S_KCFG)
+
+if _use_shared_k8s and os.path.exists(_SHARED_K8S_KCFG):
+    allow_k8s_contexts(['shared-k8s'])
+    os.putenv('KUBECONFIG', _SHARED_K8S_KCFG)
+    default_registry(_SHARED_K8S_REGISTRY)
+else:
+    allow_k8s_contexts(['kind-kind', 'kind-brrtrouter-dev'])
 
 # Tilt web UI: use **10353** to avoid 10350 (default Tilt / other stacks). Pass on the CLI:
 #   tilt up --port 10353
@@ -33,6 +47,8 @@ if _explicit_shared in ('0', 'false', 'no'):
     use_shared_kind_infra = False
 elif _explicit_shared in ('1', 'true', 'yes'):
     use_shared_kind_infra = True
+elif _use_shared_k8s and os.path.exists(_SHARED_K8S_KCFG):
+    use_shared_kind_infra = True
 else:
     use_shared_kind_infra = not is_ci
 
@@ -40,7 +56,8 @@ bundled_postgres_redis = not use_shared_kind_infra
 bundled_observability = bundled_postgres_redis and (not skip_observability)
 
 if use_shared_kind_infra:
-    print('ℹ️  Shared cluster infra: using Postgres/Redis in namespace data and OTEL/metrics in observability (shared-kind-cluster).')
+    _platform = 'shared-k8s' if (_use_shared_k8s and os.path.exists(_SHARED_K8S_KCFG)) else 'shared-kind-cluster'
+    print('ℹ️  Shared cluster infra (%s): Postgres/Redis in data, OTEL in observability.' % _platform)
 elif skip_observability:
     print('ℹ️  Observability stack skipped (TILT_SKIP_OBSERVABILITY). Postgres, Redis, and app still deploy.')
 

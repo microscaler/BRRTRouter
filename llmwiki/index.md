@@ -34,11 +34,13 @@
 - [Runtime stack map](./topics/runtime-stack-map.md) — spec → router → dispatcher → `server/service`
 - [BFF gateway merge and proxy headers](./topics/bff-gateway-merge-and-proxy-headers.md) — suite-config path keys, duplicate Content-Length fix
 - [Generator CLI and Askama](./topics/generator-cli-and-askama.md) — `brrtrouter_gen`, templates, Hauliage codegen pointers
+- [Impl controller lifecycle rollout](./topics/impl-controller-lifecycle-rollout.md) — Tier 1 registry, `regen-impl-registry`, **bidding main deferred**
 - [Sibling repos and wikis](./topics/sibling-repos-and-wikis.md) — Lifeguard + Hauliage + this repo
 - [Canonical docs vs WIP](./topics/canonical-docs-vs-wip.md) — how to treat `docs/wip/` vs maintained docs
 
 ## PRDs (active)
 
+- [Impl controller lifecycle — safe stub generation](../docs/PRD_IMPL_CONTROLLER_LIFECYCLE.md) — **Draft 2026-07-08:** Tier 1 registry, Tier 2 manifest/`imara-diff`, F5/F8 eradication; for review.
 - [Hot-path v2 — stability & perf](../docs/PRD_HOT_PATH_V2_STABILITY_AND_PERF.md) — stops per-response `Box::leak`, unbounded metrics keys, `RwLock` on hot path; adds Goose v2 harness. Targets Hauliage dev-env reboot cadence.
 
 ## Cross-references

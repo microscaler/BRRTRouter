@@ -3,7 +3,18 @@
 - **Status**: `verified`
 - **Source docs**: [`flows/code-generation-flow.md`](../flows/code-generation-flow.md)
 - **Code anchors**: `src/bin/brrtrouter_gen.rs`, `src/generator/`, `src/generator/templates.rs`, `templates/*.txt` (Askama templates for gen crates)
-- **Last updated**: 2026-04-17
+- **Last updated**: 2026-07-08
+
+## Tier 1 impl commands (2026-07-08)
+
+| Command | Purpose |
+|---------|---------|
+| `plan-impl` | Dry-run: list controllers that would register |
+| `migrate-registration [--apply]` | First migration: `impl_registry.rs` + patch `main.rs` (scoped to old match arms) |
+| `regen-impl-registry [--apply]` | Full disk discovery; **safe** for adding handlers like bidding `save_draft_quote` |
+| `migrate-main [--apply]` | Collapse legacy `main.rs` to Fix B `RunAppBuilder` |
+
+See [`topics/impl-controller-lifecycle-rollout.md`](../topics/impl-controller-lifecycle-rollout.md) — Fix B complete on all hauliage impls.
 
 ## What it is
 

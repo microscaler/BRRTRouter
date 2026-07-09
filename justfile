@@ -5,6 +5,9 @@
 default:
 	@just --list
 
+shared_k8s_root := "../shared-k8s-cluster"
+shared_k8s_kubeconfig := shared_k8s_root + "/kubeconfig/shared-k8s.yaml"
+
 # ============================================================================
 # Tooling (.venv and brrtrouter CLI)
 # ============================================================================
@@ -552,16 +555,22 @@ backup-before-upgrade:
 	@echo "✅ Pre-upgrade backup created"
 
 # ============================================================================
-# Local Development with Tilt + kind
+# Local Development with Tilt + shared-k8s
 # ============================================================================
-# Cluster lifecycle lives in microscaler/shared-kind-cluster (`just dev-up` / `just cluster-create`).
-# This repo only: registry (shared with other app Tilts) + wire nodes + `tilt up` against context kind-kind.
+# Cluster lifecycle lives in microscaler/shared-k8s-cluster (`just cluster-create` / `just infra-up`).
+# This repo: registry mirror + systemd Tilt against context shared-k8s.
 # Tilt UI port 10353 — avoids 10350 (default Tilt / Tiffany). Must pass `--port` on CLI; Tiltfile `os.putenv(TILT_PORT)` runs too late to bind.
 
-# Start local Docker registry on localhost:5001 (same pattern as shared-kind-cluster / hauliage)
+# Configure Docker + in-cluster registry mirror (shared-k8s MetalLB .220:5000).
 dev-registry:
 	#!/usr/bin/env bash
 	set -euo pipefail
+	SK_ROOT="{{shared_k8s_root}}"
+	if [[ -f "${SK_ROOT}/kubeconfig/shared-k8s.yaml" ]]; then
+		(cd "${SK_ROOT}" && just registry-configure-host) 2>/dev/null || true
+		echo "[OK] Docker configured for shared-k8s registry (localhost:5001 → MetalLB)"
+		exit 0
+	fi
 	reg_name='kind-registry'
 	reg_port='5001'
 	if ! docker ps -q -f name=^${reg_name}$ | grep -q .; then
@@ -620,7 +629,7 @@ dev-observability-verify:
 		fi
 	done
 
-# Wire localhost:5001 → kind-registry on existing Kind nodes (idempotent)
+# Wire localhost:5001 → kind-registry on existing Kind nodes (legacy Kind only; idempotent)
 dev-registry-wire:
 	#!/usr/bin/env bash
 	set -euo pipefail
@@ -638,52 +647,85 @@ dev-registry-wire:
 	kubectl apply -f k8s/core/local-registry-hosting.yaml 2>/dev/null || true
 	echo "[OK] Registry wired to Kind nodes"
 
-# Start Tilt against shared Kind (context kind-kind). Does NOT create/delete clusters.
-# Prerequisites: from microscaler/shared-kind-cluster run `just dev-up` once, OR:
-#   kind create cluster --config k8s/cluster/kind-config.yaml --wait 120s
+# Start Tilt against shared-k8s. Does NOT create/delete clusters.
+# Prerequisites: cd ../shared-k8s-cluster && just infra-up
 # Tilt UI: http://localhost:10353 (press 'space' to open)
 # Pet Store API: http://localhost:8081
 dev-up:
 	#!/usr/bin/env bash
 	set -euo pipefail
-	echo "Starting BRRTRouter Tilt (expects kubectl context kind-kind)..."
+	export KUBECONFIG="$(realpath {{shared_k8s_kubeconfig}})"
+	echo "Starting BRRTRouter Tilt (shared-k8s)..."
 	echo ""
 	just dev-registry
 	echo ""
-	if ! kubectl config get-contexts -o name 2>/dev/null | grep -qx 'kind-kind'; then
-		echo "[FAIL] kubectl context kind-kind not found."
-		echo "  Create the shared cluster: cd ../shared-kind-cluster && just dev-up"
-		echo "  Standalone clone: kind create cluster --config k8s/cluster/kind-config.yaml --wait 120s"
+	if [[ ! -f "${KUBECONFIG}" ]]; then
+		echo "[FAIL] shared-k8s kubeconfig missing."
+		echo "  Create it: cd {{shared_k8s_root}} && just cluster-create"
 		exit 1
 	fi
-	kubectl config use-context kind-kind
-	just dev-registry-wire
+	(cd "{{shared_k8s_root}}" && just check-ready) || exit 1
+	if ! kubectl get svc -n data minio >/dev/null 2>&1; then
+		echo "Platform Tilt not up — starting shared-k8s platform..."
+		(cd "{{shared_k8s_root}}" && just systemd-tilt-up) || true
+	fi
 	echo ""
-	echo "Starting Tilt on 0.0.0.0:10353 (LAN: http://<this-host>:10353/) (press 'space' to open web UI)..."
-	tilt up --host 0.0.0.0 --port 10353
+	echo "Starting BRRTRouter Tilt via systemd (port 10353)..."
+	systemctl --user start tilt-brrtrouter.service
+	for i in $(seq 1 60); do
+		if curl -sf http://localhost:10353/api/v1/info >/dev/null 2>&1; then
+			echo "Tilt is ready at http://0.0.0.0:10353"
+			exit 0
+		fi
+		sleep 2
+	done
+	echo "WARNING: Tilt did not become ready within 2 minutes"
+	exit 1
 
-# Stop Tilt only (leaves Kind cluster and kind-registry running for other repos)
+# Stop Tilt only (leaves shared-k8s cluster running for other repos)
 dev-down:
 	#!/usr/bin/env bash
 	set -euo pipefail
-	echo "Stopping Tilt..."
-	tilt down --port 10353 || true
+	echo "Stopping BRRTRouter Tilt service..."
+	systemctl --user stop tilt-brrtrouter.service || true
 	echo ""
-	echo "[OK] Tilt stopped (cluster + registry unchanged; delete cluster from shared-kind-cluster if needed)"
+	echo "[OK] Tilt stopped (shared-k8s cluster unchanged)"
+
+# Switch systemd unit to legacy Kind (other developers without shared-k8s).
+dev-enable-kind:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	dest="${HOME}/.config/systemd/user/tilt-brrtrouter.service.d"
+	mkdir -p "${dest}"
+	cp "{{shared_k8s_root}}/config/systemd-kind-override.example" "${dest}/kind.conf"
+	systemctl --user daemon-reload
+	systemctl --user restart tilt-brrtrouter.service
+	echo "BRRTRouter Tilt now uses Kind (TILT_K8S_CLUSTER=kind)"
+
+dev-disable-kind:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	rm -f "${HOME}/.config/systemd/user/tilt-brrtrouter.service.d/kind.conf"
+	systemctl --user daemon-reload
+	systemctl --user restart tilt-brrtrouter.service
+	echo "BRRTRouter Tilt restored to shared-k8s default"
 
 # Check development environment status
 dev-status:
-	@echo "kubectl context (expect kind-kind):"
-	@kubectl config current-context 2>/dev/null || echo "[FAIL] kubectl not configured"
-	@echo ""
-	@echo "KIND cluster status:"
-	@kind get clusters | grep '^kind$$' || echo "[FAIL] Cluster 'kind' not found"
-	@echo ""
-	@echo "Kubernetes pods:"
-	@kubectl get pods -n brrtrouter-dev 2>/dev/null || echo "[FAIL] Namespace not found"
-	@echo ""
-	@echo "Services:"
-	@kubectl get svc -n brrtrouter-dev 2>/dev/null || echo "[FAIL] No services found"
+	#!/usr/bin/env bash
+	set -euo pipefail
+	export KUBECONFIG="$(realpath {{shared_k8s_kubeconfig}} 2>/dev/null || echo {{shared_k8s_kubeconfig}})"
+	echo "kubectl context (expect shared-k8s):"
+	kubectl config current-context 2>/dev/null || echo "[FAIL] kubectl not configured"
+	echo ""
+	echo "shared-k8s cluster status:"
+	(cd "{{shared_k8s_root}}" && just check-ready) 2>/dev/null || echo "[FAIL] shared-k8s not ready — cd {{shared_k8s_root}} && just infra-up"
+	echo ""
+	echo "Kubernetes pods:"
+	kubectl get pods -n brrtrouter-dev 2>/dev/null || echo "[FAIL] Namespace not found"
+	echo ""
+	echo "Services:"
+	kubectl get svc -n brrtrouter-dev 2>/dev/null || echo "[FAIL] No services found"
 
 # Rebuild and redeploy (useful after major changes)
 dev-rebuild:

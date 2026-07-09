@@ -123,6 +123,26 @@ Sessions that skip this waste work. The wiki is the compounding artifact that ma
 
 `examples/pet_store/` is regenerated from `examples/openapi.yaml`. Any edit will be clobbered. Fix the spec or the template under `templates/` instead, then regenerate with `just gen`.
 
+### 1b. Impl controller stubs — user-owned sentinel (consumer repos)
+
+In hauliage, sesame-idam, rerp, and other BRRTRouter consumers, business logic lives in `microservices/<service>/impl/src/controllers/*.rs`. **`generate-stubs --force` overwrites unprotected files** with empty template stubs.
+
+When a controller contains real implementation (not a TODO stub), its **first line** must be one of these sentinels:
+
+```rust
+// BRRTRouter: user-owned
+```
+
+Also recognized: `// BRRTROUTER_USER_OWNED`, `// Implemented`.
+
+| Command | Behaviour |
+|---------|-----------|
+| `generate-stubs` (no flags) | Create **missing** stubs only; skip existing files |
+| `generate-stubs --sync` | Patch signature / `Response` on **sentinel-protected** files only |
+| `generate-stubs --force` | Overwrite **unprotected** stubs only; preserved if sentinel present |
+
+Authority: `src/generator/project/generate.rs` (`USER_OWNED_SENTINELS`), `templates/impl_controller_stub.rs.txt`.
+
 ### 2. Follow Rust conventions
 
 - `snake_case` for fns / modules, `CamelCase` for types, `SCREAMING_SNAKE_CASE` for constants.
