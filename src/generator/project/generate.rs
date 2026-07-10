@@ -314,6 +314,7 @@ pub fn generate_project_with_options(
                     &route.parameters,
                     route.sse,
                     route.x_service.is_some() && route.x_brrtrouter_downstream_path.is_some(),
+                    route.needs_http_json_return_type(),
                     force,
                 )?;
                 if existed && force {
@@ -351,6 +352,7 @@ pub fn generate_project_with_options(
                     route.x_service.clone(),
                     route.x_brrtrouter_downstream_path.clone(),
                     route.method.as_str().to_string(),
+                    route.needs_http_json_return_type(),
                 )?;
                 if existed && force {
                     updated.push(format!("controller: {controller_path:?}"));
@@ -821,6 +823,7 @@ pub fn generate_impl_stubs(
                 &response_fields,
                 route.sse,
                 route.example.as_ref(),
+                route.needs_http_json_return_type(),
             ) {
                 fs::write(&stub_path, new_content)?;
                 synced.push(handler.clone());
@@ -897,6 +900,7 @@ pub fn generate_impl_stubs(
             sse: route.sse,
             example: route.example.clone(),
             force,
+            uses_http_json: route.needs_http_json_return_type(),
         })?;
 
         if existed && force {
