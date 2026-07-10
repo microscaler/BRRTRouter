@@ -103,6 +103,25 @@ Sessions that skip this waste work. The wiki is the compounding artifact that ma
 - `cargo test router::tests::test_route_matching` — Single test by name.
 - `cargo test -- --ignored` — Ignored tests.
 
+### Desktop dev — build on ms02, remote Tilt trigger from Mac
+
+On Microscaler desktop dev (Mac editor, NFS on ms02), **run `cargo test` / `cargo clippy` on ms02**:
+
+```bash
+ssh ms02 'source ~/.cargo/env && cd ~/Workspace/microscaler/BRRTRouter && cargo test --lib'
+```
+
+Tilt: **systemd `tilt-brrtrouter.service`**, port **10353**. From Mac:
+
+```bash
+tilt trigger <resource> --host 192.168.1.189 --port 10353
+# or: cd ../shared-k8s-cluster && just tilt-remote-cycle brrtrouter <resource>
+```
+
+Tail logs via `just tilt-remote-logs brrtrouter <resource>` — not Mac `tilt logs` (version skew with ms02).
+
+Authority: [`../shared-k8s-cluster/docs/remote-tilt-workflow.md`](../shared-k8s-cluster/docs/remote-tilt-workflow.md).
+
 ### Coverage / bench / profiling
 
 - `just coverage` — Coverage report (must stay ≥80%).
