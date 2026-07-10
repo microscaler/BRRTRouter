@@ -274,6 +274,7 @@ where
                             .iter()
                             .map(|(k, v)| (k.to_string(), v.clone()))
                             .collect();
+                        let jwt_claims = req.jwt_claims.clone();
 
                         // STEP 1: Type conversion - consume the HandlerRequest to produce handler data
                         // This intentionally consumes `req` (no req.clone()) to avoid heavy copies.
@@ -297,6 +298,7 @@ where
                             path_params,
                             query_params,
                             data, // Strongly-typed request data
+                            jwt_claims,
                         };
 
                         // STEP 3: Call the actual handler
@@ -457,6 +459,7 @@ where
                             .iter()
                             .map(|(k, v)| (k.to_string(), v.clone()))
                             .collect();
+                        let jwt_claims = req.jwt_claims.clone();
 
                         // STEP 1: Type conversion - consume the HandlerRequest to produce handler data
                         // This intentionally consumes `req` (no req.clone()) to avoid heavy copies.
@@ -480,6 +483,7 @@ where
                             path_params,
                             query_params,
                             data, // Strongly-typed request data
+                            jwt_claims,
                         };
 
                         // STEP 3: Call the actual handler
@@ -551,6 +555,8 @@ pub struct TypedHandlerRequest<T> {
     pub query_params: HashMap<String, String>,
     /// Typed request data (validated and converted)
     pub data: T,
+    /// Decoded JWT claims when the route required authentication (BR-2).
+    pub jwt_claims: Option<serde_json::Value>,
 }
 
 impl<T> TypedHandlerFor<T> for TypedHandlerRequest<T>
@@ -577,6 +583,7 @@ where
                 .map(|(k, v)| (k.to_string(), v.clone()))
                 .collect(),
             data,
+            jwt_claims: req.jwt_claims,
         })
     }
 }
@@ -718,6 +725,7 @@ impl Dispatcher {
             let request_id = req.request_id;
 
             // Try to convert the request
+            let jwt_claims = req.jwt_claims.clone();
             let data = match H::Request::try_from(req.clone()) {
                 Ok(v) => v,
                 Err(err) => {
@@ -746,6 +754,7 @@ impl Dispatcher {
                     .map(|(k, v)| (k.to_string(), v.clone()))
                     .collect(),
                 data,
+                jwt_claims,
             };
 
             // Call the handler

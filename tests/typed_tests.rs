@@ -254,3 +254,52 @@ fn test_spawn_typed_http_json_status_without_panic() {
     assert_eq!(resp.status, 404);
     assert_eq!(resp.body["err"], "not here");
 }
+
+#[derive(Clone)]
+struct ClaimsEchoHandler;
+
+impl brrtrouter::typed::Handler for ClaimsEchoHandler {
+    type Request = SumReq;
+    type Response = SumResp;
+
+    fn handle(&self, req: brrtrouter::typed::TypedHandlerRequest<Self::Request>) -> Self::Response {
+        let sub = req
+            .jwt_claims
+            .as_ref()
+            .and_then(|c| c.get("sub"))
+            .and_then(|v| v.as_str())
+            .and_then(|s| s.parse::<i32>().ok())
+            .unwrap_or(0);
+        SumResp {
+            total: req.data.a + req.data.b + sub,
+        }
+    }
+}
+
+#[test]
+fn test_spawn_typed_preserves_jwt_claims() {
+    let tx = unsafe { brrtrouter::typed::spawn_typed(ClaimsEchoHandler) };
+    let (reply_tx, reply_rx) = mpsc::channel();
+    let q: ParamVec = smallvec![
+        (Arc::from("a"), "2".to_string()),
+        (Arc::from("b"), "3".to_string())
+    ];
+    tx.send(HandlerRequest {
+        request_id: brrtrouter::ids::RequestId::new(),
+        method: Method::GET,
+        path: "/sum".into(),
+        handler_name: "claims".into(),
+        path_params: ParamVec::new(),
+        query_params: q,
+        headers: HeaderVec::new(),
+        cookies: HeaderVec::new(),
+        body: None,
+        jwt_claims: Some(serde_json::json!({ "sub": "10" })),
+        reply_tx,
+        queue_guard: None,
+    })
+    .unwrap();
+    let resp = reply_rx.recv().unwrap();
+    assert_eq!(resp.status, 200);
+    assert_eq!(resp.body["total"], 15);
+}

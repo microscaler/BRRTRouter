@@ -52,21 +52,15 @@ Sesame-IDAM auth implementation (2026-07-06) exposed four framework gaps. Phase 
 
 ---
 
-## BR-2 — JWT claims in typed handlers (P2)
+## BR-2 — JWT claims in typed handlers (P2) ✅
 
-**Problem:** `TypedHandlerRequest<T>` conversion drops `HandlerRequest::jwt_claims`. Principal-dependent endpoints cannot use generated typed handlers.
+**Status:** Landed 2026-07-10.
 
-**Sesame workaround:** `identity-session-service/impl/src/raw_handler.rs` — manual `spawn_raw_handler` + `authenticated_principal()`.
+**Problem:** `TypedHandlerRequest<T>` conversion dropped `HandlerRequest::jwt_claims`. Principal-dependent endpoints could not use generated typed handlers.
 
-**Fix:** Extend typed dispatch to pass claims, e.g.:
+**Fix:** `TypedHandlerRequest<T>` now includes `jwt_claims: Option<Value>`, populated in `spawn_typed`, `spawn_typed_with_stack_size_and_name`, and `register_typed_with_pool`.
 
-- `AuthenticatedHandlerRequest<T>` with `claims: Option<JwtClaims>`, or
-- Second parameter on handler trait: `fn handle(req: T, ctx: &HandlerContext)`.
-
-**Acceptance:**
-
-- Handler registered for `BearerAuth` route receives non-empty claims after successful validation.
-- Existing handlers without auth unchanged.
+**Tests:** `tests/typed_tests.rs::test_spawn_typed_preserves_jwt_claims`.
 
 **Unblocks:** sesame **SI-3** — delete raw handler module for `/identity/me`, userinfo.
 
