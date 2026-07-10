@@ -58,6 +58,8 @@ pub struct ImplControllerStubParams<'a> {
     pub sse: bool,
     /// Optional example data for the response
     pub example: Option<Value>,
+    /// Whether the handler returns `HttpJson<T>` (multi-status / non-2xx typed responses).
+    pub uses_http_json: bool,
     /// Whether to overwrite existing files
     pub force: bool,
 }
@@ -211,6 +213,8 @@ pub struct HandlerTemplateData {
     pub sse: bool,
     /// Whether this handler acts as a transparent proxy
     pub is_proxy: bool,
+    /// Emit `HttpJson<Response>` when OpenAPI defines non-2xx JSON response schemas (BR-3)
+    pub uses_http_json: bool,
 }
 
 /// Template data for generating a controller module
@@ -247,6 +251,8 @@ pub struct ControllerTemplateData {
     pub proxy_path: String,
     /// The HTTP Method for the current path
     pub method: String,
+    /// Emit `HttpJson<Response>` when OpenAPI defines non-2xx JSON response schemas (BR-3)
+    pub uses_http_json: bool,
 }
 
 /// Write a handler module file
@@ -277,6 +283,7 @@ pub fn write_handler(
     params: &[ParameterMeta],
     sse: bool,
     is_proxy: bool,
+    uses_http_json: bool,
     force: bool,
 ) -> anyhow::Result<()> {
     if path.exists() && !force {
@@ -293,6 +300,7 @@ pub fn write_handler(
         parameters: params.to_vec(),
         sse,
         is_proxy,
+        uses_http_json,
     }
     .render()?;
     fs::write(path, rendered)?;
@@ -329,6 +337,7 @@ pub fn write_controller(
     downstream_service: Option<String>,
     downstream_path: Option<String>,
     method: String,
+    uses_http_json: bool,
 ) -> anyhow::Result<()> {
     if path.exists() && !force {
         println!("⚠️  Skipping existing controller file: {path:?}");
@@ -453,6 +462,7 @@ pub fn write_controller(
         proxy_service,
         proxy_path,
         method,
+        uses_http_json,
     };
     fs::write(path, context.render()?)?;
     println!("✅ Generated controller: {path:?}");
@@ -1216,6 +1226,8 @@ pub struct ImplControllerStubTemplateData {
     pub has_example: bool,
     /// Example response as JSON string
     pub example_json: String,
+    /// Emit `HttpJson<Response>` when OpenAPI defines non-2xx JSON response schemas (BR-3)
+    pub uses_http_json: bool,
 }
 
 /// Template data for generating implementation crate Cargo.toml
@@ -1327,6 +1339,7 @@ pub fn write_impl_controller_stub(params: ImplControllerStubParams) -> anyhow::R
         response_array_literal,
         has_example: params.example.is_some(),
         example_json,
+        uses_http_json: params.uses_http_json,
     };
 
     let rendered = stub_data.render()?;
@@ -1458,6 +1471,7 @@ pub fn sync_impl_stub_response(
     response_fields: &[FieldDef],
     sse: bool,
     example: Option<&Value>,
+    uses_http_json: bool,
 ) -> anyhow::Result<String> {
     if sse {
         return Err(anyhow::anyhow!("Sync not supported for SSE handlers"));
@@ -1489,26 +1503,44 @@ pub fn sync_impl_stub_response(
             }
         })
         .collect();
-    let new_block = format!(
-        "Response {{\n        {}\n    }}",
-        enriched
-            .iter()
-            .map(|f| {
-                let val = if f.optional {
-                    "None".to_string()
-                } else {
-                    f.value.clone()
-                };
-                format!("{}: {},", f.name, val)
-            })
-            .collect::<Vec<_>>()
-            .join("\n        ")
-    );
-    let needle = "Response {";
-    let start = content
-        .find(needle)
+    let new_block = if uses_http_json {
+        format!(
+            "HttpJson::ok(Response {{\n        {}\n    }})",
+            enriched
+                .iter()
+                .map(|f| {
+                    let val = if f.optional {
+                        "None".to_string()
+                    } else {
+                        f.value.clone()
+                    };
+                    format!("{}: {},", f.name, val)
+                })
+                .collect::<Vec<_>>()
+                .join("\n        ")
+        )
+    } else {
+        format!(
+            "Response {{\n        {}\n    }}",
+            enriched
+                .iter()
+                .map(|f| {
+                    let val = if f.optional {
+                        "None".to_string()
+                    } else {
+                        f.value.clone()
+                    };
+                    format!("{}: {},", f.name, val)
+                })
+                .collect::<Vec<_>>()
+                .join("\n        ")
+        )
+    };
+    let inner_needle = "Response {";
+    let inner_start = content
+        .find(inner_needle)
         .ok_or_else(|| anyhow::anyhow!("Response {{ not found"))?;
-    let after_brace = start + needle.len();
+    let after_brace = inner_start + inner_needle.len();
     let mut depth = 1u32;
     let mut i = after_brace;
     let bytes = content.as_bytes();
@@ -1523,10 +1555,50 @@ pub fn sync_impl_stub_response(
     if depth != 0 {
         return Err(anyhow::anyhow!("Unbalanced braces in Response block"));
     }
-    let end = i;
-    let mut out = content[..start].to_string();
+    let inner_end = i;
+
+    // Include optional `HttpJson::ok(` wrapper in the replace range when present.
+    let prefix = content[..inner_start].trim_end();
+    let had_http_json_wrap = prefix.ends_with("HttpJson::ok(");
+    let replace_start = if had_http_json_wrap {
+        prefix.len() - "HttpJson::ok(".len()
+    } else {
+        inner_start
+    };
+    let mut replace_end = inner_end;
+    if had_http_json_wrap && !uses_http_json {
+        if content.as_bytes().get(inner_end) == Some(&b')') {
+            replace_end = inner_end + 1;
+        }
+    }
+
+    let mut out = content[..replace_start].to_string();
     out.push_str(&new_block);
-    out.push_str(&content[end..]);
+    out.push_str(&content[replace_end..]);
+
+    // Patch handle() return type and ensure HttpJson import when needed.
+    let signature_from = if uses_http_json {
+        ") -> Response {"
+    } else {
+        ") -> HttpJson<Response> {"
+    };
+    let signature_to = if uses_http_json {
+        ") -> HttpJson<Response> {"
+    } else {
+        ") -> Response {"
+    };
+    if out.contains(signature_from) {
+        out = out.replace(signature_from, signature_to);
+    }
+    if uses_http_json && !out.contains("use brrtrouter::typed::HttpJson;") {
+        if let Some(pos) = out.find("use brrtrouter::typed::TypedHandlerRequest;") {
+            let insert_at = pos + "use brrtrouter::typed::TypedHandlerRequest;".len();
+            out.insert_str(insert_at, "\nuse brrtrouter::typed::HttpJson;");
+        }
+    } else if !uses_http_json {
+        out = out.replace("\nuse brrtrouter::typed::HttpJson;", "");
+    }
+
     Ok(out)
 }
 
