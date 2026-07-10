@@ -11,7 +11,8 @@ pub fn handle(req: HandlerRequest) -> HandlerResponse {
 {% else %}
 use brrtrouter_macros::handler;
 use brrtrouter::typed::TypedHandlerRequest;
-use crate::handlers::{{ handler_name }}::{ Request, Response };
+{% if uses_http_json %}use brrtrouter::typed::HttpJson;
+{% endif %}use crate::handlers::{{ handler_name }}::{ Request, Response };
 {% if sse %}use brrtrouter::sse;{% endif %}
 {% if imports.len() > 0 %}
 {% for import in imports -%}
@@ -21,7 +22,7 @@ use crate::handlers::types::{{ import }};
 {% endif %}
 
 #[handler({{ struct_name }})]
-pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
+pub fn handle(_req: TypedHandlerRequest<Request>) -> {% if uses_http_json %}HttpJson<Response>{% else %}Response{% endif %} {
     {% if sse %}
     let (tx, rx) = sse::channel();
     for i in 0..3 { tx.send(format!("tick {i}")); }
@@ -32,7 +33,7 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     // Example response:
 {{ example_json }}
     match serde_json::from_str::<Response>(r###"{{ example|safe }}"###) {
-        Ok(parsed) => return parsed,
+        Ok(parsed) => return {% if uses_http_json %}HttpJson::ok(parsed){% else %}parsed{% endif %},
         Err(e) => {
             eprintln!("Failed to parse mock example JSON into Response: {}", e);
             // Fallback to empty default structs below
@@ -40,13 +41,13 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     }
     {%- endif %}
     {% if response_is_array %}
-    Response({{ response_array_literal }})
+    {% if uses_http_json %}HttpJson::ok({% endif %}Response({{ response_array_literal }}){% if uses_http_json %}){% endif %}
     {% else %}
-    Response {
+    {% if uses_http_json %}HttpJson::ok({% endif %}Response {
         {% for field in response_fields -%}
         {{ field.name }}: {{ field.value }},
         {%- endfor %}
-    }
+    }{% if uses_http_json %}){% endif %}
     {% endif %}
     {% endif %}
 }

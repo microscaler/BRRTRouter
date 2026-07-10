@@ -5,7 +5,8 @@
 // ⚠️ To implement business logic, edit the corresponding controller file
 use serde::{Deserialize, Serialize};
 use brrtrouter::typed::TypedHandlerRequest;
-use brrtrouter::dispatcher::HandlerRequest;
+{% if uses_http_json %}use brrtrouter::typed::HttpJson;
+{% endif %}use brrtrouter::dispatcher::HandlerRequest;
 use std::convert::TryFrom;
 {% for import in imports -%}
 use crate::handlers::types::{{ import }};
@@ -96,7 +97,7 @@ impl TryFrom<HandlerRequest> for Request {
 
 {% if !is_proxy %}
 #[allow(dead_code)]
-pub fn handler(req: TypedHandlerRequest<Request>) -> Response {
+pub fn handler(req: TypedHandlerRequest<Request>) -> {% if uses_http_json %}HttpJson<Response>{% else %}Response{% endif %} {
     crate::controllers::{{ handler_name }}::handle(req)
 }
 {% endif %}

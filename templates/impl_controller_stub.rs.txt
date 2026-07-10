@@ -9,7 +9,8 @@
 use brrtrouter_macros::handler;
 use {{ rust_crate_ident }}::handlers::{{ handler_name }}::{Request, Response};
 use brrtrouter::typed::TypedHandlerRequest;
-{% if sse %}use brrtrouter::sse;{% endif %}
+{% if uses_http_json %}use brrtrouter::typed::HttpJson;
+{% endif %}{% if sse %}use brrtrouter::sse;{% endif %}
 {% if imports.len() > 0 %}
 {% for import in imports -%}
 #[allow(unused_imports)]
@@ -18,7 +19,7 @@ use {{ rust_crate_ident }}::handlers::types::{{ import }};
 {% endif %}
 
 #[handler({{ struct_name }})]
-pub fn handle(req: TypedHandlerRequest<Request>) -> Response {
+pub fn handle(req: TypedHandlerRequest<Request>) -> {% if uses_http_json %}HttpJson<Response>{% else %}Response{% endif %} {
     // TODO: Implement your business logic here
     // 
     // Example: Access request data
@@ -39,13 +40,12 @@ pub fn handle(req: TypedHandlerRequest<Request>) -> Response {
     Response(rx.collect())
     {% elif response_is_array %}
     // TODO: Return array of items from your business logic
-    Response({{ response_array_literal }})
+    {% if uses_http_json %}HttpJson::ok({% endif %}Response({{ response_array_literal }}){% if uses_http_json %}){% endif %}
     {% else %}
-    Response {
+    {% if uses_http_json %}HttpJson::ok({% endif %}Response {
 {%- for field in response_fields %}
         {{ field.name }}: {% if field.optional %}None{% else %}{{ field.value }}{% endif %}, // TODO: Set from your business logic
 {%- endfor %}
-    }
+    }{% if uses_http_json %}){% endif %}
     {% endif %}
 }
-

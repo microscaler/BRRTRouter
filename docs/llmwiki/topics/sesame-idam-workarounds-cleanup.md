@@ -66,22 +66,17 @@ Sesame-IDAM auth implementation (2026-07-06) exposed four framework gaps. Phase 
 
 ---
 
-## BR-3 — Typed error HTTP status (P2)
+## BR-3 — Typed error HTTP status (P2) ✅ 2026-07-10
 
 **Problem:** Typed handlers returning `Serialize` success types always map to HTTP 200. OAuth refresh failure in sesame returns empty `TokenResponse` at 200 instead of 401.
 
-**Partial solution exists:** `HttpJson<T>` for explicit status (see hauliage PRD). Gap is **codegen** — generated handler stubs don't use `HttpJson` for multi-response OpenAPI operations.
-
-**Fix:**
-
-- Teach `brrtrouter-gen` to emit `HttpJson<T>` when operation defines non-2xx response schemas with bodies, or
-- Document + enforce “auth error paths → raw handler or `HandlerResponse`” in sesame only.
+**Shipped:** Runtime `HttpJson<T>` existed; **codegen** now emits `HttpJson<Response>` when `RouteMeta::needs_http_json_return_type()` — operation has a non-2xx `application/json` response schema. Controller + impl stubs wrap success in `HttpJson::ok(...)`; `--sync` patches signature and return literal.
 
 **Acceptance:**
 
 - Operation with `401` + `ErrorResponse` schema can return 401 from typed handler without raw dispatch.
 
-**Unblocks:** sesame **SI-4** — `auth_refresh` OAuth-compliant errors.
+**Unblocks:** sesame **SI-4** — `auth_refresh` OAuth-compliant errors (consumer must declare `401` JSON schema in OpenAPI).
 
 ---
 

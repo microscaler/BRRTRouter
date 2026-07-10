@@ -5,7 +5,7 @@ use brrtrouter::generator::{
     write_controller, write_handler, write_impl_controller_stub, write_impl_main_rs, write_impl_registry_rs,
     write_main_rs, write_registry_rs, ImplControllerStubParams, RegistryEntry,
 };
-use brrtrouter::spec::{ParameterMeta, RouteMeta};
+use brrtrouter::spec::{ParameterMeta, ResponseSpec, RouteMeta};
 use http::Method;
 use std::collections::{BTreeSet, HashMap};
 use std::fs;
@@ -58,6 +58,7 @@ fn test_template_writers() {
         &params,
         false,
         true,
+        false,
         true,
     )
     .unwrap();
@@ -74,6 +75,7 @@ fn test_template_writers() {
         None,
         None,
         "crate::AppState".to_string(),
+        false,
     )
     .unwrap();
 
@@ -190,6 +192,7 @@ fn impl_controller_stub_maps_hyphenated_package_in_use_lines() {
         sse: false,
         example: None,
         force: true,
+        uses_http_json: false,
     })
     .unwrap();
 
@@ -247,6 +250,7 @@ fn proxy_controller_template_delegates_to_shared_module() {
         Some("fleet".to_string()),
         Some("/api/v1/fleet/vehicles".to_string()),
         "GET".to_string(),
+        false,
     )
     .unwrap();
 
@@ -341,6 +345,89 @@ fn impl_registry_renders_arms_for_discovered_controllers() {
     let mod_rs = fs::read_to_string(controllers_dir.join("mod.rs")).unwrap();
     assert!(mod_rs.contains("pub mod add_pet;"));
     assert!(mod_rs.contains("pub mod list_pets;"));
+
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn controller_emits_http_json_when_operation_has_non_2xx_json_schema() {
+    let dir = temp_dir();
+    let controllers_dir = dir.join("controllers");
+    fs::create_dir_all(&controllers_dir).unwrap();
+
+    let res_fields = vec![FieldDef {
+        name: "access_token".into(),
+        original_name: "access_token".into(),
+        ty: "String".into(),
+        optional: false,
+        value: "\"token\".to_string()".into(),
+    }];
+
+    let mut responses = HashMap::new();
+    let mut ok = HashMap::new();
+    ok.insert(
+        "application/json".to_string(),
+        ResponseSpec {
+            schema: Some(serde_json::json!({"type":"object","properties":{"access_token":{"type":"string"}}})),
+            example: None,
+        },
+    );
+    responses.insert(200, ok);
+    let mut unauthorized = HashMap::new();
+    unauthorized.insert(
+        "application/json".to_string(),
+        ResponseSpec {
+            schema: Some(serde_json::json!({"type":"object","properties":{"error":{"type":"string"}}})),
+            example: None,
+        },
+    );
+    responses.insert(401, unauthorized);
+
+    let route = RouteMeta {
+        method: Method::POST,
+        path_pattern: "/oauth/token".into(),
+        handler_name: "auth_refresh".into(),
+        parameters: vec![],
+        request_schema: None,
+        request_body_required: false,
+        request_content_types: Vec::new(),
+        response_schema: Some(serde_json::json!({"type":"object","properties":{"access_token":{"type":"string"}}})),
+        example: None,
+        responses,
+        security: vec![],
+        example_name: String::new(),
+        project_slug: String::new(),
+        output_dir: PathBuf::new(),
+        base_path: String::new(),
+        sse: false,
+        estimated_request_body_bytes: None,
+        x_brrtrouter_stack_size: None,
+        cors_policy: brrtrouter::middleware::RouteCorsPolicy::Inherit,
+        x_service: None,
+        x_brrtrouter_downstream_path: None,
+        x_brrtrouter_impl: Some(true),
+    };
+    assert!(route.needs_http_json_return_type());
+
+    write_controller(
+        &controllers_dir.join("auth_refresh.rs"),
+        "auth_refresh",
+        "AuthRefreshController",
+        &res_fields,
+        None,
+        false,
+        true,
+        None,
+        None,
+        "POST".to_string(),
+        route.needs_http_json_return_type(),
+    )
+    .unwrap();
+
+    let content = fs::read_to_string(controllers_dir.join("auth_refresh.rs")).unwrap();
+    assert!(content.contains("use brrtrouter::typed::HttpJson;"));
+    assert!(content.contains("-> HttpJson<Response>"));
+    assert!(content.contains("HttpJson::ok(Response {"));
 
     fs::remove_dir_all(&dir).unwrap();
 }

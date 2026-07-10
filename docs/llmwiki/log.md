@@ -77,3 +77,12 @@ When benches move to a **new ms02** or new CPU, reset Criterion baselines on tha
 ## [2026-07-07] Hauliage Wave 2 complete
 
 HI-7 verified (`73744df`), company smoke 2/2, consignments JWKS, BFF login 200 (30s client timeout for ~10s bcrypt login).
+
+## [2026-07-10] feat | BR-3 — HttpJson codegen for multi-response OpenAPI ops
+
+- `RouteMeta::needs_http_json_return_type()` — true when operation declares non-2xx `application/json` response schema (excludes SSE).
+- Templates: `controller.rs.txt`, `handler.rs.txt`, `impl_controller_stub.rs.txt` emit `HttpJson<Response>` + `HttpJson::ok(...)` success path.
+- `--sync` patches impl stub signature/import and `HttpJson::ok(Response { ... })` literal.
+- Test: `controller_emits_http_json_when_operation_has_non_2xx_json_schema`.
+
+**Unblocks:** sesame SI-4 (`auth_refresh` OAuth 401) — consumer OpenAPI must include `401` JSON schema.

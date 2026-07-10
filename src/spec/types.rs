@@ -281,6 +281,25 @@ impl RouteMeta {
             .and_then(|m| m.keys().next())
             .cloned()
     }
+
+    /// True when codegen should emit `HttpJson<Response>` for this operation.
+    ///
+    /// Triggered when the OpenAPI operation declares at least one **non-2xx**
+    /// response with an `application/json` body schema (BR-3). Runtime validation
+    /// already compiles those schemas; typed handlers need `HttpJson` to return
+    /// matching status codes without panicking.
+    pub fn needs_http_json_return_type(&self) -> bool {
+        if self.sse {
+            return false;
+        }
+        self.responses.iter().any(|(status, content_types)| {
+            !(200..300).contains(status)
+                && content_types
+                    .get("application/json")
+                    .and_then(|spec| spec.schema.as_ref())
+                    .is_some()
+        })
+    }
 }
 
 /// Metadata for a single parameter in an API route
