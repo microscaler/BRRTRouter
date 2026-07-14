@@ -12,10 +12,13 @@ pub struct {{ type_name }} {
     {% if field.original_name != field.name %}
     #[serde(rename = "{{ field.original_name }}")]
     {% endif %}
+    {% if field.optional %}
+    #[serde(skip_serializing_if = "Option::is_none")]
+    {% endif %}
     {% if field.original_name == "type" %}
-    pub r#type: {{ field.ty }},
+    pub r#type: {% if field.optional %}Option<{{ field.ty }}>{% else %}{{ field.ty }}{% endif %},
     {% else %}
-    pub {{ field.name }}: {{ field.ty }},
+    pub {{ field.name }}: {% if field.optional %}Option<{{ field.ty }}>{% else %}{{ field.ty }}{% endif %},
     {% endif %}
     {% endfor -%}
 }

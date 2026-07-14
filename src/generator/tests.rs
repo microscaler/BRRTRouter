@@ -525,6 +525,31 @@ fn test_write_types_rs_renders_string_enum() {
 }
 
 #[test]
+fn test_write_types_rs_preserves_optional_component_fields() {
+    let schema = json!({
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+            "id": { "type": "string" },
+            "tax": { "$ref": "#/components/schemas/TaxFact" },
+            "type": { "type": "string" }
+        }
+    });
+    let mut types = std::collections::HashMap::new();
+    process_schema_type("invoice_line", &schema, &mut types);
+    let dir = temp_dir();
+
+    write_types_rs(&dir, &types).unwrap();
+
+    let generated = fs::read_to_string(dir.join("types.rs")).unwrap();
+    assert!(generated.contains("pub id: String,"));
+    assert!(generated.contains("pub tax: Option<TaxFact>,"));
+    assert!(generated.contains("pub r#type: Option<String>,"));
+    assert!(generated.contains("#[serde(skip_serializing_if = \"Option::is_none\")]"));
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
 fn test_process_schema_type_deduplicates_sanitized_enum_variants() {
     let schema = json!({"type": "string", "enum": ["FOO-BAR", "foo_bar"]});
     let mut types = std::collections::HashMap::new();
