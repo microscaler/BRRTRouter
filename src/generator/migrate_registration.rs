@@ -1049,6 +1049,8 @@ use hauliage_consignments_gen::*;
 use hauliage_consignments::controllers;
 "#;
         let out = insert_impl_registry_mod(inline);
-        assert!(out.contains("#![allow(clippy::uninlined_format_args)]\nmod impl_registry;\nuse "));
+        assert!(out.contains(
+            "#![allow(clippy::uninlined_format_args)]\nmod controllers;\nmod impl_registry;\nuse "
+        ));
     }
 }

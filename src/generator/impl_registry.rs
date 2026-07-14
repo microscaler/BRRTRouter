@@ -17,7 +17,7 @@ use crate::spec::RouteMeta;
 pub struct ImplRegistryEntry {
     /// Handler / module name (`operationId`, snake_case).
     pub name: String,
-    /// Typed controller struct (empty when `is_untyped`).
+    /// Typed controller struct or untyped handler function name.
     pub controller_struct: String,
     /// Coroutine stack size in bytes.
     pub stack_size_bytes: usize,
@@ -426,7 +426,7 @@ mod tests {
             "pub fn handle(req: HandlerRequest) -> HandlerResponse { HandlerResponse::empty() }";
         let (untyped, name) = detect_controller_kind(content, "create_organization");
         assert!(untyped);
-        assert!(name.is_empty());
+        assert_eq!(name, "handle");
     }
 
     #[test]
