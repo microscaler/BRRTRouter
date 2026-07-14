@@ -601,6 +601,46 @@ fn test_response_body_validation_failure() {
 }
 
 #[test]
+fn test_no_content_skips_body_validation_and_writes_no_body() {
+    fn no_content_handler(req: HandlerRequest) {
+        let response = HandlerResponse {
+            status: 204,
+            headers: HeaderVec::new(),
+            // Deliberately does not satisfy the configured response schema.
+            // Bodyless statuses must not validate or serialize this sentinel.
+            body: json!({}),
+        };
+        let _ = req.reply_tx.send(response);
+    }
+
+    let response_schema = Some(json!({
+        "type": "object",
+        "properties": {"error": {"type": "string"}},
+        "required": ["error"]
+    }));
+
+    let server = CustomServerTestFixture::with_handler_and_schemas(
+        "no_content",
+        no_content_handler,
+        "/no-content",
+        Method::POST,
+        None,
+        response_schema,
+    );
+
+    let resp = send_request(
+        &server.addr(),
+        "POST /no-content HTTP/1.1\r\nHost: localhost\r\n\r\n",
+    );
+    let (status, _content_type, body) = parse_response_parts(&resp);
+    assert_eq!(status, 204);
+    assert!(
+        body.is_empty(),
+        "204 response must not contain a body: {body:?}"
+    );
+}
+
+#[test]
 fn test_invalid_http_method_rejected() {
     // Test that invalid HTTP methods are properly handled
     // This test verifies that parse_request() returns Result and errors are handled correctly

@@ -1,5 +1,5 @@
 use super::request::{parse_request, ParsedRequest};
-use super::response::{write_handler_response, write_json_error};
+use super::response::{response_status_allows_body, write_handler_response, write_json_error};
 use crate::dispatcher::Dispatcher;
 use crate::ids::RequestId;
 use crate::middleware::MetricsMiddleware;
@@ -1657,15 +1657,17 @@ impl HttpService for AppService {
                     let has_content_type = headers
                         .iter()
                         .any(|(k, _)| k.eq_ignore_ascii_case("content-type"));
-                    if !has_content_type {
+                    if response_status_allows_body(hr.status) && !has_content_type {
                         if let Some(ct) = route_match.route.content_type_for(hr.status) {
                             // JSF P2: Use Arc::from for header names (O(1) clone, no allocation)
                             headers.push((Arc::from("content-type"), ct));
                         }
                     }
-                    if let Some(schema) =
+                    if let Some(schema) = if response_status_allows_body(hr.status) {
                         response_body_schema_for_status(&route_match.route, hr.status)
-                    {
+                    } else {
+                        None
+                    } {
                         // V6: Response validation start
                         debug!(
                             handler = %route_match.handler_name,

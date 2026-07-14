@@ -2,6 +2,17 @@ use crate::dispatcher::HeaderVec;
 use may_minihttp::Response;
 use serde_json::Value;
 
+/// Whether an HTTP status permits a response body.
+///
+/// RFC 9110 forbids content on informational responses, 204, and 304; 205 also
+/// requires a zero-length response. Handlers may still use a JSON value as an
+/// internal sentinel, but it must not be validated or written on the wire.
+#[inline]
+#[must_use]
+pub(crate) fn response_status_allows_body(status: u16) -> bool {
+    !(100..200).contains(&status) && !matches!(status, 204 | 205 | 304)
+}
+
 fn status_reason(status: u16) -> &'static str {
     match status {
         200 => "OK",
@@ -44,6 +55,9 @@ pub fn write_handler_response(
             continue;
         }
         res.header(format!("{k}: {v}"));
+    }
+    if !response_status_allows_body(status) {
+        return;
     }
     match body {
         Value::String(s) => {

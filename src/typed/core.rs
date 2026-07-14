@@ -9,6 +9,7 @@ use serde::Serialize;
 use serde_json;
 use std::collections::HashMap;
 use std::convert::TryFrom;
+use std::sync::Arc;
 use tracing::error;
 
 // ---------------------------------------------------------------------------
@@ -73,6 +74,36 @@ impl<T: Serialize + Send + 'static> HandlerResponseOutput for HttpJson<T> {
     fn into_handler_response(self) -> Result<HandlerResponse, serde_json::Error> {
         let body = serde_json::to_value(self.body)?;
         Ok(HandlerResponse::json(self.status, body))
+    }
+}
+
+/// HTTP redirect response (e.g. OAuth authorize URL).
+///
+/// Returns the given status (typically **302** or **303**) with a `Location` header
+/// and an empty JSON object body.
+#[derive(Debug)]
+pub struct HttpRedirect {
+    /// HTTP status (302 Found or 303 See Other).
+    pub status: u16,
+    /// Absolute URL for the `Location` header.
+    pub location: String,
+}
+
+impl HttpRedirect {
+    #[must_use]
+    pub fn found(location: impl Into<String>) -> Self {
+        Self {
+            status: 302,
+            location: location.into(),
+        }
+    }
+}
+
+impl HandlerResponseOutput for HttpRedirect {
+    fn into_handler_response(self) -> Result<HandlerResponse, serde_json::Error> {
+        let mut headers = HeaderVec::new();
+        headers.push((Arc::from("location"), self.location));
+        Ok(HandlerResponse::new(self.status, headers, serde_json::json!({})))
     }
 }
 
@@ -904,6 +935,19 @@ mod tests {
         let hr = typed_handler_output_to_response(HttpJson::new(404, E { msg: "gone" }), None);
         assert_eq!(hr.status, 404);
         assert_eq!(hr.body["msg"], "gone");
+    }
+
+    #[test]
+    fn test_http_redirect_sets_location_header() {
+        let hr = typed_handler_output_to_response(
+            HttpRedirect::found("https://accounts.google.com/o/oauth2/v2/auth?state=abc"),
+            None,
+        );
+        assert_eq!(hr.status, 302);
+        assert_eq!(
+            hr.get_header("location"),
+            Some("https://accounts.google.com/o/oauth2/v2/auth?state=abc")
+        );
     }
 
     #[test]
