@@ -1,7 +1,7 @@
 ---
 title: Sesame-IDAM Workarounds — BRRTRouter Cleanup Tasks
 status: verified
-updated: 2026-07-07
+updated: 2026-07-14
 ---
 
 # Sesame-IDAM Workarounds — BRRTRouter Cleanup Tasks
@@ -98,15 +98,19 @@ Sesame-IDAM auth implementation (2026-07-06) exposed four framework gaps. Phase 
 
 ---
 
-## BR-6 — Zero direct/transitive `reqwest` (P3)
+## BR-6 — Zero production `reqwest` (P3) ✅
 
-**Status:** Production security providers migrated to `brrtrouter::http` (Phase 1, 2026-07-06). Remaining `reqwest` is OTEL HTTP exporter + optional jsonschema network.
+**Status:** Landed 2026-07-14. Production security providers use
+`may_minihttp::client::HttpClient` for HTTP and rustls-backed HTTPS. The normal dependency graph
+contains neither `reqwest` nor AWS-LC.
 
-**Fix:**
+**Implementation:**
 
-- Disable HTTP OTLP exporter feature; grpc-tonic only.
-- Pin jsonschema without remote fetch if possible.
-- Remove direct `reqwest` from `Cargo.toml` once tree is clean.
+- OTLP egress is delegated to `microscaler-observability`'s gRPC/Tonic adapter.
+- `jsonschema` has default features disabled because schemas are resolved locally.
+- Direct `reqwest` is a dev-dependency only. It remains for Docker UI multipart/deadline tests and
+  the async Goose/Prometheus load harness; ordinary protocol and security tests use the production
+  native client.
 
 See sesame [`topic-http-client-policy.md`](../../../../seasame-idam/docs/llmwiki/topics/topic-http-client-policy.md).
 

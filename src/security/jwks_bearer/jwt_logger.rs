@@ -53,7 +53,7 @@
 use serde::Serialize;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 
 /// Decision source classification for structured logging.
 ///
@@ -71,6 +71,8 @@ pub enum DecisionSource {
     Denylist,
     /// claims.ver < cached_ver.
     VersionMismatch,
+    /// Authoritative denylist/version dependency was unavailable or claims were invalid.
+    TokenStatus,
     /// Route was online-only, always called authz-core.
     OnlineOnly,
 }
@@ -85,6 +87,7 @@ impl DecisionSource {
             Self::FallbackOnline => "fallback_online",
             Self::Denylist => "denylist",
             Self::VersionMismatch => "version_mismatch",
+            Self::TokenStatus => "token_status",
             Self::OnlineOnly => "online_only",
         }
     }

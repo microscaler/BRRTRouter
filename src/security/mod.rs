@@ -196,28 +196,27 @@
 //!
 //! ```rust,no_run
 //! use brrtrouter::dispatcher::HandlerRequest;
-//! use reqwest::blocking::Client;
+//! use brrtrouter::http::{fetch_get, HttpFetchOptions};
 //!
 //! fn bff_handler(req: HandlerRequest) -> Result<(), Box<dyn std::error::Error>> {
-//!     let client = Client::new();
-//!     let mut downstream_req = client.get("http://downstream-service/api/data");
+//!     let mut options = HttpFetchOptions::default();
 //!
 //!     // Forward JWT token (Option 1: Forward original token)
 //!     if let Some(token) = req.get_header("authorization") {
-//!         downstream_req = downstream_req.header("Authorization", token);
+//!         options.extra_headers.push(("Authorization".into(), token.into()));
 //!     }
 //!
 //!     // Forward claims as headers (Option 2: Extract and forward claims)
 //!     if let Some(claims) = &req.jwt_claims {
 //!         if let Some(user_id) = claims.get("sub").and_then(|v| v.as_str()) {
-//!             downstream_req = downstream_req.header("X-User-ID", user_id);
+//!             options.extra_headers.push(("X-User-ID".into(), user_id.into()));
 //!         }
 //!         if let Some(email) = claims.get("email").and_then(|v| v.as_str()) {
-//!             downstream_req = downstream_req.header("X-User-Email", email);
+//!             options.extra_headers.push(("X-User-Email".into(), email.into()));
 //!         }
 //!     }
 //!
-//!     let response = downstream_req.send()?;
+//!     let _response = fetch_get("http://downstream-service/api/data", &options)?;
 //!     // ... handle response
 //!     Ok(())
 //! }
@@ -247,6 +246,9 @@ use crate::dispatcher::HeaderVec;
 use crate::router::ParamVec;
 use crate::spec::SecurityScheme;
 use serde_json::Value;
+
+/// JWT algorithm type used by [`JwksBearerProvider`] configuration.
+pub use jsonwebtoken::Algorithm as JwtAlgorithm;
 
 /// Cache statistics for JWT claims cache
 #[derive(Debug, Clone, Copy)]
@@ -357,6 +359,12 @@ pub trait SecurityProvider: Send + Sync {
     /// * `Some(Value)` - The extracted claims/information as JSON
     /// * `None` - No claims available or provider doesn't support claims extraction
     ///
+    /// # Security
+    ///
+    /// This method does not establish authorization by itself. Callers must invoke it only after
+    /// [`SecurityProvider::validate`] succeeds for the same provider, scheme, and request. The
+    /// server runtime enforces that ordering before dispatching claims to a handler.
+    ///
     /// # Default Implementation
     ///
     /// Returns `None` by default. Providers that support claims extraction should
@@ -369,7 +377,7 @@ pub trait SecurityProvider: Send + Sync {
 
 // Re-export all providers
 pub use bearer_jwt::BearerJwtProvider;
-pub use jwks_bearer::JwksBearerProvider;
+pub use jwks_bearer::{JwksBearerProvider, JwtTokenStatus, JwtTokenStatusChecker};
 pub use oauth2::OAuth2Provider;
 pub use remote_api_key::RemoteApiKeyProvider;
 pub use spiffe::{

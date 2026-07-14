@@ -207,8 +207,8 @@ fn proxy_untyped_inner(
     let method = Method::from_bytes(req.method.as_str().as_bytes())
         .map_err(|e| ProxyError::InvalidMethod(e.to_string()))?;
 
-    let mut client = HttpClient::connect(target_ip)
-        .map_err(|e| ProxyError::Connect(e.to_string()))?;
+    let mut client =
+        HttpClient::connect(target_ip).map_err(|e| ProxyError::Connect(e.to_string()))?;
     client.set_timeout(Some(proxy_timeout()));
 
     let mut proxy_req = client.new_request(method, uri);
@@ -226,15 +226,21 @@ fn proxy_untyped_inner(
         }
     }
 
-    if proxy_req.headers().get(http_legacy::header::ACCEPT).is_none() {
+    if proxy_req
+        .headers()
+        .get(http_legacy::header::ACCEPT)
+        .is_none()
+    {
         if let Ok(safe_accept) = http_legacy::header::HeaderValue::from_str("application/json") {
-            proxy_req.headers_mut().insert(http_legacy::header::ACCEPT, safe_accept);
+            proxy_req
+                .headers_mut()
+                .insert(http_legacy::header::ACCEPT, safe_accept);
         }
     }
 
     if let Some(body_json) = &req.body {
-        let body_bytes = serde_json::to_vec(body_json)
-            .map_err(|e| ProxyError::BodySerialize(e.to_string()))?;
+        let body_bytes =
+            serde_json::to_vec(body_json).map_err(|e| ProxyError::BodySerialize(e.to_string()))?;
         proxy_req
             .send(&body_bytes)
             .map_err(|e| ProxyError::Request(e.to_string()))?;
@@ -311,11 +317,8 @@ mod tests {
         let mut query_params = ParamVec::new();
         query_params.push((Arc::from("limit"), "10".to_string()));
 
-        let path = resolve_path_template(
-            "/api/v1/fleet/vehicles/{id}",
-            &path_params,
-            &query_params,
-        );
+        let path =
+            resolve_path_template("/api/v1/fleet/vehicles/{id}", &path_params, &query_params);
         assert_eq!(path, "/api/v1/fleet/vehicles/abc?limit=10");
     }
 
@@ -323,10 +326,7 @@ mod tests {
     fn downstream_host_uses_pod_namespace_when_set() {
         let _lock = ENV_LOCK.lock().unwrap();
         std::env::set_var("POD_NAMESPACE", "hauliage");
-        assert_eq!(
-            downstream_host("fleet"),
-            "fleet.hauliage.svc.cluster.local"
-        );
+        assert_eq!(downstream_host("fleet"), "fleet.hauliage.svc.cluster.local");
         std::env::remove_var("POD_NAMESPACE");
     }
 
@@ -354,8 +354,10 @@ mod tests {
 
     #[test]
     fn client_pool_key_formats_host_port() {
-        assert_eq!(client_pool_key("fleet.hauliage.svc.cluster.local", 8080),
-            "fleet.hauliage.svc.cluster.local:8080");
+        assert_eq!(
+            client_pool_key("fleet.hauliage.svc.cluster.local", 8080),
+            "fleet.hauliage.svc.cluster.local:8080"
+        );
     }
 
     #[test]

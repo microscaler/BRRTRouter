@@ -8,8 +8,9 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
-use brrtrouter::dispatcher::{HeaderVec, ParamVec};
+use brrtrouter::dispatcher::HeaderVec;
 use brrtrouter::http::{fetch_get, fetch_get_text_with_retry, HttpFetchOptions};
+use brrtrouter::router::ParamVec;
 use brrtrouter::security::{RemoteApiKeyProvider, SecurityProvider, SecurityRequest};
 use brrtrouter::spec::SecurityScheme;
 
@@ -36,14 +37,16 @@ fn write_response(stream: &mut TcpStream, status: u16, body: &str) {
 }
 
 /// Bind an ephemeral port and serve `responses` in order (last response repeats).
-fn start_sequential_server(responses: Vec<(u16, &'static str)>) -> (String, thread::JoinHandle<()>) {
+fn start_sequential_server(
+    responses: Vec<(u16, &'static str)>,
+) -> (String, thread::JoinHandle<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     let base = format!("http://{}:{}/resource", addr.ip(), addr.port());
     let handle = thread::spawn(move || {
         let mut index = 0usize;
         for incoming in listener.incoming() {
-            let Ok((mut stream, _)) = incoming else {
+            let Ok(mut stream) = incoming else {
                 break;
             };
             let _req = read_request(&mut stream);
@@ -67,7 +70,7 @@ fn start_api_key_verify_server(max_connections: usize) -> (String, thread::JoinH
     let url = format!("http://{}:{}/verify", addr.ip(), addr.port());
     let handle = thread::spawn(move || {
         for incoming in listener.incoming().take(max_connections) {
-            let Ok((mut stream, _)) = incoming else {
+            let Ok(mut stream) = incoming else {
                 break;
             };
             let req = read_request(&mut stream);
@@ -151,10 +154,8 @@ fn fetch_get_http_sends_extra_headers() {
 
 #[test]
 fn fetch_get_text_with_retry_succeeds_after_transient_failure() {
-    let (url, handle) = start_sequential_server(vec![
-        (503, "unavailable"),
-        (200, r#"{"keys":[]}"#),
-    ]);
+    let (url, handle) =
+        start_sequential_server(vec![(503, "unavailable"), (200, r#"{"keys":[]}"#)]);
     let options = HttpFetchOptions {
         timeout: Duration::from_secs(2),
         max_body_bytes: 4096,
@@ -226,7 +227,10 @@ fn fetch_get_jwks_shaped_document_via_retry_helper() {
 
     let body = fetch_get_text_with_retry(&url, &options, 2).expect("jwks body");
     let parsed: serde_json::Value = serde_json::from_str(&body).unwrap();
-    assert!(parsed.get("keys").and_then(|k| k.as_array()).is_some_and(|a| !a.is_empty()));
+    assert!(parsed
+        .get("keys")
+        .and_then(|k| k.as_array())
+        .is_some_and(|a| !a.is_empty()));
     drop(handle);
 }
 
@@ -238,9 +242,7 @@ fn jwks_bearer_provider_loads_keys_via_http_fetch() {
     let secret = b"http-fetch-jwks-secret";
     let kid = "fetch-kid";
     let k = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(secret);
-    let jwks = format!(
-        r#"{{"keys":[{{"kty":"oct","kid":"{kid}","k":"{k}","alg":"HS256"}}]}}"#
-    );
+    let jwks = format!(r#"{{"keys":[{{"kty":"oct","kid":"{kid}","k":"{k}","alg":"HS256"}}]}}"#);
 
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
@@ -274,8 +276,7 @@ fn jwks_bearer_provider_loads_keys_via_http_fetch() {
         "aud": "test-aud",
         "exp": now + 3600,
     });
-    let token =
-        jsonwebtoken::encode(&header, &claims, &EncodingKey::from_secret(secret)).unwrap();
+    let token = jsonwebtoken::encode(&header, &claims, &EncodingKey::from_secret(secret)).unwrap();
 
     let mut headers: HeaderVec = HeaderVec::new();
     headers.push((Arc::from("authorization"), format!("Bearer {token}")));
@@ -299,12 +300,18 @@ fn jwks_bearer_provider_loads_keys_via_http_fetch() {
 fn fetch_post_http_sends_json_body() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
-    let url = format!("http://{}:{}/authz/principals/effective", addr.ip(), addr.port());
+    let url = format!(
+        "http://{}:{}/authz/principals/effective",
+        addr.ip(),
+        addr.port()
+    );
     let server = thread::spawn(move || {
         if let Ok((mut stream, _)) = listener.accept() {
             let req = read_request(&mut stream);
             assert!(req.starts_with("POST "));
-            assert!(req.to_ascii_lowercase().contains("content-type: application/json"));
+            assert!(req
+                .to_ascii_lowercase()
+                .contains("content-type: application/json"));
             write_response(&mut stream, 200, r#"{"roles":[{"role":"OWNER"}]}"#);
         }
     });
@@ -312,10 +319,7 @@ fn fetch_post_http_sends_json_body() {
     let options = HttpFetchOptions {
         timeout: Duration::from_secs(2),
         max_body_bytes: 4096,
-        extra_headers: vec![(
-            "content-type".to_string(),
-            "application/json".to_string(),
-        )],
+        extra_headers: vec![("content-type".to_string(), "application/json".to_string())],
     };
     let (status, body) =
         brrtrouter::http::fetch_post(&url, br#"{"user_id":"u1"}"#, &options).unwrap();

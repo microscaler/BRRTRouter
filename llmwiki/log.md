@@ -213,3 +213,29 @@ Hauliage Phase 3 unblockers for Vite dev proxy and frontend-aligned BFF routes.
 - **Runtime:** `proxy.rs` — do not forward downstream `Content-Length`; `write_handler_response()` skips handler-supplied `content-length` before `body_vec()` (fixes Node/Vite `Duplicate Content-Length` → 502).
 - **Tests:** Python `TestGatewayPublicPath`, merge tests; Rust `test_write_handler_response_ignores_incoming_content_length`.
 - **Wiki:** [`topics/bff-gateway-merge-and-proxy-headers.md`](./topics/bff-gateway-merge-and-proxy-headers.md).
+
+## [2026-07-13] chore | consume merged may_minihttp native client
+
+- Removed the sibling-path override for `may_minihttp`; the workspace now validates the published Microscaler branch.
+- `Cargo.lock` resolves `integration/microscaler-fork` at merge commit `6041097`.
+- Renamed stale `may_http` helper/test labels to `may_minihttp`.
+- Verification on ms02: `cargo check -p brrtrouter --all-features`; 20 focused `http::` unit tests passed.
+
+## [2026-07-14] feat | native rustls HTTPS through may_minihttp
+
+- Unified security-provider HTTP and HTTPS fetches on `may_minihttp::client::HttpClient`.
+- Moved platform certificate verification, rustls transport setup, URL default ports, and `Host`
+  header handling into `may_minihttp`; BRRTRouter no longer owns a parallel raw TLS response parser.
+- Kept runtime cryptography on rustls with the ring provider and disabled AWS-LC in the native
+  client. `reqwest` remains a development-only dependency for existing E2E/load tests.
+- Added focused HTTP fetch and local-CA HTTPS coverage; bounded response and timeout behavior are
+  unchanged.
+## [2026-07-14] feat | Dynamic JWT status enforcement boundary
+
+- Added `JwtTokenStatusChecker` to `JwksBearerProvider`; consumer denylist/version checks run after
+  cryptographic validation on both claims-cache hits and misses.
+- Non-active and dependency-unavailable decisions fail closed behind BRRTRouter's uniform 401.
+- Clarified `SecurityProvider::extract_claims` as post-validation and avoided a duplicate dynamic
+  lookup that would otherwise force unsafe negative caching in Sesame.
+- Focused P0 hardening suite passes 7/7. See
+  [`dynamic-token-status-hook.md`](./topics/dynamic-token-status-hook.md) and Sesame ADR-003.

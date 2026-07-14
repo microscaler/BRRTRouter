@@ -1934,7 +1934,7 @@ Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS
 **Slow:**
 ```rust
 pub fn slow_handler(req: HandlerRequest) {
-    // Synchronous blocking call (blocks coroutine)
+    // reqwest::blocking owns a separate blocking runtime and does not use may's socket scheduler.
     let data = reqwest::blocking::get("https://api.example.com/data")
         .unwrap()
         .json()
@@ -1946,11 +1946,13 @@ pub fn slow_handler(req: HandlerRequest) {
 **Fast:**
 ```rust
 pub fn fast_handler(req: HandlerRequest) {
-    // Async call (doesn't block coroutine)
-    let data = reqwest::get("https://api.example.com/data")
-        .await?
-        .json()
-        .await?;
+    // The native client yields through may::net::TcpStream; HTTPS is handled by rustls.
+    let options = brrtrouter::http::HttpFetchOptions::default();
+    let (_status, body) = brrtrouter::http::fetch_get(
+        "https://api.example.com/data",
+        &options,
+    )?;
+    let data: serde_json::Value = serde_json::from_slice(&body)?;
     // ...
 }
 ```
@@ -2193,8 +2195,9 @@ let pet_id = match req.path_params.get("id").and_then(|s| s.parse::<i64>().ok())
 **Solution:**
 
 ```rust
-// ✅ Use async I/O
-let response = reqwest::get("https://api.com").await?;
+// ✅ Use coroutine-native I/O (plain HTTP or rustls-backed HTTPS)
+let options = brrtrouter::http::HttpFetchOptions::default();
+let response = brrtrouter::http::fetch_get("https://api.com", &options)?;
 
 // ✅ Batch queries
 let pets = db.query("SELECT * FROM pets WHERE id IN (?)", pet_ids).await?;
@@ -2320,4 +2323,3 @@ This document covered the complete request lifecycle in BRRTRouter:
 - Check [Tilt Implementation](./TILT_IMPLEMENTATION.md) for local dev setup
 
 **Questions?** Open an issue: [GitHub Issues](https://github.com/microscaler/BRRTRouter/issues)
-

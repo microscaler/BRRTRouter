@@ -170,7 +170,7 @@ impl SecurityProvider for RemoteApiKeyProvider {
                 return ok;
             }
         }
-        // Remote verify via coroutine-compatible HTTP client (may_http / rustls)
+        // Remote verify via coroutine-compatible HTTP client (may_minihttp / rustls)
         let options = crate::http::HttpFetchOptions {
             timeout: Duration::from_millis(self.timeout_ms),
             max_body_bytes: 4096,

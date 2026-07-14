@@ -37,6 +37,8 @@
 - [Impl controller lifecycle rollout](./topics/impl-controller-lifecycle-rollout.md) — Tier 1 registry, `regen-impl-registry`, **bidding main deferred**
 - [Sibling repos and wikis](./topics/sibling-repos-and-wikis.md) — Lifeguard + Hauliage + this repo
 - [Canonical docs vs WIP](./topics/canonical-docs-vs-wip.md) — how to treat `docs/wip/` vs maintained docs
+- [Native HTTP client and TLS policy](./topics/native-http-client-and-tls.md) — production rustls transport and test-only `reqwest` exceptions
+- [Dynamic JWT token-status hook](./topics/dynamic-token-status-hook.md) — consumer-supplied denylist/version checks on JWKS cache hits and misses, fail-closed status, and extraction ordering
 
 ## PRDs (active)
 

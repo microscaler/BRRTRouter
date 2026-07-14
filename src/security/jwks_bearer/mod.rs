@@ -16,8 +16,9 @@ use std::time::{Duration, Instant};
 use tracing::{debug, warn, Level};
 use url::Url;
 
-// P3: Supported JWT algorithms - whitelist for security and code simplification
-// Includes EC (ES256) and EdDSA (Ed25519) for asymmetric signing per Epic 1 design.
+// Algorithms supported by jsonwebtoken's rust_crypto backend. Each provider should configure
+// the smallest issuer-specific subset with `allowed_algorithms`; this full set remains the
+// backward-compatible default for existing BRRTRouter consumers.
 pub(super) const SUPPORTED_ALGORITHMS: &[jsonwebtoken::Algorithm] = &[
     jsonwebtoken::Algorithm::HS256,
     jsonwebtoken::Algorithm::HS384,
@@ -25,9 +26,46 @@ pub(super) const SUPPORTED_ALGORITHMS: &[jsonwebtoken::Algorithm] = &[
     jsonwebtoken::Algorithm::RS256,
     jsonwebtoken::Algorithm::RS384,
     jsonwebtoken::Algorithm::RS512,
+    jsonwebtoken::Algorithm::PS256,
+    jsonwebtoken::Algorithm::PS384,
+    jsonwebtoken::Algorithm::PS512,
     jsonwebtoken::Algorithm::ES256,
+    jsonwebtoken::Algorithm::ES384,
     jsonwebtoken::Algorithm::EdDSA,
 ];
+
+/// Dynamic status of a cryptographically valid JWT.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JwtTokenStatus {
+    /// Token is current and not revoked.
+    Active,
+    /// Token `jti` has been explicitly revoked.
+    Revoked,
+    /// Token version is older than authoritative subject or tenant state.
+    Stale,
+    /// The authoritative status dependency could not be queried.
+    Unavailable,
+    /// Required status claims are missing or malformed.
+    Invalid,
+}
+
+/// Consumer-supplied dynamic token-status check.
+///
+/// BRRTRouter owns signature and standard-claim validation. Identity systems can attach this
+/// hook for denylist and version checks that depend on their authoritative state.
+pub trait JwtTokenStatusChecker: Send + Sync {
+    /// Evaluate a cryptographically validated JWT's claims.
+    fn check(&self, claims: &serde_json::Value) -> JwtTokenStatus;
+}
+
+impl<F> JwtTokenStatusChecker for F
+where
+    F: Fn(&serde_json::Value) -> JwtTokenStatus + Send + Sync,
+{
+    fn check(&self, claims: &serde_json::Value) -> JwtTokenStatus {
+        self(claims)
+    }
+}
 
 /// Whether an HTTP (non-TLS) JWKS URL host is permitted.
 ///
@@ -44,6 +82,9 @@ pub struct JwksBearerProvider {
     pub(super) iss: Option<String>,
     pub(super) aud: Option<String>,
     pub(super) leeway_secs: u64,
+    /// Algorithms accepted for this provider. This is configuration, not token input.
+    pub(super) allowed_algorithms: Vec<jsonwebtoken::Algorithm>,
+    token_status_checker: Option<Arc<dyn JwtTokenStatusChecker>>,
     cache_ttl: Duration,
     // P1: Shared cache_ttl for background thread to read current value
     // Stored as milliseconds (u64) in AtomicU64 for lock-free reads
@@ -57,6 +98,10 @@ pub struct JwksBearerProvider {
     // P1: Condition variable to notify waiting threads when refresh completes
     // Waiting threads use wait_timeout to be woken immediately when refresh finishes
     refresh_complete: Arc<(Mutex<()>, Condvar)>,
+    // Unknown-kid refreshes bypass the normal JWKS TTL so newly rotated keys can be used
+    // immediately. A cooldown prevents attacker-controlled kids from causing a fetch storm.
+    unknown_kid_refresh_cooldown: Duration,
+    last_unknown_kid_refresh: Mutex<Option<Instant>>,
     // P1: Background refresh task handle for lifecycle management
     background_handle: Option<Arc<RwLock<Option<JoinHandle<()>>>>>,
     // P1: Shutdown flag for graceful background thread termination
@@ -153,11 +198,15 @@ impl JwksBearerProvider {
             iss: None,
             aud: None,
             leeway_secs: 30,
+            allowed_algorithms: SUPPORTED_ALGORITHMS.to_vec(),
+            token_status_checker: None,
             cache_ttl: Duration::from_secs(300),
             cache_ttl_millis: cache_ttl_millis.clone(),
             cache: cache.clone(),
             refresh_in_progress: refresh_in_progress.clone(),
             refresh_complete: refresh_complete.clone(),
+            unknown_kid_refresh_cooldown: Duration::from_secs(1),
+            last_unknown_kid_refresh: Mutex::new(None),
             claims_cache: std::sync::RwLock::new(LruCache::new(
                 NonZeroUsize::new(1000).expect("claims_cache_size must be > 0"),
             )),
@@ -209,6 +258,59 @@ impl JwksBearerProvider {
     pub fn leeway(mut self, secs: u64) -> Self {
         self.leeway_secs = secs;
         self
+    }
+
+    /// Restrict JWT algorithms accepted by this provider.
+    ///
+    /// The token header is untrusted input. Consumers SHOULD configure the smallest set that
+    /// their issuer publishes, for example only [`jsonwebtoken::Algorithm::EdDSA`]. Algorithms
+    /// outside BRRTRouter's supported set are rejected during startup configuration.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `algorithms` is empty or contains an unsupported algorithm. This builder is
+    /// intended for startup configuration, where an invalid security policy must fail fast.
+    #[allow(clippy::panic)]
+    pub fn allowed_algorithms(mut self, algorithms: &[jsonwebtoken::Algorithm]) -> Self {
+        if algorithms.is_empty() {
+            panic!("allowed_algorithms must contain at least one algorithm");
+        }
+        if let Some(unsupported) = algorithms
+            .iter()
+            .find(|algorithm| !SUPPORTED_ALGORITHMS.contains(algorithm))
+        {
+            panic!("unsupported JWT algorithm in allowed_algorithms: {unsupported:?}");
+        }
+        self.allowed_algorithms = algorithms.to_vec();
+        self
+    }
+
+    /// Configure the minimum interval between forced JWKS refreshes for unknown key IDs.
+    ///
+    /// Unknown kids bypass the normal JWKS cache TTL to support key rotation. The cooldown
+    /// bounds attacker-triggered network traffic. The default is one second.
+    pub fn unknown_kid_refresh_cooldown(mut self, cooldown: Duration) -> Self {
+        self.unknown_kid_refresh_cooldown = cooldown;
+        self
+    }
+
+    /// Attach a dynamic denylist/version checker.
+    ///
+    /// The checker runs after cryptographic and standard-claim validation on both cache hits and
+    /// misses. Any result other than [`JwtTokenStatus::Active`] rejects the token.
+    pub fn token_status_checker(mut self, checker: Arc<dyn JwtTokenStatusChecker>) -> Self {
+        self.token_status_checker = Some(checker);
+        self
+    }
+
+    pub(super) fn algorithm_allowed(&self, algorithm: jsonwebtoken::Algorithm) -> bool {
+        self.allowed_algorithms.contains(&algorithm)
+    }
+
+    pub(super) fn check_token_status(&self, claims: &serde_json::Value) -> JwtTokenStatus {
+        self.token_status_checker
+            .as_ref()
+            .map_or(JwtTokenStatus::Active, |checker| checker.check(claims))
     }
 
     /// Configure the TTL for cached JWKS keys
@@ -589,11 +691,14 @@ impl JwksBearerProvider {
                     continue;
                 }
 
-                // RSA public keys for RS* algorithms
+                // RSA public keys for PKCS#1 v1.5 (RS*) and RSA-PSS (PS*) algorithms
                 if kty.eq_ignore_ascii_case("RSA")
                     && (alg.eq_ignore_ascii_case("RS256")
                         || alg.eq_ignore_ascii_case("RS384")
-                        || alg.eq_ignore_ascii_case("RS512"))
+                        || alg.eq_ignore_ascii_case("RS512")
+                        || alg.eq_ignore_ascii_case("PS256")
+                        || alg.eq_ignore_ascii_case("PS384")
+                        || alg.eq_ignore_ascii_case("PS512"))
                 {
                     let n = match k.get("n").and_then(|v| v.as_str()) {
                         Some(v) => v,
@@ -611,9 +716,7 @@ impl JwksBearerProvider {
 
                 // EC public keys for ES* algorithms
                 if kty.eq_ignore_ascii_case("EC")
-                    && (alg.eq_ignore_ascii_case("ES256")
-                        || alg.eq_ignore_ascii_case("ES384")
-                        || alg.eq_ignore_ascii_case("ES512"))
+                    && (alg.eq_ignore_ascii_case("ES256") || alg.eq_ignore_ascii_case("ES384"))
                 {
                     let x = match k.get("x").and_then(|v| v.as_str()) {
                         Some(v) => v,
@@ -953,6 +1056,51 @@ impl JwksBearerProvider {
         }
     }
 
+    /// Force one bounded JWKS refresh after an unknown `kid` cache miss.
+    ///
+    /// The refresh is globally coalesced by `refresh_in_progress` and rate-limited by
+    /// `unknown_kid_refresh_cooldown`. A caller that loses the refresh race waits for the
+    /// in-flight refresh instead of starting another network request.
+    fn refresh_jwks_for_unknown_kid(&self) {
+        let should_start = match self.last_unknown_kid_refresh.lock() {
+            Ok(mut last_refresh) => {
+                let cooldown_elapsed = last_refresh
+                    .as_ref()
+                    .is_none_or(|instant| instant.elapsed() >= self.unknown_kid_refresh_cooldown);
+                if cooldown_elapsed {
+                    *last_refresh = Some(Instant::now());
+                }
+                cooldown_elapsed
+            }
+            Err(_) => false,
+        };
+
+        if should_start
+            && self
+                .refresh_in_progress
+                .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+                .is_ok()
+        {
+            Self::refresh_jwks_internal(
+                &self.cache,
+                &self.jwks_url,
+                &self.refresh_in_progress,
+                &self.refresh_complete,
+                true,
+            );
+            return;
+        }
+
+        if self.refresh_in_progress.load(Ordering::Acquire) {
+            let (lock, cvar) = &*self.refresh_complete;
+            if let Ok(guard) = lock.lock() {
+                let _ = cvar.wait_timeout_while(guard, Duration::from_secs(2), |_| {
+                    self.refresh_in_progress.load(Ordering::Acquire)
+                });
+            }
+        }
+    }
+
     /// Get decoding key for a given key ID (kid)
     ///
     /// P1: Non-blocking - uses lock-free reads (RwLock) and triggers refresh in background.
@@ -983,12 +1131,21 @@ impl JwksBearerProvider {
             }
         }
 
-        // Re-read to return the actual key
+        // Re-read to return the actual key.
         if let Ok(guard) = self.cache.read() {
-            guard.1.get(kid).cloned()
-        } else {
-            None
+            if let Some(key) = guard.1.get(kid).cloned() {
+                return Some(key);
+            }
         }
+
+        // A cache can be fresh while the issuer has just rotated to a new kid. Force a
+        // coalesced, rate-limited refresh rather than rejecting until the normal TTL expires.
+        self.refresh_jwks_for_unknown_kid();
+
+        self.cache
+            .read()
+            .ok()
+            .and_then(|guard| guard.1.get(kid).cloned())
     }
 }
 
@@ -1021,6 +1178,10 @@ impl Drop for JwksBearerProvider {
 ///
 /// - **HMAC**: HS256, HS384, HS512 (symmetric keys)
 /// - **RSA**: RS256, RS384, RS512 (asymmetric keys)
+/// - **EC/OKP**: ES256 and EdDSA (asymmetric keys)
+///
+/// Consumers can restrict this default compatibility set with
+/// [`JwksBearerProvider::allowed_algorithms`].
 ///
 /// # JWKS Caching
 ///

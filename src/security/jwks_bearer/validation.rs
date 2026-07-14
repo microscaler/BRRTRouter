@@ -7,7 +7,7 @@
 //! All JWT fields (issuer, subject, client_id, session_id, jti, token_version,
 //! actor_subject) are extracted from claims and logged with appropriate log levels.
 
-use crate::security::jwks_bearer::{DecisionSource, JwtLogFields, JwtStructuredLogger};
+use crate::security::jwks_bearer::{DecisionSource, JwtLogFields, JwtTokenStatus};
 use crate::security::SecurityRequest;
 use crate::spec::SecurityScheme;
 use jsonwebtoken;
@@ -15,9 +15,6 @@ use serde_json::Value;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tracing::{debug, warn};
-
-// Re-export constants from parent module
-use super::SUPPORTED_ALGORITHMS;
 
 /// Internal error types for JWT validation
 ///
@@ -66,6 +63,14 @@ pub(super) enum ValidationError {
         required: Vec<String>,
         got: Vec<String>,
     },
+    /// Token was explicitly revoked by its identity provider.
+    TokenRevoked,
+    /// Token version is stale.
+    StaleToken,
+    /// Authoritative token-status dependency is unavailable.
+    TokenStatusUnavailable,
+    /// Required token-status claims are missing or malformed.
+    InvalidTokenStatusClaims,
     /// Security scheme doesn't match (not HTTP Bearer)
     InvalidSecurityScheme { scheme: String },
 }
@@ -88,6 +93,10 @@ impl ValidationError {
             ValidationError::InvalidTokenType { .. } => "invalid token type",
             ValidationError::JwksFetchError { .. } => "JWKS fetch failed",
             ValidationError::InsufficientScopes { .. } => "insufficient scopes",
+            ValidationError::TokenRevoked => "token revoked",
+            ValidationError::StaleToken => "stale token",
+            ValidationError::TokenStatusUnavailable => "token status unavailable",
+            ValidationError::InvalidTokenStatusClaims => "invalid token status claims",
             ValidationError::InvalidSecurityScheme { .. } => "invalid security scheme",
         }
     }
@@ -123,6 +132,10 @@ impl ValidationError {
             } => "invalid_token_type".to_string(),
             ValidationError::JwksFetchError { url: _, error: _ } => "jwks_fetch_error".to_string(),
             ValidationError::InsufficientScopes { .. } => "insufficient_scopes".to_string(),
+            ValidationError::TokenRevoked => "token_revoked".to_string(),
+            ValidationError::StaleToken => "stale_token_version".to_string(),
+            ValidationError::TokenStatusUnavailable => "token_status_unavailable".to_string(),
+            ValidationError::InvalidTokenStatusClaims => "invalid_token_status_claims".to_string(),
             ValidationError::InvalidSecurityScheme { .. } => "invalid_security_scheme".to_string(),
         }
     }
@@ -189,6 +202,18 @@ impl ValidationError {
                     "JWT validation failed: insufficient scopes (required: {:?}, got: {:?})",
                     required, got
                 );
+            }
+            ValidationError::TokenRevoked => {
+                warn!("JWT validation failed: token revoked");
+            }
+            ValidationError::StaleToken => {
+                warn!("JWT validation failed: stale token version");
+            }
+            ValidationError::TokenStatusUnavailable => {
+                warn!("JWT validation failed: token status dependency unavailable");
+            }
+            ValidationError::InvalidTokenStatusClaims => {
+                warn!("JWT validation failed: required token-status claims invalid");
             }
             ValidationError::InvalidSecurityScheme { scheme } => {
                 debug!(
@@ -263,6 +288,39 @@ fn extract_and_log_jwt_fields(
     }
 }
 
+fn validate_dynamic_token_status(
+    provider: &super::JwksBearerProvider,
+    token: &str,
+    claims: &Value,
+) -> Result<(), ValidationError> {
+    let (source, error, log_result) = match provider.check_token_status(claims) {
+        JwtTokenStatus::Active => return Ok(()),
+        JwtTokenStatus::Revoked => (
+            DecisionSource::Denylist,
+            ValidationError::TokenRevoked,
+            "denied",
+        ),
+        JwtTokenStatus::Stale => (
+            DecisionSource::VersionMismatch,
+            ValidationError::StaleToken,
+            "denied",
+        ),
+        JwtTokenStatus::Unavailable => (
+            DecisionSource::TokenStatus,
+            ValidationError::TokenStatusUnavailable,
+            "failure",
+        ),
+        JwtTokenStatus::Invalid => (
+            DecisionSource::TokenStatus,
+            ValidationError::InvalidTokenStatusClaims,
+            "failure",
+        ),
+    };
+    let reason = error.error_reason();
+    extract_and_log_jwt_fields(provider, token, claims, source, log_result, Some(&reason));
+    Err(error)
+}
+
 /// Internal validation with structured error types
 fn validate_token_internal(
     provider: &super::JwksBearerProvider,
@@ -323,6 +381,14 @@ fn validate_token_internal(
         });
     }
 
+    // SECURITY: The algorithm policy comes from trusted provider configuration, never from
+    // the token alone. Consumers should configure the smallest issuer-specific allow-list.
+    if !provider.algorithm_allowed(header.alg) {
+        return Err(ValidationError::UnsupportedAlgorithm {
+            alg: format!("{:?}", header.alg),
+        });
+    }
+
     // SECURITY: Include kid in cache key so cache invalidates on key rotation
     // Format: "token|kid" ensures different cache entries for same token with different keys
     let token_key: Arc<str> = Arc::from(format!("{}|{}", token, kid));
@@ -378,6 +444,8 @@ fn validate_token_internal(
                 if now < exp_timestamp_clone {
                     // P2: Track cache hit
                     provider.cache_hits.fetch_add(1, Ordering::Relaxed);
+
+                    validate_dynamic_token_status(provider, token, &cached_claims_clone)?;
 
                     // Story 9.6: Log cache-hit validation (decision_source = jwt_claims)
                     let token_scopes = cached_claims_clone
@@ -446,13 +514,6 @@ fn validate_token_internal(
         None => return Err(ValidationError::MissingKey { kid: kid.clone() }),
     };
 
-    // P4 Security: Only allow supported algorithms (whitelist approach for security)
-    // P3: Simplified algorithm selection using whitelist instead of verbose match
-    if !SUPPORTED_ALGORITHMS.contains(&header.alg) {
-        return Err(ValidationError::UnsupportedAlgorithm {
-            alg: format!("{:?}", header.alg),
-        });
-    }
     let selected_alg = header.alg;
     let mut validation = jsonwebtoken::Validation::new(selected_alg);
     validation.validate_exp = true;
@@ -515,6 +576,8 @@ fn validate_token_internal(
             return Err(error_result);
         }
     };
+
+    validate_dynamic_token_status(provider, token, &claims)?;
 
     // P0: Store decoded claims in cache with leeway applied to expiration
     // Extract exp claim to determine cache validity
@@ -594,6 +657,10 @@ pub(super) fn extract_claims_impl(
     scheme: &SecurityScheme,
     req: &SecurityRequest,
 ) -> Option<Value> {
+    // SecurityProvider::extract_claims is called only after validate() succeeds. Dynamic status
+    // is therefore deliberately checked by validate_token_internal, once per authorization
+    // attempt. Rechecking here would either double the authoritative lookup on every request or
+    // require consumers to negative-cache Active and create a revocation window.
     match scheme {
         SecurityScheme::Http { scheme, .. } if scheme.eq_ignore_ascii_case("bearer") => {}
         _ => return None,
@@ -611,6 +678,10 @@ pub(super) fn extract_claims_impl(
     // Same check as validate_token_internal for consistency
     const EXPECTED_TYP: &str = "at+jwt";
     if header.typ.as_deref() != Some(EXPECTED_TYP) {
+        return None;
+    }
+
+    if !provider.algorithm_allowed(header.alg) {
         return None;
     }
 
@@ -696,10 +767,6 @@ pub(super) fn extract_claims_impl(
         None => return None,
     };
 
-    // Validate algorithm
-    if !SUPPORTED_ALGORITHMS.contains(&header.alg) {
-        return None;
-    }
     let selected_alg = header.alg;
     let mut validation = jsonwebtoken::Validation::new(selected_alg);
     validation.validate_exp = true;

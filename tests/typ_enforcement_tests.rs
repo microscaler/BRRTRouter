@@ -12,18 +12,18 @@
 
 use base64::Engine;
 use brrtrouter::dispatcher::{Dispatcher, HandlerRequest, HandlerResponse, HeaderVec};
-use brrtrouter::load_spec_full;
+use brrtrouter::http::{fetch_get, HttpFetchOptions};
 use brrtrouter::middleware::TracingMiddleware;
-use brrtrouter::router::{ParamVec, Router};
-use brrtrouter::security::{JwksBearerProvider, SecurityProvider, SecurityRequest};
+use brrtrouter::router::Router;
+use brrtrouter::security::JwksBearerProvider;
 use brrtrouter::server::{AppService, HttpServer, ServerHandle};
 use serde_json::json;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use std::{net::TcpStream as StdTcpStream, thread};
 
 mod tracing_util;
 use tracing_util::TestTracing;
@@ -122,23 +122,6 @@ fn make_raw_jwt(header_json: &str, payload_json: &str, signature: &str) -> Strin
     format!("{}.{}.{}", h, p, signature)
 }
 
-/// Start a mock JWKS server that returns the given JWKS JSON.
-/// Returns the HTTP URL (e.g., "http://127.0.0.1:XXXX").
-fn start_mock_jwks_server(jwks_json: &str) -> String {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let addr = listener.local_addr().unwrap();
-    let url = format!("http://{}:{}/.well-known/jwks.json", addr.ip(), addr.port());
-    let handle = thread::spawn(move || {
-        let _listener = listener; // consume
-                                  // Accept one connection
-        if let Ok((mut stream, _)) = TcpListener::bind("127.0.0.1:0").unwrap().accept() {}
-        // Actually, let's accept properly
-    });
-    // Simpler approach: start a tiny HTTP server
-    drop(handle);
-    start_mock_jwks_server_inner(jwks_json)
-}
-
 fn start_mock_jwks_server_inner(jwks_json: &str) -> String {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
@@ -181,39 +164,29 @@ fn start_mock_jwks_server_inner(jwks_json: &str) -> String {
 /// Returns the test server with automatic cleanup.
 fn build_jwks_service(
     jwks_json: &str,
-    expected_typ: &str,
+    _expected_typ: &str,
 ) -> (TestTracing, ServerHandle, SocketAddr) {
     may::config().set_stack_size(0x8000);
     let tracing = TestTracing::init();
 
-    // Secret key that goes into the JWKS
-    let secret = b"test-secret-key-12345";
-    let k = base64url(secret);
-
-    let jwks = serde_json::json!({
-        "keys": [
-            {
-                "kty": "oct",
-                "alg": "HS256",
-                "kid": "k1",
-                "k": k
-            }
-        ]
-    })
-    .to_string();
-
-    let jwks_url = start_mock_jwks_server_inner(&jwks);
+    let jwks_url = start_mock_jwks_server_inner(jwks_json);
 
     // Verify the mock server responds before proceeding
     eprintln!("DEBUG: Testing mock server at {}", jwks_url);
-    let resp = reqwest::blocking::get(&jwks_url).unwrap();
-    let body = resp.text().unwrap();
+    let (status, body) = fetch_get(&jwks_url, &HttpFetchOptions::default()).unwrap();
+    assert_eq!(status, 200);
+    let body = String::from_utf8(body).unwrap();
     eprintln!("DEBUG: Mock server responded with: {}", body);
 
     const SPEC: &str = r#"openapi: 3.1.0
 info:
   title: Typ Test API
   version: '1.0'
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
 paths:
   /secure:
     get:
@@ -248,6 +221,9 @@ paths:
         Some(PathBuf::from("examples/pet_store/doc")),
     );
     let provider = JwksBearerProvider::new(&jwks_url)
+        // This legacy fixture deliberately exercises typ enforcement independently of the
+        // production asymmetric-token profile. HMAC must therefore be opted in explicitly.
+        .allowed_algorithms(&[jsonwebtoken::Algorithm::HS256])
         .issuer("https://issuer.example")
         .audience("my-api")
         .leeway(30);
@@ -365,7 +341,6 @@ fn unit_valid_typ_atjwt_accepted() {
         }]
     })
     .to_string();
-    let jwks_url = start_mock_jwks_server_inner(&jwks);
     let (_tracing, handle, addr) = build_jwks_service(&jwks, "at+jwt");
 
     let token = make_valid_at_jwt(secret, "k1");
@@ -402,7 +377,6 @@ fn unit_missing_typ_claim_rejected() {
         }]
     })
     .to_string();
-    let jwks_url = start_mock_jwks_server_inner(&jwks);
     let (_tracing, handle, addr) = build_jwks_service(&jwks, "at+jwt");
 
     let token = make_jwt_without_typ(secret, "k1");
@@ -425,15 +399,6 @@ fn unit_missing_typ_claim_rejected() {
 #[test]
 fn unit_wrong_typ_jwt_rejected() {
     let secret = b"test-secret-key-12345";
-    let jwks = serde_json::json!({
-        "keys": [{
-            "kty": "oct",
-            "alg": "HS256",
-            "kid": "k1",
-            "k": base64url(secret)
-        }]
-    })
-    .to_string();
     let (_tracing, handle, addr) = build_jwks_service(
         &serde_json::json!({
             "keys": [{

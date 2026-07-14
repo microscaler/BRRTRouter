@@ -24,7 +24,8 @@ default-target = "x86_64-unknown-linux-gnu"
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-jsonschema = "0.45"
+# OpenAPI schemas are resolved locally; disable remote retrieval and its reqwest stack.
+jsonschema = { version = "0.45", default-features = false }
 serde_yaml = "0.9.33"
 toml = "1.1"
 # Needed for simple JWT parsing in security providers
@@ -34,7 +35,7 @@ oas3 = { version = "0.21", features = ["yaml-spec"] }
 anyhow = "1.0"
 http = "1.0"  # Do not update to newer version, it that is not compatible with may_minihttp
 may = "0.3"  # generator-rs is patched via [patch.crates-io] section at the end of this file
-# Using our fork until PR #21 is merged upstream; `client` feature for BFF proxy / fetch.
+# Microscaler fork supplies the native client used by BFF proxy and security fetches.
 may_minihttp = { git = "https://github.com/microscaler/may_minihttp.git", branch = "integration/microscaler-fork", features = ["client"] }
 regex = "1.12.3"
 smallvec = { version = "1.13", features = ["serde"] }  # Stack-allocated vectors for hot path (JSF: no heap in dispatch)
@@ -47,13 +48,10 @@ tikv-jemallocator = { version = "0.6", optional = true }
 tikv-jemalloc-ctl = { version = "0.6", optional = true, features = ["stats"] }
 minijinja = "2"
 
-# OpenTelemetry: crates.io 0.31.x still pins reqwest ^0.12; we patch the stack from
-# open-telemetry/opentelemetry-rust (main) for reqwest 0.13 alignment. Pin otlp to =0.31.0
-# so the patch applies (0.31.1 on crates.io does not). Re-validate against otel-collector when bumping.
+# OpenTelemetry versions are coordinated with microscaler-observability. BRRTRouter delegates
+# OTLP egress to that adapter, which uses gRPC/Tonic with HTTP exporters disabled.
 tracing = "0.1"
 opentelemetry = { version = "0.31", features = ["metrics", "trace"] }
-# Pin 0.31.0 so [patch] replaces crates.io with git main (reqwest 0.13); 0.31.1 would skip the patch.
-opentelemetry-otlp = { version = "=0.31.0", features = ["grpc-tonic", "metrics", "trace"] }
 opentelemetry_sdk = { version = "0.31", features = ["metrics", "trace"] }
 opentelemetry-semantic-conventions = "0.31"
 tracing-opentelemetry = "0.32"
@@ -69,15 +67,11 @@ prost = "0.14"
 tokio = { version = "1.51.1", features = ["rt-multi-thread", "macros"] }
 
 http_legacy = { package = "http", version = "0.2" }
-httparse = "1.2"
-rustls = { version = "0.23", default-features = false, features = ["std", "tls12"] }
-rustls-platform-verifier = "0.7"
-# Note: jsonwebtoken 10.3.0 still uses rsa 0.9.10 (RUSTSEC-2023-0071) - timing sidechannel vulnerability
-# No patched version available yet. Risk is mitigated by using rust_crypto feature and limiting
-# exposure to trusted environments. Monitor for updates to jsonwebtoken/rsa.
-jsonwebtoken = { version = "10.3.0", features = ["rust_crypto"] }  # rust_crypto enables RSA/EC algorithms
-# OTEL / jsonschema still pull reqwest transitively; security fetch uses may_minihttp client + rustls.
-reqwest = { version = "0.13.2", default-features = false, features = ["json", "rustls", "blocking", "multipart"] }
+# Keep JWT signing and verification on RustCrypto. Sesame configures EdDSA only;
+# RSA remains an explicit compatibility option and is not part of its token profile.
+# The transitive rsa crate is still covered by RUSTSEC-2023-0071, but BRRTRouter
+# only uses public-key verification and does not expose RSA private-key operations.
+jsonwebtoken = { version = "10.4.0", features = ["rust_crypto"] }
 urlencoding = "2.1"
 ulid = "1.1"
 sha2 = "0.11"
@@ -107,6 +101,10 @@ goose = { git = "https://github.com/tag1consulting/goose", rev = "614f75149cab5a
 parking_lot = "0.12"  # For RwLock in test utilities
 libc = "0.2"  # For signal handling in tests (SIGINT cleanup)
 tiny_http = "0.12.0"  # Lightweight HTTP server for mock JWKS endpoints in tests
+# Test-only exception: Docker UI scenarios use reqwest's multipart and separate connect/total
+# deadlines; the async Goose load harness uses reqwest for Prometheus queries. Runtime code and
+# protocol/security integration tests use may_minihttp::HttpClient + rustls.
+reqwest = { version = "0.13.2", default-features = false, features = ["json", "rustls", "blocking", "multipart"] }
 
 [[bin]]
 name = "brrtrouter-gen"
@@ -203,15 +201,10 @@ large_stack_arrays = "warn"   # Stack arrays that may overflow
 # Override generator-rs with our fork that fixes Rust 1.90+ macOS thread-local bug
 [patch.crates-io]
 generator = { git = "https://github.com/microscaler/generator-rs.git", branch = "fix/rust-1.90-thread-local-macos" }
-# crates.io 0.31.x still resolves reqwest ^0.12; upstream main uses workspace reqwest 0.13.1.
-# Patch the full OTLP stack together or opentelemetry-otlp fails to link HttpClient + reqwest.
-# rev pinned for reproducible builds; advance when intentionally upgrading OTEL.
+# Patch the full OTLP stack together so the adapter and host share one coherent revision.
+# The revision is pinned for reproducible builds; advance it intentionally.
 opentelemetry = { git = "https://github.com/open-telemetry/opentelemetry-rust", rev = "965078315b58ae14725721735f1c8e2bc2d3b445" }
 opentelemetry_sdk = { git = "https://github.com/open-telemetry/opentelemetry-rust", rev = "965078315b58ae14725721735f1c8e2bc2d3b445" }
-opentelemetry-http = { git = "https://github.com/open-telemetry/opentelemetry-rust", rev = "965078315b58ae14725721735f1c8e2bc2d3b445" }
 opentelemetry-otlp = { git = "https://github.com/open-telemetry/opentelemetry-rust", rev = "965078315b58ae14725721735f1c8e2bc2d3b445" }
 opentelemetry-proto = { git = "https://github.com/open-telemetry/opentelemetry-rust", rev = "965078315b58ae14725721735f1c8e2bc2d3b445" }
 opentelemetry-semantic-conventions = { git = "https://github.com/open-telemetry/opentelemetry-rust", rev = "965078315b58ae14725721735f1c8e2bc2d3b445" }
-
-[patch."https://github.com/microscaler/may_minihttp.git"]
-may_minihttp = { path = "../may_minihttp" }

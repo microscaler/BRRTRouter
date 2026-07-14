@@ -327,7 +327,8 @@ impl RoutePolicyStore {
         // Try parameterized match (e.g., /users/xid matches /users/123)
         let req_segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
         for (stored_path, methods) in &self.policies {
-            let stored_segments: Vec<&str> = stored_path.split('/').filter(|s| !s.is_empty()).collect();
+            let stored_segments: Vec<&str> =
+                stored_path.split('/').filter(|s| !s.is_empty()).collect();
             if req_segments.len() != stored_segments.len() {
                 continue;
             }
@@ -341,8 +342,14 @@ impl RoutePolicyStore {
                     // Common literals: me, users, shipments, payments, identity
                     let is_literal = matches!(
                         *stored_seg,
-                        "me" | "me/" | "users" | "shipments" | "payments"
-                            | "identity" | "v1" | "v2" | "api"
+                        "me" | "me/"
+                            | "users"
+                            | "shipments"
+                            | "payments"
+                            | "identity"
+                            | "v1"
+                            | "v2"
+                            | "api"
                     );
                     if is_literal {
                         segment_match = false;
