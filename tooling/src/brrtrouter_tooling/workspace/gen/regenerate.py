@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-from brrtrouter_tooling.discovery import bff_service_to_suite
 from brrtrouter_tooling.gen.brrtrouter import call_brrtrouter_generate
 from brrtrouter_tooling.workspace.build.constants import get_package_names
 from brrtrouter_tooling.workspace.ci.fix_cargo_paths import run as run_fix_cargo_paths

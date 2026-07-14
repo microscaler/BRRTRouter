@@ -53,9 +53,7 @@ def project_uses_flat_openapi_layout(project_root: Path) -> bool:
     d = _openapi_dir(project_root)
     if not d.is_dir():
         return False
-    return any(
-        child.is_dir() and (child / "openapi.yaml").is_file() for child in d.iterdir()
-    )
+    return any(child.is_dir() and (child / "openapi.yaml").is_file() for child in d.iterdir())
 
 
 def project_uses_flat_microservice_layout(project_root: Path) -> bool:
@@ -71,9 +69,7 @@ def project_uses_flat_microservice_layout(project_root: Path) -> bool:
     return False
 
 
-def resolve_service_openapi_spec_path(
-    project_root: Path, suite: str, service_name: str
-) -> Path:
+def resolve_service_openapi_spec_path(project_root: Path, suite: str, service_name: str) -> Path:
     """Resolve OpenAPI spec path; prefers existing flat or nested layout on disk."""
     if bff_service_to_suite(project_root, service_name) == suite:
         found = _first_existing(
@@ -100,9 +96,7 @@ def resolve_service_openapi_spec_path(
     return _nested_service_openapi(project_root, suite, service_name)
 
 
-def resolve_service_microservice_dir(
-    project_root: Path, suite: str, service_name: str
-) -> Path:
+def resolve_service_microservice_dir(project_root: Path, suite: str, service_name: str) -> Path:
     """Resolve microservices crate root; prefers existing flat or nested layout on disk."""
     found = _first_existing(
         _nested_microservice_dir(project_root, suite, service_name),
@@ -116,15 +110,11 @@ def resolve_service_microservice_dir(
 
 
 # Back-compat aliases used by bootstrap/regenerate callers.
-def service_openapi_spec_path(
-    project_root: Path, suite: str, service_name: str
-) -> Path:
+def service_openapi_spec_path(project_root: Path, suite: str, service_name: str) -> Path:
     return resolve_service_openapi_spec_path(project_root, suite, service_name)
 
 
-def service_microservice_dir(
-    project_root: Path, suite: str, service_name: str
-) -> Path:
+def service_microservice_dir(project_root: Path, suite: str, service_name: str) -> Path:
     return resolve_service_microservice_dir(project_root, suite, service_name)
 
 
@@ -167,9 +157,7 @@ def service_to_suite(project_root: Path, service_name: str) -> str | None:
 
 def get_bff_service_name_from_config(data: dict) -> str | None:
     """Read bff_service_name from bff-suite-config (top-level or metadata)."""
-    return data.get("bff_service_name") or (data.get("metadata") or {}).get(
-        "bff_service_name"
-    )
+    return data.get("bff_service_name") or (data.get("metadata") or {}).get("bff_service_name")
 
 
 def iter_bffs(project_root: Path, suite: str | None = None) -> Iterator[tuple[str, str]]:
@@ -216,16 +204,18 @@ def load_suite_services(project_root: Path) -> set:
 
 
 def suite_sub_service_names(project_root: Path, suite: str) -> list[str]:
-    """Sub-service names from flat and/or nested openapi layouts. Sorted."""
+    """Return sorted sub-service names from supported OpenAPI layouts.
+
+    Both ``openapi/{service}/openapi.yaml`` and
+    ``openapi/{suite}/{service}/openapi.yaml`` are discovered.
+    """
     d = _openapi_dir(project_root)
     if not d.is_dir():
         return []
     names: set[str] = set()
-    # Flat: openapi/{service}/openapi.yaml
     for child in d.iterdir():
         if child.is_dir() and (child / "openapi.yaml").is_file():
             names.add(child.name)
-    # Nested: openapi/{suite}/{service}/openapi.yaml
     nested = d / suite
     if nested.is_dir():
         for child in nested.iterdir():

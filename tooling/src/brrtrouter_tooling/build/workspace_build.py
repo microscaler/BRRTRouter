@@ -16,6 +16,7 @@ from typing import Callable
 
 from brrtrouter_tooling.build.host_aware import (
     ARCH_TARGETS,
+    _install_rust_target,
     _run_build,
     should_use_cross,
     should_use_zigbuild,
@@ -62,6 +63,8 @@ def build_workspace_with_options(
     if not _ensure_manifest_exists(project_root, workspace_dir, gen_if_missing_callback):
         return 1
     rust_target, use_cross, use_zigbuild, extra_args = _resolve_build_options(arch, release)
+    if not use_cross and not _install_rust_target(rust_target):
+        return 1
     ok = _run_build(
         project_root,
         workspace_dir,
@@ -90,6 +93,8 @@ def build_package_with_options(
     if not _ensure_manifest_exists(project_root, workspace_dir, gen_if_missing_callback):
         return 1
     rust_target, use_cross, use_zigbuild, extra_args = _resolve_build_options(arch, release)
+    if not use_cross and not _install_rust_target(rust_target):
+        return 1
     ok = _run_build(
         project_root,
         workspace_dir,

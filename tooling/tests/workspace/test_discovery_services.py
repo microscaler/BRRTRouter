@@ -6,7 +6,6 @@ from brrtrouter_tooling.workspace.discovery.services import (
     get_service_ports,
 )
 from brrtrouter_tooling.workspace.discovery.suites import (
-    project_uses_flat_microservice_layout,
     project_uses_flat_openapi_layout,
     resolve_service_microservice_dir,
     resolve_service_openapi_spec_path,

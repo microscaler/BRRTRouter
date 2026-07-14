@@ -48,9 +48,7 @@ def generate_bff_spec(
     impl_ops_raw = metadata.get("bff_impl_operations") or []
     bff_impl_operations = {str(x) for x in impl_ops_raw}
 
-    bff = merge_sub_service_specs(
-        services, info=info, bff_impl_operations=bff_impl_operations
-    )
+    bff = merge_sub_service_specs(services, info=info, bff_impl_operations=bff_impl_operations)
 
     security_schemes = (config.get("metadata") or {}).get("security_schemes")
     security = (config.get("metadata") or {}).get("security")

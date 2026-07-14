@@ -22,7 +22,13 @@ class TestBuildWorkspaceWithOptions:
             (root / "microservices").mkdir(exist_ok=True)
             (root / "microservices" / "Cargo.toml").write_text("[workspace]\n")
 
-        with patch("brrtrouter_tooling.build.host_aware.subprocess.run") as m_run:
+        with (
+            patch(
+                "brrtrouter_tooling.build.workspace_build._install_rust_target",
+                return_value=True,
+            ),
+            patch("brrtrouter_tooling.build.host_aware.subprocess.run") as m_run,
+        ):
             m_run.return_value = type("R", (), {"returncode": 0})()
             rc = build_workspace_with_options(
                 tmp_path,
@@ -39,7 +45,13 @@ class TestBuildWorkspaceWithOptions:
 
         (tmp_path / "microservices").mkdir()
         (tmp_path / "microservices" / "Cargo.toml").write_text("[workspace]\n")
-        with patch("brrtrouter_tooling.build.host_aware.subprocess.run") as m_run:
+        with (
+            patch(
+                "brrtrouter_tooling.build.workspace_build._install_rust_target",
+                return_value=True,
+            ),
+            patch("brrtrouter_tooling.build.host_aware.subprocess.run") as m_run,
+        ):
             m_run.return_value = type("R", (), {"returncode": 0})()
             build_workspace_with_options(tmp_path, workspace_dir="microservices", arch="arm7")
         (cmd,) = m_run.call_args[0]
@@ -69,7 +81,13 @@ class TestBuildPackageWithOptions:
 
         (tmp_path / "microservices").mkdir()
         (tmp_path / "microservices" / "Cargo.toml").write_text("[workspace]\n")
-        with patch("brrtrouter_tooling.build.host_aware.subprocess.run") as m_run:
+        with (
+            patch(
+                "brrtrouter_tooling.build.workspace_build._install_rust_target",
+                return_value=True,
+            ),
+            patch("brrtrouter_tooling.build.host_aware.subprocess.run") as m_run,
+        ):
             m_run.return_value = type("R", (), {"returncode": 0})()
             build_package_with_options(
                 tmp_path, workspace_dir="microservices", package_name="my_crate", arch="arm7"
@@ -89,7 +107,13 @@ class TestBuildPackageWithOptions:
             (root / "microservices").mkdir(exist_ok=True)
             (root / "microservices" / "Cargo.toml").write_text("[workspace]\n")
 
-        with patch("brrtrouter_tooling.build.host_aware.subprocess.run") as m_run:
+        with (
+            patch(
+                "brrtrouter_tooling.build.workspace_build._install_rust_target",
+                return_value=True,
+            ),
+            patch("brrtrouter_tooling.build.host_aware.subprocess.run") as m_run,
+        ):
             m_run.return_value = type("R", (), {"returncode": 0})()
             rc = build_package_with_options(
                 tmp_path,
@@ -102,3 +126,22 @@ class TestBuildPackageWithOptions:
         (cmd,) = m_run.call_args[0]
         assert "-p" in cmd
         assert "my_crate" in cmd
+
+    def test_installs_rust_target_before_package_build(self, tmp_path: Path) -> None:
+        from brrtrouter_tooling.build import build_package_with_options
+
+        (tmp_path / "microservices").mkdir()
+        (tmp_path / "microservices" / "Cargo.toml").write_text("[workspace]\n")
+        with (
+            patch(
+                "brrtrouter_tooling.build.workspace_build._install_rust_target",
+                return_value=True,
+            ) as m_install,
+            patch("brrtrouter_tooling.build.host_aware.subprocess.run") as m_run,
+        ):
+            m_run.return_value = type("R", (), {"returncode": 0})()
+            rc = build_package_with_options(
+                tmp_path, workspace_dir="microservices", package_name="my_crate", arch="amd64"
+            )
+        assert rc == 0
+        m_install.assert_called_once_with("x86_64-unknown-linux-musl")
