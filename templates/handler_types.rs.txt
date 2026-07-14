@@ -5,6 +5,7 @@
 // ⚠️ To implement business logic, edit the corresponding controller file
 use serde::{Deserialize, Serialize};
 {% for (type_name, type_def) in types %}
+{% if type_def.enum_variants.is_empty() %}
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct {{ type_name }} {
     {% for field in type_def.fields -%}
@@ -18,4 +19,16 @@ pub struct {{ type_name }} {
     {% endif %}
     {% endfor -%}
 }
+{% else %}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum {{ type_name }} {
+    {% for variant in type_def.enum_variants -%}
+    {% if loop.first %}
+    #[default]
+    {% endif %}
+    #[serde(rename = {{ variant.serialized_name_literal }})]
+    {{ variant.name }},
+    {% endfor -%}
+}
+{% endif %}
 {% endfor %}

@@ -301,6 +301,7 @@ fn test_type_definition_construction() {
     let type_def = TypeDefinition {
         name: "User".to_string(),
         fields,
+        enum_variants: Vec::new(),
     };
 
     assert_eq!(type_def.name, "User");

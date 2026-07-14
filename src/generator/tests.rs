@@ -482,6 +482,61 @@ fn test_process_schema_type() {
 }
 
 #[test]
+fn test_process_schema_type_generates_string_enum() {
+    let schema = json!({
+        "type": "string",
+        "enum": ["DRAFT", "in-progress", "200", "self"]
+    });
+    let mut types = std::collections::HashMap::new();
+
+    process_schema_type("submission_status", &schema, &mut types);
+
+    let type_def = types.get("SubmissionStatus").unwrap();
+    assert!(type_def.fields.is_empty());
+    assert_eq!(type_def.enum_variants.len(), 4);
+    assert_eq!(type_def.enum_variants[0].name, "Draft");
+    assert_eq!(
+        type_def.enum_variants[0].serialized_name_literal,
+        "\"DRAFT\""
+    );
+    assert_eq!(type_def.enum_variants[1].name, "InProgress");
+    assert_eq!(type_def.enum_variants[2].name, "Value200");
+    assert_eq!(type_def.enum_variants[3].name, "ValueSelf");
+}
+
+#[test]
+fn test_write_types_rs_renders_string_enum() {
+    let schema = json!({
+        "type": "string",
+        "enum": ["DRAFT", "FACTUR_X"]
+    });
+    let mut types = std::collections::HashMap::new();
+    process_schema_type("edi_standard", &schema, &mut types);
+    let dir = temp_dir();
+
+    write_types_rs(&dir, &types).unwrap();
+
+    let generated = fs::read_to_string(dir.join("types.rs")).unwrap();
+    assert!(generated.contains("pub enum EdiStandard"));
+    assert!(generated.contains("#[default]"));
+    assert!(generated.contains("#[serde(rename = \"DRAFT\")]"));
+    assert!(generated.contains("FacturX,"));
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn test_process_schema_type_deduplicates_sanitized_enum_variants() {
+    let schema = json!({"type": "string", "enum": ["FOO-BAR", "foo_bar"]});
+    let mut types = std::collections::HashMap::new();
+
+    process_schema_type("status", &schema, &mut types);
+
+    let variants = &types.get("Status").unwrap().enum_variants;
+    assert_eq!(variants[0].name, "FooBar");
+    assert_eq!(variants[1].name, "FooBar2");
+}
+
+#[test]
 fn test_process_schema_type_empty() {
     let mut types = std::collections::HashMap::new();
     let schema = json!({});
@@ -548,6 +603,7 @@ fn test_type_definition_construction() {
     let type_def = TypeDefinition {
         name: "User".to_string(),
         fields,
+        enum_variants: Vec::new(),
     };
 
     assert_eq!(type_def.name, "User");

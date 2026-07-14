@@ -6,13 +6,24 @@ use std::collections::{HashMap, HashSet};
 
 /// A Rust type definition generated from an OpenAPI schema
 ///
-/// Represents a struct that will be generated in the output code.
+/// Represents a struct or string enum that will be generated in the output code.
 #[derive(Debug, Clone)]
 pub struct TypeDefinition {
-    /// The Rust struct name (e.g., `Pet`, `User`)
+    /// The Rust type name (e.g., `Pet`, `OrderStatus`)
     pub name: String,
-    /// The fields that make up this struct
+    /// The fields that make up a struct; empty for enum definitions.
     pub fields: Vec<FieldDef>,
+    /// The variants that make up a string enum; empty for struct definitions.
+    pub enum_variants: Vec<EnumVariant>,
+}
+
+/// A Rust enum variant generated from an OpenAPI string-enum value.
+#[derive(Debug, Clone)]
+pub struct EnumVariant {
+    /// Sanitized Rust variant identifier.
+    pub name: String,
+    /// Quoted Rust string literal used by serde to preserve the wire value.
+    pub serialized_name_literal: String,
 }
 
 /// A field definition for a generated Rust struct
@@ -443,6 +454,62 @@ pub fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
     }
 }
 
+/// Convert OpenAPI string-enum values into deterministic Rust variants.
+fn extract_string_enum_variants(schema: &Value) -> Vec<EnumVariant> {
+    let Some(values) = schema.get("enum").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+
+    let mut variants = Vec::with_capacity(values.len());
+    let mut seen_names = HashMap::<String, usize>::new();
+
+    for value in values {
+        let Some(wire_name) = value.as_str() else {
+            continue;
+        };
+
+        let mut name = String::new();
+        for segment in wire_name
+            .split(|character: char| !character.is_ascii_alphanumeric())
+            .filter(|segment| !segment.is_empty())
+        {
+            let mut characters = segment.chars();
+            if let Some(first) = characters.next() {
+                name.extend(first.to_uppercase());
+                name.push_str(&characters.as_str().to_ascii_lowercase());
+            }
+        }
+
+        if name.is_empty() {
+            name.push_str("Empty");
+        } else if name.starts_with(|character: char| character.is_ascii_digit()) {
+            name.insert_str(0, "Value");
+        }
+
+        if matches!(
+            name.as_str(),
+            "Self" | "Super" | "Crate" | "Type" | "Match" | "Loop" | "Move" | "Ref"
+        ) {
+            name.insert_str(0, "Value");
+        }
+
+        let occurrence = seen_names.entry(name.clone()).or_insert(0);
+        *occurrence += 1;
+        if *occurrence > 1 {
+            name.push_str(&occurrence.to_string());
+        }
+
+        let serialized_name_literal =
+            serde_json::to_string(wire_name).unwrap_or_else(|_| "\"\"".to_string());
+        variants.push(EnumVariant {
+            name,
+            serialized_name_literal,
+        });
+    }
+
+    variants
+}
+
 /// Process an OpenAPI schema and generate a Rust type definition
 ///
 /// Extracts fields from the schema and adds the resulting type to the types map.
@@ -482,9 +549,29 @@ pub fn process_schema_type_with_spec(
         collect_referenced_types(schema, spec_ref, types);
     }
 
+    let enum_variants = extract_string_enum_variants(schema);
+    if !enum_variants.is_empty() {
+        types.insert(
+            name.clone(),
+            TypeDefinition {
+                name,
+                fields: Vec::new(),
+                enum_variants,
+            },
+        );
+        return;
+    }
+
     let fields = extract_fields(schema);
     if !fields.is_empty() {
-        types.insert(name.clone(), TypeDefinition { name, fields });
+        types.insert(
+            name.clone(),
+            TypeDefinition {
+                name,
+                fields,
+                enum_variants: Vec::new(),
+            },
+        );
     }
 }
 

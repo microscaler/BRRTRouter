@@ -180,41 +180,45 @@ pub fn generate_project_with_options(
 
     let spec_copy_path = doc_dir.join("openapi.yaml");
     // Spec Copy Safety: canonicalize and avoid self-copy/truncation; clear logs; honor --force
-    let source_canon = fs::canonicalize(spec_path)
-        .with_context(|| format!("Failed to canonicalize spec source: {spec_path:?}"))?;
-    let doc_dir_canon = fs::canonicalize(&doc_dir)
-        .with_context(|| format!("Failed to canonicalize doc dir: {doc_dir:?}"))?;
-    let dest_path = doc_dir_canon.join("openapi.yaml");
+    if scope.docs {
+        let source_canon = fs::canonicalize(spec_path)
+            .with_context(|| format!("Failed to canonicalize spec source: {spec_path:?}"))?;
+        let doc_dir_canon = fs::canonicalize(&doc_dir)
+            .with_context(|| format!("Failed to canonicalize doc dir: {doc_dir:?}"))?;
+        let dest_path = doc_dir_canon.join("openapi.yaml");
 
-    if source_canon == dest_path {
-        println!("⚠️  Skipping spec copy: source and destination are the same → {dest_path:?}",);
-        skipped.push(format!("spec: same-path → {dest_path:?}"));
-    } else if !spec_copy_path.exists() || force {
-        println!("📄 Copying spec from {source_canon:?} → {spec_copy_path:?}",);
-        if dry_run {
-            println!("🔎 Dry-run: would copy spec (skipped)");
-            if spec_copy_path.exists() {
-                updated.push(format!("spec: {spec_copy_path:?}"));
-            } else {
-                created.push(format!("spec: {spec_copy_path:?}"));
-            }
-        } else {
-            fs::copy(&source_canon, &spec_copy_path).with_context(|| {
-                format!("Failed to copy spec from {source_canon:?} to {spec_copy_path:?}")
-            })?;
-            println!("✅ Copied spec to {spec_copy_path:?}");
-            if spec_copy_path.exists() {
-                // Post-copy, treat as created if it didn't exist before; approximate using force flag
-                if force {
+        if source_canon == dest_path {
+            println!("⚠️  Skipping spec copy: source and destination are the same → {dest_path:?}",);
+            skipped.push(format!("spec: same-path → {dest_path:?}"));
+        } else if !spec_copy_path.exists() || force {
+            println!("📄 Copying spec from {source_canon:?} → {spec_copy_path:?}",);
+            if dry_run {
+                println!("🔎 Dry-run: would copy spec (skipped)");
+                if spec_copy_path.exists() {
                     updated.push(format!("spec: {spec_copy_path:?}"));
                 } else {
                     created.push(format!("spec: {spec_copy_path:?}"));
                 }
+            } else {
+                fs::copy(&source_canon, &spec_copy_path).with_context(|| {
+                    format!("Failed to copy spec from {source_canon:?} to {spec_copy_path:?}")
+                })?;
+                println!("✅ Copied spec to {spec_copy_path:?}");
+                if spec_copy_path.exists() {
+                    // Post-copy, treat as created if it didn't exist before; approximate using force flag
+                    if force {
+                        updated.push(format!("spec: {spec_copy_path:?}"));
+                    } else {
+                        created.push(format!("spec: {spec_copy_path:?}"));
+                    }
+                }
             }
+        } else {
+            println!("ℹ️  Spec already present at {spec_copy_path:?} (use --force to overwrite)",);
+            skipped.push(format!("spec: exists → {spec_copy_path:?}"));
         }
     } else {
-        println!("ℹ️  Spec already present at {spec_copy_path:?} (use --force to overwrite)",);
-        skipped.push(format!("spec: exists → {spec_copy_path:?}"));
+        println!("🔎 Dry-run/only: skipping OpenAPI spec copy");
     }
 
     let mut schema_types = collect_component_schemas(spec_path)?;

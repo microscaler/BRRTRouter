@@ -11,6 +11,8 @@
 3. Component schemas + per-route request/response schema types are collected:
    - `src/generator/project/generate.rs`
    - `src/generator/schema.rs`
+   - object schemas become Rust structs; top-level OpenAPI string enums become
+     serde-renamed Rust enums with a deterministic first-variant default
 4. Template writers generate handlers/controllers/registry/main/docs:
    - `src/generator/templates.rs`
 5. Output is written into generated project directories (`src/`, `doc/`, `config/`, `static_site/`):

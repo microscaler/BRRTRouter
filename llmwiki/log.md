@@ -239,3 +239,22 @@ Hauliage Phase 3 unblockers for Vite dev proxy and frontend-aligned BFF routes.
   lookup that would otherwise force unsafe negative caching in Sesame.
 - Focused P0 hardening suite passes 7/7. See
   [`dynamic-token-status-hook.md`](./topics/dynamic-token-status-hook.md) and Sesame ADR-003.
+
+## [2026-07-14] fix | generate OpenAPI string enums
+
+- Corrected the schema collector so top-level OpenAPI string enums are emitted
+  instead of being silently dropped.
+- Added deterministic Rust variant sanitation, collision handling, exact serde
+  wire names, and first-variant defaults.
+- Added generator and rendered-template regression tests; all 57 generator unit
+  tests pass.
+- Verified the fix by regenerating only RERP accounting EDI/BFF type files;
+  both previously failing generated crates now compile.
+- Recorded numeric and mixed-value enums as an explicit unsupported form.
+- Corrected selective generation so `--only types` no longer overwrites the
+  embedded OpenAPI documentation copy.
+- Full `just nt` baseline: 751 tests passed before fail-fast cancellation;
+  2 pre-existing JWKS/CORS integration tests failed token validation and 367
+  tests were not run. The failure reproduces in isolation and is outside the
+  generator paths changed here. The 57 generator unit tests and the new
+  selective-scope integration test pass.

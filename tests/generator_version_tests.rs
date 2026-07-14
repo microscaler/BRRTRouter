@@ -794,3 +794,40 @@ fn test_version_cli_integration() {
     let version = read_version_from_cargo_toml(&cargo_toml);
     assert_eq!(version, test_version, "CLI --version should be preserved");
 }
+
+#[test]
+fn test_types_only_scope_does_not_overwrite_embedded_spec() {
+    let fixture = VersionTestFixture::new();
+    let output = fixture.path().join("types_only");
+    let doc_dir = output.join("doc");
+    fs::create_dir_all(&doc_dir).unwrap();
+    fs::create_dir_all(output.join("src/handlers")).unwrap();
+    fs::create_dir_all(output.join("src/controllers")).unwrap();
+    let embedded_spec = doc_dir.join("openapi.yaml");
+    fs::write(&embedded_spec, "preserve-this-spec").unwrap();
+    let spec_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("examples")
+        .join("openapi.yaml");
+    let scope = GenerationScope {
+        types: true,
+        ..GenerationScope::default()
+    };
+
+    generate_project_with_options(
+        &spec_path,
+        Some(&output),
+        true,
+        false,
+        &scope,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(
+        fs::read_to_string(embedded_spec).unwrap(),
+        "preserve-this-spec"
+    );
+    assert!(output.join("src/handlers/types.rs").exists());
+}
