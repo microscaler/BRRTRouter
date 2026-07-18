@@ -941,7 +941,38 @@ impl HttpService for AppService {
             path: String,
             start: std::time::Instant,
             total_size_bytes: usize,
+            http_status: Option<u16>,
             span: Span,
+        }
+
+        impl RequestLogger {
+            fn record_http_status(&mut self, status: u16) {
+                self.http_status = Some(status);
+                self.span.record("status", status);
+                self.span.record("http.status_code", status);
+            }
+
+            fn respond_json_error(
+                &mut self,
+                res: &mut Response,
+                status: u16,
+                body: serde_json::Value,
+            ) {
+                self.record_http_status(status);
+                write_json_error(res, status, body);
+            }
+
+            fn respond_handler(
+                &mut self,
+                res: &mut Response,
+                status: u16,
+                body: serde_json::Value,
+                is_sse: bool,
+                headers: &crate::dispatcher::HeaderVec,
+            ) {
+                self.record_http_status(status);
+                write_handler_response(res, status, body, is_sse, headers);
+            }
         }
 
         impl Drop for RequestLogger {
@@ -1057,6 +1088,7 @@ impl HttpService for AppService {
             path: path.clone(),
             start: request_start,
             total_size_bytes,
+            http_status: None,
             span: span.clone(),
         };
 
@@ -1085,6 +1117,7 @@ impl HttpService for AppService {
         }
 
         if method == Method::GET && path == "/health" {
+            _request_logger.record_http_status(200);
             return health_endpoint(res);
         }
         if method == Method::GET && path == "/metrics" {
@@ -1097,6 +1130,7 @@ impl HttpService for AppService {
                     .extra_prometheus
                     .as_ref()
                     .map(|arc| arc.as_ref() as &(dyn Fn() -> String + Send + Sync));
+                _request_logger.record_http_status(200);
                 return metrics_endpoint(
                     res,
                     metrics,
@@ -1105,7 +1139,7 @@ impl HttpService for AppService {
                     extra,
                 );
             } else {
-                write_json_error(
+                _request_logger.respond_json_error(
                     res,
                     404,
                     serde_json::json!({"error": "Not Found", "method": method.to_string(), "path": path}),
@@ -1114,13 +1148,24 @@ impl HttpService for AppService {
             }
         }
         if method == Method::GET && path == "/openapi.yaml" {
+            let status = if self.spec_path.exists() { 200 } else { 404 };
+            _request_logger.record_http_status(status);
             return openapi_endpoint(res, &self.spec_path);
         }
         if method == Method::GET && path == "/docs" {
             if let Some(docs) = &self.doc_files {
+                let status = if docs
+                    .load("index.html", Some(&json!({ "spec_url": "/openapi.yaml" })))
+                    .is_ok()
+                {
+                    200
+                } else {
+                    404
+                };
+                _request_logger.record_http_status(status);
                 return swagger_ui_endpoint(res, docs);
             } else {
-                write_json_error(
+                _request_logger.respond_json_error(
                     res,
                     404,
                     serde_json::json!({ "error": "Docs not configured" }),
@@ -1161,6 +1206,7 @@ impl HttpService for AppService {
                         res.header(format!("Content-Type: {ct}"));
                     }
                     res.body_vec(bytes);
+                    _request_logger.record_http_status(200);
                     return Ok(());
                 }
             }
@@ -1450,7 +1496,7 @@ impl HttpService for AppService {
                         );
                     }
                 }
-                write_json_error(res, status as u16, body);
+                _request_logger.respond_json_error(res, status as u16, body);
                 return Ok(());
             } else {
                 // S6: Validation success — per-request, demoted to debug (PRD 2.2).
@@ -1507,7 +1553,7 @@ impl HttpService for AppService {
                         // methods as a diagnostic aid for clients).
                         let accept_post = declared.join(", ");
                         res.header(format!("Accept-Post: {accept_post}"));
-                        write_json_error(
+                        _request_logger.respond_json_error(
                             res,
                             415,
                             json!({
@@ -1533,7 +1579,7 @@ impl HttpService for AppService {
                     expected_content_type = %expected_content_type,
                     "Required body missing"
                 );
-                write_json_error(res, 400, json!({"error": "Request body required"}));
+                _request_logger.respond_json_error(res, 400, json!({"error": "Request body required"}));
                 return Ok(());
             }
 
@@ -1560,7 +1606,7 @@ impl HttpService for AppService {
                     None => {
                         // Schema compilation failed - this is a server configuration error
                         tracing::error!(handler = %route_match.handler_name, "Failed to compile request schema");
-                        write_json_error(
+                        _request_logger.respond_json_error(
                             res,
                             500,
                             serde_json::json!({
@@ -1598,7 +1644,7 @@ impl HttpService for AppService {
                         "Request schema validation failed"
                     );
 
-                    write_json_error(
+                    _request_logger.respond_json_error(
                         res,
                         400,
                         json!({"error": "Request validation failed", "details": error_details}),
@@ -1708,7 +1754,7 @@ impl HttpService for AppService {
                                     "Response validation failed"
                                 );
 
-                                write_json_error(
+                                _request_logger.respond_json_error(
                                     res,
                                     500, // Changed from 400 to 500 since this is a server error
                                     json!({"error": "Response validation failed", "details": error_details}),
@@ -1717,10 +1763,10 @@ impl HttpService for AppService {
                             }
                         } // End if let Some(compiled)
                     } // End if let Some(schema)
-                    write_handler_response(res, hr.status, hr.body, is_sse, &headers);
+                    _request_logger.respond_handler(res, hr.status, hr.body, is_sse, &headers);
                 }
                 None => {
-                    write_json_error(
+                    _request_logger.respond_json_error(
                         res,
                         500,
                         serde_json::json!({
@@ -1732,7 +1778,7 @@ impl HttpService for AppService {
                 }
             }
         } else {
-            write_json_error(
+            _request_logger.respond_json_error(
                 res,
                 404,
                 serde_json::json!({"error": "Not Found", "method": method.to_string(), "path": path}),
