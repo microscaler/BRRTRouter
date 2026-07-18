@@ -732,17 +732,48 @@ impl JwksBearerProvider {
                     continue;
                 }
 
-                // OKP public keys for EdDSA (Ed25519)
-                if kty.eq_ignore_ascii_case("OKP") && alg.eq_ignore_ascii_case("EdDSA") {
+                // OKP public keys for EdDSA (Ed25519).
+                //
+                // RFC 8037: for an OKP JWK, "crv" is REQUIRED and "alg" is
+                // OPTIONAL. The previous gate required alg=="EdDSA", which
+                // silently dropped any spec-legal key that omitted `alg` and
+                // produced an opaque "key not found" 401 downstream. Accept an
+                // Ed25519 signing key identified by EITHER crv==Ed25519 or
+                // alg==EdDSA, as long as any present `alg` does not contradict.
+                let crv = k.get("crv").and_then(|v| v.as_str()).unwrap_or("");
+                let looks_ed25519 = kty.eq_ignore_ascii_case("OKP")
+                    && (crv.eq_ignore_ascii_case("Ed25519") || alg.eq_ignore_ascii_case("EdDSA"))
+                    && (alg.is_empty() || alg.eq_ignore_ascii_case("EdDSA"));
+                if looks_ed25519 {
                     let x = match k.get("x").and_then(|v| v.as_str()) {
                         Some(v) => v,
-                        None => continue,
+                        None => {
+                            tracing::warn!(kid, kty, crv, alg, "JWKS: OKP key missing 'x'; skipped");
+                            continue;
+                        }
                     };
-                    if let Ok(dk) = jsonwebtoken::DecodingKey::from_ed_components(x) {
-                        new_map.insert(kid.to_string(), dk);
+                    match jsonwebtoken::DecodingKey::from_ed_components(x) {
+                        Ok(dk) => {
+                            new_map.insert(kid.to_string(), dk);
+                        }
+                        Err(e) => {
+                            tracing::warn!(kid, kty, crv, alg, error = %e, "JWKS: OKP key rejected");
+                        }
                     }
                     continue;
                 }
+
+                // Reached here => the key matched no supported (kty, alg)
+                // combination. Fail LOUDLY: this is precisely the case that
+                // otherwise surfaces only as a generic "key not found" 401,
+                // with no signal that a key *was present but rejected*.
+                tracing::warn!(
+                    kid,
+                    kty,
+                    crv,
+                    alg,
+                    "JWKS: skipping unrecognized/unsupported key; tokens with this kid will 401"
+                );
             }
         }
 
