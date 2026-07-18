@@ -931,7 +931,7 @@ impl HttpService for AppService {
     /// This method is called from multiple coroutines concurrently.
     /// All shared state (Router, Dispatcher, etc.) uses Arc + Mutex/RwLock.
     fn call(&mut self, req: Request, res: &mut Response) -> io::Result<()> {
-        use tracing::{debug, error, info_span, warn, Span};
+        use tracing::{debug, error, info, info_span, warn, Span};
 
         /// Helper struct that logs request completion when dropped
         /// This ensures we log timing even if we return early
@@ -993,24 +993,26 @@ impl HttpService for AppService {
                 self.span.record("duration_ms", duration_ms);
                 self.span.record("stack_used_kb", stack_used_kb);
 
-                // R8: Request complete - per-request, demoted to `debug!` for the
-                // hot path (PRD Phase 2.2). The span already captures
-                // `duration_ms` / `stack_used_kb` for distributed tracing;
-                // developers who want completion logs set `RUST_LOG=…=debug`.
+                // Access log at INFO so OpenSearch Discover detail shows method /
+                // path / status / duration without requiring RUST_LOG=debug
+                // (collector also drops most DEBUG). Span still carries the same
+                // fields for tracing.
                 if let Some(ref request_id) = self.request_id {
-                    debug!(
+                    info!(
                         request_id = %request_id,
                         method = %self.method,
                         path = %self.path,
+                        status = self.http_status,
                         duration_ms = duration_ms,
                         stack_used_kb = stack_used_kb,
                         total_size_bytes = self.total_size_bytes,
                         "Request completed"
                     );
                 } else {
-                    debug!(
+                    info!(
                         method = %self.method,
                         path = %self.path,
+                        status = self.http_status,
                         duration_ms = duration_ms,
                         stack_used_kb = stack_used_kb,
                         total_size_bytes = self.total_size_bytes,
