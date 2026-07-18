@@ -1016,11 +1016,18 @@ impl HttpService for AppService {
             }
         };
 
+        let tenant_id = headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case("x-tenant-id"))
+            .map(|(_, v)| v.as_str())
+            .unwrap_or("");
+
         // Create a span for this request with key fields
         let span = info_span!(
             "http_request",
             method = %method,
             path = %path,
+            tenant_id = %tenant_id,
             header_count = headers.len(),
             status = tracing::field::Empty,
             duration_ms = tracing::field::Empty,
