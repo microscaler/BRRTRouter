@@ -93,7 +93,7 @@ producer's casing bug fail *here*, immediately and diagnosably.
 | 1 | Strict, case-sensitive `kty`/`alg`/`crv` matching per RFC 7518/8037 | Done |
 | 2 | `alg` optional on OKP per RFC 8037 (but exact when present) | Done |
 | 3 | Reject wrong casing with a precise diagnostic; never drop a key silently | Done |
-| 4 | Add a mock-JWKS round-trip test: OKP/Ed25519 key → sign → `decode` succeeds; plus negative cases (`okp`, `ED25519`, contradictory `alg`) assert REJECTION + the diagnostic. The existing OKP fixture in `tests/jwks_headers_integration_tests.rs` only tests cache headers, so it would NOT have caught this | TODO |
+| 4 | Add a mock-JWKS round-trip test: OKP/Ed25519 key → sign → verify succeeds; plus negative cases (`okp`, `ED25519`, contradictory `alg`) assert REJECTION | Done — `tests/jwks_okp_rfc8037_tests.rs` (5 tests, RFC 8037 A.1 vector) |
 | 5 | Surface "JWKS refreshed, N accepted, M rejected" at info so drops are visible in normal ops | TODO |
 
 ## Lessons
