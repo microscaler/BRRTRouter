@@ -18,7 +18,7 @@ def _to_pascal_case(name: str) -> str:
 
 
 def discover_sub_services(openapi_dir: Path, system: str) -> dict[str, dict[str, Any]]:
-    """Discover sub-services under openapi_dir directly via flat paths.
+    """Discover sub-services under openapi/{system}/ (nested) or openapi/ (flat legacy).
 
     Returns:
         Dict mapping service name to {"spec": Path, "base_path": str}.
@@ -27,28 +27,49 @@ def discover_sub_services(openapi_dir: Path, system: str) -> dict[str, dict[str,
     if not openapi_dir.exists() or not openapi_dir.is_dir():
         return {}
 
+    # Nested layout: the openapi dir contains a per-system subdir, then a
+    # per-service subdir, each holding an openapi.yaml.
+    suite_dir = openapi_dir / system
+    scan_dirs = [suite_dir] if suite_dir.is_dir() else []
+    # Flat legacy layout: the openapi dir contains per-service subdirs directly.
+    if not scan_dirs:
+        scan_dirs = [openapi_dir]
+
     discovered: dict[str, dict[str, Any]] = {}
-    for service_path in sorted(openapi_dir.iterdir()):
-        if not service_path.is_dir():
-            continue
-        service_name = service_path.name
-        if service_name.startswith(".") or service_name == system or service_name == "hauliage":
-            continue
-        spec_file = service_path / "openapi.yaml"
-        if not spec_file.exists():
-            continue
-        discovered[service_name] = {
-            "spec": spec_file,
-            "base_path": f"/api/v1/{service_name}",
-        }
+    for root in scan_dirs:
+        for service_path in sorted(root.iterdir()):
+            if not service_path.is_dir():
+                continue
+            service_name = service_path.name
+            if service_name.startswith(".") or service_name == system:
+                continue
+            spec_file = service_path / "openapi.yaml"
+            if not spec_file.exists():
+                continue
+            discovered[service_name] = {
+                "spec": spec_file,
+                "base_path": f"/api/v1/{service_name}",
+            }
     return discovered
 
 
 def list_systems_with_sub_services(openapi_dir: Path) -> list[str]:
-    """Return 'hauliage' as the only logical system in the flattened layout."""
+    """Return suite names under openapi/ that have bff-suite-config.yaml or nested services."""
     if not openapi_dir.exists() or not openapi_dir.is_dir():
         return []
-    return ["hauliage"]
+    suites: list[str] = []
+    for child in sorted(openapi_dir.iterdir()):
+        if not child.is_dir() or child.name.startswith("."):
+            continue
+        if (child / "bff-suite-config.yaml").is_file():
+            suites.append(child.name)
+            continue
+        if any(sub.is_dir() and (sub / "openapi.yaml").is_file() for sub in child.iterdir()):
+            suites.append(child.name)
+    # Flat legacy: top-level bff-suite-config.yaml
+    if not suites and (openapi_dir / "bff-suite-config.yaml").is_file():
+        return ["hauliage"]
+    return suites
 
 
 def _load_spec(p: Path) -> dict[str, Any]:
@@ -240,21 +261,31 @@ def generate_system_bff_spec(
     system: str,
     output_path: Path | None = None,
 ) -> None:
-    """Generate system BFF OpenAPI at output_path (default: openapi_dir/openapi_bff.yaml).
+    """Generate system BFF OpenAPI at output_path (default: openapi/{system}/openapi_bff.yaml).
 
-    When ``openapi_dir/bff-suite-config.yaml`` exists (Hauliage layout), delegates to the
-    suite-config merge pipeline so gateway paths match frontend routes (e.g.
-    ``/bidding/quotes`` not bare ``/quotes``).
+    When ``openapi/{system}/bff-suite-config.yaml`` (or legacy top-level config) exists,
+    delegates to the suite-config merge pipeline so gateway paths match frontend routes
+    (e.g. ``/bidding/quotes`` not bare ``/quotes``).
 
-    Otherwise discovers sub-services from ``openapi_dir/{service}/openapi.yaml`` and merges
-    with legacy path keys (sub-service paths as-is).
+    Otherwise discovers sub-services from ``openapi/{system}/{service}/openapi.yaml`` and
+    merges with legacy path keys (sub-service paths as-is).
     """
-    suite_config = openapi_dir / "bff-suite-config.yaml"
+    nested_config = openapi_dir / system / "bff-suite-config.yaml"
+    flat_config = openapi_dir / "bff-suite-config.yaml"
+    suite_config = nested_config if nested_config.is_file() else flat_config
     if suite_config.is_file():
         from brrtrouter_tooling.bff.generate import generate_bff_spec
 
-        out = output_path if output_path is not None else (openapi_dir / "openapi_bff.yaml")
-        generate_bff_spec(suite_config, output_path=out, base_dir=openapi_dir.parent)
+        # Nested: resolve openapi_base_dir / output_path relative to project root
+        # (parent of openapi/). Flat legacy: same.
+        project_root = openapi_dir.parent
+        default_out = (
+            openapi_dir / system / "openapi_bff.yaml"
+            if nested_config.is_file()
+            else openapi_dir / "openapi_bff.yaml"
+        )
+        out = output_path if output_path is not None else default_out
+        generate_bff_spec(suite_config, output_path=out, base_dir=project_root)
         return
 
     sub_services = discover_sub_services(openapi_dir, system)

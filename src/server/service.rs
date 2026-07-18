@@ -1579,7 +1579,11 @@ impl HttpService for AppService {
                     expected_content_type = %expected_content_type,
                     "Required body missing"
                 );
-                _request_logger.respond_json_error(res, 400, json!({"error": "Request body required"}));
+                _request_logger.respond_json_error(
+                    res,
+                    400,
+                    json!({"error": "Request body required"}),
+                );
                 return Ok(());
             }
 

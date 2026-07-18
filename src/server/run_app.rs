@@ -84,9 +84,7 @@ impl RunAppBuilder {
             .ok_or_else(|| io::Error::other("RunAppBuilder: register handler required"))?;
         let hooks = self.hooks;
 
-        if let Err(e) =
-            crate::otel::init_logging_with_config(&crate::otel::LogConfig::from_env())
-        {
+        if let Err(e) = crate::otel::init_logging_with_config(&crate::otel::LogConfig::from_env()) {
             eprintln!("[logging][error] failed to init tracing subscriber: {e}");
         }
 
@@ -96,7 +94,9 @@ impl RunAppBuilder {
 
         let spec_path = resolve_path(&args.manifest_dir, &args.spec);
         if args.hot_reload {
-            println!("[info] hot-reload requested (handled internally by service watcher if enabled)");
+            println!(
+                "[info] hot-reload requested (handled internally by service watcher if enabled)"
+            );
         }
         if let Some(k) = &args.test_api_key {
             println!("[info] test-api-key provided ({} chars)", k.len());
@@ -107,12 +107,11 @@ impl RunAppBuilder {
             cb(&app_config);
         }
 
-        let spec_str = spec_path.to_str().ok_or_else(|| {
-            io::Error::other("OpenAPI spec path contains invalid UTF-8")
-        })?;
-        let (routes, schemes, _slug) = crate::spec::load_spec_full(spec_str).map_err(|e| {
-            io::Error::other(format!("failed to load OpenAPI spec: {e}"))
-        })?;
+        let spec_str = spec_path
+            .to_str()
+            .ok_or_else(|| io::Error::other("OpenAPI spec path contains invalid UTF-8"))?;
+        let (routes, schemes, _slug) = crate::spec::load_spec_full(spec_str)
+            .map_err(|e| io::Error::other(format!("failed to load OpenAPI spec: {e}")))?;
 
         let mut dispatcher = Dispatcher::new();
         let metrics = Arc::new(MetricsMiddleware::new());
@@ -142,9 +141,7 @@ impl RunAppBuilder {
         );
 
         let compiled_count = service.precompile_schemas(&routes);
-        println!(
-            "[startup] precompiled {compiled_count} JSON schema validators"
-        );
+        println!("[startup] precompiled {compiled_count} JSON schema validators");
 
         service.set_metrics_middleware(metrics);
         if let Some(extra) = hooks.extra_prometheus {
@@ -152,7 +149,14 @@ impl RunAppBuilder {
         }
         service.set_memory_middleware(memory);
 
-        log_startup_context(&args, &spec_path, &app_config, runtime.stack_size, runtime.may_workers, routes.len());
+        log_startup_context(
+            &args,
+            &spec_path,
+            &app_config,
+            runtime.stack_size,
+            runtime.may_workers,
+            routes.len(),
+        );
 
         let (enable, timeout, max) = match app_config.http.as_ref() {
             Some(http) => (
@@ -164,11 +168,7 @@ impl RunAppBuilder {
         };
         service.set_keep_alive(enable, timeout, max);
 
-        register_security_from_config(
-            &mut service,
-            &app_config,
-            args.test_api_key.as_deref(),
-        );
+        register_security_from_config(&mut service, &app_config, args.test_api_key.as_deref());
 
         let port = app_config
             .port

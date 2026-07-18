@@ -178,9 +178,7 @@ pub fn plan_impl_registry(
         }
 
         let (is_untyped, controller_struct) = detect_controller_kind(&content, handler);
-        let stack_size_bytes = route
-            .map(|r| compute_stack_size(*r))
-            .unwrap_or(20_480);
+        let stack_size_bytes = route.map(|r| compute_stack_size(*r)).unwrap_or(20_480);
 
         plan.registry_entries.push(ImplRegistryEntry {
             name: handler.clone(),
@@ -215,7 +213,10 @@ pub fn regenerate_impl_mod_rs(controllers_dir: &Path) -> anyhow::Result<()> {
     }
 
     fs::write(&mod_rs_path, content)?;
-    println!("✅ Regenerated impl controllers/mod.rs → {mod_rs_path:?} ({})", handlers.len());
+    println!(
+        "✅ Regenerated impl controllers/mod.rs → {mod_rs_path:?} ({})",
+        handlers.len()
+    );
     Ok(())
 }
 
@@ -353,11 +354,7 @@ pub fn print_impl_registry_plan(plan: &ImplRegistryPlan, controllers_dir: &Path)
     println!("controllers_dir: {}", controllers_dir.display());
     println!("register: {} controller(s)", plan.registry_entries.len());
     for entry in &plan.registry_entries {
-        let kind = if entry.is_untyped {
-            "untyped"
-        } else {
-            "typed"
-        };
+        let kind = if entry.is_untyped { "untyped" } else { "typed" };
         println!(
             "  - {} ({kind}, stack={})",
             entry.name, entry.stack_size_bytes
@@ -476,14 +473,12 @@ mod tests {
             route("save_draft_quote", Some(true)),
         ];
 
-        let plan =
-            regen_impl_registry_from_routes(&impl_src, &routes, false, true).unwrap();
+        let plan = regen_impl_registry_from_routes(&impl_src, &routes, false, true).unwrap();
         assert_eq!(plan.registry_entries.len(), 2);
-        assert!(
-            plan.registry_entries
-                .iter()
-                .any(|e| e.name == "save_draft_quote")
-        );
+        assert!(plan
+            .registry_entries
+            .iter()
+            .any(|e| e.name == "save_draft_quote"));
 
         let _ = fs::remove_dir_all(&base);
     }

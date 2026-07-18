@@ -58,6 +58,14 @@ impl std::fmt::Display for HttpFetchError {
 
 impl std::error::Error for HttpFetchError {}
 
+/// Full HTTP GET metadata (status, optional `Location`, body).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HttpGetResponse {
+    pub status: u16,
+    pub location: Option<String>,
+    pub body: Vec<u8>,
+}
+
 /// Perform a bounded HTTP GET and return `(status_code, body)`.
 ///
 /// Supports `http://` and rustls-backed `https://` through `may_minihttp::client`.
@@ -66,9 +74,23 @@ impl std::error::Error for HttpFetchError {}
 ///
 /// Returns [`HttpFetchError`] on URL parse failure, network/TLS errors, or oversize body.
 pub fn fetch_get(url: &str, options: &HttpFetchOptions) -> Result<(u16, Vec<u8>), HttpFetchError> {
+    fetch_get_full(url, options).map(|r| (r.status, r.body))
+}
+
+/// Perform a bounded HTTP GET and return status, optional redirect `Location`, and body.
+///
+/// Does not follow redirects — callers use this for OAuth authorize hops (302 + `Location`).
+///
+/// # Errors
+///
+/// Returns [`HttpFetchError`] on URL parse failure, network/TLS errors, or oversize body.
+pub fn fetch_get_full(
+    url: &str,
+    options: &HttpFetchOptions,
+) -> Result<HttpGetResponse, HttpFetchError> {
     let parsed = Url::parse(url).map_err(|e| HttpFetchError::InvalidUrl(e.to_string()))?;
     match parsed.scheme() {
-        "http" | "https" => fetch_get_via_client(&parsed, options),
+        "http" | "https" => fetch_get_full_via_client(&parsed, options),
         other => Err(HttpFetchError::InvalidUrl(format!(
             "unsupported scheme: {other}"
         ))),
@@ -179,10 +201,10 @@ fn fetch_post_via_client(
     read_bounded_body(&mut response, options.max_body_bytes).map(|b| (status, b))
 }
 
-fn fetch_get_via_client(
+fn fetch_get_full_via_client(
     url: &Url,
     options: &HttpFetchOptions,
-) -> Result<(u16, Vec<u8>), HttpFetchError> {
+) -> Result<HttpGetResponse, HttpFetchError> {
     let mut client = connect_client(url, options)?;
     let uri: Uri = request_uri_for_may_minihttp(url)?;
     let mut req = client.new_request(Method::GET, uri);
@@ -191,7 +213,17 @@ fn fetch_get_via_client(
         .send_request(req)
         .map_err(|e| HttpFetchError::Response(e.to_string()))?;
     let status = response.status().as_u16();
-    read_bounded_body(&mut response, options.max_body_bytes).map(|body| (status, body))
+    let location = response
+        .headers()
+        .get(http_legacy::header::LOCATION)
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string);
+    let body = read_bounded_body(&mut response, options.max_body_bytes)?;
+    Ok(HttpGetResponse {
+        status,
+        location,
+        body,
+    })
 }
 
 fn read_bounded_body(reader: &mut impl Read, max_body: usize) -> Result<Vec<u8>, HttpFetchError> {

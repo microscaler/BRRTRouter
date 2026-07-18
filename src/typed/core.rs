@@ -103,7 +103,11 @@ impl HandlerResponseOutput for HttpRedirect {
     fn into_handler_response(self) -> Result<HandlerResponse, serde_json::Error> {
         let mut headers = HeaderVec::new();
         headers.push((Arc::from("location"), self.location));
-        Ok(HandlerResponse::new(self.status, headers, serde_json::json!({})))
+        Ok(HandlerResponse::new(
+            self.status,
+            headers,
+            serde_json::json!({}),
+        ))
     }
 }
 

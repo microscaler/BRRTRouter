@@ -2,8 +2,9 @@
 
 use brrtrouter::generator::FieldDef;
 use brrtrouter::generator::{
-    write_controller, write_handler, write_impl_controller_stub, write_impl_main_rs, write_impl_registry_rs,
-    write_main_rs, write_registry_rs, ImplControllerStubParams, RegistryEntry,
+    write_controller, write_handler, write_impl_controller_stub, write_impl_main_rs,
+    write_impl_registry_rs, write_main_rs, write_registry_rs, ImplControllerStubParams,
+    RegistryEntry,
 };
 use brrtrouter::spec::{ParameterMeta, ResponseSpec, RouteMeta};
 use http::Method;
@@ -377,7 +378,9 @@ fn controller_emits_http_json_when_operation_has_non_2xx_json_schema() {
     unauthorized.insert(
         "application/json".to_string(),
         ResponseSpec {
-            schema: Some(serde_json::json!({"type":"object","properties":{"error":{"type":"string"}}})),
+            schema: Some(
+                serde_json::json!({"type":"object","properties":{"error":{"type":"string"}}}),
+            ),
             example: None,
         },
     );
@@ -391,7 +394,9 @@ fn controller_emits_http_json_when_operation_has_non_2xx_json_schema() {
         request_schema: None,
         request_body_required: false,
         request_content_types: Vec::new(),
-        response_schema: Some(serde_json::json!({"type":"object","properties":{"access_token":{"type":"string"}}})),
+        response_schema: Some(
+            serde_json::json!({"type":"object","properties":{"access_token":{"type":"string"}}}),
+        ),
         example: None,
         responses,
         security: vec![],
@@ -443,8 +448,12 @@ fn generate_stubs_force_preserves_sentinel_file() {
     let protected_body = "// BRRTRouter: user-owned\npub fn handle() { /* real logic */ }";
     fs::write(&stub_path, protected_body).unwrap();
 
-    let spec = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/pet_store/doc/openapi.yaml");
-    assert!(spec.exists(), "pet_store openapi spec required for this test");
+    let spec =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/pet_store/doc/openapi.yaml");
+    assert!(
+        spec.exists(),
+        "pet_store openapi spec required for this test"
+    );
 
     brrtrouter::generator::generate_impl_stubs(
         &spec,

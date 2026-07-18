@@ -320,6 +320,44 @@ class TestMergePathsPerMethod:
         assert "get" in str(exc_info.value).lower() or "method" in str(exc_info.value).lower()
 
 
+class TestMergeOperationIds:
+    """Operation IDs remain globally unique after composing service contracts."""
+
+    def test_prefixed_paths_with_duplicate_operation_ids_raise(self, tmp_path: Path) -> None:
+        payable_spec = tmp_path / "payable.yaml"
+        receivable_spec = tmp_path / "receivable.yaml"
+        payable_spec.write_text(
+            "openapi: 3.1.0\ninfo: { title: AP, version: '1.0' }\npaths:\n"
+            "  /payments:\n    get:\n      operationId: listPayments\n"
+            "      responses: { '200': { description: OK } }\n"
+        )
+        receivable_spec.write_text(
+            "openapi: 3.1.0\ninfo: { title: AR, version: '1.0' }\npaths:\n"
+            "  /payments:\n    get:\n      operationId: listPayments\n"
+            "      responses: { '200': { description: OK } }\n"
+        )
+        sub_services = {
+            "accounts-payable": {
+                "base_path": "/api/accounts-payable",
+                "spec_path": payable_spec,
+                "gateway_path_style": "prefixed",
+            },
+            "accounts-receivable": {
+                "base_path": "/api/accounts-receivable",
+                "spec_path": receivable_spec,
+                "gateway_path_style": "prefixed",
+            },
+        }
+
+        with pytest.raises(ValueError, match="Operation ID conflict") as exc_info:
+            merge_sub_service_specs(sub_services)
+
+        message = str(exc_info.value)
+        assert "listPayments" in message
+        assert "accounts-payable" in message
+        assert "accounts-receivable" in message
+
+
 class TestMergeComponentParameters:
     """Component parameters: same name with same definition is OK; differing definitions raise."""
 

@@ -27,15 +27,23 @@ def _run_generate_system(project_root: Path, args) -> None:
 
     if system:
         out_path = Path(output).expanduser().resolve() if output else None
+        nested_config = openapi_dir / system / "bff-suite-config.yaml"
+        flat_config = openapi_dir / "bff-suite-config.yaml"
+        has_suite_config = nested_config.is_file() or flat_config.is_file()
         subs = discover_sub_services(openapi_dir, system)
-        if not subs:
+        if not subs and not has_suite_config:
             print(f"⚠️  No sub-services found for {system}")
             return
-        print(
-            f"🔄 Generating {system} system BFF OpenAPI specification ({len(subs)} sub-services)..."
-        )
+        n = len(subs) if subs else "(suite-config)"
+        print(f"🔄 Generating {system} system BFF OpenAPI specification ({n} sub-services)...")
         generate_system_bff_spec(openapi_dir, system, output_path=out_path)
-        if (openapi_dir / "bff-suite-config.yaml").is_file():
+        if nested_config.is_file():
+            out = (
+                Path(output).expanduser().resolve()
+                if output
+                else (openapi_dir / system / "openapi_bff.yaml")
+            )
+        elif flat_config.is_file():
             out = (
                 Path(output).expanduser().resolve()
                 if output
@@ -53,10 +61,13 @@ def _run_generate_system(project_root: Path, args) -> None:
         print(
             f"🔄 Generating system BFF specs for all systems ({len(systems)} with sub-services)..."
         )
-        suite_config = openapi_dir / "bff-suite-config.yaml"
         for s in systems:
             generate_system_bff_spec(openapi_dir, s, output_path=None)
-            if suite_config.is_file():
-                print(f"✅ {s} → {openapi_dir / 'openapi_bff.yaml'}")
+            nested = openapi_dir / s / "openapi_bff.yaml"
+            flat = openapi_dir / "openapi_bff.yaml"
+            if nested.is_file():
+                print(f"✅ {s} → {nested}")
+            elif flat.is_file():
+                print(f"✅ {s} → {flat}")
             else:
                 print(f"✅ {s} → {openapi_dir / s / 'openapi.yaml'}")

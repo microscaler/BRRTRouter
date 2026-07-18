@@ -15,12 +15,7 @@ struct StaticApiKeyProvider {
 }
 
 impl SecurityProvider for StaticApiKeyProvider {
-    fn validate(
-        &self,
-        scheme: &SecurityScheme,
-        _scopes: &[String],
-        req: &SecurityRequest,
-    ) -> bool {
+    fn validate(&self, scheme: &SecurityScheme, _scopes: &[String], req: &SecurityRequest) -> bool {
         match scheme {
             SecurityScheme::ApiKey { name, location, .. } => match location.as_str() {
                 "header" => {
@@ -47,12 +42,9 @@ pub fn register_security_from_config(
     let sec_cfg = app_config.security.as_ref();
     for (scheme_name, scheme) in service.security_schemes.clone() {
         match scheme {
-            SecurityScheme::ApiKey { .. } => register_api_key(
-                service,
-                sec_cfg,
-                &scheme_name,
-                test_api_key,
-            ),
+            SecurityScheme::ApiKey { .. } => {
+                register_api_key(service, sec_cfg, &scheme_name, test_api_key)
+            }
             SecurityScheme::Http { ref scheme, .. } if scheme.eq_ignore_ascii_case("bearer") => {
                 register_bearer(service, sec_cfg, &scheme_name);
             }

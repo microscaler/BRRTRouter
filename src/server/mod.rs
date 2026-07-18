@@ -85,12 +85,12 @@ pub mod http_server;
 pub mod request;
 /// Response building and serialization
 pub mod response;
+/// Fix B: shared service bootstrap
+pub mod run_app;
 /// Security provider registration from config.yaml
 pub mod security_setup;
 /// Core application service that handles requests
 pub mod service;
-/// Fix B: shared service bootstrap
-pub mod run_app;
 
 pub use request::{decode_param_value, parse_request, ParsedRequest};
 

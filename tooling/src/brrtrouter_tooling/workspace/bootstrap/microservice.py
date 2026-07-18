@@ -68,7 +68,17 @@ def load_openapi_spec(spec_path: Path) -> dict[str, Any]:
         return yaml.safe_load(f)
 
 
-def create_dockerfile(service_name: str, binary_name: str, port: int, output_path: Path) -> None:
+def create_dockerfile(
+    service_name: str,
+    binary_name: str,
+    port: int,
+    output_path: Path,
+    *,
+    suite: str | None = None,
+) -> None:
+    crate_prefix = (
+        f"microservices/{suite}/{service_name}" if suite else f"microservices/{service_name}"
+    )
     content = f"""# Minimal runtime-only Dockerfile for {to_pascal_case(service_name)} Service (Tilt development)
 # Binary is cross-compiled on host (Apple Silicon -> x86_64 Linux) and copied in
 
@@ -92,9 +102,9 @@ RUN mkdir -p /app/config /app/doc /app/static_site && \\
     chmod -R 777 /app
 
 # Copy configuration and assets to writable locations
-COPY ./microservices/{service_name}/impl/config /app/config
-COPY ./microservices/{service_name}/gen/doc /app/doc
-COPY ./microservices/{service_name}/gen/static_site /app/static_site
+COPY ./{crate_prefix}/impl/config /app/config
+COPY ./{crate_prefix}/gen/doc /app/doc
+COPY ./{crate_prefix}/gen/static_site /app/static_site
 
 # Expose HTTP port
 EXPOSE {port}
@@ -132,12 +142,15 @@ http:
     print(f"✅ Created config.yaml: {output_path}")
 
 
-def update_workspace_cargo_toml(service_name: str, cargo_toml_path: Path) -> None:
+def update_workspace_cargo_toml(
+    service_name: str, cargo_toml_path: Path, *, suite: str | None = None
+) -> None:
     if not cargo_toml_path.exists():
         return
     content = cargo_toml_path.read_text()
-    gen_member = f'"{service_name}/gen"'
-    impl_member = f'"{service_name}/impl"'
+    member_prefix = f"{suite}/{service_name}" if suite else service_name
+    gen_member = f'"{member_prefix}/gen"'
+    impl_member = f'"{member_prefix}/impl"'
     if gen_member in content and impl_member in content:
         return
     m = re.search(r"(members\s*=\s*\[)(.*?)(\])", content, re.DOTALL)
@@ -154,7 +167,7 @@ def update_workspace_cargo_toml(service_name: str, cargo_toml_path: Path) -> Non
     new_members = '    "' + '",\n    "'.join(existing) + '",\n'
     new_content = content[: m.start()] + m.group(1) + "\n" + new_members + "]" + content[m.end() :]
     cargo_toml_path.write_text(new_content)
-    print(f"✅ Added {service_name}/gen and {service_name}/impl to workspace Cargo.toml")
+    print(f"✅ Added {member_prefix}/gen and {member_prefix}/impl to workspace Cargo.toml")
 
 
 def update_tiltfile(
@@ -491,7 +504,7 @@ def _ensure_impl_scaffold(project_root: Path, suite: str, service_name: str) -> 
     if gen_main.exists():
         _create_impl_main(gen_main, impl_main, service_name)
     cargo_toml_path = project_root / "microservices" / "Cargo.toml"
-    update_workspace_cargo_toml(service_name, cargo_toml_path)
+    update_workspace_cargo_toml(service_name, cargo_toml_path, suite=suite)
     print(f"✅ Created impl scaffold for {service_name} (impl/, Cargo.toml, main.rs, config)")
 
 
@@ -597,8 +610,15 @@ def run_bootstrap_microservice(
     project_root: Path,
     *,
     force_stubs: bool = False,
+    suite: str | None = None,
 ) -> int:
     """Bootstrap microservice. Returns 0 on success, 1 on error."""
+    from brrtrouter_tooling.workspace.discovery.suites import (
+        resolve_service_microservice_dir,
+        resolve_service_openapi_spec_path,
+        service_to_suite,
+    )
+
     if port is None:
         port = _get_port_from_registry(project_root, service_name)
     if port is None:
@@ -607,9 +627,10 @@ def run_bootstrap_microservice(
         )
         return 1
 
-    spec_file = f"{service_name}/openapi.yaml"
-    spec_path = project_root / "openapi" / service_name / "openapi.yaml"
-    crate_dir = project_root / "microservices" / service_name
+    resolved_suite = suite or service_to_suite(project_root, service_name) or "loadlinker"
+    spec_file = f"{resolved_suite}/{service_name}/openapi.yaml"
+    spec_path = resolve_service_openapi_spec_path(project_root, resolved_suite, service_name)
+    crate_dir = resolve_service_microservice_dir(project_root, resolved_suite, service_name)
     gen_dir = crate_dir / "gen"
     impl_dir = crate_dir / "impl"
     dockerfile_path = project_root / "docker" / "microservices" / f"Dockerfile.{service_name}"
@@ -623,7 +644,7 @@ def run_bootstrap_microservice(
 
     openapi_spec = load_openapi_spec(spec_path)
     binary_name = derive_binary_name(openapi_spec, service_name)
-    print(f"🚀 Bootstrapping {service_name} (port {port}, binary {binary_name})")
+    print(f"🚀 Bootstrapping {resolved_suite}/{service_name} (port {port}, binary {binary_name})")
 
     # Generate code to gen/ directory (pass service_name so --package-name is set)
     generate_code_with_brrtrouter(spec_path, gen_dir, project_root, service_name=service_name)
@@ -660,8 +681,8 @@ def run_bootstrap_microservice(
         spec_path, impl_dir, project_root, service_name, force=force_stubs
     )
 
-    create_dockerfile(service_name, binary_name, port, dockerfile_path)
-    update_workspace_cargo_toml(service_name, cargo_toml_path)
+    create_dockerfile(service_name, binary_name, port, dockerfile_path, suite=resolved_suite)
+    update_workspace_cargo_toml(service_name, cargo_toml_path, suite=resolved_suite)
     update_tiltfile(service_name, spec_file, binary_name, port, tiltfile_path)
 
     print(f"✅ Bootstrap complete for {service_name}. Next: tilt up --port 10352")

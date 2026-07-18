@@ -6,8 +6,7 @@ use std::sync::Arc;
 use http::Method;
 
 use crate::middleware::{
-    build_route_cors_map, CorsMiddleware, CorsMiddlewareBuilder, MetricsMiddleware,
-    RouteCorsPolicy,
+    build_route_cors_map, CorsMiddleware, CorsMiddlewareBuilder, MetricsMiddleware, RouteCorsPolicy,
 };
 use crate::spec::RouteMeta;
 

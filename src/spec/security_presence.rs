@@ -36,9 +36,7 @@ pub fn extract_operation_security_presence(value: &serde_json::Value) -> Operati
     let mut explicit_operation = HashSet::new();
 
     let Some(paths) = value.get("paths").and_then(|p| p.as_object()) else {
-        return OperationSecurityPresence {
-            explicit_operation,
-        };
+        return OperationSecurityPresence { explicit_operation };
     };
 
     for (path, item) in paths {
@@ -152,7 +150,15 @@ paths:
         .unwrap();
         let presence = extract_operation_security_presence(&raw);
         let spec: OpenApiV3Spec = serde_json::from_value(raw).unwrap();
-        let op = spec.paths.as_ref().unwrap().get("/public").unwrap().get.as_ref().unwrap();
+        let op = spec
+            .paths
+            .as_ref()
+            .unwrap()
+            .get("/public")
+            .unwrap()
+            .get
+            .as_ref()
+            .unwrap();
 
         let sec = resolve_operation_security("/public", "get", op, &spec, Some(&presence));
         assert!(sec.is_empty(), "security: [] must override global security");

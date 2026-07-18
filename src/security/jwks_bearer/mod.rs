@@ -702,7 +702,12 @@ impl JwksBearerProvider {
                             tracing::warn!(kid, alg, "JWKS: oct key missing 'k'; rejected");
                         }
                     } else {
-                        tracing::warn!(kid, kty, alg, "JWKS: oct key has unsupported/miscased alg; rejected");
+                        tracing::warn!(
+                            kid,
+                            kty,
+                            alg,
+                            "JWKS: oct key has unsupported/miscased alg; rejected"
+                        );
                     }
                     continue;
                 }
@@ -718,16 +723,26 @@ impl JwksBearerProvider {
                             k.get("e").and_then(|v| v.as_str()),
                         ) {
                             (Some(n), Some(e)) => {
-                                if let Ok(dk) = jsonwebtoken::DecodingKey::from_rsa_components(n, e) {
+                                if let Ok(dk) = jsonwebtoken::DecodingKey::from_rsa_components(n, e)
+                                {
                                     new_map.insert(kid.to_string(), dk);
                                 } else {
-                                    tracing::warn!(kid, alg, "JWKS: RSA key components invalid; rejected");
+                                    tracing::warn!(
+                                        kid,
+                                        alg,
+                                        "JWKS: RSA key components invalid; rejected"
+                                    );
                                 }
                             }
                             _ => tracing::warn!(kid, alg, "JWKS: RSA key missing n/e; rejected"),
                         }
                     } else {
-                        tracing::warn!(kid, kty, alg, "JWKS: RSA key has unsupported/miscased alg; rejected");
+                        tracing::warn!(
+                            kid,
+                            kty,
+                            alg,
+                            "JWKS: RSA key has unsupported/miscased alg; rejected"
+                        );
                     }
                     continue;
                 }
@@ -740,16 +755,26 @@ impl JwksBearerProvider {
                             k.get("y").and_then(|v| v.as_str()),
                         ) {
                             (Some(x), Some(y)) => {
-                                if let Ok(dk) = jsonwebtoken::DecodingKey::from_ec_components(x, y) {
+                                if let Ok(dk) = jsonwebtoken::DecodingKey::from_ec_components(x, y)
+                                {
                                     new_map.insert(kid.to_string(), dk);
                                 } else {
-                                    tracing::warn!(kid, alg, "JWKS: EC key components invalid; rejected");
+                                    tracing::warn!(
+                                        kid,
+                                        alg,
+                                        "JWKS: EC key components invalid; rejected"
+                                    );
                                 }
                             }
                             _ => tracing::warn!(kid, alg, "JWKS: EC key missing x/y; rejected"),
                         }
                     } else {
-                        tracing::warn!(kid, kty, alg, "JWKS: EC key has unsupported/miscased alg; rejected");
+                        tracing::warn!(
+                            kid,
+                            kty,
+                            alg,
+                            "JWKS: EC key has unsupported/miscased alg; rejected"
+                        );
                     }
                     continue;
                 }
@@ -764,7 +789,12 @@ impl JwksBearerProvider {
                         continue;
                     }
                     if !alg.is_empty() && alg != "EdDSA" {
-                        tracing::warn!(kid, kty, alg, "JWKS: OKP key alg must be \"EdDSA\" or omitted (RFC 8037); rejected");
+                        tracing::warn!(
+                            kid,
+                            kty,
+                            alg,
+                            "JWKS: OKP key alg must be \"EdDSA\" or omitted (RFC 8037); rejected"
+                        );
                         continue;
                     }
                     match k.get("x").and_then(|v| v.as_str()) {
@@ -776,7 +806,9 @@ impl JwksBearerProvider {
                                 tracing::warn!(kid, kty, crv, error = %e, "JWKS: OKP key 'x' invalid; rejected");
                             }
                         },
-                        None => tracing::warn!(kid, kty, crv, "JWKS: OKP key missing 'x'; rejected"),
+                        None => {
+                            tracing::warn!(kid, kty, crv, "JWKS: OKP key missing 'x'; rejected")
+                        }
                     }
                     continue;
                 }

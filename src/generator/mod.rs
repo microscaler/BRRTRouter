@@ -125,12 +125,10 @@ pub use dependencies_config::*;
 pub use impl_registry::{
     discover_impl_controllers, plan_impl_registry, plan_impl_registry_for_migration,
     print_impl_registry_plan, regen_impl_registry, regen_impl_registry_from_routes,
-    write_impl_registry_from_plan, write_impl_registry_rs,
-    ImplRegistryEntry, ImplRegistryPlan,
+    write_impl_registry_from_plan, write_impl_registry_rs, ImplRegistryEntry, ImplRegistryPlan,
 };
 pub use migrate_main::{
-    analyze_main_rs, migrate_main, print_main_migration_plan, MainMigrationPlan,
-    MigrateMainOptions,
+    analyze_main_rs, migrate_main, print_main_migration_plan, MainMigrationPlan, MigrateMainOptions,
 };
 pub use migrate_registration::{
     analyze_migration, extract_main_match_handlers, migrate_registration, print_migration_report,

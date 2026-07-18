@@ -58,6 +58,28 @@ def _update_refs_in_paths(paths: dict[str, Any], old_name: str, new_name: str) -
                         _update_refs_in_value(r["content"], old_name, new_name)
 
 
+def _register_operation_id(
+    operation_origin: dict[str, tuple[str, str, str]],
+    operation_id: str | None,
+    service: str,
+    path: str,
+    method: str,
+) -> None:
+    if not operation_id:
+        return
+    previous = operation_origin.get(operation_id)
+    if previous is not None:
+        previous_service, previous_path, previous_method = previous
+        message = (
+            f"Operation ID conflict: {operation_id!r} is defined by "
+            f"service {previous_service!r} at "
+            f"{previous_method.upper()} {previous_path!r} and by "
+            f"service {service!r} at {method.upper()} {path!r}"
+        )
+        raise ValueError(message)
+    operation_origin[operation_id] = (service, path, method)
+
+
 def _merge_one_sub_service(
     sname: str,
     base_path: str,
@@ -67,6 +89,7 @@ def _merge_one_sub_service(
     all_paths: dict[str, Any],
     merged_params: dict[str, Any],
     param_origin: dict[str, str],
+    operation_origin: dict[str, tuple[str, str, str]],
     gateway_path_style: str = "as_spec",
     bff_impl_operations: set[str] | None = None,
 ) -> None:
@@ -120,6 +143,8 @@ def _merge_one_sub_service(
                 if not isinstance(op, dict):
                     continue
                 op = dict(op)
+                operation_id = op.get("operationId")
+                _register_operation_id(operation_origin, operation_id, sname, path, method)
                 op["x-service"] = sname
                 op["x-service-base-path"] = base_path
                 op["x-brrtrouter-downstream-path"] = downstream_path(base_path, path)
@@ -283,6 +308,7 @@ def merge_sub_service_specs(
     all_paths: dict[str, Any] = {}
     merged_params = dict(bff["components"]["parameters"])
     param_origin: dict[str, str] = {}
+    operation_origin: dict[str, tuple[str, str, str]] = {}
 
     for sname, cfg in sorted(sub_services.items()):
         spec_path = cfg.get("spec_path")
@@ -301,6 +327,7 @@ def merge_sub_service_specs(
             all_paths,
             merged_params,
             param_origin,
+            operation_origin,
             gateway_path_style=cfg.get("gateway_path_style", "as_spec"),
             bff_impl_operations=bff_impl_operations,
         )

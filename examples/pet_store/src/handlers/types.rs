@@ -11,19 +11,23 @@ pub struct AddPetRequest {
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct AddPetResponse {
-    pub id: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<i32>,
 
-    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct AdminSettings {
-    pub feature_flags: serde_json::Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub feature_flags: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct AdminSettingsResponse {
-    pub feature_flags: serde_json::Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub feature_flags: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -36,7 +40,8 @@ pub struct Cat {
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct CreateItemRequest {
-    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -54,26 +59,32 @@ pub struct Dog {
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct DownloadFileResponse {
-    pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
 
-    pub url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct GetItemResponse {
-    pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
 
-    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct GetLabelResponse {
-    pub color: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct GetMatrixResponse {
-    pub coords: Vec<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub coords: Option<Vec<i32>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -93,7 +104,8 @@ pub struct GetPetResponse {
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct GetPostResponse {
-    pub author_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub author_id: Option<String>,
 
     pub body: String,
 
@@ -104,7 +116,8 @@ pub struct GetPostResponse {
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct GetUserResponse {
-    pub email: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
 
     pub id: String,
 
@@ -113,14 +126,17 @@ pub struct GetUserResponse {
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct HeadUserResponse {
-    pub exists: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exists: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct Item {
-    pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
 
-    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -135,12 +151,14 @@ pub struct ListUserPostsResponse {
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct ListUsersResponse {
-    pub users: Vec<User>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub users: Option<Vec<User>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct OptionsUserResponse {
-    pub allow: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allow: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -160,14 +178,17 @@ pub struct Pet {
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct PetCreationResponse {
-    pub id: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<i32>,
 
-    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct Post {
-    pub author_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub author_id: Option<String>,
 
     pub body: String,
 
@@ -178,30 +199,39 @@ pub struct Post {
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct PostItemRequest {
-    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct PostItemResponse {
-    pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
 
-    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct ProblemDetails {
-    pub detail: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
 
-    pub errors: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub errors: Option<Vec<String>>,
 
-    pub instance: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instance: Option<String>,
 
-    pub status: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<i32>,
 
-    pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
 
     #[serde(rename = "type")]
-    pub r#type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub r#type: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -211,34 +241,41 @@ pub struct RegisterWebhookRequest {
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct RegisterWebhookResponse {
-    pub subscription_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subscription_id: Option<String>,
 
-    pub url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct SearchResponse {
-    pub results: Vec<Item>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub results: Option<Vec<Item>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct SecureEndpointResponse {
-    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct SubmitFormResponse {
-    pub ok: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ok: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct UploadFileResponse {
-    pub location: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub location: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct User {
-    pub email: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
 
     pub id: String,
 
@@ -247,5 +284,6 @@ pub struct User {
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct UserList {
-    pub users: Vec<User>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub users: Option<Vec<User>>,
 }

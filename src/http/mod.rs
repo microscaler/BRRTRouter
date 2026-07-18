@@ -8,7 +8,8 @@ mod fetch;
 mod proxy;
 
 pub use fetch::{
-    fetch_get, fetch_get_text_with_retry, fetch_post, HttpFetchError, HttpFetchOptions,
+    fetch_get, fetch_get_full, fetch_get_text_with_retry, fetch_post, HttpFetchError,
+    HttpFetchOptions, HttpGetResponse,
 };
 pub use proxy::{
     client_pool_key, downstream_host, downstream_http_port, proxy_untyped, resolve_path_template,

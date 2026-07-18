@@ -8,9 +8,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use super::impl_registry::{
-    discover_impl_controllers, ImplRegistryPlan,
-};
+use super::impl_registry::{discover_impl_controllers, ImplRegistryPlan};
 
 /// Result of comparing main.rs, disk, and planned registry.
 #[derive(Debug, Default)]
@@ -299,13 +297,19 @@ pub fn print_migration_report(report: &MigrationReport, impl_src_dir: &Path) {
         }
     }
     if !report.f5_risk.is_empty() {
-        println!("f5_risk — on disk, not in main match ({}):", report.f5_risk.len());
+        println!(
+            "f5_risk — on disk, not in main match ({}):",
+            report.f5_risk.len()
+        );
         for h in &report.f5_risk {
             println!("  ❌ {h}");
         }
     }
     if !report.main_orphan_arms.is_empty() {
-        println!("main_orphan — in main match, no controller file ({}):", report.main_orphan_arms.len());
+        println!(
+            "main_orphan — in main match, no controller file ({}):",
+            report.main_orphan_arms.len()
+        );
         for h in &report.main_orphan_arms {
             println!("  ⚠️  {h}");
         }
@@ -367,7 +371,12 @@ fn patch_fallback_registration(content: &str) -> anyhow::Result<String> {
          {indent}    impl_registry::register_impl(&mut dispatcher, &routes);\n\
          {indent}}}\n"
     );
-    Ok(format!("{}{}{}", &content[..start], replacement, &content[end..]))
+    Ok(format!(
+        "{}{}{}",
+        &content[..start],
+        replacement,
+        &content[end..]
+    ))
 }
 
 fn find_fallback_registration_end(content: &str, start: usize) -> anyhow::Result<usize> {
@@ -456,12 +465,7 @@ fn inject_tier1_registration(content: &str) -> anyhow::Result<String> {
     let injection = format!(
         "{indent}gen_registry::register_from_spec(&mut dispatcher, &routes);\n{indent}impl_registry::register_impl(&mut dispatcher, &routes);\n"
     );
-    let injected = format!(
-        "{}{}{}",
-        &out[..block_open],
-        injection,
-        &out[block_open..]
-    );
+    let injected = format!("{}{}{}", &out[..block_open], injection, &out[block_open..]);
     remove_manual_match_registration_loop(&injected)
 }
 
@@ -548,7 +552,10 @@ fn fix_gen_registry_import(content: &str) -> String {
         if !out.contains(&alias_line) {
             for line in content.lines() {
                 let trimmed = line.trim();
-                if trimmed.starts_with("use ") && trimmed.contains("_gen") && trimmed.contains("::*;") {
+                if trimmed.starts_with("use ")
+                    && trimmed.contains("_gen")
+                    && trimmed.contains("::*;")
+                {
                     out = out.replace(line, &format!("{line}\n{alias_line}"));
                     return out;
                 }
@@ -582,7 +589,12 @@ fn insert_after_file_header(content: &str, insertion: &str) -> String {
         }
         break;
     }
-    format!("{}{}{}", &content[..insert_at], insertion, &content[insert_at..])
+    format!(
+        "{}{}{}",
+        &content[..insert_at],
+        insertion,
+        &content[insert_at..]
+    )
 }
 
 fn remove_manual_match_registration_loop(content: &str) -> anyhow::Result<String> {
@@ -628,7 +640,10 @@ fn rewrite_register_from_spec_line(line: &str) -> String {
             return line.replace(&qualified, "gen_registry::register_from_spec");
         }
     }
-    line.replace("registry::register_from_spec", "gen_registry::register_from_spec")
+    line.replace(
+        "registry::register_from_spec",
+        "gen_registry::register_from_spec",
+    )
 }
 
 fn fix_registration_lines(content: &str) -> String {
@@ -749,22 +764,21 @@ fn replace_registration_block(content: &str) -> anyhow::Result<String> {
     tail_start += ws;
 
     let indent = "        ";
-    let replacement_tail = if rest.starts_with("for route in &routes")
-        || rest.starts_with("for route in routes")
-    {
-        let brace_open = tail_start + rest.find('{').unwrap();
-        let brace_close = find_closing_brace(content, brace_open)
-            .ok_or_else(|| anyhow::anyhow!("unbalanced braces in for route loop"))?;
-        format!(
-            "{new_reg_line}{indent}impl_registry::register_impl(&mut dispatcher, &routes);\n{}",
-            &content[brace_close + 1..]
-        )
-    } else {
-        format!(
-            "{new_reg_line}{indent}impl_registry::register_impl(&mut dispatcher, &routes);\n{}",
-            &content[tail_start..]
-        )
-    };
+    let replacement_tail =
+        if rest.starts_with("for route in &routes") || rest.starts_with("for route in routes") {
+            let brace_open = tail_start + rest.find('{').unwrap();
+            let brace_close = find_closing_brace(content, brace_open)
+                .ok_or_else(|| anyhow::anyhow!("unbalanced braces in for route loop"))?;
+            format!(
+                "{new_reg_line}{indent}impl_registry::register_impl(&mut dispatcher, &routes);\n{}",
+                &content[brace_close + 1..]
+            )
+        } else {
+            format!(
+                "{new_reg_line}{indent}impl_registry::register_impl(&mut dispatcher, &routes);\n{}",
+                &content[tail_start..]
+            )
+        };
 
     let patched = format!("{}{}", &content[..line_start], replacement_tail);
     remove_manual_match_registration_loop(&patched)
@@ -845,10 +859,7 @@ pub fn migrate_registration(opts: &MigrateRegistrationOptions) -> anyhow::Result
         return Ok(report);
     }
 
-    if report.complex_main
-        && !opts.force_main
-        && !main_content.contains("fallback_routes")
-    {
+    if report.complex_main && !opts.force_main && !main_content.contains("fallback_routes") {
         anyhow::bail!(
             "refusing to patch complex main.rs: {}. Use --force-main after manual review, or edit main.rs by hand.",
             report.complex_main_reason.as_deref().unwrap_or("unknown")

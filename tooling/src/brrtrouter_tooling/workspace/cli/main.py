@@ -19,7 +19,7 @@ from . import pre_commit as pre_commit_cli
 from . import release as release_cli
 from . import tilt as tilt_cli
 
-# MONKEY PATCH: optional flattened OpenAPI layout (openapi/<service>/ vs openapi/<suite>/<service>/).
+# MONKEY PATCH: workspace discovery (nested openapi/<suite>/<service>/; flat legacy fallback).
 # Injected discovery module may come from this repo or a fork; see ``workspace.discovery.suites``.
 b_suites.suites_with_bff = h_suites.suites_with_bff
 b_suites.bff_suite_config_path = h_suites.bff_suite_config_path

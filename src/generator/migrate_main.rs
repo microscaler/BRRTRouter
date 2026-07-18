@@ -84,17 +84,19 @@ pub fn analyze_main_rs(
         package_name: package_name.clone(),
         gen_crate_ident,
         default_port: extract_default_port(main_content).unwrap_or(8081),
-        service_name: extract_service_name(main_content)
-            .unwrap_or_else(|| package_name.clone()),
+        service_name: extract_service_name(main_content).unwrap_or_else(|| package_name.clone()),
         has_mod_controllers: !uses_lib_controllers
             && (main_content.contains("mod controllers;")
                 || impl_registry_content.contains("crate::controllers::")),
         has_lifeguard_prometheus: main_content.contains("set_extra_prometheus")
             && main_content.contains("lifeguard::metrics"),
         has_db_warm: main_content.contains("hauliage_database::db()"),
-        spec_default: extract_clap_default(main_content, "spec").unwrap_or_else(|| "../gen/doc/openapi.yaml".into()),
-        doc_dir_default: extract_clap_default(main_content, "doc_dir").unwrap_or_else(|| "../gen/doc".into()),
-        config_default: extract_clap_default(main_content, "config").unwrap_or_else(|| "./config/config.yaml".into()),
+        spec_default: extract_clap_default(main_content, "spec")
+            .unwrap_or_else(|| "../gen/doc/openapi.yaml".into()),
+        doc_dir_default: extract_clap_default(main_content, "doc_dir")
+            .unwrap_or_else(|| "../gen/doc".into()),
+        config_default: extract_clap_default(main_content, "config")
+            .unwrap_or_else(|| "./config/config.yaml".into()),
         already_migrated: main_content.contains("RunAppBuilder"),
     })
 }

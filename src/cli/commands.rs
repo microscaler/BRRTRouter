@@ -307,7 +307,9 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
             let plan = crate::generator::plan_impl_registry(&routes, &controllers_dir)?;
             crate::generator::print_impl_registry_plan(&plan, &controllers_dir);
             if !plan.errors.is_empty() {
-                return Err(anyhow::anyhow!("plan failed with {} error(s)", plan.errors.len()).into());
+                return Err(
+                    anyhow::anyhow!("plan failed with {} error(s)", plan.errors.len()).into(),
+                );
             }
             Ok(())
         }
@@ -356,13 +358,15 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
             apply,
             force_main,
         } => {
-            crate::generator::migrate_registration(&crate::generator::MigrateRegistrationOptions {
-                spec_path: spec.clone(),
-                impl_output_dir: output.clone(),
-                component_name: component_name.clone(),
-                apply: *apply,
-                force_main: *force_main,
-            })?;
+            crate::generator::migrate_registration(
+                &crate::generator::MigrateRegistrationOptions {
+                    spec_path: spec.clone(),
+                    impl_output_dir: output.clone(),
+                    component_name: component_name.clone(),
+                    apply: *apply,
+                    force_main: *force_main,
+                },
+            )?;
             if *apply {
                 crate::generator::format_project(output.as_path())?;
             }

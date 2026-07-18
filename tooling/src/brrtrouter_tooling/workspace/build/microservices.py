@@ -13,23 +13,36 @@ from brrtrouter_tooling.workspace.gen.regenerate import regenerate_service
 
 
 def run_hauliage_gen_if_missing(project_root: Path) -> None:
-    """Generate gen crates for hauliage natively if missing."""
-    service_names = list(suite_sub_service_names(project_root, "hauliage"))
-    if not service_names:
+    """Generate gen crates for discovered suites if missing."""
+    from brrtrouter_tooling.workspace.discovery.suites import (
+        resolve_service_microservice_dir,
+        suites_with_bff,
+    )
+
+    suites = suites_with_bff(project_root)
+    if not suites and suite_sub_service_names(project_root, "hauliage"):
+        suites = ["hauliage"]
+    if not suites:
         return
 
     workspace_dir = "microservices"
-    # In flat structure, probe microservices/{service}/gen/Cargo.toml
-    probe = project_root / workspace_dir / service_names[0] / "gen" / "Cargo.toml"
-    if probe.exists():
-        return
-
-    print(
-        f"📦 {workspace_dir} crates missing; running brrtrouter-gen natively for all services...",
-        file=sys.stderr,
-    )
-    for name in service_names:
-        regenerate_service(project_root, "hauliage", name)
+    for suite in suites:
+        service_names = list(suite_sub_service_names(project_root, suite))
+        if not service_names:
+            continue
+        probe = (
+            resolve_service_microservice_dir(project_root, suite, service_names[0])
+            / "gen"
+            / "Cargo.toml"
+        )
+        if probe.exists():
+            continue
+        print(
+            f"📦 {workspace_dir}/{suite} crates missing; running brrtrouter-gen natively...",
+            file=sys.stderr,
+        )
+        for name in service_names:
+            regenerate_service(project_root, suite, name)
     print("✅ codegen complete")
 
 
