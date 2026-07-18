@@ -57,6 +57,8 @@ const CREDENTIAL_PATTERNS: &[&str] = &[
     "refresh_token",
     "authorization",
     "credentials",
+    "cookie",
+    "set-cookie",
     "ssn",
     "social_security_number",
     "credit_card",
@@ -208,6 +210,19 @@ impl Sanitizer {
             .collect()
     }
 
+    /// Format headers for access-log attributes (OpenSearch-friendly JSON object).
+    ///
+    /// Sensitive values are masked per [`sanitize_headers`](Self::sanitize_headers).
+    /// Duplicate header names keep the last value (typical for access triage).
+    pub fn headers_for_log(&self, headers: &HeaderVec) -> String {
+        let safe = self.sanitize_headers(headers);
+        let mut map = serde_json::Map::with_capacity(safe.len());
+        for (name, value) in safe.iter() {
+            map.insert(name.to_string(), Value::String(value.clone()));
+        }
+        Value::Object(map).to_string()
+    }
+
     /// Return a copy of the param vec with sensitive parameter values masked.
     ///
     /// Uses the same field-name policy as [`should_redact`](Self::should_redact).
@@ -275,6 +290,10 @@ mod tests {
         assert!(s.should_redact("authorization"));
         assert!(s.should_redact("Authorization"));
         assert!(s.should_redact("credentials"));
+        assert!(s.should_redact("cookie"));
+        assert!(s.should_redact("Cookie"));
+        assert!(s.should_redact("set-cookie"));
+        assert!(s.should_redact("Set-Cookie"));
         assert!(s.should_redact("ssn"));
         assert!(s.should_redact("credit_card"));
         assert!(s.should_redact("creditCard"));
@@ -497,6 +516,39 @@ mod tests {
             smallvec::smallvec![(Arc::from("authorization"), "Bearer secret".to_string()),];
         let safe = s.sanitize_headers(&headers);
         assert_eq!(safe[0].1, "Bearer secret");
+    }
+
+    #[test]
+    fn test_sanitize_headers_masks_cookie() {
+        let s = Sanitizer::new(RedactionLevel::Credentials);
+        let headers: HeaderVec = smallvec::smallvec![
+            (Arc::from("cookie"), "session=abc123".to_string()),
+            (Arc::from("set-cookie"), "session=abc123; HttpOnly".to_string()),
+            (Arc::from("x-tenant-id"), "hauliage".to_string()),
+        ];
+        let safe = s.sanitize_headers(&headers);
+        assert_eq!(safe[0].1, "<REDACTED>");
+        assert_eq!(safe[1].1, "<REDACTED>");
+        assert_eq!(safe[2].1, "hauliage");
+    }
+
+    #[test]
+    fn test_headers_for_log_json_redacts_secrets() {
+        let s = Sanitizer::new(RedactionLevel::Credentials);
+        let headers: HeaderVec = smallvec::smallvec![
+            (Arc::from("content-type"), "application/json".to_string()),
+            (
+                Arc::from("authorization"),
+                "Bearer sk_live_secret123".to_string()
+            ),
+            (Arc::from("x-request-id"), "req-1".to_string()),
+        ];
+        let logged = s.headers_for_log(&headers);
+        let parsed: Value = serde_json::from_str(&logged).expect("valid json object");
+        assert_eq!(parsed["content-type"], "application/json");
+        assert_eq!(parsed["authorization"], "<REDACTED>");
+        assert_eq!(parsed["x-request-id"], "req-1");
+        assert!(!logged.contains("sk_live_secret123"));
     }
 
     // ========================================================================

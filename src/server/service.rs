@@ -4,6 +4,7 @@ use crate::dispatcher::Dispatcher;
 use crate::ids::RequestId;
 use crate::middleware::MetricsMiddleware;
 use crate::router::Router;
+use crate::sanitize::default_sanitizer;
 use crate::security::{SecurityProvider, SecurityRequest};
 use crate::spec::SecurityScheme;
 use crate::static_files::StaticFiles;
@@ -942,6 +943,10 @@ impl HttpService for AppService {
             start: std::time::Instant,
             total_size_bytes: usize,
             http_status: Option<u16>,
+            /// Redacted request headers as JSON object string for OpenSearch.
+            request_headers: String,
+            /// Redacted response headers as JSON object string (set on respond_*).
+            response_headers: Option<String>,
             span: Span,
         }
 
@@ -952,6 +957,10 @@ impl HttpService for AppService {
                 self.span.record("http.status_code", status);
             }
 
+            fn record_response_headers(&mut self, headers: &crate::dispatcher::HeaderVec) {
+                self.response_headers = Some(default_sanitizer().headers_for_log(headers));
+            }
+
             fn respond_json_error(
                 &mut self,
                 res: &mut Response,
@@ -959,6 +968,12 @@ impl HttpService for AppService {
                 body: serde_json::Value,
             ) {
                 self.record_http_status(status);
+                // JSON errors use default Content-Type only; still record empty map
+                // so Discover always shows the field on completed requests.
+                if self.response_headers.is_none() {
+                    self.response_headers =
+                        Some(default_sanitizer().headers_for_log(&crate::dispatcher::HeaderVec::new()));
+                }
                 write_json_error(res, status, body);
             }
 
@@ -971,6 +986,7 @@ impl HttpService for AppService {
                 headers: &crate::dispatcher::HeaderVec,
             ) {
                 self.record_http_status(status);
+                self.record_response_headers(headers);
                 write_handler_response(res, status, body, is_sse, headers);
             }
         }
@@ -993,8 +1009,10 @@ impl HttpService for AppService {
                 self.span.record("duration_ms", duration_ms);
                 self.span.record("stack_used_kb", stack_used_kb);
 
+                let response_headers = self.response_headers.as_deref().unwrap_or("{}");
+
                 // Access log at INFO so OpenSearch Discover detail shows method /
-                // path / status / duration without requiring RUST_LOG=debug
+                // path / status / duration / redacted headers without RUST_LOG=debug
                 // (collector also drops most DEBUG). Span still carries the same
                 // fields for tracing.
                 if let Some(ref request_id) = self.request_id {
@@ -1006,6 +1024,8 @@ impl HttpService for AppService {
                         duration_ms = duration_ms,
                         stack_used_kb = stack_used_kb,
                         total_size_bytes = self.total_size_bytes,
+                        request_headers = %self.request_headers,
+                        response_headers = %response_headers,
                         "Request completed"
                     );
                 } else {
@@ -1016,6 +1036,8 @@ impl HttpService for AppService {
                         duration_ms = duration_ms,
                         stack_used_kb = stack_used_kb,
                         total_size_bytes = self.total_size_bytes,
+                        request_headers = %self.request_headers,
+                        response_headers = %response_headers,
                         "Request completed"
                     );
                 }
@@ -1081,6 +1103,11 @@ impl HttpService for AppService {
 
         let total_size_bytes = header_size_bytes + body_size_bytes;
 
+        let sanitizer = default_sanitizer();
+        let request_headers_log = sanitizer.headers_for_log(&headers);
+        let safe_cookies = sanitizer.sanitize_headers(&cookies);
+        let safe_query_params = sanitizer.sanitize_params(&query_params);
+
         // Create request logger that will log completion on drop (RAII pattern)
         // Note: request_id will be set to None initially, updated when dispatch occurs
         // Note: total_size_bytes will be updated after routing if estimate is available
@@ -1091,17 +1118,20 @@ impl HttpService for AppService {
             start: request_start,
             total_size_bytes,
             http_status: None,
+            request_headers: request_headers_log.clone(),
+            response_headers: None,
             span: span.clone(),
         };
 
-        // Log incoming request with all headers (for debugging TooManyHeaders)
+        // Log incoming request with redacted headers (TooManyHeaders / triage).
+        // Secrets (Authorization, Cookie, …) are masked before export to OpenSearch.
         debug!(
             method = %method,
             path = %path,
             header_count = headers.len(),
-            headers = ?headers,
-            query_params = ?query_params,
-            cookies = ?cookies,
+            headers = %request_headers_log,
+            query_params = ?safe_query_params,
+            cookies = %sanitizer.headers_for_log(&safe_cookies),
             body_size = body.as_ref().map(|v| v.as_object().map(|o| o.len())),
             "Request received"
         );
