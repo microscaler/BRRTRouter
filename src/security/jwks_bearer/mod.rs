@@ -673,107 +673,131 @@ impl JwksBearerProvider {
                 let kid = k.get("kid").and_then(|v| v.as_str()).unwrap_or("");
                 let kty = k.get("kty").and_then(|v| v.as_str()).unwrap_or("");
                 let alg = k.get("alg").and_then(|v| v.as_str()).unwrap_or("");
-
-                // HMAC (oct) keys for HS* algorithms
-                if kty.eq_ignore_ascii_case("oct")
-                    && (alg.eq_ignore_ascii_case("HS256")
-                        || alg.eq_ignore_ascii_case("HS384")
-                        || alg.eq_ignore_ascii_case("HS512"))
-                {
-                    if let Some(kval) = k.get("k").and_then(|v| v.as_str()) {
-                        if let Ok(secret) =
-                            base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(kval)
-                        {
-                            let dk = jsonwebtoken::DecodingKey::from_secret(&secret);
-                            new_map.insert(kid.to_string(), dk);
-                        }
-                    }
-                    continue;
-                }
-
-                // RSA public keys for PKCS#1 v1.5 (RS*) and RSA-PSS (PS*) algorithms
-                if kty.eq_ignore_ascii_case("RSA")
-                    && (alg.eq_ignore_ascii_case("RS256")
-                        || alg.eq_ignore_ascii_case("RS384")
-                        || alg.eq_ignore_ascii_case("RS512")
-                        || alg.eq_ignore_ascii_case("PS256")
-                        || alg.eq_ignore_ascii_case("PS384")
-                        || alg.eq_ignore_ascii_case("PS512"))
-                {
-                    let n = match k.get("n").and_then(|v| v.as_str()) {
-                        Some(v) => v,
-                        None => continue,
-                    };
-                    let e = match k.get("e").and_then(|v| v.as_str()) {
-                        Some(v) => v,
-                        None => continue,
-                    };
-                    if let Ok(dk) = jsonwebtoken::DecodingKey::from_rsa_components(n, e) {
-                        new_map.insert(kid.to_string(), dk);
-                    }
-                    continue;
-                }
-
-                // EC public keys for ES* algorithms
-                if kty.eq_ignore_ascii_case("EC")
-                    && (alg.eq_ignore_ascii_case("ES256") || alg.eq_ignore_ascii_case("ES384"))
-                {
-                    let x = match k.get("x").and_then(|v| v.as_str()) {
-                        Some(v) => v,
-                        None => continue,
-                    };
-                    let y = match k.get("y").and_then(|v| v.as_str()) {
-                        Some(v) => v,
-                        None => continue,
-                    };
-                    if let Ok(dk) = jsonwebtoken::DecodingKey::from_ec_components(x, y) {
-                        new_map.insert(kid.to_string(), dk);
-                    }
-                    continue;
-                }
-
-                // OKP public keys for EdDSA (Ed25519).
-                //
-                // RFC 8037: for an OKP JWK, "crv" is REQUIRED and "alg" is
-                // OPTIONAL. The previous gate required alg=="EdDSA", which
-                // silently dropped any spec-legal key that omitted `alg` and
-                // produced an opaque "key not found" 401 downstream. Accept an
-                // Ed25519 signing key identified by EITHER crv==Ed25519 or
-                // alg==EdDSA, as long as any present `alg` does not contradict.
                 let crv = k.get("crv").and_then(|v| v.as_str()).unwrap_or("");
-                let looks_ed25519 = kty.eq_ignore_ascii_case("OKP")
-                    && (crv.eq_ignore_ascii_case("Ed25519") || alg.eq_ignore_ascii_case("EdDSA"))
-                    && (alg.is_empty() || alg.eq_ignore_ascii_case("EdDSA"));
-                if looks_ed25519 {
-                    let x = match k.get("x").and_then(|v| v.as_str()) {
-                        Some(v) => v,
-                        None => {
-                            tracing::warn!(kid, kty, crv, alg, "JWKS: OKP key missing 'x'; skipped");
-                            continue;
+
+                // JOSE member values are CASE-SENSITIVE. RFC 7518 (JWA) fixes
+                // "oct"/"RSA"/"EC" and the alg codes; RFC 8037 fixes "OKP" and
+                // "Ed25519"/"EdDSA". We match EXACTLY and reject wrong casing
+                // rather than tolerate it — leniency lets a producer's casing
+                // bug hide and surface only as an opaque downstream 401. Wrong
+                // casing is diagnosed loudly below so it fails with a precise
+                // message instead.
+
+                // HMAC (oct) keys for HS* algorithms (RFC 7518).
+                if kty == "oct" {
+                    if matches!(alg, "HS256" | "HS384" | "HS512") {
+                        if let Some(kval) = k.get("k").and_then(|v| v.as_str()) {
+                            match base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(kval) {
+                                Ok(secret) => {
+                                    new_map.insert(
+                                        kid.to_string(),
+                                        jsonwebtoken::DecodingKey::from_secret(&secret),
+                                    );
+                                }
+                                Err(e) => {
+                                    tracing::warn!(kid, alg, error = %e, "JWKS: oct key 'k' not base64url; rejected");
+                                }
+                            }
+                        } else {
+                            tracing::warn!(kid, alg, "JWKS: oct key missing 'k'; rejected");
                         }
-                    };
-                    match jsonwebtoken::DecodingKey::from_ed_components(x) {
-                        Ok(dk) => {
-                            new_map.insert(kid.to_string(), dk);
-                        }
-                        Err(e) => {
-                            tracing::warn!(kid, kty, crv, alg, error = %e, "JWKS: OKP key rejected");
-                        }
+                    } else {
+                        tracing::warn!(kid, kty, alg, "JWKS: oct key has unsupported/miscased alg; rejected");
                     }
                     continue;
                 }
 
-                // Reached here => the key matched no supported (kty, alg)
-                // combination. Fail LOUDLY: this is precisely the case that
-                // otherwise surfaces only as a generic "key not found" 401,
-                // with no signal that a key *was present but rejected*.
-                tracing::warn!(
-                    kid,
-                    kty,
-                    crv,
-                    alg,
-                    "JWKS: skipping unrecognized/unsupported key; tokens with this kid will 401"
-                );
+                // RSA public keys for RS*/PS* algorithms (RFC 7518).
+                if kty == "RSA" {
+                    if matches!(
+                        alg,
+                        "RS256" | "RS384" | "RS512" | "PS256" | "PS384" | "PS512"
+                    ) {
+                        match (
+                            k.get("n").and_then(|v| v.as_str()),
+                            k.get("e").and_then(|v| v.as_str()),
+                        ) {
+                            (Some(n), Some(e)) => {
+                                if let Ok(dk) = jsonwebtoken::DecodingKey::from_rsa_components(n, e) {
+                                    new_map.insert(kid.to_string(), dk);
+                                } else {
+                                    tracing::warn!(kid, alg, "JWKS: RSA key components invalid; rejected");
+                                }
+                            }
+                            _ => tracing::warn!(kid, alg, "JWKS: RSA key missing n/e; rejected"),
+                        }
+                    } else {
+                        tracing::warn!(kid, kty, alg, "JWKS: RSA key has unsupported/miscased alg; rejected");
+                    }
+                    continue;
+                }
+
+                // EC public keys for ES* algorithms (RFC 7518).
+                if kty == "EC" {
+                    if matches!(alg, "ES256" | "ES384") {
+                        match (
+                            k.get("x").and_then(|v| v.as_str()),
+                            k.get("y").and_then(|v| v.as_str()),
+                        ) {
+                            (Some(x), Some(y)) => {
+                                if let Ok(dk) = jsonwebtoken::DecodingKey::from_ec_components(x, y) {
+                                    new_map.insert(kid.to_string(), dk);
+                                } else {
+                                    tracing::warn!(kid, alg, "JWKS: EC key components invalid; rejected");
+                                }
+                            }
+                            _ => tracing::warn!(kid, alg, "JWKS: EC key missing x/y; rejected"),
+                        }
+                    } else {
+                        tracing::warn!(kid, kty, alg, "JWKS: EC key has unsupported/miscased alg; rejected");
+                    }
+                    continue;
+                }
+
+                // OKP public keys for EdDSA (Ed25519), RFC 8037. STRICT:
+                //  - kty MUST be exactly "OKP"
+                //  - crv MUST be exactly "Ed25519" (RFC 8037: crv is REQUIRED)
+                //  - alg is OPTIONAL, but if present MUST be exactly "EdDSA"
+                if kty == "OKP" {
+                    if crv != "Ed25519" {
+                        tracing::warn!(kid, kty, crv, "JWKS: OKP key crv must be exactly \"Ed25519\" (RFC 8037, case-sensitive); rejected");
+                        continue;
+                    }
+                    if !alg.is_empty() && alg != "EdDSA" {
+                        tracing::warn!(kid, kty, alg, "JWKS: OKP key alg must be \"EdDSA\" or omitted (RFC 8037); rejected");
+                        continue;
+                    }
+                    match k.get("x").and_then(|v| v.as_str()) {
+                        Some(x) => match jsonwebtoken::DecodingKey::from_ed_components(x) {
+                            Ok(dk) => {
+                                new_map.insert(kid.to_string(), dk);
+                            }
+                            Err(e) => {
+                                tracing::warn!(kid, kty, crv, error = %e, "JWKS: OKP key 'x' invalid; rejected");
+                            }
+                        },
+                        None => tracing::warn!(kid, kty, crv, "JWKS: OKP key missing 'x'; rejected"),
+                    }
+                    continue;
+                }
+
+                // No exact kty match. Detect a wrong-CASE near-miss (e.g.
+                // "okp" vs "OKP") and reject it with a precise, actionable
+                // message — this is exactly the diagnostic that was missing
+                // when a producer served a non-RFC-cased JWKS.
+                let rfc_kty = ["OKP", "RSA", "EC", "oct"]
+                    .into_iter()
+                    .find(|c| kty.eq_ignore_ascii_case(c));
+                match rfc_kty {
+                    Some(correct) => tracing::warn!(
+                        kid, kty, crv, alg, expected = correct,
+                        "JWKS: kty has non-RFC casing (JOSE member values are case-sensitive); key REJECTED — the producer must emit the exact RFC casing"
+                    ),
+                    None => tracing::warn!(
+                        kid, kty, crv, alg,
+                        "JWKS: unrecognized kty; key rejected, tokens with this kid will 401"
+                    ),
+                }
             }
         }
 
