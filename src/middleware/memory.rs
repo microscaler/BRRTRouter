@@ -289,6 +289,7 @@ impl MemoryMiddleware {
         let growth_mb = growth / (1024 * 1024);
         if growth_mb > 500 {
             tracing::warn!(
+                event_category = "runtime_metrics",
                 rss_mb = current.rss_bytes / (1024 * 1024),
                 heap_mb = current.heap_bytes / (1024 * 1024),
                 growth_mb = growth_mb,
@@ -296,6 +297,7 @@ impl MemoryMiddleware {
             );
         } else {
             tracing::info!(
+                event_category = "runtime_metrics",
                 rss_mb = current.rss_bytes / (1024 * 1024),
                 heap_mb = current.heap_bytes / (1024 * 1024),
                 growth_mb = growth_mb,
