@@ -326,7 +326,10 @@ mod tests {
     fn downstream_host_uses_pod_namespace_when_set() {
         let _lock = ENV_LOCK.lock().unwrap();
         std::env::set_var("POD_NAMESPACE", "logistics");
-        assert_eq!(downstream_host("fleet"), "fleet.logistics.svc.cluster.local");
+        assert_eq!(
+            downstream_host("fleet"),
+            "fleet.logistics.svc.cluster.local"
+        );
         std::env::remove_var("POD_NAMESPACE");
     }
 

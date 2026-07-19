@@ -78,23 +78,21 @@ pub fn write_handler_response(
             }
             res.body_vec(s.into_bytes());
         }
-        other => {
-            match serde_json::to_vec(&other) {
-                Ok(json_bytes) => {
-                    if !has_content_type {
-                        res.header("Content-Type: application/json");
-                    }
-                    res.body_vec(json_bytes);
+        other => match serde_json::to_vec(&other) {
+            Ok(json_bytes) => {
+                if !has_content_type {
+                    res.header("Content-Type: application/json");
                 }
-                Err(e) => {
-                    res.status_code(500, "Internal Server Error");
-                    if !has_content_type {
-                        res.header("Content-Type: text/plain");
-                    }
-                    res.body_vec(format!("Failed to serialize response: {}", e).into_bytes());
-                }
+                res.body_vec(json_bytes);
             }
-        }
+            Err(e) => {
+                res.status_code(500, "Internal Server Error");
+                if !has_content_type {
+                    res.header("Content-Type: text/plain");
+                }
+                res.body_vec(format!("Failed to serialize response: {}", e).into_bytes());
+            }
+        },
     }
 }
 

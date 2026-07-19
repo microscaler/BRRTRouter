@@ -115,12 +115,12 @@ Tilt: **systemd `tilt-brrtrouter.service`**, port **10353**. From Mac:
 
 ```bash
 tilt trigger <resource> --host 192.168.1.189 --port 10353
-# or: cd ../shared-k8s-cluster && just tilt-remote-cycle brrtrouter <resource>
+# or: cd ../shared-gitops-k8s-cluster && just tilt-remote-cycle brrtrouter <resource>
 ```
 
 Tail logs via `just tilt-remote-logs brrtrouter <resource>` — not Mac `tilt logs` (version skew with ms02).
 
-Authority: [`../shared-k8s-cluster/docs/remote-tilt-workflow.md`](../shared-k8s-cluster/docs/remote-tilt-workflow.md).
+Authority: [`../shared-gitops-k8s-cluster/docs/remote-tilt-workflow.md`](../shared-gitops-k8s-cluster/docs/remote-tilt-workflow.md).
 
 ### Coverage / bench / profiling
 

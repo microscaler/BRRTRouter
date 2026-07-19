@@ -971,8 +971,9 @@ impl HttpService for AppService {
                 // JSON errors use default Content-Type only; still record empty map
                 // so Discover always shows the field on completed requests.
                 if self.response_headers.is_none() {
-                    self.response_headers =
-                        Some(default_sanitizer().headers_for_log(&crate::dispatcher::HeaderVec::new()));
+                    self.response_headers = Some(
+                        default_sanitizer().headers_for_log(&crate::dispatcher::HeaderVec::new()),
+                    );
                 }
                 write_json_error(res, status, body);
             }

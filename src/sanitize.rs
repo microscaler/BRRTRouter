@@ -523,7 +523,10 @@ mod tests {
         let s = Sanitizer::new(RedactionLevel::Credentials);
         let headers: HeaderVec = smallvec::smallvec![
             (Arc::from("cookie"), "session=abc123".to_string()),
-            (Arc::from("set-cookie"), "session=abc123; HttpOnly".to_string()),
+            (
+                Arc::from("set-cookie"),
+                "session=abc123; HttpOnly".to_string()
+            ),
             (Arc::from("x-tenant-id"), "acme".to_string()),
         ];
         let safe = s.sanitize_headers(&headers);

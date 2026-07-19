@@ -41,6 +41,16 @@ repos:
 
   - repo: local
     hooks:
+      # Rust formatting gate — the octopilot Lint job enforces
+      # `cargo fmt --all -- --check`, so catch drift before commit/push.
+      # language: system (uses your toolchain; CI lint re-checks hermetically).
+      - id: cargo-fmt-check
+        name: cargo fmt (check)
+        entry: cargo fmt --all -- --check
+        language: system
+        types: [rust]
+        pass_filenames: false
+
       # check-empty-print-statements — fast grep, no subprocess/temp-dir needed.
       - id: check-empty-print-statements
         name: Check for empty print statements to stderr/stdout

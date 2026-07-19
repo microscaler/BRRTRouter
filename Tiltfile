@@ -5,7 +5,7 @@
 version_settings(constraint='>=0.33.0')
 
 # Default cluster: shared-k8s (Multipass k3s) when kubeconfig exists; legacy Kind otherwise.
-_SHARED_K8S_KCFG = os.path.abspath('../shared-k8s-cluster/kubeconfig/shared-k8s.yaml')
+_SHARED_K8S_KCFG = os.path.abspath('../shared-gitops-k8s-cluster/kubeconfig/shared-k8s.yaml')
 _SHARED_K8S_REGISTRY = '10.177.76.220:5000'
 _k8s_mode = os.environ.get('TILT_K8S_CLUSTER', '').strip().lower()
 if _k8s_mode in ('kind', 'kind-kind'):
