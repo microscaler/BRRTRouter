@@ -1,0 +1,31 @@
+name: Octopilot CI
+
+# Generic Octopilot pipeline (detect → lint → test → validate → artifacts).
+# The application shape is auto-detected from skaffold.yaml: one rust context
+# at the repo root building the pet_store example via the octopilot/rust
+# buildpack. integration: false — BRRTRouter has no Helm chart / k8s overlay
+# yet, so the Kind + Flux deploy stage is skipped; images are still built and
+# pushed to ttl.sh for verification.
+#
+# The pre-existing ci.yml continues to run the exhaustive repo-native test
+# suite; this workflow proves the octopilot meta-build path.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Octopilot
+    uses: octopilot/actions/.github/workflows/pipeline.yml@main
+    with:
+      integration: false
+    # Pass explicitly (not `inherit`): inherit does not reliably cross the
+    # org boundary to octopilot/actions.
+    secrets:
+      SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

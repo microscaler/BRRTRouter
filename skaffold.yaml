@@ -1,0 +1,52 @@
+# Octopilot shape source of truth (detect-contexts reads this).
+#
+# BRRTRouter is a library-first Cargo workspace; the deployable artifact is the
+# pet_store example service, built with the octopilot/rust buildpack.
+# BP_RUST_PACKAGE selects the workspace member (context is the repo root, which
+# carries Cargo.toml so detect-contexts classifies this as rust).
+#
+# Runtime assets: the buildpack exports the whole source tree (minus target/
+# and .cargo/) into the run image, and pet_store resolves its relative --spec /
+# --doc-dir defaults against the compiled-in CARGO_MANIFEST_DIR
+# (/workspace/examples/pet_store), so doc/openapi.yaml and static_site/ are
+# available without extra plumbing.
+#
+# Dependency note: microscaler-observability is a pinned git dependency (no
+# path deps escape the repo), so a clean clone — which is all pack ever sees —
+# resolves fully. Local dev overrides live in the ancestor cargo config
+# (~/Workspace/remote/microscaler/.cargo/config.toml), never in this repo.
+apiVersion: skaffold/v4beta7
+kind: Config
+metadata:
+  name: brrtrouter
+build:
+  artifacts:
+    # image function: the pet_store microservice container
+    - image: ghcr.io/microscaler/brrtrouter-petstore
+      context: .
+      buildpacks:
+        builder: ghcr.io/octopilot/builder-jammy-base:latest
+        buildpacks:
+          - octopilot/rust
+        env:
+          - BP_RUST_PACKAGE=pet_store
+          - BP_RUST_BINARY_NAME=pet_store
+    # lib function (-lib suffix): "build and test it all" for the Rust
+    # workspace (brrtrouter, brrtrouter_macros, brrtrouter-tooling crate,
+    # pet_store). publish=none → the deliverable is the verified rev that
+    # downstream repos (hauliage et al.) pin as a git dependency.
+    - image: ghcr.io/microscaler/brrtrouter-lib
+      context: .
+      buildpacks:
+        builder: ghcr.io/octopilot/builder-jammy-base:latest
+        env:
+          - BP_LIB_PUBLISH=none
+    # lib function: the brrtrouter-tooling Python package (console script
+    # `brrtrouter`; consumed by hauliage's tooling). ruff + pytest + wheel
+    # sanity every run; publish stays off until a registry target is chosen.
+    - image: ghcr.io/microscaler/brrtrouter-tooling-lib
+      context: tooling
+      buildpacks:
+        builder: ghcr.io/octopilot/builder-jammy-base:latest
+        env:
+          - BP_LIB_PUBLISH=none

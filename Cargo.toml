@@ -59,7 +59,11 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-appender = "0.2"
 
 # Hexagonal OTEL adapter — OTLP tracer/logger + propagator (shared with Hauliage / Lifeguard).
-microscaler-observability = { path = "../microscaler-observability" }
+# Pinned git dependency so the repo builds from a clean clone (CI, buildpacks, downstream git
+# consumers). For local co-development against a sibling checkout, add a [patch] override in
+# ~/Workspace/remote/microscaler/.cargo/config.toml (ancestor config, never committed) — see
+# docs: OCTOPILOT-DEPENDENCY-RESOLUTION.
+microscaler-observability = { git = "https://github.com/microscaler/microscaler-observability.git", rev = "9b9de6ba2e376b21219f4581262490e600e68c86" }
 
 # gRPC dependencies for OTLP (compatible with opentelemetry 0.31)
 tonic = "0.14"

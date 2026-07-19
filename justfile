@@ -5,7 +5,7 @@
 default:
 	@just --list
 
-shared_k8s_root := "../shared-k8s-cluster"
+shared_k8s_root := "../shared-gitops-k8s-cluster"
 shared_k8s_kubeconfig := shared_k8s_root + "/kubeconfig/shared-k8s.yaml"
 
 # ============================================================================
@@ -557,7 +557,7 @@ backup-before-upgrade:
 # ============================================================================
 # Local Development with Tilt + shared-k8s
 # ============================================================================
-# Cluster lifecycle lives in microscaler/shared-k8s-cluster (`just cluster-create` / `just infra-up`).
+# Cluster lifecycle lives in microscaler/shared-gitops-k8s-cluster (`just cluster-create` / `just infra-up`).
 # This repo: registry mirror + systemd Tilt against context shared-k8s.
 # Tilt UI port 10353 — avoids 10350 (default Tilt / Tiffany). Must pass `--port` on CLI; Tiltfile `os.putenv(TILT_PORT)` runs too late to bind.
 
@@ -648,7 +648,7 @@ dev-registry-wire:
 	echo "[OK] Registry wired to Kind nodes"
 
 # Start Tilt against shared-k8s. Does NOT create/delete clusters.
-# Prerequisites: cd ../shared-k8s-cluster && just infra-up
+# Prerequisites: cd ../shared-gitops-k8s-cluster && just infra-up
 # Tilt UI: http://localhost:10353 (press 'space' to open)
 # Pet Store API: http://localhost:8081
 dev-up:
@@ -772,3 +772,18 @@ dev-clean:
 	echo "[OK] Volumes preserved for data persistence"
 	echo ""
 	echo "Now run: just dev-up"
+
+# ─── Octopilot dependency resolution ─────────────────────────────────────────
+# Regenerate Cargo.lock WITHOUT the local-dev [patch] overrides from the
+# ancestor config (~/Workspace/remote/microscaler/.cargo/config.toml), so the
+# committed lockfile always reflects the pinned git dependencies (CI truth).
+relock:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	CFG="$(cd .. && pwd)/.cargo/config.toml"
+	if [[ -f "$CFG" ]]; then
+		mv "$CFG" "$CFG.off"
+		trap 'mv "$CFG.off" "$CFG"' EXIT
+	fi
+	cargo metadata --format-version 1 > /dev/null
+	echo "[OK] Cargo.lock regenerated against pinned git dependencies"
