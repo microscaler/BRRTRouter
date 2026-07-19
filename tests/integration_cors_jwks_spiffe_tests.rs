@@ -80,6 +80,8 @@ fn make_signed_jwt_for_jwks(
     let header = Header {
         kid: Some(kid.to_string()),
         alg: Algorithm::HS256,
+        // RFC 9068: the JWKS provider only accepts access tokens typed "at+jwt"
+        typ: Some("at+jwt".to_string()),
         ..Default::default()
     };
 
@@ -113,6 +115,8 @@ fn make_signed_spiffe_jwt(
     let header = Header {
         kid: Some(kid.to_string()),
         alg: Algorithm::HS256,
+        // RFC 9068: the JWKS provider only accepts access tokens typed "at+jwt"
+        typ: Some("at+jwt".to_string()),
         ..Default::default()
     };
 
@@ -788,6 +792,9 @@ fn test_spiffe_algorithm_mismatch_validation() {
     let header = Header {
         kid: Some("test-kid".to_string()),
         alg: Algorithm::HS384, // Different algorithm
+        // typ must be valid so this test exercises ALGORITHM rejection,
+        // not the earlier RFC 9068 typ check.
+        typ: Some("at+jwt".to_string()),
         ..Default::default()
     };
 
