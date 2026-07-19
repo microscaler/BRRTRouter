@@ -38,8 +38,8 @@ use serde::{Deserialize, Serialize};
 /// This struct represents the decoded claims from a JWT token that has been
 /// validated by the JWKS client (signature, expiry, issuer, audience checks).
 ///
-/// The claims structure follows the Sesame-IDAM token format where the `sx`
-/// field contains authorization-relevant data (roles, permissions, risk level).
+/// The claims structure follows an IdAM token format where the `sx` field
+/// contains authorization-relevant data (roles, permissions, risk level).
 ///
 /// # Security Note
 ///

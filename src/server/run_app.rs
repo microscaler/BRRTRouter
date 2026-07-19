@@ -32,12 +32,12 @@ pub struct RunAppArgs {
     pub service_name: String,
 }
 
-/// Service-specific startup hooks (bff sesame init, lifeguard prometheus, DB warm, etc.).
+/// Service-specific startup hooks (auth client init, extra runtime metrics, DB warm, etc.).
 #[derive(Default)]
 pub struct RunAppHooks {
     /// Called after config is loaded, before route registration.
     pub on_config_loaded: Option<Box<dyn FnOnce(&AppConfig)>>,
-    /// Extra Prometheus scrape text (e.g. lifeguard metrics).
+    /// Extra Prometheus scrape text (e.g. a companion runtime's metrics).
     pub extra_prometheus: Option<Arc<dyn Fn() -> String + Send + Sync>>,
     /// Called on the main OS thread immediately before binding the listen socket.
     pub before_listen: Option<Box<dyn FnOnce()>>,

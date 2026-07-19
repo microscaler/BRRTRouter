@@ -10,10 +10,9 @@
 //! [`tracing::subscriber::set_default`] with a `Registry` + [`OpenTelemetryLayer`] so they do not
 //! fight `try_init()` and so each test can own a fresh in-memory provider.
 //!
-//! When a test binary also depends on **Lifeguard**, you can add `lifeguard::channel_layer()` to the
+//! When a test binary also depends on a companion channel-layer crate, you can add its layer to the
 //! same `Registry::default().with(...)` chain **in the test setup** if you need the may-channel log
-//! path; still use **one** `TracerProvider` per `TestTracing` instance. See Lifeguard
-//! `docs/OBSERVABILITY_APP_INTEGRATION.md`.
+//! path; still use **one** `TracerProvider` per `TestTracing` instance.
 
 use opentelemetry::trace::TracerProvider as _;
 use opentelemetry_sdk::error::OTelSdkError;

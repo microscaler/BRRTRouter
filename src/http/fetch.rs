@@ -253,11 +253,11 @@ mod tests {
     #[test]
     fn request_uri_for_may_minihttp_uses_path_not_full_url() {
         let url = Url::parse(
-            "http://identity-session-service.sesame-idam.svc.cluster.local:8105/idam/v1/.well-known/jwks.json",
+            "http://auth-service.identity.svc.cluster.local:8080/auth/v1/.well-known/jwks.json",
         )
         .unwrap();
         let uri = request_uri_for_may_minihttp(&url).unwrap();
-        assert_eq!(uri.to_string(), "/idam/v1/.well-known/jwks.json");
+        assert_eq!(uri.to_string(), "/auth/v1/.well-known/jwks.json");
     }
 
     #[test]

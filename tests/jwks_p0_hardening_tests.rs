@@ -1,8 +1,8 @@
 //! P0 JWT hardening tests for configured algorithms and unknown-key rotation.
 //!
-//! These tests cover the shared BRRTRouter behavior required by Sesame-IDAM P0:
-//! trusted algorithm allow-lists, immediate refresh after an unknown `kid`, and a
-//! cooldown that bounds attacker-triggered JWKS requests.
+//! These tests cover the shared BRRTRouter behavior required for a hardened
+//! IdAM integration (P0): trusted algorithm allow-lists, immediate refresh after
+//! an unknown `kid`, and a cooldown that bounds attacker-triggered JWKS requests.
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 

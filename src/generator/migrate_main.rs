@@ -310,7 +310,7 @@ mod controllers;
 use foo_gen::registry as gen_registry;
 fn main() {
     let port = app_config.port.or_else(|| None).unwrap_or(8017);
-    println!("🚀 hauliage_customs example server listening on {addr}");
+    println!("🚀 acme_customs example server listening on {addr}");
     service.set_extra_prometheus(Some(std::sync::Arc::new(|| {
         lifeguard::metrics::prometheus_scrape_text()
     })));
@@ -320,21 +320,21 @@ fn main() {
 
     #[test]
     fn analyze_detects_port_hooks_and_banner() {
-        let cargo = "[package]\nname = \"hauliage_customs\"\n";
+        let cargo = "[package]\nname = \"acme_customs\"\n";
         let plan = analyze_main_rs(LEGACY_MAIN, cargo, "").unwrap();
         assert_eq!(plan.default_port, 8017);
-        assert_eq!(plan.service_name, "hauliage_customs");
+        assert_eq!(plan.service_name, "acme_customs");
         assert!(plan.has_lifeguard_prometheus);
         assert!(plan.has_db_warm);
         assert!(plan.has_mod_controllers);
-        assert_eq!(plan.gen_crate_ident, "hauliage_customs_gen");
+        assert_eq!(plan.gen_crate_ident, "acme_customs_gen");
     }
 
     #[test]
     fn render_includes_run_app_builder() {
         let plan = MainMigrationPlan {
-            package_name: "hauliage_telemetry".into(),
-            gen_crate_ident: "hauliage_telemetry_gen".into(),
+            package_name: "acme_telemetry".into(),
+            gen_crate_ident: "acme_telemetry_gen".into(),
             default_port: 8080,
             service_name: "geographic_telemetry_and_mapping".into(),
             has_mod_controllers: true,

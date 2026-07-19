@@ -1285,7 +1285,7 @@ serde = "1.0"
 
     write_cargo_toml_with_options(
         &gen_dir,
-        "hauliage_bff_gen",
+        "acme_bff_gen",
         true,
         None,
         None,

@@ -1493,7 +1493,7 @@ fn test_jwks_cookie_support() {
 #[test]
 fn test_jwks_url_kubernetes_cluster_local_allowed() {
     let _provider = brrtrouter::security::JwksBearerProvider::new(
-        "http://identity-session-service.sesame-idam.svc.cluster.local:8105/idam/v1/.well-known/jwks.json",
+        "http://auth-service.identity.svc.cluster.local:8080/auth/v1/.well-known/jwks.json",
     );
 }
 

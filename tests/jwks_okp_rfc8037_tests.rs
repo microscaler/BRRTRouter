@@ -1,5 +1,5 @@
-//! OKP/Ed25519 (EdDSA) JWKS round-trip tests — the regression guard for the
-//! sesame-idam RFC 8037 casing incident.
+//! OKP/Ed25519 (EdDSA) JWKS round-trip tests — the regression guard for an
+//! RFC 8037 key-casing incident observed against a production IdAM.
 //!
 //! Every case signs a REAL EdDSA token and serves a JWKS over HTTP, then
 //! drives the actual `JwksBearerProvider::validate` path:
@@ -157,7 +157,7 @@ fn okp_without_alg_verifies() {
 
 #[test]
 fn okp_lowercase_kty_rejected() {
-    // The sesame incident: kty "okp" instead of "OKP".
+    // The original incident: kty "okp" instead of "OKP".
     let provider = provider_for(jwks_okp("ed-kid", "okp", "Ed25519", Some("EdDSA")));
     assert!(
         !validate(&provider, &sign_ed("ed-kid")),
@@ -167,7 +167,7 @@ fn okp_lowercase_kty_rejected() {
 
 #[test]
 fn okp_uppercase_crv_rejected() {
-    // The sesame incident: crv "ED25519" instead of "Ed25519".
+    // The original incident: crv "ED25519" instead of "Ed25519".
     let provider = provider_for(jwks_okp("ed-kid", "OKP", "ED25519", Some("EdDSA")));
     assert!(
         !validate(&provider, &sign_ed("ed-kid")),

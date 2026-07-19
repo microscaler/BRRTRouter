@@ -325,8 +325,8 @@ mod tests {
     #[test]
     fn downstream_host_uses_pod_namespace_when_set() {
         let _lock = ENV_LOCK.lock().unwrap();
-        std::env::set_var("POD_NAMESPACE", "hauliage");
-        assert_eq!(downstream_host("fleet"), "fleet.hauliage.svc.cluster.local");
+        std::env::set_var("POD_NAMESPACE", "logistics");
+        assert_eq!(downstream_host("fleet"), "fleet.logistics.svc.cluster.local");
         std::env::remove_var("POD_NAMESPACE");
     }
 
@@ -355,8 +355,8 @@ mod tests {
     #[test]
     fn client_pool_key_formats_host_port() {
         assert_eq!(
-            client_pool_key("fleet.hauliage.svc.cluster.local", 8080),
-            "fleet.hauliage.svc.cluster.local:8080"
+            client_pool_key("fleet.logistics.svc.cluster.local", 8080),
+            "fleet.logistics.svc.cluster.local:8080"
         );
     }
 
@@ -389,7 +389,7 @@ mod tests {
     #[test]
     fn proxy_untyped_returns_502_on_dns_failure() {
         let _lock = ENV_LOCK.lock().unwrap();
-        std::env::set_var("POD_NAMESPACE", "hauliage");
+        std::env::set_var("POD_NAMESPACE", "logistics");
         std::env::set_var("HAULIAGE_SERVICE_HTTP_PORT", "8080");
         let req = empty_request(Method::GET);
         let res = proxy_untyped(&req, "no-such-service-xyz.invalid", "/health");

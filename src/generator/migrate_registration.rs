@@ -173,9 +173,8 @@ fn detect_complex_main(main_content: &str) -> Option<String> {
             "{matches} `match route.handler_name` blocks (e.g. company fallback pattern); migrate manually"
         ));
     }
-    if main_content.contains("hauliage_company_gen::controllers")
-        || main_content.contains("_gen::controllers::")
-    {
+    // Matches any `<crate>_gen::controllers` usage (with or without trailing `::`).
+    if main_content.contains("_gen::controllers") {
         return Some("registers gen crate controllers in impl main; migrate manually".into());
     }
     None
@@ -891,7 +890,7 @@ mod tests {
     use super::*;
 
     const SIMPLE_MAIN: &str = r#"
-use sesame_idam_org_mgmt_gen::registry;
+use acme_org_service_gen::registry;
 mod controllers;
 
 fn main() {
@@ -945,7 +944,7 @@ unsafe {
     fn ignores_auth_match_false_positives() {
         let main = r#"
 unsafe {
-    hauliage_terminals_gen::registry::register_from_spec(&mut dispatcher, &routes);
+    acme_terminals_gen::registry::register_from_spec(&mut dispatcher, &routes);
 }
 match source.as_str() {
     "header" => {}
@@ -1026,8 +1025,8 @@ use foo_gen::registry;
     #[test]
     fn fixes_handlers_glob_gen_registry_import() {
         let main = r#"
-use hauliage_analytics_gen::handlers::*;
-use hauliage_analytics_gen::*;
+use acme_analytics_gen::handlers::*;
+use acme_analytics_gen::*;
 
 fn main() {
     unsafe {
@@ -1047,7 +1046,7 @@ fn main() {
             "registry::register_from_spec",
         );
         let patched = patch_main_registration_simple(&main, false).unwrap();
-        assert!(patched.contains("use hauliage_analytics_gen::registry as gen_registry;"));
+        assert!(patched.contains("use acme_analytics_gen::registry as gen_registry;"));
         assert!(!patched.contains("handlers::registry"));
         assert!(!patched.contains("match route.handler_name"));
     }
@@ -1056,8 +1055,8 @@ fn main() {
     fn inserts_impl_registry_mod_after_inner_attr() {
         let inline = r#"// header
 #![allow(clippy::uninlined_format_args)]
-use hauliage_consignments_gen::*;
-use hauliage_consignments::controllers;
+use acme_consignments_gen::*;
+use acme_consignments::controllers;
 "#;
         let out = insert_impl_registry_mod(inline);
         assert!(out.contains(

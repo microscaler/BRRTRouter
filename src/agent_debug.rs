@@ -7,8 +7,8 @@
 //!
 //! **LogQL (Loki) examples**
 //! ```text
-//! {service_name="hauliage_consignments"} |= "cursor_debug_session"
-//! {service_name="hauliage_consignments"} | json | hypothesis_id="H1_dispatch"
+//! {service_name="acme_consignments"} |= "cursor_debug_session"
+//! {service_name="acme_consignments"} | json | hypothesis_id="H1_dispatch"
 //! ```
 //!
 //! Enable via **ConfigMap / env** (merged automatically by [`crate::otel::init_logging_with_config`]
