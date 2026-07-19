@@ -38,9 +38,13 @@ build:
     # covered by the image artifact; brrtrouter-validator-python is a pyo3
     # maturin wheel, phase 2 — and ci.yml notes a bare `--all` workspace build
     # is not currently expected to succeed).
-    # BP_TEST_COMMAND declares this context's test command for the pipeline's
-    # Test job, mirroring the native ci.yml ritual: regenerate pet_store
-    # handlers from the spec, then run the full workspace suite with coverage.
+    # No BP_TEST_COMMAND here: detect-contexts recognizes the BRRTRouter
+    # archetype (brrtrouter package + brrtrouter-gen bin) and SYNTHESIZES the
+    # test ritual from observable signals — musl toolchain (tests reference a
+    # musl target), RUSTFLAGS neutralized (committed .cargo/config rustflags),
+    # handler regeneration (examples/openapi.yaml + brrtrouter-gen), then the
+    # full workspace suite with coverage. Declare BP_TEST_COMMAND only to
+    # override that inference.
     - image: ghcr.io/microscaler/brrtrouter-lib
       context: .
       buildpacks:
@@ -49,15 +53,8 @@ build:
           - BP_LIB_PUBLISH=none
           - BP_LIB_PACKAGES=brrtrouter,brrtrouter_macros,brrtrouter-tooling
           # build-only verify: the full suite (incl. the Docker e2e curl harness)
-          # runs once in the pipeline Test job via BP_TEST_COMMAND below.
+          # runs once in the pipeline Test job.
           - BP_LIB_VERIFY=build
-          # The context's real test ritual, mirroring ci.yml: musl toolchain for
-          # the curl e2e harness (it cross-builds pet_store and runs it on
-          # Alpine), regenerate pet_store handlers from the spec, then the full
-          # workspace suite with coverage. RUSTFLAGS cleared to override the
-          # committed .cargo/config rustflags (same effect as ci.yml's config
-          # override step).
-          - BP_TEST_COMMAND=sudo apt-get update -qq && sudo apt-get install -y -qq musl-tools && rustup target add x86_64-unknown-linux-musl && export RUSTFLAGS= CC_x86_64_unknown_linux_musl=musl-gcc CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc && cargo run --bin brrtrouter-gen -- generate --spec examples/openapi.yaml --force && cargo llvm-cov test --workspace --all-targets --no-fail-fast --lcov --output-path "$GITHUB_WORKSPACE/coverage/lcov.info"
     # lib function: the brrtrouter-tooling Python package (console script
     # `brrtrouter`; consumed by hauliage's tooling). ruff + pytest + wheel
     # sanity every run; publish stays off until a registry target is chosen.
