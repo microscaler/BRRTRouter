@@ -50,9 +50,17 @@ pub fn write_handler_response(
     res.status_code(status as usize, reason);
     // Owned headers are freed with the `Response` — `may_minihttp` accepts
     // `String` via `IntoResponseHeader` on our fork, so no `Box::leak`.
+    //
+    // Track Content-Type from the handler/OpenAPI map so we do not emit a
+    // second casing (`content-type` + `Content-Type`). Nginx treats that as a
+    // duplicate header and can return 502 to the browser.
+    let mut has_content_type = false;
     for (k, v) in headers {
         if k.eq_ignore_ascii_case("content-length") {
             continue;
+        }
+        if k.eq_ignore_ascii_case("content-type") {
+            has_content_type = true;
         }
         res.header(format!("{k}: {v}"));
     }
@@ -61,20 +69,28 @@ pub fn write_handler_response(
     }
     match body {
         Value::String(s) => {
-            if is_sse {
-                res.header("Content-Type: text/event-stream");
-            } else {
-                res.header("Content-Type: text/plain");
+            if !has_content_type {
+                if is_sse {
+                    res.header("Content-Type: text/event-stream");
+                } else {
+                    res.header("Content-Type: text/plain");
+                }
             }
             res.body_vec(s.into_bytes());
         }
         other => {
-            res.header("Content-Type: application/json");
             match serde_json::to_vec(&other) {
-                Ok(json_bytes) => res.body_vec(json_bytes),
+                Ok(json_bytes) => {
+                    if !has_content_type {
+                        res.header("Content-Type: application/json");
+                    }
+                    res.body_vec(json_bytes);
+                }
                 Err(e) => {
                     res.status_code(500, "Internal Server Error");
-                    res.header("Content-Type: text/plain");
+                    if !has_content_type {
+                        res.header("Content-Type: text/plain");
+                    }
                     res.body_vec(format!("Failed to serialize response: {}", e).into_bytes());
                 }
             }
@@ -122,6 +138,20 @@ mod tests {
             // JSF P2: Use Arc::from for header names
             headers.push((Arc::from("x-test"), "foo".to_string()));
             write_handler_response(res, 201, serde_json::json!({"ok": true}), false, &headers);
+            Ok(())
+        }
+    }
+
+    /// Simulates the OpenAPI/proxy path that already injects `content-type`
+    /// (lowercase) before `write_handler_response` adds a default.
+    #[derive(Clone)]
+    struct PrefixedContentTypeService;
+
+    impl HttpService for PrefixedContentTypeService {
+        fn call(&mut self, _req: Request, res: &mut Response) -> std::io::Result<()> {
+            let mut headers: HeaderVec = HeaderVec::new();
+            headers.push((Arc::from("content-type"), "application/json".to_string()));
+            write_handler_response(res, 200, serde_json::json!({"ok": true}), false, &headers);
             Ok(())
         }
     }
@@ -372,6 +402,25 @@ mod tests {
             "response must not duplicate Content-Length"
         );
         let (_, _, body) = parse_parts(&resp);
+        assert_eq!(body, "{\"ok\":true}");
+    }
+
+    #[test]
+    fn test_write_handler_response_does_not_duplicate_content_type() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        drop(listener);
+        let handle = HttpServer(PrefixedContentTypeService).start(addr).unwrap();
+        let resp = send_request(&addr, "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n");
+        unsafe { handle.coroutine().cancel() };
+        assert_eq!(
+            count_header(&resp, "content-type"),
+            1,
+            "duplicate Content-Type (any casing) breaks nginx reverse proxies with 502: {resp}"
+        );
+        let (status, ct, body) = parse_parts(&resp);
+        assert_eq!(status, 200);
+        assert_eq!(ct, "application/json");
         assert_eq!(body, "{\"ok\":true}");
     }
 
