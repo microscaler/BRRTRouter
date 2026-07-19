@@ -1,5 +1,6 @@
 """Tests for hauliage CLI (main, openapi, bff, ci, ports)."""
 
+import shutil
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -359,7 +360,8 @@ def test_tilt_logs_tilt_missing_exits_1(tmp_path, monkeypatch, capsys):
 
 def test_tilt_setup_kind_registry_mocked_exits_0(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("HAULIAGE_PROJECT_ROOT", str(tmp_path))
-    with patch("subprocess.run") as m:
+    # shutil.which patched so the docker-presence gate passes without a docker CLI.
+    with patch("shutil.which", return_value="/usr/bin/docker"), patch("subprocess.run") as m:
         m.side_effect = [
             MagicMock(returncode=0),
             MagicMock(returncode=0, stdout="true"),
@@ -383,6 +385,7 @@ def test_build_microservice_unknown_exits_1(tmp_path, monkeypatch, capsys):
     assert "unknown" in (out + err) or "nosuch" in (out + err) or "Valid" in (out + err)
 
 
+@pytest.mark.skipif(shutil.which("rustup") is None, reason="requires rustup on PATH")
 def test_build_microservices_missing_manifest_exits_1(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("HAULIAGE_PROJECT_ROOT", str(tmp_path))
     code = _run_main(["build", "microservices", "amd64"])

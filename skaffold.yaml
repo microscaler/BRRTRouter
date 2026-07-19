@@ -31,16 +31,24 @@ build:
         env:
           - BP_RUST_PACKAGE=pet_store
           - BP_RUST_BINARY_NAME=pet_store
-    # lib function (-lib suffix): "build and test it all" for the Rust
-    # workspace (brrtrouter, brrtrouter_macros, brrtrouter-tooling crate,
-    # pet_store). publish=none → the deliverable is the verified rev that
-    # downstream repos (hauliage et al.) pin as a git dependency.
+    # lib function (-lib suffix): "build and test it all" for the Rust lib.
+    # publish=none → the deliverable is the verified rev that downstream repos
+    # (hauliage et al.) pin as a git dependency.
+    # BP_LIB_PACKAGES scopes the verify to the library crates (pet_store is
+    # covered by the image artifact; brrtrouter-validator-python is a pyo3
+    # maturin wheel, phase 2 — and ci.yml notes a bare `--all` workspace build
+    # is not currently expected to succeed).
+    # BP_TEST_COMMAND declares this context's test command for the pipeline's
+    # Test job, mirroring the native ci.yml ritual: regenerate pet_store
+    # handlers from the spec, then run the full workspace suite with coverage.
     - image: ghcr.io/microscaler/brrtrouter-lib
       context: .
       buildpacks:
         builder: ghcr.io/octopilot/builder-jammy-base:latest
         env:
           - BP_LIB_PUBLISH=none
+          - BP_LIB_PACKAGES=brrtrouter,brrtrouter_macros,brrtrouter-tooling
+          - BP_TEST_COMMAND=cargo run --bin brrtrouter-gen -- generate --spec examples/openapi.yaml --force && cargo llvm-cov test --workspace --all-targets --no-fail-fast --lcov --output-path "$GITHUB_WORKSPACE/coverage/lcov.info"
     # lib function: the brrtrouter-tooling Python package (console script
     # `brrtrouter`; consumed by hauliage's tooling). ruff + pytest + wheel
     # sanity every run; publish stays off until a registry target is chosen.

@@ -9,7 +9,7 @@ class TestSetupKindRegistry:
     def test_returns_0_when_network_and_registry_ok(self, tmp_path: Path) -> None:
         from brrtrouter_tooling.tilt.setup_kind_registry import run
 
-        with patch("subprocess.run") as m:
+        with patch("shutil.which", return_value="/usr/bin/docker"), patch("subprocess.run") as m:
             m.side_effect = [
                 MagicMock(returncode=0),
                 MagicMock(returncode=0, stdout="true"),
@@ -23,7 +23,7 @@ class TestSetupKindRegistry:
     def test_returns_1_when_kind_network_missing(self, tmp_path: Path) -> None:
         from brrtrouter_tooling.tilt.setup_kind_registry import run
 
-        with patch("subprocess.run") as m:
+        with patch("shutil.which", return_value="/usr/bin/docker"), patch("subprocess.run") as m:
             m.side_effect = [
                 MagicMock(returncode=0),
                 MagicMock(returncode=0, stdout="true"),

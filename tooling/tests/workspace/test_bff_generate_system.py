@@ -105,7 +105,9 @@ class TestListSystemsWithSubServices:
     def test_empty_openapi_dir_returns_empty(self, tmp_path: Path) -> None:
         from brrtrouter_tooling.workspace.bff.generate_system import list_systems_with_sub_services
 
-        assert list_systems_with_sub_services(tmp_path) == ["hauliage"]
+        # No openapi/ content at all -> no systems (matches the test's name; the
+        # legacy implicit-"hauliage" only applies when a flat config file exists).
+        assert list_systems_with_sub_services(tmp_path) == []
 
     def __skip1(self):
         pass

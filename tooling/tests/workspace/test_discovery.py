@@ -24,13 +24,25 @@ class TestSuites:
         (tmp_path / "openapi" / "bff-suite-config.yaml").write_text("")
         assert suites_with_bff(tmp_path) == ["hauliage"]
 
-    def test_bff_suite_config_path(self, tmp_path: Path):
+    def test_bff_suite_config_path_prefers_nested_default(self, tmp_path: Path):
+        # Nothing on disk: the nested (suite-scoped) path is the default.
+        assert (
+            bff_suite_config_path(tmp_path, "hauliage")
+            == tmp_path / "openapi" / "hauliage" / "bff-suite-config.yaml"
+        )
+
+    def test_bff_suite_config_path_flat_legacy_fallback(self, tmp_path: Path):
+        # Legacy hauliage layout: flat file exists, no nested — fallback applies.
+        (tmp_path / "openapi").mkdir(parents=True)
+        (tmp_path / "openapi" / "bff-suite-config.yaml").write_text("")
         assert (
             bff_suite_config_path(tmp_path, "hauliage")
             == tmp_path / "openapi" / "bff-suite-config.yaml"
         )
 
-    def test_openapi_bff_path(self, tmp_path: Path):
+    def test_openapi_bff_path_flat_legacy_fallback(self, tmp_path: Path):
+        (tmp_path / "openapi").mkdir(parents=True)
+        (tmp_path / "openapi" / "openapi_bff.yaml").write_text("")
         assert openapi_bff_path(tmp_path, "hauliage") == tmp_path / "openapi" / "openapi_bff.yaml"
 
     def test_service_to_suite_finds_spec(self, tmp_path: Path):

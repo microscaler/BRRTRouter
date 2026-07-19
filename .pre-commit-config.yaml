@@ -2,14 +2,23 @@
 # Install: just init && just install-hooks
 # Run manually: pre-commit run --all-files
 # Conventional commits are validated on commit-msg (see commit-msg hook).
-# Hooks run in order: Ruff (lint --fix + format) on tooling Python.
+#
+# Hooks are PORTABLE: ruff comes from astral-sh/ruff-pre-commit (pre-commit
+# manages its own environment), pinned to the same version as
+# tooling/pyproject.toml's dev extra — never from tooling/.venv, which does not
+# exist on CI runners or clean clones.
+#
+# Pushes are locked down too: default_stages includes pre-push, so `git push`
+# re-runs the lint hooks (install with `pre-commit install --hook-type pre-push`,
+# covered by default_install_hook_types below).
 #
 # NOTE: The `qa` hook (just qa) was removed. It runs the full tooling test suite
 # which fails in environments with read-only /tmp (NFS containers, CI runners)
 # because rustup/downloader tests need a writable temp directory. Run `just qa`
 # manually when you need the full check.
 
-default_install_hook_types: [pre-commit, commit-msg]
+default_install_hook_types: [pre-commit, commit-msg, pre-push]
+default_stages: [pre-commit, pre-push]
 
 repos:
   - repo: https://github.com/compilerla/conventional-pre-commit
@@ -18,16 +27,20 @@ repos:
       - id: conventional-pre-commit
         stages: [commit-msg]
 
-  - repo: local
+  # Keep in lockstep with ruff==0.15.9 in tooling/pyproject.toml [dev].
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.9
     hooks:
-      # Use project Ruff so we always commit linted/formatted tooling code (same as just lint + just format).
       - id: ruff
-        name: Ruff (lint --fix + format)
-        entry: bash -c 'tooling/.venv/bin/ruff check tooling/ --fix && tooling/.venv/bin/ruff format tooling/'
-        language: system
-        pass_filenames: false
+        name: Ruff lint (--fix)
+        args: [--fix]
+        files: ^tooling/.*\.py$
+      - id: ruff-format
+        name: Ruff format
         files: ^tooling/.*\.py$
 
+  - repo: local
+    hooks:
       # check-empty-print-statements — fast grep, no subprocess/temp-dir needed.
       - id: check-empty-print-statements
         name: Check for empty print statements to stderr/stdout

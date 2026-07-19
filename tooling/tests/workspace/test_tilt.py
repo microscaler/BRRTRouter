@@ -8,7 +8,7 @@ class TestSetupKindRegistry:
     def test_returns_0_when_network_and_registry_ok(self, tmp_path: Path):
         from brrtrouter_tooling.workspace.tilt.setup_kind_registry import run
 
-        with patch("subprocess.run") as m:
+        with patch("shutil.which", return_value="/usr/bin/docker"), patch("subprocess.run") as m:
             # docker inspect (no container) -> fail; then we'd docker run. To avoid that, make inspect succeed (container exists)
             # docker inspect -f State.Running -> "true"
             # docker network inspect kind -> ok
@@ -27,7 +27,7 @@ class TestSetupKindRegistry:
     def test_returns_1_when_kind_network_missing(self, tmp_path: Path):
         from brrtrouter_tooling.workspace.tilt.setup_kind_registry import run
 
-        with patch("subprocess.run") as m:
+        with patch("shutil.which", return_value="/usr/bin/docker"), patch("subprocess.run") as m:
             m.side_effect = [
                 MagicMock(returncode=0),
                 MagicMock(returncode=0, stdout="true"),
@@ -40,14 +40,14 @@ class TestSetupPersistentVolumes:
     def test_returns_1_when_kubectl_not_connected(self, tmp_path: Path):
         from brrtrouter_tooling.workspace.tilt.setup_persistent_volumes import run
 
-        with patch("subprocess.run") as m:
+        with patch("shutil.which", return_value="/usr/bin/docker"), patch("subprocess.run") as m:
             m.return_value = MagicMock(returncode=1)
             assert run(tmp_path) == 1
 
     def test_returns_0_when_no_pv_files(self, tmp_path: Path):
         from brrtrouter_tooling.workspace.tilt.setup_persistent_volumes import run
 
-        with patch("subprocess.run") as m:
+        with patch("shutil.which", return_value="/usr/bin/docker"), patch("subprocess.run") as m:
             m.return_value = MagicMock(returncode=0, stdout="")
             assert run(tmp_path) == 0
 

@@ -1,5 +1,6 @@
 """Tests for hauliage docker build-base (delegates to brrtrouter_tooling.docker.build_base)."""
 
+import shutil
 from pathlib import Path
 
 import pytest
@@ -8,6 +9,7 @@ pytest.importorskip("brrtrouter_tooling")
 
 
 class TestBuildBase:
+    @pytest.mark.skipif(shutil.which("docker") is None, reason="requires docker CLI on PATH")
     def test_dockerfile_missing_returns_1(self, tmp_path: Path):
         from brrtrouter_tooling.docker.build_base import run
 
