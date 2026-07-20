@@ -339,6 +339,13 @@ mod tests {
                 ]
             }),
         );
+        // json() deliberately leaves the content-type slot empty (so the
+        // OpenAPI spec type can win at write time); a handler that pins the
+        // type sets it explicitly — which is what this fixture exercises.
+        res.headers.push((
+            std::sync::Arc::from("content-type"),
+            "application/json".to_string(),
+        ));
 
         // Invoke the middleware chain (this is what Dispatcher::dispatch does in D5)
         middleware.after(&req, &mut res, Duration::from_millis(5));
@@ -350,7 +357,7 @@ mod tests {
         );
         assert_eq!(res.get_header("x-content-type-options"), Some("nosniff"));
         assert_eq!(res.get_header("vary"), Some("Accept"));
-        // Content-Type from json() helper should still be intact
+        // Explicit Content-Type set by the handler should still be intact
         assert_eq!(res.get_header("content-type"), Some("application/json"));
     }
 
@@ -431,8 +438,15 @@ mod tests {
     fn test_jwks_middleware_preserves_content_type_header() {
         let middleware = JwksHeadersMiddleware;
         let req = make_request("/v1/.well-known/jwks.json");
-        // Handler sets content-type via HandlerResponse::json()
+        // Handler pins the content-type explicitly (json() itself leaves the
+        // slot empty so the OpenAPI spec type can win at write time) — the
+        // regression guard is that set_header's retain() only removes the
+        // specific header being set, never this one.
         let mut res = HandlerResponse::json(200, serde_json::json!({}));
+        res.headers.push((
+            std::sync::Arc::from("content-type"),
+            "application/json".to_string(),
+        ));
 
         middleware.after(&req, &mut res, Duration::ZERO);
 

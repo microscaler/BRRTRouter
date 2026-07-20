@@ -246,9 +246,17 @@ impl HandlerResponse {
     }
 
     /// Create an error response
+    ///
+    /// Unlike [`Self::json`], this pins `content-type: application/json`
+    /// explicitly: error payloads are terminal (middleware short-circuits,
+    /// policy rejections) and are never subject to OpenAPI response
+    /// content-type negotiation.
     #[must_use]
     pub fn error(status: u16, message: &str) -> Self {
-        Self::json(status, serde_json::json!({ "error": message }))
+        let mut resp = Self::json(status, serde_json::json!({ "error": message }));
+        resp.headers
+            .push((Arc::from("content-type"), "application/json".to_string()));
+        resp
     }
 
     /// Get a header by name
