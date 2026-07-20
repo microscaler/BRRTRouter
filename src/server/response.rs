@@ -60,9 +60,20 @@ pub fn write_handler_response(
             continue;
         }
         if k.eq_ignore_ascii_case("content-type") {
+            // SSE: the stream's content type is fixed. Drop any handler/OpenAPI
+            // response-map content-type (e.g. application/json) so exactly one
+            // `text/event-stream` header is emitted below — emitting the map's
+            // type here would win the single-content-type slot and break SSE.
+            if is_sse {
+                continue;
+            }
             has_content_type = true;
         }
         res.header(format!("{k}: {v}"));
+    }
+    if is_sse {
+        res.header("Content-Type: text/event-stream");
+        has_content_type = true;
     }
     if !response_status_allows_body(status) {
         return;
@@ -70,11 +81,7 @@ pub fn write_handler_response(
     match body {
         Value::String(s) => {
             if !has_content_type {
-                if is_sse {
-                    res.header("Content-Type: text/event-stream");
-                } else {
-                    res.header("Content-Type: text/plain");
-                }
+                res.header("Content-Type: text/plain");
             }
             res.body_vec(s.into_bytes());
         }
