@@ -25,7 +25,7 @@ build:
     - image: ghcr.io/microscaler/brrtrouter-petstore
       context: .
       buildpacks:
-        builder: ghcr.io/octopilot/builder-jammy-base:rust-builder-9f9d796
+        builder: ghcr.io/octopilot/builder-jammy-base:rust-builder-7311be7
         buildpacks:
           - octopilot/rust
         env:
@@ -48,7 +48,7 @@ build:
     - image: ghcr.io/microscaler/brrtrouter-lib
       context: .
       buildpacks:
-        builder: ghcr.io/octopilot/builder-jammy-base:rust-builder-9f9d796
+        builder: ghcr.io/octopilot/builder-jammy-base:rust-builder-7311be7
         env:
           - BP_LIB_PUBLISH=none
           - BP_LIB_PACKAGES=brrtrouter,brrtrouter_macros,brrtrouter-tooling
@@ -61,6 +61,6 @@ build:
     - image: ghcr.io/microscaler/brrtrouter-tooling-lib
       context: tooling
       buildpacks:
-        builder: ghcr.io/octopilot/builder-jammy-base:rust-builder-9f9d796
+        builder: ghcr.io/octopilot/builder-jammy-base:rust-builder-7311be7
         env:
           - BP_LIB_PUBLISH=none
