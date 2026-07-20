@@ -72,6 +72,10 @@ const COVERAGE_ENV_VARS: &[&str] = &[
 /// Flag to track if signal handler cleanup is already running
 static SIGNAL_CLEANUP_RUNNING: AtomicBool = AtomicBool::new(false);
 
+/// True when cleanup was triggered by SIGINT/SIGTERM (full teardown) rather
+/// than normal process exit (shared container is left running for siblings).
+static EXITING_VIA_SIGNAL: AtomicBool = AtomicBool::new(false);
+
 /// Register signal handlers and atexit cleanup to ensure containers are always removed
 ///
 /// This is critical because `HARNESS` is a static `OnceLock`, so its `Drop` is never
@@ -88,19 +92,27 @@ fn register_signal_handlers() {
 
         eprintln!("\n🧹 Cleaning up Docker resources on exit...");
 
-        // 1. Clean up the running container
-        if let Some(harness) = HARNESS.get() {
-            eprintln!("Stopping container: {}", harness.container_id);
-            let _ = Command::new("docker")
-                .args(["stop", "-t", "2", &harness.container_id])
-                .status();
-            let _ = Command::new("docker")
-                .args(["rm", "-f", &harness.container_id])
-                .status();
-        }
+        // 1. Container teardown — ONLY on interrupt (SIGINT/SIGTERM).
+        // On normal exit the shared container is deliberately left running:
+        // sibling nextest processes may still be using it, and the next run
+        // adopts or replaces it (image-freshness checked at start). CI runners
+        // are ephemeral, so nothing leaks there.
+        if EXITING_VIA_SIGNAL.load(Ordering::SeqCst) {
+            if let Some(harness) = HARNESS.get() {
+                eprintln!("Stopping container: {}", harness.container_id);
+                let _ = Command::new("docker")
+                    .args(["stop", "-t", "2", &harness.container_id])
+                    .status();
+                let _ = Command::new("docker")
+                    .args(["rm", "-f", &harness.container_id])
+                    .status();
+            }
 
-        // Also cleanup by name (in case harness wasn't initialized)
-        cleanup_orphaned_containers();
+            // Also cleanup by name (in case harness wasn't initialized)
+            cleanup_orphaned_containers();
+        } else {
+            eprintln!("Leaving shared e2e container running for sibling test processes / next run");
+        }
 
         // 2. Clean up dangling test images
         // Why cleanup images?
@@ -218,6 +230,7 @@ fn register_signal_handlers() {
     }
 
     extern "C" fn signal_handler(_: libc::c_int) {
+        EXITING_VIA_SIGNAL.store(true, Ordering::SeqCst);
         cleanup_handler();
 
         // Re-raise the signal to allow normal termination
@@ -529,12 +542,16 @@ pub fn base_url() -> &'static str {
     h.base_url.as_str()
 }
 
-/// Get the container name for this test process
+/// Get the shared e2e container name
 ///
-/// Uses process ID to create unique container names for parallel test execution.
-/// This allows nextest to run multiple test processes simultaneously without conflicts.
+/// Deterministic (NOT per-process): under nextest every test is its own
+/// process, and per-pid names meant every curl test built and started its own
+/// container (60–120s each, serialized on the build lock). One shared
+/// container is created by the first process and ADOPTED by the rest — see
+/// `ContainerHarness::start` for the image-freshness check that prevents a
+/// stale container from previous code being reused.
 fn container_name() -> String {
-    format!("brrtrouter-e2e-{}", std::process::id())
+    "brrtrouter-e2e-shared".to_string()
 }
 
 /// Manually clean up any orphaned containers from previous test runs
@@ -649,39 +666,72 @@ impl ContainerHarness {
     ///
     /// Panics if Docker is unavailable, build fails, or the container doesn't become ready.
     fn start() -> Self {
-        // ALWAYS cleanup orphaned containers first (not just once)
-        // This is critical because if tests were cancelled, Drop may not have run
-        eprintln!("Cleaning up any orphaned containers from previous runs...");
-        cleanup_orphaned_containers();
+        // Serialize adopt-or-start across nextest's per-test processes: exactly
+        // one process creates the shared container, the rest ADOPT it. Reuses
+        // the cross-process file lock (build already finished, so it is free).
+        let _container_lock = E2eDockerBuildLock::acquire()
+            .expect("failed to acquire cross-process e2e container lock");
 
         // Image setup is now handled by ensure_image_ready() called from base_url()
         // This ensures the image is built once for all tests, not per-container
 
-        // Run container detached with random host port for 8080
-        // Use unique container name per process to allow parallel test execution
         let container_name = container_name();
-        eprintln!("Starting container: {container_name}");
-        let output = Command::new("docker")
-            .args([
-                "run",
-                "-d",
-                "-e",
-                "PORT=8080",
-                "-p",
-                "127.0.0.1::8080", // random host port, loopback only
-                "--name",
-                &container_name,
-                "brrtrouter-petstore:e2e",
-            ])
-            .output()
-            .expect("failed to run container");
-        assert!(
-            output.status.success(),
-            "docker run failed: {}",
-            String::from_utf8_lossy(&output.stderr)
+
+        // Adoption: reuse a running shared container ONLY if it runs exactly the
+        // image we just built — a container from previous code must be replaced.
+        let inspect = |args: &[&str]| -> Option<String> {
+            let out = Command::new("docker").args(args).output().ok()?;
+            if out.status.success() {
+                Some(String::from_utf8_lossy(&out.stdout).trim().to_string())
+            } else {
+                None
+            }
+        };
+        let expected_image = inspect(&["inspect", "-f", "{{.Id}}", "brrtrouter-petstore:e2e"]);
+        let existing = inspect(&[
+            "inspect",
+            "-f",
+            "{{.State.Running}} {{.Image}}",
+            &container_name,
+        ]);
+        let adoptable = matches!(
+            (&expected_image, &existing),
+            (Some(img), Some(state)) if state.starts_with("true ") && state.ends_with(img.as_str())
         );
-        let container_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        eprintln!("Container started: {container_id}");
+
+        let container_id: String;
+        if adoptable {
+            eprintln!("Adopting running shared container: {container_name} (image is current)");
+            container_id = container_name.clone();
+        } else {
+            // Stale or absent — replace. (rm -f is a no-op when absent.)
+            eprintln!("Starting shared container: {container_name}");
+            let _ = Command::new("docker")
+                .args(["rm", "-f", &container_name])
+                .output();
+            // Run container detached with random host port for 8080
+            let output = Command::new("docker")
+                .args([
+                    "run",
+                    "-d",
+                    "-e",
+                    "PORT=8080",
+                    "-p",
+                    "127.0.0.1::8080", // random host port, loopback only
+                    "--name",
+                    &container_name,
+                    "brrtrouter-petstore:e2e",
+                ])
+                .output()
+                .expect("failed to run container");
+            assert!(
+                output.status.success(),
+                "docker run failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            container_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            eprintln!("Container started: {container_id}");
+        }
 
         // Query mapped port with polling - Docker needs a moment to set up network settings
         // We poll immediately and continuously until the port mapping is available
