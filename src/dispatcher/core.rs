@@ -232,12 +232,15 @@ impl HandlerResponse {
     /// Create a JSON response with default headers
     #[must_use]
     pub fn json(status: u16, body: Value) -> Self {
-        let mut headers = HeaderVec::new();
-        // JSF P2: Use Arc::from for header names (O(1) clone)
-        headers.push((Arc::from("content-type"), "application/json".to_string()));
+        // No content-type header here: this constructor's JSON type is an
+        // implicit default, not a deliberate handler choice. Leaving the slot
+        // empty lets the service select the OpenAPI-declared response content
+        // type (`RouteMeta::content_type_for`); the response writer still falls
+        // back to `application/json` for JSON bodies when neither is present,
+        // so plain JSON handlers keep identical wire behavior.
         Self {
             status,
-            headers,
+            headers: HeaderVec::new(),
             body,
         }
     }

@@ -240,8 +240,14 @@ paths:
 fn send_raw_request(addr: &SocketAddr, req: &str) -> String {
     let mut stream = TcpStream::connect(addr).unwrap();
     stream.write_all(req.as_bytes()).unwrap();
+    // CI runners under parallel nextest need a longer read window than local dev.
+    let timeout_ms: u64 = if std::env::var("CI").is_ok() {
+        2000
+    } else {
+        500
+    };
     stream
-        .set_read_timeout(Some(Duration::from_millis(500)))
+        .set_read_timeout(Some(Duration::from_millis(timeout_ms)))
         .unwrap();
     let mut buf = Vec::new();
     let mut header_end = None;

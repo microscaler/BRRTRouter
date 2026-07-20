@@ -395,9 +395,11 @@ fn make_token(scope: &str) -> String {
 fn send_request(addr: &SocketAddr, req: &str) -> String {
     let mut stream = TcpStream::connect(addr).unwrap();
     stream.write_all(req.as_bytes()).unwrap();
-    // Allow slower CI environments (e.g., act) a longer read window
-    let timeout_ms: u64 = if std::env::var("ACT").is_ok() {
-        1500
+    // Allow slower CI environments (GitHub runners set CI=true; act sets ACT)
+    // a longer read window — under parallel nextest on a 2-core runner the
+    // 500ms local window starves and yields status-0 flakes.
+    let timeout_ms: u64 = if std::env::var("CI").is_ok() || std::env::var("ACT").is_ok() {
+        2000
     } else {
         500
     };
@@ -4361,13 +4363,17 @@ fn test_jwks_empty_cache_no_retry_on_successful_empty_response() {
     // Wait to ensure any retry would have happened
     std::thread::sleep(Duration::from_millis(500));
 
-    // Verify that only ONE request was made (no retry)
-    // If retry logic incorrectly triggered, we'd see 2+ requests
+    // Verify no RETRY happened. Legitimate requests under the P0 semantics:
+    //   1. the provider's initial fetch at construction (background refresh)
+    //   2. the unknown-`kid` immediate refresh triggered by validate()
+    // A third request would mean retry logic incorrectly re-fetched after a
+    // successful (HTTP 200) but empty JWKS response — the bug this test guards.
     let final_count = request_count.load(Ordering::Relaxed);
     assert!(
-        final_count == 1,
-        "Exactly 1 HTTP request should be made (refresh succeeded with empty keys, no retry). \
-         Got {final_count} requests. If > 1, retry logic incorrectly triggered on successful empty response."
+        final_count <= 2,
+        "At most 2 HTTP requests expected (initial fetch + unknown-kid refresh; empty-but-\
+         successful response must not retry). Got {final_count} requests — retry logic \
+         incorrectly triggered on a successful empty response."
     );
 
     // Verify that validation fails (as expected with empty keys)
