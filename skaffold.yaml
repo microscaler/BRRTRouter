@@ -31,6 +31,10 @@ build:
         env:
           - BP_RUST_PACKAGE=pet_store
           - BP_RUST_BINARY_NAME=pet_store
+          # rust >= 0.1.12 prunes source from the run image; pet_store loads
+          # its spec/config/static site from the source tree at runtime
+          # (paths compiled in via CARGO_MANIFEST_DIR), so keep exactly those.
+          - BP_RUST_KEEP=examples/pet_store/doc,examples/pet_store/config,examples/pet_store/static_site
     # lib function (-lib suffix): "build and test it all" for the Rust lib.
     # publish=none → the deliverable is the verified rev that downstream repos
     # (hauliage et al.) pin as a git dependency.
