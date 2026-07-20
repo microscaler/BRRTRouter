@@ -1,0 +1,20 @@
+# nextest configuration — https://nexte.st/docs/configuration/
+#
+# Two goals:
+# 1. Per-test hard timeouts (terminate-after): a deadlocked test dies at the
+#    test level in minutes, instead of eating the CI job's 60-minute cap
+#    (two early Octopilot runs sat on a hung libtest job for 6 hours).
+# 2. Calibrated slow-markers: the curl e2e group legitimately takes ~60-90s on
+#    a cold cache (one shared container build; siblings queue on the
+#    cross-process lock then adopt) — mark them slow at 120s, not 60s.
+
+[profile.default]
+# Default: warn at 60s, kill after 4 periods (4 minutes).
+slow-timeout = { period = "60s", terminate-after = 4 }
+
+[[profile.default.overrides]]
+# Docker e2e harness: first process builds binary + image + container while
+# the rest wait on the shared lock. Warm-cache runs are seconds; cold runs
+# may reach ~2 minutes. Kill after 3 periods (6 minutes) — that means a hang.
+filter = 'test(/^curl_/)'
+slow-timeout = { period = "120s", terminate-after = 3 }
