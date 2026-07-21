@@ -16,7 +16,11 @@ pub fn dummy_value(ty: &str) -> askama::Result<String> {
     let value = match inner_ty {
         "String" => "\"example\".to_string()".to_string(),
         "i32" => "42".to_string(),
-        "f64" => "3.14".to_string(), // Valid mathematical number - clippy warning is acceptable for f64
+        // NOT 3.14: clippy::approx_constant (≈ PI) is DENY-by-default since
+        // rust 1.97, so 3.14 makes every consumer's generated stubs fail
+        // `cargo clippy`. 1.5 is exact in binary floating point and near no
+        // math constant.
+        "f64" => "1.5".to_string(),
         "rust_decimal::Decimal" => {
             // General decimal: 123.45
             "rust_decimal::Decimal::new(12345, 2)".to_string()
@@ -71,7 +75,7 @@ mod tests {
 
     #[test]
     fn test_f64() {
-        assert_eq!(dummy_value("f64").unwrap(), "3.14");
+        assert_eq!(dummy_value("f64").unwrap(), "1.5");
     }
 
     #[test]
@@ -167,8 +171,8 @@ mod tests {
         // Verify that Option<f64> extracts inner type correctly
         let result = dummy_value("Option<f64>").unwrap();
         assert_eq!(
-            result, "3.14",
-            "Option<f64> should extract inner type and return 3.14"
+            result, "1.5",
+            "Option<f64> should extract inner type and return 1.5"
         );
     }
 }

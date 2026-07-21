@@ -878,8 +878,8 @@ fn test_extract_fields_mixed_number_types() {
     assert_eq!(math_field.ty, "f64", "number without format should be f64");
     // Field is optional (not in required array), so value is wrapped in Some()
     assert!(
-        math_field.value == "3.14" || math_field.value == "Some(3.14)",
-        "f64 should use 3.14 (clippy warning acceptable), got: {}",
+        math_field.value == "1.5" || math_field.value == "Some(1.5)",
+        "f64 should use 1.5 (3.14 trips deny-by-default clippy::approx_constant), got: {}",
         math_field.value
     );
 
