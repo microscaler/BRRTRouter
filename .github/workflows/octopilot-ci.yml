@@ -18,6 +18,12 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# One run per ref: a new push cancels the previous in-flight run so builds
+# never stack up. Tag runs are NEVER cancelled — releases always complete.
+concurrency:
+  group: octopilot-ci-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
 jobs:
   build:
     name: Octopilot
