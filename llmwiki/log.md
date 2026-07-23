@@ -144,6 +144,12 @@ Stress test against `pet_store` on `127.0.0.1:8081`, direct `api_load_test` bina
 - Added **`topics/sibling-repos-and-wikis.md`** — how BRRTRouter / Lifeguard / Hauliage wikis divide responsibility.
 - Updated **`index.md`** to list the new topic pages.
 
+## [2026-06-25] fix | keep local sibling dep, rewrite to git in GitHub Actions
+
+- Restored `microscaler-observability` in [`../Cargo.toml`](../Cargo.toml) to the local sibling path (`../microscaler-observability`) so contributor builds continue to use the adjacent checkout.
+- Added workflow-local rewrite steps in [`../.github/workflows/ci.yml`](../.github/workflows/ci.yml) and [`../.github/workflows/docs.yml`](../.github/workflows/docs.yml) that `sed` the dependency to `git = "https://github.com/microscaler/microscaler-observability.git"` on GitHub runners before Cargo commands execute.
+- Adjusted `Cargo.lock` back to the path-dependency state by removing the git `source` entry for `microscaler-observability`.
+
 ## [2026-04-17] ingest | bootstrap llmwiki from docs + code
 - Created initial `llmwiki/` structure.
 - Imported full `docs/**/*.md` inventory into a catalog.
