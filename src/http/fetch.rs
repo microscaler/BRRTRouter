@@ -140,7 +140,45 @@ pub fn fetch_post(
 ) -> Result<(u16, Vec<u8>), HttpFetchError> {
     let parsed = Url::parse(url).map_err(|e| HttpFetchError::InvalidUrl(e.to_string()))?;
     match parsed.scheme() {
-        "http" | "https" => fetch_post_via_client(&parsed, body, options),
+        "http" | "https" => fetch_method_via_client(&parsed, Method::POST, Some(body), options),
+        other => Err(HttpFetchError::InvalidUrl(format!(
+            "unsupported scheme: {other}"
+        ))),
+    }
+}
+
+/// Perform a bounded HTTP PATCH and return `(status_code, body)`.
+///
+/// # Errors
+///
+/// Returns [`HttpFetchError`] on URL parse failure, network/TLS errors, or oversize body.
+pub fn fetch_patch(
+    url: &str,
+    body: &[u8],
+    options: &HttpFetchOptions,
+) -> Result<(u16, Vec<u8>), HttpFetchError> {
+    let parsed = Url::parse(url).map_err(|e| HttpFetchError::InvalidUrl(e.to_string()))?;
+    match parsed.scheme() {
+        "http" | "https" => fetch_method_via_client(&parsed, Method::PATCH, Some(body), options),
+        other => Err(HttpFetchError::InvalidUrl(format!(
+            "unsupported scheme: {other}"
+        ))),
+    }
+}
+
+/// Perform a bounded HTTP DELETE and return `(status_code, body)`.
+///
+/// # Errors
+///
+/// Returns [`HttpFetchError`] on URL parse failure, network/TLS errors, or oversize body.
+pub fn fetch_delete(
+    url: &str,
+    body: Option<&[u8]>,
+    options: &HttpFetchOptions,
+) -> Result<(u16, Vec<u8>), HttpFetchError> {
+    let parsed = Url::parse(url).map_err(|e| HttpFetchError::InvalidUrl(e.to_string()))?;
+    match parsed.scheme() {
+        "http" | "https" => fetch_method_via_client(&parsed, Method::DELETE, body, options),
         other => Err(HttpFetchError::InvalidUrl(format!(
             "unsupported scheme: {other}"
         ))),
@@ -183,17 +221,20 @@ fn apply_extra_headers(request: &mut may_minihttp::client::Request, options: &Ht
     }
 }
 
-fn fetch_post_via_client(
+fn fetch_method_via_client(
     url: &Url,
-    body: &[u8],
+    method: Method,
+    body: Option<&[u8]>,
     options: &HttpFetchOptions,
 ) -> Result<(u16, Vec<u8>), HttpFetchError> {
     let mut client = connect_client(url, options)?;
     let uri: Uri = request_uri_for_may_minihttp(url)?;
-    let mut req = client.new_request(Method::POST, uri);
+    let mut req = client.new_request(method, uri);
     apply_extra_headers(&mut req, options);
-    req.send(body)
-        .map_err(|e| HttpFetchError::Request(e.to_string()))?;
+    if let Some(bytes) = body {
+        req.send(bytes)
+            .map_err(|e| HttpFetchError::Request(e.to_string()))?;
+    }
     let mut response = client
         .send_request(req)
         .map_err(|e| HttpFetchError::Response(e.to_string()))?;

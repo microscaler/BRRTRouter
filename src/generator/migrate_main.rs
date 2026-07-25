@@ -275,7 +275,12 @@ fn render_hooks_block(plan: &MainMigrationPlan) -> String {
     let mut lines = vec!["        .hooks(RunAppHooks {".to_string()];
     if plan.has_lifeguard_prometheus {
         lines.push(
-            "            extra_prometheus: Some(Arc::new(lifeguard::metrics::prometheus_scrape_text)),".to_string(),
+            "            extra_prometheus: Some(Arc::new(hauliage_database::prometheus_scrape_text)),"
+                .to_string(),
+        );
+        lines.push(
+            "            readiness_check: Some(Arc::new(hauliage_database::readiness_check)),"
+                .to_string(),
         );
     }
     if plan.has_db_warm {

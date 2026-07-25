@@ -100,3 +100,15 @@ fn test_health_endpoint() {
 
     // Automatic cleanup!
 }
+
+#[test]
+fn test_ready_endpoint_without_hook_is_ready() {
+    let server = HealthTestServer::new();
+    let resp = send_request(
+        &server.addr(),
+        "GET /ready HTTP/1.1\r\nHost: localhost\r\n\r\n",
+    );
+    let (status, body) = parse_response(&resp);
+    assert_eq!(status, 200);
+    assert_eq!(body["status"], "ready");
+}

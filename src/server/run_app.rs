@@ -41,6 +41,9 @@ pub struct RunAppHooks {
     pub extra_prometheus: Option<Arc<dyn Fn() -> String + Send + Sync>>,
     /// Called on the main OS thread immediately before binding the listen socket.
     pub before_listen: Option<Box<dyn FnOnce()>>,
+    /// Optional dependency readiness for `GET /ready`. `Ok(())` → 200; `Err` → 503.
+    /// When unset, `/ready` returns 200 (same as shallow `/health`).
+    pub readiness_check: Option<Arc<dyn Fn() -> Result<(), String> + Send + Sync>>,
 }
 
 /// Registers gen + impl handlers. Must be `unsafe` because it spawns coroutines.
@@ -146,6 +149,9 @@ impl RunAppBuilder {
         service.set_metrics_middleware(metrics);
         if let Some(extra) = hooks.extra_prometheus {
             service.set_extra_prometheus(Some(extra));
+        }
+        if let Some(ready) = hooks.readiness_check {
+            service.set_readiness_check(Some(ready));
         }
         service.set_memory_middleware(memory);
 

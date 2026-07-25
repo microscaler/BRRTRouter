@@ -147,6 +147,8 @@ pub struct AppService {
     pub metrics: Option<Arc<crate::middleware::MetricsMiddleware>>,
     /// Optional extra Prometheus text (e.g. Lifeguard `lifeguard_*` appended to `/metrics`).
     pub extra_prometheus: Option<Arc<dyn Fn() -> String + Send + Sync>>,
+    /// Optional dependency readiness check for `GET /ready`.
+    pub readiness_check: Option<Arc<dyn Fn() -> Result<(), String> + Send + Sync>>,
     /// Optional memory tracking middleware
     pub memory: Option<Arc<crate::middleware::MemoryMiddleware>>,
     /// Path to the OpenAPI specification file
@@ -203,6 +205,7 @@ impl Clone for AppService {
             security_providers: self.security_providers.clone(),
             metrics: self.metrics.clone(),
             extra_prometheus: self.extra_prometheus.clone(),
+            readiness_check: self.readiness_check.clone(),
             memory: self.memory.clone(),
             spec_path: self.spec_path.clone(),
             static_files: self.static_files.clone(),
@@ -249,6 +252,7 @@ impl AppService {
             security_providers: HashMap::new(),
             metrics: None,
             extra_prometheus: None,
+            readiness_check: None,
             memory: None,
             spec_path,
             static_files: static_dir.map(StaticFiles::new),
@@ -293,6 +297,14 @@ impl AppService {
     /// Append OpenMetrics text from another subsystem (e.g. database pool metrics).
     pub fn set_extra_prometheus(&mut self, scrape: Option<Arc<dyn Fn() -> String + Send + Sync>>) {
         self.extra_prometheus = scrape;
+    }
+
+    /// Set optional readiness callback used by `GET /ready` (k8s readinessProbe).
+    pub fn set_readiness_check(
+        &mut self,
+        check: Option<Arc<dyn Fn() -> Result<(), String> + Send + Sync>>,
+    ) {
+        self.readiness_check = check;
     }
 
     pub fn set_metrics_middleware(&mut self, metrics: Arc<MetricsMiddleware>) {
@@ -524,6 +536,43 @@ pub fn health_endpoint(res: &mut Response) -> io::Result<()> {
         false,
         &HeaderVec::new(),
     );
+    Ok(())
+}
+
+/// Dependency-aware readiness for Kubernetes probes (`GET /ready`).
+///
+/// When `check` is `None`, returns 200 (process accepts traffic). When present,
+/// `Ok(())` → 200 / `{"status":"ready"}`; `Err(msg)` → 503 / `{"status":"not_ready","error":msg}`.
+pub fn ready_endpoint(
+    res: &mut Response,
+    check: Option<&(dyn Fn() -> Result<(), String> + Send + Sync)>,
+) -> io::Result<()> {
+    use crate::dispatcher::HeaderVec;
+    match check {
+        None => write_handler_response(
+            res,
+            200,
+            serde_json::json!({ "status": "ready" }),
+            false,
+            &HeaderVec::new(),
+        ),
+        Some(cb) => match cb() {
+            Ok(()) => write_handler_response(
+                res,
+                200,
+                serde_json::json!({ "status": "ready" }),
+                false,
+                &HeaderVec::new(),
+            ),
+            Err(msg) => write_handler_response(
+                res,
+                503,
+                serde_json::json!({ "status": "not_ready", "error": msg }),
+                false,
+                &HeaderVec::new(),
+            ),
+        },
+    }
     Ok(())
 }
 
@@ -1152,6 +1201,23 @@ impl HttpService for AppService {
         if method == Method::GET && path == "/health" {
             _request_logger.record_http_status(200);
             return health_endpoint(res);
+        }
+        if method == Method::GET && path == "/ready" {
+            use crate::dispatcher::HeaderVec;
+            let outcome = match self.readiness_check.as_ref() {
+                None => Ok(()),
+                Some(cb) => cb(),
+            };
+            let (status, body) = match outcome {
+                Ok(()) => (200u16, serde_json::json!({ "status": "ready" })),
+                Err(msg) => (
+                    503u16,
+                    serde_json::json!({ "status": "not_ready", "error": msg }),
+                ),
+            };
+            _request_logger.record_http_status(status);
+            write_handler_response(res, status, body, false, &HeaderVec::new());
+            return Ok(());
         }
         if method == Method::GET && path == "/metrics" {
             if let Some(metrics) = &self.metrics {
