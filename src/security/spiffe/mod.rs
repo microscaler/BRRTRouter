@@ -173,6 +173,13 @@ pub struct SpiffeProvider {
     >,
     /// JWKS cache TTL
     jwks_cache_ttl: Duration,
+    /// Per-attempt HTTP timeout for JWKS fetches.
+    ///
+    /// Configuration, not a literal: this used to be hard-coded at 200ms in
+    /// `validation::refresh_jwks_internal`, exactly as in [`crate::security::JwksBearerProvider`],
+    /// and is wrong for the same reason once the JWKS URL is HTTPS behind a TLS-terminating edge.
+    /// See [`crate::security::DEFAULT_JWKS_FETCH_TIMEOUT`].
+    jwks_fetch_timeout: Duration,
     /// Debounce flag for JWKS refresh
     jwks_refresh_in_progress: Option<Arc<AtomicBool>>,
     /// Condition variable for JWKS refresh completion
@@ -202,6 +209,7 @@ impl SpiffeProvider {
             cookie_name: None,
             jwks_cache: None,
             jwks_cache_ttl: Duration::from_secs(3600),
+            jwks_fetch_timeout: crate::security::jwks_fetch_timeout_from_env(),
             jwks_refresh_in_progress: None,
             jwks_refresh_complete: None,
             revocation_checker: None,
@@ -351,6 +359,29 @@ impl SpiffeProvider {
         self
     }
 
+    /// Configure the per-attempt HTTP timeout for JWKS fetches.
+    ///
+    /// Default: [`crate::security::DEFAULT_JWKS_FETCH_TIMEOUT`], overridable process-wide with the
+    /// `BRRTR_JWKS_FETCH_TIMEOUT_MS` environment variable. Treated identically to
+    /// [`crate::security::JwksBearerProvider::fetch_timeout`] — both providers fetch the same kind
+    /// of endpoint over the same transport and must not disagree about how long that can take.
+    #[must_use]
+    pub fn jwks_fetch_timeout(mut self, timeout: Duration) -> Self {
+        self.jwks_fetch_timeout = timeout;
+        self
+    }
+
+    /// How long to wait for a refresh started by another thread.
+    ///
+    /// Derived from the configured fetch timeout: a fixed wait shorter than
+    /// `attempts × timeout` expires before the refresh it waits on can have finished.
+    fn jwks_refresh_wait_timeout(&self) -> Duration {
+        self.jwks_fetch_timeout
+            .saturating_mul(crate::security::JWKS_FETCH_ATTEMPTS)
+            .saturating_add(Duration::from_millis(500))
+            .max(Duration::from_secs(5))
+    }
+
     /// Get decoding key and algorithm for a given key ID (kid).
     ///
     /// This is used internally for signature verification.
@@ -382,7 +413,7 @@ impl SpiffeProvider {
         if is_empty {
             let (lock, cvar) = &**refresh_complete;
             let guard = lock.lock().unwrap();
-            let _ = cvar.wait_timeout(guard, Duration::from_secs(5));
+            let _ = cvar.wait_timeout(guard, self.jwks_refresh_wait_timeout());
         }
 
         // Read from cache
@@ -445,13 +476,14 @@ impl SpiffeProvider {
                     refresh_in_progress,
                     refresh_complete,
                     true, // Already claimed
+                    self.jwks_fetch_timeout,
                 );
                 return;
             } else {
                 // Another thread is refreshing - wait for it
                 let (lock, cvar) = &**refresh_complete;
                 let guard = lock.lock().unwrap();
-                let _ = cvar.wait_timeout(guard, Duration::from_secs(5));
+                let _ = cvar.wait_timeout(guard, self.jwks_refresh_wait_timeout());
                 return;
             }
         }
@@ -470,6 +502,7 @@ impl SpiffeProvider {
         let refresh_in_progress_clone = Arc::clone(refresh_in_progress);
         let refresh_complete_clone = Arc::clone(refresh_complete);
         let jwks_url_clone = jwks_url.clone();
+        let jwks_fetch_timeout = self.jwks_fetch_timeout;
 
         // Clone for error handler
         let refresh_in_progress_err = Arc::clone(refresh_in_progress);
@@ -485,6 +518,7 @@ impl SpiffeProvider {
                     &refresh_in_progress_clone,
                     &refresh_complete_clone,
                     true, // Already claimed
+                    jwks_fetch_timeout,
                 );
             })
             .map_err(move |e| {

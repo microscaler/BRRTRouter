@@ -55,6 +55,26 @@
 //! - Reduces memory allocations for validation
 //! - Can be disabled for debugging or if issues arise
 //!
+//! ### `BRRTR_JWKS_FETCH_TIMEOUT_MS`
+//!
+//! Per-attempt HTTP timeout for JWKS fetches, in whole milliseconds. Applies to both
+//! `security::JwksBearerProvider` and `security::SpiffeProvider`; each also exposes a builder
+//! (`fetch_timeout` / `jwks_fetch_timeout`) for per-provider overrides.
+//!
+//! Default: `3000` (see `security::DEFAULT_JWKS_FETCH_TIMEOUT`).
+//!
+//! **Why this matters:**
+//! - The value used to be hard-coded at 200ms, sized for plaintext in-cluster
+//!   `http://…svc.cluster.local` JWKS URLs — one pod-network hop, no handshake.
+//! - Consumers now use `https://` on real hostnames behind TLS-terminating edges, where a fetch
+//!   pays DNS + TCP connect + TLS handshake + chain verification before the HTTP round trip.
+//! - Too low and *every* refresh times out: no keyset is cached and every JWT is rejected with a
+//!   bare 401. Two attempts are made per refresh, so worst-case refresh time is ≈ `2 × timeout`.
+//! - Refreshes are cached and debounced, so a generous timeout costs far less than a failed fetch.
+//!
+//! Read at provider construction (startup), not per request. Unset, unparseable or zero values
+//! fall back to the default and are reported at `WARN`.
+//!
 //! ## Usage
 //!
 //! ```rust

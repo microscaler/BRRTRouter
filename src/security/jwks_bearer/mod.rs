@@ -13,8 +13,10 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, RwLock};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
-use tracing::{debug, warn, Level};
+use tracing::{debug, error, info, warn, Level};
 use url::Url;
+
+use crate::security::{jwks_fetch_timeout_from_env, JWKS_FETCH_ATTEMPTS, JWKS_FETCH_TIMEOUT_ENV};
 
 // Algorithms supported by jsonwebtoken's rust_crypto backend. Each provider should configure
 // the smallest issuer-specific subset with `allowed_algorithms`; this full set remains the
@@ -64,6 +66,108 @@ where
 {
     fn check(&self, claims: &serde_json::Value) -> JwtTokenStatus {
         self(claims)
+    }
+}
+
+/// Fetch configuration and outcome counters shared by every code path that can refresh JWKS.
+///
+/// Lives behind an `Arc` because the background refresh thread, the on-demand refresh threads and
+/// the request path all need it, while `JwksBearerProvider::refresh_jwks_internal` is an
+/// associated function that only ever receives shared handles.
+#[derive(Debug)]
+pub(crate) struct JwksFetchState {
+    /// Per-attempt HTTP timeout in milliseconds.
+    ///
+    /// Atomic (rather than a plain field) for the same reason `cache_ttl_millis` is: the
+    /// background thread starts inside `new()`, so a builder call such as `fetch_timeout()` has to
+    /// be visible to a thread that is already running.
+    timeout_millis: AtomicU64,
+    /// Whether a JWKS fetch has *ever* produced a parseable keyset.
+    ///
+    /// This is the difference between **degraded** (a refresh failed but a cached keyset is still
+    /// being served, so most traffic still works) and **fatal** (no keyset has ever loaded, so
+    /// every single token is rejected). Those are very different incidents and must not share a
+    /// log line, a severity, or a readiness answer.
+    ever_loaded: AtomicBool,
+    /// Successful refreshes (HTTP fetch + JSON parse).
+    fetch_success: AtomicU64,
+    /// Failed refreshes (transport failure, non-2xx, or unparseable body).
+    fetch_failure: AtomicU64,
+    /// Failures since the last success. Reset to zero on success.
+    consecutive_failures: AtomicU64,
+}
+
+impl JwksFetchState {
+    fn new(timeout: Duration) -> Self {
+        Self {
+            timeout_millis: AtomicU64::new(timeout.as_millis() as u64),
+            ever_loaded: AtomicBool::new(false),
+            fetch_success: AtomicU64::new(0),
+            fetch_failure: AtomicU64::new(0),
+            consecutive_failures: AtomicU64::new(0),
+        }
+    }
+
+    fn timeout(&self) -> Duration {
+        Duration::from_millis(self.timeout_millis.load(Ordering::Acquire))
+    }
+
+    fn set_timeout(&self, timeout: Duration) {
+        self.timeout_millis
+            .store(timeout.as_millis() as u64, Ordering::Release);
+    }
+
+    fn ever_loaded(&self) -> bool {
+        self.ever_loaded.load(Ordering::Acquire)
+    }
+
+    /// Record a successful refresh; returns the failure streak it just ended.
+    fn record_success(&self) -> u64 {
+        self.ever_loaded.store(true, Ordering::Release);
+        self.fetch_success.fetch_add(1, Ordering::Relaxed);
+        self.consecutive_failures.swap(0, Ordering::AcqRel)
+    }
+
+    /// Record a failed refresh; returns the new consecutive-failure count.
+    fn record_failure(&self) -> u64 {
+        self.fetch_failure.fetch_add(1, Ordering::Relaxed);
+        self.consecutive_failures.fetch_add(1, Ordering::AcqRel) + 1
+    }
+}
+
+/// Observable state of a [`JwksBearerProvider`]'s key material.
+///
+/// Exposed so services can wire JWKS liveness into their own `/ready` probe — see
+/// [`JwksBearerProvider::readiness`] and `AppService::set_readiness_check`. A router that has
+/// never loaded a keyset cannot authenticate anything and should not be taking traffic.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct JwksHealth {
+    /// A JWKS document has been fetched and parsed at least once since startup.
+    pub ever_loaded: bool,
+    /// Number of usable decoding keys currently cached.
+    pub keys_cached: usize,
+    /// Total successful refreshes.
+    pub fetch_success: u64,
+    /// Total failed refreshes.
+    pub fetch_failure: u64,
+    /// Failures since the last success (zero when healthy).
+    pub consecutive_failures: u64,
+}
+
+impl JwksHealth {
+    /// Whether the provider can validate tokens right now.
+    #[must_use]
+    pub fn is_ready(&self) -> bool {
+        self.ever_loaded && self.keys_cached > 0
+    }
+
+    /// Whether the provider is serving a keyset that is no longer being refreshed successfully.
+    ///
+    /// Distinct from `!is_ready()`: degraded still authenticates existing keys, it just cannot
+    /// pick up a key rotation.
+    #[must_use]
+    pub fn is_degraded(&self) -> bool {
+        self.is_ready() && self.consecutive_failures > 0
     }
 }
 
@@ -119,9 +223,10 @@ pub struct JwksBearerProvider {
     pub(super) cache_hits: AtomicU64,
     pub(super) cache_misses: AtomicU64,
     pub(super) cache_evictions: AtomicU64,
+    // JWKS fetch timeout + outcome counters, shared with every refresh path (background thread,
+    // on-demand refresh threads, unknown-kid refresh).
+    fetch_state: Arc<JwksFetchState>,
     // JWKS fetch metrics (HACK-101: poisoning defense)
-    jwks_fetch_success: AtomicU64,
-    jwks_fetch_failure: AtomicU64,
     jwks_poisoning_rejected: AtomicU64,
     // Story 9.6: Structured JWT logging for audit trail
     pub(super) structured_logger: JwtStructuredLogger,
@@ -192,6 +297,9 @@ impl JwksBearerProvider {
         let refresh_complete = Arc::new((Mutex::new(()), Condvar::new()));
         let shutdown = Arc::new(AtomicBool::new(false));
         let cache_ttl_millis = Arc::new(std::sync::atomic::AtomicU64::new(300_000));
+        // Timeout default comes from configuration, not a literal in the refresh path — see
+        // `crate::security::DEFAULT_JWKS_FETCH_TIMEOUT` for why the old 200ms was wrong.
+        let fetch_state = Arc::new(JwksFetchState::new(jwks_fetch_timeout_from_env()));
 
         let provider = Self {
             jwks_url: url_str,
@@ -218,8 +326,7 @@ impl JwksBearerProvider {
             structured_logger: JwtStructuredLogger::new(),
             background_handle: Some(background_handle.clone()),
             shutdown: shutdown.clone(),
-            jwks_fetch_success: AtomicU64::new(0),
-            jwks_fetch_failure: AtomicU64::new(0),
+            fetch_state: Arc::clone(&fetch_state),
             jwks_poisoning_rejected: AtomicU64::new(0),
         };
 
@@ -231,9 +338,102 @@ impl JwksBearerProvider {
             shutdown,
             background_handle,
             cache_ttl_millis,
+            fetch_state,
         );
 
         provider
+    }
+
+    /// Configure the per-attempt HTTP timeout for JWKS fetches.
+    ///
+    /// Default: [`crate::security::DEFAULT_JWKS_FETCH_TIMEOUT`], overridable process-wide with
+    /// the `BRRTR_JWKS_FETCH_TIMEOUT_MS` environment variable.
+    ///
+    /// Two attempts are made per refresh, so the worst-case refresh duration is roughly
+    /// `2 × timeout`. The previous value was hard-coded at 200ms, which was sized for a plaintext
+    /// in-cluster hop and cannot cover a TLS handshake to a hostname behind an edge — see
+    /// [`crate::security::DEFAULT_JWKS_FETCH_TIMEOUT`] for the full reasoning.
+    ///
+    /// # Note on ordering
+    ///
+    /// The background refresh thread starts in [`Self::new`], so the very first refresh may
+    /// already be in flight using the configured default when this builder runs. The new value
+    /// applies to every refresh after that.
+    #[must_use]
+    pub fn fetch_timeout(self, timeout: Duration) -> Self {
+        self.fetch_state.set_timeout(timeout);
+        self
+    }
+
+    /// Current JWKS key-material health, for metrics and readiness probes.
+    #[must_use]
+    pub fn jwks_health(&self) -> JwksHealth {
+        JwksHealth {
+            ever_loaded: self.fetch_state.ever_loaded(),
+            keys_cached: self.cache.read().map(|guard| guard.1.len()).unwrap_or(0),
+            fetch_success: self.fetch_state.fetch_success.load(Ordering::Relaxed),
+            fetch_failure: self.fetch_state.fetch_failure.load(Ordering::Relaxed),
+            consecutive_failures: self
+                .fetch_state
+                .consecutive_failures
+                .load(Ordering::Relaxed),
+        }
+    }
+
+    /// Readiness answer suitable for `AppService::set_readiness_check`.
+    ///
+    /// A provider that has never fetched a keyset rejects **every** token, so it must not be
+    /// reported ready — that state used to be completely invisible: the fetch error went to
+    /// `debug!` and callers saw only 401s.
+    ///
+    /// A *degraded* provider (cached keys present, refresh currently failing) still reports `Ok`
+    /// on purpose: it can authenticate existing tokens, and pulling the pod out of the load
+    /// balancer for it would turn a partial outage into a total one.
+    ///
+    /// # Wiring it to `GET /ready`
+    ///
+    /// ```text
+    /// let jwks = Arc::new(JwksBearerProvider::new(jwks_url));
+    /// service.register_security_provider("bearerAuth", Arc::clone(&jwks) as Arc<dyn SecurityProvider>);
+    /// service.set_readiness_check(Some(Arc::new({
+    ///     let jwks = Arc::clone(&jwks);
+    ///     move || jwks.readiness()
+    /// })));
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns a human-readable reason when no usable key material is available.
+    pub fn readiness(&self) -> Result<(), String> {
+        let health = self.jwks_health();
+        if !health.ever_loaded {
+            return Err(format!(
+                "JWKS has never been fetched from {} ({} failed attempts): all JWT validation \
+                 will fail. Check DNS, TLS trust and reachability, and {} if the endpoint is slow.",
+                self.jwks_url, health.fetch_failure, JWKS_FETCH_TIMEOUT_ENV
+            ));
+        }
+        if health.keys_cached == 0 {
+            return Err(format!(
+                "JWKS at {} was fetched but contains no usable keys: all JWT validation will fail",
+                self.jwks_url
+            ));
+        }
+        Ok(())
+    }
+
+    /// How long a thread that lost the refresh race should wait for the winner.
+    ///
+    /// Derived from the configured timeout rather than fixed: a constant 2s wait was fine when a
+    /// refresh could not take longer than `2 × 200ms`, but it would make every waiter give up
+    /// before the refresh it is waiting for could possibly have finished once the timeout became
+    /// TLS-sized.
+    fn refresh_wait_timeout(&self) -> Duration {
+        self.fetch_state
+            .timeout()
+            .saturating_mul(JWKS_FETCH_ATTEMPTS)
+            .saturating_add(Duration::from_millis(500))
+            .max(Duration::from_secs(2))
     }
 
     /// Configure the expected JWT issuer claim
@@ -486,6 +686,7 @@ impl JwksBearerProvider {
     ///
     /// The background task refreshes JWKS every (cache_ttl - 10s) to stay ahead of expiration.
     /// This ensures validation threads never block on HTTP requests.
+    #[allow(clippy::too_many_arguments)]
     fn start_background_refresh_internal(
         &self,
         cache: Arc<RwLock<(Instant, HashMap<String, jsonwebtoken::DecodingKey>)>>,
@@ -494,6 +695,7 @@ impl JwksBearerProvider {
         shutdown: Arc<AtomicBool>,
         handle_lock: Arc<RwLock<Option<JoinHandle<()>>>>,
         cache_ttl_millis: Arc<std::sync::atomic::AtomicU64>,
+        fetch_state: Arc<JwksFetchState>,
     ) {
         let jwks_url = self.jwks_url.clone();
         let cache_ttl_millis = cache_ttl_millis;
@@ -509,6 +711,7 @@ impl JwksBearerProvider {
                     &refresh_in_progress,
                     &refresh_complete,
                     false, // Background thread claims the refresh itself
+                    &fetch_state,
                 );
             }
 
@@ -573,6 +776,7 @@ impl JwksBearerProvider {
                         &refresh_in_progress,
                         &refresh_complete,
                         false, // Background thread claims the refresh itself
+                        &fetch_state,
                     );
                 } else {
                     // After sleeping for refresh_interval, always refresh proactively
@@ -585,6 +789,7 @@ impl JwksBearerProvider {
                         &refresh_in_progress,
                         &refresh_complete,
                         false, // Background thread claims the refresh itself
+                        &fetch_state,
                     );
                 }
                 // Continue to next loop iteration to recalculate refresh_interval
@@ -619,12 +824,25 @@ impl JwksBearerProvider {
     /// # Arguments
     /// * `already_claimed` - If true, the caller has already atomically claimed the refresh
     ///   (set refresh_in_progress to true). If false, this method will atomically claim it.
+    /// * `fetch_state` - Shared fetch timeout and outcome counters.
+    ///
+    /// # Diagnostics
+    ///
+    /// Both failure exits used to `return` after nothing louder than the transport layer's
+    /// `debug!` (the JSON parse failure logged nothing at all). A JWKS endpoint that never once
+    /// answered therefore looked identical, at default log levels, to a healthy one — the only
+    /// symptom was that every token got a 401. Failures are now reported at `WARN`/`ERROR`, and
+    /// crucially they distinguish:
+    ///
+    /// * **fatal** — nothing has ever loaded, so *every* token is rejected; and
+    /// * **degraded** — a cached keyset is still being served, so only newly rotated keys fail.
     fn refresh_jwks_internal(
         cache: &Arc<RwLock<(Instant, HashMap<String, jsonwebtoken::DecodingKey>)>>,
         jwks_url: &str,
         refresh_in_progress: &Arc<AtomicBool>,
         refresh_complete: &Arc<(Mutex<()>, Condvar)>,
         already_claimed: bool,
+        fetch_state: &Arc<JwksFetchState>,
     ) {
         // P2: Debounce - check if another thread is already refreshing
         // If already_claimed is true, we've already set the flag, so skip the check
@@ -638,14 +856,30 @@ impl JwksBearerProvider {
         }
 
         let refresh_start = Instant::now();
+        let fetch_timeout = fetch_state.timeout();
         let fetch_options = crate::http::HttpFetchOptions {
-            timeout: Duration::from_millis(200),
+            // Configuration, not a literal. This was `Duration::from_millis(200)`, sized for a
+            // plaintext in-cluster hop; it cannot cover a TLS handshake to a hostname behind an
+            // edge. See `crate::security::DEFAULT_JWKS_FETCH_TIMEOUT`.
+            timeout: fetch_timeout,
             max_body_bytes: 256 * 1024,
             extra_headers: Vec::new(),
         };
-        let body = match crate::http::fetch_get_text_with_retry(jwks_url, &fetch_options, 2) {
+        let body = match crate::http::fetch_get_text_with_retry(
+            jwks_url,
+            &fetch_options,
+            JWKS_FETCH_ATTEMPTS,
+        ) {
             Some(b) => b,
             None => {
+                Self::report_refresh_failure(
+                    cache,
+                    jwks_url,
+                    fetch_state,
+                    fetch_timeout,
+                    refresh_start,
+                    "JWKS endpoint could not be fetched",
+                );
                 refresh_in_progress.store(false, Ordering::Release);
                 // Notify waiting threads even on failure so they don't wait forever
                 let (lock, cvar) = &**refresh_complete;
@@ -657,7 +891,18 @@ impl JwksBearerProvider {
 
         let parsed: serde_json::Value = match serde_json::from_str(&body) {
             Ok(v) => v,
-            Err(_) => {
+            Err(error) => {
+                // A 2xx body that is not JSON means we reached *something* but not the issuer —
+                // a captive portal, an edge error page, or the wrong route. Previously this exit
+                // was completely silent, which is the hardest possible version to diagnose.
+                Self::report_refresh_failure(
+                    cache,
+                    jwks_url,
+                    fetch_state,
+                    fetch_timeout,
+                    refresh_start,
+                    &format!("JWKS response was not valid JSON: {error}"),
+                );
                 refresh_in_progress.store(false, Ordering::Release);
                 // Notify waiting threads even on failure so they don't wait forever
                 let (lock, cvar) = &**refresh_complete;
@@ -840,6 +1085,8 @@ impl JwksBearerProvider {
             *guard = (Instant::now(), new_map);
         }
 
+        let ended_failure_streak = fetch_state.record_success();
+
         refresh_in_progress.store(false, Ordering::Release);
 
         // Notify all waiting threads that refresh has completed
@@ -848,10 +1095,82 @@ impl JwksBearerProvider {
         let _guard = lock.lock().unwrap();
         cvar.notify_all();
 
+        if key_count == 0 {
+            // A parseable but empty keyset is a legitimate response (see the note in
+            // `refresh_jwks_if_needed`), yet it still means nothing can be validated. Say so.
+            warn!(
+                jwks_url = %jwks_url,
+                elapsed_ms = refresh_duration.as_millis() as u64,
+                "JWKS refresh succeeded but the document contains no usable keys; all JWT validation will fail"
+            );
+        } else if ended_failure_streak > 0 {
+            // Recovery is as operationally interesting as the failure — it closes the incident.
+            info!(
+                jwks_url = %jwks_url,
+                keys = key_count,
+                elapsed_ms = refresh_duration.as_millis() as u64,
+                recovered_after_failures = ended_failure_streak,
+                "JWKS refresh recovered after consecutive failures"
+            );
+        }
+
         debug!(
             "JWKS refresh completed in {:?} (keys: {})",
             refresh_duration, key_count
         );
+    }
+
+    /// Log a failed JWKS refresh at a severity that reflects its operational impact.
+    ///
+    /// `ERROR` when no keyset has ever loaded (fatal: every token is rejected), `WARN` when a
+    /// cached keyset is still being served (degraded: only key rotation is affected). The message
+    /// names the URL, elapsed time, attempt count and configured timeout so the first log line an
+    /// operator reads already distinguishes DNS/TLS/edge/upstream instead of leaving them to
+    /// eliminate each by hand.
+    fn report_refresh_failure(
+        cache: &Arc<RwLock<(Instant, HashMap<String, jsonwebtoken::DecodingKey>)>>,
+        jwks_url: &str,
+        fetch_state: &Arc<JwksFetchState>,
+        fetch_timeout: Duration,
+        refresh_start: Instant,
+        reason: &str,
+    ) {
+        let consecutive_failures = fetch_state.record_failure();
+        let elapsed_ms = refresh_start.elapsed().as_millis() as u64;
+        let timeout_ms = fetch_timeout.as_millis() as u64;
+
+        let (cached_keys, cache_age_ms) = cache
+            .read()
+            .map(|guard| (guard.1.len(), guard.0.elapsed().as_millis() as u64))
+            .unwrap_or((0, 0));
+
+        if !fetch_state.ever_loaded() || cached_keys == 0 {
+            error!(
+                jwks_url = %jwks_url,
+                reason,
+                elapsed_ms,
+                attempts = JWKS_FETCH_ATTEMPTS,
+                timeout_ms,
+                consecutive_failures,
+                ever_loaded = fetch_state.ever_loaded(),
+                "JWKS refresh failed and no keyset is available: ALL JWT validation will fail with 401 until this succeeds. \
+                 Check DNS resolution, TLS trust and reachability of the JWKS URL; if the endpoint is simply slow, raise \
+                 BRRTR_JWKS_FETCH_TIMEOUT_MS (the timeout used here) or JwksBearerProvider::fetch_timeout."
+            );
+        } else {
+            warn!(
+                jwks_url = %jwks_url,
+                reason,
+                elapsed_ms,
+                attempts = JWKS_FETCH_ATTEMPTS,
+                timeout_ms,
+                consecutive_failures,
+                cached_keys,
+                cache_age_ms,
+                "JWKS refresh failed; serving the cached keyset (DEGRADED). Existing tokens still validate, but tokens \
+                 signed with a newly rotated key will be rejected until a refresh succeeds."
+            );
+        }
     }
 
     /// P1: Non-blocking refresh check - triggers refresh if needed but doesn't wait
@@ -913,6 +1232,7 @@ impl JwksBearerProvider {
                     &self.refresh_in_progress,
                     &self.refresh_complete,
                     true, // We already claimed the flag
+                    &self.fetch_state,
                 );
 
                 // Check if refresh succeeded by comparing timestamps
@@ -950,6 +1270,7 @@ impl JwksBearerProvider {
                                 &self.refresh_in_progress,
                                 &self.refresh_complete,
                                 true, // We already claimed the flag
+                                &self.fetch_state,
                             );
                         }
                     }
@@ -968,7 +1289,11 @@ impl JwksBearerProvider {
                     }
                 };
 
-                let timeout = Duration::from_secs(2); // Allow 2s for refresh (400ms max + buffer for network issues)
+                // Derived from the configured fetch timeout, not fixed. This used to be a flat
+                // `Duration::from_secs(2)` with the comment "400ms max + buffer" — true only while
+                // the fetch timeout was hard-coded at 200ms. With a TLS-sized timeout a fixed 2s
+                // wait expires before the refresh being waited on can possibly have finished.
+                let timeout = self.refresh_wait_timeout();
                 let (lock, cvar) = &*self.refresh_complete;
                 let guard = lock.lock().unwrap();
 
@@ -1030,6 +1355,7 @@ impl JwksBearerProvider {
                                     &self.refresh_in_progress,
                                     &self.refresh_complete,
                                     true, // We already claimed the flag
+                                    &self.fetch_state,
                                 );
                             }
                         }
@@ -1075,6 +1401,7 @@ impl JwksBearerProvider {
                                 &self.refresh_in_progress,
                                 &self.refresh_complete,
                                 true, // We already claimed the flag
+                                &self.fetch_state,
                             );
                         }
                     }
@@ -1112,6 +1439,7 @@ impl JwksBearerProvider {
             let refresh_complete_thread = self.refresh_complete.clone();
             let refresh_in_progress_error = self.refresh_in_progress.clone();
             let refresh_complete_error = self.refresh_complete.clone();
+            let fetch_state_thread = Arc::clone(&self.fetch_state);
 
             // CRITICAL: If thread::spawn panics (e.g., resource exhaustion), we must clear
             // the refresh_in_progress flag to prevent permanent deadlock. The spawned thread
@@ -1125,6 +1453,7 @@ impl JwksBearerProvider {
                     &refresh_in_progress_thread,
                     &refresh_complete_thread,
                     true,
+                    &fetch_state_thread,
                 );
             }) {
                 Ok(_) => {
@@ -1174,6 +1503,7 @@ impl JwksBearerProvider {
                 &self.refresh_in_progress,
                 &self.refresh_complete,
                 true,
+                &self.fetch_state,
             );
             return;
         }
@@ -1181,7 +1511,9 @@ impl JwksBearerProvider {
         if self.refresh_in_progress.load(Ordering::Acquire) {
             let (lock, cvar) = &*self.refresh_complete;
             if let Ok(guard) = lock.lock() {
-                let _ = cvar.wait_timeout_while(guard, Duration::from_secs(2), |_| {
+                // Scaled to the configured fetch timeout for the same reason as above.
+                let timeout = self.refresh_wait_timeout();
+                let _ = cvar.wait_timeout_while(guard, timeout, |_| {
                     self.refresh_in_progress.load(Ordering::Acquire)
                 });
             }

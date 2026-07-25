@@ -289,10 +289,60 @@ fn verify_signature(token: &str, provider: &SpiffeProvider) -> bool {
     }
 }
 
+/// Report a failed SPIFFE JWKS refresh at a severity that reflects its operational impact.
+///
+/// Kept consistent with [`crate::security::JwksBearerProvider`]: `ERROR` when no keyset is cached
+/// (fatal — every SVID is rejected), `WARN` when a cached keyset is still being served (degraded).
+/// Both exits used to return silently, which made a JWKS endpoint that never answered
+/// indistinguishable at default log levels from a healthy one.
+fn report_spiffe_refresh_failure(
+    cache: &Arc<
+        RwLock<(
+            Instant,
+            HashMap<String, (jsonwebtoken::DecodingKey, jsonwebtoken::Algorithm)>,
+        )>,
+    >,
+    jwks_url: &str,
+    fetch_timeout: Duration,
+    refresh_start: Instant,
+    reason: &str,
+) {
+    let elapsed_ms = refresh_start.elapsed().as_millis() as u64;
+    let timeout_ms = fetch_timeout.as_millis() as u64;
+    let cached_keys = cache.read().map(|guard| guard.1.len()).unwrap_or(0);
+
+    if cached_keys == 0 {
+        tracing::error!(
+            jwks_url = %jwks_url,
+            reason,
+            elapsed_ms,
+            attempts = crate::security::JWKS_FETCH_ATTEMPTS,
+            timeout_ms,
+            "SPIFFE JWKS refresh failed and no keyset is cached: ALL SVID validation will fail until this succeeds. \
+             Check DNS resolution, TLS trust and reachability of the JWKS URL; if the endpoint is simply slow, raise \
+             BRRTR_JWKS_FETCH_TIMEOUT_MS or SpiffeProvider::jwks_fetch_timeout."
+        );
+    } else {
+        tracing::warn!(
+            jwks_url = %jwks_url,
+            reason,
+            elapsed_ms,
+            attempts = crate::security::JWKS_FETCH_ATTEMPTS,
+            timeout_ms,
+            cached_keys,
+            "SPIFFE JWKS refresh failed; serving the cached keyset (DEGRADED). SVIDs signed with a newly rotated key \
+             will be rejected until a refresh succeeds."
+        );
+    }
+}
+
 /// Refresh JWKS keys from URL.
 ///
 /// This is a simplified version of JwksBearerProvider's refresh logic,
 /// adapted for SPIFFE provider.
+///
+/// `fetch_timeout` is supplied by the caller rather than hard-coded — see
+/// [`crate::security::DEFAULT_JWKS_FETCH_TIMEOUT`] for why the previous 200ms literal was wrong.
 pub(super) fn refresh_jwks_internal(
     cache: &Arc<
         RwLock<(
@@ -304,6 +354,7 @@ pub(super) fn refresh_jwks_internal(
     refresh_in_progress: &Arc<AtomicBool>,
     refresh_complete: &Arc<(Mutex<()>, Condvar)>,
     already_claimed: bool,
+    fetch_timeout: Duration,
 ) {
     if !already_claimed
         && refresh_in_progress
@@ -315,13 +366,24 @@ pub(super) fn refresh_jwks_internal(
 
     let refresh_start = Instant::now();
     let fetch_options = crate::http::HttpFetchOptions {
-        timeout: Duration::from_millis(200),
+        timeout: fetch_timeout,
         max_body_bytes: 256 * 1024,
         extra_headers: Vec::new(),
     };
-    let body = match crate::http::fetch_get_text_with_retry(jwks_url, &fetch_options, 2) {
+    let body = match crate::http::fetch_get_text_with_retry(
+        jwks_url,
+        &fetch_options,
+        crate::security::JWKS_FETCH_ATTEMPTS,
+    ) {
         Some(b) => b,
         None => {
+            report_spiffe_refresh_failure(
+                cache,
+                jwks_url,
+                fetch_timeout,
+                refresh_start,
+                "JWKS endpoint could not be fetched",
+            );
             refresh_in_progress.store(false, Ordering::Release);
             let (lock, cvar) = &**refresh_complete;
             let _guard = lock.lock().unwrap();
@@ -332,7 +394,14 @@ pub(super) fn refresh_jwks_internal(
 
     let parsed: serde_json::Value = match serde_json::from_str(&body) {
         Ok(v) => v,
-        Err(_) => {
+        Err(error) => {
+            report_spiffe_refresh_failure(
+                cache,
+                jwks_url,
+                fetch_timeout,
+                refresh_start,
+                &format!("JWKS response was not valid JSON: {error}"),
+            );
             refresh_in_progress.store(false, Ordering::Release);
             let (lock, cvar) = &**refresh_complete;
             let _guard = lock.lock().unwrap();

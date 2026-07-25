@@ -1,10 +1,15 @@
 //! Bounded HTTP fetches through `may_minihttp::client` for both HTTP and rustls-backed HTTPS.
 
 use std::io::Read;
-use std::time::Duration;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, OnceLock};
+use std::time::{Duration, Instant};
 
 use http_legacy::{Method, Uri};
 use may_minihttp::client::HttpClient;
+use rustls::ClientConfig;
+use rustls_platform_verifier::BuilderVerifierExt;
+use tracing::{error, warn};
 use url::Url;
 
 /// Options for outbound GET requests from security providers.
@@ -99,30 +104,83 @@ pub fn fetch_get_full(
 
 /// GET with retries; returns body text only on 2xx responses.
 ///
-/// Used by JWKS refresh paths (two attempts, short timeout).
+/// Used by JWKS refresh paths.
+///
+/// # Diagnostics
+///
+/// Every failed attempt is logged at `WARN` and exhaustion of all attempts at `ERROR`, each with
+/// the URL, the attempt number, the configured timeout, the elapsed time and the underlying error.
+///
+/// **Why this is deliberate.** This function used to log every failure at `debug!` and simply
+/// return `None`. At default log levels a JWKS endpoint that had never once answered was
+/// indistinguishable from a healthy one: the refresh silently never succeeded, every token
+/// validation failed with a bare 401, and nothing in the logs named DNS, TLS, the edge or the
+/// upstream. Operators had to eliminate each of those by hand. The caller's `Option` contract is
+/// unchanged — the difference is that the failure is now *visible*.
 pub fn fetch_get_text_with_retry(
     url: &str,
     options: &HttpFetchOptions,
     attempts: u32,
 ) -> Option<String> {
+    let started = Instant::now();
+    let timeout_ms = options.timeout.as_millis() as u64;
+    let mut last_failure: Option<String> = None;
+
     for attempt in 0..attempts {
+        let attempt_started = Instant::now();
         match fetch_get(url, options) {
-            Ok((status, body)) if (200..300).contains(&status) => {
-                return String::from_utf8(body).ok();
-            }
+            Ok((status, body)) if (200..300).contains(&status) => match String::from_utf8(body) {
+                Ok(text) => return Some(text),
+                Err(error) => {
+                    // A 2xx carrying a non-UTF-8 body is a peer misconfiguration, not a transient
+                    // fault, so it is not retried — but it must never be silent either.
+                    error!(
+                        url = %url,
+                        status,
+                        attempt = attempt + 1,
+                        attempts,
+                        elapsed_ms = started.elapsed().as_millis() as u64,
+                        error = %error,
+                        "HTTP fetch failed: 2xx response body is not valid UTF-8"
+                    );
+                    return None;
+                }
+            },
             Ok((status, _)) => {
-                tracing::debug!(
-                    "HTTP fetch attempt {}: status {} for {}",
-                    attempt + 1,
+                last_failure = Some(format!("HTTP status {status}"));
+                warn!(
+                    url = %url,
                     status,
-                    url
+                    attempt = attempt + 1,
+                    attempts,
+                    timeout_ms,
+                    attempt_ms = attempt_started.elapsed().as_millis() as u64,
+                    "HTTP fetch attempt failed: unexpected status"
                 );
             }
-            Err(e) => {
-                tracing::debug!("HTTP fetch attempt {}: {} for {}", attempt + 1, e, url);
+            Err(error) => {
+                last_failure = Some(error.to_string());
+                warn!(
+                    url = %url,
+                    attempt = attempt + 1,
+                    attempts,
+                    timeout_ms,
+                    attempt_ms = attempt_started.elapsed().as_millis() as u64,
+                    error = %error,
+                    "HTTP fetch attempt failed"
+                );
             }
         }
     }
+
+    error!(
+        url = %url,
+        attempts,
+        timeout_ms,
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        error = last_failure.as_deref().unwrap_or("no attempts were made"),
+        "HTTP fetch failed after all attempts; no body was retrieved"
+    );
     None
 }
 
@@ -203,9 +261,68 @@ fn request_uri_for_may_minihttp(url: &Url) -> Result<Uri, HttpFetchError> {
         .map_err(|e| HttpFetchError::InvalidUrl(format!("path uri: {e}")))
 }
 
+/// Process-wide rustls client configuration for outbound HTTPS, built exactly once.
+///
+/// # Why this is cached
+///
+/// `may_minihttp::client::HttpClient::from_url` calls its internal `platform_tls_config()` on
+/// **every** HTTPS connect, and that call builds a fresh `rustls::ClientConfig` backed by the
+/// platform verifier — which reads and parses the whole system CA bundle off disk each time.
+/// On the JWKS refresh path that cost was paid per fetch *and* per retry, out of the same budget
+/// as the request itself. It is a large part of why the old hard-coded 200ms JWKS timeout was
+/// simply unachievable once the URL moved from plaintext in-cluster HTTP to HTTPS on a real
+/// hostname behind a TLS-terminating edge: the deadline was partly consumed before a single byte
+/// left the process.
+///
+/// The trust store does not change between fetches, so we build it once and share the `Arc` for
+/// the life of the process. `Err` is cached too — a machine with an unreadable trust store will
+/// not become readable by re-parsing it on every request, and re-trying would reintroduce exactly
+/// the per-fetch cost this exists to remove.
+static PLATFORM_TLS_CONFIG: OnceLock<Result<Arc<ClientConfig>, String>> = OnceLock::new();
+
+/// How many times the shared TLS config was actually constructed.
+///
+/// The entire point of the cache is that this stays at 1 no matter how many HTTPS fetches run,
+/// so it is the thing the test asserts on.
+static TLS_CONFIG_BUILDS: AtomicUsize = AtomicUsize::new(0);
+
+/// Return the shared rustls client configuration, building it on first use.
+fn platform_tls_config() -> Result<Arc<ClientConfig>, HttpFetchError> {
+    PLATFORM_TLS_CONFIG
+        .get_or_init(|| {
+            TLS_CONFIG_BUILDS.fetch_add(1, Ordering::Relaxed);
+            build_platform_tls_config()
+        })
+        .clone()
+        .map_err(HttpFetchError::Tls)
+}
+
+/// Mirrors `may_minihttp`'s own platform TLS setup: explicit ring provider, safe default protocol
+/// versions, OS trust store, no client certificate. Kept identical so that switching to the
+/// cached path does not silently change which certificates are trusted.
+fn build_platform_tls_config() -> Result<Arc<ClientConfig>, String> {
+    let provider = Arc::new(rustls::crypto::ring::default_provider());
+    let builder = ClientConfig::builder_with_provider(provider)
+        .with_safe_default_protocol_versions()
+        .map_err(|error| format!("TLS protocol setup failed: {error}"))?;
+    let config = builder
+        .with_platform_verifier()
+        .map_err(|error| format!("platform verifier failed: {error}"))?
+        .with_no_client_auth();
+    Ok(Arc::new(config))
+}
+
 fn connect_client(url: &Url, options: &HttpFetchOptions) -> Result<HttpClient, HttpFetchError> {
-    let mut client = HttpClient::from_url(url.as_str())
-        .map_err(|error| HttpFetchError::Connect(error.to_string()))?;
+    // Plaintext HTTP needs no TLS material at all, so the trust store is never touched for
+    // in-cluster `http://...svc.cluster.local` JWKS URLs; HTTPS reuses the cached config above
+    // instead of letting `from_url` rebuild one per connect.
+    let mut client = if url.scheme().eq_ignore_ascii_case("https") {
+        HttpClient::from_url_with_tls_config(url.as_str(), platform_tls_config()?)
+            .map_err(|error| HttpFetchError::Connect(error.to_string()))?
+    } else {
+        HttpClient::from_url(url.as_str())
+            .map_err(|error| HttpFetchError::Connect(error.to_string()))?
+    };
     client.set_timeout(Some(options.timeout));
     Ok(client)
 }
@@ -317,5 +434,49 @@ mod tests {
     fn http_fetch_error_display_includes_context() {
         let err = HttpFetchError::Connect("refused".to_string());
         assert!(err.to_string().contains("refused"));
+    }
+
+    /// The system CA bundle used to be re-parsed from disk on every HTTPS connect. It must now be
+    /// built once and shared: repeated calls hand back the *same* `Arc` and never re-run the
+    /// builder, no matter how many fetches happen.
+    #[test]
+    fn platform_tls_config_is_built_once_and_shared() {
+        let first = platform_tls_config();
+        let builds_after_first = TLS_CONFIG_BUILDS.load(Ordering::Relaxed);
+
+        // Stand in for "many fetches": each of these is what one HTTPS connect would ask for.
+        for _ in 0..8 {
+            let next = platform_tls_config();
+            match (&first, &next) {
+                (Ok(a), Ok(b)) => assert!(
+                    Arc::ptr_eq(a, b),
+                    "each fetch must reuse the same TLS config allocation"
+                ),
+                (Err(a), Err(b)) => assert_eq!(a, b, "cached failure must be stable"),
+                _ => panic!("cached TLS config result changed between calls"),
+            }
+        }
+
+        assert_eq!(
+            TLS_CONFIG_BUILDS.load(Ordering::Relaxed),
+            builds_after_first,
+            "TLS config was rebuilt after the first call"
+        );
+        assert_eq!(
+            builds_after_first, 1,
+            "TLS config must be constructed exactly once per process"
+        );
+    }
+
+    /// `connect_client` must not touch the trust store for plaintext URLs at all — an in-cluster
+    /// `http://` JWKS URL should never pay for certificate parsing.
+    #[test]
+    fn plaintext_scheme_does_not_require_tls_config() {
+        let url = Url::parse("http://127.0.0.1:1/jwks.json").unwrap();
+        let err = connect_client(&url, &HttpFetchOptions::default()).unwrap_err();
+        assert!(
+            matches!(err, HttpFetchError::Connect(_)),
+            "expected a connect failure on a dead port, got {err:?}"
+        );
     }
 }

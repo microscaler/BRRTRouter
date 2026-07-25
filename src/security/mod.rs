@@ -246,9 +246,64 @@ use crate::dispatcher::HeaderVec;
 use crate::router::ParamVec;
 use crate::spec::SecurityScheme;
 use serde_json::Value;
+use std::time::Duration;
 
 /// JWT algorithm type used by [`JwksBearerProvider`] configuration.
 pub use jsonwebtoken::Algorithm as JwtAlgorithm;
+
+/// Environment variable overriding [`DEFAULT_JWKS_FETCH_TIMEOUT`], in whole milliseconds.
+///
+/// Follows the crate's `BRRTR_*` runtime-configuration convention (see
+/// [`crate::runtime_config`]). Read once per provider construction, i.e. at startup.
+pub const JWKS_FETCH_TIMEOUT_ENV: &str = "BRRTR_JWKS_FETCH_TIMEOUT_MS";
+
+/// Default per-attempt timeout for a JWKS HTTP fetch.
+///
+/// # Why this is not 200ms any more
+///
+/// Both [`JwksBearerProvider`] and [`SpiffeProvider`] used to hard-code `Duration::from_millis(200)`.
+/// That budget was sized when JWKS URLs were plaintext `http://…svc.cluster.local` — one hop
+/// across the pod network, no handshake, no name resolution worth measuring.
+///
+/// Consumers now point at `https://` on a real hostname behind a TLS-terminating edge. A single
+/// fetch there has to pay, in series: DNS resolution, TCP connect, a full TLS handshake (two round
+/// trips on TLS 1.3, more on 1.2), certificate chain verification against the system trust store,
+/// and only then the HTTP request/response. 200ms cannot cover that, so *every* refresh timed out,
+/// no keyset was ever cached, and every token was rejected — while the fetch error was logged at
+/// `debug!` and thrown away.
+///
+/// Three seconds is deliberately generous. A JWKS refresh is a startup and background cost, not a
+/// per-request one; the debounce and cache in front of it mean a slow refresh costs far less than
+/// a failed one. Tighten it per deployment with [`JWKS_FETCH_TIMEOUT_ENV`] or the providers'
+/// `fetch_timeout` builders if your issuer is known to be local and fast.
+pub const DEFAULT_JWKS_FETCH_TIMEOUT: Duration = Duration::from_millis(3000);
+
+/// Resolve the default JWKS fetch timeout from the environment.
+///
+/// Returns [`DEFAULT_JWKS_FETCH_TIMEOUT`] when [`JWKS_FETCH_TIMEOUT_ENV`] is unset, unparseable or
+/// zero. A bad value is reported at `WARN` rather than silently ignored — silently ignoring
+/// configuration is the same class of bug as silently ignoring a fetch failure.
+#[must_use]
+pub fn jwks_fetch_timeout_from_env() -> Duration {
+    match std::env::var(JWKS_FETCH_TIMEOUT_ENV) {
+        Ok(raw) => match raw.trim().parse::<u64>() {
+            Ok(ms) if ms > 0 => Duration::from_millis(ms),
+            _ => {
+                tracing::warn!(
+                    env = JWKS_FETCH_TIMEOUT_ENV,
+                    value = %raw,
+                    default_ms = DEFAULT_JWKS_FETCH_TIMEOUT.as_millis() as u64,
+                    "invalid JWKS fetch timeout in environment; falling back to the default"
+                );
+                DEFAULT_JWKS_FETCH_TIMEOUT
+            }
+        },
+        Err(_) => DEFAULT_JWKS_FETCH_TIMEOUT,
+    }
+}
+
+/// Number of HTTP attempts made per JWKS refresh (initial attempt plus one retry).
+pub const JWKS_FETCH_ATTEMPTS: u32 = 2;
 
 /// Cache statistics for JWT claims cache
 #[derive(Debug, Clone, Copy)]
@@ -377,7 +432,7 @@ pub trait SecurityProvider: Send + Sync {
 
 // Re-export all providers
 pub use bearer_jwt::BearerJwtProvider;
-pub use jwks_bearer::{JwksBearerProvider, JwtTokenStatus, JwtTokenStatusChecker};
+pub use jwks_bearer::{JwksBearerProvider, JwksHealth, JwtTokenStatus, JwtTokenStatusChecker};
 pub use oauth2::OAuth2Provider;
 pub use remote_api_key::RemoteApiKeyProvider;
 pub use spiffe::{
@@ -398,3 +453,60 @@ mod jwks_bearer;
 mod oauth2;
 mod remote_api_key;
 mod spiffe;
+
+#[cfg(test)]
+mod jwks_timeout_config_tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    /// `set_var` is process-global; serialize the cases that touch it.
+    static ENV_GUARD: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn default_timeout_covers_a_tls_handshake_not_just_a_plaintext_hop() {
+        // Regression guard for the value this task exists to change. Anything at or below the old
+        // 200ms literal cannot cover DNS + TCP + TLS + HTTP to an edge-terminated host.
+        assert!(
+            DEFAULT_JWKS_FETCH_TIMEOUT >= Duration::from_secs(1),
+            "default JWKS fetch timeout must leave room for a TLS handshake"
+        );
+    }
+
+    #[test]
+    fn timeout_is_read_from_the_environment() {
+        let _guard = ENV_GUARD.lock().unwrap_or_else(|e| e.into_inner());
+        let previous = std::env::var(JWKS_FETCH_TIMEOUT_ENV).ok();
+
+        std::env::set_var(JWKS_FETCH_TIMEOUT_ENV, "1234");
+        assert_eq!(
+            jwks_fetch_timeout_from_env(),
+            Duration::from_millis(1234),
+            "configured value must win over the compiled-in default"
+        );
+
+        match previous {
+            Some(value) => std::env::set_var(JWKS_FETCH_TIMEOUT_ENV, value),
+            None => std::env::remove_var(JWKS_FETCH_TIMEOUT_ENV),
+        }
+    }
+
+    #[test]
+    fn invalid_or_zero_timeout_falls_back_to_the_default() {
+        let _guard = ENV_GUARD.lock().unwrap_or_else(|e| e.into_inner());
+        let previous = std::env::var(JWKS_FETCH_TIMEOUT_ENV).ok();
+
+        for bad in ["", "0", "not-a-number", "-5"] {
+            std::env::set_var(JWKS_FETCH_TIMEOUT_ENV, bad);
+            assert_eq!(
+                jwks_fetch_timeout_from_env(),
+                DEFAULT_JWKS_FETCH_TIMEOUT,
+                "{bad:?} must fall back rather than produce a zero or nonsense timeout"
+            );
+        }
+
+        match previous {
+            Some(value) => std::env::set_var(JWKS_FETCH_TIMEOUT_ENV, value),
+            None => std::env::remove_var(JWKS_FETCH_TIMEOUT_ENV),
+        }
+    }
+}
