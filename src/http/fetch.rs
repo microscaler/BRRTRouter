@@ -1,13 +1,14 @@
 //! Bounded HTTP fetches through `may_minihttp::client` for both HTTP and rustls-backed HTTPS.
 
-use std::io::Read;
+use std::fs::File;
+use std::io::{BufRead, BufReader, Read};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use http_legacy::{Method, Uri};
 use may_minihttp::client::HttpClient;
-use rustls::ClientConfig;
+use rustls::{ClientConfig, RootCertStore};
 use rustls_platform_verifier::BuilderVerifierExt;
 use tracing::{error, warn};
 use url::Url;
@@ -297,10 +298,26 @@ fn platform_tls_config() -> Result<Arc<ClientConfig>, HttpFetchError> {
         .map_err(HttpFetchError::Tls)
 }
 
-/// Mirrors `may_minihttp`'s own platform TLS setup: explicit ring provider, safe default protocol
-/// versions, OS trust store, no client certificate. Kept identical so that switching to the
-/// cached path does not silently change which certificates are trusted.
+/// Mirrors `may_minihttp`'s platform TLS setup unless `SSL_CERT_FILE` names an
+/// explicit PEM bundle. Containers use that standard variable to extend their
+/// system roots with deployment-local CAs.
 fn build_platform_tls_config() -> Result<Arc<ClientConfig>, String> {
+    if let Some(path) = std::env::var_os("SSL_CERT_FILE") {
+        let file = File::open(&path)
+            .map_err(|error| format!("cannot open SSL_CERT_FILE {}: {error}", path.display()))?;
+        return build_tls_config_from_pem(BufReader::new(file));
+    }
+    if let Some(path) = std::env::var_os("EXTRA_CA_CERT_FILE") {
+        let file = File::open(&path).map_err(|error| {
+            format!("cannot open EXTRA_CA_CERT_FILE {}: {error}", path.display())
+        })?;
+        let mut roots = RootCertStore::empty();
+        let native = rustls_native_certs::load_native_certs();
+        roots.add_parsable_certificates(native.certs);
+        add_pem_roots(&mut roots, BufReader::new(file), "EXTRA_CA_CERT_FILE")?;
+        return build_tls_config_from_roots(roots);
+    }
+
     let provider = Arc::new(rustls::crypto::ring::default_provider());
     let builder = ClientConfig::builder_with_provider(provider)
         .with_safe_default_protocol_versions()
@@ -308,6 +325,42 @@ fn build_platform_tls_config() -> Result<Arc<ClientConfig>, String> {
     let config = builder
         .with_platform_verifier()
         .map_err(|error| format!("platform verifier failed: {error}"))?
+        .with_no_client_auth();
+    Ok(Arc::new(config))
+}
+
+fn build_tls_config_from_pem(mut reader: impl BufRead) -> Result<Arc<ClientConfig>, String> {
+    let mut roots = RootCertStore::empty();
+    add_pem_roots(&mut roots, &mut reader, "SSL_CERT_FILE")?;
+    build_tls_config_from_roots(roots)
+}
+
+fn add_pem_roots(
+    roots: &mut RootCertStore,
+    mut reader: impl BufRead,
+    source: &str,
+) -> Result<(), String> {
+    let mut loaded = 0usize;
+    for certificate in rustls_pemfile::certs(&mut reader) {
+        let certificate =
+            certificate.map_err(|error| format!("invalid certificate in {source}: {error}"))?;
+        roots
+            .add(certificate)
+            .map_err(|error| format!("invalid certificate in {source}: {error}"))?;
+        loaded += 1;
+    }
+    if loaded == 0 {
+        return Err(format!("{source} contains no certificates"));
+    }
+    Ok(())
+}
+
+fn build_tls_config_from_roots(roots: RootCertStore) -> Result<Arc<ClientConfig>, String> {
+    let provider = Arc::new(rustls::crypto::ring::default_provider());
+    let config = ClientConfig::builder_with_provider(provider)
+        .with_safe_default_protocol_versions()
+        .map_err(|error| format!("TLS protocol setup failed: {error}"))?
+        .with_root_certificates(roots)
         .with_no_client_auth();
     Ok(Arc::new(config))
 }
@@ -466,6 +519,22 @@ mod tests {
             builds_after_first, 1,
             "TLS config must be constructed exactly once per process"
         );
+    }
+
+    #[test]
+    fn explicit_pem_bundle_builds_tls_config() {
+        let rcgen::CertifiedKey { cert, .. } =
+            rcgen::generate_simple_self_signed(vec!["provider.test".to_string()])
+                .expect("certificate");
+        let bundle = cert.pem();
+        assert!(build_tls_config_from_pem(std::io::Cursor::new(bundle)).is_ok());
+    }
+
+    #[test]
+    fn explicit_empty_pem_bundle_fails_closed() {
+        let error = build_tls_config_from_pem(std::io::Cursor::new(Vec::<u8>::new()))
+            .expect_err("empty bundle must fail");
+        assert!(error.contains("contains no certificates"));
     }
 
     /// `connect_client` must not touch the trust store for plaintext URLs at all — an in-cluster

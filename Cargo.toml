@@ -90,6 +90,8 @@ dashmap = "6.1"  # Lock-free concurrent HashMap for metrics
 lru = "0.16"  # LRU cache for JWT claims to prevent memory leaks
 once_cell = "1"  # Lazy static initialization for SPIFFE ID regex
 arc-swap = "1.7"  # Lock-free ArcSwap for Router/Dispatcher hot-path reads (PRD Phase 1)
+rustls-pemfile = "2.2.0"
+rustls-native-certs = "0.8.4"
 
 # SIGTERM / SIGINT for Kubernetes graceful shutdown (scale-down, rollouts).
 [target.'cfg(unix)'.dependencies]
@@ -116,6 +118,7 @@ tiny_http = "0.12.0"  # Lightweight HTTP server for mock JWKS endpoints in tests
 # deadlines; the async Goose load harness uses reqwest for Prometheus queries. Runtime code and
 # protocol/security integration tests use may_minihttp::HttpClient + rustls.
 reqwest = { version = "0.13.2", default-features = false, features = ["json", "rustls", "blocking", "multipart"] }
+rcgen = "0.14.8"
 
 [[bin]]
 name = "brrtrouter-gen"
@@ -145,10 +148,6 @@ members = [
     "brrtrouter-validator-python",
     "crates/brrtrouter-tooling",
 ]
-
-# Used by generated service `Cargo.toml` when `use_workspace_deps` is enabled (`templates/Cargo.toml.txt`).
-[workspace.dependencies]
-arc-swap = "1.7"
 
 [profile.release]
 # Ensure optimized, compatible with musl when building with target=x86_64-unknown-linux-musl
