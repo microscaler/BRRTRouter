@@ -316,29 +316,271 @@ mod tests {
         }
     }
 
-    #[test]
-    fn resolve_path_template_substitutes_params_and_query() {
-        let mut path_params = ParamVec::new();
-        path_params.push((Arc::from("id"), "abc".to_string()));
-        let mut query_params = ParamVec::new();
-        query_params.push((Arc::from("limit"), "10".to_string()));
+    fn param_vec(pairs: &[(&str, &str)]) -> ParamVec {
+        let mut params = ParamVec::new();
+        for (k, v) in pairs {
+            params.push((Arc::from(*k), (*v).to_string()));
+        }
+        params
+    }
 
-        let path =
-            resolve_path_template("/api/v1/fleet/vehicles/{id}", &path_params, &query_params);
-        assert_eq!(path, "/api/v1/fleet/vehicles/abc?limit=10");
+    fn assert_parseable_uri(path: &str) {
+        path.parse::<Uri>()
+            .unwrap_or_else(|e| panic!("URI rejected {path:?}: {e}"));
+    }
+
+    /// Pre-fix behaviour: decoded values concatenated raw → InvalidUri.
+    fn legacy_unencoded_query(path_template: &str, query: &[(&str, &str)]) -> String {
+        let mut path = path_template.to_string();
+        if !query.is_empty() {
+            path.push('?');
+            for (i, (k, v)) in query.iter().enumerate() {
+                if i > 0 {
+                    path.push('&');
+                }
+                path.push_str(k);
+                path.push('=');
+                path.push_str(v);
+            }
+        }
+        path
     }
 
     #[test]
-    fn resolve_path_template_percent_encodes_query_values() {
-        // HandlerRequest query params are decoded; rebuild a parseable URI.
-        let path_params = ParamVec::new();
-        let mut query_params = ParamVec::new();
-        query_params.push((Arc::from("country"), "South Africa".to_string()));
+    fn resolve_path_template_substitutes_params_and_query() {
+        let path = resolve_path_template(
+            "/api/v1/fleet/vehicles/{id}",
+            &param_vec(&[("id", "abc")]),
+            &param_vec(&[("limit", "10")]),
+        );
+        assert_eq!(path, "/api/v1/fleet/vehicles/abc?limit=10");
+        assert_parseable_uri(&path);
+    }
 
-        let path =
-            resolve_path_template("/api/v1/locations/provinces", &path_params, &query_params);
+    #[test]
+    fn resolve_path_template_percent_encodes_query_space() {
+        // Incident: country=South Africa (decoded) → InvalidUri → BFF 502.
+        let path = resolve_path_template(
+            "/api/v1/locations/provinces",
+            &ParamVec::new(),
+            &param_vec(&[("country", "South Africa")]),
+        );
         assert_eq!(path, "/api/v1/locations/provinces?country=South%20Africa");
-        assert!(path.parse::<Uri>().is_ok());
+        assert_parseable_uri(&path);
+        let legacy = legacy_unencoded_query(
+            "/api/v1/locations/provinces",
+            &[("country", "South Africa")],
+        );
+        assert!(
+            legacy.parse::<Uri>().is_err(),
+            "regression guard: unencoded space must fail Uri parse"
+        );
+    }
+
+    #[test]
+    fn resolve_path_template_ascii_safe_query_unchanged() {
+        let path = resolve_path_template(
+            "/api/v1/locations/provinces",
+            &ParamVec::new(),
+            &param_vec(&[("country", "ZA")]),
+        );
+        assert_eq!(path, "/api/v1/locations/provinces?country=ZA");
+        assert_parseable_uri(&path);
+    }
+
+    #[test]
+    fn resolve_path_template_encodes_accents_and_diacritics() {
+        let cases = [
+            ("Côte d'Ivoire", "C%C3%B4te%20d%27Ivoire"),
+            ("São Paulo", "S%C3%A3o%20Paulo"),
+            ("Québec", "Qu%C3%A9bec"),
+            ("Zürich", "Z%C3%BCrich"),
+            ("España", "Espa%C3%B1a"),
+            ("Österreich", "%C3%96sterreich"),
+        ];
+        for (raw, encoded) in cases {
+            let path = resolve_path_template(
+                "/api/v1/locations/provinces",
+                &ParamVec::new(),
+                &param_vec(&[("country", raw)]),
+            );
+            assert_eq!(
+                path,
+                format!("/api/v1/locations/provinces?country={encoded}"),
+                "raw={raw:?}"
+            );
+            assert_parseable_uri(&path);
+            let decoded = urlencoding::decode(
+                path.strip_prefix("/api/v1/locations/provinces?country=")
+                    .expect("prefix"),
+            )
+            .expect("decode");
+            assert_eq!(decoded.as_ref(), raw);
+        }
+    }
+
+    #[test]
+    fn resolve_path_template_encodes_query_delimiter_chars() {
+        // Delimiters in *values* must not split/corrupt the query string.
+        let path = resolve_path_template(
+            "/search",
+            &ParamVec::new(),
+            &param_vec(&[("q", "a&b=c?d#e"), ("tag", "x y")]),
+        );
+        assert_eq!(path, "/search?q=a%26b%3Dc%3Fd%23e&tag=x%20y");
+        assert_parseable_uri(&path);
+        let uri: Uri = path.parse().unwrap();
+        let qs = uri.query().unwrap_or("");
+        assert!(qs.contains("a%26b"), "ampersand must stay encoded in value");
+        assert!(!qs.contains("a&b="), "raw & must not introduce a new param");
+    }
+
+    #[test]
+    fn resolve_path_template_encodes_plus_percent_and_unicode() {
+        let path = resolve_path_template(
+            "/api/v1/locations/cities",
+            &ParamVec::new(),
+            &param_vec(&[
+                ("name", "C++"),
+                ("note", "100%"),
+                ("city", "東京"),
+                ("emoji", "🚛"),
+            ]),
+        );
+        assert_parseable_uri(&path);
+        assert!(path.contains("name=C%2B%2B"));
+        assert!(path.contains("note=100%25"));
+        assert!(path.contains("city=%E6%9D%B1%E4%BA%AC"));
+        assert!(path.contains("emoji=%F0%9F%9A%9B"));
+    }
+
+    #[test]
+    fn resolve_path_template_empty_query_value_and_multiple_params() {
+        let path = resolve_path_template(
+            "/api/v1/locations/countries",
+            &ParamVec::new(),
+            &param_vec(&[
+                ("origin", "ZA"),
+                ("home_country", ""),
+                ("q", "KwaZulu-Natal"),
+            ]),
+        );
+        assert_eq!(
+            path,
+            "/api/v1/locations/countries?origin=ZA&home_country=&q=KwaZulu-Natal"
+        );
+        assert_parseable_uri(&path);
+    }
+
+    #[test]
+    fn resolve_path_template_encodes_path_param_space_and_accents() {
+        let path = resolve_path_template(
+            "/api/v1/regions/{name}/summary",
+            &param_vec(&[("name", "Western Cape")]),
+            &ParamVec::new(),
+        );
+        assert_eq!(path, "/api/v1/regions/Western%20Cape/summary");
+        assert_parseable_uri(&path);
+
+        let path = resolve_path_template(
+            "/api/v1/regions/{name}/summary",
+            &param_vec(&[("name", "Provence-Alpes-Côte d'Azur")]),
+            &ParamVec::new(),
+        );
+        assert!(path.contains("C%C3%B4te"));
+        assert_parseable_uri(&path);
+    }
+
+    #[test]
+    fn resolve_path_template_encodes_slash_in_path_param() {
+        // Path params are single OpenAPI segments; `/` must not create extra segments.
+        let path = resolve_path_template(
+            "/api/v1/docs/{id}",
+            &param_vec(&[("id", "a/b")]),
+            &ParamVec::new(),
+        );
+        assert_eq!(path, "/api/v1/docs/a%2Fb");
+        assert_parseable_uri(&path);
+    }
+
+    #[test]
+    fn resolve_path_template_encodes_query_keys() {
+        let path = resolve_path_template(
+            "/q",
+            &ParamVec::new(),
+            &param_vec(&[("filter name", "yes")]),
+        );
+        assert_eq!(path, "/q?filter%20name=yes");
+        assert_parseable_uri(&path);
+    }
+
+    #[test]
+    fn resolve_path_template_encodes_control_and_whitespace() {
+        let path = resolve_path_template("/q", &ParamVec::new(), &param_vec(&[("q", "a\tb\nc")]));
+        assert_eq!(path, "/q?q=a%09b%0Ac");
+        assert_parseable_uri(&path);
+    }
+
+    #[test]
+    fn resolve_path_template_negative_unencoded_space_and_controls_fail_uri_parse() {
+        // Spaces / ASCII controls in the query break http::Uri (incident class).
+        for v in ["South Africa", "line\nbreak", "tab\there"] {
+            let legacy = legacy_unencoded_query("/p", &[("k", v)]);
+            assert!(
+                legacy.parse::<Uri>().is_err(),
+                "expected InvalidUri for unencoded {v:?} in {legacy:?}"
+            );
+            let fixed = resolve_path_template("/p", &ParamVec::new(), &param_vec(&[("k", v)]));
+            assert_parseable_uri(&fixed);
+        }
+    }
+
+    #[test]
+    fn resolve_path_template_negative_unencoded_hash_truncates_query() {
+        // `#` is accepted by Uri parse but steals the remainder as a fragment.
+        let legacy = legacy_unencoded_query("/p", &[("k", "x#frag")]);
+        assert!(legacy.contains("#frag"));
+        let legacy_uri: Uri = legacy.parse().expect("hash form still parses");
+        assert_eq!(legacy_uri.query(), Some("k=x"));
+        let fixed = resolve_path_template("/p", &ParamVec::new(), &param_vec(&[("k", "x#frag")]));
+        assert_eq!(fixed, "/p?k=x%23frag");
+        assert!(!fixed.contains('#'));
+        let fixed_uri: Uri = fixed.parse().unwrap();
+        assert_eq!(fixed_uri.query(), Some("k=x%23frag"));
+    }
+
+    #[test]
+    fn resolve_path_template_negative_unencoded_ampersand_corrupts_query() {
+        // `&` / `=` often still parse as a URI but invent extra query params.
+        let legacy = legacy_unencoded_query("/p", &[("k", "a&b=c")]);
+        let legacy_uri: Uri = legacy.parse().expect("ampersand still parses as Uri");
+        assert_eq!(legacy_uri.query(), Some("k=a&b=c"));
+        let fixed = resolve_path_template("/p", &ParamVec::new(), &param_vec(&[("k", "a&b=c")]));
+        assert_eq!(fixed, "/p?k=a%26b%3Dc");
+        let fixed_uri: Uri = fixed.parse().unwrap();
+        assert_eq!(fixed_uri.query(), Some("k=a%26b%3Dc"));
+    }
+
+    #[test]
+    fn resolve_path_template_encodes_non_ascii_even_if_uri_would_accept_raw() {
+        // Accents must be encoded for interoperable downstream HTTP clients,
+        // even when a particular Uri parser is lenient about raw UTF-8.
+        let raw = "Côte d'Ivoire";
+        let path = resolve_path_template("/p", &ParamVec::new(), &param_vec(&[("country", raw)]));
+        assert!(
+            !path.contains("ô") && !path.contains('\''),
+            "expected percent-encoding, got {path}"
+        );
+        assert!(path.contains("C%C3%B4te"));
+        assert_parseable_uri(&path);
+        let encoded = path.rsplit('=').next().unwrap();
+        assert_eq!(urlencoding::decode(encoded).unwrap(), raw);
+    }
+
+    #[test]
+    fn proxy_error_invalid_path_display() {
+        let err = ProxyError::InvalidPath("invalid uri character".to_string());
+        assert_eq!(err.to_string(), "invalid path: invalid uri character");
     }
 
     #[test]
