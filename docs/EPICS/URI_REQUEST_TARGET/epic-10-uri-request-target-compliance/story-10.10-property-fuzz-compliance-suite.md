@@ -1,9 +1,10 @@
 # Story 10.10 — Property/fuzz compliance suite
 
-**GitHub issue:** _(create)_  
+**GitHub issue:** [#384](https://github.com/microscaler/BRRTRouter/issues/384)  
 **Epic:** [Epic 10](README.md)  
 **Blocked by:** 10.2, 10.3, 10.4, 10.5, 10.9  
-**Blocks:** Epic 10 Done
+**Blocks:** Epic 10 Done  
+**Testing standard:** [TESTING_STANDARD.md](../TESTING_STANDARD.md)
 
 ## Overview
 
@@ -23,12 +24,47 @@ characters. This story is the automated proof that the matrix is Pass.
 - Optional: `cargo fuzz` target for `parse_query_params` (no panic).
 - CI: property tests in default `cargo test`; fuzz optional nightly/job.
 
+## Unit tests (required)
+
+Property tests that run under `cargo test` count as unit tests.
+
+### Positive (properties / cases)
+
+| ID | Property / case | Assert |
+|----|-----------------|--------|
+| P1 | Random Unicode + reserved (bounded) encode→parse | logical equality (or documented norm) |
+| P2 | `resolve_path_template` always Uri-OK for legal maps | holds |
+| P3 | Passthrough (when applicable) | query bytes unchanged |
+| P4 | Golden corpus still Pass | no regression |
+| P5 | Duplicate keys survive rebuild | multiset equality |
+| P6 | Fixed RNG seed CI run | reproducible |
+
+### Negative (properties / cases)
+
+| ID | Property / case | Assert |
+|----|-----------------|--------|
+| N1 | Arbitrary `&str` path to parse | no panic |
+| N2 | Arbitrary query suffix | no panic |
+| N3 | Encoder never emits raw space in query values | holds |
+| N4 | Encoder never emits raw `&`/`=` inside values | holds or documented structure |
+| N5 | Invalid UTF-8 / binary if accepted as bytes | no panic |
+| N6 | Fuzz crash → minimized golden added | process + test |
+| N7 | Oversize random strings | hit 10.6; no OOM in budget |
+| N8 | Shrink failing case stores seed | CI artifact/docs |
+
+### Acceptance criteria (tests)
+
+- [ ] `cargo test` runs property suite (feature-gated OK if default-on in CI).
+- [ ] N1/N2 hard requirements.
+- [ ] N6 process documented.
+
 ## Acceptance criteria
 
 - [ ] Property tests in CI with fixed RNG seed for reproducibility + unseeded local runs.
 - [ ] No known counterexample for legal inputs after 10.2–10.5.
 - [ ] Fuzz or property “no panic” on inbound parse.
 - [ ] Matrix marked Pass; audit scorecard updated.
+- [ ] Unit tests section complete (positive + negative).
 
 ## References
 

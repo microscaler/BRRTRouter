@@ -1,9 +1,10 @@
 # Story 10.8 — Unify http URI stack
 
-**GitHub issue:** _(create)_  
+**GitHub issue:** [#382](https://github.com/microscaler/BRRTRouter/issues/382)  
 **Epic:** [Epic 10](README.md)  
 **Blocked by:** 10.4, 10.5 (logic stable first)  
-**Blocks:** —
+**Blocks:** —  
+**Testing standard:** [TESTING_STANDARD.md](../TESTING_STANDARD.md)
 
 ## Overview
 
@@ -22,12 +23,44 @@ both stacks accept every golden rebuilt target.
   exists).
 - Update Cargo docs / ARCHITECTURE note.
 
+## Unit tests (required)
+
+### Positive
+
+| ID | Scenario | Assert |
+|----|----------|--------|
+| P1 | Same logical params → same request-target both stacks | byte-equal |
+| P2 | Space → `%20` both stacks | Uri-OK both |
+| P3 | Unicode both stacks | Uri-OK both |
+| P4 | Path template resolve both stacks | equal |
+| P5 | Empty query policy both stacks | equal |
+| P6 | Multi-param order both stacks | equal |
+
+### Negative
+
+| ID | Scenario | Assert |
+|----|----------|--------|
+| N1 | Raw space both stacks | same reject-or-encode-before-parse |
+| N2 | Truncated `%` decode both | same policy outcome |
+| N3 | Oversize both | same error family |
+| N4 | Missing param both | same taxonomy |
+| N5 | Golden divergence 0.2 ≠ 1.0 | CI fails (hard gate) |
+| N6 | Panic on either stack | forbidden |
+| N7 | Only one stack tested in CI | forbidden while dual exists |
+| N8 | Silent type confusion at bridge | conversion errors typed |
+
+### Acceptance criteria (tests)
+
+- [ ] Shared golden runner against every URI parser still in use.
+- [ ] N5 is a hard CI gate for epic Done.
+
 ## Acceptance criteria
 
 - [ ] Decision A/B recorded in this story or a short ADR.
 - [ ] No silent drift: goldens validated against every URI parser still in use.
 - [ ] Matrix row for URI stack unification marked Pass or “Accepted dual-stack with bridge tests.”
 - [ ] No behaviour regression in proxy integration tests.
+- [ ] Unit tests section complete (positive + negative).
 
 ## References
 

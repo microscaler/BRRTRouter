@@ -9,7 +9,7 @@
 |---|---:|---|
 | `auto-research/` | — | Perf charter + scripts; canonical [`auto-research/docs/PERF_CONTROL_SURFACE_AND_LOG.md`](../auto-research/docs/PERF_CONTROL_SURFACE_AND_LOG.md); see [`topics/auto-research-perf-loop.md`](./topics/auto-research-perf-loop.md) |
 | `docs/wip` | 154 | Historical and work-in-progress material; high staleness risk |
-| `docs/EPICS` | 42 | Planning/spec material; partial implementation overlap |
+| `docs/EPICS` | 42+ | Planning/spec material; includes URI_REQUEST_TARGET Epics 10–11 + BUILD_BOARD |
 | `docs/SPIFFY_mTLS` | 10 | Security architecture/design docs |
 | `docs/tasks` | 7 | Task and PRD planning docs |
 | `docs/JSF` + `docs/JSF_COMPLIANCE.md` | 7 | Safety/performance discipline docs |
@@ -61,6 +61,14 @@
 - `docs/EPICS/BFF_PROXY/epic-5-microservices-claims-lifeguard/story-5.2-lifeguard-session-claims.md`
 - `docs/EPICS/BFF_PROXY/epic-5-microservices-claims-lifeguard/story-5.3-microservice-auth-model.md`
 - `docs/EPICS/EPICS_CATALOG.md`
+- `docs/EPICS/URI_REQUEST_TARGET/README.md`
+- `docs/EPICS/URI_REQUEST_TARGET/BUILD_BOARD.md`
+- `docs/EPICS/URI_REQUEST_TARGET/TESTING_STANDARD.md`
+- `docs/EPICS/URI_REQUEST_TARGET/EPICS_AND_STORIES_SUMMARY.md`
+- `docs/EPICS/URI_REQUEST_TARGET/epic-10-uri-request-target-compliance/` (stories 10.1–10.11)
+- `docs/EPICS/URI_REQUEST_TARGET/epic-11-http-query-method/` (stories 11.1–11.4)
+- `docs/AUDIT-uri-request-target-and-rfc10008-2026-08.md`
+- `docs/POSTMORTEM-proxy-query-encoding-invalid-uri-2026-08-07.md`
 - `docs/EPICS/IDAM/EPICS_AND_STORIES_SUMMARY.md`
 - `docs/EPICS/IDAM/README.md`
 - `docs/EPICS/IDAM/epic-6-idam-contract/README.md`

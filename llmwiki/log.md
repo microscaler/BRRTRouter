@@ -1,5 +1,13 @@
 # LLM Wiki Log
 
+## [2026-08-07] docs | URI request-target Epics 10–11 + build board
+
+- Added [`topics/uri-request-target-compliance.md`](./topics/uri-request-target-compliance.md): provinces 502 root cause, encode asymmetry, Epic 10/11 scope, testing mandate, wave plan.
+- Epics docs: `docs/EPICS/URI_REQUEST_TARGET/` — `TESTING_STANDARD.md` (positive+negative unit tests), `BUILD_BOARD.md` (Wave 0–5).
+- GitHub: Epic 10 [#373](https://github.com/microscaler/BRRTRouter/issues/373), Epic 11 [#374](https://github.com/microscaler/BRRTRouter/issues/374); stories [#375](https://github.com/microscaler/BRRTRouter/issues/375)–[#389](https://github.com/microscaler/BRRTRouter/issues/389). Labels `uri-request-target`, `rfc10008`.
+- **Build NOW:** Story 10.1 matrix/goldens [#375](https://github.com/microscaler/BRRTRouter/issues/375).
+- Encode fix already on main (`resolve_path_template` + proxy unit tests); remaining gap is full compliance matrix + taxonomy (502→400 for composition).
+
 ## [2026-07-08] ship | Bidding Fix B migration (638 → 67 lines)
 
 - **`hauliage_bidding` impl main** now uses `RunAppBuilder`; lifeguard prometheus + DB warm hooks preserved.

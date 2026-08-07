@@ -1,7 +1,11 @@
 # URI / Request-Target — Epics and Stories Summary
 
 **Source:** `docs/AUDIT-uri-request-target-and-rfc10008-2026-08.md`  
-**Purpose:** Author Epic/Story docs and create/link GitHub issues.
+**Purpose:** Author Epic/Story docs and create/link GitHub issues.  
+**Testing:** [`TESTING_STANDARD.md`](TESTING_STANDARD.md) — every story requires
+comprehensive **positive and negative** unit tests (see each story’s Unit tests section).  
+**Build board:** [`BUILD_BOARD.md`](BUILD_BOARD.md)  
+**Issues:** Epic 10 [#373](https://github.com/microscaler/BRRTRouter/issues/373), Epic 11 [#374](https://github.com/microscaler/BRRTRouter/issues/374)
 
 ---
 
@@ -32,6 +36,8 @@ unification, OpenAPI style fidelity, and automated proof of compliance.
 
 **Scope:** First-class QUERY routing, CORS, OpenAPI binding, proxy/client support,
 POST fallback guidance. **Does not** replace Epic 10 URI work.
+**Testing:** Same [`TESTING_STANDARD.md`](TESTING_STANDARD.md) — positive + negative
+unit tests required on every story (11.1–11.4).
 
 | ID | Story | One-line description | Parent | Type | Labels |
 |----|--------|----------------------|--------|------|--------|

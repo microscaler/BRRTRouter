@@ -15,8 +15,8 @@
 | 7 | IDAM core implementation (GoTrue proxy) | IDAM, epic | Feature | [IDAM/epic-7-idam-core/](IDAM/epic-7-idam-core/) | [#279](https://github.com/microscaler/BRRTRouter/issues/279) |
 | 8 | IDAM extension and build/deploy | IDAM, epic | Feature | [IDAM/epic-8-idam-extension/](IDAM/epic-8-idam-extension/) | [#280](https://github.com/microscaler/BRRTRouter/issues/280) |
 | 9 | BFF ↔ IDAM integration | IDAM, epic | Feature | [IDAM/epic-9-bff-idam/](IDAM/epic-9-bff-idam/) | [#281](https://github.com/microscaler/BRRTRouter/issues/281) |
-| 10 | Request-target parse & rebuild — 100% URI compliance | URI_REQUEST_TARGET, epic | Feature | [URI_REQUEST_TARGET/epic-10-uri-request-target-compliance/](URI_REQUEST_TARGET/epic-10-uri-request-target-compliance/) | _(create)_ |
-| 11 | HTTP QUERY method (RFC 10008) | URI_REQUEST_TARGET, epic | Feature | [URI_REQUEST_TARGET/epic-11-http-query-method/](URI_REQUEST_TARGET/epic-11-http-query-method/) | _(create)_ |
+| 10 | Request-target parse & rebuild — 100% URI compliance | URI_REQUEST_TARGET, epic | Feature | [URI_REQUEST_TARGET/epic-10-uri-request-target-compliance/](URI_REQUEST_TARGET/epic-10-uri-request-target-compliance/) | [#373](https://github.com/microscaler/BRRTRouter/issues/373) |
+| 11 | HTTP QUERY method (RFC 10008) | URI_REQUEST_TARGET, epic | Feature | [URI_REQUEST_TARGET/epic-11-http-query-method/](URI_REQUEST_TARGET/epic-11-http-query-method/) | [#374](https://github.com/microscaler/BRRTRouter/issues/374) |
 
 **GitHub metadata mapping:**
 - **Labels** → Theme + role: `bff-proxy`, `idam`, or `uri-request-target`; epics also get `epic`, stories get `story`. Epic 11 also uses `rfc10008`.

@@ -1,6 +1,6 @@
 # Epic 10 — Request-target parse & rebuild (100% URI compliance)
 
-**GitHub issue:** _(create and link)_  
+**GitHub issue:** [#373](https://github.com/microscaler/BRRTRouter/issues/373)  
 **Theme labels:** `uri-request-target`, `epic`
 
 ## Overview
@@ -27,22 +27,25 @@ silent corruption, or mis-labelled 502s.
 - [ ] Inbound illegal inputs fail closed with correct status; legal Unicode/reserved inputs round-trip.
 - [ ] Proxy never returns **502** for URI composition failures.
 - [ ] Loadlinker-class geography names (spaces, diacritics) covered by golden + fuzz suites.
+- [ ] **Every story** meets [`TESTING_STANDARD.md`](../TESTING_STANDARD.md): comprehensive **positive and negative** unit tests (minima enforced in each story’s Unit tests section).
 
 ## Stories
 
-| Story | Title | Doc |
-|-------|--------|-----|
-| 10.1 | Spec matrix & golden corpus | [story-10.1-spec-matrix-and-golden-corpus.md](story-10.1-spec-matrix-and-golden-corpus.md) |
-| 10.2 | Inbound query parse edge cases | [story-10.2-inbound-query-parse-edge-cases.md](story-10.2-inbound-query-parse-edge-cases.md) |
-| 10.3 | Inbound path segment decode | [story-10.3-inbound-path-segment-decode.md](story-10.3-inbound-path-segment-decode.md) |
-| 10.4 | Component-specific encoders | [story-10.4-component-specific-encoders.md](story-10.4-component-specific-encoders.md) |
-| 10.5 | Proxy path/query passthrough | [story-10.5-proxy-path-query-passthrough.md](story-10.5-proxy-path-query-passthrough.md) |
-| 10.6 | Request-target length → 414 | [story-10.6-request-target-length-414.md](story-10.6-request-target-length-414.md) |
-| 10.7 | Error taxonomy | [story-10.7-error-taxonomy.md](story-10.7-error-taxonomy.md) |
-| 10.8 | Unify http URI stack | [story-10.8-unify-http-uri-stack.md](story-10.8-unify-http-uri-stack.md) |
-| 10.9 | OpenAPI style/explode fidelity | [story-10.9-openapi-style-explode-fidelity.md](story-10.9-openapi-style-explode-fidelity.md) |
-| 10.10 | Property/fuzz compliance suite | [story-10.10-property-fuzz-compliance-suite.md](story-10.10-property-fuzz-compliance-suite.md) |
-| 10.11 | may_minihttp request-line boundary | [story-10.11-may-minihttp-request-line-boundary.md](story-10.11-may-minihttp-request-line-boundary.md) |
+| Story | Title | Issue | Doc |
+|-------|--------|-------|-----|
+| 10.1 | Spec matrix & golden corpus | [#375](https://github.com/microscaler/BRRTRouter/issues/375) | [story-10.1-…](story-10.1-spec-matrix-and-golden-corpus.md) |
+| 10.2 | Inbound query parse edge cases | [#376](https://github.com/microscaler/BRRTRouter/issues/376) | [story-10.2-…](story-10.2-inbound-query-parse-edge-cases.md) |
+| 10.3 | Inbound path segment decode | [#377](https://github.com/microscaler/BRRTRouter/issues/377) | [story-10.3-…](story-10.3-inbound-path-segment-decode.md) |
+| 10.4 | Component-specific encoders | [#378](https://github.com/microscaler/BRRTRouter/issues/378) | [story-10.4-…](story-10.4-component-specific-encoders.md) |
+| 10.5 | Proxy path/query passthrough | [#379](https://github.com/microscaler/BRRTRouter/issues/379) | [story-10.5-…](story-10.5-proxy-path-query-passthrough.md) |
+| 10.6 | Request-target length → 414 | [#380](https://github.com/microscaler/BRRTRouter/issues/380) | [story-10.6-…](story-10.6-request-target-length-414.md) |
+| 10.7 | Error taxonomy | [#381](https://github.com/microscaler/BRRTRouter/issues/381) | [story-10.7-…](story-10.7-error-taxonomy.md) |
+| 10.8 | Unify http URI stack | [#382](https://github.com/microscaler/BRRTRouter/issues/382) | [story-10.8-…](story-10.8-unify-http-uri-stack.md) |
+| 10.9 | OpenAPI style/explode fidelity | [#383](https://github.com/microscaler/BRRTRouter/issues/383) | [story-10.9-…](story-10.9-openapi-style-explode-fidelity.md) |
+| 10.10 | Property/fuzz compliance suite | [#384](https://github.com/microscaler/BRRTRouter/issues/384) | [story-10.10-…](story-10.10-property-fuzz-compliance-suite.md) |
+| 10.11 | may_minihttp request-line boundary | [#385](https://github.com/microscaler/BRRTRouter/issues/385) | [story-10.11-…](story-10.11-may-minihttp-request-line-boundary.md) |
+
+**Build:** start at Wave 0 → [BUILD_BOARD.md](../BUILD_BOARD.md).
 
 ## Primary code surfaces
 

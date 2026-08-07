@@ -39,6 +39,11 @@
 - [Canonical docs vs WIP](./topics/canonical-docs-vs-wip.md) — how to treat `docs/wip/` vs maintained docs
 - [Native HTTP client and TLS policy](./topics/native-http-client-and-tls.md) — production rustls transport and test-only `reqwest` exceptions
 - [Dynamic JWT token-status hook](./topics/dynamic-token-status-hook.md) — consumer-supplied denylist/version checks on JWKS cache hits and misses, fail-closed status, and extraction ordering
+- [URI / request-target compliance](./topics/uri-request-target-compliance.md) — Epics 10–11, provinces 502, encode asymmetry, [BUILD_BOARD](../docs/EPICS/URI_REQUEST_TARGET/BUILD_BOARD.md)
+
+## Epics (active)
+
+- [Epic 10 — URI request-target](https://github.com/microscaler/BRRTRouter/issues/373) / [Epic 11 — HTTP QUERY](https://github.com/microscaler/BRRTRouter/issues/374) — build from [BUILD_BOARD.md](../docs/EPICS/URI_REQUEST_TARGET/BUILD_BOARD.md); **NOW = Story 10.1** [#375](https://github.com/microscaler/BRRTRouter/issues/375)
 
 ## PRDs (active)
 

@@ -1,9 +1,10 @@
 # Story 10.6 — Request-target length → 414
 
-**GitHub issue:** _(create)_  
+**GitHub issue:** [#380](https://github.com/microscaler/BRRTRouter/issues/380)  
 **Epic:** [Epic 10](README.md)  
 **Blocked by:** 10.1  
-**Blocks:** 10.7
+**Blocks:** 10.7  
+**Testing standard:** [TESTING_STANDARD.md](../TESTING_STANDARD.md)
 
 ## Overview
 
@@ -20,12 +21,43 @@ of opaque client/proxy failures.
 - Metrics/log when rejected (no body leak of full target at info if sensitive).
 - Tests: under limit succeeds; over limit → 414.
 
+## Unit tests (required)
+
+### Positive
+
+| ID | Scenario | Assert |
+|----|----------|--------|
+| P1 | Target under limit | success |
+| P2 | Target at limit − 1 | success |
+| P3 | Target exactly at limit | success (or exclusive bound documented) |
+| P4 | Short path + short query | success |
+| P5 | Encoded expansion under limit | counts **wire** length |
+| P6 | Default ≥ 8192 | config/default assertion |
+
+### Negative
+
+| ID | Scenario | Assert |
+|----|----------|--------|
+| N1 | Inbound over limit | **414**; not 500/502; no panic |
+| N2 | Outbound rebuild over limit | composition error before dial |
+| N3 | Limit misconfig (0 / negative) | fail closed at load or reject safely |
+| N4 | Extremely large fixture | bounded memory in test |
+| N5 | Repeated keys over limit | 414 |
+| N6 | Path alone over limit | 414 |
+| N7 | Encoded longer than decoded | wire length wins |
+| N8 | Log/metric on reject | fires; no full sensitive target at info |
+
+### Acceptance criteria (tests)
+
+- [ ] N1/N2 mandatory; P6 locks default.
+
 ## Acceptance criteria
 
 - [ ] Configurable max with documented default (≥ 8192).
 - [ ] Inbound over-limit → 414 (not 500/502).
 - [ ] Outbound rebuilt target over-limit → composition error (see 10.7), not dial.
 - [ ] Matrix row for length limits marked Pass.
+- [ ] Unit tests section complete (positive + negative).
 
 ## References
 
