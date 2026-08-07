@@ -20,7 +20,7 @@ beyond WHATWG `application/x-www-form-urlencoded` decode.
 | REQ-URI-VALIDATE | Rebuilt target parses as URI | RFC 9110 §7 | `http` 0.2 `Uri` | **Partial** | P1–P10, N3–N6 (0.2 not full RFC 3986 validator) |
 | REQ-INBOUND-FORM | Inbound query via form-urlencoded (`+` / `%20`) | WHATWG form-urlencoded | `parse_query_params` | **Pass** | P2, P3, P1, P6, P7, P10 |
 | REQ-INBOUND-INVALID-PCT | Truncated / illegal `%` inbound | RFC 3986 | `parse_query_params` | **Pass** | Story 10.2: leave-as-is / lossy UTF-8; `parse_query_params_negative_n1`–`n4`; golden N1/N2 |
-| REQ-INBOUND-PATH-DECODE | Path param pct-decode (`+` ≠ space) | RFC 3986 §3.3 | router path capture | **Gap** | Story 10.3 (P9 outbound Pass; inbound decode not wired) |
+| REQ-INBOUND-PATH-DECODE | Path param pct-decode (`+` ≠ space) | RFC 3986 §3.3 | `decode_path_segment` + radix | **Pass** | Story 10.3; `decode_path_segment_*` / `path_decode_*` |
 | REQ-PASSTHROUGH | Preserve original query octets when safe | Gateway practice | proxy | **Gap** | Story 10.5 |
 | REQ-414 | Request-target length → 414 | RFC 9110 | parse + proxy | **Gap** | N7 (deferred); Story 10.6 |
 | REQ-OPENAPI-STYLE | style/explode fidelity on rebuild | OpenAPI 3 | proxy / decode_param | **Gap** | Story 10.9 (P6 duplicates Pass as flat ParamVec) |

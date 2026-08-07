@@ -49,16 +49,22 @@ separator. Symmetric to query work in 10.2.
 
 ### Acceptance criteria (tests)
 
-- [ ] All P*/N* as named unit tests; N1 and P4 mandatory.
-- [ ] Illegal encodings share status policy with 10.7.
+- [x] All P*/N* as named unit tests; N1 and P4 mandatory.
+- [x] Illegal encodings share status policy with 10.7.
 
 ## Acceptance criteria
 
-- [ ] Encoded spaces/accents in path params decode to Unicode strings in `HandlerRequest`.
-- [ ] `%2F` does not create an extra path segment.
-- [ ] Illegal encodings fail closed (no panic); status consistent with 10.7.
-- [ ] Matrix rows for inbound path marked Pass.
-- [ ] Unit tests section complete (positive + negative).
+- [x] Encoded spaces/accents in path params decode to Unicode strings in `HandlerRequest`.
+- [x] `%2F` does not create an extra path segment.
+- [x] Illegal encodings fail closed (no panic); status consistent with 10.7.
+- [x] Matrix rows for inbound path marked Pass.
+- [x] Unit tests section complete (positive + negative).
+
+## Shipped (2026-08-07)
+
+- `src/router/path_segment.rs` — `decode_path_segment` (`+` ≠ space; decode-once; lossy UTF-8)
+- Radix capture applies decode on param push
+- Trailing `/` ignored (empty segments skipped) — documented in `path_decode_positive_p6_*`
 
 ## References
 

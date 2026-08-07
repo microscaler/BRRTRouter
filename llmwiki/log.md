@@ -1,5 +1,11 @@
 # LLM Wiki Log
 
+## [2026-08-07] ship | Story 10.3 inbound path segment decode
+
+- Added `router::decode_path_segment` (RFC 3986; `+` literal; decode-once; lossy `%FF`).
+- Radix param capture pct-decodes on push; `%2F` stays one segment.
+- Matrix `REQ-INBOUND-PATH-DECODE` → **Pass**; BUILD_BOARD **NOW** = 10.11 (#385).
+
 ## [2026-08-07] ship | Story 10.2 inbound query parse edge cases
 
 - Documented illegal-% / fragment policy on `parse_query_params` (leave-as-is / lossy UTF-8; `#` not stripped).

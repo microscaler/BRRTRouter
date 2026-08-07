@@ -64,6 +64,7 @@
 //! with regex matching, particularly for applications with many routes.
 
 mod core;
+mod path_segment;
 #[cfg(test)]
 mod performance_tests;
 mod radix;
@@ -71,3 +72,4 @@ mod radix;
 mod tests;
 
 pub use core::{ParamVec, RouteMatch, Router, MAX_INLINE_PARAMS};
+pub use path_segment::decode_path_segment;

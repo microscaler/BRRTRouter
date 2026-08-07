@@ -334,7 +334,8 @@ impl RadixNode {
             if let Some(ref param_name) = param_child.param_name {
                 // JSF Optimization (P0): Arc::clone() is O(1) atomic increment
                 // vs O(n) string copy for param names.
-                params.push((Arc::clone(param_name), segment.to_string()));
+                // Story 10.3: pct-decode path segments (RFC 3986; `+` ≠ space).
+                params.push((Arc::clone(param_name), super::decode_path_segment(segment)));
                 if let Some(route) = param_child.search(segments, method, params) {
                     return Some(route);
                 }
@@ -1125,5 +1126,100 @@ mod tests {
             Some("team789")
         );
         assert_eq!(params.len(), 3);
+    }
+
+    // --- Story 10.3: inbound path segment decode via radix match ---
+
+    #[test]
+    fn path_decode_positive_p1_encoded_space() {
+        let router = RadixRouter::new(vec![create_route_meta(
+            Method::GET,
+            "/regions/{region}",
+            "get_region",
+        )]);
+        let (_, params) = router
+            .route(Method::GET, "/regions/Western%20Cape")
+            .expect("match");
+        assert_eq!(get_param(&params, "region"), Some("Western Cape"));
+    }
+
+    #[test]
+    fn path_decode_positive_p4_encoded_slash_one_segment() {
+        let router = RadixRouter::new(vec![create_route_meta(
+            Method::GET,
+            "/regions/{region}",
+            "get_region",
+        )]);
+        // `%2F` must not create an extra path segment
+        let (_, params) = router
+            .route(Method::GET, "/regions/a%2Fb")
+            .expect("single-segment match");
+        assert_eq!(get_param(&params, "region"), Some("a/b"));
+        assert!(router.route(Method::GET, "/regions/a/b").is_none());
+    }
+
+    #[test]
+    fn path_decode_positive_p6_trailing_slash_ignored() {
+        let router = RadixRouter::new(vec![create_route_meta(
+            Method::GET,
+            "/regions/{region}",
+            "get_region",
+        )]);
+        // Documented: PathCursor skips empty segments, so a trailing `/` matches
+        // the same as without it (and still pct-decodes the param).
+        let (_, params) = router
+            .route(Method::GET, "/regions/Western%20Cape/")
+            .expect("trailing slash ignored");
+        assert_eq!(get_param(&params, "region"), Some("Western Cape"));
+    }
+
+    #[test]
+    fn path_decode_positive_p7_multiple_encoded_params() {
+        let router = RadixRouter::new(vec![create_route_meta(
+            Method::GET,
+            "/org/{org}/item/{item}",
+            "get_item",
+        )]);
+        let (_, params) = router
+            .route(Method::GET, "/org/ACME%20Ltd/item/C%C3%B4te")
+            .expect("match");
+        assert_eq!(get_param(&params, "org"), Some("ACME Ltd"));
+        assert_eq!(get_param(&params, "item"), Some("Côte"));
+    }
+
+    #[test]
+    fn path_decode_positive_p8_empty_segment_between_slashes() {
+        let router = RadixRouter::new(vec![create_route_meta(
+            Method::GET,
+            "/regions/{region}",
+            "get_region",
+        )]);
+        // Empty segment (`//`) does not match a required `{region}` param route
+        assert!(router.route(Method::GET, "/regions//").is_none());
+    }
+
+    #[test]
+    fn path_decode_negative_n1_plus_not_space() {
+        let router = RadixRouter::new(vec![create_route_meta(
+            Method::GET,
+            "/regions/{region}",
+            "get_region",
+        )]);
+        let (_, params) = router
+            .route(Method::GET, "/regions/Western+Cape")
+            .expect("match");
+        assert_eq!(get_param(&params, "region"), Some("Western+Cape"));
+    }
+
+    #[test]
+    fn path_decode_negative_n4_encoded_dotdot_is_literal_param() {
+        let router = RadixRouter::new(vec![create_route_meta(
+            Method::GET,
+            "/regions/{region}",
+            "get_region",
+        )]);
+        let (_, params) = router.route(Method::GET, "/regions/%2E%2E").expect("match");
+        // Decoded to `..` but still a single path param — no filesystem traversal
+        assert_eq!(get_param(&params, "region"), Some(".."));
     }
 }
