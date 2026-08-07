@@ -1,0 +1,179 @@
+{
+  "version": 1,
+  "description": "Epic 10 Story 10.1 URI request-target golden corpus",
+  "vectors": [
+    {
+      "id": "P1",
+      "requirement_ids": ["REQ-INBOUND-FORM", "REQ-URI-VALIDATE"],
+      "kind": "roundtrip_query",
+      "inbound_path": "/p?k=v",
+      "expect_params": [["k", "v"]],
+      "rebuild_template": "/p",
+      "expect_rebuild": "/p?k=v",
+      "expect_uri_ok": true
+    },
+    {
+      "id": "P2",
+      "requirement_ids": ["REQ-REENCODE", "REQ-INBOUND-FORM"],
+      "kind": "roundtrip_query",
+      "inbound_path": "/p?q=South%20Africa",
+      "expect_params": [["q", "South Africa"]],
+      "rebuild_template": "/p",
+      "expect_rebuild": "/p?q=South%20Africa",
+      "expect_uri_ok": true
+    },
+    {
+      "id": "P3",
+      "requirement_ids": ["REQ-INBOUND-FORM"],
+      "kind": "inbound_only",
+      "inbound_path": "/p?q=South+Africa",
+      "expect_params": [["q", "South Africa"]]
+    },
+    {
+      "id": "P4",
+      "requirement_ids": ["REQ-UNICODE", "REQ-INBOUND-FORM"],
+      "kind": "roundtrip_query",
+      "inbound_path": "/p?q=C%C3%B4te",
+      "expect_params": [["q", "Côte"]],
+      "rebuild_template": "/p",
+      "expect_rebuild": "/p?q=C%C3%B4te",
+      "expect_uri_ok": true
+    },
+    {
+      "id": "P5",
+      "requirement_ids": ["REQ-UNICODE"],
+      "kind": "roundtrip_query",
+      "inbound_path": "/p?q=%E6%9D%B1%E4%BA%AC%F0%9F%8C%90",
+      "expect_params": [["q", "東京🌐"]],
+      "rebuild_template": "/p",
+      "expect_rebuild": "/p?q=%E6%9D%B1%E4%BA%AC%F0%9F%8C%90",
+      "expect_uri_ok": true
+    },
+    {
+      "id": "P6",
+      "requirement_ids": ["REQ-INBOUND-FORM", "REQ-OPENAPI-STYLE"],
+      "kind": "inbound_only",
+      "inbound_path": "/p?a=1&a=2",
+      "expect_params": [["a", "1"], ["a", "2"]]
+    },
+    {
+      "id": "P7",
+      "requirement_ids": ["REQ-INBOUND-FORM"],
+      "kind": "roundtrip_query",
+      "inbound_path": "/p?k=",
+      "expect_params": [["k", ""]],
+      "rebuild_template": "/p",
+      "expect_rebuild": "/p?k=",
+      "expect_uri_ok": true
+    },
+    {
+      "id": "P8",
+      "requirement_ids": ["REQ-UNRESERVED"],
+      "kind": "roundtrip_query",
+      "inbound_path": "/p?name=-._~",
+      "expect_params": [["name", "-._~"]],
+      "rebuild_template": "/p",
+      "expect_rebuild": "/p?name=-._~",
+      "expect_uri_ok": true
+    },
+    {
+      "id": "P9",
+      "requirement_ids": ["REQ-PATH-SEGMENT-ENC", "REQ-URI-VALIDATE"],
+      "kind": "rebuild_path",
+      "rebuild_template": "/regions/{region}",
+      "path_params": [["region", "Western Cape"]],
+      "expect_rebuild": "/regions/Western%20Cape",
+      "expect_uri_ok": true
+    },
+    {
+      "id": "P10",
+      "requirement_ids": ["REQ-INBOUND-FORM", "REQ-URI-VALIDATE"],
+      "kind": "roundtrip_query",
+      "inbound_path": "/p?x=1&y=2&z=3",
+      "expect_params": [["x", "1"], ["y", "2"], ["z", "3"]],
+      "rebuild_template": "/p",
+      "expect_rebuild": "/p?x=1&y=2&z=3",
+      "expect_uri_ok": true
+    },
+    {
+      "id": "N1",
+      "requirement_ids": ["REQ-INBOUND-INVALID-PCT"],
+      "kind": "inbound_no_panic",
+      "inbound_path": "/p?q=%",
+      "expect_params": [["q", "%"]],
+      "notes": "form_urlencoded leaves truncated % as-is (Inherited)"
+    },
+    {
+      "id": "N1b",
+      "requirement_ids": ["REQ-INBOUND-INVALID-PCT"],
+      "kind": "inbound_no_panic",
+      "inbound_path": "/p?q=%2",
+      "expect_params": [["q", "%2"]],
+      "notes": "truncated hex left as-is"
+    },
+    {
+      "id": "N2",
+      "requirement_ids": ["REQ-INBOUND-INVALID-PCT"],
+      "kind": "inbound_no_panic",
+      "inbound_path": "/p?q=%GG",
+      "expect_params": [["q", "%GG"]],
+      "notes": "illegal hex left as-is"
+    },
+    {
+      "id": "N3",
+      "requirement_ids": ["REQ-REENCODE", "REQ-URI-VALIDATE"],
+      "kind": "legacy_vs_encode",
+      "rebuild_template": "/p",
+      "logical_query": [["k", "South Africa"]],
+      "expect_rebuild": "/p?k=South%20Africa",
+      "legacy_unencoded_must_fail_uri": true,
+      "expect_uri_ok": true
+    },
+    {
+      "id": "N4",
+      "requirement_ids": ["REQ-RESERVED-QUERY"],
+      "kind": "legacy_vs_encode",
+      "rebuild_template": "/p",
+      "logical_query": [["k", "a&b=c"]],
+      "expect_rebuild": "/p?k=a%26b%3Dc",
+      "legacy_unencoded_must_fail_uri": false,
+      "legacy_corrupts_param_count": true,
+      "expect_uri_ok": true
+    },
+    {
+      "id": "N5",
+      "requirement_ids": ["REQ-RESERVED-QUERY"],
+      "kind": "legacy_vs_encode",
+      "rebuild_template": "/p",
+      "logical_query": [["k", "x#frag"]],
+      "expect_rebuild": "/p?k=x%23frag",
+      "legacy_unencoded_must_fail_uri": false,
+      "legacy_hash_truncates": true,
+      "expect_uri_ok": true
+    },
+    {
+      "id": "N6",
+      "requirement_ids": ["REQ-CONTROLS"],
+      "kind": "legacy_vs_encode",
+      "rebuild_template": "/p",
+      "logical_query": [["k", "a\tb\nc"]],
+      "legacy_unencoded_must_fail_uri": true,
+      "expect_uri_ok": true
+    },
+    {
+      "id": "N7",
+      "requirement_ids": ["REQ-414"],
+      "kind": "deferred",
+      "story": "10.6",
+      "flag": "length",
+      "notes": "Oversize request-target reserved for Story 10.6"
+    },
+    {
+      "id": "N8",
+      "requirement_ids": ["REQ-EMPTY-PATH"],
+      "kind": "inbound_no_panic",
+      "inbound_path": "/p",
+      "expect_params": []
+    }
+  ]
+}

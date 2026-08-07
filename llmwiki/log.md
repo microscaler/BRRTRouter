@@ -1,5 +1,13 @@
 # LLM Wiki Log
 
+## [2026-08-07] ship | Story 10.1 URI golden corpus + compliance matrix
+
+- Added `docs/EPICS/URI_REQUEST_TARGET/compliance-matrix.md` (REQ-* IDs → Status → Test ID).
+- Added `tests/uri_golden/corpus.json` + `tests/uri_golden_harness.rs` (21 tests: P1–P10, N1–N8).
+- `cargo test --test uri_golden_harness` green on ms02.
+- BUILD_BOARD: 10.1 **done**; **NOW** = Wave 1 (10.2 ‖ 10.3 ‖ 10.11).
+- GitHub [#375](https://github.com/microscaler/BRRTRouter/issues/375) closable.
+
 ## [2026-08-07] docs | URI request-target Epics 10–11 + build board
 
 - Added [`topics/uri-request-target-compliance.md`](./topics/uri-request-target-compliance.md): provinces 502 root cause, encode asymmetry, Epic 10/11 scope, testing mandate, wave plan.

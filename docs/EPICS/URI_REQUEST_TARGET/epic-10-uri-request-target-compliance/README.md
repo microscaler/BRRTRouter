@@ -45,7 +45,8 @@ silent corruption, or mis-labelled 502s.
 | 10.10 | Property/fuzz compliance suite | [#384](https://github.com/microscaler/BRRTRouter/issues/384) | [story-10.10-…](story-10.10-property-fuzz-compliance-suite.md) |
 | 10.11 | may_minihttp request-line boundary | [#385](https://github.com/microscaler/BRRTRouter/issues/385) | [story-10.11-…](story-10.11-may-minihttp-request-line-boundary.md) |
 
-**Build:** start at Wave 0 → [BUILD_BOARD.md](../BUILD_BOARD.md).
+**Build:** Wave 0 **done** (10.1). Next → Wave 1 on [BUILD_BOARD.md](../BUILD_BOARD.md).  
+**Matrix:** [compliance-matrix.md](../compliance-matrix.md) · **Goldens:** `tests/uri_golden/`
 
 ## Primary code surfaces
 

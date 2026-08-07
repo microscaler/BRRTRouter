@@ -47,7 +47,8 @@ Done — see [`TESTING_STANDARD.md`](../../docs/EPICS/URI_REQUEST_TARGET/TESTING
 
 ## Gaps / drift (open)
 
-- Compliance matrix (Story 10.1) not yet checked in as executable goldens.
+- Compliance matrix + goldens **shipped** (Story 10.1 / [#375](https://github.com/microscaler/BRRTRouter/issues/375)):
+  `docs/EPICS/URI_REQUEST_TARGET/compliance-matrix.md`, `tests/uri_golden/`, `tests/uri_golden_harness.rs`.
 - `ProxyError` still maps composition failures to **502** (Story 10.7).
 - Single `urlencoding::encode` site — Story 10.4 wants named path vs query APIs.
 - Dual `http` 1.0 vs `http_legacy` 0.2 URI stacks (Story 10.8).
@@ -66,5 +67,8 @@ Wave 5: 10.9 → 10.10 → 10.8
 Epic 11: 11.1 → 11.2 → 11.3 → 11.4  (after 10.1; 11.3 after 10.7)
 ```
 
-Start implementation at **Wave 0 / Story 10.1** ([#375](https://github.com/microscaler/BRRTRouter/issues/375)).
+**Wave 0 done.** Next: Wave 1 — Stories 10.2 / 10.3 / 10.11
+([#376](https://github.com/microscaler/BRRTRouter/issues/376),
+[#377](https://github.com/microscaler/BRRTRouter/issues/377),
+[#385](https://github.com/microscaler/BRRTRouter/issues/385)).
 Full index: [`BUILD_BOARD.md`](../../docs/EPICS/URI_REQUEST_TARGET/BUILD_BOARD.md).

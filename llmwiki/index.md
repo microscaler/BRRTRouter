@@ -43,7 +43,7 @@
 
 ## Epics (active)
 
-- [Epic 10 — URI request-target](https://github.com/microscaler/BRRTRouter/issues/373) / [Epic 11 — HTTP QUERY](https://github.com/microscaler/BRRTRouter/issues/374) — build from [BUILD_BOARD.md](../docs/EPICS/URI_REQUEST_TARGET/BUILD_BOARD.md); **NOW = Story 10.1** [#375](https://github.com/microscaler/BRRTRouter/issues/375)
+- [Epic 10 — URI request-target](https://github.com/microscaler/BRRTRouter/issues/373) / [Epic 11 — HTTP QUERY](https://github.com/microscaler/BRRTRouter/issues/374) — [BUILD_BOARD.md](../docs/EPICS/URI_REQUEST_TARGET/BUILD_BOARD.md); Wave 0 done; **NOW = Wave 1** (10.2 [#376](https://github.com/microscaler/BRRTRouter/issues/376) ‖ 10.3 [#377](https://github.com/microscaler/BRRTRouter/issues/377) ‖ 10.11 [#385](https://github.com/microscaler/BRRTRouter/issues/385))
 
 ## PRDs (active)
 

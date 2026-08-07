@@ -63,17 +63,23 @@ Harness must run under `cargo test` and fail the build if any golden fails.
 
 ### Acceptance criteria (tests)
 
-- [ ] Every P* and N* row implemented as a named unit/golden test.
-- [ ] Harness reports Requirement ID ↔ Test ID for matrix.
-- [ ] CI runs harness on every PR touching URI/proxy/request code.
+- [x] Every P* and N* row implemented as a named unit/golden test.
+- [x] Harness reports Requirement ID ↔ Test ID for matrix.
+- [x] CI runs harness on every PR touching URI/proxy/request code (`cargo test --test uri_golden_harness`).
 
 ## Acceptance criteria
 
-- [ ] Matrix lists every Epic 10 gap from the audit with a unique Requirement ID.
-- [ ] Golden corpus checked in; CI runs the harness on `cargo test`.
-- [ ] Document states Done = all matrix rows Pass (no “manual only” for core parse/rebuild).
-- [ ] Explicit non-goals: RFC 10008 QUERY (Epic 11), HTML form submission quirks beyond form-urlencoded decode.
-- [ ] Unit tests section complete (positive + negative).
+- [x] Matrix lists every Epic 10 gap from the audit with a unique Requirement ID.
+- [x] Golden corpus checked in; CI runs the harness on `cargo test`.
+- [x] Document states Done = all matrix rows Pass (no “manual only” for core parse/rebuild).
+- [x] Explicit non-goals: RFC 10008 QUERY (Epic 11), HTML form submission quirks beyond form-urlencoded decode.
+- [x] Unit tests section complete (positive + negative).
+
+## Shipped (2026-08-07)
+
+- [`compliance-matrix.md`](../compliance-matrix.md)
+- [`tests/uri_golden/corpus.json`](../../../../tests/uri_golden/corpus.json)
+- [`tests/uri_golden_harness.rs`](../../../../tests/uri_golden_harness.rs) — 21 tests (P1–P10, N1–N8)
 
 ## References
 
