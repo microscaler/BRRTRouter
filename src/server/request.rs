@@ -100,9 +100,31 @@ pub fn parse_cookies(headers: &HeaderVec) -> HeaderVec {
     }
 }
 
-/// Parse query string parameters from a URL path
+/// Parse query string parameters from a URL path.
 ///
-/// Extracts everything after the `?` character and URL-decodes parameter names and values.
+/// Extracts everything after the first `?` and decodes with
+/// [`url::form_urlencoded::parse`] (WHATWG `application/x-www-form-urlencoded`):
+/// - `+` and `%20` both become a space
+/// - Duplicate keys are preserved as multiple `ParamVec` entries (order kept)
+/// - Empty values (`k=`) and valueless keys (`k`) yield an empty string value
+///
+/// # Illegal / truncated percent-encoding policy (Story 10.2)
+///
+/// We **do not reject** the request for truncated or illegal `%` sequences.
+/// Behaviour is inherited from `form_urlencoded` and locked by unit tests:
+/// - Truncated (`%`, `%2`) and non-hex (`%GG`) sequences are left as literal text
+/// - Invalid UTF-8 after percent-decode is lossy (replacement character `U+FFFD`)
+/// - Parsing **never panics** on hostile input
+///
+/// Fail-closed rejection of illegal encodings (HTTP 400) is intentionally out of
+/// scope here; tighten only with a coordinated Epic 10 matrix change.
+///
+/// # Fragments (`#`)
+///
+/// HTTP request-targets should not include a fragment (RFC 9110). If a `#` still
+/// appears after `?`, it is treated as ordinary query octets by this parser
+/// (not stripped). Stripping belongs at the may_minihttp / front boundary
+/// (Story 10.11). A path with `#` and **no** `?` yields an empty param list.
 ///
 /// # Arguments
 ///
@@ -456,11 +478,162 @@ mod tests {
         assert_eq!(find_header_param(&cookies, "c"), Some("d"));
     }
 
+    fn pairs(params: &ParamVec) -> Vec<(String, String)> {
+        params
+            .iter()
+            .map(|(k, v)| (k.as_ref().to_string(), v.clone()))
+            .collect()
+    }
+
+    // --- Story 10.2 positive ---
+
     #[test]
-    fn test_parse_query_params() {
+    fn parse_query_params_positive_p1_ascii_kv() {
         let q = parse_query_params("/p?x=1&y=2");
-        assert_eq!(find_query_param(&q, "x"), Some("1"));
-        assert_eq!(find_query_param(&q, "y"), Some("2"));
+        assert_eq!(
+            pairs(&q),
+            vec![("x".into(), "1".into()), ("y".into(), "2".into())]
+        );
+    }
+
+    #[test]
+    fn parse_query_params_positive_p2_percent20_space() {
+        let q = parse_query_params("/p?q=South%20Africa");
+        assert_eq!(find_query_param(&q, "q"), Some("South Africa"));
+    }
+
+    #[test]
+    fn parse_query_params_positive_p3_plus_space() {
+        let q = parse_query_params("/p?q=South+Africa");
+        assert_eq!(find_query_param(&q, "q"), Some("South Africa"));
+    }
+
+    #[test]
+    fn parse_query_params_positive_p2_p3_spaces_equivalent() {
+        let qa = parse_query_params("/p?q=South%20Africa");
+        let qb = parse_query_params("/p?q=South+Africa");
+        assert_eq!(find_query_param(&qa, "q"), find_query_param(&qb, "q"));
+        assert_eq!(find_query_param(&qa, "q"), Some("South Africa"));
+    }
+
+    #[test]
+    fn parse_query_params_positive_p4_accented() {
+        let q = parse_query_params("/p?q=C%C3%B4te");
+        assert_eq!(find_query_param(&q, "q"), Some("Côte"));
+    }
+
+    #[test]
+    fn parse_query_params_positive_p5_duplicate_keys_order() {
+        let q = parse_query_params("/p?a=1&a=2");
+        assert_eq!(
+            pairs(&q),
+            vec![("a".into(), "1".into()), ("a".into(), "2".into())]
+        );
+    }
+
+    #[test]
+    fn parse_query_params_positive_p6_empty_value() {
+        let q = parse_query_params("/p?k=");
+        assert_eq!(find_query_param(&q, "k"), Some(""));
+    }
+
+    #[test]
+    fn parse_query_params_positive_valueless_key() {
+        // form_urlencoded: `k` without `=` → empty value
+        let q = parse_query_params("/p?k");
+        assert_eq!(find_query_param(&q, "k"), Some(""));
+    }
+
+    #[test]
+    fn parse_query_params_positive_p7_encoded_plus() {
+        let q = parse_query_params("/p?q=%2B");
+        assert_eq!(find_query_param(&q, "q"), Some("+"));
+    }
+
+    #[test]
+    fn parse_query_params_positive_p8_no_query() {
+        let q = parse_query_params("/p");
+        assert!(q.is_empty());
+    }
+
+    #[test]
+    fn parse_query_params_positive_p9_trailing_question_mark() {
+        // `/p?` → empty query string → no pairs (documented)
+        let q = parse_query_params("/p?");
+        assert!(q.is_empty(), "expected no pairs for trailing ?, got {q:?}");
+    }
+
+    #[test]
+    fn parse_query_params_positive_p10_cjk() {
+        let q = parse_query_params("/p?name=%E6%9D%B1%E4%BA%AC");
+        assert_eq!(find_query_param(&q, "name"), Some("東京"));
+    }
+
+    // --- Story 10.2 negative (no panic; documented leave-as-is / lossy) ---
+
+    #[test]
+    fn parse_query_params_negative_n1_truncated_percent() {
+        let q = parse_query_params("/p?q=%");
+        assert_eq!(find_query_param(&q, "q"), Some("%"));
+    }
+
+    #[test]
+    fn parse_query_params_negative_n2_truncated_hex() {
+        let q = parse_query_params("/p?q=%2");
+        assert_eq!(find_query_param(&q, "q"), Some("%2"));
+    }
+
+    #[test]
+    fn parse_query_params_negative_n3_illegal_hex() {
+        let q = parse_query_params("/p?q=%GG");
+        assert_eq!(find_query_param(&q, "q"), Some("%GG"));
+    }
+
+    #[test]
+    fn parse_query_params_negative_n4_invalid_utf8_byte() {
+        // Lone %FF is not valid UTF-8 → lossy replacement (U+FFFD)
+        let q = parse_query_params("/p?q=%FF");
+        let v = find_query_param(&q, "q").expect("q present");
+        assert_eq!(v, "\u{FFFD}");
+    }
+
+    #[test]
+    fn parse_query_params_negative_n5_embedded_nul() {
+        let q = parse_query_params("/p?q=a%00b");
+        assert_eq!(find_query_param(&q, "q"), Some("a\0b"));
+        let q2 = parse_query_params("/p?q=a\0b");
+        assert_eq!(find_query_param(&q2, "q"), Some("a\0b"));
+    }
+
+    #[test]
+    fn parse_query_params_negative_n6_long_query_under_414() {
+        let long = "x".repeat(4000);
+        let path = format!("/p?q={long}");
+        let q = parse_query_params(&path);
+        assert_eq!(find_query_param(&q, "q"), Some(long.as_str()));
+    }
+
+    #[test]
+    fn parse_query_params_negative_n7_empty_key_forms() {
+        assert_eq!(
+            pairs(&parse_query_params("/p?=")),
+            vec![("".into(), "".into())]
+        );
+        assert_eq!(
+            pairs(&parse_query_params("/p?=v")),
+            vec![("".into(), "v".into())]
+        );
+    }
+
+    #[test]
+    fn parse_query_params_negative_n8_hash_fragment_forms() {
+        // No `?` → fragment never reaches query parser
+        assert!(parse_query_params("/p#frag").is_empty());
+        // `#` after `?` is not stripped here (front boundary owns that — 10.11)
+        let q = parse_query_params("/p?q=a#frag");
+        assert_eq!(find_query_param(&q, "q"), Some("a#frag"));
+        let q2 = parse_query_params("/p?#frag");
+        assert_eq!(pairs(&q2), vec![("#frag".into(), "".into())]);
     }
 
     #[test]

@@ -1,5 +1,11 @@
 # LLM Wiki Log
 
+## [2026-08-07] ship | Story 10.2 inbound query parse edge cases
+
+- Documented illegal-% / fragment policy on `parse_query_params` (leave-as-is / lossy UTF-8; `#` not stripped).
+- Unit tests: 20 `parse_query_params_positive_*` / `_negative_*` in `src/server/request.rs`.
+- Matrix `REQ-INBOUND-INVALID-PCT` → **Pass**; BUILD_BOARD **NOW** = 10.3 (#377).
+
 ## [2026-08-07] ship | Story 10.1 URI golden corpus + compliance matrix
 
 - Added `docs/EPICS/URI_REQUEST_TARGET/compliance-matrix.md` (REQ-* IDs → Status → Test ID).

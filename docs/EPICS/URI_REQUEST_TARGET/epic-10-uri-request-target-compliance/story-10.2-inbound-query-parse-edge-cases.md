@@ -57,18 +57,26 @@ Module: `src/server/request.rs` (`parse_query_params` and callers).
 
 ### Acceptance criteria (tests)
 
-- [ ] All P*/N* as named unit tests (`parse_query_params_positive_*` / `_negative_*`).
-- [ ] Illegal-% policy documented in module docs and locked by N1–N3.
-- [ ] Duplicate-key order locked by P5.
+- [x] All P*/N* as named unit tests (`parse_query_params_positive_*` / `_negative_*`).
+- [x] Illegal-% policy documented in module docs and locked by N1–N3.
+- [x] Duplicate-key order locked by P5.
 
 ## Acceptance criteria
 
-- [ ] Goldens for `+` / `%20` spaces both decode to the same string value.
-- [ ] Truncated/`%GG` escapes: behaviour documented + tested (no panic).
-- [ ] `a=1&a=2` → two entries; order preserved.
-- [ ] Empty value `k=` and valueless `k` (if accepted by form_urlencoded) covered.
-- [ ] Matrix rows for inbound query marked Pass.
-- [ ] Unit tests section complete (positive + negative).
+- [x] Goldens for `+` / `%20` spaces both decode to the same string value.
+- [x] Truncated/`%GG` escapes: behaviour documented + tested (no panic).
+- [x] `a=1&a=2` → two entries; order preserved.
+- [x] Empty value `k=` and valueless `k` (if accepted by form_urlencoded) covered.
+- [x] Matrix rows for inbound query marked Pass.
+- [x] Unit tests section complete (positive + negative).
+
+## Shipped (2026-08-07)
+
+**Illegal-% policy:** leave-as-is for truncated/illegal hex; lossy `U+FFFD` for invalid
+UTF-8 after decode; never panic; no HTTP 400 from this layer.
+
+**Tests:** `src/server/request.rs` — `parse_query_params_positive_*` /
+`parse_query_params_negative_*` (20 cases incl. valueless key + space equivalence).
 
 ## References
 

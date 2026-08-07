@@ -11,8 +11,8 @@ Track implementation here. Update **Status** as work lands (`todo` → `doing` �
 | Priority | ID | Status | Issue | Notes |
 |----------|-----|--------|-------|-------|
 | DONE | 10.1 | done | [#375](https://github.com/microscaler/BRRTRouter/issues/375) | Matrix + `tests/uri_golden` harness shipped |
-| **NOW** | 10.2 | todo | [#376](https://github.com/microscaler/BRRTRouter/issues/376) | Inbound query (parallel with 10.3, 10.11) |
-| NEXT | 10.3 | todo | [#377](https://github.com/microscaler/BRRTRouter/issues/377) | Inbound path decode |
+| DONE | 10.2 | done | [#376](https://github.com/microscaler/BRRTRouter/issues/376) | Inbound query edge cases + policy docs |
+| **NOW** | 10.3 | todo | [#377](https://github.com/microscaler/BRRTRouter/issues/377) | Inbound path decode |
 | NEXT | 10.11 | todo | [#385](https://github.com/microscaler/BRRTRouter/issues/385) | may_minihttp boundary contract |
 
 ## Wave plan (Epic 10)
@@ -55,7 +55,7 @@ Wave 5 ──► 10.9 OpenAPI style → 10.10 fuzz → 10.8 unify http stack
 |----|--------|------|--------|--------|
 | Epic 10 | Request-target parse & rebuild | — | todo | [#373](https://github.com/microscaler/BRRTRouter/issues/373) |
 | 10.1 | Spec matrix & golden corpus | 0 | done | [#375](https://github.com/microscaler/BRRTRouter/issues/375) |
-| 10.2 | Inbound query parse edge cases | 1 | todo | [#376](https://github.com/microscaler/BRRTRouter/issues/376) |
+| 10.2 | Inbound query parse edge cases | 1 | done | [#376](https://github.com/microscaler/BRRTRouter/issues/376) |
 | 10.3 | Inbound path segment decode | 1 | todo | [#377](https://github.com/microscaler/BRRTRouter/issues/377) |
 | 10.4 | Component-specific encoders | 2 | todo | [#378](https://github.com/microscaler/BRRTRouter/issues/378) |
 | 10.5 | Proxy path/query passthrough | 3 | todo | [#379](https://github.com/microscaler/BRRTRouter/issues/379) |

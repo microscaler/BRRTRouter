@@ -67,8 +67,7 @@ Wave 5: 10.9 → 10.10 → 10.8
 Epic 11: 11.1 → 11.2 → 11.3 → 11.4  (after 10.1; 11.3 after 10.7)
 ```
 
-**Wave 0 done.** Next: Wave 1 — Stories 10.2 / 10.3 / 10.11
-([#376](https://github.com/microscaler/BRRTRouter/issues/376),
-[#377](https://github.com/microscaler/BRRTRouter/issues/377),
-[#385](https://github.com/microscaler/BRRTRouter/issues/385)).
+**Wave 0–1 (10.1, 10.2) done.** Next: **10.3** path decode
+([#377](https://github.com/microscaler/BRRTRouter/issues/377)) ‖ **10.11** boundary
+([#385](https://github.com/microscaler/BRRTRouter/issues/385)).
 Full index: [`BUILD_BOARD.md`](../../docs/EPICS/URI_REQUEST_TARGET/BUILD_BOARD.md).
