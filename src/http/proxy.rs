@@ -52,6 +52,10 @@ impl std::fmt::Display for ProxyError {
 impl std::error::Error for ProxyError {}
 
 /// Resolve `{param}` placeholders and append query string.
+///
+/// Query values are percent-encoded. Incoming `HandlerRequest` query params are
+/// already decoded by the HTTP stack; rebuilding the downstream URI without
+/// encoding breaks on spaces (e.g. `country=South Africa` → InvalidUri).
 #[must_use]
 pub fn resolve_path_template(
     path_template: &str,
@@ -61,7 +65,9 @@ pub fn resolve_path_template(
     let mut resolved_path = path_template.to_string();
     for (k, v) in path_params {
         let needle = format!("{{{k}}}");
-        resolved_path = resolved_path.replace(&needle, v.as_ref());
+        // Path segments: encode so spaces/unicode stay URI-safe; keep `/` out
+        // of values (OpenAPI path params are single segments).
+        resolved_path = resolved_path.replace(&needle, urlencoding::encode(v.as_ref()).as_ref());
     }
 
     if !query_params.is_empty() {
@@ -72,9 +78,9 @@ pub fn resolve_path_template(
             } else {
                 qs.push('?');
             }
-            qs.push_str(k.as_ref());
+            qs.push_str(urlencoding::encode(k.as_ref()).as_ref());
             qs.push('=');
-            qs.push_str(v.as_ref());
+            qs.push_str(urlencoding::encode(v.as_ref()).as_ref());
         }
         resolved_path.push_str(&qs);
     }
@@ -320,6 +326,19 @@ mod tests {
         let path =
             resolve_path_template("/api/v1/fleet/vehicles/{id}", &path_params, &query_params);
         assert_eq!(path, "/api/v1/fleet/vehicles/abc?limit=10");
+    }
+
+    #[test]
+    fn resolve_path_template_percent_encodes_query_values() {
+        // HandlerRequest query params are decoded; rebuild a parseable URI.
+        let path_params = ParamVec::new();
+        let mut query_params = ParamVec::new();
+        query_params.push((Arc::from("country"), "South Africa".to_string()));
+
+        let path =
+            resolve_path_template("/api/v1/locations/provinces", &path_params, &query_params);
+        assert_eq!(path, "/api/v1/locations/provinces?country=South%20Africa");
+        assert!(path.parse::<Uri>().is_ok());
     }
 
     #[test]
