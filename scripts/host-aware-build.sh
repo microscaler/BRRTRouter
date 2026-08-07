@@ -24,10 +24,8 @@ shift || true
 os_name=$(uname -s || echo unknown)
 arch=$(uname -m || echo unknown)
 
+# Always use zigbuild so binaries are portable between host and container.
 use_zigbuild=true
-if [[ ${os_name} == Linux && ${arch} == x86_64 ]]; then
-  use_zigbuild=false
-fi
 
 if [[ ${target} == "brr" ]]; then
   if [[ ${use_zigbuild} == true ]]; then
