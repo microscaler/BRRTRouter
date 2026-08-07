@@ -1,5 +1,11 @@
 # LLM Wiki Log
 
+## [2026-08-07] ship | Stories 10.5 + 10.6 (Wave 3)
+
+- `resolve_downstream_target`: query passthrough when raw octets match parsed params and are wire-safe; else rebuild via 10.4 encoders.
+- `HandlerRequest.raw_query` + `ParsedRequest.request_target`; inbound/outbound max via `BRRTROUTER_MAX_REQUEST_TARGET_OCTETS` (default 8192) → **414**.
+- Matrix `REQ-PASSTHROUGH` + `REQ-414` → **Pass**; **NOW** = Wave 4 / 10.7 (#381).
+
 ## [2026-08-07] ship | Story 10.4 component-specific encoders
 
 - Added `http::uri_encode` (`encode_path_segment` / `encode_query_component`); space→`%20`, `+`→`%2B`.

@@ -1101,25 +1101,39 @@ impl HttpService for AppService {
         let ParsedRequest {
             method,
             path,
+            request_target,
             headers,
             cookies,
             query_params,
             body,
         } = match parse_request(req) {
             Ok(parsed) => parsed,
-            Err(invalid_method) => {
-                // Reject invalid HTTP methods with 400 Bad Request
-                write_json_error(
-                    res,
-                    400,
-                    serde_json::json!({
-                        "error": "Bad Request",
-                        "message": format!("Invalid HTTP method: {}", invalid_method)
-                    }),
-                );
+            Err(err) => {
+                let status = super::request_target::parse_request_error_status(&err);
+                if status == 414 {
+                    write_json_error(
+                        res,
+                        414,
+                        serde_json::json!({
+                            "error": "URI Too Long",
+                            "message": "Request-target exceeds configured maximum length"
+                        }),
+                    );
+                } else {
+                    // Reject invalid HTTP methods with 400 Bad Request
+                    write_json_error(
+                        res,
+                        400,
+                        serde_json::json!({
+                            "error": "Bad Request",
+                            "message": format!("Invalid HTTP method: {}", err)
+                        }),
+                    );
+                }
                 return Ok(());
             }
         };
+        let raw_query = super::request_target::raw_query(&request_target).map(str::to_string);
 
         let tenant_id = headers
             .iter()
@@ -1800,6 +1814,7 @@ impl HttpService for AppService {
                     cookies,
                     req_id,
                     jwt_claims,
+                    raw_query.clone(),
                 )
             };
             match handler_response {

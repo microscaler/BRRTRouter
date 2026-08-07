@@ -22,8 +22,8 @@ beyond WHATWG `application/x-www-form-urlencoded` decode.
 | REQ-INBOUND-FORM | Inbound query via form-urlencoded (`+` / `%20`) | WHATWG form-urlencoded | `parse_query_params` | **Pass** | P2, P3, P1, P6, P7, P10 |
 | REQ-INBOUND-INVALID-PCT | Truncated / illegal `%` inbound | RFC 3986 | `parse_query_params` | **Pass** | Story 10.2: leave-as-is / lossy UTF-8; `parse_query_params_negative_n1`–`n4`; golden N1/N2 |
 | REQ-INBOUND-PATH-DECODE | Path param pct-decode (`+` ≠ space) | RFC 3986 §3.3 | `decode_path_segment` + radix | **Pass** | Story 10.3; `decode_path_segment_*` / `path_decode_*` |
-| REQ-PASSTHROUGH | Preserve original query octets when safe | Gateway practice | proxy | **Gap** | Story 10.5 |
-| REQ-414 | Request-target length → 414 | RFC 9110 | parse + proxy | **Gap** | N7 (deferred); Story 10.6 |
+| REQ-PASSTHROUGH | Preserve original query octets when safe | Gateway practice | `resolve_downstream_target` | **Pass** | Story 10.5; `resolve_downstream_positive_p1_*` / `_negative_n3_*` |
+| REQ-414 | Request-target length → 414 | RFC 9110 | parse + proxy | **Pass** | Story 10.6; `request_target_length_*` / `proxy_untyped_maps_*_414` |
 | REQ-OPENAPI-STYLE | style/explode fidelity on rebuild | OpenAPI 3 | proxy / decode_param | **Gap** | Story 10.9 (P6 duplicates Pass as flat ParamVec) |
 | REQ-ERROR-TAXONOMY | Uri-build ≠ upstream 502 | Ops | `proxy_untyped` | **Gap** | Story 10.7 |
 | REQ-HTTP-STACK | Unify http 0.2 / 1.0 URI handling | Internal | proxy / server | **Gap** | Story 10.8 |

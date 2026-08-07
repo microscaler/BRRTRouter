@@ -16,6 +16,8 @@ use serde_json::Value;
 
 use crate::dispatcher::{HandlerRequest, HandlerResponse, HeaderVec};
 use crate::router::ParamVec;
+use crate::server::request::parse_query_params;
+use crate::server::request_target::{max_request_target_octets, request_target_exceeds_limit};
 
 const DEFAULT_DOWNSTREAM_PORT: u16 = 8080;
 const DEFAULT_PROXY_TIMEOUT: Duration = Duration::from_secs(30);
@@ -26,6 +28,11 @@ const MAX_PROXY_BODY_BYTES: usize = 16 * 1024 * 1024;
 pub enum ProxyError {
     InvalidMethod(String),
     InvalidPath(String),
+    /// Outbound or inbound request-target exceeds configured max (Story 10.6 → 414).
+    RequestTargetTooLong {
+        len: usize,
+        max: usize,
+    },
     Dns(String),
     Connect(String),
     Request(String),
@@ -39,6 +46,9 @@ impl std::fmt::Display for ProxyError {
         match self {
             Self::InvalidMethod(msg) => write!(f, "invalid method: {msg}"),
             Self::InvalidPath(msg) => write!(f, "invalid path: {msg}"),
+            Self::RequestTargetTooLong { len, max } => {
+                write!(f, "request-target too long: {len} > {max}")
+            }
             Self::Dns(msg) => write!(f, "dns: {msg}"),
             Self::Connect(msg) => write!(f, "connect: {msg}"),
             Self::Request(msg) => write!(f, "request: {msg}"),
@@ -51,18 +61,10 @@ impl std::fmt::Display for ProxyError {
 
 impl std::error::Error for ProxyError {}
 
-/// Resolve `{param}` placeholders and append query string.
-///
-/// Incoming `HandlerRequest` params are already decoded. Rebuild uses
-/// [`crate::http::uri_encode`] so spaces become `%20` (never `+`) and reserved
-/// characters cannot corrupt the request-target (provinces 502 regression).
+/// Substitute `{param}` placeholders in a path template (no query).
 #[must_use]
-pub fn resolve_path_template(
-    path_template: &str,
-    path_params: &ParamVec,
-    query_params: &ParamVec,
-) -> String {
-    use crate::http::uri_encode::{encode_path_segment, encode_query_component};
+pub fn resolve_path_only(path_template: &str, path_params: &ParamVec) -> String {
+    use crate::http::uri_encode::encode_path_segment;
 
     let mut resolved_path = path_template.to_string();
     for (k, v) in path_params {
@@ -71,22 +73,121 @@ pub fn resolve_path_template(
         // becomes `%2F` (OpenAPI path params are single segments).
         resolved_path = resolved_path.replace(&needle, encode_path_segment(v.as_ref()).as_ref());
     }
-
-    if !query_params.is_empty() {
-        let mut qs = String::new();
-        for (i, (k, v)) in query_params.iter().enumerate() {
-            if i > 0 {
-                qs.push('&');
-            } else {
-                qs.push('?');
-            }
-            qs.push_str(encode_query_component(k.as_ref()).as_ref());
-            qs.push('=');
-            qs.push_str(encode_query_component(v.as_ref()).as_ref());
-        }
-        resolved_path.push_str(&qs);
-    }
     resolved_path
+}
+
+/// Encode query params as `?k=v&…` (empty → `""`, no bare `?`).
+#[must_use]
+pub fn encode_query_string(query_params: &ParamVec) -> String {
+    use crate::http::uri_encode::encode_query_component;
+
+    if query_params.is_empty() {
+        return String::new();
+    }
+    let mut qs = String::from("?");
+    for (i, (k, v)) in query_params.iter().enumerate() {
+        if i > 0 {
+            qs.push('&');
+        }
+        qs.push_str(encode_query_component(k.as_ref()).as_ref());
+        qs.push('=');
+        qs.push_str(encode_query_component(v.as_ref()).as_ref());
+    }
+    qs
+}
+
+/// `true` when `raw` query octets are URI-safe for passthrough (no space/CTL/`#`).
+#[must_use]
+pub fn raw_query_is_wire_safe(raw: &str) -> bool {
+    !raw.bytes().any(|b| b <= 0x20 || b == b'#' || b == 0x7f)
+}
+
+/// `true` when parsed `raw` matches `query_params` (order + values) — middleware unmutated.
+#[must_use]
+pub fn query_params_match_raw(raw: &str, query_params: &ParamVec) -> bool {
+    let parsed = parse_query_params(&format!("/?{raw}"));
+    if parsed.len() != query_params.len() {
+        return false;
+    }
+    parsed
+        .iter()
+        .zip(query_params.iter())
+        .all(|((k1, v1), (k2, v2))| k1.as_ref() == k2.as_ref() && v1 == v2)
+}
+
+/// Resolve downstream request-target with optional query passthrough (Story 10.5)
+/// and length enforcement (Story 10.6).
+///
+/// Passthrough applies when `raw_query` is present, wire-safe, and still matches
+/// `query_params` (no middleware mutation). Path templates with `{param}` still
+/// substitute via 10.4 encoders; query octets are preserved when eligible.
+pub fn resolve_downstream_target(
+    path_template: &str,
+    path_params: &ParamVec,
+    query_params: &ParamVec,
+    raw_query: Option<&str>,
+) -> Result<String, ProxyError> {
+    let path = resolve_path_only(path_template, path_params);
+    if path.contains('{') {
+        return Err(ProxyError::InvalidPath(format!(
+            "unresolved path template placeholder in {path_template}"
+        )));
+    }
+    // N8: path must not introduce a second `?` (smuggling); encoders percent-encode `?`.
+    if path.contains('?') {
+        return Err(ProxyError::InvalidPath(
+            "resolved path must not contain '?'".to_string(),
+        ));
+    }
+
+    let query_suffix = match raw_query {
+        Some(raw) if query_params_match_raw(raw, query_params) => {
+            if raw.is_empty() || parse_query_params(&format!("/?{raw}")).is_empty() {
+                // No pairs (incl. trailing `?` alone) → no spurious `?` on wire.
+                String::new()
+            } else if !raw_query_is_wire_safe(raw) {
+                return Err(ProxyError::InvalidPath(
+                    "raw query contains unsafe octets for passthrough".to_string(),
+                ));
+            } else {
+                format!("?{raw}")
+            }
+        }
+        _ => encode_query_string(query_params),
+    };
+
+    let target = format!("{path}{query_suffix}");
+    let max = max_request_target_octets();
+    if request_target_exceeds_limit(&target, max) {
+        tracing::debug!(
+            target_len = target.len(),
+            max_len = max,
+            "Outbound request-target exceeds configured max; rejecting with 414"
+        );
+        return Err(ProxyError::RequestTargetTooLong {
+            len: target.len(),
+            max,
+        });
+    }
+    Ok(target)
+}
+
+/// Resolve `{param}` placeholders and append query string (always rebuild).
+///
+/// Incoming `HandlerRequest` params are already decoded. Rebuild uses
+/// [`crate::http::uri_encode`] so spaces become `%20` (never `+`) and reserved
+/// characters cannot corrupt the request-target (provinces 502 regression).
+/// Prefer [`resolve_downstream_target`] when `raw_query` is available.
+#[must_use]
+pub fn resolve_path_template(
+    path_template: &str,
+    path_params: &ParamVec,
+    query_params: &ParamVec,
+) -> String {
+    let path = resolve_path_only(path_template, path_params);
+    let mut resolved = path;
+    resolved.push_str(&encode_query_string(query_params));
+    resolved
 }
 
 /// Kubernetes DNS host for a downstream Service in the pod namespace.
@@ -190,6 +291,7 @@ pub fn proxy_untyped(
 ) -> HandlerResponse {
     match proxy_untyped_inner(req, downstream_service, path_template) {
         Ok(res) => res,
+        Err(ProxyError::RequestTargetTooLong { .. }) => HandlerResponse::error(414, "URI Too Long"),
         Err(e) => HandlerResponse::error(502, &e.to_string()),
     }
 }
@@ -199,7 +301,12 @@ fn proxy_untyped_inner(
     downstream_service: &str,
     path_template: &str,
 ) -> Result<HandlerResponse, ProxyError> {
-    let resolved_path = resolve_path_template(path_template, &req.path_params, &req.query_params);
+    let resolved_path = resolve_downstream_target(
+        path_template,
+        &req.path_params,
+        &req.query_params,
+        req.raw_query.as_deref(),
+    )?;
     let host = downstream_host(downstream_service);
     let port = downstream_http_port();
 
@@ -309,6 +416,7 @@ mod tests {
             handler_name: "proxy_test".to_string(),
             path_params: ParamVec::new(),
             query_params: ParamVec::new(),
+            raw_query: None,
             headers: HeaderVec::new(),
             cookies: HeaderVec::new(),
             body: None,
@@ -662,5 +770,216 @@ mod tests {
         assert_eq!(res.status, 502);
         std::env::remove_var("POD_NAMESPACE");
         std::env::remove_var("HAULIAGE_SERVICE_HTTP_PORT");
+    }
+
+    // --- Story 10.5 query passthrough ---
+
+    #[test]
+    fn resolve_downstream_positive_p1_passthrough_plus_and_pct2b() {
+        let q = param_vec(&[("q", "a+b c")]);
+        let raw = "q=a%2Bb+c";
+        assert!(query_params_match_raw(raw, &q));
+        let t = resolve_downstream_target("/p", &ParamVec::new(), &q, Some(raw)).unwrap();
+        assert_eq!(t, "/p?q=a%2Bb+c");
+    }
+
+    #[test]
+    fn resolve_downstream_positive_p2_passthrough_preserves_pct20() {
+        let q = param_vec(&[("q", "South Africa")]);
+        let raw = "q=South%20Africa";
+        let t = resolve_downstream_target("/p", &ParamVec::new(), &q, Some(raw)).unwrap();
+        assert_eq!(t, "/p?q=South%20Africa");
+        assert!(!t.contains('+'));
+    }
+
+    #[test]
+    fn resolve_downstream_positive_p3_path_param_rebuild_path() {
+        let path = param_vec(&[("id", "a b")]);
+        let t = resolve_downstream_target("/items/{id}", &path, &ParamVec::new(), None).unwrap();
+        assert_eq!(t, "/items/a%20b");
+        assert_parseable_uri(&t);
+    }
+
+    #[test]
+    fn resolve_downstream_positive_p4_path_sub_query_passthrough() {
+        let path = param_vec(&[("id", "x")]);
+        let q = param_vec(&[("q", "a+b c")]);
+        let raw = "q=a%2Bb+c";
+        let t = resolve_downstream_target("/items/{id}", &path, &q, Some(raw)).unwrap();
+        assert_eq!(t, "/items/x?q=a%2Bb+c");
+    }
+
+    #[test]
+    fn resolve_downstream_positive_p5_multi_param_passthrough() {
+        let q = param_vec(&[("a", "1"), ("b", "2")]);
+        let raw = "a=1&b=2";
+        let t = resolve_downstream_target("/p", &ParamVec::new(), &q, Some(raw)).unwrap();
+        assert_eq!(t, "/p?a=1&b=2");
+    }
+
+    #[test]
+    fn resolve_downstream_positive_p6_empty_query_no_spurious_qmark() {
+        let t =
+            resolve_downstream_target("/p", &ParamVec::new(), &ParamVec::new(), Some("")).unwrap();
+        assert_eq!(t, "/p");
+        let t2 = resolve_downstream_target("/p", &ParamVec::new(), &ParamVec::new(), None).unwrap();
+        assert_eq!(t2, "/p");
+    }
+
+    #[test]
+    fn resolve_downstream_positive_p7_rebuild_space_to_pct20() {
+        let q = param_vec(&[("k", "South Africa")]);
+        let t = resolve_downstream_target("/p", &ParamVec::new(), &q, None).unwrap();
+        assert_eq!(t, "/p?k=South%20Africa");
+        assert_parseable_uri(&t);
+    }
+
+    #[test]
+    fn resolve_downstream_positive_p8_unmutated_selects_passthrough() {
+        let q = param_vec(&[("q", "x")]);
+        let raw = "q=x";
+        assert!(query_params_match_raw(raw, &q));
+        let t = resolve_downstream_target("/p", &ParamVec::new(), &q, Some(raw)).unwrap();
+        assert_eq!(t, "/p?q=x");
+    }
+
+    #[test]
+    fn resolve_downstream_negative_n1_raw_space_rejected() {
+        let q = param_vec(&[("q", "a b")]);
+        // Crafted match via parse of space-containing raw is unusual; force match by using
+        // decoded equivalent but unsafe wire octets.
+        let err = resolve_downstream_target("/p", &ParamVec::new(), &q, Some("q=a b")).unwrap_err();
+        assert!(matches!(err, ProxyError::InvalidPath(_)));
+    }
+
+    #[test]
+    fn resolve_downstream_negative_n2_ctl_and_hash_rejected() {
+        // Unsafe hash with matching parse: form_urlencoded treats `#` as part of value.
+        let q_hash = param_vec(&[("q", "a#frag")]);
+        let err = resolve_downstream_target("/p", &ParamVec::new(), &q_hash, Some("q=a#frag"))
+            .unwrap_err();
+        assert!(matches!(err, ProxyError::InvalidPath(_)));
+        assert!(!raw_query_is_wire_safe("q=a\tb"));
+    }
+
+    #[test]
+    fn resolve_downstream_negative_n3_mutation_forces_rebuild() {
+        let mutated = param_vec(&[("q", "new")]);
+        let raw = "q=old";
+        assert!(!query_params_match_raw(raw, &mutated));
+        let t = resolve_downstream_target("/p", &ParamVec::new(), &mutated, Some(raw)).unwrap();
+        assert_eq!(t, "/p?q=new");
+        assert!(!t.contains("old"));
+    }
+
+    #[test]
+    fn resolve_downstream_negative_n4_missing_path_param() {
+        let err =
+            resolve_downstream_target("/items/{id}", &ParamVec::new(), &ParamVec::new(), None)
+                .unwrap_err();
+        assert!(matches!(err, ProxyError::InvalidPath(_)));
+    }
+
+    #[test]
+    fn resolve_downstream_negative_n5_no_double_encode_on_passthrough() {
+        let q = param_vec(&[("q", "%20")]); // decoded value is literal %20
+        let raw = "q=%2520"; // wire was double-encoded once already as inbound
+                             // If params match raw parse of %2520 → value "%20"
+        assert!(query_params_match_raw(raw, &q));
+        let t = resolve_downstream_target("/p", &ParamVec::new(), &q, Some(raw)).unwrap();
+        assert_eq!(t, "/p?q=%2520", "passthrough must not re-encode");
+    }
+
+    #[test]
+    fn resolve_downstream_negative_n6_malformed_raw_space() {
+        assert!(!raw_query_is_wire_safe("q=a b"));
+    }
+
+    #[test]
+    fn resolve_downstream_negative_n8_question_in_resolved_path() {
+        // encode_path_segment encodes `?` → should not hit this; force via template without `{`
+        // that already contains `?` (misconfig).
+        let err = resolve_downstream_target("/p?evil", &ParamVec::new(), &ParamVec::new(), None)
+            .unwrap_err();
+        assert!(matches!(err, ProxyError::InvalidPath(_)));
+    }
+
+    // --- Story 10.6 length / 414 ---
+
+    #[test]
+    fn resolve_downstream_length_positive_p1_under_limit() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        crate::server::request_target::reset_max_request_target_cache_for_tests();
+        std::env::set_var("BRRTROUTER_MAX_REQUEST_TARGET_OCTETS", "100");
+        crate::server::request_target::reset_max_request_target_cache_for_tests();
+        let t = resolve_downstream_target("/p", &ParamVec::new(), &ParamVec::new(), None).unwrap();
+        assert_eq!(t, "/p");
+        std::env::remove_var("BRRTROUTER_MAX_REQUEST_TARGET_OCTETS");
+        crate::server::request_target::reset_max_request_target_cache_for_tests();
+    }
+
+    #[test]
+    fn resolve_downstream_length_positive_p2_at_limit_minus_one() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        std::env::set_var("BRRTROUTER_MAX_REQUEST_TARGET_OCTETS", "10");
+        crate::server::request_target::reset_max_request_target_cache_for_tests();
+        // "/p?q=xxxx" = 9 chars
+        let q = param_vec(&[("q", "xxxx")]);
+        let t = resolve_downstream_target("/p", &ParamVec::new(), &q, None).unwrap();
+        assert_eq!(t.len(), 9);
+        std::env::remove_var("BRRTROUTER_MAX_REQUEST_TARGET_OCTETS");
+        crate::server::request_target::reset_max_request_target_cache_for_tests();
+    }
+
+    #[test]
+    fn resolve_downstream_length_positive_p3_exactly_at_limit() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        std::env::set_var("BRRTROUTER_MAX_REQUEST_TARGET_OCTETS", "9");
+        crate::server::request_target::reset_max_request_target_cache_for_tests();
+        let q = param_vec(&[("q", "xxxx")]);
+        let t = resolve_downstream_target("/p", &ParamVec::new(), &q, None).unwrap();
+        assert_eq!(t.len(), 9);
+        std::env::remove_var("BRRTROUTER_MAX_REQUEST_TARGET_OCTETS");
+        crate::server::request_target::reset_max_request_target_cache_for_tests();
+    }
+
+    #[test]
+    fn resolve_downstream_length_positive_p6_default_ge_8192() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        std::env::remove_var("BRRTROUTER_MAX_REQUEST_TARGET_OCTETS");
+        crate::server::request_target::reset_max_request_target_cache_for_tests();
+        assert!(crate::server::request_target::DEFAULT_MAX_REQUEST_TARGET_OCTETS >= 8192);
+        assert_eq!(
+            crate::server::request_target::max_request_target_octets(),
+            8192
+        );
+    }
+
+    #[test]
+    fn resolve_downstream_length_negative_n2_outbound_over_limit() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        std::env::set_var("BRRTROUTER_MAX_REQUEST_TARGET_OCTETS", "8");
+        crate::server::request_target::reset_max_request_target_cache_for_tests();
+        let q = param_vec(&[("q", "xxxx")]); // "/p?q=xxxx" = 9
+        let err = resolve_downstream_target("/p", &ParamVec::new(), &q, None).unwrap_err();
+        assert!(matches!(err, ProxyError::RequestTargetTooLong { .. }));
+        std::env::remove_var("BRRTROUTER_MAX_REQUEST_TARGET_OCTETS");
+        crate::server::request_target::reset_max_request_target_cache_for_tests();
+    }
+
+    #[test]
+    fn proxy_untyped_maps_request_target_too_long_to_414() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        std::env::set_var("BRRTROUTER_MAX_REQUEST_TARGET_OCTETS", "8");
+        crate::server::request_target::reset_max_request_target_cache_for_tests();
+        std::env::set_var("POD_NAMESPACE", "logistics");
+        let mut req = empty_request(Method::GET);
+        req.query_params = param_vec(&[("q", "xxxx")]);
+        // DNS would fail anyway, but length check runs first.
+        let res = proxy_untyped(&req, "no-such-service-xyz.invalid", "/p");
+        assert_eq!(res.status, 414);
+        std::env::remove_var("BRRTROUTER_MAX_REQUEST_TARGET_OCTETS");
+        std::env::remove_var("POD_NAMESPACE");
+        crate::server::request_target::reset_max_request_target_cache_for_tests();
     }
 }

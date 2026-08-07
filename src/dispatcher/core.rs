@@ -80,6 +80,8 @@ pub struct HandlerRequest {
     pub path_params: ParamVec,
     /// Query string parameters (stack-allocated for ≤8 params)
     pub query_params: ParamVec,
+    /// Original query octets (no leading `?`) when available for proxy passthrough (Story 10.5).
+    pub raw_query: Option<String>,
     /// HTTP headers (stack-allocated for ≤16 headers)
     pub headers: HeaderVec,
     /// Cookies parsed from the Cookie header (stack-allocated for ≤16 cookies)
@@ -731,7 +733,7 @@ impl Dispatcher {
     ) -> Option<HandlerResponse> {
         // Backwards-compatible wrapper: generate a request_id and call dispatch_with_request_id
         let request_id = generate_request_id();
-        self.dispatch_with_request_id(route_match, body, headers, cookies, request_id, None)
+        self.dispatch_with_request_id(route_match, body, headers, cookies, request_id, None, None)
     }
 
     /// Dispatch a request with a pre-determined request_id (for correlation)
@@ -743,6 +745,7 @@ impl Dispatcher {
         cookies: HeaderVec,
         request_id: String,
         jwt_claims: Option<Value>,
+        raw_query: Option<String>,
     ) -> Option<HandlerResponse> {
         let (reply_tx, reply_rx) = mpsc::channel();
 
@@ -775,6 +778,7 @@ impl Dispatcher {
             handler_name: route_match.handler_name,
             path_params: route_match.path_params,
             query_params: route_match.query_params,
+            raw_query,
             headers,
             cookies,
             body,

@@ -58,6 +58,7 @@ mod tests {
             handler_name: "echo".to_string(),
             path_params: params,
             query_params: query,
+            raw_query: None,
             headers: HeaderVec::new(),
             cookies: HeaderVec::new(),
             body: Some(body.clone()),

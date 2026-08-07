@@ -35,8 +35,11 @@ pub struct ParsedRequest {
     /// HTTP method (GET, POST, etc.)
     /// JSF P1: Use Method enum instead of String to avoid allocation
     pub method: Method,
-    /// Request path including query string
+    /// Path only (no query), for routing
     pub path: String,
+    /// Full origin-form request-target after boundary normalize (`/path?query`).
+    /// Used for length limits (10.6) and query passthrough octets (10.5).
+    pub request_target: String,
     /// HTTP headers (lowercase keys) - stack-allocated for ≤16 headers
     pub headers: HeaderVec,
     /// Parsed cookies from Cookie header - stack-allocated for ≤16 cookies
@@ -332,8 +335,18 @@ pub fn parse_request(req: Request) -> Result<ParsedRequest, String> {
     let method_str = req.method();
     let method = method_str.parse().map_err(|_| method_str.to_string())?;
     // Story 10.11: normalize absolute-form → origin path+query for app use.
-    let raw_path = super::request_target::request_target_for_app(req.path()).to_string();
-    let path = super::request_target::path_only(&raw_path).to_string();
+    let request_target = super::request_target::request_target_for_app(req.path()).to_string();
+    // Story 10.6: enforce max request-target octets before heavier parsing.
+    let max_len = super::request_target::max_request_target_octets();
+    if super::request_target::request_target_exceeds_limit(&request_target, max_len) {
+        tracing::debug!(
+            target_len = request_target.len(),
+            max_len,
+            "Request-target exceeds configured max; rejecting with 414"
+        );
+        return Err(super::request_target::REQUEST_TARGET_TOO_LONG.to_string());
+    }
+    let path = super::request_target::path_only(&request_target).to_string();
     // JSF P1: Use static strings for HTTP version (avoids format! allocation)
     // Note: may_minihttp version() returns a Debug-able type, but we can't match on it
     // So we format once (acceptable as it's not in the hot path per-request allocation)
@@ -378,7 +391,7 @@ pub fn parse_request(req: Request) -> Result<ParsedRequest, String> {
     );
 
     // R4: Query params parsed
-    let query_params = parse_query_params(&raw_path);
+    let query_params = parse_query_params(&request_target);
     debug!(
         param_count = query_params.len(),
         query_params = ?query_params,
@@ -443,6 +456,7 @@ pub fn parse_request(req: Request) -> Result<ParsedRequest, String> {
     Ok(ParsedRequest {
         method,
         path,
+        request_target,
         headers,
         cookies,
         query_params,

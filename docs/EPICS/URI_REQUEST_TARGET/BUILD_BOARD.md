@@ -15,7 +15,9 @@ Track implementation here. Update **Status** as work lands (`todo` → `doing` �
 | DONE | 10.3 | done | [#377](https://github.com/microscaler/BRRTRouter/issues/377) | Path segment pct-decode (`+` ≠ space) |
 | DONE | 10.11 | done | [#385](https://github.com/microscaler/BRRTRouter/issues/385) | Request-line boundary + absolute-form normalize |
 | DONE | 10.4 | done | [#378](https://github.com/microscaler/BRRTRouter/issues/378) | Named path/query encoders |
-| **NOW** | 10.5 ‖ 10.6 | todo | [#379](https://github.com/microscaler/BRRTRouter/issues/379) / [#380](https://github.com/microscaler/BRRTRouter/issues/380) | Wave 3: passthrough + 414 |
+| DONE | 10.5 | done | [#379](https://github.com/microscaler/BRRTRouter/issues/379) | Query passthrough when safe |
+| DONE | 10.6 | done | [#380](https://github.com/microscaler/BRRTRouter/issues/380) | Max request-target → 414 |
+| **NOW** | 10.7 | todo | [#381](https://github.com/microscaler/BRRTRouter/issues/381) | Wave 4: composition ≠ 502 |
 
 ## Wave plan (Epic 10)
 
@@ -60,8 +62,8 @@ Wave 5 ──► 10.9 OpenAPI style → 10.10 fuzz → 10.8 unify http stack
 | 10.2 | Inbound query parse edge cases | 1 | done | [#376](https://github.com/microscaler/BRRTRouter/issues/376) |
 | 10.3 | Inbound path segment decode | 1 | done | [#377](https://github.com/microscaler/BRRTRouter/issues/377) |
 | 10.4 | Component-specific encoders | 2 | done | [#378](https://github.com/microscaler/BRRTRouter/issues/378) |
-| 10.5 | Proxy path/query passthrough | 3 | todo | [#379](https://github.com/microscaler/BRRTRouter/issues/379) |
-| 10.6 | Request-target length → 414 | 3 | todo | [#380](https://github.com/microscaler/BRRTRouter/issues/380) |
+| 10.5 | Proxy path/query passthrough | 3 | done | [#379](https://github.com/microscaler/BRRTRouter/issues/379) |
+| 10.6 | Request-target length → 414 | 3 | done | [#380](https://github.com/microscaler/BRRTRouter/issues/380) |
 | 10.7 | Error taxonomy | 4 | todo | [#381](https://github.com/microscaler/BRRTRouter/issues/381) |
 | 10.8 | Unify http URI stack | 5 | todo | [#382](https://github.com/microscaler/BRRTRouter/issues/382) |
 | 10.9 | OpenAPI style/explode fidelity | 5 | todo | [#383](https://github.com/microscaler/BRRTRouter/issues/383) |

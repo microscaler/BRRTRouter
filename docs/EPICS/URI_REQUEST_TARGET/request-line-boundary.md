@@ -30,7 +30,7 @@ into `path()` (no decode at the front).
 |----|----------|--------------|--------------------|
 | N1 | Raw space in request-target | **Front** (httparse) | Parse error (`Version`); connection fails before app |
 | N2 | CTL (tab) in target | **Front** (httparse) | Parse error (`Token`) |
-| N3 | Oversize target | **Gap** | httparse accepts ≥8k today; Story **10.6** adds 414 in BRRTRouter |
+| N3 | Oversize target | **App** (10.6) | httparse may accept ≥8k; BRRTRouter rejects with **414** when over `BRRTROUTER_MAX_REQUEST_TARGET_OCTETS` (default 8192) |
 | N4 | NUL in target | **Front** (httparse) | Parse error (`Token`) |
 | N5 | Fragment `#` | **Neither strips** | Passed through; app query parser may treat `#…` as value octets (see 10.2). Prefer peer/edge reject. |
 | N6 | Malformed absolute-form | **Front** / app | httparse may still accept; app normalizes known `http(s)://` absolute-form to origin path+query |

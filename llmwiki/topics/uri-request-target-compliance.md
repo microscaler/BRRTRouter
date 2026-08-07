@@ -9,7 +9,8 @@
   - [`docs/EPICS/URI_REQUEST_TARGET/BUILD_BOARD.md`](../../docs/EPICS/URI_REQUEST_TARGET/BUILD_BOARD.md)
 - **Code anchors:**
   - `src/server/request.rs` — `parse_query_params`, `parse_request`, `decode_param_value`
-  - `src/http/proxy.rs` — `resolve_path_template`, `proxy_untyped`, `ProxyError`
+  - `src/http/proxy.rs` — `resolve_downstream_target`, `resolve_path_template`, `proxy_untyped`
+  - `src/server/request_target.rs` — boundary normalize, max length / 414 helpers
   - `src/router/` — path template / path params
   - may_minihttp (sibling) — request-line → path string
 
@@ -47,10 +48,9 @@ Done — see [`TESTING_STANDARD.md`](../../docs/EPICS/URI_REQUEST_TARGET/TESTING
 
 ## Gaps / drift (open)
 
-- Compliance matrix + goldens **shipped** (Story 10.1 / [#375](https://github.com/microscaler/BRRTRouter/issues/375)):
-  `docs/EPICS/URI_REQUEST_TARGET/compliance-matrix.md`, `tests/uri_golden/`, `tests/uri_golden_harness.rs`.
-- `ProxyError` still maps composition failures to **502** (Story 10.7).
-- Single `urlencoding::encode` site — Story 10.4 wants named path vs query APIs.
+- Compliance matrix + goldens **shipped** (Story 10.1 / [#375](https://github.com/microscaler/BRRTRouter/issues/375)).
+- Waves 0–3 done: encoders, passthrough, 414 (`BRRTROUTER_MAX_REQUEST_TARGET_OCTETS`, default 8192).
+- `ProxyError` still maps most composition failures to **502** (Story 10.7); length → **414**.
 - Dual `http` 1.0 vs `http_legacy` 0.2 URI stacks (Story 10.8).
 - QUERY method not first-class (Epic 11).
 - RFC 10008 is **orthogonal** to percent-encoding; do not conflate in fixes.
@@ -67,8 +67,8 @@ Wave 5: 10.9 → 10.10 → 10.8
 Epic 11: 11.1 → 11.2 → 11.3 → 11.4  (after 10.1; 11.3 after 10.7)
 ```
 
-**Waves 0–2 done.** **NOW:** Wave 3 — **10.5** passthrough
-([#379](https://github.com/microscaler/BRRTRouter/issues/379)) ‖ **10.6** 414
-([#380](https://github.com/microscaler/BRRTRouter/issues/380)).
-Encoders: `http::uri_encode`. Boundary: [`request-line-boundary.md`](../../docs/EPICS/URI_REQUEST_TARGET/request-line-boundary.md).
+**Waves 0–3 done.** **NOW:** Wave 4 — **10.7** error taxonomy
+([#381](https://github.com/microscaler/BRRTRouter/issues/381)).
+Passthrough: `resolve_downstream_target` + `HandlerRequest.raw_query`.
+Length: inbound/outbound → 414. Boundary: [`request-line-boundary.md`](../../docs/EPICS/URI_REQUEST_TARGET/request-line-boundary.md).
 Full index: [`BUILD_BOARD.md`](../../docs/EPICS/URI_REQUEST_TARGET/BUILD_BOARD.md).

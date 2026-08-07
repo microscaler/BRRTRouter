@@ -1271,6 +1271,7 @@ mod cors_middleware_tests {
             handler_name: handler_name.to_string(),
             path_params: ParamVec::new(),
             query_params: ParamVec::new(),
+            raw_query: None,
             headers: hv,
             cookies: HeaderVec::new(),
             body: None,

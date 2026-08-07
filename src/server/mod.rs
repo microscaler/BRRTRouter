@@ -95,7 +95,11 @@ pub mod security_setup;
 pub mod service;
 
 pub use request::{decode_param_value, parse_request, ParsedRequest};
-pub use request_target::{path_only, request_target_for_app};
+pub use request_target::{
+    max_request_target_octets, parse_request_error_status, path_only, raw_query,
+    request_target_exceeds_limit, request_target_for_app, DEFAULT_MAX_REQUEST_TARGET_OCTETS,
+    REQUEST_TARGET_TOO_LONG,
+};
 
 pub use app_config::{
     load_app_config, ApiKeyConfig, AppConfig, BearerConfig, CorsConfig, HttpConfig, JwksConfig,

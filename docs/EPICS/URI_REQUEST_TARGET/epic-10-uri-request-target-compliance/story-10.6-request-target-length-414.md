@@ -49,15 +49,15 @@ of opaque client/proxy failures.
 
 ### Acceptance criteria (tests)
 
-- [ ] N1/N2 mandatory; P6 locks default.
+- [x] N1/N2 mandatory; P6 locks default.
 
 ## Acceptance criteria
 
-- [ ] Configurable max with documented default (≥ 8192).
-- [ ] Inbound over-limit → 414 (not 500/502).
-- [ ] Outbound rebuilt target over-limit → composition error (see 10.7), not dial.
-- [ ] Matrix row for length limits marked Pass.
-- [ ] Unit tests section complete (positive + negative).
+- [x] Configurable max with documented default (≥ 8192).
+- [x] Inbound over-limit → 414 (not 500/502).
+- [x] Outbound rebuilt target over-limit → composition error (see 10.7), not dial.
+- [x] Matrix row for length limits marked Pass.
+- [x] Unit tests section complete (positive + negative).
 
 ## References
 

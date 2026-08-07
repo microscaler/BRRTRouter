@@ -55,17 +55,17 @@ That eliminates an entire class of re-serialization bugs for complex queries.
 
 ### Acceptance criteria (tests)
 
-- [ ] P1 mandatory (`+` / `%2B` preservation).
-- [ ] N3 mandatory (mutation disables passthrough).
+- [x] P1 mandatory (`+` / `%2B` preservation).
+- [x] N3 mandatory (mutation disables passthrough).
 
 ## Acceptance criteria
 
-- [ ] Passthrough path documented (when it applies / when rebuild is required).
-- [ ] Test: inbound `?q=a%2Bb+c` survives unchanged under passthrough.
-- [ ] Template substitution still uses encoders from 10.4.
-- [ ] No double-encoding when mixing path substitute + query passthrough.
-- [ ] Matrix row “preserve original query octets” marked Pass.
-- [ ] Unit tests section complete (positive + negative).
+- [x] Passthrough path documented (when it applies / when rebuild is required).
+- [x] Test: inbound `?q=a%2Bb+c` survives unchanged under passthrough.
+- [x] Template substitution still uses encoders from 10.4.
+- [x] No double-encoding when mixing path substitute + query passthrough.
+- [x] Matrix row “preserve original query octets” marked Pass.
+- [x] Unit tests section complete (positive + negative).
 
 ## References
 

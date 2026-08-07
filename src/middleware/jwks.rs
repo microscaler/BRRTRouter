@@ -152,6 +152,7 @@ mod tests {
             handler_name: "jwks_handler".to_string(),
             path_params: crate::router::ParamVec::new(),
             query_params: crate::router::ParamVec::new(),
+            raw_query: None,
             headers: HeaderVec::new(),
             cookies: HeaderVec::new(),
             body: None,
