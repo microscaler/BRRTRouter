@@ -6,7 +6,7 @@
 - **Consumer postmortem**: hauliage
   `docs/postmortems/postmortem-bff-provinces-space-502-2026-08-07.md`
 - **Initial fix commit**: `854e3d9` — percent-encode path/query params  
-  **Follow-up**: comprehensive positive/negative URI rebuild tests + this doc.
+  **Follow-up**: `fed096e` — comprehensive positive/negative URI rebuild tests + this doc.
 
 ---
 
