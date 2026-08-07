@@ -54,16 +54,22 @@ Module: encoder helpers + `resolve_path_template`.
 
 ### Acceptance criteria (tests)
 
-- [ ] Existing `resolve_path_template_*` tests mapped to P*/N*.
-- [ ] N1–N4 mandatory; P1 mandatory regression.
+- [x] Existing `resolve_path_template_*` tests mapped to P*/N*.
+- [x] N1–N4 mandatory; P1 mandatory regression.
 
 ## Acceptance criteria
 
-- [ ] Path and query encoding go through named APIs (no raw `urlencoding::encode` in proxy).
-- [ ] Space always `%20` on rebuild; `+` in a value encodes as `%2B`.
-- [ ] Docs state form-urlencoded inbound vs URI-component outbound policy.
-- [ ] Matrix rows for outbound encoding marked Pass (pending passthrough 10.5).
-- [ ] Unit tests section complete (positive + negative).
+- [x] Path and query encoding go through named APIs (no raw `urlencoding::encode` in proxy).
+- [x] Space always `%20` on rebuild; `+` in a value encodes as `%2B`.
+- [x] Docs state form-urlencoded inbound vs URI-component outbound policy.
+- [x] Matrix rows for outbound encoding marked Pass (pending passthrough 10.5).
+- [x] Unit tests section complete (positive + negative).
+
+## Shipped (2026-08-07)
+
+- `src/http/uri_encode.rs` — `encode_path_segment` / `encode_query_component`
+- `resolve_path_template` uses named APIs only (`encode_negative_n8_*` guards source)
+- Asymmetry documented in module rustdoc (inbound `+`→space; outbound space→`%20`)
 
 ## References
 

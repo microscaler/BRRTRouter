@@ -67,7 +67,8 @@ Wave 5: 10.9 → 10.10 → 10.8
 Epic 11: 11.1 → 11.2 → 11.3 → 11.4  (after 10.1; 11.3 after 10.7)
 ```
 
-**Wave 1 done** (10.1–10.3, 10.11). **NOW:** Wave 2 **10.4** encoders
-([#378](https://github.com/microscaler/BRRTRouter/issues/378)).
-Boundary: [`request-line-boundary.md`](../../docs/EPICS/URI_REQUEST_TARGET/request-line-boundary.md).
+**Waves 0–2 done.** **NOW:** Wave 3 — **10.5** passthrough
+([#379](https://github.com/microscaler/BRRTRouter/issues/379)) ‖ **10.6** 414
+([#380](https://github.com/microscaler/BRRTRouter/issues/380)).
+Encoders: `http::uri_encode`. Boundary: [`request-line-boundary.md`](../../docs/EPICS/URI_REQUEST_TARGET/request-line-boundary.md).
 Full index: [`BUILD_BOARD.md`](../../docs/EPICS/URI_REQUEST_TARGET/BUILD_BOARD.md).

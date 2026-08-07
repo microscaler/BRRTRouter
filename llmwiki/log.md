@@ -1,5 +1,11 @@
 # LLM Wiki Log
 
+## [2026-08-07] ship | Story 10.4 component-specific encoders
+
+- Added `http::uri_encode` (`encode_path_segment` / `encode_query_component`); space→`%20`, `+`→`%2B`.
+- `resolve_path_template` uses named APIs only; proxy source guard against raw `urlencoding::encode`.
+- Wave 2 done; **NOW** = Wave 3 (10.5 passthrough ‖ 10.6 414).
+
 ## [2026-08-07] ship | Story 10.11 request-line boundary
 
 - Added `request-line-boundary.md` + `server::request_target` (absolute-form → origin).

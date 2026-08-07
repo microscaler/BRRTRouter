@@ -53,21 +53,23 @@ impl std::error::Error for ProxyError {}
 
 /// Resolve `{param}` placeholders and append query string.
 ///
-/// Query values are percent-encoded. Incoming `HandlerRequest` query params are
-/// already decoded by the HTTP stack; rebuilding the downstream URI without
-/// encoding breaks on spaces (e.g. `country=South Africa` → InvalidUri).
+/// Incoming `HandlerRequest` params are already decoded. Rebuild uses
+/// [`crate::http::uri_encode`] so spaces become `%20` (never `+`) and reserved
+/// characters cannot corrupt the request-target (provinces 502 regression).
 #[must_use]
 pub fn resolve_path_template(
     path_template: &str,
     path_params: &ParamVec,
     query_params: &ParamVec,
 ) -> String {
+    use crate::http::uri_encode::{encode_path_segment, encode_query_component};
+
     let mut resolved_path = path_template.to_string();
     for (k, v) in path_params {
         let needle = format!("{{{k}}}");
-        // Path segments: encode so spaces/unicode stay URI-safe; keep `/` out
-        // of values (OpenAPI path params are single segments).
-        resolved_path = resolved_path.replace(&needle, urlencoding::encode(v.as_ref()).as_ref());
+        // Path segments: encode so spaces/unicode stay URI-safe; `/` in a value
+        // becomes `%2F` (OpenAPI path params are single segments).
+        resolved_path = resolved_path.replace(&needle, encode_path_segment(v.as_ref()).as_ref());
     }
 
     if !query_params.is_empty() {
@@ -78,9 +80,9 @@ pub fn resolve_path_template(
             } else {
                 qs.push('?');
             }
-            qs.push_str(urlencoding::encode(k.as_ref()).as_ref());
+            qs.push_str(encode_query_component(k.as_ref()).as_ref());
             qs.push('=');
-            qs.push_str(urlencoding::encode(v.as_ref()).as_ref());
+            qs.push_str(encode_query_component(v.as_ref()).as_ref());
         }
         resolved_path.push_str(&qs);
     }

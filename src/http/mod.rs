@@ -6,6 +6,7 @@
 
 mod fetch;
 mod proxy;
+pub mod uri_encode;
 
 pub use fetch::{
     fetch_delete, fetch_get, fetch_get_full, fetch_get_text_with_retry, fetch_patch, fetch_post,
@@ -15,3 +16,4 @@ pub use proxy::{
     client_pool_key, downstream_host, downstream_http_port, proxy_untyped, resolve_path_template,
     skip_forward_request_header, skip_forward_response_header, ProxyError,
 };
+pub use uri_encode::{encode_path_segment, encode_query_component};

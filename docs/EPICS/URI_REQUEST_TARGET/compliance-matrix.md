@@ -13,10 +13,11 @@ beyond WHATWG `application/x-www-form-urlencoded` decode.
 
 | Requirement ID | Requirement | Spec § | Component | Status | Test ID |
 |----------------|-------------|--------|-----------|--------|---------|
-| REQ-REENCODE | Re-encode after decode when rebuilding URI | RFC 3986 §2.4 | `resolve_path_template` | **Pass** | P2, N3; `resolve_path_template_percent_encodes_query_space` |
-| REQ-RESERVED-QUERY | Encode reserved in query values (`& = ? #`) | RFC 3986 §2 | `resolve_path_template` | **Pass** | N4, N5; `resolve_path_template_encodes_query_delimiter_chars` |
-| REQ-UNICODE | Encode Unicode (accents, CJK, emoji) as UTF-8 pct | RFC 3986 / 3629 | `resolve_path_template` | **Pass** | P4, P5; `resolve_path_template_encodes_accents_and_diacritics` |
-| REQ-PATH-SEGMENT-ENC | Path segment encoding (`/` not delimiter) | RFC 3986 §3.3 | `resolve_path_template` | **Pass** | P9; `resolve_path_template_encodes_slash_in_path_param` |
+| REQ-REENCODE | Re-encode after decode when rebuilding URI | RFC 3986 §2.4 | `uri_encode` + `resolve_path_template` | **Pass** | Story 10.4; `encode_query_positive_p1_*` |
+| REQ-RESERVED-QUERY | Encode reserved in query values (`& = ? #`) | RFC 3986 §2 | `encode_query_component` | **Pass** | Story 10.4 N2–N4 |
+| REQ-UNICODE | Encode Unicode (accents, CJK, emoji) as UTF-8 pct | RFC 3986 / 3629 | `uri_encode` | **Pass** | Story 10.4 P2; proxy accent tests |
+| REQ-PATH-SEGMENT-ENC | Path segment encoding (`/` not delimiter) | RFC 3986 §3.3 | `encode_path_segment` | **Pass** | Story 10.4 P3/N5; slash path-param tests |
+| REQ-COMPONENT-ENCODERS | Named path vs query encode APIs | RFC 3986 §2.3–2.4 | `http::uri_encode` | **Pass** | Story 10.4; no raw `urlencoding::encode` in proxy |
 | REQ-URI-VALIDATE | Rebuilt target parses as URI | RFC 9110 §7 | `http` 0.2 `Uri` | **Partial** | P1–P10, N3–N6 (0.2 not full RFC 3986 validator) |
 | REQ-INBOUND-FORM | Inbound query via form-urlencoded (`+` / `%20`) | WHATWG form-urlencoded | `parse_query_params` | **Pass** | P2, P3, P1, P6, P7, P10 |
 | REQ-INBOUND-INVALID-PCT | Truncated / illegal `%` inbound | RFC 3986 | `parse_query_params` | **Pass** | Story 10.2: leave-as-is / lossy UTF-8; `parse_query_params_negative_n1`–`n4`; golden N1/N2 |
