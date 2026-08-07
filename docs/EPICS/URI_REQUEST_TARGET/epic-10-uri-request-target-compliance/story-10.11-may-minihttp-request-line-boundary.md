@@ -51,16 +51,23 @@ BRRTRouter unit tests can pass while production bytes differ.
 
 ### Acceptance criteria (tests)
 
-- [ ] Boundary doc lists which layer owns N1–N7.
-- [ ] At least one integration/contract test may_minihttp → `parse_query_params`.
+- [x] Boundary doc lists which layer owns N1–N7.
+- [x] At least one integration/contract test may_minihttp → `parse_query_params`.
 
 ## Acceptance criteria
 
-- [ ] Written contract: what characters can appear in `raw_path` (query? fragment?).
-- [ ] At least one integration test spanning may_minihttp → `parse_query_params`.
-- [ ] Gaps that require may_minihttp changes are filed and linked.
-- [ ] Matrix row for request-line boundary marked Pass.
-- [ ] Unit tests section complete (positive + negative).
+- [x] Written contract: what characters can appear in `raw_path` (query? fragment?).
+- [x] At least one integration test spanning may_minihttp → `parse_query_params`.
+- [x] Gaps that require may_minihttp changes are filed and linked.
+- [x] Matrix row for request-line boundary marked Pass.
+- [x] Unit tests section complete (positive + negative).
+
+## Shipped (2026-08-07)
+
+- [`request-line-boundary.md`](../request-line-boundary.md)
+- `src/server/request_target.rs` — absolute-form → origin path+query; wired in `parse_request`
+- `tests/request_line_boundary_tests.rs` — httparse contract (P*/N*)
+- may_minihttp follow-up: [#390](https://github.com/microscaler/BRRTRouter/issues/390) (Issues disabled on may_minihttp fork)
 
 ## References
 

@@ -83,6 +83,8 @@ pub mod header_intern;
 pub mod http_server;
 /// Request parsing and parameter extraction
 pub mod request;
+/// Request-target boundary helpers (may_minihttp / httparse → app)
+pub mod request_target;
 /// Response building and serialization
 pub mod response;
 /// Fix B: shared service bootstrap
@@ -93,6 +95,7 @@ pub mod security_setup;
 pub mod service;
 
 pub use request::{decode_param_value, parse_request, ParsedRequest};
+pub use request_target::{path_only, request_target_for_app};
 
 pub use app_config::{
     load_app_config, ApiKeyConfig, AppConfig, BearerConfig, CorsConfig, HttpConfig, JwksConfig,

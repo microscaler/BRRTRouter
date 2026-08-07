@@ -1,5 +1,12 @@
 # LLM Wiki Log
 
+## [2026-08-07] ship | Story 10.11 request-line boundary
+
+- Added `request-line-boundary.md` + `server::request_target` (absolute-form → origin).
+- `parse_request` uses normalized target; httparse contract tests (14) green.
+- Matrix `REQ-BOUNDARY` → **Pass**; Wave 1 complete; **NOW** = 10.4 (#378).
+- may_minihttp Issues disabled — tracking issue filed under BRRTRouter for optional front hardening.
+
 ## [2026-08-07] ship | Story 10.3 inbound path segment decode
 
 - Added `router::decode_path_segment` (RFC 3986; `+` literal; decode-once; lossy `%FF`).

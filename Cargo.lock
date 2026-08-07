@@ -567,6 +567,7 @@ dependencies = [
  "goose",
  "http 0.2.12",
  "http 1.4.0",
+ "httparse",
  "jsonschema",
  "jsonwebtoken",
  "libc",
@@ -6459,9 +6460,9 @@ name = "lifeguard-migrate"
 version = "0.1.0"
 
 [[patch.unused]]
-name = "may_postgres"
+name = "sesame-idam-client"
 version = "0.1.0"
 
 [[patch.unused]]
-name = "sesame-idam-client"
+name = "may_postgres"
 version = "0.1.0"

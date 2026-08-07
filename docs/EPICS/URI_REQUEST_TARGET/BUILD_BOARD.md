@@ -13,8 +13,8 @@ Track implementation here. Update **Status** as work lands (`todo` → `doing` �
 | DONE | 10.1 | done | [#375](https://github.com/microscaler/BRRTRouter/issues/375) | Matrix + `tests/uri_golden` harness shipped |
 | DONE | 10.2 | done | [#376](https://github.com/microscaler/BRRTRouter/issues/376) | Inbound query edge cases + policy docs |
 | DONE | 10.3 | done | [#377](https://github.com/microscaler/BRRTRouter/issues/377) | Path segment pct-decode (`+` ≠ space) |
-| **NOW** | 10.11 | todo | [#385](https://github.com/microscaler/BRRTRouter/issues/385) | may_minihttp boundary contract |
-| NEXT | 10.4 | todo | [#378](https://github.com/microscaler/BRRTRouter/issues/378) | Component encoders (Wave 2) |
+| DONE | 10.11 | done | [#385](https://github.com/microscaler/BRRTRouter/issues/385) | Request-line boundary + absolute-form normalize |
+| **NOW** | 10.4 | todo | [#378](https://github.com/microscaler/BRRTRouter/issues/378) | Component encoders (Wave 2) |
 
 ## Wave plan (Epic 10)
 
@@ -65,7 +65,7 @@ Wave 5 ──► 10.9 OpenAPI style → 10.10 fuzz → 10.8 unify http stack
 | 10.8 | Unify http URI stack | 5 | todo | [#382](https://github.com/microscaler/BRRTRouter/issues/382) |
 | 10.9 | OpenAPI style/explode fidelity | 5 | todo | [#383](https://github.com/microscaler/BRRTRouter/issues/383) |
 | 10.10 | Property/fuzz compliance suite | 5 | todo | [#384](https://github.com/microscaler/BRRTRouter/issues/384) |
-| 10.11 | may_minihttp request-line boundary | 1 | todo | [#385](https://github.com/microscaler/BRRTRouter/issues/385) |
+| 10.11 | may_minihttp request-line boundary | 1 | done | [#385](https://github.com/microscaler/BRRTRouter/issues/385) |
 | Epic 11 | HTTP QUERY (RFC 10008) | — | todo | [#374](https://github.com/microscaler/BRRTRouter/issues/374) |
 | 11.1 | Method + router + CORS | E11 | todo | [#386](https://github.com/microscaler/BRRTRouter/issues/386) |
 | 11.2 | OpenAPI QUERY operations | E11 | todo | [#387](https://github.com/microscaler/BRRTRouter/issues/387) |

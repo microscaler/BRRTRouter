@@ -27,7 +27,7 @@ beyond WHATWG `application/x-www-form-urlencoded` decode.
 | REQ-ERROR-TAXONOMY | Uri-build ≠ upstream 502 | Ops | `proxy_untyped` | **Gap** | Story 10.7 |
 | REQ-HTTP-STACK | Unify http 0.2 / 1.0 URI handling | Internal | proxy / server | **Gap** | Story 10.8 |
 | REQ-FUZZ | Property/fuzz no-panic + Uri-OK | QA | parse + rebuild | **Gap** | Story 10.10 |
-| REQ-BOUNDARY | may_minihttp request-line contract | RFC 9110 §7.1 | front + `parse_request` | **Gap** | Story 10.11 |
+| REQ-BOUNDARY | may_minihttp request-line contract | RFC 9110 §7.1 | httparse + `request_target_for_app` | **Pass** | Story 10.11; `request-line-boundary.md`; `request_line_boundary_tests` |
 | REQ-EMPTY-PATH | Missing `?` → empty params | — | `parse_query_params` | **Pass** | N8 |
 | REQ-UNRESERVED | Unreserved `-._~` stable on encode | RFC 3986 §2.3 | encoder | **Pass** | P8 |
 | REQ-CONTROLS | CTL in rebuild encoded / raw fails Uri | RFC 3986 | `resolve_path_template` | **Pass** | N6 |

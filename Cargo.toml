@@ -99,6 +99,8 @@ signal-hook = { version = "0.3", features = ["iterator"] }
 
 [dev-dependencies]
 pet_store = { path = "./examples/pet_store" }
+# Contract tests for Story 10.11 (same parser may_minihttp uses server-side).
+httparse = "1.10"
 criterion = "0.8"
 # Using our own OTLP test utilities compatible with opentelemetry 0.31
 flamegraph = "0.6"

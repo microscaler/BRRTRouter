@@ -4,7 +4,8 @@
 **Incident postmortem:** [docs/POSTMORTEM-proxy-query-encoding-invalid-uri-2026-08-07.md](../../POSTMORTEM-proxy-query-encoding-invalid-uri-2026-08-07.md)  
 **Summary:** [EPICS_AND_STORIES_SUMMARY.md](EPICS_AND_STORIES_SUMMARY.md)  
 **Build board:** [BUILD_BOARD.md](BUILD_BOARD.md)  
-**Compliance matrix:** [compliance-matrix.md](compliance-matrix.md)
+**Compliance matrix:** [compliance-matrix.md](compliance-matrix.md)  
+**Request-line boundary:** [request-line-boundary.md](request-line-boundary.md)
 
 Theme for making BRRTRouter’s **inbound request-target parsing** and **outbound URI
 rebuild** fully compliant with RFC 3986 + RFC 9110 (+ WHATWG form-urlencoded

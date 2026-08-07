@@ -305,30 +305,35 @@ fn parse_request_body(raw: &[u8], content_type: &str) -> Option<Value> {
 /// Extracts all components (method, path, headers, cookies, query params, body)
 /// from the raw HTTP request.
 ///
+/// # Request-target boundary (Story 10.11)
+///
+/// `req.path()` is may_minihttp/`httparse`'s request-target token (often
+/// origin-form **including** `?query`). See
+/// `docs/EPICS/URI_REQUEST_TARGET/request-line-boundary.md`. Absolute-form
+/// targets are normalized via [`super::request_target::request_target_for_app`]
+/// before query parse and path routing.
+///
 /// # Arguments
 ///
 /// * `req` - The raw HTTP request from may_minihttp
 ///
 /// # Returns
 ///
-/// A parsed request with all extracted components
+/// Returns `Ok(ParsedRequest)` if the request is valid, or `Err(invalid_method_string)`
+/// if the HTTP method is invalid and cannot be parsed.
 ///
 /// # JSF Compliance
 ///
 /// Uses SmallVec for headers, cookies, and query params to avoid heap
 /// allocation in the common case.
-///
-/// # Returns
-///
-/// Returns `Ok(ParsedRequest)` if the request is valid, or `Err(invalid_method_string)`
-/// if the HTTP method is invalid and cannot be parsed.
 pub fn parse_request(req: Request) -> Result<ParsedRequest, String> {
     // JSF P1: Parse method directly to Method enum (avoids String allocation)
     // Reject invalid HTTP methods instead of defaulting to GET (security fix)
     let method_str = req.method();
     let method = method_str.parse().map_err(|_| method_str.to_string())?;
-    let raw_path = req.path().to_string();
-    let path = raw_path.split('?').next().unwrap_or("/").to_string();
+    // Story 10.11: normalize absolute-form → origin path+query for app use.
+    let raw_path = super::request_target::request_target_for_app(req.path()).to_string();
+    let path = super::request_target::path_only(&raw_path).to_string();
     // JSF P1: Use static strings for HTTP version (avoids format! allocation)
     // Note: may_minihttp version() returns a Debug-able type, but we can't match on it
     // So we format once (acceptable as it's not in the hot path per-request allocation)
