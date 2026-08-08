@@ -1,5 +1,11 @@
 # Progress
 
+## 2026-08-09 — Story 13.2 rate limiting
+
+- `src/middleware/rate_limit.rs` + AppConfig `rate_limit` + run_app wiring.
+- Prometheus `brrtrouter_rate_limit_sheds_total`; docs claim updated.
+- Closed #402. Pushed `b0b1ba2`.
+
 ## 2026-08-09 — Wave 0: JWT boundary + 13.1 + 14.1
 
 - `docs/JWT_AND_IDENTITY_BOUNDARY.md` — consumer/enforcer only; Sesame/external issue.

@@ -54,6 +54,17 @@ http:
   timeout_secs: 5
   max_requests: 5000
 
+# Rate limiting (Epic 13.2) — omitted / enabled: false → no-op (safe default).
+# rate_limit:
+#   enabled: true
+#   requests: 100          # tokens per window (global)
+#   window_secs: 60
+#   max_keys: 10000        # soft cap on distinct client keys
+#   key: subject_then_ip   # subject_then_ip | subject | ip
+#   skip_options: false    # true = CORS preflight does not consume tokens
+#   routes:
+#     list_pets: 20        # optional per-handler tighter limit
+
 cors:
   # Allowed Origins for browser clients — not listed in openapi.yaml; set here per environment.
   # OpenAPI: per-operation `x-cors` (inherit | false | object); see info.description in openapi.yaml.
