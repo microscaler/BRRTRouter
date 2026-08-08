@@ -346,7 +346,7 @@ See [docs/JSF_COMPLIANCE.md](docs/JSF_COMPLIANCE.md).
 - [Microservice layout guide](docs/guides/BUILDING_MICROSERVICES.md)
 - [Development Guide](docs/DEVELOPMENT.md)
 - [Testing](docs/TEST_DOCUMENTATION.md) · [Goose load testing](docs/GOOSE_LOAD_TESTING.md)
-- [Suite brochure site](website/) — marketing landing (draft)
+- [Suite brochure (Photon)](https://github.com/microscaler/photon/tree/main/brochure) — suite marketing site ([pointer](website/))
 
 ### Core
 

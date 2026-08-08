@@ -12,7 +12,8 @@ repository root so newcomers land on `README.md` → `docs/BUILDING_WITH_BRRTROU
 | [solution_brief.md](solution_brief.md) | Short buyer / partner brief |
 | [pitch_deck.md](pitch_deck.md) | Slide-oriented talking points |
 
-Public brochure site (draft): [`../../website/`](../../website/).
+Public brochure site: [microscaler/photon `brochure/`](https://github.com/microscaler/photon/tree/main/brochure)
+([local pointer](../../website/)).
 
 Compliance / engineering inventories stay under `docs/` (e.g.
 [`../OPENAPI_3.1.0_COMPLIANCE_GAP.md`](../OPENAPI_3.1.0_COMPLIANCE_GAP.md)), not here.
