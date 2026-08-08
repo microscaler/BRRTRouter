@@ -1,16 +1,12 @@
-## 2026-08-08 — Epic 12 Wave 4 shipped (12.8)
+## 2026-08-09 — Epic 13 defined
 
-- **12.8** Perf science Phase 6 — #399 closed.
-- `src/perf_harness.rs` + benches `match_vs_validate`, `request_guards`; Criterion sample/measurement stabilized.
-- Evidence (ms02 release): match ~161ns, `is_valid` ~44ns, `iter_errors` ~163ns — all sub-µs; **no trie rewrite**.
-- Next bottleneck: full `AppService` / dispatch (Phase 3 reply-slot), not radix.
-- Docs: `docs/PERFORMANCE.md` § Phase 6, `docs/flamegraph.md`; Photon `docs/perf.md`.
-- Epic 12 board: all stories **done**.
+- **Epic 13** Framework completeness — [#400](https://github.com/microscaler/BRRTRouter/issues/400)
+- Stories **13.1–13.10** → issues **#401–#410** (sub-issues of #400)
+- Docs: `docs/EPICS/FRAMEWORK_MATURITY/epic-13-framework-completeness/`
+- Each story: FR + NFR + acceptance criteria + positive/negative unit tests
+- Board **NOW:** 13.1 doc truth
+- Pushed `716c4e9`
 
-## 2026-08-08 — Epic 12 Wave 3 shipped
+## 2026-08-08 — Epic 12 complete (Wave 4)
 
-- **12.6** multipart → JSON fields; #397. **12.7** HttpNoContent / HEAD omit; #398.
-
-## 2026-08-08 — Photon is suite home; brochure moved
-
-- Suite brochure: **`microscaler/photon`**. BRRTRouter `website/` pointer only.
+- 12.8 perf science; all 12.1–12.8 done (#391 closed)
