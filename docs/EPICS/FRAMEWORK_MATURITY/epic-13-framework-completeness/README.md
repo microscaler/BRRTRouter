@@ -13,9 +13,11 @@ ops middleware (rate limit, deadlines, optional compression), RFC 7807 errors,
 streaming file upload/download, browser/session posture (or explicit out-of-scope),
 live SSE flush, and DevEx (multi-status codegen + public `TestApp`).
 
-**Does not include WebSocket** (parked — may_minihttp upgrade).  
-**Does not include** radix rewrites, OAS callback auto-fire, fleet OAS 3.2 cutover,
-SPIFFE X.509/mTLS (separate zero-trust epic), or BFF claim-enrichment product work.
+**Does not include WebSocket** (parked — [PARKED.md](../../PARKED.md)).  
+**Sibling epics (gap audit):** [Epic 14 SPIFFE/mTLS](../../ZERO_TRUST/epic-14-spiffe-mtls-federation/README.md) (**critical**),
+[Epic 15 OpenAPI surface](../../OPENAPI_SURFACE/epic-15-openapi-surface-completion/README.md),
+[Epic 16 Release maturity](../../RELEASE_MATURITY/epic-16-release-and-observability/README.md).  
+BFF claim enrichment remains Epics 3–5 / 6–9.
 
 Grounded in the post–Epic-12 gap audit (2026-08-09).
 
@@ -99,14 +101,15 @@ Wave 5 ──► 13.9 multi-status codegen ‖ 13.10 TestApp
 | E-NFR-6 | Default configs remain safe for public APIs (fail-closed rate limits off until configured; compression opt-in). |
 | E-NFR-7 | Unit tests follow TESTING_STANDARD (≥5 positive + ≥5 negative where domain allows). |
 
-## Parked (explicit)
+## Out of scope here (tracked elsewhere)
 
-- WebSocket upgrade
-- OAS `callbacks` / root `webhooks` auto-fire
-- Radix trie rewrite
-- Fleet OpenAPI 3.2.0 cutover
-- SPIFFE X.509 SVID / mTLS / federation
-- BFF custom IDAM claim enrichment (product epics)
+| Item | Where |
+|------|--------|
+| SPIFFE X.509 / mTLS / federation | **Epic 14** |
+| Response headers, servers, encoding, methods, versioning, callbacks fidelity, OAS 3.2 readiness | **Epic 15** |
+| crates.io / API freeze / fake OTEL / beta | **Epic 16** |
+| WebSocket, callback auto-fire engine, radix rewrite | [PARKED.md](../../PARKED.md) |
+| BFF claim enrichment | Epics 3–5 / 6–9 |
 
 ## References
 

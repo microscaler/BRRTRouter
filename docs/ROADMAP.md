@@ -3,12 +3,14 @@
 > **Status (2026-08):** This document is an **archive pointer**, not the live backlog.
 > Active work is tracked on epic build boards under [`docs/EPICS/`](EPICS/EPICS_CATALOG.md).
 >
-> - **Now:** [Epic 13 — Framework completeness](EPICS/FRAMEWORK_MATURITY/BUILD_BOARD.md)
-> - **Shipped recently:** [Epic 12 Framework maturity](EPICS/FRAMEWORK_MATURITY/epic-12-framework-maturity/README.md) (12.1–12.8),
->   [Epic 10 URI / request-target](EPICS/URI_REQUEST_TARGET/BUILD_BOARD.md),
->   [Epic 11 HTTP QUERY](EPICS/URI_REQUEST_TARGET/epic-11-http-query-method/README.md)
-> - **Parked:** WebSocket (no `may_minihttp` upgrade), radix rewrite, OAS callback auto-fire,
->   SPIFFE X.509/mTLS — see Epic 13 parked list.
+> - **Now (parallel themes):**
+>   - [Epic 13 — Framework completeness](EPICS/FRAMEWORK_MATURITY/BUILD_BOARD.md)
+>   - [Epic 14 — SPIFFE X.509 / mTLS / Federation](EPICS/ZERO_TRUST/BUILD_BOARD.md) (**critical**)
+>   - [Epic 15 — OpenAPI surface](EPICS/OPENAPI_SURFACE/BUILD_BOARD.md)
+>   - [Epic 16 — Release & observability](EPICS/RELEASE_MATURITY/BUILD_BOARD.md)
+> - **Shipped recently:** [Epic 12](EPICS/FRAMEWORK_MATURITY/epic-12-framework-maturity/README.md),
+>   Epics [10](EPICS/URI_REQUEST_TARGET/BUILD_BOARD.md)–[11](EPICS/URI_REQUEST_TARGET/epic-11-http-query-method/README.md)
+> - **Parked:** WebSocket, OAS callback auto-fire engine, radix rewrite — [PARKED.md](EPICS/PARKED.md)
 > - **Open reference product:** [Sesame-IDAM](https://github.com/microscaler/sesame-idam) —
 >   [BUILDING_WITH_BRRTROUTER.md](BUILDING_WITH_BRRTROUTER.md) (not private Hauliage / PriceWhisperer; not immature RERP).
 
@@ -30,25 +32,23 @@ Do not treat those bullets as open work.
 
 ## 🚧 Active / next
 
-See **[Epic 13 BUILD_BOARD](EPICS/FRAMEWORK_MATURITY/BUILD_BOARD.md)** (waves 0–5):
+| Epic | Board | Focus |
+|------|--------|--------|
+| **13** | [Framework completeness](EPICS/FRAMEWORK_MATURITY/BUILD_BOARD.md) | Rate limit, problem+json, files, browser, deadlines, SSE, compression, TestApp |
+| **14** | [Zero-trust SPIFFE/mTLS](EPICS/ZERO_TRUST/BUILD_BOARD.md) | **Critical** X.509 SVID, mTLS path, federation, JWT hardening |
+| **15** | [OpenAPI surface](EPICS/OPENAPI_SURFACE/BUILD_BOARD.md) | Headers, servers, encoding, methods, versioning, callbacks fidelity, 3.2 readiness |
+| **16** | [Release maturity](EPICS/RELEASE_MATURITY/BUILD_BOARD.md) | API policy, crates.io, fake OTEL, beta checklist, migration guide |
 
-- Doc truth & claim reconciliation
-- Rate limiting middleware → 429
-- Problem Details (RFC 7807)
-- Streaming uploads / download helpers
-- Browser security posture (kit or explicit OOS)
-- Handler deadlines → 504
-- SSE live flush; opt-in response compression
-- Multi-status codegen + public TestApp
-
-Also: crates.io packaging polish; fake OTEL collector coverage in remaining tests.
+Catalog: [EPICS_CATALOG.md](EPICS/EPICS_CATALOG.md).
 
 ## ⏸ Parked (explicit non-goals for now)
 
+See **[EPICS/PARKED.md](EPICS/PARKED.md)**.
+
 - Native WebSocket upgrade in-process
 - Radix trie rewrite “for its own sake”
-- Full OAS callback auto-fire runtime
-- Fleet-wide OpenAPI 3.2.0 cutover (products stay 3.1; see [OPENAPI_VERSION_SUPPORT.md](OPENAPI_VERSION_SUPPORT.md))
+- Full OAS callback auto-fire runtime (object fidelity = Epic 15.7; outbound kit = 12.5)
+- Fleet-wide forced OpenAPI 3.2.0 cutover (readiness plan = Epic 15.8)
 
 ## 🎯 Benchmark Goal
 
@@ -86,7 +86,9 @@ described work that is largely landed. Prefer epic story files and GitHub issues
 ## links
 
 - [Epics catalog](EPICS/EPICS_CATALOG.md)
-- [Epic 13 build board](EPICS/FRAMEWORK_MATURITY/BUILD_BOARD.md)
+- [Epics catalog](EPICS/EPICS_CATALOG.md)
+- [Epic 13 board](EPICS/FRAMEWORK_MATURITY/BUILD_BOARD.md) · [Epic 14 zero-trust](EPICS/ZERO_TRUST/BUILD_BOARD.md) · [Epic 15 OpenAPI](EPICS/OPENAPI_SURFACE/BUILD_BOARD.md) · [Epic 16 release](EPICS/RELEASE_MATURITY/BUILD_BOARD.md)
 - [Epic 12 (done)](EPICS/FRAMEWORK_MATURITY/epic-12-framework-maturity/README.md)
+- [Parked](EPICS/PARKED.md)
 - [OpenAPI version support](OPENAPI_VERSION_SUPPORT.md)
 - [Describing API Security](https://learn.openapis.org/specification/security.html)

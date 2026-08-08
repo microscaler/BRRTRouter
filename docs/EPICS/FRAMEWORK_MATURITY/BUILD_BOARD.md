@@ -53,11 +53,15 @@ Wave 5 ──► 13.9 ‖ 13.10
 | Epic 12 | Framework maturity | done | [#391](https://github.com/microscaler/BRRTRouter/issues/391) |
 | 12.1–12.8 | See [epic-12 README](epic-12-framework-maturity/README.md) | done | #392–#399 |
 
-## Parked (not in Epic 13)
+## Sibling epics (from gap audit — not in Epic 13)
 
-- WebSocket / may_minihttp upgrade
-- Radix trie rewrite / stack-size product APIs
-- Full OAS callback auto-fire runtime
-- Fleet OpenAPI 3.2.0 cutover
-- SPIFFE X.509 / mTLS / federation (separate zero-trust epic)
-- BFF custom IDAM claim enrichment (product epics)
+| Epic | Board | Why separate |
+|------|--------|----------------|
+| **14** SPIFFE/mTLS/Federation | [ZERO_TRUST](../ZERO_TRUST/BUILD_BOARD.md) | **Critical** zero-trust; large may_minihttp/TLS surface |
+| **15** OpenAPI surface | [OPENAPI_SURFACE](../OPENAPI_SURFACE/BUILD_BOARD.md) | Contract fidelity beyond ops/DevEx kits |
+| **16** Release maturity | [RELEASE_MATURITY](../RELEASE_MATURITY/BUILD_BOARD.md) | Packaging / API freeze / OTEL tests |
+
+## Parked (no epic)
+
+See [`../PARKED.md`](../PARKED.md): WebSocket, callback auto-fire engine, radix rewrite.  
+BFF claim enrichment remains Epics **3–5 / 6–9**.

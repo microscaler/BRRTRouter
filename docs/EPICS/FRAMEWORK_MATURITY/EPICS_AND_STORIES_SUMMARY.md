@@ -30,4 +30,5 @@
 | 12.7 | Multi-status typed / codegen | L | 3 | Runtime done; codegen → 13.9 |
 | 12.8 | Perf science (Phase 6) | M | 4 | Evidence: no radix rewrite |
 
-**Parked:** WebSocket, radix rewrite, stack-size plumbing, full OAS callback runtime, OAS 3.2 fleet cutover, SPIFFE X.509/mTLS, BFF claim enrichment.
+**Sibling epics:** 14 (SPIFFE/mTLS), 15 (OpenAPI surface), 16 (release maturity).  
+**Parked:** see [`../PARKED.md`](../PARKED.md).
