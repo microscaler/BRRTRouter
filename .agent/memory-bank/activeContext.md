@@ -1,8 +1,13 @@
+## 2026-08-08 — Epic 12 Wave 3 shipped
+
+- **12.6** multipart → JSON fields (`src/server/multipart.rs`); #397 closed; `docs/multipart.md`.
+- **12.7** `HttpNoContent`, `HttpJson::created`, HEAD `omit_body`; #398 closed.
+- Pushed `cbf389c`. **NOW:** Wave 4 — 12.8 perf science (#399).
+
 ## 2026-08-08 — Epic 12.5 webhook kit shipped
 
 - `brrtrouter::http::deliver_webhook` + HMAC/retries (`e1294f0`); #396 closed.
 - Operator doc: `docs/webhook_delivery.md`. Outward: photon `docs/webhooks.md`.
-- **NOW:** Wave 3 — 12.6 multipart (#397) ‖ 12.7 multi-status (#398).
 
 ## 2026-08-08 — Photon is suite home; brochure moved
 
