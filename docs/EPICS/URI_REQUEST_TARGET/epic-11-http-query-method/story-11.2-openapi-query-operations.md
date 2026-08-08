@@ -43,14 +43,20 @@ Spec load + generator recognize QUERY operations with request bodies (query medi
 
 ### Acceptance criteria (tests)
 
-- [ ] P1/P2 mandatory; N1/N2 mandatory.
+- [x] P1/P2 mandatory; N1/N2 mandatory.
 
 ## Acceptance criteria
 
-- [ ] Example OpenAPI snippet in docs loads without error.
-- [ ] Generated handler receives body for QUERY.
-- [ ] Unknown/unsupported tooling path documented.
-- [ ] Unit tests section complete (positive + negative).
+- [x] Example OpenAPI snippet in docs loads without error.
+- [x] Generated handler receives body for QUERY.
+- [x] Unknown/unsupported tooling path documented.
+- [x] Unit tests section complete (positive + negative).
+
+## Delivery notes
+
+- Declaration guide: [declaring-query-operations.md](declaring-query-operations.md)
+- Fixture: `tests/fixtures/openapi_query_method.yaml`
+- Loader: `promote_query_operations` → `x-brrtrouter-query`; `build_routes` emits `method_query()` routes
 
 ## References
 

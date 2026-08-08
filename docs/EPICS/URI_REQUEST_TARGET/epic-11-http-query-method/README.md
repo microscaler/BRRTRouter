@@ -39,6 +39,11 @@ percent-encoding.
 
 **Build:** see [BUILD_BOARD.md](../BUILD_BOARD.md) (start after Epic 10.1; 11.3 after 10.7).
 
+## Declaring QUERY in OpenAPI
+
+See [declaring-query-operations.md](declaring-query-operations.md) (`query:` or
+`x-brrtrouter-query` until OAS/`oas3` list QUERY natively).
+
 ## References
 
 - RFC 10008

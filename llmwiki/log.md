@@ -1,9 +1,14 @@
 # LLM Wiki Log
 
+## [2026-08-08] ship | Story 11.2 OpenAPI QUERY operations
+
+- Promote `query:` → `x-brrtrouter-query`; `build_routes` registers `method_query()` + body schemas.
+- Docs/fixture + `tests/openapi_query_method_tests.rs`. **NOW** = 11.3 (#388).
+
 ## [2026-08-08] ship | Story 11.1 QUERY method + router + CORS
 
 - `http::method_query()` / radix slot 9; CORS default+permissive list QUERY.
-- Lowercase `query` is a distinct token (no route match). **NOW** = 11.2 (#387).
+- Lowercase `query` is a distinct token (no route match).
 
 ## [2026-08-08] ship | Wave 5 (10.9 + 10.10 + 10.8) — Epic 10 core Pass
 

@@ -22,7 +22,8 @@ Track implementation here. Update **Status** as work lands (`todo` → `doing` �
 | DONE | 10.10 | done | [#384](https://github.com/microscaler/BRRTRouter/issues/384) | proptest suite (fixed seed) |
 | DONE | 10.8 | done | [#382](https://github.com/microscaler/BRRTRouter/issues/382) | Decision B + dual-stack goldens |
 | DONE | 11.1 | done | [#386](https://github.com/microscaler/BRRTRouter/issues/386) | QUERY method + router slot + CORS |
-| **NOW** | 11.2 | todo | [#387](https://github.com/microscaler/BRRTRouter/issues/387) | OpenAPI QUERY operations |
+| DONE | 11.2 | done | [#387](https://github.com/microscaler/BRRTRouter/issues/387) | OpenAPI QUERY ops (`x-brrtrouter-query`) |
+| **NOW** | 11.3 | todo | [#388](https://github.com/microscaler/BRRTRouter/issues/388) | Proxy & client QUERY |
 
 ## Wave plan (Epic 10)
 
@@ -54,7 +55,7 @@ Wave 5 ──► 10.9 OpenAPI style → 10.10 fuzz → 10.8 unify http stack
 | Order | ID | Status | Issue | Blocked by |
 |-------|-----|--------|-------|------------|
 | 1 | 11.1 | done | [#386](https://github.com/microscaler/BRRTRouter/issues/386) | — |
-| 2 | 11.2 | todo | [#387](https://github.com/microscaler/BRRTRouter/issues/387) | 11.1 |
+| 2 | 11.2 | done | [#387](https://github.com/microscaler/BRRTRouter/issues/387) | 11.1 |
 | 3 | 11.3 | todo | [#388](https://github.com/microscaler/BRRTRouter/issues/388) | 11.1, **10.7** |
 | 4 | 11.4 | todo | [#389](https://github.com/microscaler/BRRTRouter/issues/389) | 11.2 |
 
@@ -76,7 +77,7 @@ Wave 5 ──► 10.9 OpenAPI style → 10.10 fuzz → 10.8 unify http stack
 | 10.11 | may_minihttp request-line boundary | 1 | done | [#385](https://github.com/microscaler/BRRTRouter/issues/385) |
 | Epic 11 | HTTP QUERY (RFC 10008) | — | todo | [#374](https://github.com/microscaler/BRRTRouter/issues/374) |
 | 11.1 | Method + router + CORS | E11 | done | [#386](https://github.com/microscaler/BRRTRouter/issues/386) |
-| 11.2 | OpenAPI QUERY operations | E11 | todo | [#387](https://github.com/microscaler/BRRTRouter/issues/387) |
+| 11.2 | OpenAPI QUERY operations | E11 | done | [#387](https://github.com/microscaler/BRRTRouter/issues/387) |
 | 11.3 | Proxy & client QUERY | E11 | todo | [#388](https://github.com/microscaler/BRRTRouter/issues/388) |
 | 11.4 | Accept-Query + POST fallback docs | E11 | todo | [#389](https://github.com/microscaler/BRRTRouter/issues/389) |
 

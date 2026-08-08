@@ -1,0 +1,68 @@
+openapi: 3.1.0
+info:
+  title: QUERY Method Fixture
+  version: 1.0.0
+paths:
+  /search:
+    get:
+      operationId: get_search
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mode:
+                    type: string
+    query:
+      operationId: query_search
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - q
+              properties:
+                q:
+                  type: string
+                limit:
+                  type: integer
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                q:
+                  type: string
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  hits:
+                    type: array
+                    items:
+                      type: string
+  /via-extension:
+    x-brrtrouter-query:
+      operationId: query_via_extension
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - term
+              properties:
+                term:
+                  type: string
+      responses:
+        "200":
+          description: ok

@@ -51,6 +51,15 @@ pub fn extract_operation_security_presence(value: &serde_json::Value) -> Operati
                 explicit_operation.insert((path.clone(), method.to_string()));
             }
         }
+        // Story 11.2: QUERY ops live under x-brrtrouter-query after promote_query_operations.
+        if let Some(op) = obj
+            .get(super::load::QUERY_OPERATION_EXTENSION)
+            .and_then(|o| o.as_object())
+        {
+            if op.contains_key("security") {
+                explicit_operation.insert((path.clone(), "query".to_string()));
+            }
+        }
     }
 
     OperationSecurityPresence { explicit_operation }

@@ -629,81 +629,61 @@ pub fn build_routes_with_security_presence(
 
     if let Some(paths_map) = spec.paths.as_ref() {
         for (path, item) in paths_map {
-            for (method_str, operation) in item.methods() {
-                let method = method_str.clone();
-                let location = format!("{path} → {method}");
-
-                let handler_name = match resolve_handler_name(operation, &location, &mut issues) {
-                    Some(name) => name,
-                    None => continue,
-                };
-
-                let (request_schema, request_body_required, request_content_types) =
-                    extract_request_body_details(spec, operation);
-                let (response_schema, example, responses) =
-                    extract_response_schema_and_example(spec, operation);
-
-                let security = resolve_operation_security(
-                    path,
-                    method.as_str(),
-                    operation,
+            for (method, operation) in item.methods() {
+                push_route_from_operation(
+                    &mut routes,
+                    &mut issues,
                     spec,
+                    slug,
+                    &base_path,
+                    path,
+                    item,
+                    method,
+                    operation,
                     security_presence,
                 );
+            }
 
-                let mut parameters = Vec::new();
-                parameters.extend(extract_parameters(spec, &item.parameters));
-                parameters.extend(extract_parameters(spec, &operation.parameters));
-
-                // Estimate request body size from schema
-                let estimated_request_body_bytes = estimate_body_size(request_schema.as_ref());
-
-                // Extract vendor extension for stack size override
-                let x_brrtrouter_stack_size = extract_stack_size_override(operation);
-
-                // Extract route-specific CORS policy from x-cors extension
-                let cors_policy = crate::middleware::extract_route_cors_config(operation);
-
-                // Extract proxy downstream routes
-                let x_service = operation
-                    .extensions
-                    .get("service")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string());
-
-                let x_brrtrouter_downstream_path = operation
-                    .extensions
-                    .get("brrtrouter-downstream-path")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string());
-
-                let x_brrtrouter_impl = extract_brrtrouter_impl(operation);
-
-                routes.push(RouteMeta {
-                    method,
-                    // JSF P0-2: Use Arc<str> for O(1) cloning
-                    path_pattern: Arc::from(path.as_str()),
-                    handler_name: Arc::from(handler_name.as_str()),
-                    parameters,
-                    request_schema,
-                    request_body_required,
-                    request_content_types,
-                    response_schema,
-                    example,
-                    responses,
-                    security,
-                    example_name: format!("{slug}_example"),
-                    project_slug: slug.to_string(),
-                    output_dir: std::path::PathBuf::from("examples").join(slug).join("src"),
-                    base_path: base_path.clone(),
-                    sse: extract_sse_flag(operation),
-                    estimated_request_body_bytes,
-                    x_brrtrouter_stack_size,
-                    cors_policy,
-                    x_service,
-                    x_brrtrouter_downstream_path,
-                    x_brrtrouter_impl,
-                });
+            // RFC 10008 QUERY (Story 11.2): oas3 PathItem has no query field;
+            // loaders promote `query:` → `x-brrtrouter-query` (key `brrtrouter-query`).
+            if let Some(op_val) = item
+                .extensions
+                .get(super::load::QUERY_OPERATION_EXTENSION_KEY)
+            {
+                if !path_template_is_legal(path) {
+                    issues.push(ValidationIssue::new(
+                        format!("{path} → QUERY"),
+                        "IllegalPathTemplate",
+                        "QUERY path template is illegal (unbalanced or empty '{' '}' params)",
+                    ));
+                    continue;
+                }
+                match serde_json::from_value::<oas3::spec::Operation>(op_val.clone()) {
+                    Ok(operation) => {
+                        push_route_from_operation(
+                            &mut routes,
+                            &mut issues,
+                            spec,
+                            slug,
+                            &base_path,
+                            path,
+                            item,
+                            crate::http::method_query(),
+                            &operation,
+                            security_presence,
+                        );
+                    }
+                    Err(e) => {
+                        issues.push(ValidationIssue::new(
+                            format!("{path} → QUERY"),
+                            "MalformedQueryOperation",
+                            format!(
+                                "failed to parse {} as Operation: {e}",
+                                super::load::QUERY_OPERATION_EXTENSION
+                            ),
+                        ));
+                    }
+                }
             }
         }
     }
@@ -712,10 +692,125 @@ pub fn build_routes_with_security_presence(
     Ok(routes)
 }
 
+/// Balanced `{param}` segments and leading `/` — fail closed for QUERY (Story 11.2 N5).
+fn path_template_is_legal(path: &str) -> bool {
+    if !path.starts_with('/') {
+        return false;
+    }
+    let mut in_param = false;
+    let mut param_len = 0usize;
+    for c in path.chars() {
+        match c {
+            '{' => {
+                if in_param {
+                    return false;
+                }
+                in_param = true;
+                param_len = 0;
+            }
+            '}' => {
+                if !in_param || param_len == 0 {
+                    return false;
+                }
+                in_param = false;
+            }
+            _ if in_param => param_len += 1,
+            _ => {}
+        }
+    }
+    !in_param
+}
+
+#[allow(clippy::too_many_arguments)]
+fn push_route_from_operation(
+    routes: &mut Vec<RouteMeta>,
+    issues: &mut Vec<ValidationIssue>,
+    spec: &OpenApiV3Spec,
+    slug: &str,
+    base_path: &str,
+    path: &str,
+    item: &oas3::spec::PathItem,
+    method: http::Method,
+    operation: &oas3::spec::Operation,
+    security_presence: Option<&OperationSecurityPresence>,
+) {
+    let location = format!("{path} → {method}");
+
+    let handler_name = match resolve_handler_name(operation, &location, issues) {
+        Some(name) => name,
+        None => return,
+    };
+
+    let (request_schema, request_body_required, request_content_types) =
+        extract_request_body_details(spec, operation);
+    let (response_schema, example, responses) =
+        extract_response_schema_and_example(spec, operation);
+
+    let security =
+        resolve_operation_security(path, method.as_str(), operation, spec, security_presence);
+
+    let mut parameters = Vec::new();
+    parameters.extend(extract_parameters(spec, &item.parameters));
+    parameters.extend(extract_parameters(spec, &operation.parameters));
+
+    let estimated_request_body_bytes = estimate_body_size(request_schema.as_ref());
+    let x_brrtrouter_stack_size = extract_stack_size_override(operation);
+    let cors_policy = crate::middleware::extract_route_cors_config(operation);
+
+    let x_service = operation
+        .extensions
+        .get("service")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    let x_brrtrouter_downstream_path = operation
+        .extensions
+        .get("brrtrouter-downstream-path")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    let x_brrtrouter_impl = extract_brrtrouter_impl(operation);
+
+    routes.push(RouteMeta {
+        method,
+        path_pattern: Arc::from(path),
+        handler_name: Arc::from(handler_name.as_str()),
+        parameters,
+        request_schema,
+        request_body_required,
+        request_content_types,
+        response_schema,
+        example,
+        responses,
+        security,
+        example_name: format!("{slug}_example"),
+        project_slug: slug.to_string(),
+        output_dir: std::path::PathBuf::from("examples").join(slug).join("src"),
+        base_path: base_path.to_string(),
+        sse: extract_sse_flag(operation),
+        estimated_request_body_bytes,
+        x_brrtrouter_stack_size,
+        cors_policy,
+        x_service,
+        x_brrtrouter_downstream_path,
+        x_brrtrouter_impl,
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn path_template_legal_balanced() {
+        assert!(path_template_is_legal("/search"));
+        assert!(path_template_is_legal("/items/{id}"));
+        assert!(!path_template_is_legal("search"));
+        assert!(!path_template_is_legal("/items/{"));
+        assert!(!path_template_is_legal("/items/{}"));
+        assert!(!path_template_is_legal("/items/{id"));
+    }
 
     #[test]
     fn test_estimate_body_size_string() {
