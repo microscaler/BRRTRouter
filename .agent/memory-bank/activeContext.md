@@ -1,12 +1,17 @@
-## 2026-08-09 — Epic 13 defined
+## 2026-08-09 — Wave 0 done; JWT = consumer only
 
-- **Epic 13** Framework completeness — [#400](https://github.com/microscaler/BRRTRouter/issues/400)
-- Stories **13.1–13.10** → issues **#401–#410** (sub-issues of #400)
-- Docs: `docs/EPICS/FRAMEWORK_MATURITY/epic-13-framework-completeness/`
-- Each story: FR + NFR + acceptance criteria + positive/negative unit tests
-- Board **NOW:** 13.1 doc truth
-- Pushed `716c4e9`
+**Policy:** Sesame-IDAM / external IdP **issues** JWTs. BRRTRouter **validates & enforces**
+only (`docs/JWT_AND_IDENTITY_BOUNDARY.md`). No in-router IdP / revocation product.
 
-## 2026-08-08 — Epic 12 complete (Wave 4)
+| Story | Issue | Commit |
+|-------|-------|--------|
+| 13.1 Doc truth | #401 closed | `fcf70fa` |
+| 14.1 Zero-trust inventory | #414 closed | `fcf70fa` |
 
-- 12.8 perf science; all 12.1–12.8 done (#391 closed)
+**NOW:** 13.2 rate limiting (#402) · 14.2 X.509 SVID (#415)  
+**Epics:** 13 #400 · 14 #411 · 15 #412 · 16 #413  
+BFF claim enrichment (3–9): product track when Sesame needs it — not gating 13–16.
+
+## Prior — Epic 13–16 planned
+
+Stories + boards under `docs/EPICS/`; catalog `docs/EPICS/EPICS_CATALOG.md`.

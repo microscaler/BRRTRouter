@@ -206,6 +206,8 @@ pub struct MetricsMiddleware {
     cors_preflight_denials: AtomicUsize,
     /// CORS: route has `x-cors: false` / [`RouteCorsPolicy::Disabled`](crate::middleware::RouteCorsPolicy::Disabled) — one increment per request (no CORS headers)
     cors_route_disabled: AtomicUsize,
+    /// Rate-limit sheds (429) from [`RateLimitMiddleware`](crate::middleware::RateLimitMiddleware)
+    rate_limit_sheds: AtomicUsize,
 }
 
 /// Default initialization for metrics middleware
@@ -241,6 +243,7 @@ impl Default for MetricsMiddleware {
             cors_origin_rejections: AtomicUsize::new(0),
             cors_preflight_denials: AtomicUsize::new(0),
             cors_route_disabled: AtomicUsize::new(0),
+            rate_limit_sheds: AtomicUsize::new(0),
         }
     }
 }
@@ -367,6 +370,17 @@ impl MetricsMiddleware {
     #[must_use]
     pub fn cors_route_disabled(&self) -> usize {
         self.cors_route_disabled.load(Ordering::Relaxed)
+    }
+
+    /// Increment rate-limit shed counter (called by [`RateLimitMiddleware`](crate::middleware::RateLimitMiddleware)).
+    pub fn inc_rate_limit_shed(&self) {
+        self.rate_limit_sheds.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Total rate-limit sheds (429 before handler).
+    #[must_use]
+    pub fn rate_limit_sheds(&self) -> usize {
+        self.rate_limit_sheds.load(Ordering::Relaxed)
     }
 
     /// Get connection health ratio (successful requests vs connection issues)

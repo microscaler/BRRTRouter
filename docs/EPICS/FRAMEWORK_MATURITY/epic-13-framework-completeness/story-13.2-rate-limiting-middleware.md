@@ -68,13 +68,13 @@ APIs can shed load with **429** and metrics — replacing aspirational docs clai
 
 ### Acceptance criteria (tests)
 
-- [ ] P1/P2 and N1/N4 mandatory.
+- [x] P1/P2 and N1/N4 mandatory.
 
 ## Acceptance criteria
 
-- [ ] Middleware ships and is configurable.
-- [ ] Docs updated to claim rate limiting only after green tests.
-- [ ] FR/NFR + unit tests complete.
+- [x] Middleware ships and is configurable.
+- [x] Docs updated to claim rate limiting only after green tests.
+- [x] FR/NFR + unit tests complete.
 
 ## References
 

@@ -69,11 +69,15 @@ fn epic13_1_p6_multipart_mvp_or_streaming_pointer() {
 }
 
 #[test]
-fn epic13_1_n1_no_shipped_rate_limit_claim_in_lifecycle() {
+fn epic13_1_n1_rate_limit_shipped_claim_matches_implementation() {
     let life = include_str!("../docs/RequestLifecycle.md");
     assert!(
-        life.contains("Not shipped") && life.contains("RateLimitMiddleware"),
-        "RequestLifecycle must mark RateLimitMiddleware as not shipped"
+        life.contains("**RateLimitMiddleware** | ✅ Shipped"),
+        "RequestLifecycle must mark RateLimitMiddleware as shipped after 13.2"
+    );
+    assert!(
+        !life.contains("**RateLimitMiddleware** | 🚧 **Not shipped**"),
+        "stale Not shipped RateLimitMiddleware row forbidden"
     );
 }
 

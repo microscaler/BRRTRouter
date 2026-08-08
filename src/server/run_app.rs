@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::dispatcher::Dispatcher;
-use crate::middleware::MetricsMiddleware;
+use crate::middleware::{MetricsMiddleware, RateLimitMiddleware};
 use crate::router::Router;
 use crate::runtime_config::RuntimeConfig;
 use crate::spec::RouteMeta;
@@ -125,6 +125,14 @@ impl RunAppBuilder {
 
         if let Some(cors) = build_cors_middleware(&app_config, &routes, metrics.clone()) {
             dispatcher.add_middleware(cors);
+        }
+
+        if let Some(rl_yaml) = app_config.rate_limit.as_ref() {
+            if let Some(rl_cfg) = rl_yaml.to_middleware_config() {
+                let rl = RateLimitMiddleware::new(rl_cfg).with_metrics_sink(metrics.clone());
+                dispatcher.add_middleware(Arc::new(rl));
+                println!("[startup] rate-limit middleware enabled");
+            }
         }
 
         unsafe {

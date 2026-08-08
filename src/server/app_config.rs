@@ -16,6 +16,27 @@ pub struct AppConfig {
     pub security: Option<SecurityConfig>,
     pub http: Option<HttpConfig>,
     pub cors: Option<CorsConfig>,
+    /// Optional HTTP rate limiting (Epic 13.2). Absent / disabled → no-op.
+    pub rate_limit: Option<RateLimitYamlConfig>,
+}
+
+/// YAML shape for [`crate::middleware::RateLimitMiddleware`] (Epic 13.2).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+pub struct RateLimitYamlConfig {
+    /// When false or absent with no other fields forcing enable, middleware is skipped.
+    pub enabled: Option<bool>,
+    /// Max requests per window (global default).
+    pub requests: Option<u64>,
+    /// Window length in seconds (default 60).
+    pub window_secs: Option<u64>,
+    /// Soft cap on distinct client keys (default 10000).
+    pub max_keys: Option<usize>,
+    /// `subject_then_ip` (default) | `subject` | `ip`
+    pub key: Option<String>,
+    /// Per-handler overrides (handler_name → max requests / window).
+    pub routes: Option<HashMap<String, u64>>,
+    /// When true, OPTIONS does not consume tokens.
+    pub skip_options: Option<bool>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
@@ -88,6 +109,31 @@ pub struct CorsConfig {
     pub allow_credentials: Option<bool>,
     pub expose_headers: Option<Vec<String>>,
     pub max_age: Option<u32>,
+}
+
+impl RateLimitYamlConfig {
+    /// Convert YAML config into a middleware config. Returns `None` when disabled / unset.
+    pub fn to_middleware_config(&self) -> Option<crate::middleware::RateLimitConfig> {
+        let enabled = self.enabled.unwrap_or(false);
+        if !enabled {
+            return None;
+        }
+        use crate::middleware::{RateLimitConfig, RateLimitKeyMode};
+        let key_mode = match self.key.as_deref().unwrap_or("subject_then_ip") {
+            "ip" => RateLimitKeyMode::Ip,
+            "subject" => RateLimitKeyMode::Subject,
+            _ => RateLimitKeyMode::SubjectThenIp,
+        };
+        Some(RateLimitConfig {
+            enabled: true,
+            requests: self.requests.unwrap_or(100).max(1),
+            window: std::time::Duration::from_secs(self.window_secs.unwrap_or(60).max(1)),
+            max_keys: self.max_keys.unwrap_or(10_000),
+            key_mode,
+            route_limits: self.routes.clone().unwrap_or_default(),
+            skip_options: self.skip_options.unwrap_or(false),
+        })
+    }
 }
 
 /// Load `config.yaml` using the same semantics as generated service mains.

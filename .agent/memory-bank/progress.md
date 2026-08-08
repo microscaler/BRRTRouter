@@ -1,5 +1,13 @@
 # Progress
 
+## 2026-08-09 — Wave 0: JWT boundary + 13.1 + 14.1
+
+- `docs/JWT_AND_IDENTITY_BOUNDARY.md` — consumer/enforcer only; Sesame/external issue.
+- Story 14.7 rewritten: external `jti` hook; no Redis/IdP revocation in-router.
+- `docs/SPIFFE_ZERO_TRUST_INVENTORY.md`; OPENAPI gap §1b for 12.3; marketing claim fixes.
+- Tests: `epic13_1_doc_truth_tests`, `epic14_1_zero_trust_inventory_tests`.
+- Closed #401, #414. Pushed `fcf70fa`.
+
 ## 2026-08-08 — Root marketing tidy + suite brochure scaffold
 
 - Moved root narrative docs → `docs/marketing/`; OAS gap → `docs/OPENAPI_3.1.0_COMPLIANCE_GAP.md`; layout guide → `docs/guides/BUILDING_MICROSERVICES.md`; CAPI sample → `k8s/demos/lm-demo-cluster.yaml`.

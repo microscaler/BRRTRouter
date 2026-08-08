@@ -116,7 +116,7 @@ Traditional Rust web frameworks require you to learn:
 - ✅ **Request/response types** that match your spec
 - ✅ **Validation logic** that enforces your constraints
 - ✅ **Error handling** with stable structured JSON (`error` / `reason` / `message`) — RFC 7807 `problem+json` is planned ([Epic 13.3](../EPICS/FRAMEWORK_MATURITY/epic-13-framework-completeness/story-13.3-problem-details-rfc7807.md)), not shipped yet
-- ✅ **Middleware integration** (metrics, tracing, CORS) — rate limiting / compression are planned ([Epic 13](../EPICS/FRAMEWORK_MATURITY/BUILD_BOARD.md)), not shipped yet
+- ✅ **Middleware integration** (metrics, tracing, CORS, rate limiting) — compression is still planned ([Epic 13.8](../EPICS/FRAMEWORK_MATURITY/BUILD_BOARD.md))
 - ✅ **Serialization/deserialization** (automatic via serde)
 
 **You don't need to learn these libraries**—you just need to understand OpenAPI (which is language-agnostic and well-documented).
@@ -207,7 +207,7 @@ As a beginner, you might not know:
 - How to validate requests properly
 - How to structure logging
 - How to handle authentication
-- How rate limiting will work once Epic 13.2 ships (not included yet)
+- How rate limiting works (`rate_limit` in `config.yaml` — Epic 13.2)
 - How to set up health checks
 
 **Learning all of this takes time.** And if you get it wrong, you create technical debt that's hard to fix later.

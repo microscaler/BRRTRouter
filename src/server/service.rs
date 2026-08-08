@@ -724,6 +724,16 @@ pub fn metrics_endpoint(
         metrics.cors_route_disabled()
     );
 
+    body.push_str(
+        "# HELP brrtrouter_rate_limit_sheds_total Requests shed by rate-limit middleware (HTTP 429)\n",
+    );
+    body.push_str("# TYPE brrtrouter_rate_limit_sheds_total counter\n");
+    let _ = writeln!(
+        body,
+        "brrtrouter_rate_limit_sheds_total {}",
+        metrics.rate_limit_sheds()
+    );
+
     // Connection metrics
     body.push_str("# HELP brrtrouter_connection_closes_total Total number of connection close events (client disconnects)\n");
     body.push_str("# TYPE brrtrouter_connection_closes_total counter\n");

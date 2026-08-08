@@ -118,7 +118,7 @@ pub use request_target::{
 
 pub use app_config::{
     load_app_config, ApiKeyConfig, AppConfig, BearerConfig, CorsConfig, HttpConfig, JwksConfig,
-    OAuth2Config, PropelAuthConfig, RemoteApiKeyConfig, SecurityConfig,
+    OAuth2Config, PropelAuthConfig, RateLimitYamlConfig, RemoteApiKeyConfig, SecurityConfig,
 };
 pub use http_server::{HttpServer, ServerHandle};
 pub use run_app::{RegisterHandlersFn, RunAppArgs, RunAppBuilder, RunAppHooks};

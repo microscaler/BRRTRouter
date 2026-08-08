@@ -31,6 +31,7 @@
 //! - **[`AuthMiddleware`]** - Enforces authentication and authorization
 //! - **[`CorsMiddleware`]** - Handles CORS headers and preflight requests
 //! - **[`MetricsMiddleware`]** - Collects Prometheus metrics
+//! - **[`RateLimitMiddleware`]** - Token-bucket rate limiting (429 + `Retry-After`)
 //! - **[`TracingMiddleware`]** - Adds distributed tracing spans
 //!
 //! ## Creating Custom Middleware
@@ -94,6 +95,7 @@ mod cors;
 pub mod jwks;
 pub mod memory;
 mod metrics;
+mod rate_limit;
 mod tracing;
 
 pub use auth::AuthMiddleware;
@@ -106,4 +108,8 @@ pub use cors::{
 pub use jwks::JwksHeadersMiddleware;
 pub use memory::MemoryMiddleware;
 pub use metrics::MetricsMiddleware;
+pub use rate_limit::{
+    ManualClock, RateLimitClock, RateLimitConfig, RateLimitKeyMode, RateLimitMiddleware,
+    SystemClock, RATE_LIMIT_ERROR,
+};
 pub use tracing::TracingMiddleware;
