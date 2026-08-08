@@ -69,13 +69,13 @@ path for existing `{error, reason, message, fields}` consumers.
 
 ### Acceptance criteria (tests)
 
-- [ ] P1/P2 and N2/N3 mandatory.
+- [x] P1/P2 and N2/N3 mandatory.
 
 ## Acceptance criteria
 
-- [ ] Framework error paths migrated (or flagged) to problem+json.
-- [ ] Operator doc + type catalog published.
-- [ ] FR/NFR + unit tests complete.
+- [x] Framework error paths migrated (or flagged) to problem+json.
+- [x] Operator doc + type catalog published.
+- [x] FR/NFR + unit tests complete.
 
 ## References
 

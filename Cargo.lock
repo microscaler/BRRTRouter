@@ -6536,14 +6536,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0f4a4e8e9dc5c62d159f04fcdbe07f4c3fb710415aab4754bf11505501e3251d"
 
 [[patch.unused]]
-name = "may_postgres"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "sesame-idam-client"
-version = "0.1.0"
-
-[[patch.unused]]
 name = "lifeguard"
 version = "0.1.0"
 
@@ -6553,4 +6545,12 @@ version = "0.1.0"
 
 [[patch.unused]]
 name = "lifeguard-migrate"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "sesame-idam-client"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "may_postgres"
 version = "0.1.0"

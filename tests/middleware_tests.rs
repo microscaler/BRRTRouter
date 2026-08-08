@@ -165,10 +165,12 @@ fn test_auth_middleware_invalid_token() {
     assert!(result.is_some());
     let response = result.unwrap();
     assert_eq!(response.status, 401);
-    assert_eq!(
-        response.body,
-        serde_json::json!({ "error": "Unauthorized" })
-    );
+    assert_eq!(response.body["error"], "Unauthorized");
+    assert_eq!(response.body["status"], 401);
+    assert!(response
+        .get_header("content-type")
+        .unwrap_or("")
+        .starts_with("application/problem+json"));
 }
 
 #[test]
@@ -183,10 +185,8 @@ fn test_auth_middleware_missing_token() {
     assert!(result.is_some());
     let response = result.unwrap();
     assert_eq!(response.status, 401);
-    assert_eq!(
-        response.body,
-        serde_json::json!({ "error": "Unauthorized" })
-    );
+    assert_eq!(response.body["error"], "Unauthorized");
+    assert_eq!(response.body["status"], 401);
 }
 
 #[test]

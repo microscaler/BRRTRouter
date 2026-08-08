@@ -247,18 +247,14 @@ impl HandlerResponse {
         }
     }
 
-    /// Create an error response
+    /// Create a framework error response (RFC 7807 Problem Details by default).
     ///
-    /// Unlike [`Self::json`], this pins `content-type: application/json`
-    /// explicitly: error payloads are terminal (middleware short-circuits,
-    /// policy rejections) and are never subject to OpenAPI response
-    /// content-type negotiation.
+    /// Pins `Content-Type: application/problem+json` (or `application/json` when
+    /// `BRRTR_LEGACY_ERROR_JSON=1`). Terminal middleware/policy errors are never
+    /// subject to OpenAPI response content-type negotiation.
     #[must_use]
     pub fn error(status: u16, message: &str) -> Self {
-        let mut resp = Self::json(status, serde_json::json!({ "error": message }));
-        resp.headers
-            .push((Arc::from("content-type"), "application/json".to_string()));
-        resp
+        crate::http::problem::Problem::from_status_detail(status, message).into_handler_response()
     }
 
     /// Get a header by name

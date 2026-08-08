@@ -57,24 +57,10 @@ pub fn multipart_error_status(err: &str) -> Option<u16> {
     }
 }
 
-/// JSON error body for multipart failures.
+/// Problem Details body for multipart failures (RFC 7807; Epic 13.3).
 #[must_use]
 pub fn multipart_error_json(err: &str) -> Value {
-    let (title, reason) = match err {
-        MULTIPART_MISSING_BOUNDARY => (
-            "Missing multipart boundary",
-            REASON_MULTIPART_MISSING_BOUNDARY,
-        ),
-        MULTIPART_FILE_TOO_LARGE => (
-            "Multipart file part exceeds size limit",
-            REASON_MULTIPART_FILE_TOO_LARGE,
-        ),
-        _ => ("Malformed multipart body", REASON_MULTIPART_MALFORMED),
-    };
-    json!({
-        "error": title,
-        "reason": reason,
-    })
+    crate::http::problem::multipart_problem(err).to_value()
 }
 
 /// Parse `multipart/form-data` into a JSON object.

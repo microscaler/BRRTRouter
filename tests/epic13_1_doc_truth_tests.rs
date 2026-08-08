@@ -82,16 +82,15 @@ fn epic13_1_n1_rate_limit_shipped_claim_matches_implementation() {
 }
 
 #[test]
-fn epic13_1_n2_beginner_guide_does_not_claim_shipped_7807() {
+fn epic13_1_n2_beginner_guide_claims_shipped_7807_after_13_3() {
     let guide = include_str!("../docs/marketing/BEGINNER_GUIDE.md");
-    // Allow "planned" / "Epic 13.3" mentions; forbid bare "returns RFC 7807" as shipped fact.
     assert!(
-        !guide.contains("Error handling** that returns RFC 7807"),
-        "BEGINNER_GUIDE must not claim shipped RFC 7807 error handling"
+        guide.contains("RFC 7807") && guide.contains("problem+json"),
+        "BEGINNER_GUIDE must claim shipped RFC 7807 after 13.3"
     );
     assert!(
-        guide.contains("planned") || guide.contains("13.3"),
-        "BEGINNER_GUIDE should caveat problem+json as planned"
+        !guide.contains("RFC 7807 `problem+json` is planned"),
+        "stale planned caveat for 7807 forbidden"
     );
 }
 

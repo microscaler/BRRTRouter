@@ -297,7 +297,14 @@ impl RateLimitMiddleware {
     }
 
     fn shed_response(retry_after: Duration) -> HandlerResponse {
-        let mut resp = HandlerResponse::error(429, RATE_LIMIT_ERROR);
+        let mut resp = crate::http::problem::Problem::new(
+            crate::http::problem::TYPE_RATE_LIMIT_EXCEEDED,
+            "Too Many Requests",
+            429,
+        )
+        .detail(RATE_LIMIT_ERROR)
+        .reason("rate_limit_exceeded")
+        .into_handler_response();
         resp.set_header("retry-after", retry_after.as_secs().max(1).to_string());
         resp
     }

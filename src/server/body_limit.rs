@@ -7,7 +7,7 @@
 //!
 //! Prefer `Content-Length` when present; otherwise cap the read stream.
 
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// Default global max inbound body octets (16 MiB).
@@ -88,14 +88,10 @@ pub fn content_length_for_limit(
     Ok(Some(n as usize))
 }
 
-/// Stable 413 JSON body aligned with Epic 10 error style.
+/// Stable 413 Problem Details body (RFC 7807; Epic 13.3).
 #[must_use]
 pub fn body_too_large_json(message: &str) -> Value {
-    json!({
-        "error": "Payload Too Large",
-        "reason": REASON_REQUEST_BODY_TOO_LARGE,
-        "message": message,
-    })
+    crate::http::problem::body_too_large_problem(message).to_value()
 }
 
 /// Map parse_request / early reject markers to HTTP status when body-related.
@@ -179,8 +175,11 @@ mod tests {
     #[test]
     fn body_limit_negative_n6_error_json_shape() {
         let v = body_too_large_json("too big");
-        assert_eq!(v["error"], "Payload Too Large");
+        assert_eq!(v["title"], "Payload Too Large");
         assert_eq!(v["reason"], REASON_REQUEST_BODY_TOO_LARGE);
+        assert_eq!(v["detail"], "too big");
+        assert_eq!(v["status"], 413);
+        // Legacy aliases
         assert_eq!(v["message"], "too big");
     }
 

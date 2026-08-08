@@ -83,19 +83,26 @@ pub fn validate_route_parameters(
     }
 }
 
-/// Stable 400 JSON body listing fields.
+/// Stable 400 Problem Details body listing fields (RFC 7807; Epic 13.3).
 #[must_use]
 pub fn param_validation_error_json(fields: &[ParamFieldError]) -> Value {
-    json!({
-        "error": "Bad Request",
-        "reason": REASON_PARAMETER_VALIDATION_FAILED,
-        "message": "One or more request parameters are missing or invalid",
-        "fields": fields.iter().map(|f| json!({
-            "name": f.name,
-            "in": f.location,
-            "error": f.error,
-        })).collect::<Vec<_>>(),
-    })
+    let fields_json = Value::Array(
+        fields
+            .iter()
+            .map(|f| {
+                json!({
+                    "name": f.name,
+                    "in": f.location,
+                    "error": f.error,
+                })
+            })
+            .collect(),
+    );
+    crate::http::problem::parameter_validation_problem(
+        fields_json,
+        "One or more request parameters are missing or invalid",
+    )
+    .to_value()
 }
 
 fn location_str(loc: &ParameterLocation) -> &'static str {
@@ -292,6 +299,8 @@ mod tests {
         }];
         let v = param_validation_error_json(&fields);
         assert_eq!(v["reason"], REASON_PARAMETER_VALIDATION_FAILED);
+        assert_eq!(v["status"], 400);
+        assert!(v["type"].as_str().unwrap().contains("parameter-validation"));
         assert!(v["fields"].as_array().unwrap().len() == 1);
     }
 

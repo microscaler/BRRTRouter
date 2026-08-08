@@ -22,8 +22,14 @@ fn status_reason(status: u16) -> &'static str {
         401 => "Unauthorized",
         403 => "Forbidden",
         404 => "Not Found",
+        413 => "Payload Too Large",
+        414 => "URI Too Long",
+        415 => "Unsupported Media Type",
+        429 => "Too Many Requests",
         500 => "Internal Server Error",
-        _ => "OK",
+        503 => "Service Unavailable",
+        504 => "Gateway Timeout",
+        _ => "Error",
     }
 }
 
@@ -116,26 +122,35 @@ pub fn write_handler_response_with_body_policy(
     }
 }
 
-/// Write a JSON error response to the HTTP response object
+/// Write a framework error response (RFC 7807 Problem Details by default).
 ///
-/// Used for validation errors, authentication failures, and other error conditions.
-/// Always sets content-type to `application/json`.
+/// Sets `Content-Type: application/problem+json` unless
+/// `BRRTR_LEGACY_ERROR_JSON=1` (then `application/json` + legacy shape).
 ///
-/// # Arguments
-///
-/// * `res` - HTTP response object to write to
-/// * `status` - HTTP status code (typically 400-599)
-/// * `body` - Error response body as JSON (usually includes "error" field)
+/// When `body` already contains RFC members (`type` + `status`), it is written
+/// as-is (still under the problem content type unless legacy mode).
 pub fn write_json_error(res: &mut Response, status: u16, body: Value) {
-    let reason = status_reason(status);
-    res.status_code(status as usize, reason);
-    res.header("Content-Type: application/json");
-    // Direct Vec<u8> — avoids the intermediate `String` allocation from
-    // `to_string().into_bytes()`.
-    match serde_json::to_vec(&body) {
-        Ok(bytes) => res.body_vec(bytes),
-        Err(_) => res.body_vec(br#"{"error":"serialization failure"}"#.to_vec()),
+    use crate::http::problem::{
+        legacy_error_json_enabled, problem_from_legacy_body, write_problem, PROBLEM_CONTENT_TYPE,
+    };
+
+    let already_problem = body.get("type").is_some() && body.get("status").is_some();
+    if already_problem && !legacy_error_json_enabled() {
+        let reason = status_reason(status);
+        res.status_code(status as usize, reason);
+        res.header(format!("Content-Type: {PROBLEM_CONTENT_TYPE}"));
+        match serde_json::to_vec(&body) {
+            Ok(bytes) => res.body_vec(bytes),
+            Err(_) => res.body_vec(
+                br#"{"type":"about:blank","title":"Error","status":500,"detail":"serialization failure"}"#
+                    .to_vec(),
+            ),
+        }
+        return;
     }
+
+    let problem = problem_from_legacy_body(status, &body);
+    write_problem(res, &problem);
 }
 
 #[cfg(test)]
@@ -413,8 +428,13 @@ mod tests {
         unsafe { handle.coroutine().cancel() };
         let (status, ct, body) = parse_parts(&resp);
         assert_eq!(status, 404);
-        assert_eq!(ct, "application/json");
-        assert_eq!(body, "{\"error\":\"nope\"}");
+        assert!(
+            ct.starts_with("application/problem+json"),
+            "framework errors use problem+json, got {ct}"
+        );
+        let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(v["status"], 404);
+        assert!(body.contains("nope"));
     }
 
     #[derive(Clone)]
@@ -494,10 +514,16 @@ mod tests {
             !first.contains("403 OK"),
             "must not emit 403 with OK reason phrase (regression guard): {first:?}"
         );
-        let (_status, _ct, body) = parse_parts(&resp);
-        assert_eq!(
-            body, "{\"error\":\"Origin not allowed by CORS policy\"}",
-            "JSON body must be an object, not null"
+        let (_status, ct, body) = parse_parts(&resp);
+        assert!(
+            ct.starts_with("application/problem+json") || ct == "application/json",
+            "unexpected content-type {ct}"
+        );
+        let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert!(v.is_object(), "JSON body must be an object, not null");
+        assert!(
+            body.contains("Origin not allowed"),
+            "JSON body must describe CORS denial"
         );
     }
 

@@ -115,7 +115,7 @@ Traditional Rust web frameworks require you to learn:
 - ✅ **Route handlers** with correct signatures
 - ✅ **Request/response types** that match your spec
 - ✅ **Validation logic** that enforces your constraints
-- ✅ **Error handling** with stable structured JSON (`error` / `reason` / `message`) — RFC 7807 `problem+json` is planned ([Epic 13.3](../EPICS/FRAMEWORK_MATURITY/epic-13-framework-completeness/story-13.3-problem-details-rfc7807.md)), not shipped yet
+- ✅ **Error handling** with RFC 7807 Problem Details (`application/problem+json`) plus legacy `error` / `reason` / `message` aliases ([Epic 13.3](../EPICS/FRAMEWORK_MATURITY/epic-13-framework-completeness/story-13.3-problem-details-rfc7807.md); [catalog](../PROBLEM_DETAILS.md))
 - ✅ **Middleware integration** (metrics, tracing, CORS, rate limiting) — compression is still planned ([Epic 13.8](../EPICS/FRAMEWORK_MATURITY/BUILD_BOARD.md))
 - ✅ **Serialization/deserialization** (automatic via serde)
 
@@ -200,7 +200,7 @@ pub fn create_user(req: CreateUserRequest, pool: &LifeguardPool) -> Result<Creat
 ### What Beginners Don't Know (Yet)
 
 As a beginner, you might not know:
-- How to structure error responses (stable JSON today; RFC 7807 planned)
+- How to structure error responses (RFC 7807 Problem Details; see `docs/PROBLEM_DETAILS.md`)
 - How to set up Prometheus metrics
 - How to configure OpenTelemetry tracing
 - How to handle CORS correctly
@@ -216,7 +216,7 @@ As a beginner, you might not know:
 
 **BRRTRouter includes all of this out of the box**. You get production-ready patterns without having to learn them first:
 
-- ✅ **Error responses**: structured JSON (`error` / `reason`); RFC 7807 planned (Epic 13.3)
+- ✅ **Error responses**: RFC 7807 `application/problem+json` (Epic 13.3)
 - ✅ **Metrics**: Prometheus-compatible `/metrics` endpoint
 - ✅ **Tracing**: OpenTelemetry with automatic span creation
 - ✅ **CORS**: RFC 6454-compliant with route-specific configuration

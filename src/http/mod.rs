@@ -8,6 +8,7 @@ mod accept_query;
 mod fetch;
 pub mod method_ext;
 pub mod openapi_query;
+pub mod problem;
 mod proxy;
 pub mod uri_encode;
 mod webhook_delivery;
@@ -22,6 +23,12 @@ pub use fetch::{
 pub use openapi_query::{
     encode_query_form_explode, encode_query_form_no_explode, encode_query_styled,
     query_rebuild_style, QueryRebuildStyle, QueryStyleError,
+};
+pub use problem::{
+    body_too_large_problem, legacy_error_json_enabled, multipart_problem,
+    parameter_validation_problem, problem_from_legacy_body, write_problem, Problem,
+    LEGACY_ERROR_JSON_ENV, PROBLEM_CONTENT_TYPE, TYPE_BASE, TYPE_MULTIPART_MISSING_BOUNDARY,
+    TYPE_PARAMETER_VALIDATION_FAILED, TYPE_REQUEST_BODY_TOO_LARGE,
 };
 pub use proxy::{
     classify_transport_error, client_pool_key, downstream_host, downstream_http_port,
