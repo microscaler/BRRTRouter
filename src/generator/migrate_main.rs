@@ -253,7 +253,7 @@ fn main() -> io::Result<()> {{
             ", RunAppHooks".to_string()
         },
         gen = gen,
-        arc_import = if plan.has_lifeguard_prometheus {
+        arc_import = if plan.has_lifeguard_prometheus || plan.has_db_warm {
             "use std::sync::Arc;\n".to_string()
         } else {
             String::new()
@@ -273,17 +273,19 @@ fn render_hooks_block(plan: &MainMigrationPlan) -> String {
     }
 
     let mut lines = vec!["        .hooks(RunAppHooks {".to_string()];
+    // Lifeguard metrics scrape (detected via `lifeguard::metrics` in legacy main).
     if plan.has_lifeguard_prometheus {
         lines.push(
-            "            extra_prometheus: Some(Arc::new(hauliage_database::prometheus_scrape_text)),"
+            "            extra_prometheus: Some(Arc::new(lifeguard::metrics::prometheus_scrape_text)),"
                 .to_string(),
         );
+    }
+    // Hauliage DB warm + readiness share the same product signal (`hauliage_database::db()`).
+    if plan.has_db_warm {
         lines.push(
             "            readiness_check: Some(Arc::new(hauliage_database::readiness_check)),"
                 .to_string(),
         );
-    }
-    if plan.has_db_warm {
         lines.push("            before_listen: Some(Box::new(|| {".to_string());
         lines.push("                let _ = hauliage_database::db();".to_string());
         lines.push("            })),".to_string());
@@ -355,6 +357,11 @@ fn main() {
         assert!(rendered.contains("geographic_telemetry_and_mapping"));
         assert!(rendered.contains("lifeguard::metrics::prometheus_scrape_text"));
         assert!(rendered.contains("hauliage_database::db()"));
+        assert!(rendered.contains("hauliage_database::readiness_check"));
+        assert!(
+            !rendered.contains("hauliage_database::prometheus_scrape_text"),
+            "lifeguard scrape must not be replaced by hauliage_database prometheus"
+        );
     }
 
     #[test]
