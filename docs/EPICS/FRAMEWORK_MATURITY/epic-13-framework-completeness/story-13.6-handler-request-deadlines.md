@@ -65,12 +65,12 @@ instead of holding a worker indefinitely.
 
 ### Acceptance criteria (tests)
 
-- [ ] P1/P2 and N3/N4 mandatory.
+- [x] P1/P2 and N3/N4 mandatory.
 
 ## Acceptance criteria
 
-- [ ] Config documented; default safe for existing apps (off or high).
-- [ ] FR/NFR + unit tests complete.
+- [x] Config documented; default safe for existing apps (off or high).
+- [x] FR/NFR + unit tests complete.
 
 ## References
 

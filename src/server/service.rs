@@ -734,6 +734,16 @@ pub fn metrics_endpoint(
         metrics.rate_limit_sheds()
     );
 
+    body.push_str(
+        "# HELP brrtrouter_handler_deadline_timeouts_total Handler wait deadlines exceeded (HTTP 504)\n",
+    );
+    body.push_str("# TYPE brrtrouter_handler_deadline_timeouts_total counter\n");
+    let _ = writeln!(
+        body,
+        "brrtrouter_handler_deadline_timeouts_total {}",
+        metrics.handler_deadline_timeouts()
+    );
+
     // Connection metrics
     body.push_str("# HELP brrtrouter_connection_closes_total Total number of connection close events (client disconnects)\n");
     body.push_str("# TYPE brrtrouter_connection_closes_total counter\n");

@@ -27,6 +27,7 @@ Set `BRRTR_LEGACY_ERROR_JSON=1` (or `true` / `yes`) to emit the pre-13.3
 | `…/uri-too-long` | 414 | — |
 | `…/bad-request` | 400 | — |
 | `…/rate-limit-exceeded` | 429 | `rate_limit_exceeded` |
+| `…/gateway-timeout` | 504 | `handler_deadline_exceeded` |
 | `…/internal-error` | 5xx | — |
 
 Prefix: `https://microscaler.dev/problems/`.

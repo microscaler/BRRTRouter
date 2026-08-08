@@ -254,6 +254,9 @@ pub struct RouteMeta {
     pub estimated_request_body_bytes: Option<usize>,
     /// Vendor extension override for stack size (x-brrtrouter-stack-size)
     pub x_brrtrouter_stack_size: Option<usize>,
+    /// Per-route handler wait deadline in ms (`x-brrtrouter-deadline-ms`, Epic 13.6).
+    /// Combined with the global ceiling via [`crate::dispatcher::resolve_deadline`].
+    pub x_brrtrouter_deadline_ms: Option<u64>,
     /// Route-specific CORS policy from OpenAPI `x-cors` extension
     /// Determines how CORS should be handled for this route:
     /// - `Inherit`: Use global CORS configuration (default)

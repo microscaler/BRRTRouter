@@ -120,6 +120,21 @@ impl RunAppBuilder {
         let metrics = Arc::new(MetricsMiddleware::new());
         dispatcher.add_middleware(metrics.clone());
 
+        // Epic 13.6: handler deadline — config.yaml wins over env when set.
+        let deadline_ms = app_config
+            .http
+            .as_ref()
+            .and_then(|h| h.handler_deadline_ms)
+            .or_else(crate::dispatcher::handler_deadline_from_env);
+        dispatcher.set_handler_deadline_ms(deadline_ms);
+        if let Some(ms) = dispatcher.handler_deadline_ms {
+            let m = metrics.clone();
+            dispatcher.set_on_deadline_timeout(Some(Arc::new(move || {
+                m.inc_handler_deadline_timeout();
+            })));
+            println!("[startup] handler deadline enabled ({ms} ms)");
+        }
+
         let memory = Arc::new(crate::middleware::MemoryMiddleware::new());
         crate::middleware::memory::start_memory_monitor(memory.clone());
 

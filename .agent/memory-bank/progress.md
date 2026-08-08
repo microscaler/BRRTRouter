@@ -1,5 +1,18 @@
 # Progress
 
+## 2026-08-09 — Story 13.6 handler deadlines → 504
+
+- `src/dispatcher/deadline.rs` + `recv_timeout` wait; default off.
+- Config: `BRRTR_HANDLER_DEADLINE_MS` / `http.handler_deadline_ms` / `x-brrtrouter-deadline-ms`.
+- Metric `brrtrouter_handler_deadline_timeouts_total`; docs `HANDLER_DEADLINES.md`.
+- Tests: `dispatcher::deadline` + `handler_deadline_integration_tests`.
+- Closed #406.
+
+## 2026-08-09 — Story 13.5 browser posture (Option B)
+
+- `docs/BROWSER_SECURITY_POSTURE.md`; `SetCookieBuilder` in `security/set_cookie.rs`.
+- Closed #405. Pushed `440ddaf`.
+
 ## 2026-08-09 — Story 13.4 streaming uploads / HttpFile
 
 - `src/server/multipart_stream.rs`; opt-in `BRRTR_MULTIPART_STREAM_FILES`.

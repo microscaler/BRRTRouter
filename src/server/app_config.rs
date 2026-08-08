@@ -99,6 +99,9 @@ pub struct HttpConfig {
     pub keep_alive: Option<bool>,
     pub timeout_secs: Option<u64>,
     pub max_requests: Option<u64>,
+    /// Handler wait deadline in milliseconds (Epic 13.6). `0` / absent → disabled.
+    /// Env override: `BRRTR_HANDLER_DEADLINE_MS`.
+    pub handler_deadline_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]

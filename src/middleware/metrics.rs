@@ -208,6 +208,8 @@ pub struct MetricsMiddleware {
     cors_route_disabled: AtomicUsize,
     /// Rate-limit sheds (429) from [`RateLimitMiddleware`](crate::middleware::RateLimitMiddleware)
     rate_limit_sheds: AtomicUsize,
+    /// Handler wait deadline timeouts (504) — Epic 13.6
+    handler_deadline_timeouts: AtomicUsize,
 }
 
 /// Default initialization for metrics middleware
@@ -244,6 +246,7 @@ impl Default for MetricsMiddleware {
             cors_preflight_denials: AtomicUsize::new(0),
             cors_route_disabled: AtomicUsize::new(0),
             rate_limit_sheds: AtomicUsize::new(0),
+            handler_deadline_timeouts: AtomicUsize::new(0),
         }
     }
 }
@@ -381,6 +384,18 @@ impl MetricsMiddleware {
     #[must_use]
     pub fn rate_limit_sheds(&self) -> usize {
         self.rate_limit_sheds.load(Ordering::Relaxed)
+    }
+
+    /// Increment handler-deadline timeout counter (504).
+    pub fn inc_handler_deadline_timeout(&self) {
+        self.handler_deadline_timeouts
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Total handler deadline timeouts.
+    #[must_use]
+    pub fn handler_deadline_timeouts(&self) -> usize {
+        self.handler_deadline_timeouts.load(Ordering::Relaxed)
     }
 
     /// Get connection health ratio (successful requests vs connection issues)

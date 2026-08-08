@@ -53,6 +53,9 @@ http:
   keep_alive: true
   timeout_secs: 5
   max_requests: 5000
+  # Handler wait deadline in ms (Epic 13.6). Omit / 0 = disabled (legacy wait).
+  # Env override when unset here: BRRTR_HANDLER_DEADLINE_MS. See docs/HANDLER_DEADLINES.md.
+  # handler_deadline_ms: 5000
 
 # Rate limiting (Epic 13.2) — omitted / enabled: false → no-op (safe default).
 # rate_limit:

@@ -37,6 +37,7 @@ pub const TYPE_NOT_FOUND: &str = "https://microscaler.dev/problems/not-found";
 pub const TYPE_URI_TOO_LONG: &str = "https://microscaler.dev/problems/uri-too-long";
 pub const TYPE_BAD_REQUEST: &str = "https://microscaler.dev/problems/bad-request";
 pub const TYPE_RATE_LIMIT_EXCEEDED: &str = "https://microscaler.dev/problems/rate-limit-exceeded";
+pub const TYPE_GATEWAY_TIMEOUT: &str = "https://microscaler.dev/problems/gateway-timeout";
 pub const TYPE_INTERNAL: &str = "https://microscaler.dev/problems/internal-error";
 
 /// RFC 7807 Problem Details builder.
@@ -96,6 +97,7 @@ impl Problem {
             414 => (TYPE_URI_TOO_LONG, "URI Too Long"),
             429 => (TYPE_RATE_LIMIT_EXCEEDED, "Too Many Requests"),
             400 => (TYPE_BAD_REQUEST, "Bad Request"),
+            504 => (TYPE_GATEWAY_TIMEOUT, "Gateway Timeout"),
             500..=599 => (TYPE_INTERNAL, "Internal Server Error"),
             _ => (TYPE_BAD_REQUEST, "Error"),
         };
@@ -258,6 +260,7 @@ fn problem_for_reason(reason: &str, status: u16, title: &str, detail: &str) -> P
         "rate_limit_exceeded" | "rate limit exceeded" => {
             (TYPE_RATE_LIMIT_EXCEEDED, "Too Many Requests")
         }
+        "handler_deadline_exceeded" => (TYPE_GATEWAY_TIMEOUT, "Gateway Timeout"),
         _ => (TYPE_BAD_REQUEST, default_title(status)),
     };
     let title = if title.is_empty() {

@@ -417,6 +417,11 @@ pub struct Dispatcher {
     pub queue_depths: HashMap<String, std::sync::Arc<std::sync::atomic::AtomicUsize>>,
     /// Global backpressure bound for standard queues
     pub queue_bound: usize,
+    /// Global handler wait deadline in milliseconds (`None` / `0` = disabled).
+    /// See [`super::deadline`].
+    pub handler_deadline_ms: Option<u64>,
+    /// Optional callback when a handler wait times out (Epic 13.6 metrics hook).
+    pub on_deadline_timeout: Option<Arc<dyn Fn() + Send + Sync>>,
 }
 
 impl Default for Dispatcher {
@@ -442,7 +447,22 @@ impl Dispatcher {
             middlewares: Vec::new(),
             queue_depths: HashMap::new(),
             queue_bound,
+            handler_deadline_ms: super::deadline::handler_deadline_from_env(),
+            on_deadline_timeout: None,
         }
+    }
+
+    /// Set the global handler deadline (milliseconds). `0` or `None` disables.
+    pub fn set_handler_deadline_ms(&mut self, ms: Option<u64>) {
+        self.handler_deadline_ms = match ms {
+            Some(0) | None => None,
+            Some(n) => Some(n),
+        };
+    }
+
+    /// Attach a callback invoked when a handler wait times out (e.g. metrics).
+    pub fn set_on_deadline_timeout(&mut self, cb: Option<Arc<dyn Fn() + Send + Sync>>) {
+        self.on_deadline_timeout = cb;
     }
 
     /// Add a handler sender for the given route metadata. This allows handlers
@@ -714,7 +734,10 @@ impl Dispatcher {
     ///
     /// # Timeout
     ///
-    /// Waits up to 30 seconds for a response before timing out.
+    /// When a handler deadline is configured ([`Self::handler_deadline_ms`] or
+    /// per-route `x-brrtrouter-deadline-ms`), waits at most that long via
+    /// `recv_timeout` and returns **504** on expiry. Otherwise waits indefinitely
+    /// (legacy behavior).
     ///
     /// # JSF Compliance
     ///
@@ -744,6 +767,7 @@ impl Dispatcher {
         raw_query: Option<String>,
     ) -> Option<HandlerResponse> {
         let (reply_tx, reply_rx) = mpsc::channel();
+        let route_deadline_ms = route_match.route.x_brrtrouter_deadline_ms;
 
         // D1: Handler lookup
         debug!(
@@ -883,43 +907,83 @@ impl Dispatcher {
                 "Waiting for handler response"
             );
 
-            // Receive response with timeout detection
-            // Note: may::sync::mpsc doesn't have recv_timeout, so we use recv()
-            // and rely on handler-side timeouts and panic recovery
-            let r = match reply_rx.recv() {
-                Ok(response) => {
-                    // Per-request — demoted to debug (PRD 2.2).
-                    let elapsed = start.elapsed();
-                    debug!(
-                        request_id = %request_id,
-                        handler_name = %request.handler_name,
-                        latency_ms = elapsed.as_millis() as u64,
-                        status = response.status,
-                        "Handler response received"
-                    );
-                    response
-                }
-                Err(e) => {
-                    // D7: Handler channel closed - likely handler panic or resource exhaustion
-                    let elapsed = start.elapsed();
-                    error!(
-                        request_id = %request_id,
-                        handler_name = %request.handler_name,
-                        elapsed_ms = elapsed.as_millis() as u64,
-                        error = %e,
-                        "Handler channel closed - handler may have crashed"
-                    );
+            // Resolve deadline: global ceiling + optional per-route override (Epic 13.6).
+            let deadline =
+                super::deadline::resolve_deadline(self.handler_deadline_ms, route_deadline_ms);
 
-                    // Return a 503 Service Unavailable response instead of None
-                    // This prevents connection drops and indicates server issue
-                    return Some(HandlerResponse::error(
-                        503,
-                        &format!(
-                        "Handler '{}' is not responding - possible crash or resource exhaustion",
-                        request.handler_name
-                    ),
-                    ));
-                }
+            let r = match deadline {
+                None => match reply_rx.recv() {
+                    Ok(response) => {
+                        let elapsed = start.elapsed();
+                        debug!(
+                            request_id = %request_id,
+                            handler_name = %request.handler_name,
+                            latency_ms = elapsed.as_millis() as u64,
+                            status = response.status,
+                            "Handler response received"
+                        );
+                        response
+                    }
+                    Err(e) => {
+                        let elapsed = start.elapsed();
+                        error!(
+                            request_id = %request_id,
+                            handler_name = %request.handler_name,
+                            elapsed_ms = elapsed.as_millis() as u64,
+                            error = %e,
+                            "Handler channel closed - handler may have crashed"
+                        );
+                        return Some(HandlerResponse::error(
+                            503,
+                            &format!(
+                                "Handler '{}' is not responding - possible crash or resource exhaustion",
+                                request.handler_name
+                            ),
+                        ));
+                    }
+                },
+                Some(limit) => match reply_rx.recv_timeout(limit) {
+                    Ok(response) => {
+                        let elapsed = start.elapsed();
+                        debug!(
+                            request_id = %request_id,
+                            handler_name = %request.handler_name,
+                            latency_ms = elapsed.as_millis() as u64,
+                            status = response.status,
+                            "Handler response received"
+                        );
+                        response
+                    }
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                        warn!(
+                            request_id = %request_id,
+                            handler_name = %request.handler_name,
+                            deadline_ms = limit.as_millis() as u64,
+                            "Handler deadline exceeded — returning 504"
+                        );
+                        if let Some(cb) = &self.on_deadline_timeout {
+                            cb();
+                        }
+                        // Dropping reply_rx closes the oneshot; a late handler send is ignored.
+                        return Some(super::deadline::deadline_exceeded_response());
+                    }
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                        let elapsed = start.elapsed();
+                        error!(
+                            request_id = %request_id,
+                            handler_name = %request.handler_name,
+                            elapsed_ms = elapsed.as_millis() as u64,
+                            "Handler channel closed during deadline wait"
+                        );
+                        return Some(HandlerResponse::error(
+                            503,
+                            &format!(
+                                "Handler '{}' is not responding - possible crash or resource exhaustion",
+                                request.handler_name
+                            ),
+                        ));
+                    }
+                },
             };
             (r, start.elapsed())
         };

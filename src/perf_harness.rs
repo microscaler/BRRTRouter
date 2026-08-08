@@ -47,6 +47,7 @@ pub fn scalability_routes(n: usize) -> Vec<RouteMeta> {
             sse: false,
             estimated_request_body_bytes: None,
             x_brrtrouter_stack_size: None,
+            x_brrtrouter_deadline_ms: None,
             cors_policy: crate::middleware::RouteCorsPolicy::Inherit,
         });
     }

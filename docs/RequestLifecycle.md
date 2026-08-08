@@ -978,7 +978,7 @@ Do not treat the aspirational rows above as available APIs until those stories c
 4. **Handler coroutine** receives request
 5. Executes business logic
 6. Sends `HandlerResponse` via reply channel
-7. **Dispatcher** receives response
+7. **Dispatcher** receives response (`recv` or `recv_timeout` when a handler deadline is set — [Epic 13.6](./HANDLER_DEADLINES.md); timeout → **504**)
 8. Returns response to server
 
 **Code Reference:** `src/dispatcher/core.rs` - `Dispatcher::dispatch()`

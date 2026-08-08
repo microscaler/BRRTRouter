@@ -112,6 +112,7 @@ fn test_template_writers() {
         sse: false,
         estimated_request_body_bytes: None,
         x_brrtrouter_stack_size: None,
+        x_brrtrouter_deadline_ms: None,
         cors_policy: brrtrouter::middleware::RouteCorsPolicy::Inherit,
     };
     write_main_rs(&src_dir, "tester", vec![route]).unwrap();
@@ -303,6 +304,7 @@ fn impl_registry_renders_arms_for_discovered_controllers() {
             sse: false,
             estimated_request_body_bytes: None,
             x_brrtrouter_stack_size: None,
+            x_brrtrouter_deadline_ms: None,
             cors_policy: brrtrouter::middleware::RouteCorsPolicy::Inherit,
             x_service: None,
             x_brrtrouter_downstream_path: None,
@@ -327,6 +329,7 @@ fn impl_registry_renders_arms_for_discovered_controllers() {
             sse: false,
             estimated_request_body_bytes: None,
             x_brrtrouter_stack_size: None,
+            x_brrtrouter_deadline_ms: None,
             cors_policy: brrtrouter::middleware::RouteCorsPolicy::Inherit,
             x_service: None,
             x_brrtrouter_downstream_path: None,
@@ -407,6 +410,7 @@ fn controller_emits_http_json_when_operation_has_non_2xx_json_schema() {
         sse: false,
         estimated_request_body_bytes: None,
         x_brrtrouter_stack_size: None,
+        x_brrtrouter_deadline_ms: None,
         cors_policy: brrtrouter::middleware::RouteCorsPolicy::Inherit,
         x_service: None,
         x_brrtrouter_downstream_path: None,

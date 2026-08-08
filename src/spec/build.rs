@@ -728,6 +728,18 @@ pub fn extract_stack_size_override(operation: &oas3::spec::Operation) -> Option<
         })
 }
 
+/// Extract `x-brrtrouter-deadline-ms` (Epic 13.6) — milliseconds; `0` ignored at resolve time.
+pub fn extract_deadline_ms_override(operation: &oas3::spec::Operation) -> Option<u64> {
+    operation
+        .extensions
+        .get("x-brrtrouter-deadline-ms")
+        .or_else(|| operation.extensions.get("brrtrouter-deadline-ms"))
+        .and_then(|v| {
+            v.as_u64()
+                .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+        })
+}
+
 /// Extract the `x-brrtrouter-impl` tri-state marker from an OpenAPI operation.
 ///
 /// Returns `Some(true)` when real impl is required, `Some(false)` for gen-stub-only,
@@ -972,6 +984,7 @@ fn push_route_from_operation(
 
     let estimated_request_body_bytes = estimate_body_size(request_schema.as_ref());
     let x_brrtrouter_stack_size = extract_stack_size_override(operation);
+    let x_brrtrouter_deadline_ms = extract_deadline_ms_override(operation);
     let cors_policy = crate::middleware::extract_route_cors_config(operation);
 
     let x_service = operation
@@ -1007,6 +1020,7 @@ fn push_route_from_operation(
         sse: extract_sse_flag(operation),
         estimated_request_body_bytes,
         x_brrtrouter_stack_size,
+        x_brrtrouter_deadline_ms,
         cors_policy,
         x_service,
         x_brrtrouter_downstream_path,

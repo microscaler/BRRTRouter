@@ -1,9 +1,10 @@
-## 2026-08-09 — Epic 13.5 browser posture shipped (Option B)
+## 2026-08-09 — Epic 13.6 handler deadlines shipped
 
-**Commit:** (pending push) · Issue [#405](https://github.com/microscaler/BRRTRouter/issues/405)
+**Issue:** [#406](https://github.com/microscaler/BRRTRouter/issues/406)
 
-- Decision: **Bearer/JWKS only** — no server-session / CSRF kit
-- `SetCookieBuilder` for non-session cookies (Secure/HttpOnly/SameSite)
-- Doc: `docs/BROWSER_SECURITY_POSTURE.md`
+- `src/dispatcher/deadline.rs` — resolve + 504 problem; env `BRRTR_HANDLER_DEADLINE_MS`
+- Dispatcher `recv_timeout`; route `x-brrtrouter-deadline-ms`; metric callback
+- Docs: `docs/HANDLER_DEADLINES.md`
+- Tests: unit + `handler_deadline_integration_tests`
 
-**NOW:** 13.6 handler deadlines → 504 (#406) · 14.2 X.509 SVID (#415)
+**NOW:** 13.7 SSE live flush (#407) · also 14.2 X.509 SVID (#415)
