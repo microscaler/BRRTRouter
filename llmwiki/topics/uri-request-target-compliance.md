@@ -51,7 +51,7 @@ Done — see [`TESTING_STANDARD.md`](../../docs/EPICS/URI_REQUEST_TARGET/TESTING
 - Compliance matrix + goldens **shipped** (Story 10.1 / [#375](https://github.com/microscaler/BRRTRouter/issues/375)).
 - Waves 0–5 done (Epic 10 stories 10.1–10.11).
 - Dual stack: Decision B `RequestTarget` + both parsers gated in CI.
-- QUERY method first-class in router/CORS (11.1); OpenAPI load via `query:` / `x-brrtrouter-query` (11.2). Proxy/client (11.3) and Accept-Query docs (11.4) remain.
+- QUERY first-class: router/CORS (11.1), OpenAPI (11.2), proxy/client + retry classifier (11.3). Accept-Query / POST fallback docs (11.4) remain.
 - RFC 10008 is **orthogonal** to percent-encoding; do not conflate in fixes.
 
 ## Build order (summary)
@@ -66,6 +66,6 @@ Wave 5: 10.9 → 10.10 → 10.8
 Epic 11: 11.1 → 11.2 → 11.3 → 11.4  (after 10.1; 11.3 after 10.7)
 ```
 
-**Epic 10 done.** Epic 11: **11.1–11.2 done**. **NOW:** **11.3** Proxy & client QUERY
-([#388](https://github.com/microscaler/BRRTRouter/issues/388)).
+**Epic 10 done.** Epic 11: **11.1–11.3 done**. **NOW:** **11.4** Accept-Query + POST fallback
+([#389](https://github.com/microscaler/BRRTRouter/issues/389)).
 Full index: [`BUILD_BOARD.md`](../../docs/EPICS/URI_REQUEST_TARGET/BUILD_BOARD.md).

@@ -1,12 +1,10 @@
-//! HTTP method helpers for RFC 10008 QUERY (Story 11.1).
+//! HTTP method helpers for RFC 10008 QUERY (Stories 11.1 / 11.3).
 //!
 //! `http::Method` has no `Method::QUERY` constant; QUERY is an extension token.
 //! Routing and CORS use [`method_query`] (uppercase only). Lowercase `query` is a
 //! distinct token and will not match QUERY routes.
 
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::sync::{Arc, OnceLock};
+use std::sync::OnceLock;
 
 use http::Method;
 
@@ -25,6 +23,19 @@ pub fn is_query_method(method: &Method) -> bool {
     method == &method_query()
 }
 
+/// Methods eligible for automatic retry (safe + idempotent per RFC 9110 / RFC 10008).
+///
+/// Includes [`method_query`]: QUERY is defined as both safe and idempotent, so
+/// retry policies may treat it like GET (Story 11.3 P6). Does **not** include
+/// POST/PATCH (not idempotent) or PUT/DELETE (idempotent but not safe).
+#[must_use]
+pub fn method_allows_automatic_retry(method: &Method) -> bool {
+    matches!(
+        method.as_str(),
+        "GET" | "HEAD" | "OPTIONS" | "TRACE" | "QUERY"
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -34,6 +45,9 @@ mod tests {
     use crate::router::{ParamVec, Router};
     use crate::spec::RouteMeta;
     use may::sync::mpsc;
+    use std::collections::HashMap;
+    use std::path::PathBuf;
+    use std::sync::Arc;
 
     fn route(method: Method, path: &str, handler: &str) -> RouteMeta {
         RouteMeta {
@@ -230,5 +244,22 @@ mod tests {
         let mw = CorsMiddleware::permissive();
         let _ = mw.before(&options_req("https://app.example", "QUERY"));
         let _ = mw.before(&options_req("https://app.example", "GET"));
+    }
+
+    // --- Story 11.3 P6 / retry classifier ---
+
+    #[test]
+    fn query_retry_positive_p6_query_allows_automatic_retry() {
+        assert!(method_allows_automatic_retry(&method_query()));
+        assert!(method_allows_automatic_retry(&Method::GET));
+        assert!(method_allows_automatic_retry(&Method::HEAD));
+    }
+
+    #[test]
+    fn query_retry_negative_post_patch_not_auto_retry() {
+        assert!(!method_allows_automatic_retry(&Method::POST));
+        assert!(!method_allows_automatic_retry(&Method::PATCH));
+        assert!(!method_allows_automatic_retry(&Method::PUT));
+        assert!(!method_allows_automatic_retry(&Method::DELETE));
     }
 }

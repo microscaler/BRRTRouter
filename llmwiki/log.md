@@ -1,9 +1,14 @@
 # LLM Wiki Log
 
+## [2026-08-08] ship | Story 11.3 Proxy & client QUERY
+
+- `fetch_query` + `method_allows_automatic_retry`; proxy QUERY→mock body/method tests.
+- Epic 10 composition taxonomy unchanged on QUERY. **NOW** = 11.4 (#389).
+
 ## [2026-08-08] ship | Story 11.2 OpenAPI QUERY operations
 
 - Promote `query:` → `x-brrtrouter-query`; `build_routes` registers `method_query()` + body schemas.
-- Docs/fixture + `tests/openapi_query_method_tests.rs`. **NOW** = 11.3 (#388).
+- Docs/fixture + `tests/openapi_query_method_tests.rs`.
 
 ## [2026-08-08] ship | Story 11.1 QUERY method + router + CORS
 

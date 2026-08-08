@@ -10,11 +10,11 @@ pub mod openapi_query;
 mod proxy;
 pub mod uri_encode;
 
-pub use method_ext::{is_query_method, method_query};
+pub use method_ext::{is_query_method, method_allows_automatic_retry, method_query};
 
 pub use fetch::{
     fetch_delete, fetch_get, fetch_get_full, fetch_get_text_with_retry, fetch_patch, fetch_post,
-    HttpFetchError, HttpFetchOptions, HttpGetResponse,
+    fetch_query, HttpFetchError, HttpFetchOptions, HttpGetResponse,
 };
 pub use openapi_query::{
     encode_query_form_explode, encode_query_form_no_explode, encode_query_styled,

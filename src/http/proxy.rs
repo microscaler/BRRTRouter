@@ -1358,4 +1358,246 @@ mod tests {
         assert!(res.body.get("message").and_then(|v| v.as_str()).is_some());
         assert_eq!(res.body.as_object().map(|o| o.len()), Some(3));
     }
+
+    // --- Story 11.3 — PROXY QUERY + body ---
+
+    #[derive(Default, Clone, Debug)]
+    struct CapturedDownstream {
+        method: String,
+        content_type: Option<String>,
+        body: Vec<u8>,
+        /// True if the client-supplied `Connection: keep-alive` was forwarded (must be false).
+        saw_forwarded_keep_alive: bool,
+        saw_request_id: bool,
+    }
+
+    fn spawn_capture_downstream() -> (u16, Arc<Mutex<Option<CapturedDownstream>>>) {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        use std::thread;
+        use std::time::Duration;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(false).expect("blocking accept");
+        let port = listener.local_addr().unwrap().port();
+        let captured = Arc::new(Mutex::new(None));
+        let slot = Arc::clone(&captured);
+        thread::spawn(move || {
+            let Ok((mut stream, _)) = listener.accept() else {
+                return;
+            };
+            let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
+            let mut buf = Vec::new();
+            let mut tmp = [0u8; 4096];
+            loop {
+                match stream.read(&mut tmp) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        buf.extend_from_slice(&tmp[..n]);
+                        if let Some(end) = find_http_header_end(&buf) {
+                            let headers = &buf[..end];
+                            let content_length = parse_content_length(headers).unwrap_or(0);
+                            if buf.len() >= end + content_length {
+                                break;
+                            }
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+            let parsed = parse_captured_http(&buf);
+            *slot.lock().unwrap() = Some(parsed);
+            let _ = stream.write_all(
+                b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 11\r\nConnection: close\r\n\r\n{\"ok\":true}",
+            );
+        });
+        (port, captured)
+    }
+
+    fn find_http_header_end(buf: &[u8]) -> Option<usize> {
+        buf.windows(4).position(|w| w == b"\r\n\r\n").map(|i| i + 4)
+    }
+
+    fn parse_content_length(headers: &[u8]) -> Option<usize> {
+        let text = std::str::from_utf8(headers).ok()?;
+        for line in text.lines() {
+            let lower = line.to_ascii_lowercase();
+            if let Some(rest) = lower.strip_prefix("content-length:") {
+                return rest.trim().parse().ok();
+            }
+        }
+        None
+    }
+
+    fn parse_captured_http(buf: &[u8]) -> CapturedDownstream {
+        let end = find_http_header_end(buf).unwrap_or(buf.len());
+        let header_text = String::from_utf8_lossy(&buf[..end]);
+        let mut lines = header_text.lines();
+        let request_line = lines.next().unwrap_or("");
+        let method = request_line
+            .split_whitespace()
+            .next()
+            .unwrap_or("")
+            .to_string();
+        let mut content_type = None;
+        let mut saw_forwarded_keep_alive = false;
+        let mut saw_request_id = false;
+        for line in lines {
+            let lower = line.to_ascii_lowercase();
+            if let Some(rest) = lower.strip_prefix("content-type:") {
+                content_type = Some(rest.trim().to_string());
+            }
+            if lower.starts_with("connection:") && lower.contains("keep-alive") {
+                saw_forwarded_keep_alive = true;
+            }
+            if lower.starts_with("x-request-id:") {
+                saw_request_id = true;
+            }
+        }
+        let body = buf.get(end..).unwrap_or(&[]).to_vec();
+        CapturedDownstream {
+            method,
+            content_type,
+            body,
+            saw_forwarded_keep_alive,
+            saw_request_id,
+        }
+    }
+
+    fn query_proxy_request(body: Option<Value>, headers: &[(&str, &str)]) -> HandlerRequest {
+        let (tx, _rx) = mpsc::channel();
+        let mut hdrs = HeaderVec::new();
+        for (k, v) in headers {
+            hdrs.push((Arc::from(*k), (*v).to_string()));
+        }
+        HandlerRequest {
+            request_id: RequestId::new(),
+            method: crate::http::method_query(),
+            path: "/search".to_string(),
+            handler_name: "query_proxy_test".to_string(),
+            path_params: ParamVec::new(),
+            query_params: ParamVec::new(),
+            raw_query: None,
+            headers: hdrs,
+            cookies: HeaderVec::new(),
+            body,
+            jwt_claims: None,
+            reply_tx: tx,
+            queue_guard: None,
+        }
+    }
+
+    /// P1 / P4 / P5 / N5 / N8 — BFF QUERY forwards method + same body bytes; not GET/POST.
+    #[test]
+    fn query_proxy_positive_p1_forwards_query_method_and_body() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        std::env::remove_var("POD_NAMESPACE");
+        let (port, captured) = spawn_capture_downstream();
+        std::env::set_var("HAULIAGE_SERVICE_HTTP_PORT", port.to_string());
+
+        let body = serde_json::json!({"q":"South Africa","limit":2});
+        let expected = serde_json::to_vec(&body).unwrap();
+        let req = query_proxy_request(
+            Some(body),
+            &[
+                ("content-type", "application/json"),
+                ("connection", "keep-alive"),
+                ("x-request-id", "req-11-3"),
+            ],
+        );
+        let res = proxy_untyped(&req, "127.0.0.1", "/search");
+        assert_eq!(res.status, 200, "P5 2xx from mock: {:?}", res.body);
+
+        let got = captured
+            .lock()
+            .unwrap()
+            .clone()
+            .expect("downstream should receive request");
+        assert_eq!(got.method, "QUERY", "N8 must not mis-map to GET/POST");
+        assert_eq!(got.body, expected, "P1/N5 same body bytes");
+        assert_eq!(
+            got.content_type.as_deref(),
+            Some("application/json"),
+            "P4 Content-Type preserved"
+        );
+        assert!(
+            !got.saw_forwarded_keep_alive,
+            "P3 Connection: keep-alive must not be forwarded"
+        );
+        assert!(got.saw_request_id, "P3 end-to-end headers still forward");
+
+        std::env::remove_var("HAULIAGE_SERVICE_HTTP_PORT");
+    }
+
+    /// P2 / N6 — legacy http 0.2 Method bridge accepts QUERY.
+    #[test]
+    fn query_proxy_positive_p2_legacy_method_from_bytes() {
+        let m = http_legacy::Method::from_bytes(b"QUERY").expect("N6 QUERY token");
+        assert_eq!(m.as_str(), "QUERY");
+        assert_eq!(
+            http_legacy::Method::from_bytes(crate::http::method_query().as_str().as_bytes())
+                .unwrap()
+                .as_str(),
+            "QUERY"
+        );
+    }
+
+    /// N1 — invalid request-target on QUERY still composition 400 (not 502).
+    #[test]
+    fn query_proxy_negative_n1_invalid_target_is_400() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let mut req = query_proxy_request(Some(serde_json::json!({"q":"x"})), &[]);
+        req.query_params = param_vec(&[("q", "South Africa")]);
+        // Force rebuild of unencoded space via mismatched raw → composition InvalidUri path
+        // (same Loadlinker class as GET).
+        let res = proxy_untyped(&req, "127.0.0.1", "/p?bad");
+        // path template containing `?` → PathContainsQuestion → 400
+        assert_eq!(res.status, 400, "N1 composition not 502: {:?}", res.body);
+        assert_ne!(res.status, 502);
+    }
+
+    /// N2 — DNS/connect failure remains 502 (not composition).
+    #[test]
+    fn query_proxy_negative_n2_dns_is_502() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        std::env::set_var("POD_NAMESPACE", "logistics");
+        std::env::set_var("HAULIAGE_SERVICE_HTTP_PORT", "8080");
+        let req = query_proxy_request(Some(serde_json::json!({"q":"x"})), &[]);
+        let res = proxy_untyped(&req, "no-such-service-xyz.invalid", "/search");
+        assert_eq!(res.status, 502);
+        std::env::remove_var("POD_NAMESPACE");
+        std::env::remove_var("HAULIAGE_SERVICE_HTTP_PORT");
+    }
+
+    /// N3 — empty body when none attached: proxy does not panic (required-body 400 is service).
+    #[test]
+    fn query_proxy_negative_n3_empty_body_no_panic() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        std::env::remove_var("POD_NAMESPACE");
+        let (port, captured) = spawn_capture_downstream();
+        std::env::set_var("HAULIAGE_SERVICE_HTTP_PORT", port.to_string());
+        let req = query_proxy_request(None, &[("content-type", "application/json")]);
+        let res = proxy_untyped(&req, "127.0.0.1", "/search");
+        assert_eq!(res.status, 200);
+        let got = captured.lock().unwrap().clone().unwrap();
+        assert_eq!(got.method, "QUERY");
+        assert!(got.body.is_empty(), "N3/N5 empty body not fabricated");
+        std::env::remove_var("HAULIAGE_SERVICE_HTTP_PORT");
+    }
+
+    /// N4 — oversized *response* body → BodyTooLarge → 502; no panic.
+    #[test]
+    fn query_proxy_negative_n4_oversized_response_mapped() {
+        assert_eq!(proxy_error_http_status(&ProxyError::BodyTooLarge), 502);
+        let _ = proxy_error_response(&ProxyError::BodyTooLarge);
+    }
+
+    /// N7 — forward error paths do not panic.
+    #[test]
+    fn query_proxy_negative_n7_no_panic_on_errors() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let req = query_proxy_request(Some(serde_json::json!({"q":"x"})), &[]);
+        let _ = proxy_untyped(&req, "no-such-service-xyz.invalid", "/search");
+        let _ = proxy_untyped(&req, "127.0.0.1", "/p?bad");
+    }
 }

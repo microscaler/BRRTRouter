@@ -206,6 +206,31 @@ pub fn fetch_post(
     }
 }
 
+/// Perform a bounded HTTP QUERY (RFC 10008) and return `(status_code, body)`.
+///
+/// Bridges to `http` 0.2 [`Method::from_bytes`]`("QUERY")` for may_minihttp
+/// (Story 11.3). QUERY is safe/idempotent — see [`crate::http::method_allows_automatic_retry`].
+///
+/// # Errors
+///
+/// Returns [`HttpFetchError`] on URL parse failure, network/TLS errors, or oversize body.
+pub fn fetch_query(
+    url: &str,
+    body: &[u8],
+    options: &HttpFetchOptions,
+) -> Result<(u16, Vec<u8>), HttpFetchError> {
+    let parsed = Url::parse(url).map_err(|e| HttpFetchError::InvalidUrl(e.to_string()))?;
+    let method = Method::from_bytes(b"QUERY").map_err(|e| {
+        HttpFetchError::InvalidUrl(format!("QUERY method unsupported by http client: {e}"))
+    })?;
+    match parsed.scheme() {
+        "http" | "https" => fetch_method_via_client(&parsed, method, Some(body), options),
+        other => Err(HttpFetchError::InvalidUrl(format!(
+            "unsupported scheme: {other}"
+        ))),
+    }
+}
+
 /// Perform a bounded HTTP PATCH and return `(status_code, body)`.
 ///
 /// # Errors
@@ -480,6 +505,19 @@ mod tests {
     #[test]
     fn fetch_get_rejects_malformed_url() {
         let err = fetch_get("not-a-url", &HttpFetchOptions::default()).unwrap_err();
+        assert!(matches!(err, HttpFetchError::InvalidUrl(_)));
+    }
+
+    #[test]
+    fn fetch_query_positive_p2_method_from_bytes() {
+        let m = Method::from_bytes(b"QUERY").expect("QUERY token for may_minihttp");
+        assert_eq!(m.as_str(), "QUERY");
+    }
+
+    #[test]
+    fn fetch_query_rejects_unsupported_scheme() {
+        let err =
+            fetch_query("ftp://example.com/q", b"{}", &HttpFetchOptions::default()).unwrap_err();
         assert!(matches!(err, HttpFetchError::InvalidUrl(_)));
     }
 

@@ -44,6 +44,10 @@ percent-encoding.
 See [declaring-query-operations.md](declaring-query-operations.md) (`query:` or
 `x-brrtrouter-query` until OAS/`oas3` list QUERY natively).
 
+## Retry policy
+
+See [query-retry-policy.md](query-retry-policy.md) (`method_allows_automatic_retry`).
+
 ## References
 
 - RFC 10008

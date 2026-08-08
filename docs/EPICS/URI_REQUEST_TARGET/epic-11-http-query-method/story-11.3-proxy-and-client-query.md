@@ -43,15 +43,20 @@ BFF proxy and outbound HTTP client forward QUERY with body to downstream service
 
 ### Acceptance criteria (tests)
 
-- [ ] P1 and N1 mandatory.
-- [ ] Client unit coverage for QUERY method construction.
+- [x] P1 and N1 mandatory.
+- [x] Client unit coverage for QUERY method construction.
 
 ## Acceptance criteria
 
-- [ ] Integration test: BFF QUERY → mock downstream QUERY with same body.
-- [ ] Invalid request-target still uses Epic 10 composition errors (not 502).
-- [ ] Client unit/integration coverage for QUERY.
-- [ ] Unit tests section complete (positive + negative).
+- [x] Integration test: BFF QUERY → mock downstream QUERY with same body.
+- [x] Invalid request-target still uses Epic 10 composition errors (not 502).
+- [x] Client unit/integration coverage for QUERY.
+- [x] Unit tests section complete (positive + negative).
+
+## Delivery notes
+
+- `fetch_query` + `method_allows_automatic_retry` (see [query-retry-policy.md](query-retry-policy.md))
+- Proxy already mapped methods via `Method::from_bytes`; tests prove QUERY + body + hop-by-hop
 
 ## References
 
