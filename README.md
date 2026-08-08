@@ -243,7 +243,7 @@ Board: [docs/EPICS/FRAMEWORK_MATURITY/BUILD_BOARD.md](docs/EPICS/FRAMEWORK_MATUR
 URI theme: [docs/EPICS/URI_REQUEST_TARGET/BUILD_BOARD.md](docs/EPICS/URI_REQUEST_TARGET/BUILD_BOARD.md).
 
 Longer OAS surface gaps (callbacks, full 3.2 matrix):
-[OPENAPI_3.1.0_COMPLIANCE_GAP.md](OPENAPI_3.1.0_COMPLIANCE_GAP.md).
+[docs/OPENAPI_3.1.0_COMPLIANCE_GAP.md](docs/OPENAPI_3.1.0_COMPLIANCE_GAP.md).
 
 ---
 
@@ -343,8 +343,10 @@ See [docs/JSF_COMPLIANCE.md](docs/JSF_COMPLIANCE.md).
 
 - [Local Development](docs/LOCAL_DEVELOPMENT.md) — Tilt + kind
 - [Building with BRRTRouter](docs/BUILDING_WITH_BRRTROUTER.md) — Sesame-IDAM reference
+- [Microservice layout guide](docs/guides/BUILDING_MICROSERVICES.md)
 - [Development Guide](docs/DEVELOPMENT.md)
 - [Testing](docs/TEST_DOCUMENTATION.md) · [Goose load testing](docs/GOOSE_LOAD_TESTING.md)
+- [Suite brochure site](website/) — marketing landing (draft)
 
 ### Core
 
@@ -357,7 +359,8 @@ See [docs/JSF_COMPLIANCE.md](docs/JSF_COMPLIANCE.md).
 - [Request body limits](docs/request_body_limits.md) · [Stack size](docs/stack_size.md)
 - [Epic 12 board](docs/EPICS/FRAMEWORK_MATURITY/BUILD_BOARD.md)
 - [URI / QUERY epics](docs/EPICS/URI_REQUEST_TARGET/BUILD_BOARD.md)
-- [OpenAPI 3.1 compliance gap](OPENAPI_3.1.0_COMPLIANCE_GAP.md)
+- [OpenAPI 3.1 compliance gap](docs/OPENAPI_3.1.0_COMPLIANCE_GAP.md)
+- [Marketing / whitepaper drafts](docs/marketing/)
 - [Typed handlers & HTTP status PRD](docs/PRD_TYPED_HANDLER_HTTP_STATUS.md)
 
 ### Ops / contrib

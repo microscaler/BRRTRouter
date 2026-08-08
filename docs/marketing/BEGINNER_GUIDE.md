@@ -719,7 +719,7 @@ pub fn get_todo(req: GetTodoRequest, pool: &LifeguardPool) -> Result<GetTodoResp
 
 **The result**: You learn Rust faster, build features faster, and create production-ready services from day one.
 
-**Ready to get started?** Check out the [main BRRTRouter blog post](./BRRTRouter_BLOG_POST.md) to learn about the journey that led to BRRTRouter, or dive into the [README](../README.md) to start building your first service.
+**Ready to get started?** Check out the [main BRRTRouter blog post](./BLOG_POST.md) to learn about the journey that led to BRRTRouter, or dive into the [README](../../README.md) to start building your first service.
 
 ---
 

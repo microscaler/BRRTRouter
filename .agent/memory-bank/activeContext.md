@@ -1,7 +1,13 @@
+## 2026-08-08 — Contributor-facing root + suite brochure draft
+
+- Root marketing/compliance clutter relocated: `docs/marketing/*`, `docs/OPENAPI_3.1.0_COMPLIANCE_GAP.md`, `docs/guides/BUILDING_MICROSERVICES.md`, `k8s/demos/lm-demo-cluster.yaml`.
+- Draft suite site at `website/` (Microscaler · BRRTRouter · Lifeguard · Sesame), Rocket/Loco/Actix-class IA; Sesame is public CTA; no Hauliage marketing.
+- Next for site: domain + Pages deploy, real Goose proof numbers, Lifeguard public repo URL, optional extract to `microscaler/website`.
+
 ## 2026-08-08 — Webhook / WebSocket / SSE audit (read-only)
 
 - **SSE:** Implemented via `x-sse` → `RouteMeta.sse` → `text/event-stream`; channel helper `src/sse.rs`. Buffered (`rx.collect()` + `body_vec`), not true chunked streaming. Tests: `tests/sse_tests.rs`, `sse_channel_tests.rs`, `spec_tests` YAML_SSE.
-- **OpenAPI callbacks / webhooks:** Documented gap in `OPENAPI_3.1.0_COMPLIANCE_GAP.md`; no parse/runtime. Pet store `callbacks:` on `POST /webhooks` is decorative; handler is mock REST only.
+- **OpenAPI callbacks / webhooks:** Documented gap in `docs/OPENAPI_3.1.0_COMPLIANCE_GAP.md`; no parse/runtime. Pet store `callbacks:` on `POST /webhooks` is decorative; handler is mock REST only.
 - **WebSocket:** Not implemented (`src/websocket.rs` absent). Roadmap proposes `x-websocket` + tungstenite/may_minihttp upgrade; may_minihttp fork has no upgrade API. PriceWhisperer EPIC_17 assumes separate tokio-tungstenite server.
 - **Sesame-idam style:** Org-mgmt webhook CRUD is normal REST paths (no OAS `callbacks:` / top-level `webhooks:`); BRRTRouter already routes those. Gap is outbound delivery + optional callback codegen, not route registration.
 - **No dedicated BRRTRouter GH epic/issue** for WS/webhooks; tracked in README/ROADMAP/compliance gap only.

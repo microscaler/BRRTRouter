@@ -23,7 +23,7 @@ flowchart LR
 - **Later (Phase 2):** Add **LifeReflector** at the end of this process for distributed cache coherence (Postgres LISTEN/NOTIFY → Redis). All BFF and backend flows described in this document work without LifeReflector; LifeReflector is an optional enhancement to the data/cache layer.
 
 **References:**
-- BRRTRouter: `docs/ARCHITECTURE.md`, `docs/ADRS/002-BFF-Implementations-for-microservices.md`, `src/server/service.rs`, `src/dispatcher/core.rs`, `src/security/mod.rs`, `src/spec/types.rs`, `src/typed/core.rs`, `OPENAPI_3.1.0_COMPLIANCE_GAP.md`
+- BRRTRouter: `docs/ARCHITECTURE.md`, `docs/ADRS/002-BFF-Implementations-for-microservices.md`, `src/server/service.rs`, `src/dispatcher/core.rs`, `src/security/mod.rs`, `src/spec/types.rs`, `src/typed/core.rs`, `docs/OPENAPI_3.1.0_COMPLIANCE_GAP.md`
 - RERP: `openapi/accounting/bff-suite-config.yaml`, `tooling/src/rerp_tooling/bff/generate_system.py`, `microservices/accounting/bff/impl/`, `entities/` (Lifeguard), `docs/BFF_COMPONENT_DESIGN_PROPOSAL.md`, `docs/IDAM_ARCHITECTURE_ANALYSIS.md`
 - IDAM: `idam/README.md`, `idam/common/src/supabase.rs` (Supabase GoTrue client); **IDAM strategy (general vs per-system):** [IDAM Microscaler Analysis](IDAM_MICROSCALER_ANALYSIS.md); **IDAM core + extension and BFF usage:** [IDAM Design: Core and Extension](IDAM_DESIGN_CORE_AND_EXTENSION.md)
 - Lifeguard: `lifeguard/README.md`, `lifeguard/src/connection.rs`, `lifeguard/src/pool/` (no session/claims support today)

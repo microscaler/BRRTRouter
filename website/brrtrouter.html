@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>BRRTRouter — Microscaler</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,650&family=IBM+Plex+Mono:wght@400;500&family=Sora:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="assets/css/site.css" />
+  </head>
+  <body>
+    <div class="wrap">
+      <nav class="site-nav" aria-label="Primary">
+        <a class="brand" href="index.html">Micro<span>scaler</span></a>
+        <ul class="nav-links">
+          <li><a href="brrtrouter.html" aria-current="page">BRRTRouter</a></li>
+          <li><a href="lifeguard.html">Lifeguard</a></li>
+          <li><a href="sesame.html">Sesame</a></li>
+          <li><a class="nav-cta" href="get-started.html">Get started</a></li>
+        </ul>
+      </nav>
+
+      <header class="page-hero reveal">
+        <p class="section-kicker">HTTP · OpenAPI · coroutines</p>
+        <h1>BRRTRouter</h1>
+        <p>
+          Compile an OpenAPI document into a radix-routed service with typed handlers,
+          security schemes, CORS, body limits, and codegen that stays out of your way.
+        </p>
+      </header>
+
+      <section class="features">
+        <article class="feature reveal">
+          <h3>PathCursor routing</h3>
+          <p>Zero-regex hot path over a radix tree — predictable matching for APIs that grow.</p>
+        </article>
+        <article class="feature reveal">
+          <h3>Typed handlers</h3>
+          <p><code>catch_unwind</code>-safe handlers with OpenAPI-aligned request shapes.</p>
+        </article>
+        <article class="feature reveal">
+          <h3>Fail-closed security</h3>
+          <p>Schemes and validation that refuse ambiguous specs instead of silently weakening.</p>
+        </article>
+        <article class="feature reveal">
+          <h3>Ops-ready</h3>
+          <p>Tilt, Kind, Goose load paths, and an Epic 12 maturity board you can read in public.</p>
+        </article>
+      </section>
+
+      <section class="cta-row reveal" style="padding-bottom: 4rem">
+        <a class="btn btn-primary" href="https://github.com/microscaler/BRRTRouter">Repository</a>
+        <a class="btn btn-ghost" href="../docs/BUILDING_WITH_BRRTROUTER.md">Building with BRRTRouter</a>
+      </section>
+
+      <footer class="site-footer">
+        <a href="index.html">← Suite home</a>
+        <a href="https://github.com/microscaler/BRRTRouter">GitHub</a>
+      </footer>
+    </div>
+    <script src="assets/js/site.js"></script>
+  </body>
+</html>

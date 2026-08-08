@@ -1,5 +1,11 @@
 # Progress
 
+## 2026-08-08 — Root marketing tidy + suite brochure scaffold
+
+- Moved root narrative docs → `docs/marketing/`; OAS gap → `docs/OPENAPI_3.1.0_COMPLIANCE_GAP.md`; layout guide → `docs/guides/BUILDING_MICROSERVICES.md`; CAPI sample → `k8s/demos/lm-demo-cluster.yaml`.
+- Scaffolded `website/` static suite landing (Microscaler / BRRTRouter / Lifeguard / Sesame).
+- README doc index updated; epic relative links to OAS gap now resolve under `docs/`.
+
 ## 2026-08-08 — Research: OpenAPI 3.2 / oas3 readiness (read-only)
 
 - BRRTRouter pins `oas3 = 0.21` (`Cargo.lock` → `0.21.0`); crate claims OpenAPI **v3.1.x** only (`~3.1` via `validate_version`).

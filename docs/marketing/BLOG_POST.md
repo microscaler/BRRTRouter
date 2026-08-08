@@ -168,7 +168,7 @@ If you're new to Rust microservice development, BRRTRouter removes many of the t
 
 **The Bottom Line**: BRRTRouter lets you focus on **learning Rust and building features**, not learning web framework internals, async/await complexity, or boilerplate patterns.
 
-> **📚 New to Rust microservices?** Check out our [Beginner's Guide to BRRTRouter](./docs/wip/BRRTRouter_BEGINNER_GUIDE.md) for a deep dive into how BRRTRouter makes Rust microservice development accessible to beginners.
+> **📚 New to Rust microservices?** Check out our [Beginner's Guide to BRRTRouter](./BEGINNER_GUIDE.md) for a deep dive into how BRRTRouter makes Rust microservice development accessible to beginners.
 
 ---
 

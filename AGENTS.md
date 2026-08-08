@@ -180,6 +180,7 @@ Authority: `src/generator/project/generate.rs` (`USER_OWNED_SENTINELS`), `templa
 - Public modules require `//!` module-level docs (overview, architecture, examples).
 - Public fns / structs / enums / traits require `///` docs (purpose, args, returns, examples, panics / safety).
 - Test modules have `//!` module docs explaining coverage and strategy.
+- Keep the **repo root** contributor-facing: `README`, `CONTRIBUTING`, license, Cargo, Tilt. Narrative / pitch material lives under [`docs/marketing/`](./docs/marketing/); suite brochure draft under [`website/`](./website/). Public learn path: [`docs/BUILDING_WITH_BRRTROUTER.md`](./docs/BUILDING_WITH_BRRTROUTER.md) → Sesame-IDAM.
 
 ### 5. Testing discipline
 

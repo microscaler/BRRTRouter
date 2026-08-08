@@ -9,7 +9,7 @@
 - Hauliage [`PRD_BFF_SCAFFOLDING_REMEDIATION.md`](../../hauliage/docs/PRD_BFF_SCAFFOLDING_REMEDIATION.md) (F5 eradication, Tier 1 D4–D7)
 - Hauliage [`PRD_BFF_VIEW_COMPOSITION.md`](../../hauliage/docs/PRD_BFF_VIEW_COMPOSITION.md) §7.6–§7.8 (Tier 1–3, manifest, `imara-diff`)
 - Hauliage [`docs/llmwiki/topics/scaffolding-lifecycle.md`](../../hauliage/docs/llmwiki/topics/scaffolding-lifecycle.md) (F5, F8)
-- [`BUILDING_WITH_BRRTRouter.md`](../BUILDING_WITH_BRRTRouter.md), [`llmwiki/flows/code-generation-flow.md`](../llmwiki/flows/code-generation-flow.md)
+- [`BUILDING_MICROSERVICES.md`](guides/BUILDING_MICROSERVICES.md), [`BUILDING_WITH_BRRTROUTER.md`](BUILDING_WITH_BRRTROUTER.md), [`llmwiki/flows/code-generation-flow.md`](../llmwiki/flows/code-generation-flow.md)
 - [`src/generator/project/generate.rs`](../src/generator/project/generate.rs) (`generate_impl_stubs`, `USER_OWNED_SENTINELS`)
 
 ---
@@ -292,7 +292,7 @@ for route in &routes {
 | **NFR-04** | DX | Conflict markers use familiar git conflict format (`<<<<<<<`, `=======`, `>>>>>>>`). |
 | **NFR-05** | Compatibility | Tier 1 ships without Tier 2; Tier 2 builds on Tier 1 manifest paths. |
 | **NFR-06** | Testing | Unit tests for merge cases (OURS=BASE, conflict, clean merge); integration test on `pet_store` example. |
-| **NFR-07** | Docs | Update `BUILDING_WITH_BRRTRouter.md`, consumer `AGENTS.md`, hauliage `scaffolding-lifecycle` wiki. |
+| **NFR-07** | Docs | Update `docs/guides/BUILDING_MICROSERVICES.md` / `docs/BUILDING_WITH_BRRTROUTER.md`, consumer `AGENTS.md`, hauliage `scaffolding-lifecycle` wiki. |
 | **NFR-08** | Dependencies | Tier 2 adds `imara-diff` only; Tier 1 adds **no** new runtime deps to `brrtrouter` library. |
 | **NFR-09** | CI | Consumer CI MAY run `brrtrouter-gen plan` and fail on unexpected `would_overwrite` without sentinel/manifest. |
 
