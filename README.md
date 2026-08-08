@@ -1,425 +1,288 @@
-BRRTRouter
-
 # 🚀 BRRTRouter
 
-> **MVP-ready HTTP router for Rust, powered by OpenAPI 3.1.x** (3.2 QUERY dual-support — see [docs/OPENAPI_VERSION_SUPPORT.md](docs/OPENAPI_VERSION_SUPPORT.md))
+> **OpenAPI-first HTTP router for Rust** — generate routing, validation, security,
+> CORS, and handlers from your spec. Built on `may` coroutines.
 
 [CI](https://github.com/microscaler/BRRTRouter/actions)
 [Crate](https://crates.io/crates/brrrouter)
 [Docs](https://docs.rs/brrrouter)
 
+**OpenAPI:** 3.1.x fleet default · QUERY dual-support (3.1 + 3.2 promote) —
+[version policy](docs/OPENAPI_VERSION_SUPPORT.md)
+
+**Open reference product:** [Sesame-IDAM](https://github.com/microscaler/sesame-idam) —
+[Building with BRRTRouter](docs/BUILDING_WITH_BRRTROUTER.md)
+
 ---
 
 ## What is BRRTRouter?
 
-**BRRTRouter** generates a complete, type-safe HTTP server from your OpenAPI specification. Write your API definition once, get routing, validation, middleware, observability, and handler scaffolding automatically. Ship production-ready APIs faster.
+**BRRTRouter** turns an OpenAPI document into a type-safe HTTP server: radix routing,
+schema validation, OpenAPI-driven auth, RFC-oriented CORS, metrics/tracing, and
+codegen for typed handlers / BFF proxies.
 
-Inspired by the *GAU-8/A Avenger* on the A-10 Warthog, this router delivers precision request dispatch with massive throughput. Built on `may` coroutines for lightweight concurrency (800+ concurrent connections), it delivers **1,500+ req/s with sub-10 ms median latency on just 2 CPU cores** — verified by automated Goose load tests in CI.
-
----
-
-## 🎯 Why BRRTRouter?
-
-
-| Traditional Approach                    | BRRTRouter                                                                                        |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| Write routes manually for each endpoint | Generated from OpenAPI spec                                                                       |
-| Add validation per endpoint             | Automatic from JSON Schema                                                                        |
-| Configure observability stack           | Built-in, zero config (Prometheus, Jaeger, Loki)                                                  |
-| Build admin/testing UI                  | Included (Sample SolidJS dashboard)                                                               |
-| Setup local infrastructure              | Shared Kind: `../shared-kind-cluster` `**just dev-up`**, then BRRTRouter `**just dev-up**` (Tilt) |
-| Test with curl scripts                  | Interactive dashboard with API testing                                                            |
-| Memory leak hunting                     | Goose load tests (2+ minute sustained tests)                                                      |
-
-
-✅ **Design Once, Deploy Everywhere**  
-OpenAPI spec generates server, client SDKs, and docs
-
-✅ **Production-Ready Day One**  
-Observability, security, and error handling included
-
-✅ **Developer Experience First**  
-Hot reload, live metrics, comprehensive testing, 1-2s iteration cycle
-
-✅ **Verified Performance on Minimal Resources**  
-**1,500+ req/s** · **12 ms median latency** · **0% failures** — measured on a 2-core CI runner matching a typical K8s pod
+Inspired by the *GAU-8/A Avenger* on the A-10 Warthog — precision dispatch with high
+throughput. On a **2-core CI runner** (typical pod shape): **~1,500+ req/s**,
+**sub-10 ms median**, **0% failures** (Goose). Hot-path work targets much higher
+match rates under JSF constraints — see [Performance](#-performance--scale-out).
 
 ---
 
-## 🏗️ Architecture at a Glance
+## Why BRRTRouter?
 
-Detailed information on the systems architecture can be found in [Architecture Docs](./docs/ARCHITECTURE.md)
-
----
-
-## 🎯 Early Stage MVP Notice
-
-**BRRTRouter has reached Early Stage MVP status!**
-
-Core functionality is exercised by the in-repo **pet_store** example and by
-production-shaped suites. The **open reference** for building a multi-service
-product on BRRTRouter is **[Sesame-IDAM](https://github.com/microscaler/sesame-idam)** —
-see [Building with BRRTRouter](docs/BUILDING_WITH_BRRTROUTER.md).
-
-**Status:**
-
-- ✅ Core functionality working
-- ✅ Multi-crate support (pet_store + product suites)
-- ✅ Public reference product: [Sesame-IDAM](https://github.com/microscaler/sesame-idam)
-- 🔧 API may change (breaking changes expected)
-- 🔧 Performance optimization ongoing
-- 🧪 Seeking early feedback and testing
-
-**We welcome:**
-
-- 📝 Documentation feedback
-- 🐛 Bug reports
-- 💡 API suggestions
-- 🧪 Testing and experimentation
-
-**One step closer to beta!** We're actively working toward v0.1.0 stable release.
+| Traditional approach | BRRTRouter |
+| -------------------- | ---------- |
+| Hand-written routes per endpoint | Routes + params from OpenAPI |
+| Ad-hoc validation | JSON Schema + required params before handler |
+| Bolt-on auth/CORS | `securitySchemes` + `config.yaml` + `x-cors` |
+| Separate observability setup | Prometheus, OTEL, `/health`, `/metrics` |
+| curl scripts forever | Pet Store dashboard + Swagger UI |
+| Opaque local infra | Shared Kind + Tilt (`just dev-up`) |
 
 ---
 
-## ✨ Key Features
+## Status
 
-- **📜 OpenAPI-First**: Your API spec is the single source of truth - routing, validation, and handlers generated automatically
-- **🎨 Interactive Dashboard**: Production-ready SolidJS UI with live data, SSE streaming, and comprehensive API testing
-- **⚡ Coroutine-Powered**: Built on `may` coroutines for lightweight concurrency (800+ concurrent connections on 1MB stack)
-- **🔐 Security Built-In**: JWT/JWKS, OAuth2, API Keys with auto-registration from OpenAPI `securitySchemes`
-- **🌐 RFC-Compliant CORS**: Full CORS support with route-specific configuration, credentials, and environment-specific origins
-- **🔀 BFF Auto-Proxy Gateway**: Generate zero-latency, high-concurrency transparent proxy gateways leveraging native `may_http` thread-local connection pooling.
-- **📊 Zero-Config Observability**: Prometheus metrics, OpenTelemetry tracing, health checks out of the box
-- **🔥 Hot Reload**: Live spec reloading without server restart
-- **🧪 Well-Tested**: 722 tests, 80%+ coverage, parallel execution support
+Early-stage MVP — API may still change; seeking feedback toward a stable `0.1`.
 
----
-
-## 🏃 Quick Start
-
-See [CONTRIBUTING.md](CONTRIBUTING.md#-quick-start) for complete setup instructions, including:
-
-- Tilt + kind setup (recommended)
-- Simple cargo run option
-- Prerequisites and installation
-- Observability stack overview
-
-**Goal: Running in <5 minutes**
+| | |
+| -- | -- |
+| In-repo example | `examples/pet_store` |
+| Public product reference | [Sesame-IDAM](https://github.com/microscaler/sesame-idam) |
+| Active board | [Epic 12 — Framework maturity](docs/EPICS/FRAMEWORK_MATURITY/BUILD_BOARD.md) |
+| Recent URI / QUERY work | [Epics 10–11](docs/EPICS/URI_REQUEST_TARGET/BUILD_BOARD.md) |
 
 ---
 
-## 📸 See It In Action
+## Key capabilities
 
-See [CONTRIBUTING.md](CONTRIBUTING.md#-see-it-in-action) for the interactive dashboard demo and observability stack overview.
+- **OpenAPI-first** — `paths`, params, bodies, `securitySchemes`, vendor extensions
+- **O(k) radix routing** — `PathCursor` segment walk (not regex on the hot path)
+- **Coroutine server** — `may` + `may_minihttp`
+- **Security** — pluggable `SecurityProvider`s from OpenAPI + `config.yaml` (see below)
+- **CORS** — global config + per-route `x-cors`; proxy/`Forwarded` + Private Network Access (see below)
+- **Validation** — JSON body schema; required query/header/path params → **400**; body caps → **413**
+- **HTTP QUERY (RFC 10008)** — router, CORS, proxy/fetch helpers; declare on `openapi: 3.1.0`
+- **BFF auto-proxy** — transparent proxies with `may_http` connection pooling
+- **Observability** — Prometheus, OpenTelemetry, structured tracing
+- **Hot reload** — rebuild router on spec change
+- **SSE** — `x-sse` + `sse::channel` (buffered responses; not WebSocket)
+- **Typed handlers** — codegen + `#[handler]`; panics recovered via `catch_unwind`
 
----
-
-## ✅ Feature Status
-
-### 🎯 Production-Ready (October 2025)
-
-
-| Feature                                          | Status | Description                                                                                                                                                                                                                                                                  |
-| ------------------------------------------------ | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Performance target (100k req/sec)**            | ✅      | Extensive work towards the the 100k req/sec goal has been undertaken on our JSF initiative.                                                                                                                                                                                  |
-| **OpenAPI 3.1 Spec Parser**                      | ✅      | Parses `paths`, `methods`, parameters, and `x-handler-`* extensions                                                                                                                                                                                                          |
-| **Routing Table Construction**                   | ✅      | Compiles OpenAPI paths into an O(k) radix tree (`PathCursor` segment walk) with param tracking                                                                                                                                                                               |
-| **Coroutine-Based Server**                       | ✅      | Fully integrated with `may_minihttp` and `may` coroutine runtime                                                                                                                                                                                                             |
-| **Dynamic Handler Dispatch**                     | ✅      | Request is dispatched to named handlers via coroutine channels                                                                                                                                                                                                               |
-| **Full Request Context Support**                 | ✅      | Request path, method, path params, query params, and JSON body all passed into the handler                                                                                                                                                                                   |
-| `**echo_handler` Coroutine**                     | ✅      | Mock handler that serializes and returns all request input data                                                                                                                                                                                                              |
-| **Query Parameter Parsing**                      | ✅      | Fully extracted from the request URI and passed to handler                                                                                                                                                                                                                   |
-| **Request Body Decoding (JSON)**                 | ✅      | JSON body is read and deserialized for POST/PUT/PATCH handlers                                                                                                                                                                                                               |
-| **404 and 500 Handling**                         | ✅      | Fallback responses for unknown routes or missing handlers                                                                                                                                                                                                                    |
-| **Verbose Mode for CLI**                         | ✅      | `--verbose` flag enables OpenAPI parsing debug output                                                                                                                                                                                                                        |
-| **Modular Design**                               | ✅      | Clean separation of `spec`, `router`, `dispatcher`, and `server` logic                                                                                                                                                                                                       |
-| **Composable Handlers**                          | ✅      | Coroutine-safe handler registry for runtime dispatch                                                                                                                                                                                                                         |
-| **Radix path matching (`PathCursor`)**           | ✅      | Path parameters extracted during radix walk (legacy regex table retained for compatibility, not the request hot path)                                                                                                                                                        |
-| **Zero I/O Testing Support**                     | ✅      | `load_spec_from_spec()` allows programmatic spec testing                                                                                                                                                                                                                     |
-| **Test Coverage**                                | ✅      | 219 tests covering all HTTP verbs, paths, and fallback routing                                                                                                                                                                                                               |
-| **Swagger UI & Spec Endpoints**                  | ✅      | Bundled Swagger UI at `/docs` and spec served from `/openapi.yaml`                                                                                                                                                                                                           |
-| **Prometheus metrics middleware**                | ✅      | Complete metrics collection for requests, responses, latency, auth failures; `/metrics` endpoint for Prometheus scraping                                                                                                                                                     |
-| **Interactive Dashboard (SolidJS UI)**           | ✅      | Production-ready UI with live data, SSE streaming, API explorer/testing, authentication UI                                                                                                                                                                                   |
-| **Pluggable Security Providers**                 | ✅      | `SecurityProvider` trait enables custom authentication schemes                                                                                                                                                                                                               |
-| **Server-Sent Events**                           | ✅      | `x-sse` extension with `sse::channel` helper; responses are buffered (not byte-streaming upgrade)                                                                                                                                                                            |
-| **JWT/OAuth2 & API Key Auth**                    | ✅      | `BearerJwtProvider`, `OAuth2Provider`, `JwksBearerProvider` (JWKS HS/RS algs), and `RemoteApiKeyProvider`; scope checks, cookie support, metrics, and OpenAPI-driven registration                                                                                            |
-| **Schema validation**                            | ✅      | Request and response validation against OpenAPI JSON Schema with clear 400 errors; exercised in tests.                                                                                                                                                                       |
-| **Improved handler ergonomics**                  | ✅      | Use `#[handler]` to implement the `Handler` trait automatically.                                                                                                                                                                                                             |
-| **Fix flaky tests / deterministic startup**      | ✅      | Tests use a fixed sleep to wait for server readiness and cancel the coroutine abruptly.                                                                                                                                                                                      |
-| **Investigate config context**                   | ✅      | A pragmatic way to pass Configuration across the entire code base, possibly with an immutable global config that is loaded at start time                                                                                                                                     |
-| **Panic recovery for handlers**                  | ✅      | Untyped and typed handlers recover from panics via `catch_unwind` and return 500 instead of tearing down the coroutine.                                                                                                                                                      |
-| **Comprehensive logging/tracing**                | ✅      | Structured tracing with 49 runtime touchpoints across request lifecycle, routing, security, validation, dispatcher, handlers, and hot reload; JSON format with redaction, sampling, async buffering; dual output (stdout + Loki) for hot reload                              |
-| **Multiple security providers**                  | ✅      | Multiple providers supported and auto-registered from OpenAPI schemes; per-route scheme enforcement tested; supports ApiKey, Bearer, OAuth2, JWKS, RemoteApiKey                                                                                                              |
-| **Code generation for typed handlers**           | ✅      | Complete template system generates `TryFrom<HandlerRequest>` impls, Request/Response structs with serde annotations; production-ready                                                                                                                                        |
-| **BFF Auto-Proxy Core Integration**              | ✅      | Fully bypasses macro implementations for pure proxies; suppresses generating unneeded endpoints in downstream schemas; utilizes native `may_http` connection caching to reach theoretical target 85k req/sec throughput logic                                                |
-| **Dynamic route registration**                   | ✅      | `Dispatcher::add_route` and `register_from_spec` working; used in production; tests cover this functionality                                                                                                                                                                 |
-| **Structured tracing (OTEL)**                    | ✅      | OpenTelemetry tracing implemented with test support; integrated with Jaeger in Tilt environment                                                                                                                                                                              |
-| **Configurable stack size with instrumentation** | ✅      | Global `BRRTR_STACK_SIZE`, per-route `x-brrtrouter-stack-size` / heuristic sizing — see [docs/stack_size.md](docs/stack_size.md). Used-stack sampling remains optional / not a product API.                                                                                    |
-| **Hot reload on spec change**                    | ✅      | `hot_reload::watch_spec` rebuilds the `Router`, the server automatically updates the dispatcher and registers new routes.                                                                                                                                                    |
-| **RFC-compliant CORS middleware**                | ✅      | Full CORS implementation with origin validation, preflight handling, credentials support, exposed headers, preflight caching; route-specific config via OpenAPI `x-cors`; origins from `config.yaml`; regex patterns and custom validators; JSF-compliant startup processing |
-| **Inbound body size limits (413)**               | ✅      | Global `BRRTROUTER_MAX_REQUEST_BODY_OCTETS` + per-route estimate / `x-brrtrouter-body-size-bytes` → **413** before handler. See [docs/request_body_limits.md](docs/request_body_limits.md).                                                                                  |
-| **Extend fake otel collector across all tests**  | 🚧     | Fake OpenTelemetry collector is used in just tests, but not all tests utilize it.                                                                                                                                                                                            |
-| **OpenAPI fidelity gaps**                        | 🚧     | `$ref` requestBodies/responses, pre-handler params, multipart truth — tracked in [Epic 12](docs/EPICS/FRAMEWORK_MATURITY/BUILD_BOARD.md). Callbacks / full OAS surface: [OPENAPI_3.1.0_COMPLIANCE_GAP.md](OPENAPI_3.1.0_COMPLIANCE_GAP.md). Version policy: [docs/OPENAPI_VERSION_SUPPORT.md](docs/OPENAPI_VERSION_SUPPORT.md). |
-| **WebSocket support**                            | ⏸      | **Parked** — not on the MVP path; `may_minihttp` has no upgrade path. Use SSE (`x-sse`) or an external sidecar. See [Epic 12 parked](docs/EPICS/FRAMEWORK_MATURITY/BUILD_BOARD.md#parked-not-in-this-epic).                                                                   |
-| **Documentation & packaging**                    | 🚧     | README and epics exist; crate not yet prepared for crates.io publication.                                                                                                                                                                                                    |
-
+**Parked:** native WebSocket upgrade (`may_minihttp` has no upgrade path). Prefer SSE or a sidecar.
 
 ---
 
-## 📊 Performance & Scale-Out Strategy
+## Security
 
-BRRTRouter is engineered for **cloud-native scale-out** rather than monolithic scale-up architectures. The average Kubernetes pod runs on **≤ 2 CPU cores and 500 Mi memory** — and that is exactly where BRRTRouter shines.
+Security is **OpenAPI-driven**: schemes in `components.securitySchemes`, requirements on
+operations (including `security: []` for public routes). Providers auto-register from
+the spec and can be refined in `config.yaml`.
 
-### Real-World Benchmark (2-Core GitHub Actions Runner)
+| Scheme / provider | Role |
+| ----------------- | ---- |
+| API key (header / query / cookie) | Static or `RemoteApiKeyProvider` (cached remote check) |
+| `BearerJwtProvider` | Local JWT (HMAC) + scopes |
+| `JwksBearerProvider` | JWKS fetch (HS/RS), readiness, fail-closed on timeout/poisoning |
+| `OAuth2Provider` | OAuth2 + scope checks |
+| `SpiffeProvider` | SPIFFE JWT SVIDs (optional enterprise path) |
+| PropelAuth / Auth0 / Cognito / Keycloak | Via JWKS URL (or PropelAuth helper in config) |
 
-The following results were captured by a [Goose](https://book.goose.rs/) load test running **20 concurrent users** across six scenario groups against a BRRTRouter instance on a **2-core, resource-constrained CI runner** — the same resource envelope as a typical production pod.
+**Pipeline order (secured route):** match → **auth (401/403)** → param validation →
+Content-Type / body schema → handler.
 
-| Metric | Value |
-|---|---|
-| **Total requests served** | 190,434 |
-| **Aggregate throughput** | **1,536 req/s** |
-| **Median latency** | **8 ms** |
-| **Average latency** | 12 ms |
-| **Failure rate** | **0.00%** |
-| **Scenario throughput** | 543 scenarios/s (20 users) |
-
-#### Latency by Endpoint Type
-
-| Endpoint | Median | Avg | Max |
-|---|---|---|---|
-| Path-parameter routes (`/pets/{id}`, `/users/{id}`) | 9 ms | 12 ms | 121 ms |
-| Static file serving | 3 ms | 5 ms | 112 ms |
-| Health check | 3 ms | 5 ms | 63 ms |
-| Prometheus `/metrics` | 42 ms | 46 ms | 154 ms |
-| CRUD operations (POST/DELETE) | 10 ms | 14 ms | 122 ms |
-
-> **What this means for you:** A single pod on the cheapest node pool can sustain **1,500+ requests per second with sub-10 ms median latency and zero failures**. Scale horizontally with standard HPA to multiply throughput linearly.
-
-### Scale-Out Design
-
-- **Fail-fast shedding:** Built-in queue-bounded protection returns `503 Service Unavailable` during overload, intentionally triggering Kubernetes HPA scale-out rather than allowing unbounded memory growth.
-- **Predictable latency:** [JSF AV Rules](#️-jsf-av-rules-compliance) eliminate heap allocations on the hot path, keeping p50 latency stable under load.
-- **Horizontal scaling:** Stateless design means every replica is identical — add pods, add throughput.
-
-See [docs/PERFORMANCE.md](docs/PERFORMANCE.md) for complete benchmarks, load test methodology, and optimization details.
+Details: [Security & Authentication](docs/SecurityAuthentication.md) ·
+fail-closed design notes in `docs/DESIGN-security-scheme-fail-closed.md`.
 
 ---
 
-## 📈 Recent Progress (December 2025)
+## CORS
 
-- **🛡️ JSF AV Rules Implementation**: Applied [Joint Strike Fighter coding standards](https://www.stroustrup.com/JSF-AV-rules.pdf) to hot path
-  - Stack-allocated `SmallVec` for parameters and headers (zero heap in dispatch)
-  - O(k) radix tree routing with "last write wins" semantics
-  - Comprehensive Clippy configuration with JSF-inspired thresholds
-  - Fixed critical MPSC→MPMC worker pool bug (was causing double-free crashes)
-  - **Result: 67k req/s with 0% failures** at 4,500+ concurrent users (no breaking point found!)
-- **🚀 Early Stage MVP Achievement**: pet_store example plus production-shaped consumers
-  - **Open reference:** [Sesame-IDAM](https://github.com/microscaler/sesame-idam) — [Building with BRRTRouter](docs/BUILDING_WITH_BRRTROUTER.md)
-  - Private dogfood (Hauliage, PriceWhisperer) informed hardening; RERP is not yet a reference
-  - Thanks to early adopters (including PriceWhisperer.ai) whose JSF-focused feedback shaped the hot path
-- **🎨 Sample SolidJS Dashboard**: Complete interactive UI showcasing all BRRTRouter capabilities
-  - Live data display with auto-refresh and modal views
-  - Real-time SSE streaming with visual connection indicator
-  - API Explorer with 25+ endpoints and color-coded HTTP methods
-  - Comprehensive API testing suite with parameter forms and body editors
-  - Authentication UI with API Key + Bearer Token configuration
-  - Professional design with SolidJS + Vite + Tailwind CSS
-- **🎉 Tilt + kind Local Development**: Fast iteration (~1-2s) with full observability stack
-  - Cross-compilation support for Apple Silicon → x86_64 Linux
-  - Live binary syncing without container rebuilds
-  - PostgreSQL and Redis included for multi-service testing
-  - Docker Hub proxy cache (70% faster startup, saves ~4GB bandwidth/day)
-- **🎉 100% Documentation Coverage**: All public APIs, impl blocks, complex functions, and test modules comprehensively documented
-- **🌐 RFC-Compliant CORS Implementation**: Complete CORS middleware rewrite achieving full RFC 6454 compliance
-  - Origin validation, preflight handling, credentials support, exposed headers, preflight caching
-  - Route-specific CORS configuration via OpenAPI `x-cors` extension
-    - `x-cors: false` - Disables CORS for route (no CORS headers, prevents cross-origin access)
-    - `x-cors: "inherit"` - Uses global CORS config from `config.yaml`
-    - `x-cors: { ... }` - Route-specific CORS configuration (merged with global origins)
-  - Environment-specific origins from `config.yaml` (not in OpenAPI spec)
-  - Advanced features: regex pattern matching, custom validation functions
-  - JSF-compliant: all configuration processed at startup, zero runtime parsing
-  - **26+ CORS-specific tests** (all passing), feature parity with Rocket-RS
-  - **Production-ready** with comprehensive security posture
-- **✅ Parallel Test Execution**: Fixed Docker container conflicts for nextest parallel execution (219 tests pass)
-- **🦆 Goose Load Testing**: Comprehensive CI load tests covering ALL OpenAPI endpoints (unlike wrk)
-  - Tests authenticated endpoints with API keys
-  - Detects memory leaks via sustained 2-minute tests
-  - Per-endpoint metrics with ASCII output for CI/CD
-  - HTML reports with interactive visualizations
-- **🔐 Security implementation - WIP**:
-  - `JwksBearerProvider` with full JWKS support (HS256/384/512, RS256/384/512)
-  - `RemoteApiKeyProvider` with caching and configurable headers
-  - OpenAPI-driven auto-registration of security providers
-  - Further testing with security backends required
-- **📊 Enhanced Metrics**: Request counts, latency tracking, auth failure counters, stack usage monitoring
-- **🔥 Hot Reload**: Live spec reloading with filesystem watching
-- **📝 Code Generation**: Complete typed handler generation from OpenAPI schemas
+Production-oriented CORS middleware (RFC 6454-oriented):
+
+- Global origins / methods / headers / credentials / `maxAge` from **`config.yaml`**
+  (origins stay in deployment config, not the OpenAPI file)
+- Per-route **`x-cors`**: `inherit` · `false` (disable) · object override
+- Preflight short-circuit, credentials rules, exposed headers, `Vary`
+- **`trust_forwarded_host`** — same-origin via `Forwarded` / `X-Forwarded-*` behind a trusted edge
+- **Private Network Access** — `allow_private_network_access` for Chrome PNA preflights
+- Metrics: `brrtrouter_cors_*` when wired to `MetricsMiddleware`
+- QUERY included in permissive method lists where configured
+
+Guides: [CORS.md](docs/CORS.md) · [CORS_OPERATIONS.md](docs/CORS_OPERATIONS.md) ·
+[CORS_IMPLEMENTATION_AUDIT.md](docs/CORS_IMPLEMENTATION_AUDIT.md)
 
 ---
 
-## 🛡️ JSF AV Rules Compliance
+## Feature status (condensed)
 
-BRRTRouter implements coding standards inspired by the **[Joint Strike Fighter Air Vehicle C++ Coding Standards](https://www.stroustrup.com/JSF-AV-rules.pdf)** (JSF AV Rules) — the same rigorous standards used in the F-35 fighter jet's flight-critical software.
+### Ready
 
-**Key principles:**
+| Area | Notes |
+| ---- | ----- |
+| Spec load + radix router | OpenAPI 3.1; component `$ref` for schemas/parameters/**requestBodies/responses/pathItems** |
+| Dispatch + typed codegen | Coroutine handlers; panic → 500 |
+| Auth providers | API key, Bearer JWT, JWKS, OAuth2, remote API key, SPIFFE |
+| CORS | Global + `x-cors`; forwarded host; PNA |
+| Validation | Body schema; required params; **413** body caps; **415** Content-Type |
+| URI / QUERY | Epic 10 request-target; Epic 11 QUERY method |
+| Proxy / BFF | Downstream path resolve, connection cache |
+| Observability | `/metrics`, OTEL, tracing middleware |
+| Dev loop | Tilt + kind; hot reload; Pet Store UI + Swagger |
 
-- **Zero allocations** in hot path (SmallVec for params/headers)
-- **O(k) radix tree** routing for predictable latency
-- **Result-based** error handling (no panics in dispatch)
-- **Stack-allocated** collections (JSF Rule 206)
+### In progress / gaps
 
-**Verified Results (2-core CI runner):** 1,536 req/s sustained throughput, 8 ms median latency, 0% failure rate across 190k+ requests. See [Performance & Scale-Out Strategy](#-performance--scale-out-strategy) for the full Goose load-test breakdown.
+| Area | Notes |
+| ---- | ----- |
+| Epic 12 waves 2–4 | Webhook outbound kit, multipart truth, multi-status codegen, perf science — [board](docs/EPICS/FRAMEWORK_MATURITY/BUILD_BOARD.md) |
+| Broader OAS surface | Callbacks, full 3.2 feature matrix — [gap doc](OPENAPI_3.1.0_COMPLIANCE_GAP.md) |
+| Fake OTEL in all tests | Partial |
+| crates.io polish | Docs exist; publish packaging still open |
+| WebSocket | **Parked** |
 
-See [docs/JSF_COMPLIANCE.md](docs/JSF_COMPLIANCE.md) for complete implementation details and validation results.
+Stack sizing: [docs/stack_size.md](docs/stack_size.md) (`BRRTR_STACK_SIZE`,
+`x-brrtrouter-stack-size`). Body limits: [docs/request_body_limits.md](docs/request_body_limits.md).
+Params: [docs/parameter_validation.md](docs/parameter_validation.md).
 
 ---
 
-## 🛠️ Development
+## Quick start
 
-See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for complete development guide, including:
+1. Shared Kind (monorepo): `cd ../shared-kind-cluster && just dev-up`
+2. This repo: `just dev-up` (Tilt)
+3. Smoke: `curl http://localhost:8081/health` ·
+   `curl -H "X-API-Key: test123" http://localhost:8081/pets`
 
-- Prerequisites and setup
-- Common tasks and workflows
-- Service URLs and environment variables
-- Working with generated code
+Full steps: [CONTRIBUTING.md](CONTRIBUTING.md) · [LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md)
+
+**Goal:** running in under five minutes.
 
 ---
 
-## 📋 Quick Reference
+## Performance & scale-out
 
-### Service URLs (when Tilt is running)
+Engineered for **cloud-native scale-out** (≤2 CPU / ~500 Mi pods), not giant single nodes.
 
+**Goose (2-core GHA, 20 users):** ~190k requests · **~1,536 req/s** · **~8 ms median** ·
+**0% failures**. Details: [docs/PERFORMANCE.md](docs/PERFORMANCE.md).
 
-| Service                      | URL                                                            | Purpose                                                         |
-| ---------------------------- | -------------------------------------------------------------- | --------------------------------------------------------------- |
-| **🎨 Interactive Dashboard** | [http://localhost:8081/](http://localhost:8081/)               | **START HERE** - SolidJS UI with live data, SSE, API testing    |
-| **Pet Store API**            | [http://localhost:8081](http://localhost:8081)                 | Main API (local-dev default; k8s deployments still use 8080)    |
-| **Swagger UI**               | [http://localhost:8081/docs](http://localhost:8081/docs)       | OpenAPI documentation                                           |
-| **Health Check**             | [http://localhost:8081/health](http://localhost:8081/health)   | Readiness probe                                                 |
-| **Metrics**                  | [http://localhost:8081/metrics](http://localhost:8081/metrics) | Prometheus metrics                                              |
-| **Grafana**                  | [http://localhost:3000](http://localhost:3000)                 | Dashboards (admin/admin)                                        |
-| **Prometheus**               | [http://localhost:9090](http://localhost:9090)                 | Metrics database                                                |
-| **Jaeger**                   | [http://localhost:16686](http://localhost:16686)               | Distributed tracing                                             |
-| **PostgreSQL**               | localhost:5432                                                 | Database (user: brrtrouter, db: brrtrouter, pass: dev_password) |
-| **Redis**                    | localhost:6379                                                 | Cache/session store                                             |
-| **Tilt Web UI**              | [http://localhost:10353](http://localhost:10353)               | Dev dashboard (press 'space' in terminal)                       |
+- Fail-fast shedding → `503` under overload (helps HPA)
+- JSF-inspired hot path (SmallVec, radix) for stable p50
+- Stateless replicas — scale horizontally
 
+---
 
-### Environment Variables
+## JSF AV Rules (hot path)
+
+Standards inspired by the
+[JSF AV C++ Coding Standards](https://www.stroustrup.com/JSF-AV-rules.pdf):
+
+- Prefer **zero heap** on the request hot path (`SmallVec` params/headers)
+- **O(k) radix** routing with `PathCursor`
+- **Result-based** errors (no panics in dispatch; handler panics caught)
+
+See [docs/JSF_COMPLIANCE.md](docs/JSF_COMPLIANCE.md).
+
+---
+
+## Quick reference
+
+### URLs (Tilt / local-dev)
+
+| Service | URL |
+| ------- | --- |
+| Dashboard / API | http://localhost:8081/ |
+| Swagger | http://localhost:8081/docs |
+| Health | http://localhost:8081/health |
+| Metrics | http://localhost:8081/metrics |
+| Grafana | http://localhost:3000 (admin/admin) |
+| Prometheus | http://localhost:9090 |
+| Jaeger | http://localhost:16686 |
+| Tilt UI | http://localhost:10353 |
+
+### Environment variables
 
 | Variable | Purpose |
-|----------|---------|
-| `BRRTR_STACK_SIZE` | Coroutine stack size (decimal or hex like `0x8000`). See [docs/stack_size.md](docs/stack_size.md). |
-| `BRRTROUTER_MAX_REQUEST_BODY_OCTETS` | Global inbound body ceiling (default 16 MiB). See [docs/request_body_limits.md](docs/request_body_limits.md). |
-| `BRRTROUTER_MAX_REQUEST_TARGET_OCTETS` | Max request-target length (default 8192). Epic 10. |
+| -------- | ------- |
+| `BRRTR_STACK_SIZE` | Coroutine stack (decimal or `0x8000`) — [stack_size.md](docs/stack_size.md) |
+| `BRRTROUTER_MAX_REQUEST_BODY_OCTETS` | Global body ceiling (default 16 MiB) — [request_body_limits.md](docs/request_body_limits.md) |
+| `BRRTROUTER_MAX_REQUEST_TARGET_OCTETS` | Max request-target length (default 8192) |
+| `BRRTR_JWKS_FETCH_TIMEOUT_MS` | JWKS HTTP timeout (fail-closed) |
 
 ---
 
-## 📚 Documentation
+## Documentation
 
-**Organized by user journey, not by component**
+### Start here
 
-### Getting Started
+- [Local Development](docs/LOCAL_DEVELOPMENT.md) — Tilt + kind
+- [Building with BRRTRouter](docs/BUILDING_WITH_BRRTROUTER.md) — Sesame-IDAM reference
+- [Development Guide](docs/DEVELOPMENT.md)
+- [Testing](docs/TEST_DOCUMENTATION.md) · [Goose load testing](docs/GOOSE_LOAD_TESTING.md)
 
-- [🚀 Local Development](docs/LOCAL_DEVELOPMENT.md) - **START HERE** for Tilt + kind setup
-- [🧱 Building with BRRTRouter](docs/BUILDING_WITH_BRRTROUTER.md) - **Open reference:** [Sesame-IDAM](https://github.com/microscaler/sesame-idam)
-- [🛠️ Development Guide](docs/DEVELOPMENT.md) - Development workflow and common tasks
-- [🧪 Testing](docs/TEST_DOCUMENTATION.md) - Complete test suite overview
-- [🦆 Load Testing](docs/GOOSE_LOAD_TESTING.md) - Goose load testing guide
+### Core
 
-### Core Concepts
+- [Overview](docs/BRRTRouter_OVERVIEW.md) · [Architecture](docs/ARCHITECTURE.md)
+- [Request lifecycle & codegen](docs/RequestLifecycle.md)
+- [Security & Authentication](docs/SecurityAuthentication.md)
+- [CORS](docs/CORS.md) · [CORS operations](docs/CORS_OPERATIONS.md)
+- [OpenAPI version support](docs/OPENAPI_VERSION_SUPPORT.md)
+- [Component `$ref`](docs/openapi_component_refs.md) · [Parameter validation](docs/parameter_validation.md)
+- [Request body limits](docs/request_body_limits.md) · [Stack size](docs/stack_size.md)
+- [Epic 12 board](docs/EPICS/FRAMEWORK_MATURITY/BUILD_BOARD.md)
+- [URI / QUERY epics](docs/EPICS/URI_REQUEST_TARGET/BUILD_BOARD.md)
+- [OpenAPI 3.1 compliance gap](OPENAPI_3.1.0_COMPLIANCE_GAP.md)
+- [Typed handlers & HTTP status PRD](docs/PRD_TYPED_HANDLER_HTTP_STATUS.md)
 
-- [📖 BRRTRouter Overview](docs/BRRTRouter_OVERVIEW.md) - What it is, concepts, core components, and how it works (with diagrams)
-- [🏗️ Architecture](docs/ARCHITECTURE.md) - System design with Mermaid diagrams
-- [🔄 Request Lifecycle & Code Generation](docs/RequestLifecycle.md) - End-to-end request flow from OpenAPI to response
-- [🔐 Security & Authentication](docs/SecurityAuthentication.md) - OpenAPI-driven security with multiple auth providers
-- [📋 OpenAPI 3.1.0 Compliance Gap](OPENAPI_3.1.0_COMPLIANCE_GAP.md) - Outstanding work for full OpenAPI 3.1.0 support
-- [📄 OpenAPI version support](docs/OPENAPI_VERSION_SUPPORT.md) - 3.1 product policy + QUERY dual-support
-- [🧱 Epic 12 — Framework maturity](docs/EPICS/FRAMEWORK_MATURITY/BUILD_BOARD.md) - Safety, OpenAPI fidelity, kits (active board)
-- [📄 PRD: Typed handlers & REST HTTP status](docs/PRD_TYPED_HANDLER_HTTP_STATUS.md) - Non-200 responses without panics; phased and long-term deliverables
-- [📡 Server-Sent Events](#-server-sent-events) - SSE implementation guide
-- [📦 Request body limits](docs/request_body_limits.md) - Global + per-route 413 caps
+### Ops / contrib
 
-### Performance
-
-- [📊 Performance Benchmarks](docs/PERFORMANCE.md) - Performance results, benchmarks, and optimization
-- [🛡️ JSF Compliance](docs/JSF_COMPLIANCE.md) - JSF AV Rules implementation and validation
-
-### Operations
-
-- [🏗️ Tilt Implementation](docs/TILT_IMPLEMENTATION.md) - Architecture of the dev environment
-- [📁 K8s Directory Structure](docs/K8S_DIRECTORY_STRUCTURE.md) - Organized Kubernetes manifests
-- [💾 Backup & Recovery](docs/VELERO_BACKUPS.md) - Velero backup system
-
-### Contributing
-
-- [🤝 Contributing Guide](CONTRIBUTING.md) - How to contribute to BRRTRouter
-
-### Advanced
-
-- [🔥 Flamegraphs](docs/flamegraph.md) - Performance profiling guide
-- [🚀 Publishing](docs/PUBLISHING.md) - Release process for crates.io
-- [📊 Roadmap](docs/ROADMAP.md) - Future plans and completed work
-
-**Build and view docs locally:**
+- [Tilt implementation](docs/TILT_IMPLEMENTATION.md) · [Performance](docs/PERFORMANCE.md)
+- [JSF compliance](docs/JSF_COMPLIANCE.md) · [Contributing](CONTRIBUTING.md)
+- [Roadmap (archive pointer)](docs/ROADMAP.md) · [Publishing](docs/PUBLISHING.md)
 
 ```bash
 just docs
-# or
-cargo doc --open
+# or: cargo doc --open
 ```
 
 ---
 
-## 🧪 Testing
+## Testing
 
-**722 tests** covering all HTTP verbs, paths, routing, validation, security, and middleware.
+Large automated suite (unit + integration + CORS/security HTTP conformance). Prefer:
 
-See [docs/TEST_DOCUMENTATION.md](docs/TEST_DOCUMENTATION.md) for complete testing guide, including:
+```bash
+just nt          # nextest
+cargo test       # standard
+```
 
-- Running tests (standard and parallel with nextest)
-- Code coverage (≥80% required)
-- Load testing with Goose
-- Benchmarks and flamegraphs
-
----
-
-## 🤝 Contributing
-
-We welcome contributions from developers at all levels!
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for:
-
-- Getting started as a contributor
-- Areas for contribution
-- Code standards and documentation requirements
-- Development workflow
+Coverage target ≥80%. See [docs/TEST_DOCUMENTATION.md](docs/TEST_DOCUMENTATION.md).
 
 ---
 
-## 📞 Community & Support
+## Contributing
 
-- **Issues**: [GitHub Issues](https://github.com/microscaler/BRRTRouter/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/microscaler/BRRTRouter/discussions)
-- **Roadmap**: [docs/ROADMAP.md](docs/ROADMAP.md)
-
-**Found a bug?** Open an issue with:
-
-- Steps to reproduce
-- Expected vs actual behavior
-- Output of `just dev-status` and relevant logs
-
-**Have an idea?** Start a discussion or open a feature request!
+See [CONTRIBUTING.md](CONTRIBUTING.md). Prefer the
+[Epic 12 board](docs/EPICS/FRAMEWORK_MATURITY/BUILD_BOARD.md) for current gaps.
+Do not treat WebSocket as an MVP contribution target.
 
 ---
 
-## 📄 License
+## Community
 
-See [LICENSE](LICENSE) for details.
+- [Issues](https://github.com/microscaler/BRRTRouter/issues)
+- [Discussions](https://github.com/microscaler/BRRTRouter/discussions)
+
+Bug reports: repro steps, expected vs actual, `just dev-status` + relevant logs.
 
 ---
 
-## 👁️ Logo & Theme
+## License
 
-The logo features a stylized **A-10 Warthog nose cannon**, symbolizing BRRTRouter's precision and firepower. This reflects our goal: maximum routing performance with zero stray shots.
+See [LICENSE](LICENSE).
+
+---
+
+## Logo & theme
+
+Stylized **A-10 Warthog nose cannon** — precision routing, no stray shots.
