@@ -66,6 +66,6 @@ Wave 5: 10.9 → 10.10 → 10.8
 Epic 11: 11.1 → 11.2 → 11.3 → 11.4  (after 10.1; 11.3 after 10.7)
 ```
 
-**Epic 10 Wave 5 done.** **NOW:** Epic 11 — HTTP QUERY ([#374](https://github.com/microscaler/BRRTRouter/issues/374)).
-Style matrix: [`openapi-style-explode-matrix.md`](../../docs/EPICS/URI_REQUEST_TARGET/openapi-style-explode-matrix.md).
+**Epic 10 done.** Epic 11: **11.1 done** (`method_query`, CORS). **NOW:** **11.2** OpenAPI QUERY ops
+([#387](https://github.com/microscaler/BRRTRouter/issues/387)).
 Full index: [`BUILD_BOARD.md`](../../docs/EPICS/URI_REQUEST_TARGET/BUILD_BOARD.md).

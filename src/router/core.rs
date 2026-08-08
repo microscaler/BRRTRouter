@@ -173,6 +173,7 @@ impl Router {
             Method::OPTIONS,
             Method::HEAD,
             Method::TRACE,
+            crate::http::method_query(),
         ];
 
         let routes: Vec<RouteMeta> = routes

@@ -132,16 +132,15 @@ impl<'a> PathCursor<'a> {
 /// Before this type, [`RadixNode`] stored `HashMap<Method, Arc<RouteMeta>>`
 /// at every terminal node. Hot-path lookup paid a hash + bucket traversal
 /// on every matched request (one call per route match at ~66 k req/s). Since
-/// the set of HTTP methods is small and closed, a 9-slot `Option` array
+/// the set of HTTP methods is small and closed, a fixed-slot `Option` array
 /// indexed by a cheap `match` on [`Method`] is strictly faster *and* smaller
-/// than the `HashMap` (72 bytes of padded `Option<Arc<_>>` slots vs
-/// `HashMap`'s allocator-backed buckets + hasher state).
+/// than the `HashMap` (padded `Option<Arc<_>>` slots vs `HashMap`'s
+/// allocator-backed buckets + hasher state).
 ///
 /// `None` for every method means "no terminal route at this node for any
 /// method" — i.e. the node is a prefix, not a destination. Unknown
-/// extension methods yield `None` from [`method_index`] and are therefore
-/// treated as non-matches, preserving the previous behaviour where only
-/// the 8 filter-listed methods plus `CONNECT` were stored.
+/// extension methods (other than RFC 10008 `QUERY`) yield `None` from
+/// [`method_index`] and are treated as non-matches.
 #[derive(Clone, Default)]
 struct MethodRouteTable {
     slots: [Option<Arc<RouteMeta>>; N_METHOD_SLOTS],
@@ -149,11 +148,11 @@ struct MethodRouteTable {
 
 /// Number of indexed HTTP method slots. Matches [`method_index`] / the
 /// supported-method filter in [`RadixRouter::new`] / [`super::core::Router::new`].
-const N_METHOD_SLOTS: usize = 9;
+/// Includes RFC 10008 QUERY (Story 11.1) as slot 9.
+const N_METHOD_SLOTS: usize = 10;
 
 /// Map a canonical HTTP method to its slot index. Returns `None` for any
-/// extension method so callers treat it as "no route" — matching the
-/// pre-Phase-R.1 behaviour where unsupported methods were not insertable.
+/// unsupported extension method so callers treat it as "no route".
 #[inline]
 fn method_index(m: &Method) -> Option<usize> {
     // Order kept stable with the `supported_methods` list in both Router and
@@ -168,6 +167,7 @@ fn method_index(m: &Method) -> Option<usize> {
         Method::HEAD => Some(6),
         Method::TRACE => Some(7),
         Method::CONNECT => Some(8),
+        ref other if crate::http::is_query_method(other) => Some(9),
         _ => None,
     }
 }
@@ -395,6 +395,7 @@ impl RadixRouter {
             Method::OPTIONS,
             Method::HEAD,
             Method::TRACE,
+            crate::http::method_query(),
         ];
 
         let routes: Vec<RouteMeta> = routes

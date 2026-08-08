@@ -5,9 +5,12 @@
 //! without a separate tokio runtime.
 
 mod fetch;
+pub mod method_ext;
 pub mod openapi_query;
 mod proxy;
 pub mod uri_encode;
+
+pub use method_ext::{is_query_method, method_query};
 
 pub use fetch::{
     fetch_delete, fetch_get, fetch_get_full, fetch_get_text_with_retry, fetch_patch, fetch_post,

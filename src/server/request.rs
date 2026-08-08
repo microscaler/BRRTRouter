@@ -719,6 +719,7 @@ mod tests {
             ("OPTIONS", Method::OPTIONS),
             ("CONNECT", Method::CONNECT),
             ("TRACE", Method::TRACE),
+            ("QUERY", crate::http::method_query()),
         ];
 
         for (method_str, expected_method) in valid_methods {

@@ -43,17 +43,24 @@ Accept `QUERY` as a first-class method in routing and CORS preflight responses.
 
 ### Acceptance criteria (tests)
 
-- [ ] P1/P3 and N2 mandatory.
-- [ ] All P*/N* named unit/integration tests as appropriate; unit-level method/CORS helpers required.
+- [x] P1/P3 and N2 mandatory.
+- [x] All P*/N* named unit/integration tests as appropriate; unit-level method/CORS helpers required.
 
 ## Acceptance criteria
 
-- [ ] Same-origin QUERY reaches a registered handler.
-- [ ] CORS preflight lists QUERY when CORS is on.
-- [ ] Tests for allow and 405 paths.
-- [ ] Unit tests section complete (positive + negative).
+- [x] Same-origin QUERY reaches a registered handler.
+- [x] CORS preflight lists QUERY when CORS is on.
+- [x] Tests for allow and 405 paths.
+- [x] Unit tests section complete (positive + negative).
+
+## Policy notes
+
+- **Uppercase only:** `method_query()` / routing accept `QUERY`. Lowercase `query` is a
+  distinct `http::Method` extension token and does **not** match QUERY routes.
+- Default / permissive CORS `Access-Control-Allow-Methods` includes `QUERY`.
+  Custom method lists without `QUERY` still deny preflight (403).
 
 ## References
 
 - RFC 10008 §2, §4 (Security / CORS)
-- `src/server/cors_setup.rs`, `src/router/`
+- `src/http/method_ext.rs`, `src/server/cors_setup.rs`, `src/router/`

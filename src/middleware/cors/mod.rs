@@ -942,7 +942,7 @@ impl CorsMiddleware {
     /// Configuration:
     /// - `allowed_origins`: `["*"]` (all origins)
     /// - `allowed_headers`: `["Content-Type", "Authorization"]`
-    /// - `allowed_methods`: `GET, POST, PUT, DELETE, OPTIONS`
+    /// - `allowed_methods`: `GET, POST, PUT, DELETE, OPTIONS, QUERY`
     /// - `allow_credentials`: `false` (cannot be true with wildcard)
     /// - `expose_headers`: `[]` (empty)
     /// - `max_age`: `None` (no preflight caching)
@@ -965,6 +965,7 @@ impl CorsMiddleware {
                 Method::PUT,
                 Method::DELETE,
                 Method::OPTIONS,
+                crate::http::method_query(),
             ],
             allow_credentials: false, // Cannot be true with wildcard
             expose_headers: vec![],
@@ -987,7 +988,7 @@ impl Default for CorsMiddleware {
     /// Default configuration:
     /// - `allowed_origins`: `[]` (empty - no origins allowed, requires explicit configuration)
     /// - `allowed_headers`: `["Content-Type", "Authorization"]`
-    /// - `allowed_methods`: `GET, POST, PUT, DELETE, OPTIONS`
+    /// - `allowed_methods`: `GET, POST, PUT, DELETE, OPTIONS, QUERY`
     /// - `allow_credentials`: `false`
     /// - `expose_headers`: `[]` (empty)
     /// - `max_age`: `None` (no preflight caching)
@@ -1018,6 +1019,7 @@ impl Default for CorsMiddleware {
                 Method::PUT,
                 Method::DELETE,
                 Method::OPTIONS,
+                crate::http::method_query(),
             ],
             allow_credentials: false,
             expose_headers: vec![],

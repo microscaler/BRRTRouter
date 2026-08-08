@@ -266,7 +266,7 @@ fn test_cors_preflight_response() {
     );
     assert_eq!(
         resp.get_header("access-control-allow-methods"),
-        Some("GET, POST, PUT, DELETE, OPTIONS")
+        Some("GET, POST, PUT, DELETE, OPTIONS, QUERY")
     );
     assert_eq!(resp.get_header("vary"), Some("Origin"));
 }
@@ -507,7 +507,7 @@ fn test_cors_default_configuration() {
     );
     assert_eq!(
         resp.get_header("access-control-allow-methods"),
-        Some("GET, POST, PUT, DELETE, OPTIONS")
+        Some("GET, POST, PUT, DELETE, OPTIONS, QUERY")
     );
     assert_eq!(resp.get_header("vary"), Some("Origin"));
 }
