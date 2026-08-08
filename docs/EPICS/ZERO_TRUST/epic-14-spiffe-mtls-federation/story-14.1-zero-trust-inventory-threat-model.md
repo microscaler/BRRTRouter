@@ -12,7 +12,8 @@ threat model (spoofed SAN, expired leaf, wrong trust domain), and epic boundary
 (consumer not issuer).
 
 ## Delivery
-- Living doc under `docs/` (promote from `docs/wip/SPIFFE_*`).
+- Living doc: [`docs/SPIFFE_ZERO_TRUST_INVENTORY.md`](../../../SPIFFE_ZERO_TRUST_INVENTORY.md).
+- Identity boundary: [`docs/JWT_AND_IDENTITY_BOUNDARY.md`](../../../JWT_AND_IDENTITY_BOUNDARY.md) (Sesame/external IdP issues JWTs; router enforces).
 - Matrix: capability × status × story owner.
 - Explicit may_minihttp / TLS termination assumptions.
 
@@ -49,8 +50,8 @@ threat model (spoofed SAN, expired leaf, wrong trust domain), and epic boundary
 | N5 | Silent omit of Federation | forbidden |
 
 ### Acceptance criteria (tests)
-- [ ] Doc fixtures cover P1–P3 and N1–N2.
+- [x] Doc fixtures cover P1–P3 and N1–N2 (`tests/epic14_1_zero_trust_inventory_tests.rs`).
 
 ## Acceptance criteria
-- [ ] Inventory published; FR/NFR complete.
+- [x] Inventory published; FR/NFR complete.
 

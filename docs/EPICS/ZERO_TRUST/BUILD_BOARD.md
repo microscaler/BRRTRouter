@@ -7,8 +7,8 @@
 
 | Priority | ID | Status | Issue | Notes |
 |----------|-----|--------|-------|-------|
-| **NOW** | 14.1 | todo | [#414](https://github.com/microscaler/BRRTRouter/issues/414) | Inventory & threat model |
-| **NEXT** | 14.2 | todo | [#415](https://github.com/microscaler/BRRTRouter/issues/415) | X.509 validate |
+| **DONE** | 14.1 | done | [#414](https://github.com/microscaler/BRRTRouter/issues/414) | Inventory & threat model |
+| **NOW** | 14.2 | todo | [#415](https://github.com/microscaler/BRRTRouter/issues/415) | X.509 validate |
 | **NEXT** | 14.3 | todo | [#416](https://github.com/microscaler/BRRTRouter/issues/416) | mTLS request path |
 
 ## Wave plan
@@ -28,7 +28,7 @@ Wave 6 ──► 14.8
 | ID | Title | Wave | Status | GitHub |
 |----|--------|------|--------|--------|
 | Epic 14 | SPIFFE X.509 / mTLS / Federation | — | todo | [#411](https://github.com/microscaler/BRRTRouter/issues/411) |
-| 14.1 | Zero-trust inventory & threat model | 0 | todo | [#414](https://github.com/microscaler/BRRTRouter/issues/414) |
+| 14.1 | Zero-trust inventory & threat model | 0 | done | [#414](https://github.com/microscaler/BRRTRouter/issues/414) |
 | 14.2 | X.509 SVID parse & validate | 1 | todo | [#415](https://github.com/microscaler/BRRTRouter/issues/415) |
 | 14.3 | mTLS peer identity on request path | 1 | todo | [#416](https://github.com/microscaler/BRRTRouter/issues/416) |
 | 14.4 | X.509 SecurityProvider → authz | 2 | todo | [#417](https://github.com/microscaler/BRRTRouter/issues/417) |

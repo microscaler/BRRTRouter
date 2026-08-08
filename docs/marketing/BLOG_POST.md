@@ -292,7 +292,7 @@ Every handler is type-safe. The request and response types are generated from yo
 - Request bodies are validated against JSON Schema
 - Response bodies are validated before sending
 
-If a request doesn't match your spec, BRRTRouter returns a structured error (RFC 7807 Problem Details) before your handler even runs.
+If a request doesn't match your spec, BRRTRouter returns a structured error JSON (`error` / `reason` / `message`) before your handler even runs. RFC 7807 `problem+json` is on the roadmap (Epic 13.3), not a shipped claim.
 
 ### Request Processing Flow
 

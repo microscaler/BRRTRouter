@@ -2,11 +2,16 @@
 
 This document catalogs what is **outstanding** in BRRTRouter to achieve full OpenAPI 3.1.0 support. It is intended to guide the "Deep dive into OpenAPI spec" work referenced in the README.
 
-**Status verification (Jan 2025):** The "Implemented", "Outstanding", and "Partial" rows below were checked against the current codebase. No items were found to be newly implemented; the document is up to date. See [§13 Relationship to BFF_PROXY](#13-relationship-to-bff_proxy) for whether OpenAPI compliance must be completed before BFF proxy work.
+**Status verification (2026-08-09, Story 13.1):** Reconciled with Epic 12.3 — local
+`$ref` for **requestBodies**, **responses**, and **pathItems** is **supported**
+(fail-closed). See [`openapi_component_refs.md`](./openapi_component_refs.md).
+Remaining surface work is tracked in **[Epic 15](./EPICS/OPENAPI_SURFACE/BUILD_BOARD.md)**.
+Older Jan 2025 rows below that still say ❌ for those refs are **superseded** by §1b.
 
 **References:**
 - [OpenAPI 3.1.0 Spec](https://spec.openapis.org/oas/v3.1.0)
-- BRRTRouter uses the **oas3** Rust crate (v0.20) for parsing; oas3 targets OpenAPI 3.1.x (3.0 may have limited compatibility).
+- BRRTRouter uses the **oas3** Rust crate for parsing; oas3 targets OpenAPI 3.1.x (3.0 may have limited compatibility).
+- Active backlog: Epics [13](./EPICS/FRAMEWORK_MATURITY/BUILD_BOARD.md)–[16](./EPICS/RELEASE_MATURITY/BUILD_BOARD.md); parked: [PARKED.md](./EPICS/PARKED.md).
 
 ---
 
@@ -30,6 +35,15 @@ This document catalogs what is **outstanding** in BRRTRouter to achieve full Ope
 | **MediaType: example, examples** | ✅ | `MediaTypeExamples::Example`, `Examples` in `extract_response_schema_and_example` |
 | **JSON Schema: type, format, properties, items, required, allOf, oneOf, anyOf** | ✅ | Used in generator/schema and validation; `type: ["string","null"]` for optional in 3.1 style (see schema.rs) |
 
+### 1b. Shipped in Epic 12.3 (do not treat as outstanding)
+
+| Area | Status | Notes |
+|------|--------|-------|
+| **components.requestBodies `$ref`** | ✅ | Local `#/components/requestBodies/*` — fail-closed |
+| **components.responses `$ref`** | ✅ | Local `#/components/responses/*` — fail-closed |
+| **components.pathItems / Path Item `$ref`** | ✅ | Local `#/components/pathItems/*` — fail-closed |
+| Detail | — | [`openapi_component_refs.md`](./openapi_component_refs.md) |
+
 ---
 
 ## 2. Outstanding: Document and Top-Level
@@ -47,13 +61,13 @@ This document catalogs what is **outstanding** in BRRTRouter to achieve full Ope
 
 | Feature | OAS 3.1 | BRRTRouter | Notes |
 |---------|---------|------------|-------|
-| **components.responses** | `#/components/responses/X` | ❌ Not resolved | Operation `responses` can $ref here. `extract_response_schema_and_example` only handles inline or (implied) schema $ref; no `resolve_response_ref` for `#/components/responses/`. |
-| **components.requestBodies** | `#/components/requestBodies/X` | ❌ Not resolved | Linter checks `requestBody` $ref starts with `#/components/requestBodies/` but returns early; `extract_request_schema` does not resolve it. Request body would be missed. |
-| **components.headers** | `#/components/headers/X` | ❌ Not used | Response headers; not used in build or codegen. |
+| **components.responses** | `#/components/responses/X` | ✅ Local resolved (12.3) | See §1b; Epic 15 for headers/links fidelity |
+| **components.requestBodies** | `#/components/requestBodies/X` | ✅ Local resolved (12.3) | See §1b |
+| **components.headers** | `#/components/headers/X` | ❌ Not used | → Epic 15.2 |
 | **components.examples** | `#/components/examples/X` | ⚠️ Partial | MediaType `examples` can $ref here. oas3 may resolve; BRRTRouter uses `examples` for default example only. |
 | **components.links** | `#/components/links/X` | ❌ Ignored | Response `links`; design-time only; no runtime. |
-| **components.callbacks** | `#/components/callbacks/X` | ❌ Ignored | Reusable callback defs; see Operation callbacks. |
-| **components.pathItems** | `#/components/pathItems/X` | ❌ Not resolved | 3.1; paths can $ref `#/components/pathItems/X`. No resolution in BRRTRouter. |
+| **components.callbacks** | `#/components/callbacks/X` | ❌ Ignored | → Epic 15.7 (fidelity); auto-fire parked |
+| **components.pathItems** | `#/components/pathItems/X` | ✅ Local resolved (12.3) | See §1b |
 
 ---
 
@@ -61,10 +75,10 @@ This document catalogs what is **outstanding** in BRRTRouter to achieve full Ope
 
 | Feature | OAS 3.1 | BRRTRouter | Notes |
 |---------|---------|------------|-------|
-| **Path Item $ref** | `$ref` to Path Item | ⚠️ oas3? | If oas3 resolves, we may get path; else missing. |
-| **Path item: servers** | Override servers for path | ❌ Ignored | Only root `servers[0].url` used for `base_path`. |
-| **Operation: callbacks** | `callbacks: { [expr]: PathItem }` | ❌ Ignored | Out-of-band callbacks; runtime expression → URL. No parsing or runtime. |
-| **Operation: servers** | Override servers for op | ❌ Ignored | Same as path-level. |
+| **Path Item $ref** | `$ref` to Path Item | ✅ Local (12.3) | `#/components/pathItems/*`; external HTTP refs fail-closed |
+| **Path item: servers** | Override servers for path | ❌ Ignored | → Epic 15.3 |
+| **Operation: callbacks** | `callbacks: { [expr]: PathItem }` | ❌ Ignored | → Epic 15.7 fidelity; auto-fire parked ([PARKED.md](./EPICS/PARKED.md)) |
+| **Operation: servers** | Override servers for op | ❌ Ignored | → Epic 15.3 |
 | **Operation: externalDocs** | Doc link | ❌ Ignored | Doc only. |
 
 ---
@@ -76,7 +90,7 @@ This document catalogs what is **outstanding** in BRRTRouter to achieve full Ope
 | **Parameter: content** | `content: { media: MediaType }` | ⚠️ Unclear | Parameter can use `content` instead of `schema`. `extract_parameters` uses `param.schema`; `content`-based params may not be fully handled. |
 | **Parameter: allowReserved, allowEmptyValue** | Parameter object | ⚠️ Unclear | Passed through oas3→ParameterMeta? Not obviously used in validation. |
 | **Parameter: deprecated** | Parameter object | ❌ Not in ParameterMeta | — |
-| **Encoding (media type)** | `encoding` in MediaType | ❌ Ignored | multipart / form-urlencoded encoding; no encoding-specific handling. |
+| **Encoding (media type)** | `encoding` in MediaType | ❌ Ignored | → Epic 15.4 (+ multipart streaming Epic 13.4) |
 
 ---
 
@@ -97,9 +111,9 @@ This document catalogs what is **outstanding** in BRRTRouter to achieve full Ope
 
 | Feature | OAS 3.1 | BRRTRouter | Notes |
 |---------|---------|------------|-------|
-| **Response: headers** | `headers: { [name]: Header \| $ref }` | ❌ | Not in ResponseSpec; no codegen for response headers. |
+| **Response: headers** | `headers: { [name]: Header \| $ref }` | ❌ | → Epic 15.2 |
 | **Response: links** | `links: { [name]: Link \| $ref }` | ❌ | Design-time; no use. |
-| **Response $ref** | `#/components/responses/X` | ❌ | Not resolved (see 3.). |
+| **Response $ref** | `#/components/responses/X` | ✅ | Local resolved (12.3); see §1b |
 | **Link, runtime expressions** | `operationRef`, `operationId`, `parameters`, `requestBody` | ❌ | Not implemented. |
 
 ---
@@ -163,11 +177,11 @@ When using **bff-generator** to produce a BFF spec consumed by BRRTRouter:
 | Category | Implemented | Partial | Not Implemented |
 |----------|-------------|---------|-----------------|
 | **Root** | info (title, version, description, contact), servers, paths, security, tags | — | webhooks, jsonSchemaDialect, externalDocs |
-| **Components** | schemas, parameters, securitySchemes | examples (via oas3?) | responses, requestBodies, headers, examples (full), links, callbacks, pathItems |
-| **Paths/Ops** | path, methods, parameters, requestBody, responses, security, deprecated (parsed) | Path Item $ref (if oas3 resolves) | path/op servers, callbacks, externalDocs |
+| **Components** | schemas, parameters, securitySchemes, requestBodies, responses, pathItems | examples (via oas3?) | headers, examples (full), links, callbacks |
+| **Paths/Ops** | path, methods, parameters, requestBody, responses, security, pathItem $ref (local), deprecated (parsed) | — | path/op servers, callbacks fidelity, externalDocs |
 | **Params** | path, query, header, cookie; schema; style; explode; $ref to components.parameters | — | content-based, allowReserved, allowEmptyValue, deprecated, content |
 | **Schema** | type, format, properties, items, required, allOf, oneOf, anyOf, $ref, 3.1 `type: [T,null]` | nullable (legacy), example vs examples, discriminator | $schema, jsonSchemaDialect, contentEncoding, contentMediaType, xml |
-| **Response** | status, content, schema, example/examples | — | headers, links, $ref to components.responses |
+| **Response** | status, content, schema, example/examples, `$ref` to components.responses | — | headers, links |
 
 ---
 

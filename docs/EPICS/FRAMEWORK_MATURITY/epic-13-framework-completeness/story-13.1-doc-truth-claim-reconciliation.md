@@ -68,13 +68,14 @@ Docs story: fixture / `include_str!` guards.
 
 ### Acceptance criteria (tests)
 
-- [ ] Doc fixture test covers P1–P3 and N1–N4.
+- [x] Doc fixture test covers P1–P3 and N1–N4 (`tests/epic13_1_doc_truth_tests.rs`).
 
 ## Acceptance criteria
 
-- [ ] Touched docs match engineering truth.
-- [ ] Unit tests section complete.
-- [ ] FR/NFR tables satisfied.
+- [x] Touched docs match engineering truth.
+- [x] Unit tests section complete.
+- [x] FR/NFR tables satisfied.
+- [x] JWT consumer boundary published (`docs/JWT_AND_IDENTITY_BOUNDARY.md`).
 
 ## References
 

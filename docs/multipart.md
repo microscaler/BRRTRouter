@@ -22,6 +22,7 @@ type the operation does not list (e.g. multipart against JSON-only).
 
 ## Not in this story
 
+- Stream-to-disk uploads / download helpers → [Epic 13.4](./EPICS/FRAMEWORK_MATURITY/epic-13-framework-completeness/story-13.4-streaming-uploads-downloads.md)
 - Full OpenAPI `encoding` object / `style` matrix for multipart
 - Streaming large uploads to disk
 - Multipart response generation

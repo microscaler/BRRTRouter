@@ -96,10 +96,13 @@ graph TB
 | Type | OpenAPI Scheme | Provider | Status |
 |------|----------------|----------|--------|
 | **API Key** | `apiKey` (header/query/cookie) | `ApiKeyProvider`, `RemoteApiKeyProvider` | ✅ Production |
-| **HTTP Bearer** | `http` (scheme: bearer) | `BearerJwtProvider`, `JwksBearerProvider` | ✅ Production |
-| **OAuth2** | `oauth2` (all flows) | `OAuth2Provider`, `JwksBearerProvider` | ✅ Production |
-| **OpenID Connect** | `openIdConnect` | Planned (`JwksBearerProvider` compatible) | 🚧 Roadmap |
-| **Mutual TLS** | N/A | Custom `SecurityProvider` | 🔧 DIY |
+| **HTTP Bearer** | `http` (scheme: bearer) | `JwksBearerProvider` (prod), `BearerJwtProvider` (dev HMAC) | ✅ Prod = JWKS |
+| **OAuth2** | `oauth2` (resource server) | **`JwksBearerProvider`** against Sesame-IDAM / external IdP JWKS | ✅ Consumer only |
+| **OAuth2Provider (in-tree)** | — | Simplified local JWT | ⚠️ **Stub/dev — not an authorization server** |
+| **OpenID Connect** | `openIdConnect` | Via JWKS URL (`JwksBearerProvider`) | ✅ As resource server |
+| **Mutual TLS / SPIFFE X.509** | N/A | Epic 14 | 🚧 Planned |
+
+BRRTRouter does **not** issue tokens or run an IdP. See [JWT_AND_IDENTITY_BOUNDARY.md](./JWT_AND_IDENTITY_BOUNDARY.md).
 
 ---
 
@@ -788,10 +791,12 @@ cargo run --release --example api_load_test -- \
 
 ### 1. Use Production Providers in Production
 
-| Environment | API Key | JWT | OAuth2 |
-|-------------|---------|-----|--------|
-| **Development** | `ApiKeyProvider` (env var) | `BearerJwtProvider` (simple) | `OAuth2Provider` (simple) |
-| **Production** | `RemoteApiKeyProvider` (centralized) | `JwksBearerProvider` (JWKS) | `JwksBearerProvider` (JWKS) |
+| Environment | API Key | User / OAuth JWT | SPIFFE |
+|-------------|---------|------------------|--------|
+| **Development** | `ApiKeyProvider` (env var) | `BearerJwtProvider` or local JWKS | JWT SVID fixtures |
+| **Production** | `RemoteApiKeyProvider` | **`JwksBearerProvider`** → Sesame-IDAM / external IdP | JWT SVID today; X.509 mTLS → Epic 14 |
+
+Do **not** deploy `OAuth2Provider` as a production IdP substitute.
 
 ### 2. Configure Appropriate Cache TTLs
 

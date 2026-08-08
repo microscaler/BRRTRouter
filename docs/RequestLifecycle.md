@@ -960,10 +960,11 @@ pub trait Middleware: Send + Sync {
 | **MetricsMiddleware** | Increment request counter | Record latency, status code |
 | **CorsMiddleware** | Add `Access-Control-Allow-Origin` | Finalize CORS headers |
 | **TracingMiddleware** | Start OpenTelemetry span | End span, add attributes |
-| **RateLimitMiddleware** | Check rate limit, return 429 if exceeded | - |
-| **CompressionMiddleware** | - | Compress response body |
+| **RateLimitMiddleware** | 🚧 **Not shipped** — planned [Epic 13.2](./EPICS/FRAMEWORK_MATURITY/epic-13-framework-completeness/story-13.2-rate-limiting-middleware.md) | - |
+| **CompressionMiddleware** | 🚧 **Not shipped** — planned [Epic 13.8](./EPICS/FRAMEWORK_MATURITY/epic-13-framework-completeness/story-13.8-response-compression.md) | - |
 
-**Code Reference:** `src/middleware/mod.rs`
+Shipped middleware lives under `src/middleware/` (CORS, metrics, tracing, …).
+Do not treat the aspirational rows above as available APIs until those stories close.
 
 #### Phase 5: Dispatcher & Handler Execution
 

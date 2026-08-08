@@ -10,10 +10,16 @@
 Close the **critical** zero-trust gap for fintech/MedTech: BRRTRouter already
 validates **SPIFFE JWT SVIDs** (~98% JWT path). Production mTLS requires
 **X.509 SVID** peer identity, rotation/readiness, and **SPIFFE Federation** for
-multi-cloud / cross-org trust. Also harden JWT SVID (revocation check, ECDSA).
+multi-cloud / cross-org trust. Also harden JWT **verification** (ECDSA + optional
+external `jti` check).
+
+**Identity boundary:** BRRTRouter is a **consumer/enforcer** of JWTs and SPIFFE
+SVIDs. Token issuance, user sessions, and revocation **data** live in
+[Sesame-IDAM](https://github.com/microscaler/sesame-idam) or another external IdP —
+see [`JWT_AND_IDENTITY_BOUNDARY.md`](../../../JWT_AND_IDENTITY_BOUNDARY.md).
 
 **Does not include:** becoming a SPIFFE issuer (SPIRE remains the issuer);
-WebSocket; OAS callback auto-fire.
+becoming an OAuth/OIDC authorization server; WebSocket; OAS callback auto-fire.
 
 Authority: [`docs/wip/SPIFFE_COMPLIANCE_ASSESSMENT.md`](../../../wip/SPIFFE_COMPLIANCE_ASSESSMENT.md).
 
@@ -33,7 +39,7 @@ Wave 1 ──► 14.2 X.509 validate ‖ 14.3 mTLS request path
 Wave 2 ──► 14.4 SecurityProvider integration
 Wave 3 ──► 14.5 rotation & readiness
 Wave 4 ──► 14.6 federation
-Wave 5 ──► 14.7 JWT hardening (revocation + ECDSA)
+Wave 5 ──► 14.7 JWT hardening (external revoke hook + ECDSA)
 Wave 6 ──► 14.8 reference integration + docs
 ```
 
@@ -47,7 +53,7 @@ Wave 6 ──► 14.8 reference integration + docs
 | 14.4 | X.509 SecurityProvider → authz | [#417](https://github.com/microscaler/BRRTRouter/issues/417) | M | 14.3 |
 | 14.5 | SVID/bundle rotation & fail-closed ready | [#418](https://github.com/microscaler/BRRTRouter/issues/418) | M | 14.2 |
 | 14.6 | SPIFFE Federation (bundles) | [#419](https://github.com/microscaler/BRRTRouter/issues/419) | L | 14.2, 14.5 |
-| 14.7 | JWT SVID hardening (revocation + ECDSA) | [#420](https://github.com/microscaler/BRRTRouter/issues/420) | M | — |
+| 14.7 | JWT hardening (external revoke hook + ECDSA) | [#420](https://github.com/microscaler/BRRTRouter/issues/420) | M | — |
 | 14.8 | Reference integration guide & e2e fixtures | [#421](https://github.com/microscaler/BRRTRouter/issues/421) | M | 14.4–14.6 |
 
 ## Functional requirements (epic)
@@ -59,8 +65,8 @@ Wave 6 ──► 14.8 reference integration + docs
 | E-FR-3 | Map peer SPIFFE ID into the same security/authz pipeline as JWT SVID. |
 | E-FR-4 | Rotate leaf/intermediate/bundle without process restart (or documented hot-reload). |
 | E-FR-5 | Accept federated trust bundles for configured foreign domains. |
-| E-FR-6 | Optional JWT `jti` revocation lookup before accept. |
-| E-FR-7 | Verify JWT SVIDs signed with ES256/ES384/ES512 when keys present. |
+| E-FR-6 | Optional JWT `jti` check via **pluggable external** checker (Sesame/IdP) before accept. |
+| E-FR-7 | Verify JWTs signed with ES256/ES384/ES512 when JWKS keys present. |
 
 ## Non-functional requirements (epic)
 
@@ -70,7 +76,8 @@ Wave 6 ──► 14.8 reference integration + docs
 | E-NFR-2 | No panic on malformed certs/bundles. |
 | E-NFR-3 | Secrets/key material never logged. |
 | E-NFR-4 | Hot path after identity extract stays lock-friendly (ArcSwap-style snapshots). |
-| E-NFR-5 | Clear split: BRRTRouter is SVID **consumer**, not issuer. |
+| E-NFR-5 | Clear split: BRRTRouter is SVID/JWT **consumer**, not issuer or IdP. |
+| E-NFR-6 | No in-router revocation database or session IdP. |
 
 ## References
 

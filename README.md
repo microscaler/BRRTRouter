@@ -13,7 +13,8 @@
 | **OpenAPI** | 3.1.x fleet default · QUERY dual-support — [version policy](docs/OPENAPI_VERSION_SUPPORT.md) |
 | **Open reference** | [Sesame-IDAM](https://github.com/microscaler/sesame-idam) — [Building with BRRTRouter](docs/BUILDING_WITH_BRRTROUTER.md) |
 | **In-repo demo** | `examples/pet_store` (Tilt dashboard, Swagger, Goose) |
-| **Active roadmap** | [Epic 12 build board](docs/EPICS/FRAMEWORK_MATURITY/BUILD_BOARD.md) |
+| **Active roadmap** | [Epics catalog](docs/EPICS/EPICS_CATALOG.md) · [Epic 13](docs/EPICS/FRAMEWORK_MATURITY/BUILD_BOARD.md) · [Epic 14 mTLS](docs/EPICS/ZERO_TRUST/BUILD_BOARD.md) |
+| **JWT / identity** | Consumer/enforcer only — [boundary](docs/JWT_AND_IDENTITY_BOUNDARY.md) |
 
 ---
 
@@ -56,8 +57,8 @@ Early-stage MVP — APIs may still change; feedback welcome toward a stable `0.1
 - ✅ Public reference: [Sesame-IDAM](https://github.com/microscaler/sesame-idam)
 - ✅ Security + CORS production-hardened (see below)
 - ✅ URI / request-target (Epic 10) + HTTP QUERY (Epic 11)
-- 🔧 Framework maturity waves still open — [Epic 12 board](docs/EPICS/FRAMEWORK_MATURITY/BUILD_BOARD.md)
-- ⏸ WebSocket **parked** (no `may_minihttp` upgrade path)
+- 🔧 Epic 12 **done**; active: [Epic 13](docs/EPICS/FRAMEWORK_MATURITY/BUILD_BOARD.md) · [Epic 14 SPIFFE/mTLS](docs/EPICS/ZERO_TRUST/BUILD_BOARD.md) · [15](docs/EPICS/OPENAPI_SURFACE/BUILD_BOARD.md) · [16](docs/EPICS/RELEASE_MATURITY/BUILD_BOARD.md)
+- ⏸ WebSocket **parked** — [PARKED.md](docs/EPICS/PARKED.md)
 
 ---
 
@@ -109,12 +110,14 @@ the spec and can be refined in `config.yaml`.
 | Provider / scheme | What it does |
 | ----------------- | ------------ |
 | API key (header / query / cookie) | Static key or `RemoteApiKeyProvider` (cached remote check) |
-| `BearerJwtProvider` | Local JWT (HMAC) + scope checks |
-| `JwksBearerProvider` | JWKS fetch (HS/RS families), readiness probes, fail-closed on timeout / key poisoning |
-| `OAuth2Provider` | OAuth2 token + scopes |
-| `SpiffeProvider` | SPIFFE JWT SVIDs (optional enterprise path) |
-| PropelAuth / Auth0 / Cognito / Keycloak | Via JWKS URL (PropelAuth helper in config) |
+| `JwksBearerProvider` | **Production** — validate JWTs via JWKS from Sesame-IDAM or external IdP |
+| `BearerJwtProvider` | Dev/test HMAC JWT only — not an IdP |
+| `OAuth2Provider` | **Stub/dev** — prefer JWKS; BRRTRouter does not issue OAuth tokens |
+| `SpiffeProvider` | SPIFFE JWT SVID **consumer** (X.509/mTLS → Epic 14) |
+| PropelAuth / Auth0 / Cognito / Keycloak / Sesame | Via JWKS URL (issuer outside the router) |
 | Custom | Implement `SecurityProvider` and register by scheme name |
+
+Identity boundary: [JWT_AND_IDENTITY_BOUNDARY.md](docs/JWT_AND_IDENTITY_BOUNDARY.md).
 
 **Request pipeline (secured route):**
 
@@ -224,27 +227,20 @@ Legend: ✅ ready · 🚧 in progress / partial · ⏸ parked
 The live backlog is the epic boards (not the archived [ROADMAP.md](docs/ROADMAP.md)).
 
 ```text
-Done     Epic 10 URI / request-target · Epic 11 QUERY · Epic 12 Wave 0–1
-           (docs truth, body 413, component $ref, pre-handler params)
-Now      Epic 12 Wave 4 — perf science (#399)
-Next     Wave 3 — multipart truth · multi-status codegen
-Later    Wave 4 — perf science (evidence before more radix churn)
-Parked   WebSocket · fleet OpenAPI 3.2 cutover · full OAS callback runtime
+Done     Epic 10–12 (URI, QUERY, framework maturity 12.1–12.8)
+Now      Epic 13 framework completeness · Epic 14 SPIFFE/mTLS (critical)
+           · Epic 15 OpenAPI surface · Epic 16 release maturity
+Parked   WebSocket · callback auto-fire engine · radix rewrite
+           (see docs/EPICS/PARKED.md)
 ```
 
-| Wave | Stories | Theme |
-| ---- | ------- | ----- |
-| 0 ✅ | 12.1–12.2 | Doc truth · inbound body **413** |
-| 1 ✅ | 12.3–12.4 | Component `$ref` · pre-handler params |
-| 2 ✅ | 12.5 | Webhook outbound delivery kit (Sesame-shaped) |
-| 3 ✅ | 12.6–12.7 | Multipart truth · multi-status typed/codegen |
-| 4 | 12.8 | Perf science / Goose baselines |
+Catalog: [docs/EPICS/EPICS_CATALOG.md](docs/EPICS/EPICS_CATALOG.md).  
+Boards: [13](docs/EPICS/FRAMEWORK_MATURITY/BUILD_BOARD.md) ·
+[14 zero-trust](docs/EPICS/ZERO_TRUST/BUILD_BOARD.md) ·
+[15 OpenAPI](docs/EPICS/OPENAPI_SURFACE/BUILD_BOARD.md) ·
+[16 release](docs/EPICS/RELEASE_MATURITY/BUILD_BOARD.md).
 
-Board: [docs/EPICS/FRAMEWORK_MATURITY/BUILD_BOARD.md](docs/EPICS/FRAMEWORK_MATURITY/BUILD_BOARD.md) ·
-URI theme: [docs/EPICS/URI_REQUEST_TARGET/BUILD_BOARD.md](docs/EPICS/URI_REQUEST_TARGET/BUILD_BOARD.md).
-
-Longer OAS surface gaps (callbacks, full 3.2 matrix):
-[docs/OPENAPI_3.1.0_COMPLIANCE_GAP.md](docs/OPENAPI_3.1.0_COMPLIANCE_GAP.md).
+OpenAPI gap inventory (post–12.3): [docs/OPENAPI_3.1.0_COMPLIANCE_GAP.md](docs/OPENAPI_3.1.0_COMPLIANCE_GAP.md).
 
 ---
 
@@ -358,7 +354,7 @@ See [docs/JSF_COMPLIANCE.md](docs/JSF_COMPLIANCE.md).
 - [OpenAPI version support](docs/OPENAPI_VERSION_SUPPORT.md)
 - [Component `$ref`](docs/openapi_component_refs.md) · [Parameter validation](docs/parameter_validation.md)
 - [Request body limits](docs/request_body_limits.md) · [Multipart](docs/multipart.md) · [Webhook delivery](docs/webhook_delivery.md) · [Stack size](docs/stack_size.md)
-- [Epic 12 board](docs/EPICS/FRAMEWORK_MATURITY/BUILD_BOARD.md)
+- [Epics catalog](docs/EPICS/EPICS_CATALOG.md) · [Epic 13 board](docs/EPICS/FRAMEWORK_MATURITY/BUILD_BOARD.md)
 - [URI / QUERY epics](docs/EPICS/URI_REQUEST_TARGET/BUILD_BOARD.md)
 - [OpenAPI 3.1 compliance gap](docs/OPENAPI_3.1.0_COMPLIANCE_GAP.md)
 - [Marketing / whitepaper drafts](docs/marketing/)
@@ -393,7 +389,7 @@ Coverage target ≥80%. See [docs/TEST_DOCUMENTATION.md](docs/TEST_DOCUMENTATION
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Prefer the
-[Epic 12 board](docs/EPICS/FRAMEWORK_MATURITY/BUILD_BOARD.md) for current gaps.
+[Epics catalog](docs/EPICS/EPICS_CATALOG.md) for current gaps.
 WebSocket is parked — not an MVP contribution target.
 
 ---
