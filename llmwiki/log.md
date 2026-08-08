@@ -1,5 +1,15 @@
 # LLM Wiki Log
 
+## [2026-08-08] plan | Epic 12 Framework Maturity lined up
+
+- Theme `docs/EPICS/FRAMEWORK_MATURITY/`; epic [#391](https://github.com/microscaler/BRRTRouter/issues/391); stories 12.1–12.8 = #392–#399.
+- Waves: docs+413 → $ref+params → webhook kit → multipart+multi-status → perf science. WS parked.
+
+## [2026-08-08] docs | OpenAPI 3.1 + 3.2 dual-support contract
+
+- `docs/OPENAPI_VERSION_SUPPORT.md`; fixture `openapi_query_method_32.yaml`.
+- `query_operation_from_path_item` hook for oas3-rs#300; product openapi README policy.
+
 ## [2026-08-08] ship | Story 11.4 + Epic 11 complete
 
 - `Accept-Query` helpers; consumer guide (GET/QUERY/POST, CORS, 405 POST fallback).
