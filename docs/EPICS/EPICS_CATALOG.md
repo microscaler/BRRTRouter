@@ -1,8 +1,8 @@
 # Epics catalog
 
-**Purpose:** Single catalog of all Epics (global numbering). BFF Proxy = Epics 1–5; IDAM = Epics 6–9; URI / request-target = Epics 10–11; Framework maturity = Epic 12.
+**Purpose:** Single catalog of all Epics (global numbering). BFF Proxy = Epics 1–5; IDAM = Epics 6–9; URI / request-target = Epics 10–11; Framework maturity = Epics 12–13.
 
-## All epics (1–12)
+## All epics (1–13)
 
 | Epic | Title | Theme (Labels) | Type | Directory | GitHub issue |
 |------|--------|----------------|------|-----------|--------------|
@@ -18,6 +18,7 @@
 | 10 | Request-target parse & rebuild — 100% URI compliance | URI_REQUEST_TARGET, epic | Feature | [URI_REQUEST_TARGET/epic-10-uri-request-target-compliance/](URI_REQUEST_TARGET/epic-10-uri-request-target-compliance/) | [#373](https://github.com/microscaler/BRRTRouter/issues/373) |
 | 11 | HTTP QUERY method (RFC 10008) | URI_REQUEST_TARGET, epic | Feature | [URI_REQUEST_TARGET/epic-11-http-query-method/](URI_REQUEST_TARGET/epic-11-http-query-method/) | [#374](https://github.com/microscaler/BRRTRouter/issues/374) |
 | 12 | Framework maturity — safety, OpenAPI fidelity, kits | FRAMEWORK_MATURITY, epic | Feature | [FRAMEWORK_MATURITY/epic-12-framework-maturity/](FRAMEWORK_MATURITY/epic-12-framework-maturity/) | [#391](https://github.com/microscaler/BRRTRouter/issues/391) |
+| 13 | Framework completeness — ops, errors, files, DevEx | FRAMEWORK_MATURITY, epic | Feature | [FRAMEWORK_MATURITY/epic-13-framework-completeness/](FRAMEWORK_MATURITY/epic-13-framework-completeness/) | [#400](https://github.com/microscaler/BRRTRouter/issues/400) |
 
 **GitHub metadata mapping:**
 - **Labels** → Theme + role: `bff-proxy`, `idam`, `uri-request-target`, or `framework-maturity`; epics also get `epic`, stories get `story`. Epic 11 also uses `rfc10008`.
@@ -29,4 +30,4 @@
 - **BFF_PROXY** (Epics 1–5): [BFF_PROXY/README.md](BFF_PROXY/README.md)
 - **IDAM** (Epics 6–9): [IDAM/README.md](IDAM/README.md)
 - **URI_REQUEST_TARGET** (Epics 10–11): [URI_REQUEST_TARGET/README.md](URI_REQUEST_TARGET/README.md)
-- **FRAMEWORK_MATURITY** (Epic 12): [FRAMEWORK_MATURITY/README.md](FRAMEWORK_MATURITY/README.md) · **[BUILD_BOARD.md](FRAMEWORK_MATURITY/BUILD_BOARD.md)** (active Now/Next waves)
+- **FRAMEWORK_MATURITY** (Epics 12–13): [FRAMEWORK_MATURITY/README.md](FRAMEWORK_MATURITY/README.md) · **[BUILD_BOARD.md](FRAMEWORK_MATURITY/BUILD_BOARD.md)** (Epic 13 active)

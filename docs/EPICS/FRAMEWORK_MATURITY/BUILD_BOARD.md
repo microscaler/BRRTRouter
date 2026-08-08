@@ -1,52 +1,63 @@
 # Framework Maturity — Build Board
 
-**Theme:** Epic 12  
+**Theme:** Epics 12–13  
 **Testing:** [`TESTING_STANDARD.md`](TESTING_STANDARD.md)  
-**Summary:** [`EPICS_AND_STORIES_SUMMARY.md`](EPICS_AND_STORIES_SUMMARY.md)
+**Summaries:** [`EPICS_AND_STORIES_SUMMARY.md`](EPICS_AND_STORIES_SUMMARY.md)
 
-## Now / next
+## Now / next — Epic 13
 
 | Priority | ID | Status | Issue | Notes |
 |----------|-----|--------|-------|-------|
-| **DONE** | 12.1 | done | [#392](https://github.com/microscaler/BRRTRouter/issues/392) | Doc reconciliation |
-| **DONE** | 12.2 | done | [#393](https://github.com/microscaler/BRRTRouter/issues/393) | Inbound body → 413 |
-| **DONE** | 12.3 | done | [#394](https://github.com/microscaler/BRRTRouter/issues/394) | `$ref` bodies/responses/pathItems |
-| **DONE** | 12.4 | done | [#395](https://github.com/microscaler/BRRTRouter/issues/395) | Pre-handler param validation |
-| **DONE** | 12.5 | done | [#396](https://github.com/microscaler/BRRTRouter/issues/396) | Webhook outbound kit |
-| **DONE** | 12.6 | done | [#397](https://github.com/microscaler/BRRTRouter/issues/397) | Multipart truth |
-| **DONE** | 12.7 | done | [#398](https://github.com/microscaler/BRRTRouter/issues/398) | Multi-status typed |
-| **DONE** | 12.8 | done | [#399](https://github.com/microscaler/BRRTRouter/issues/399) | Perf science Phase 6 |
-| **NEXT** | — | — | — | Epic 12 complete; next work outside this board (e.g. Phase 3 reply-slot / e2e flamegraph follow-ups) |
+| **NOW** | 13.1 | todo | [#401](https://github.com/microscaler/BRRTRouter/issues/401) | Doc truth & claim reconciliation |
+| **NEXT** | 13.2 | todo | [#402](https://github.com/microscaler/BRRTRouter/issues/402) | Rate limiting |
+| **NEXT** | 13.3 | todo | [#403](https://github.com/microscaler/BRRTRouter/issues/403) | Problem Details (RFC 7807) |
+| — | 13.4 | todo | [#404](https://github.com/microscaler/BRRTRouter/issues/404) | Streaming uploads/downloads |
+| — | 13.5 | todo | [#405](https://github.com/microscaler/BRRTRouter/issues/405) | Browser security posture |
+| — | 13.6 | todo | [#406](https://github.com/microscaler/BRRTRouter/issues/406) | Handler deadlines → 504 |
+| — | 13.7 | todo | [#407](https://github.com/microscaler/BRRTRouter/issues/407) | SSE live flush |
+| — | 13.8 | todo | [#408](https://github.com/microscaler/BRRTRouter/issues/408) | Response compression |
+| — | 13.9 | todo | [#409](https://github.com/microscaler/BRRTRouter/issues/409) | Multi-status codegen |
+| — | 13.10 | todo | [#410](https://github.com/microscaler/BRRTRouter/issues/410) | Public TestApp |
 
-## Wave plan
+## Wave plan (Epic 13)
 
 ```text
-Wave 0 ──► 12.1 ‖ 12.2
-Wave 1 ──► 12.3 ‖ 12.4
-Wave 2 ──► 12.5 ✅
-Wave 3 ──► 12.6 ‖ 12.7 ✅
-Wave 4 ──► 12.8 ✅
+Wave 0 ──► 13.1
+Wave 1 ──► 13.2 ‖ 13.3
+Wave 2 ──► 13.4
+Wave 3 ──► 13.5 ‖ 13.6
+Wave 4 ──► 13.7 ‖ 13.8
+Wave 5 ──► 13.9 ‖ 13.10
 ```
 
-
-
-## Full story index
+## Epic 13 story index
 
 | ID | Title | Wave | Status | GitHub |
 |----|--------|------|--------|--------|
-| Epic 12 | Framework maturity | — | done | [#391](https://github.com/microscaler/BRRTRouter/issues/391) |
-| 12.1 | Doc / status reconciliation | 0 | done | [#392](https://github.com/microscaler/BRRTRouter/issues/392) |
-| 12.2 | Hard inbound body limits → 413 | 0 | done | [#393](https://github.com/microscaler/BRRTRouter/issues/393) |
-| 12.3 | OpenAPI `$ref` requestBodies / responses / pathItems | 1 | done | [#394](https://github.com/microscaler/BRRTRouter/issues/394) |
-| 12.4 | Pre-handler query/header validation | 1 | done | [#395](https://github.com/microscaler/BRRTRouter/issues/395) |
-| 12.5 | Webhook outbound delivery kit | 2 | done | [#396](https://github.com/microscaler/BRRTRouter/issues/396) |
-| 12.6 | Multipart form-data truth | 3 | done | [#397](https://github.com/microscaler/BRRTRouter/issues/397) |
-| 12.7 | Multi-status typed / codegen | 3 | done | [#398](https://github.com/microscaler/BRRTRouter/issues/398) |
-| 12.8 | Perf science Phase 6 | 4 | done | [#399](https://github.com/microscaler/BRRTRouter/issues/399) |
+| Epic 13 | Framework completeness | — | todo | [#400](https://github.com/microscaler/BRRTRouter/issues/400) |
+| 13.1 | Doc truth & claim reconciliation | 0 | todo | [#401](https://github.com/microscaler/BRRTRouter/issues/401) |
+| 13.2 | Rate limiting middleware | 1 | todo | [#402](https://github.com/microscaler/BRRTRouter/issues/402) |
+| 13.3 | Problem Details (RFC 7807) | 1 | todo | [#403](https://github.com/microscaler/BRRTRouter/issues/403) |
+| 13.4 | Streaming uploads & download helpers | 2 | todo | [#404](https://github.com/microscaler/BRRTRouter/issues/404) |
+| 13.5 | Browser security posture | 3 | todo | [#405](https://github.com/microscaler/BRRTRouter/issues/405) |
+| 13.6 | Handler / request deadlines → 504 | 3 | todo | [#406](https://github.com/microscaler/BRRTRouter/issues/406) |
+| 13.7 | SSE live flush streaming | 4 | todo | [#407](https://github.com/microscaler/BRRTRouter/issues/407) |
+| 13.8 | Response compression middleware | 4 | todo | [#408](https://github.com/microscaler/BRRTRouter/issues/408) |
+| 13.9 | Multi-status response codegen | 5 | todo | [#409](https://github.com/microscaler/BRRTRouter/issues/409) |
+| 13.10 | Public TestApp / RequestBuilder | 5 | todo | [#410](https://github.com/microscaler/BRRTRouter/issues/410) |
 
-## Parked (not in this epic)
+## Epic 12 — complete (archive)
+
+| ID | Title | Status | GitHub |
+|----|--------|--------|--------|
+| Epic 12 | Framework maturity | done | [#391](https://github.com/microscaler/BRRTRouter/issues/391) |
+| 12.1–12.8 | See [epic-12 README](epic-12-framework-maturity/README.md) | done | #392–#399 |
+
+## Parked (not in Epic 13)
 
 - WebSocket / may_minihttp upgrade
-- Radix trie rewrite / stack-size plumbing
+- Radix trie rewrite / stack-size product APIs
 - Full OAS callback auto-fire runtime
 - Fleet OpenAPI 3.2.0 cutover
+- SPIFFE X.509 / mTLS / federation (separate zero-trust epic)
+- BFF custom IDAM claim enrichment (product epics)

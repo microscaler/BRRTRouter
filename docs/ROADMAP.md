@@ -3,11 +3,12 @@
 > **Status (2026-08):** This document is an **archive pointer**, not the live backlog.
 > Active work is tracked on epic build boards under [`docs/EPICS/`](EPICS/EPICS_CATALOG.md).
 >
-> - **Now:** [Epic 12 — Framework maturity](EPICS/FRAMEWORK_MATURITY/BUILD_BOARD.md)
-> - **Shipped recently:** [Epic 10 URI / request-target](EPICS/URI_REQUEST_TARGET/BUILD_BOARD.md),
+> - **Now:** [Epic 13 — Framework completeness](EPICS/FRAMEWORK_MATURITY/BUILD_BOARD.md)
+> - **Shipped recently:** [Epic 12 Framework maturity](EPICS/FRAMEWORK_MATURITY/epic-12-framework-maturity/README.md) (12.1–12.8),
+>   [Epic 10 URI / request-target](EPICS/URI_REQUEST_TARGET/BUILD_BOARD.md),
 >   [Epic 11 HTTP QUERY](EPICS/URI_REQUEST_TARGET/epic-11-http-query-method/README.md)
-> - **Parked:** WebSocket (no `may_minihttp` upgrade), radix rewrite, stack-size plumbing as product APIs —
->   see Epic 12 parked list.
+> - **Parked:** WebSocket (no `may_minihttp` upgrade), radix rewrite, OAS callback auto-fire,
+>   SPIFFE X.509/mTLS — see Epic 13 parked list.
 > - **Open reference product:** [Sesame-IDAM](https://github.com/microscaler/sesame-idam) —
 >   [BUILDING_WITH_BRRTROUTER.md](BUILDING_WITH_BRRTROUTER.md) (not private Hauliage / PriceWhisperer; not immature RERP).
 
@@ -29,14 +30,16 @@ Do not treat those bullets as open work.
 
 ## 🚧 Active / next
 
-See **[Epic 12 BUILD_BOARD](EPICS/FRAMEWORK_MATURITY/BUILD_BOARD.md)** (waves 0–4):
+See **[Epic 13 BUILD_BOARD](EPICS/FRAMEWORK_MATURITY/BUILD_BOARD.md)** (waves 0–5):
 
-- OpenAPI `$ref` requestBodies / responses / pathItems
-- Pre-handler query/header validation
-- Webhook outbound delivery kit
-- Multipart form-data truth
-- Multi-status typed/codegen
-- Perf science (Phase 6)
+- Doc truth & claim reconciliation
+- Rate limiting middleware → 429
+- Problem Details (RFC 7807)
+- Streaming uploads / download helpers
+- Browser security posture (kit or explicit OOS)
+- Handler deadlines → 504
+- SSE live flush; opt-in response compression
+- Multi-status codegen + public TestApp
 
 Also: crates.io packaging polish; fake OTEL collector coverage in remaining tests.
 
@@ -51,6 +54,7 @@ Also: crates.io packaging polish; fake OTEL collector coverage in remaining test
 
 - Cloud-native scale-out (≤2 cores / 500 Mi typical pod)
 - Evidence-driven optimization via Epic 12.8 — not premature radix rewrites
+- Epic 13 focuses on e2e/dispatch/ops completeness, not trie rewrites
 
 ---
 
@@ -82,6 +86,7 @@ described work that is largely landed. Prefer epic story files and GitHub issues
 ## links
 
 - [Epics catalog](EPICS/EPICS_CATALOG.md)
-- [Epic 12 build board](EPICS/FRAMEWORK_MATURITY/BUILD_BOARD.md)
+- [Epic 13 build board](EPICS/FRAMEWORK_MATURITY/BUILD_BOARD.md)
+- [Epic 12 (done)](EPICS/FRAMEWORK_MATURITY/epic-12-framework-maturity/README.md)
 - [OpenAPI version support](OPENAPI_VERSION_SUPPORT.md)
 - [Describing API Security](https://learn.openapis.org/specification/security.html)

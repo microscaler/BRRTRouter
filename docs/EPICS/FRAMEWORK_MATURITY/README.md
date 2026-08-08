@@ -1,36 +1,39 @@
 # Theme: Framework Maturity (Epics 12+)
 
 **Goal:** Make BRRTRouter a trustworthy OpenAPI-first web framework — safety,
-contract fidelity, and honest docs — with
+contract fidelity, ops completeness, and honest docs — with
 [**Sesame-IDAM**](https://github.com/microscaler/sesame-idam) as the **public**
-reference consumer ([Building with BRRTRouter](../../BUILDING_WITH_BRRTROUTER.md)).
-Private suites (Hauliage, PriceWhisperer) and immature RERP still consume the
-framework but are not the docs’ learn-by-example target. WebSocket work is
-**parked** (separate may_minihttp epic).
+reference consumer ([Building with BRRTRouter](../../BUILDING_WITH_BRRTRouter.md)).
+WebSocket work is **parked** (separate may_minihttp epic).
 
 **Testing:** [`TESTING_STANDARD.md`](TESTING_STANDARD.md) (positive + negative unit tests mandatory).  
-**Board:** [`BUILD_BOARD.md`](BUILD_BOARD.md)
+**Board:** [`BUILD_BOARD.md`](BUILD_BOARD.md) ← **Epic 13 active**
 
 ## Scope
 
-| In | Out (for now) |
-|----|----------------|
-| Inbound body hard limits | WebSocket / may upgrade |
-| OpenAPI `$ref` fidelity | Full OAS 3.2 feature parity |
-| Param validation before handler | Radix micro-opts / stack-size plumbing |
-| Multipart truth | Full OAS callback auto-fire runtime |
-| Multi-status codegen | Fleet `openapi: 3.2.0` cutover |
-| Webhook **outbound delivery kit** | Trie rewrite |
-| Doc reconciliation + measurable perf science | |
+| In (Epic 13) | Out (parked / other epics) |
+|--------------|----------------------------|
+| Docs truth / claim reconciliation | WebSocket / may upgrade |
+| Rate limiting → 429 | Full OAS 3.2 feature parity |
+| RFC 7807 problem+json | Radix rewrites |
+| Streaming uploads / download helpers | OAS callback auto-fire |
+| Browser posture (kit or explicit OOS) | Fleet `openapi: 3.2.0` cutover |
+| Handler deadlines → 504 | SPIFFE X.509 / mTLS |
+| SSE live flush, opt-in compression | BFF claim enrichment (product) |
+| Multi-status codegen + public TestApp | |
 
-## Epic
+Epic 12 delivered: body 413, `$ref`, param validation, webhook kit, multipart MVP-A,
+typed multi-status **runtime**, perf science.
+
+## Epics
 
 | Epic | Title | Issue | Doc |
 |------|--------|-------|-----|
-| 12 | Framework maturity — safety, OpenAPI fidelity, platform kits | [#391](https://github.com/microscaler/BRRTRouter/issues/391) | [epic-12-…](epic-12-framework-maturity/README.md) |
+| 12 | Framework maturity — safety, OpenAPI fidelity, kits | [#391](https://github.com/microscaler/BRRTRouter/issues/391) | [epic-12-…](epic-12-framework-maturity/README.md) **done** |
+| 13 | Framework completeness — ops, errors, files, DevEx | [#400](https://github.com/microscaler/BRRTRouter/issues/400) | [epic-13-…](epic-13-framework-completeness/README.md) **active** |
 
 ## Related
 
 - OpenAPI version dual-support: [`docs/OPENAPI_VERSION_SUPPORT.md`](../../OPENAPI_VERSION_SUPPORT.md)
 - Compliance gap inventory: [`OPENAPI_3.1.0_COMPLIANCE_GAP.md`](../../OPENAPI_3.1.0_COMPLIANCE_GAP.md)
-- Hot-path PRD: [`docs/PRD_HOT_PATH_V2_STABILITY_AND_PERF.md`](../../PRD_HOT_PATH_V2_STABILITY_AND_PERF.md)
+- Hot-path / perf: [`docs/PERFORMANCE.md`](../../PERFORMANCE.md)
