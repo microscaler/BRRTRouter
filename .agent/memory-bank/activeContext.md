@@ -1,8 +1,12 @@
-## 2026-08-08 — Contributor-facing root + suite brochure draft
+## 2026-08-08 — Photon is suite home; brochure moved
+
+- Suite brochure + brand: **`microscaler/photon`** (`brochure/`, honest README). Dreams → `photon/.aspirational/`.
+- BRRTRouter `website/` is a pointer only (`7995922`).
+- Next for site: make photon public, Pages deploy, domain; keep copy honest (no CLI/SaaS claims).
+
+## 2026-08-08 — Contributor-facing root tidy
 
 - Root marketing/compliance clutter relocated: `docs/marketing/*`, `docs/OPENAPI_3.1.0_COMPLIANCE_GAP.md`, `docs/guides/BUILDING_MICROSERVICES.md`, `k8s/demos/lm-demo-cluster.yaml`.
-- Draft suite site at `website/` (Microscaler · BRRTRouter · Lifeguard · Sesame), Rocket/Loco/Actix-class IA; Sesame is public CTA; no Hauliage marketing.
-- Next for site: domain + Pages deploy, real Goose proof numbers, Lifeguard public repo URL, optional extract to `microscaler/website`.
 
 ## 2026-08-08 — Webhook / WebSocket / SSE audit (read-only)
 
