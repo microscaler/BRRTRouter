@@ -6540,10 +6540,6 @@ name = "sesame-idam-client"
 version = "0.1.0"
 
 [[patch.unused]]
-name = "may_postgres"
-version = "0.1.0"
-
-[[patch.unused]]
 name = "lifeguard"
 version = "0.1.0"
 
@@ -6553,4 +6549,8 @@ version = "0.1.0"
 
 [[patch.unused]]
 name = "lifeguard-migrate"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "may_postgres"
 version = "0.1.0"

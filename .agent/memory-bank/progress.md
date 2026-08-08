@@ -1,5 +1,11 @@
 # Progress
 
+## 2026-08-09 — Story 13.4 streaming uploads / HttpFile
+
+- `src/server/multipart_stream.rs`; opt-in `BRRTR_MULTIPART_STREAM_FILES`.
+- Typed `HttpFile` + raw base64 wire path; skip JSON schema for file responses.
+- Closed #404. Pushed `56bcb16`.
+
 ## 2026-08-09 — Story 13.3 Problem Details (RFC 7807)
 
 - `src/http/problem.rs`; param/body/multipart/auth/rate-limit errors → problem+json.

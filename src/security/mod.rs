@@ -435,6 +435,7 @@ pub use bearer_jwt::BearerJwtProvider;
 pub use jwks_bearer::{JwksBearerProvider, JwksHealth, JwtTokenStatus, JwtTokenStatusChecker};
 pub use oauth2::OAuth2Provider;
 pub use remote_api_key::RemoteApiKeyProvider;
+pub use set_cookie::{SameSite, SetCookieBuilder};
 pub use spiffe::{
     InMemoryRevocationChecker, NoOpRevocationChecker, RevocationChecker, SpiffeConfigError,
     SpiffeProvider,
@@ -452,6 +453,7 @@ mod bearer_jwt;
 mod jwks_bearer;
 mod oauth2;
 mod remote_api_key;
+pub mod set_cookie;
 mod spiffe;
 
 #[cfg(test)]

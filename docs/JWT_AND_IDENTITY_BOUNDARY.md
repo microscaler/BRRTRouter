@@ -19,7 +19,7 @@ SPIFFE identities. It does **not** reproduce an identity provider.
 |------------|--------|
 | Issue access / refresh tokens | [Sesame-IDAM](https://github.com/microscaler/sesame-idam) / external IdP |
 | User signup, password, OTP, magic link | Sesame-IDAM / GoTrue-shaped IDAM |
-| Session cookies as the IdP session store | Sesame-IDAM (Epic 13.5 may add **app** cookie helpers only) |
+| Session cookies as the IdP session store | Sesame-IDAM — BRRTRouter is Option B (Bearer/JWKS); see [`BROWSER_SECURITY_POSTURE.md`](./BROWSER_SECURITY_POSTURE.md) |
 | OAuth authorization server / consent UI | External IdP |
 | Long-lived revocation database as product feature | IdP / platform — BRRTRouter may call it |
 
@@ -39,4 +39,4 @@ SPIFFE identities. It does **not** reproduce an identity provider.
 
 - [SecurityAuthentication.md](./SecurityAuthentication.md)
 - Epic 14: [ZERO_TRUST](./EPICS/ZERO_TRUST/README.md)
-- Epic 13.5 browser posture: cookie kit vs Bearer-only
+- Epic 13.5: [`BROWSER_SECURITY_POSTURE.md`](./BROWSER_SECURITY_POSTURE.md) (Option B + `SetCookieBuilder`)

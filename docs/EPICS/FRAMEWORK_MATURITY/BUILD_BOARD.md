@@ -12,8 +12,8 @@
 | **DONE** | 13.2 | done | [#402](https://github.com/microscaler/BRRTRouter/issues/402) | Rate limiting |
 | **DONE** | 13.3 | done | [#403](https://github.com/microscaler/BRRTRouter/issues/403) | Problem Details (RFC 7807) |
 | **DONE** | 13.4 | done | [#404](https://github.com/microscaler/BRRTRouter/issues/404) | Streaming uploads/downloads |
-| **NOW** | 13.5 | todo | [#405](https://github.com/microscaler/BRRTRouter/issues/405) | Browser security posture |
-| — | 13.6 | todo | [#406](https://github.com/microscaler/BRRTRouter/issues/406) | Handler deadlines → 504 |
+| **DONE** | 13.5 | done | [#405](https://github.com/microscaler/BRRTRouter/issues/405) | Browser security posture (Option B) |
+| **NOW** | 13.6 | todo | [#406](https://github.com/microscaler/BRRTRouter/issues/406) | Handler deadlines → 504 |
 | — | 13.7 | todo | [#407](https://github.com/microscaler/BRRTRouter/issues/407) | SSE live flush |
 | — | 13.8 | todo | [#408](https://github.com/microscaler/BRRTRouter/issues/408) | Response compression |
 | — | 13.9 | todo | [#409](https://github.com/microscaler/BRRTRouter/issues/409) | Multi-status codegen |
@@ -39,7 +39,7 @@ Wave 5 ──► 13.9 ‖ 13.10
 | 13.2 | Rate limiting middleware | 1 | done | [#402](https://github.com/microscaler/BRRTRouter/issues/402) |
 | 13.3 | Problem Details (RFC 7807) | 1 | done | [#403](https://github.com/microscaler/BRRTRouter/issues/403) |
 | 13.4 | Streaming uploads & download helpers | 2 | done | [#404](https://github.com/microscaler/BRRTRouter/issues/404) |
-| 13.5 | Browser security posture | 3 | todo | [#405](https://github.com/microscaler/BRRTRouter/issues/405) |
+| 13.5 | Browser security posture | 3 | done | [#405](https://github.com/microscaler/BRRTRouter/issues/405) |
 | 13.6 | Handler / request deadlines → 504 | 3 | todo | [#406](https://github.com/microscaler/BRRTRouter/issues/406) |
 | 13.7 | SSE live flush streaming | 4 | todo | [#407](https://github.com/microscaler/BRRTRouter/issues/407) |
 | 13.8 | Response compression middleware | 4 | todo | [#408](https://github.com/microscaler/BRRTRouter/issues/408) |

@@ -1,11 +1,9 @@
-## 2026-08-09 — Epic 13.3 Problem Details shipped
+## 2026-08-09 — Epic 13.5 browser posture shipped (Option B)
 
-**Commit:** `218c3b6` · Issue [#403](https://github.com/microscaler/BRRTRouter/issues/403) closed.
+**Commit:** (pending push) · Issue [#405](https://github.com/microscaler/BRRTRouter/issues/405)
 
-- `brrtrouter::http::problem::Problem` + `write_problem`
-- Framework errors → `application/problem+json` (`HandlerResponse::error`, `write_json_error`)
-- Catalog: `docs/PROBLEM_DETAILS.md`
-- Escape hatch: `BRRTR_LEGACY_ERROR_JSON=1`
+- Decision: **Bearer/JWKS only** — no server-session / CSRF kit
+- `SetCookieBuilder` for non-session cookies (Secure/HttpOnly/SameSite)
+- Doc: `docs/BROWSER_SECURITY_POSTURE.md`
 
-**NOW:** 13.4 streaming uploads/downloads (#404) · 14.2 X.509 SVID (#415)  
-**JWT:** consumer/enforcer only (Sesame/external IdP)
+**NOW:** 13.6 handler deadlines → 504 (#406) · 14.2 X.509 SVID (#415)

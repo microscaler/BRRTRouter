@@ -117,7 +117,9 @@ the spec and can be refined in `config.yaml`.
 | PropelAuth / Auth0 / Cognito / Keycloak / Sesame | Via JWKS URL (issuer outside the router) |
 | Custom | Implement `SecurityProvider` and register by scheme name |
 
-Identity boundary: [JWT_AND_IDENTITY_BOUNDARY.md](docs/JWT_AND_IDENTITY_BOUNDARY.md).
+Identity boundary: [JWT_AND_IDENTITY_BOUNDARY.md](docs/JWT_AND_IDENTITY_BOUNDARY.md).  
+Browser posture: **Bearer/JWKS only** (no server sessions) —
+[BROWSER_SECURITY_POSTURE.md](docs/BROWSER_SECURITY_POSTURE.md).
 
 **Request pipeline (secured route):**
 

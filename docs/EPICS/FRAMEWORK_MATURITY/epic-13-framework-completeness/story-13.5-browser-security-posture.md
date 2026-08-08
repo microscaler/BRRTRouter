@@ -74,12 +74,12 @@ with Set-Cookie helpers only for non-session use. No silent half-session framewo
 
 ### Acceptance criteria (tests)
 
-- [ ] P1 mandatory; if A → P3a/N1a mandatory; if B → P2b/N4 mandatory.
+- [x] P1 mandatory; if A → P3a/N1a mandatory; if B → P2b/N4 mandatory.
 
 ## Acceptance criteria
 
-- [ ] One posture shipped and documented.
-- [ ] FR/NFR + unit tests complete for the chosen option.
+- [x] One posture shipped and documented (**Option B**).
+- [x] FR/NFR + unit tests complete for the chosen option.
 
 ## References
 
