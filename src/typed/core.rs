@@ -135,6 +135,153 @@ impl HandlerResponseOutput for HttpRedirect {
     }
 }
 
+/// Content-Disposition style for [`HttpFile`] (Epic 13.4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FileDisposition {
+    /// `Content-Disposition: attachment; filename="…"`
+    Attachment,
+    /// `Content-Disposition: inline; filename="…"` (filename optional).
+    Inline,
+}
+
+/// Binary/file download response for typed handlers (Epic 13.4).
+///
+/// Sets `Content-Type`, `Content-Disposition`, and encodes the payload as
+/// base64 in the JSON body with an internal
+/// [`crate::server::response::RAW_BODY_ENCODING_HEADER`] so
+/// [`crate::server::response::write_handler_response`] writes raw octets
+/// (not a JSON string). Response JSON Schema validation is skipped for these
+/// responses.
+///
+/// # Example
+///
+/// ```ignore
+/// use brrtrouter::typed::HttpFile;
+///
+/// HttpFile::attachment("report.pdf", "application/pdf", pdf_bytes)
+/// ```
+#[derive(Debug, Clone)]
+pub struct HttpFile {
+    pub status: u16,
+    pub bytes: Vec<u8>,
+    pub content_type: String,
+    pub filename: Option<String>,
+    pub disposition: FileDisposition,
+}
+
+impl HttpFile {
+    /// HTTP 200 download with `Content-Disposition: attachment`.
+    #[must_use]
+    pub fn attachment(
+        filename: impl Into<String>,
+        content_type: impl Into<String>,
+        bytes: Vec<u8>,
+    ) -> Self {
+        Self {
+            status: 200,
+            bytes,
+            content_type: content_type.into(),
+            filename: Some(filename.into()),
+            disposition: FileDisposition::Attachment,
+        }
+    }
+
+    /// HTTP 200 inline display (`Content-Disposition: inline`).
+    #[must_use]
+    pub fn inline(content_type: impl Into<String>, bytes: Vec<u8>) -> Self {
+        Self {
+            status: 200,
+            bytes,
+            content_type: content_type.into(),
+            filename: None,
+            disposition: FileDisposition::Inline,
+        }
+    }
+
+    /// Builder-style filename for inline responses.
+    #[must_use]
+    pub fn with_filename(mut self, filename: impl Into<String>) -> Self {
+        self.filename = Some(filename.into());
+        self
+    }
+
+    #[must_use]
+    pub fn with_status(mut self, status: u16) -> Self {
+        self.status = status;
+        self
+    }
+}
+
+fn sanitize_content_disposition_filename(name: &str) -> String {
+    name.chars()
+        .map(|c| match c {
+            '"' | '\\' | '\r' | '\n' => '_',
+            c if c.is_control() => '_',
+            c => c,
+        })
+        .take(200)
+        .collect()
+}
+
+impl HandlerResponseOutput for HttpFile {
+    fn into_handler_response(self) -> Result<HandlerResponse, serde_json::Error> {
+        use base64::Engine;
+        let mut headers = HeaderVec::new();
+        headers.push((Arc::from("content-type"), self.content_type.clone()));
+        let disp = match (self.disposition, self.filename.as_deref()) {
+            (FileDisposition::Attachment, Some(name)) => {
+                let safe = sanitize_content_disposition_filename(name);
+                format!("attachment; filename=\"{safe}\"")
+            }
+            (FileDisposition::Attachment, None) => "attachment".to_string(),
+            (FileDisposition::Inline, Some(name)) => {
+                let safe = sanitize_content_disposition_filename(name);
+                format!("inline; filename=\"{safe}\"")
+            }
+            (FileDisposition::Inline, None) => "inline".to_string(),
+        };
+        headers.push((Arc::from("content-disposition"), disp));
+        headers.push((
+            Arc::from(crate::server::response::RAW_BODY_ENCODING_HEADER),
+            crate::server::response::RAW_BODY_ENCODING_BASE64.to_string(),
+        ));
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&self.bytes);
+        Ok(HandlerResponse::new(
+            self.status,
+            headers,
+            serde_json::Value::String(b64),
+        ))
+    }
+}
+
+#[cfg(test)]
+mod http_file_tests {
+    use super::*;
+
+    #[test]
+    fn p3_attachment_disposition() {
+        let hr = HttpFile::attachment("a.bin", "application/octet-stream", b"hi".to_vec())
+            .into_handler_response()
+            .unwrap();
+        assert_eq!(hr.status, 200);
+        let disp = hr.get_header("content-disposition").unwrap();
+        assert!(disp.starts_with("attachment;"));
+        assert!(disp.contains("a.bin"));
+    }
+
+    #[test]
+    fn p6_content_type_matches() {
+        let hr = HttpFile::inline("image/png", vec![1, 2, 3])
+            .into_handler_response()
+            .unwrap();
+        assert_eq!(hr.get_header("content-type"), Some("image/png"));
+        assert_eq!(
+            hr.get_header(crate::server::response::RAW_BODY_ENCODING_HEADER),
+            Some(crate::server::response::RAW_BODY_ENCODING_BASE64)
+        );
+    }
+}
+
 /// Shared STEP 4: map typed output to [`HandlerResponse`] with legacy null-body and serde-error behavior.
 fn typed_handler_output_to_response(
     result: impl HandlerResponseOutput,

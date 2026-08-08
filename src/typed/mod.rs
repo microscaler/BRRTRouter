@@ -64,8 +64,9 @@
 //! ## REST status codes (non-200)
 //!
 //! Handler return types implement [`HandlerResponseOutput`]. Types that implement [`serde::Serialize`]
-//! are sent as **HTTP 200** with a JSON body. Use [`HttpJson`] for an explicit status (e.g. **201**, **404**)
-//! or [`HttpNoContent`] for **204** — without panicking. See `docs/PRD_TYPED_HANDLER_HTTP_STATUS.md`.
+//! are sent as **HTTP 200** with a JSON body. Use [`HttpJson`] for an explicit status (e.g. **201**, **404**),
+//! [`HttpNoContent`] for **204**, or [`HttpFile`] for binary downloads (Epic 13.4) — without panicking.
+//! See `docs/PRD_TYPED_HANDLER_HTTP_STATUS.md` and `docs/multipart.md`.
 
 mod core;
 

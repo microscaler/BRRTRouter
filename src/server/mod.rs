@@ -85,6 +85,8 @@ pub mod header_intern;
 pub mod http_server;
 /// Multipart/form-data body parsing (Story 12.6)
 pub mod multipart;
+/// Stream multipart file parts to disk (Epic 13.4)
+pub mod multipart_stream;
 /// Pre-handler OpenAPI parameter validation (Story 12.4)
 pub mod param_validation;
 /// Request parsing and parameter extraction
@@ -108,6 +110,11 @@ pub use multipart::{
     extract_boundary, multipart_error_json, multipart_error_status, parse_multipart_form_data,
     DEFAULT_MAX_FILE_PART_BYTES, MULTIPART_FILE_TOO_LARGE, MULTIPART_MALFORMED,
     MULTIPART_MISSING_BOUNDARY,
+};
+pub use multipart_stream::{
+    default_upload_temp_dir, multipart_stream_files_enabled, parse_multipart_form_data_streaming,
+    sanitize_filename, MultipartStreamOptions, TempUpload, DEFAULT_MAX_STREAMED_FILE_PART_BYTES,
+    MULTIPART_STREAM_ENV, TEMP_UPLOAD_SUBDIR,
 };
 pub use request::{decode_param_value, parse_request, ParsedRequest};
 pub use request_target::{

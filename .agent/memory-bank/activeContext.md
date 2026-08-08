@@ -1,11 +1,11 @@
-## 2026-08-09 — Epic 13.2 rate limiting shipped
+## 2026-08-09 — Epic 13.3 Problem Details shipped
 
-**Commit:** `b0b1ba2` · Issue [#402](https://github.com/microscaler/BRRTRouter/issues/402) closed.
+**Commit:** `218c3b6` · Issue [#403](https://github.com/microscaler/BRRTRouter/issues/403) closed.
 
-- `RateLimitMiddleware` token bucket (DashMap); default **off**
-- Enable: `rate_limit:` in `config.yaml` (`enabled`, `requests`, `window_secs`, `routes`, `key`)
-- Metric: `brrtrouter_rate_limit_sheds_total`
-- JWT boundary unchanged: consumer/enforcer only
+- `brrtrouter::http::problem::Problem` + `write_problem`
+- Framework errors → `application/problem+json` (`HandlerResponse::error`, `write_json_error`)
+- Catalog: `docs/PROBLEM_DETAILS.md`
+- Escape hatch: `BRRTR_LEGACY_ERROR_JSON=1`
 
-**NOW:** 13.3 RFC 7807 (#403) · 14.2 X.509 SVID (#415)  
-**JWT:** Sesame/external IdP issues; see `docs/JWT_AND_IDENTITY_BOUNDARY.md`
+**NOW:** 13.4 streaming uploads/downloads (#404) · 14.2 X.509 SVID (#415)  
+**JWT:** consumer/enforcer only (Sesame/external IdP)

@@ -71,13 +71,13 @@ file responses.
 
 ### Acceptance criteria (tests)
 
-- [ ] P1/P2 and N1/N2 mandatory.
+- [x] P1/P2 and N1/N2 mandatory.
 
 ## Acceptance criteria
 
-- [ ] Streaming upload API documented (`docs/multipart.md` updated).
-- [ ] Download helper usable from typed handlers.
-- [ ] FR/NFR + unit tests complete.
+- [x] Streaming upload API documented (`docs/multipart.md` updated).
+- [x] Download helper usable from typed handlers.
+- [x] FR/NFR + unit tests complete.
 
 ## References
 

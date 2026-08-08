@@ -2,6 +2,14 @@ use crate::dispatcher::HeaderVec;
 use may_minihttp::Response;
 use serde_json::Value;
 
+/// Internal header: when set to [`RAW_BODY_ENCODING_BASE64`], the JSON body is a
+/// base64 string and must be written as raw octets (Epic 13.4 [`crate::typed::HttpFile`]).
+/// Stripped from the wire response.
+pub const RAW_BODY_ENCODING_HEADER: &str = "x-brrtrouter-raw-encoding";
+
+/// Value for [`RAW_BODY_ENCODING_HEADER`].
+pub const RAW_BODY_ENCODING_BASE64: &str = "base64";
+
 /// Whether an HTTP status permits a response body.
 ///
 /// RFC 9110 forbids content on informational responses, 204, and 304; 205 also
@@ -73,8 +81,16 @@ pub fn write_handler_response_with_body_policy(
     // second casing (`content-type` + `Content-Type`). Nginx treats that as a
     // duplicate header and can return 502 to the browser.
     let mut has_content_type = false;
+    let mut raw_base64 = false;
     for (k, v) in headers {
         if k.eq_ignore_ascii_case("content-length") {
+            continue;
+        }
+        // Internal marker for HttpFile — never emit on the wire.
+        if k.eq_ignore_ascii_case(RAW_BODY_ENCODING_HEADER) {
+            if v == RAW_BODY_ENCODING_BASE64 {
+                raw_base64 = true;
+            }
             continue;
         }
         if k.eq_ignore_ascii_case("content-type") {
@@ -96,6 +112,26 @@ pub fn write_handler_response_with_body_policy(
     // 204/1xx/304 never carry a body; HEAD must not leak a payload (N5).
     if omit_body || !response_status_allows_body(status) {
         return;
+    }
+    if raw_base64 {
+        if let Value::String(s) = &body {
+            use base64::Engine;
+            match base64::engine::general_purpose::STANDARD.decode(s.as_bytes()) {
+                Ok(bytes) => {
+                    if !has_content_type {
+                        res.header("Content-Type: application/octet-stream");
+                    }
+                    res.body_vec(bytes);
+                    return;
+                }
+                Err(_) => {
+                    res.status_code(500, "Internal Server Error");
+                    res.header("Content-Type: text/plain");
+                    res.body_vec(b"Failed to decode raw response body".to_vec());
+                    return;
+                }
+            }
+        }
     }
     match body {
         Value::String(s) => {

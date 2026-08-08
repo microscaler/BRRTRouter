@@ -292,11 +292,19 @@ fn parse_request_body(raw: &[u8], content_type: &str) -> Result<Option<Value>, S
         return Ok(Some(form_urlencoded_body_to_json(raw)));
     }
     if ct_lower == "multipart/form-data" {
-        let parsed = super::multipart::parse_multipart_form_data(
-            raw,
-            content_type,
-            super::multipart::DEFAULT_MAX_FILE_PART_BYTES,
-        )?;
+        let parsed = if super::multipart_stream::multipart_stream_files_enabled() {
+            super::multipart_stream::parse_multipart_form_data_streaming(
+                raw,
+                content_type,
+                &super::multipart_stream::MultipartStreamOptions::default(),
+            )?
+        } else {
+            super::multipart::parse_multipart_form_data(
+                raw,
+                content_type,
+                super::multipart::DEFAULT_MAX_FILE_PART_BYTES,
+            )?
+        };
         return Ok(Some(parsed));
     }
     Ok(serde_json::from_slice(raw).ok())

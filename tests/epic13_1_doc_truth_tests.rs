@@ -63,8 +63,8 @@ fn epic13_1_p5_catalog_lists_epic_13() {
 fn epic13_1_p6_multipart_mvp_or_streaming_pointer() {
     let mp = include_str!("../docs/multipart.md");
     assert!(
-        mp.to_lowercase().contains("mvp") || mp.contains("13.4") || mp.contains("stream"),
-        "multipart docs should describe MVP-A or point at streaming story"
+        mp.to_lowercase().contains("mvp") && (mp.contains("13.4") || mp.contains("Stream")),
+        "multipart docs should describe MVP-A and streaming (13.4)"
     );
 }
 

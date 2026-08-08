@@ -1903,11 +1903,24 @@ impl HttpService for AppService {
                             headers.push((Arc::from("content-type"), ct));
                         }
                     }
-                    if let Some(schema) = if response_status_allows_body(hr.status) {
-                        response_body_schema_for_status(&route_match.route, hr.status)
-                    } else {
-                        None
-                    } {
+                    // Epic 13.4: HttpFile / format:binary — do not JSON-schema-validate raw bodies.
+                    let skip_response_schema = headers.iter().any(|(k, v)| {
+                        k.eq_ignore_ascii_case(super::response::RAW_BODY_ENCODING_HEADER)
+                            && v == super::response::RAW_BODY_ENCODING_BASE64
+                    }) || headers.iter().any(|(k, v)| {
+                        k.eq_ignore_ascii_case("content-type")
+                            && !v.to_ascii_lowercase().contains("json")
+                            && headers
+                                .iter()
+                                .any(|(dk, _)| dk.eq_ignore_ascii_case("content-disposition"))
+                    });
+                    if let Some(schema) =
+                        if response_status_allows_body(hr.status) && !skip_response_schema {
+                            response_body_schema_for_status(&route_match.route, hr.status)
+                        } else {
+                            None
+                        }
+                    {
                         // V6: Response validation start
                         debug!(
                             handler = %route_match.handler_name,

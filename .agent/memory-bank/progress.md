@@ -1,5 +1,11 @@
 # Progress
 
+## 2026-08-09 — Story 13.3 Problem Details (RFC 7807)
+
+- `src/http/problem.rs`; param/body/multipart/auth/rate-limit errors → problem+json.
+- Catalog `docs/PROBLEM_DETAILS.md`; tests `epic13_3_problem_details_tests`.
+- Closed #403. Pushed `218c3b6`.
+
 ## 2026-08-09 — Story 13.2 rate limiting
 
 - `src/middleware/rate_limit.rs` + AppConfig `rate_limit` + run_app wiring.
