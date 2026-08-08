@@ -18,7 +18,10 @@ Track implementation here. Update **Status** as work lands (`todo` → `doing` �
 | DONE | 10.5 | done | [#379](https://github.com/microscaler/BRRTRouter/issues/379) | Query passthrough when safe |
 | DONE | 10.6 | done | [#380](https://github.com/microscaler/BRRTRouter/issues/380) | Max request-target → 414 |
 | DONE | 10.7 | done | [#381](https://github.com/microscaler/BRRTRouter/issues/381) | Composition → 400/414; DNS 502; timeout 504 |
-| **NOW** | 10.9 → 10.10 → 10.8 | todo | [#383](https://github.com/microscaler/BRRTRouter/issues/383) / [#384](https://github.com/microscaler/BRRTRouter/issues/384) / [#382](https://github.com/microscaler/BRRTRouter/issues/382) | Wave 5 |
+| DONE | 10.9 | done | [#383](https://github.com/microscaler/BRRTRouter/issues/383) | form explode/no-explode + fail-closed |
+| DONE | 10.10 | done | [#384](https://github.com/microscaler/BRRTRouter/issues/384) | proptest suite (fixed seed) |
+| DONE | 10.8 | done | [#382](https://github.com/microscaler/BRRTRouter/issues/382) | Decision B + dual-stack goldens |
+| **NOW** | Epic 11 | todo | [#374](https://github.com/microscaler/BRRTRouter/issues/374) | HTTP QUERY (11.1→11.4); Epic 10 matrix Pass |
 
 ## Wave plan (Epic 10)
 
@@ -58,7 +61,7 @@ Wave 5 ──► 10.9 OpenAPI style → 10.10 fuzz → 10.8 unify http stack
 
 | ID | Title | Wave | Status | GitHub |
 |----|--------|------|--------|--------|
-| Epic 10 | Request-target parse & rebuild | — | todo | [#373](https://github.com/microscaler/BRRTRouter/issues/373) |
+| Epic 10 | Request-target parse & rebuild | — | done | [#373](https://github.com/microscaler/BRRTRouter/issues/373) |
 | 10.1 | Spec matrix & golden corpus | 0 | done | [#375](https://github.com/microscaler/BRRTRouter/issues/375) |
 | 10.2 | Inbound query parse edge cases | 1 | done | [#376](https://github.com/microscaler/BRRTRouter/issues/376) |
 | 10.3 | Inbound path segment decode | 1 | done | [#377](https://github.com/microscaler/BRRTRouter/issues/377) |
@@ -66,9 +69,9 @@ Wave 5 ──► 10.9 OpenAPI style → 10.10 fuzz → 10.8 unify http stack
 | 10.5 | Proxy path/query passthrough | 3 | done | [#379](https://github.com/microscaler/BRRTRouter/issues/379) |
 | 10.6 | Request-target length → 414 | 3 | done | [#380](https://github.com/microscaler/BRRTRouter/issues/380) |
 | 10.7 | Error taxonomy | 4 | done | [#381](https://github.com/microscaler/BRRTRouter/issues/381) |
-| 10.8 | Unify http URI stack | 5 | todo | [#382](https://github.com/microscaler/BRRTRouter/issues/382) |
-| 10.9 | OpenAPI style/explode fidelity | 5 | todo | [#383](https://github.com/microscaler/BRRTRouter/issues/383) |
-| 10.10 | Property/fuzz compliance suite | 5 | todo | [#384](https://github.com/microscaler/BRRTRouter/issues/384) |
+| 10.8 | Unify http URI stack | 5 | done | [#382](https://github.com/microscaler/BRRTRouter/issues/382) |
+| 10.9 | OpenAPI style/explode fidelity | 5 | done | [#383](https://github.com/microscaler/BRRTRouter/issues/383) |
+| 10.10 | Property/fuzz compliance suite | 5 | done | [#384](https://github.com/microscaler/BRRTRouter/issues/384) |
 | 10.11 | may_minihttp request-line boundary | 1 | done | [#385](https://github.com/microscaler/BRRTRouter/issues/385) |
 | Epic 11 | HTTP QUERY (RFC 10008) | — | todo | [#374](https://github.com/microscaler/BRRTRouter/issues/374) |
 | 11.1 | Method + router + CORS | E11 | todo | [#386](https://github.com/microscaler/BRRTRouter/issues/386) |

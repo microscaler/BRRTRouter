@@ -1,7 +1,14 @@
-//! Request-target boundary helpers (Stories 10.11, 10.6).
+//! Request-target boundary helpers (Stories 10.11, 10.6, 10.8).
 //!
 //! may_minihttp exposes `httparse`'s request-target via `Request::path()`.
 //! See `docs/EPICS/URI_REQUEST_TARGET/request-line-boundary.md`.
+//!
+//! # Dual http stack (Story 10.8 — Decision B)
+//!
+//! Internal type of truth is an origin-form **string** ([`RequestTarget`]).
+//! Convert to `http_legacy::Uri` (0.2) only at the may_minihttp client edge.
+//! While both crates exist, [`assert_request_target_uri_ok`] requires **both**
+//! parsers to accept the same octets (hard gate against silent drift).
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -53,6 +60,84 @@ pub fn parse_request_error_status(err: &str) -> u16 {
         414
     } else {
         400
+    }
+}
+
+/// Origin-form request-target (`/path` or `/path?query`) used as the internal
+/// bridge type while `http` 1.0 and `http_legacy` 0.2 coexist (Decision B).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct RequestTarget(String);
+
+impl RequestTarget {
+    /// Wrap a path+query string without re-validating (caller already checked).
+    #[must_use]
+    pub fn from_checked(s: impl Into<String>) -> Self {
+        Self(s.into())
+    }
+
+    /// Validate with both URI stacks; reject if either fails (Story 10.8 N5).
+    pub fn try_from_path_query(s: impl Into<String>) -> Result<Self, RequestTargetUriError> {
+        let s = s.into();
+        assert_request_target_uri_ok(&s)?;
+        Ok(Self(s))
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    #[must_use]
+    pub fn into_string(self) -> String {
+        self.0
+    }
+
+    /// Convert at the may_minihttp edge only.
+    pub fn to_legacy_uri(&self) -> Result<http_legacy::Uri, RequestTargetUriError> {
+        self.0
+            .parse::<http_legacy::Uri>()
+            .map_err(|_| RequestTargetUriError::LegacyReject)
+    }
+}
+
+impl AsRef<str> for RequestTarget {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+/// Dual-stack URI validation failure (Story 10.8).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RequestTargetUriError {
+    LegacyReject,
+    Http1Reject,
+    /// One stack accepted and the other rejected — hard CI gate.
+    StackDivergence,
+}
+
+impl std::fmt::Display for RequestTargetUriError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::LegacyReject => write!(f, "http_legacy (0.2) rejected request-target"),
+            Self::Http1Reject => write!(f, "http (1.0) rejected request-target"),
+            Self::StackDivergence => {
+                write!(f, "http 1.0 and http_legacy 0.2 disagree on request-target")
+            }
+        }
+    }
+}
+
+impl std::error::Error for RequestTargetUriError {}
+
+/// Require both `http` 1.0 and `http_legacy` 0.2 to accept `target`.
+pub fn assert_request_target_uri_ok(target: &str) -> Result<(), RequestTargetUriError> {
+    let legacy_ok = target.parse::<http_legacy::Uri>().is_ok();
+    let http1_ok = target.parse::<http::Uri>().is_ok();
+    match (legacy_ok, http1_ok) {
+        (true, true) => Ok(()),
+        (false, false) => Err(RequestTargetUriError::LegacyReject),
+        (true, false) => Err(RequestTargetUriError::StackDivergence),
+        (false, true) => Err(RequestTargetUriError::StackDivergence),
     }
 }
 
@@ -294,5 +379,68 @@ mod tests {
     fn request_target_raw_query_helper() {
         assert_eq!(raw_query("/p?q=1"), Some("q=1"));
         assert_eq!(raw_query("/p"), None);
+    }
+
+    // --- Story 10.8 dual-stack bridge ---
+
+    #[test]
+    fn request_target_stack_positive_p1_same_octets_both() {
+        let t = RequestTarget::try_from_path_query("/p?q=1").unwrap();
+        assert_eq!(t.as_str(), "/p?q=1");
+        assert_eq!(t.to_legacy_uri().unwrap().path(), "/p");
+    }
+
+    #[test]
+    fn request_target_stack_positive_p2_space_pct20_both() {
+        assert_request_target_uri_ok("/p?q=South%20Africa").unwrap();
+    }
+
+    #[test]
+    fn request_target_stack_positive_p3_unicode_both() {
+        assert_request_target_uri_ok("/p?q=%E6%9D%B1%E4%BA%AC").unwrap();
+    }
+
+    #[test]
+    fn request_target_stack_positive_p4_path_template_resolve_both() {
+        use crate::http::resolve_path_template;
+        use crate::router::ParamVec;
+        use std::sync::Arc;
+        let mut path = ParamVec::new();
+        path.push((Arc::from("id"), "a b".to_string()));
+        let rebuilt = resolve_path_template("/items/{id}", &path, &ParamVec::new());
+        assert_eq!(rebuilt, "/items/a%20b");
+        RequestTarget::try_from_path_query(rebuilt).unwrap();
+    }
+
+    #[test]
+    fn request_target_stack_positive_p5_empty_query_both() {
+        assert_request_target_uri_ok("/p").unwrap();
+    }
+
+    #[test]
+    fn request_target_stack_positive_p6_multi_param_order_both() {
+        assert_request_target_uri_ok("/p?a=1&b=2").unwrap();
+    }
+
+    #[test]
+    fn request_target_stack_negative_n1_raw_space_both_reject() {
+        assert!(assert_request_target_uri_ok("/p?q=a b").is_err());
+    }
+
+    #[test]
+    fn request_target_stack_negative_n4_missing_param_family() {
+        // Composition taxonomy remains InvalidPath; dual-stack only gates Uri-OK targets.
+        let err = assert_request_target_uri_ok("/p?q=a b").unwrap_err();
+        assert!(matches!(
+            err,
+            RequestTargetUriError::LegacyReject | RequestTargetUriError::StackDivergence
+        ));
+    }
+
+    #[test]
+    fn request_target_stack_negative_n6_no_panic_on_hostile() {
+        let _ = assert_request_target_uri_ok("");
+        let _ = assert_request_target_uri_ok("%%%%");
+        let _ = assert_request_target_uri_ok("/p?q=\0");
     }
 }

@@ -52,9 +52,12 @@
     {
       "id": "P6",
       "requirement_ids": ["REQ-INBOUND-FORM", "REQ-OPENAPI-STYLE"],
-      "kind": "inbound_only",
+      "kind": "roundtrip_query",
       "inbound_path": "/p?a=1&a=2",
-      "expect_params": [["a", "1"], ["a", "2"]]
+      "expect_params": [["a", "1"], ["a", "2"]],
+      "rebuild_template": "/p",
+      "expect_rebuild": "/p?a=1&a=2",
+      "expect_uri_ok": true
     },
     {
       "id": "P7",

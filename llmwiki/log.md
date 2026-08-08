@@ -1,5 +1,12 @@
 # LLM Wiki Log
 
+## [2026-08-08] ship | Wave 5 (10.9 + 10.10 + 10.8) — Epic 10 core Pass
+
+- 10.9: `openapi_query` form explode/no-explode; matrix doc; golden P6 roundtrip.
+- 10.10: `tests/uri_property_tests.rs` (proptest, fixed seed `0x1010_c0ff_ee`).
+- 10.8: Decision B `RequestTarget` bridge; dual-stack Uri gate on goldens + proxy edge.
+- Matrix REQ-OPENAPI-STYLE / REQ-FUZZ / REQ-HTTP-STACK → **Pass**; **NOW** = Epic 11.
+
 ## [2026-08-08] ship | Story 10.7 error taxonomy (Wave 4)
 
 - `ProxyPathReason` + `proxy_error_response`: composition → 400, overlong → 414, timeout → 504, DNS/connect → 502.

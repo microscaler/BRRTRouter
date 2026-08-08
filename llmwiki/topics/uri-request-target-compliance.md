@@ -1,6 +1,6 @@
 # URI / request-target compliance (Epics 10–11)
 
-- **Status:** partially-verified (encode fix shipped; epic matrix not yet Pass)
+- **Status:** verified (Epic 10 matrix Pass for parse/rebuild rows; Epic 11 open)
 - **Source docs:**
   - [`docs/AUDIT-uri-request-target-and-rfc10008-2026-08.md`](../../docs/AUDIT-uri-request-target-and-rfc10008-2026-08.md)
   - [`docs/POSTMORTEM-proxy-query-encoding-invalid-uri-2026-08-07.md`](../../docs/POSTMORTEM-proxy-query-encoding-invalid-uri-2026-08-07.md)
@@ -49,9 +49,8 @@ Done — see [`TESTING_STANDARD.md`](../../docs/EPICS/URI_REQUEST_TARGET/TESTING
 ## Gaps / drift (open)
 
 - Compliance matrix + goldens **shipped** (Story 10.1 / [#375](https://github.com/microscaler/BRRTRouter/issues/375)).
-- Waves 0–4 done: encoders, passthrough, 414, error taxonomy.
-- Composition → **400**; overlong → **414**; timeout → **504**; DNS/connect → **502**.
-- Dual `http` 1.0 vs `http_legacy` 0.2 URI stacks (Story 10.8).
+- Waves 0–5 done (Epic 10 stories 10.1–10.11).
+- Dual stack: Decision B `RequestTarget` + both parsers gated in CI.
 - QUERY method not first-class (Epic 11).
 - RFC 10008 is **orthogonal** to percent-encoding; do not conflate in fixes.
 
@@ -67,7 +66,6 @@ Wave 5: 10.9 → 10.10 → 10.8
 Epic 11: 11.1 → 11.2 → 11.3 → 11.4  (after 10.1; 11.3 after 10.7)
 ```
 
-**Waves 0–4 done.** **NOW:** Wave 5 — **10.9** → **10.10** → **10.8**.
-Taxonomy: `proxy_error_response` / `ProxyPathReason`. Passthrough + 414 remain.
-Boundary: [`request-line-boundary.md`](../../docs/EPICS/URI_REQUEST_TARGET/request-line-boundary.md).
+**Epic 10 Wave 5 done.** **NOW:** Epic 11 — HTTP QUERY ([#374](https://github.com/microscaler/BRRTRouter/issues/374)).
+Style matrix: [`openapi-style-explode-matrix.md`](../../docs/EPICS/URI_REQUEST_TARGET/openapi-style-explode-matrix.md).
 Full index: [`BUILD_BOARD.md`](../../docs/EPICS/URI_REQUEST_TARGET/BUILD_BOARD.md).

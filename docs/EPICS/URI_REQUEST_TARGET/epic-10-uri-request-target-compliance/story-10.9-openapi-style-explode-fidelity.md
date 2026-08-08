@@ -52,19 +52,21 @@ mis-join arrays).
 
 ### Acceptance criteria (tests)
 
-- [ ] Table-driven style × explode for every **supported** cell.
-- [ ] Unsupported styles covered by N*.
+- [x] Table-driven style × explode for every **supported** cell.
+- [x] Unsupported styles covered by N*.
 
 ## Acceptance criteria
 
-- [ ] Documented supported style/explode matrix for proxy rebuild.
-- [ ] Duplicate/multi-value query round-trips for supported styles.
-- [ ] Unsupported styles fail closed (composition error), not corrupt query.
-- [ ] Matrix row for OpenAPI style fidelity marked Pass.
-- [ ] Unit tests section complete (positive + negative).
+- [x] Documented supported style/explode matrix for proxy rebuild.
+- [x] Duplicate/multi-value query round-trips for supported styles.
+- [x] Unsupported styles fail closed (composition error), not corrupt query.
+- [x] Matrix row for OpenAPI style fidelity marked Pass.
+- [x] Unit tests section complete (positive + negative).
 
 ## References
 
+- [`openapi-style-explode-matrix.md`](../openapi-style-explode-matrix.md)
+- `src/http/openapi_query.rs`
 - `src/server/request.rs` `decode_param_value`
 - OpenAPI 3.1 Parameter Object `style` / `explode`
 - `src/http/proxy.rs` `resolve_path_template`

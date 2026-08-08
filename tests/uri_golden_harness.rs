@@ -13,6 +13,7 @@ use std::sync::Arc;
 use brrtrouter::http::resolve_path_template;
 use brrtrouter::router::ParamVec;
 use brrtrouter::server::request::parse_query_params;
+use brrtrouter::server::request_target::assert_request_target_uri_ok;
 use http_legacy::Uri;
 use serde::Deserialize;
 
@@ -101,8 +102,9 @@ fn legacy_unencoded_query(path_template: &str, query: &[(String, String)]) -> St
 }
 
 fn assert_uri_ok(path: &str) {
-    path.parse::<Uri>()
-        .unwrap_or_else(|e| panic!("URI rejected {path:?}: {e}"));
+    // Story 10.8: both http 1.0 and http_legacy 0.2 must accept (hard gate).
+    assert_request_target_uri_ok(path)
+        .unwrap_or_else(|e| panic!("dual-stack URI rejected {path:?}: {e}"));
 }
 
 fn run_vector(v: &Vector) {

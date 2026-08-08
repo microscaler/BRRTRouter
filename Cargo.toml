@@ -99,6 +99,8 @@ signal-hook = { version = "0.3", features = ["iterator"] }
 
 [dev-dependencies]
 pet_store = { path = "./examples/pet_store" }
+# Story 10.10 — property tests under default `cargo test` (fixed seed in CI).
+proptest = "1"
 # Contract tests for Story 10.11 (same parser may_minihttp uses server-side).
 httparse = "1.10"
 criterion = "0.8"

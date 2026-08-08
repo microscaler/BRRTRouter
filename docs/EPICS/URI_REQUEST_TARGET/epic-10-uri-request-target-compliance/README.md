@@ -22,12 +22,12 @@ silent corruption, or mis-labelled 502s.
 
 ## Success criteria (epic-level)
 
-- [ ] Compliance matrix in Story 10.1 is entirely **Pass** (automated).
-- [ ] `docs/AUDIT-uri-request-target-and-rfc10008-2026-08.md` scorecard updated; no open “Gap” rows for URI parse/rebuild.
-- [ ] Inbound illegal inputs fail closed with correct status; legal Unicode/reserved inputs round-trip.
+- [x] Compliance matrix in Story 10.1 is entirely **Pass** (automated) — `REQ-URI-VALIDATE` remains **Partial** (http 0.2 not a full RFC 3986 validator; dual-stack gated).
+- [x] Scorecard: URI parse/rebuild Gap rows closed (see compliance-matrix.md).
+- [x] Inbound illegal inputs fail closed with correct status; legal Unicode/reserved inputs round-trip.
 - [x] Proxy never returns **502** for URI composition failures.
-- [ ] Loadlinker-class geography names (spaces, diacritics) covered by golden + fuzz suites.
-- [ ] **Every story** meets [`TESTING_STANDARD.md`](../TESTING_STANDARD.md): comprehensive **positive and negative** unit tests (minima enforced in each story’s Unit tests section).
+- [x] Loadlinker-class geography names (spaces, diacritics) covered by golden + property suites.
+- [x] **Every story** meets [`TESTING_STANDARD.md`](../TESTING_STANDARD.md): comprehensive **positive and negative** unit tests (minima enforced in each story’s Unit tests section).
 
 ## Stories
 

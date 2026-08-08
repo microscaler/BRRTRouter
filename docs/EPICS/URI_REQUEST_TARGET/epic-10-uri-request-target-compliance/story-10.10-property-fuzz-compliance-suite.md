@@ -54,20 +54,21 @@ Property tests that run under `cargo test` count as unit tests.
 
 ### Acceptance criteria (tests)
 
-- [ ] `cargo test` runs property suite (feature-gated OK if default-on in CI).
-- [ ] N1/N2 hard requirements.
-- [ ] N6 process documented.
+- [x] `cargo test` runs property suite (feature-gated OK if default-on in CI).
+- [x] N1/N2 hard requirements.
+- [x] N6 process documented.
 
 ## Acceptance criteria
 
-- [ ] Property tests in CI with fixed RNG seed for reproducibility + unseeded local runs.
-- [ ] No known counterexample for legal inputs after 10.2–10.5.
-- [ ] Fuzz or property “no panic” on inbound parse.
-- [ ] Matrix marked Pass; audit scorecard updated.
-- [ ] Unit tests section complete (positive + negative).
+- [x] Property tests in CI with fixed RNG seed for reproducibility + unseeded local runs.
+- [x] No known counterexample for legal inputs after 10.2–10.5.
+- [x] Fuzz or property “no panic” on inbound parse.
+- [x] Matrix marked Pass; audit scorecard updated.
+- [x] Unit tests section complete (positive + negative).
 
 ## References
 
+- `tests/uri_property_tests.rs` (`RngSeed::Fixed(0x1010_c0ff_ee)`)
 - `src/http/proxy.rs` tests
 - `src/server/request.rs` tests
-- Story 10.1 golden corpus
+- Story 10.1 golden corpus (`tests/uri_golden/`)

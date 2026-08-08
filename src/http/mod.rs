@@ -5,12 +5,17 @@
 //! without a separate tokio runtime.
 
 mod fetch;
+pub mod openapi_query;
 mod proxy;
 pub mod uri_encode;
 
 pub use fetch::{
     fetch_delete, fetch_get, fetch_get_full, fetch_get_text_with_retry, fetch_patch, fetch_post,
     HttpFetchError, HttpFetchOptions, HttpGetResponse,
+};
+pub use openapi_query::{
+    encode_query_form_explode, encode_query_form_no_explode, encode_query_styled,
+    query_rebuild_style, QueryRebuildStyle, QueryStyleError,
 };
 pub use proxy::{
     classify_transport_error, client_pool_key, downstream_host, downstream_http_port,

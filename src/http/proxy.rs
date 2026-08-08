@@ -38,6 +38,8 @@ pub enum ProxyPathReason {
     PathContainsQuestion,
     /// Passthrough raw query contained space/CTL/`#`.
     UnsafeRawQuery,
+    /// OpenAPI query style/explode not supported for proxy rebuild (Story 10.9).
+    UnsupportedQueryStyle,
 }
 
 impl ProxyPathReason {
@@ -49,6 +51,7 @@ impl ProxyPathReason {
             Self::UnresolvedPathParam => "unresolved_path_param",
             Self::PathContainsQuestion => "path_contains_question",
             Self::UnsafeRawQuery => "unsafe_raw_query",
+            Self::UnsupportedQueryStyle => "unsupported_query_style",
         }
     }
 
@@ -60,6 +63,7 @@ impl ProxyPathReason {
             Self::UnresolvedPathParam => "unresolved path template placeholder",
             Self::PathContainsQuestion => "resolved path must not contain '?'",
             Self::UnsafeRawQuery => "raw query contains unsafe octets for passthrough",
+            Self::UnsupportedQueryStyle => "unsupported OpenAPI query style for proxy rebuild",
         }
     }
 }
@@ -237,24 +241,13 @@ pub fn resolve_path_only(path_template: &str, path_params: &ParamVec) -> String 
     resolved_path
 }
 
-/// Encode query params as `?k=v&…` (empty → `""`, no bare `?`).
+/// Encode query params as OpenAPI `form` + `explode=true` (`?k=v&…`).
+///
+/// Empty → `""` (no bare `?`). For `explode=false` or style gates see
+/// [`crate::http::openapi_query`].
 #[must_use]
 pub fn encode_query_string(query_params: &ParamVec) -> String {
-    use crate::http::uri_encode::encode_query_component;
-
-    if query_params.is_empty() {
-        return String::new();
-    }
-    let mut qs = String::from("?");
-    for (i, (k, v)) in query_params.iter().enumerate() {
-        if i > 0 {
-            qs.push('&');
-        }
-        qs.push_str(encode_query_component(k.as_ref()).as_ref());
-        qs.push('=');
-        qs.push_str(encode_query_component(v.as_ref()).as_ref());
-    }
-    qs
+    crate::http::openapi_query::encode_query_form_explode(query_params)
 }
 
 /// `true` when `raw` query octets are URI-safe for passthrough (no space/CTL/`#`).
@@ -473,12 +466,11 @@ fn proxy_untyped_inner(
         .next()
         .ok_or(ProxyError::Dns)?;
 
-    // Do not embed `resolved_path` in the error — reason code only (no URI leak).
-    let uri: Uri = resolved_path
-        .parse::<Uri>()
-        .map_err(|_e: http_legacy::uri::InvalidUri| {
-            ProxyError::invalid_path(ProxyPathReason::InvalidUri)
-        })?;
+    // Decision B: validate both stacks; convert to legacy Uri only at this edge
+    // (no full request-target embedded in error Display).
+    let uri = crate::server::request_target::RequestTarget::try_from_path_query(resolved_path)
+        .and_then(|t| t.to_legacy_uri())
+        .map_err(|_e| ProxyError::invalid_path(ProxyPathReason::InvalidUri))?;
 
     let method = Method::from_bytes(req.method.as_str().as_bytes())
         .map_err(|_e| ProxyError::InvalidMethod)?;
@@ -1182,6 +1174,11 @@ mod tests {
                 "unsafe_raw_query",
             ),
             (
+                ProxyError::invalid_path(ProxyPathReason::UnsupportedQueryStyle),
+                400,
+                "unsupported_query_style",
+            ),
+            (
                 ProxyError::RequestTargetTooLong { len: 9, max: 8 },
                 414,
                 "request_target_too_long",
@@ -1300,6 +1297,7 @@ mod tests {
             ProxyPathReason::UnresolvedPathParam,
             ProxyPathReason::PathContainsQuestion,
             ProxyPathReason::UnsafeRawQuery,
+            ProxyPathReason::UnsupportedQueryStyle,
         ] {
             let err = ProxyError::InvalidPath { reason };
             assert!(!proxy_error_reason_code(&err).is_empty());
