@@ -1,6 +1,6 @@
 # URI / request-target compliance (Epics 10–11)
 
-- **Status:** verified (Epic 10 matrix Pass for parse/rebuild rows; Epic 11 open)
+- **Status:** verified (Epic 10 matrix Pass; Epic 11 QUERY complete)
 - **Source docs:**
   - [`docs/AUDIT-uri-request-target-and-rfc10008-2026-08.md`](../../docs/AUDIT-uri-request-target-and-rfc10008-2026-08.md)
   - [`docs/POSTMORTEM-proxy-query-encoding-invalid-uri-2026-08-07.md`](../../docs/POSTMORTEM-proxy-query-encoding-invalid-uri-2026-08-07.md)
@@ -51,7 +51,7 @@ Done — see [`TESTING_STANDARD.md`](../../docs/EPICS/URI_REQUEST_TARGET/TESTING
 - Compliance matrix + goldens **shipped** (Story 10.1 / [#375](https://github.com/microscaler/BRRTRouter/issues/375)).
 - Waves 0–5 done (Epic 10 stories 10.1–10.11).
 - Dual stack: Decision B `RequestTarget` + both parsers gated in CI.
-- QUERY first-class: router/CORS (11.1), OpenAPI (11.2), proxy/client + retry classifier (11.3). Accept-Query / POST fallback docs (11.4) remain.
+- QUERY first-class (Epic 11 complete): router/CORS, OpenAPI, proxy/client, Accept-Query helpers + consumer guide / POST fallback docs.
 - RFC 10008 is **orthogonal** to percent-encoding; do not conflate in fixes.
 
 ## Build order (summary)
@@ -66,6 +66,5 @@ Wave 5: 10.9 → 10.10 → 10.8
 Epic 11: 11.1 → 11.2 → 11.3 → 11.4  (after 10.1; 11.3 after 10.7)
 ```
 
-**Epic 10 done.** Epic 11: **11.1–11.3 done**. **NOW:** **11.4** Accept-Query + POST fallback
-([#389](https://github.com/microscaler/BRRTRouter/issues/389)).
-Full index: [`BUILD_BOARD.md`](../../docs/EPICS/URI_REQUEST_TARGET/BUILD_BOARD.md).
+**Epics 10–11 done.** Full index: [`BUILD_BOARD.md`](../../docs/EPICS/URI_REQUEST_TARGET/BUILD_BOARD.md).
+Consumer guide: [`consumer-guide-query-method.md`](../../docs/EPICS/URI_REQUEST_TARGET/epic-11-http-query-method/consumer-guide-query-method.md).

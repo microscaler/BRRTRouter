@@ -16,10 +16,10 @@ percent-encoding.
 
 ## Success criteria (epic-level)
 
-- [ ] Stories 11.1–11.4 meet [`TESTING_STANDARD.md`](../TESTING_STANDARD.md):
+- [x] Stories 11.1–11.4 meet [`TESTING_STANDARD.md`](../TESTING_STANDARD.md):
   comprehensive **positive and negative** unit tests (see each story’s Unit tests section).
-- [ ] QUERY routing + CORS covered with allow and reject paths.
-- [ ] Proxy/client QUERY does not regress Epic 10 composition error taxonomy.
+- [x] QUERY routing + CORS covered with allow and reject paths.
+- [x] Proxy/client QUERY does not regress Epic 10 composition error taxonomy.
 
 ## Browser / ecosystem constraints (track in stories)
 
@@ -47,6 +47,10 @@ See [declaring-query-operations.md](declaring-query-operations.md) (`query:` or
 ## Retry policy
 
 See [query-retry-policy.md](query-retry-policy.md) (`method_allows_automatic_retry`).
+
+## Consumer guide (GET vs QUERY vs POST, Accept-Query, 405 fallback)
+
+See [consumer-guide-query-method.md](consumer-guide-query-method.md).
 
 ## References
 

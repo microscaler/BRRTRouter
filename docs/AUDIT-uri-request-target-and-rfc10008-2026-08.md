@@ -184,13 +184,13 @@ search/filter UX even with perfect percent-encoding.
 | Browser HTTP cache for QUERY | **Not implemented** in Chrome/Firefox measurements (identical QUERY hits origin twice) |
 | CORS | Preflight required cross-origin |
 | Intermediaries (CDN/WAF/envoy) | Uneven — may 405/400 or strip body |
-| BRRTRouter / OpenAPI routing | **No first-class QUERY** yet (`http::Method` / router / CORS allow-lists need explicit work) |
-| may_minihttp client | Method via `http` 0.2 `Method::from_bytes` — likely accepts extension methods; needs explicit test |
+| BRRTRouter / OpenAPI routing | **First-class** (Epic 11): router/CORS, `query:` / `x-brrtrouter-query`, proxy/`fetch_query` |
+| may_minihttp client | `Method::from_bytes(b"QUERY")` + `fetch_query` (Story 11.3) |
 
-**Practical guidance:** keep GET + correct URI encoding for simple filters;
-design rich search as POST *or* QUERY with a **POST fallback** until the edge
-and OpenAPI story are complete. Do not block URI compliance work on QUERY
-adoption.
+**Practical guidance:** keep GET + correct URI encoding for simple filters
+(Epic 10); design rich search as QUERY with a **POST fallback** when edges 405.
+Consumer guide: [`docs/EPICS/URI_REQUEST_TARGET/epic-11-http-query-method/consumer-guide-query-method.md`](./EPICS/URI_REQUEST_TARGET/epic-11-http-query-method/consumer-guide-query-method.md).
+Do not block URI compliance work on QUERY adoption.
 
 ---
 

@@ -4,12 +4,14 @@
 //! Replaces `reqwest::blocking` in the request hot path so fetches run on `may::net::TcpStream`
 //! without a separate tokio runtime.
 
+mod accept_query;
 mod fetch;
 pub mod method_ext;
 pub mod openapi_query;
 mod proxy;
 pub mod uri_encode;
 
+pub use accept_query::{format_accept_query, parse_accept_query, ACCEPT_QUERY_HEADER};
 pub use method_ext::{is_query_method, method_allows_automatic_retry, method_query};
 
 pub use fetch::{

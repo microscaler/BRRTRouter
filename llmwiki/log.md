@@ -1,9 +1,14 @@
 # LLM Wiki Log
 
+## [2026-08-08] ship | Story 11.4 + Epic 11 complete
+
+- `Accept-Query` helpers; consumer guide (GET/QUERY/POST, CORS, 405 POST fallback).
+- Docs fixtures + audit §5 update. Epic **#374** closed.
+
 ## [2026-08-08] ship | Story 11.3 Proxy & client QUERY
 
 - `fetch_query` + `method_allows_automatic_retry`; proxy QUERY→mock body/method tests.
-- Epic 10 composition taxonomy unchanged on QUERY. **NOW** = 11.4 (#389).
+- Epic 10 composition taxonomy unchanged on QUERY.
 
 ## [2026-08-08] ship | Story 11.2 OpenAPI QUERY operations
 

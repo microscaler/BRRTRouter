@@ -50,15 +50,22 @@ and treat doc examples as fixtures that must compile/load (P1–P3).
 
 ### Acceptance criteria (tests)
 
-- [ ] At least docs-fixture tests for P1/P5 when code is docs-only.
-- [ ] Full P*/N* when Accept-Query or POST fallback is implemented.
+- [x] At least docs-fixture tests for P1/P5 when code is docs-only.
+- [x] Full P*/N* when Accept-Query or POST fallback is implemented.
+  (`Accept-Query` helpers implemented; POST fallback **documented** only.)
 
 ## Acceptance criteria
 
-- [ ] Docs page linked from Epic 11 README and audit §5.
-- [ ] Example fetch + preflight CORS snippet.
-- [ ] Explicit “Epic 10 still required for GET query strings.”
-- [ ] Unit tests section complete (positive + negative).
+- [x] Docs page linked from Epic 11 README and audit §5.
+- [x] Example fetch + preflight CORS snippet.
+- [x] Explicit “Epic 10 still required for GET query strings.”
+- [x] Unit tests section complete (positive + negative).
+
+## Delivery notes
+
+- Guide: [consumer-guide-query-method.md](consumer-guide-query-method.md)
+- Helpers: `format_accept_query` / `parse_accept_query`
+- Tests: `tests/query_consumer_guide_tests.rs` + `src/http/accept_query.rs`
 
 ## References
 
