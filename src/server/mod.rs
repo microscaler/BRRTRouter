@@ -83,6 +83,8 @@ pub mod body_limit;
 pub mod cors_setup;
 pub mod header_intern;
 pub mod http_server;
+/// Pre-handler OpenAPI parameter validation (Story 12.4)
+pub mod param_validation;
 /// Request parsing and parameter extraction
 pub mod request;
 /// Request-target boundary helpers (may_minihttp / httparse → app)

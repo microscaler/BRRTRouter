@@ -47,13 +47,13 @@ schemas or routes.
 
 ### Acceptance criteria (tests)
 
-- [ ] P1/P2 and N1 mandatory.
+- [x] P1/P2 and N1 mandatory.
 
 ## Acceptance criteria
 
-- [ ] Fixture specs with component refs load with schemas.
-- [ ] No silent schema drop for supported local refs.
-- [ ] Unit tests section complete.
+- [x] Fixture specs with component refs load with schemas.
+- [x] No silent schema drop for supported local refs.
+- [x] Unit tests section complete.
 
 ## References
 

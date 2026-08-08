@@ -3,11 +3,12 @@ use super::types::{
     ParameterLocation, ParameterMeta, ParameterStyle, ResponseSpec, Responses, RouteMeta,
 };
 use super::SecurityScheme;
-use crate::validator::{fail_if_issues, ValidationIssue};
+use crate::validator::{print_issues, ValidationIssue};
 use oas3::spec::{MediaTypeExamples, ObjectOrReference, Parameter};
 use oas3::OpenApiV3Spec;
 use serde_json::Value;
 use std::cmp;
+use std::collections::HashSet;
 use std::sync::Arc;
 
 /// Maximum estimated size for unbounded types (arrays/strings without maxItems/maxLength)
@@ -58,12 +59,25 @@ pub fn resolve_schema_ref<'a>(
 /// * `spec` - The OpenAPI specification
 /// * `value` - The JSON value to process (modified in-place)
 pub fn expand_schema_refs(spec: &OpenApiV3Spec, value: &mut Value) {
+    let mut visited = HashSet::new();
+    expand_schema_refs_inner(spec, value, &mut visited);
+}
+
+fn expand_schema_refs_inner(
+    spec: &OpenApiV3Spec,
+    value: &mut Value,
+    visited: &mut HashSet<String>,
+) {
     match value {
         Value::Object(obj) => {
-            if let Some(ref_path) = obj.get("$ref").and_then(|v| v.as_str()) {
-                if let Some(schema) = resolve_schema_ref(spec, ref_path) {
+            if let Some(ref_path) = obj.get("$ref").and_then(|v| v.as_str()).map(str::to_string) {
+                // Story 12.3 N3: fail closed on cycles (no infinite expand / panic).
+                if !visited.insert(ref_path.clone()) {
+                    return;
+                }
+                if let Some(schema) = resolve_schema_ref(spec, &ref_path) {
                     if let Ok(mut new_val) = serde_json::to_value(schema) {
-                        expand_schema_refs(spec, &mut new_val);
+                        expand_schema_refs_inner(spec, &mut new_val, visited);
                         if let Some(name) = ref_path.strip_prefix("#/components/schemas/") {
                             if let Value::Object(o) = &mut new_val {
                                 o.insert("x-ref-name".to_string(), Value::String(name.to_string()));
@@ -75,15 +89,81 @@ pub fn expand_schema_refs(spec: &OpenApiV3Spec, value: &mut Value) {
                 }
             }
             for v in obj.values_mut() {
-                expand_schema_refs(spec, v);
+                expand_schema_refs_inner(spec, v, visited);
             }
         }
         Value::Array(arr) => {
             for v in arr.iter_mut() {
-                expand_schema_refs(spec, v);
+                expand_schema_refs_inner(spec, v, visited);
             }
         }
         _ => {}
+    }
+}
+
+/// Resolve a local `#/components/pathItems/{name}` (or nested PathItem.`$ref`).
+///
+/// External HTTP refs and unknown shapes return `Err` (Story 12.3 N4/N6).
+pub fn resolve_path_item_ref(
+    spec: &OpenApiV3Spec,
+    ref_path: &str,
+    depth: usize,
+) -> Result<oas3::spec::PathItem, String> {
+    const MAX_DEPTH: usize = 8;
+    if depth > MAX_DEPTH {
+        return Err(format!(
+            "circular or too-deep pathItem $ref (depth>{MAX_DEPTH}): {ref_path}"
+        ));
+    }
+    if ref_path.starts_with("http://") || ref_path.starts_with("https://") {
+        return Err(format!("external pathItem $ref is unsupported: {ref_path}"));
+    }
+    let Some(name) = ref_path.strip_prefix("#/components/pathItems/") else {
+        return Err(format!(
+            "unsupported pathItem $ref (expected #/components/pathItems/…): {ref_path}"
+        ));
+    };
+    let Some(oor) = spec
+        .components
+        .as_ref()
+        .and_then(|c| c.path_items.get(name))
+    else {
+        return Err(format!("dangling pathItem $ref: {ref_path}"));
+    };
+    match oor {
+        ObjectOrReference::Object(pi) => {
+            if let Some(nested) = pi.reference.as_deref() {
+                resolve_path_item_ref(spec, nested, depth + 1)
+            } else {
+                Ok(pi.clone())
+            }
+        }
+        ObjectOrReference::Ref {
+            ref_path: nested, ..
+        } => resolve_path_item_ref(spec, nested, depth + 1),
+    }
+}
+
+/// Effective Path Item for routing: follow PathItem.`$ref` when present.
+fn effective_path_item(
+    spec: &OpenApiV3Spec,
+    path: &str,
+    item: &oas3::spec::PathItem,
+    issues: &mut Vec<ValidationIssue>,
+) -> Option<oas3::spec::PathItem> {
+    match item.reference.as_deref() {
+        None => Some(item.clone()),
+        Some(ref_path) => match resolve_path_item_ref(spec, ref_path, 0) {
+            Ok(resolved) => Some(resolved),
+            Err(msg) => {
+                issues.push(ValidationIssue::new(
+                    path.to_string(),
+                    "UnresolvablePathItemRef",
+                    msg,
+                ));
+                None
+            }
+        },
     }
 }
 
@@ -243,18 +323,18 @@ pub fn extract_request_schema(
     spec: &OpenApiV3Spec,
     operation: &oas3::spec::Operation,
 ) -> (Option<Value>, bool) {
-    let (schema, required, _content_types) = extract_request_body_details(spec, operation);
+    let (schema, required, _content_types, _issues) = extract_request_body_details(spec, operation);
     (schema, required)
 }
 
-/// Like [`extract_request_schema`], but also returns the list of declared content types.
+/// Like [`extract_request_schema`], but also returns declared content types and
+/// validation issues (Story 12.3: dangling `requestBodies` `$ref` is not silent).
 ///
 /// Parses the `requestBody.content` map in an OpenAPI operation and returns:
 /// * `schema`   — the JSON schema for `application/json` (if declared)
 /// * `required` — whether the request body is required
 /// * `content_types` — every content-type key declared in `requestBody.content`
-///   (e.g. `["application/json"]` or `["application/json", "multipart/form-data"]`).
-///   Empty when the operation declares no `requestBody`.
+/// * `issues` — unresolvable / wrong-type / external `$ref` problems
 ///
 /// The content-types list is used at request time to enforce **415 Unsupported
 /// Media Type** when a client POSTs with a `Content-Type` the operation did not
@@ -264,27 +344,71 @@ pub fn extract_request_schema(
 pub fn extract_request_body_details(
     spec: &OpenApiV3Spec,
     operation: &oas3::spec::Operation,
-) -> (Option<Value>, bool, Vec<String>) {
-    let mut required = false;
+) -> (Option<Value>, bool, Vec<String>, Vec<ValidationIssue>) {
+    let mut issues = Vec::new();
     let mut content_types: Vec<String> = Vec::new();
-    let mut schema = operation.request_body.as_ref().and_then(|r| match r {
-        ObjectOrReference::Object(req_body) => {
-            required = req_body.required.unwrap_or(false);
-            content_types = req_body.content.keys().cloned().collect();
-            req_body.content.get("application/json").and_then(|media| {
-                match media.schema.as_ref()? {
-                    ObjectOrReference::Object(schema_obj) => serde_json::to_value(schema_obj).ok(),
-                    ObjectOrReference::Ref { ref_path, .. } => resolve_schema_ref(spec, ref_path)
-                        .and_then(|s| serde_json::to_value(s).ok()),
-                }
-            })
+    let Some(rb_ref) = operation.request_body.as_ref() else {
+        return (None, false, content_types, issues);
+    };
+
+    // Reject external refs before resolve.
+    if let ObjectOrReference::Ref { ref_path, .. } = rb_ref {
+        if ref_path.starts_with("http://") || ref_path.starts_with("https://") {
+            issues.push(ValidationIssue::new(
+                "requestBody".to_string(),
+                "UnsupportedExternalRef",
+                format!("external requestBody $ref is unsupported: {ref_path}"),
+            ));
+            return (None, false, content_types, issues);
         }
-        _ => None,
-    });
+    }
+
+    let req_body = match rb_ref.resolve(spec) {
+        Ok(body) => body,
+        Err(e) => {
+            issues.push(ValidationIssue::new(
+                "requestBody".to_string(),
+                "UnresolvableRequestBodyRef",
+                format!("failed to resolve requestBody $ref: {e}"),
+            ));
+            return (None, false, content_types, issues);
+        }
+    };
+
+    let required = req_body.required.unwrap_or(false);
+    content_types = req_body.content.keys().cloned().collect();
+    let mut schema =
+        req_body
+            .content
+            .get("application/json")
+            .and_then(|media| match media.schema.as_ref()? {
+                ObjectOrReference::Object(schema_obj) => serde_json::to_value(schema_obj).ok(),
+                ObjectOrReference::Ref { ref_path, .. } => {
+                    if ref_path.starts_with("http://") || ref_path.starts_with("https://") {
+                        issues.push(ValidationIssue::new(
+                            "requestBody.schema".to_string(),
+                            "UnsupportedExternalRef",
+                            format!("external schema $ref is unsupported: {ref_path}"),
+                        ));
+                        return None;
+                    }
+                    match resolve_schema_ref(spec, ref_path) {
+                        Some(s) => serde_json::to_value(s).ok(),
+                        None => {
+                            issues.push(ValidationIssue::new(
+                                "requestBody.schema".to_string(),
+                                "UnresolvableSchemaRef",
+                                format!("dangling schema $ref: {ref_path}"),
+                            ));
+                            None
+                        }
+                    }
+                }
+            });
     if let Some(ref mut val) = schema {
         expand_schema_refs(spec, val);
     }
-    (schema, required, content_types)
+    (schema, required, content_types, issues)
 }
 
 /// Extract response schemas and examples from an OpenAPI operation
@@ -308,9 +432,26 @@ pub fn extract_response_schema_and_example(
     spec: &OpenApiV3Spec,
     operation: &oas3::spec::Operation,
 ) -> (Option<Value>, Option<Value>, Responses) {
+    let (schema, example, responses, _issues) =
+        extract_response_schema_and_example_with_issues(spec, operation);
+    (schema, example, responses)
+}
+
+/// Like [`extract_response_schema_and_example`], but reports unresolvable response `$ref`s
+/// (Story 12.3 — no silent drop).
+pub fn extract_response_schema_and_example_with_issues(
+    spec: &OpenApiV3Spec,
+    operation: &oas3::spec::Operation,
+) -> (
+    Option<Value>,
+    Option<Value>,
+    Responses,
+    Vec<ValidationIssue>,
+) {
     let mut all: Responses = std::collections::HashMap::new();
     let mut default_schema = None;
     let mut default_example = None;
+    let mut issues = Vec::new();
 
     if let Some(responses_map) = operation.responses.as_ref() {
         for (status_str, resp_ref) in responses_map {
@@ -318,45 +459,73 @@ pub fn extract_response_schema_and_example(
                 Ok(v) => v,
                 Err(_) => continue,
             };
-            if let ObjectOrReference::Object(resp_obj) = resp_ref {
-                for (mt, media) in &resp_obj.content {
-                    let example = match &media.examples {
-                        Some(MediaTypeExamples::Example { example }) => Some(example.clone()),
-                        Some(MediaTypeExamples::Examples { examples }) => {
-                            examples.iter().find_map(|(_, v)| match v {
-                                ObjectOrReference::Object(obj) => obj.value.clone(),
-                                _ => None,
-                            })
-                        }
-                        None => None,
-                    };
-
-                    let mut schema = match media.schema.as_ref() {
-                        Some(ObjectOrReference::Object(schema_obj)) => {
-                            serde_json::to_value(schema_obj).ok()
-                        }
-                        Some(ObjectOrReference::Ref { ref_path, .. }) => {
-                            resolve_schema_ref(spec, ref_path)
-                                .and_then(|s| serde_json::to_value(s).ok())
-                        }
-                        None => None,
-                    };
-                    if let Some(ref mut val) = schema {
-                        expand_schema_refs(spec, val);
+            if let ObjectOrReference::Ref { ref_path, .. } = resp_ref {
+                if ref_path.starts_with("http://") || ref_path.starts_with("https://") {
+                    issues.push(ValidationIssue::new(
+                        format!("responses.{status_str}"),
+                        "UnsupportedExternalRef",
+                        format!("external response $ref is unsupported: {ref_path}"),
+                    ));
+                    continue;
+                }
+            }
+            let resp_obj = match resp_ref.resolve(spec) {
+                Ok(r) => r,
+                Err(e) => {
+                    issues.push(ValidationIssue::new(
+                        format!("responses.{status_str}"),
+                        "UnresolvableResponseRef",
+                        format!("failed to resolve response $ref: {e}"),
+                    ));
+                    continue;
+                }
+            };
+            for (mt, media) in &resp_obj.content {
+                let example = match &media.examples {
+                    Some(MediaTypeExamples::Example { example }) => Some(example.clone()),
+                    Some(MediaTypeExamples::Examples { examples }) => {
+                        examples.iter().find_map(|(_, v)| match v {
+                            ObjectOrReference::Object(obj) => obj.value.clone(),
+                            _ => None,
+                        })
                     }
+                    None => None,
+                };
 
-                    all.entry(status).or_default().insert(
-                        mt.clone(),
-                        ResponseSpec {
-                            schema: schema.clone(),
-                            example: example.clone(),
-                        },
-                    );
-
-                    if status == 200 && mt == "application/json" {
-                        default_schema = schema;
-                        default_example = example;
+                let mut schema = match media.schema.as_ref() {
+                    Some(ObjectOrReference::Object(schema_obj)) => {
+                        serde_json::to_value(schema_obj).ok()
                     }
+                    Some(ObjectOrReference::Ref { ref_path, .. }) => {
+                        match resolve_schema_ref(spec, ref_path) {
+                            Some(s) => serde_json::to_value(s).ok(),
+                            None => {
+                                issues.push(ValidationIssue::new(
+                                    format!("responses.{status_str}.schema"),
+                                    "UnresolvableSchemaRef",
+                                    format!("dangling schema $ref: {ref_path}"),
+                                ));
+                                None
+                            }
+                        }
+                    }
+                    None => None,
+                };
+                if let Some(ref mut val) = schema {
+                    expand_schema_refs(spec, val);
+                }
+
+                all.entry(status).or_default().insert(
+                    mt.clone(),
+                    ResponseSpec {
+                        schema: schema.clone(),
+                        example: example.clone(),
+                    },
+                );
+
+                if status == 200 && mt == "application/json" {
+                    default_schema = schema;
+                    default_example = example;
                 }
             }
         }
@@ -409,7 +578,7 @@ pub fn extract_response_schema_and_example(
         }
     }
 
-    (default_schema, default_example, all)
+    (default_schema, default_example, all, issues)
 }
 
 /// Extract all security schemes from an OpenAPI specification
@@ -631,7 +800,11 @@ pub fn build_routes_with_security_presence(
 
     if let Some(paths_map) = spec.paths.as_ref() {
         for (path, item) in paths_map {
-            for (method, operation) in item.methods() {
+            // Story 12.3: follow Path Item `$ref` / components.pathItems.
+            let Some(effective) = effective_path_item(spec, path, item, &mut issues) else {
+                continue;
+            };
+            for (method, operation) in effective.methods() {
                 push_route_from_operation(
                     &mut routes,
                     &mut issues,
@@ -639,7 +812,7 @@ pub fn build_routes_with_security_presence(
                     slug,
                     &base_path,
                     path,
-                    item,
+                    &effective,
                     method,
                     operation,
                     security_presence,
@@ -648,7 +821,7 @@ pub fn build_routes_with_security_presence(
 
             // RFC 10008 QUERY: prefer native PathItem.query when oas3 gains OAS 3.2
             // (https://github.com/x52dev/oas3-rs/issues/300); else promoted extension.
-            match query_operation_from_path_item(item) {
+            match query_operation_from_path_item(&effective) {
                 Ok(None) => {}
                 Ok(Some(operation)) => {
                     if !path_template_is_legal(path) {
@@ -666,7 +839,7 @@ pub fn build_routes_with_security_presence(
                         slug,
                         &base_path,
                         path,
-                        item,
+                        &effective,
                         crate::http::method_query(),
                         &operation,
                         security_presence,
@@ -683,7 +856,17 @@ pub fn build_routes_with_security_presence(
         }
     }
 
-    fail_if_issues(issues);
+    if !issues.is_empty() {
+        // Library path: return Err (do not process::exit) so tests and embedders
+        // can handle Story 12.3 fail-closed refs without killing the process.
+        print_issues(&issues);
+        let summary = issues
+            .iter()
+            .map(|i| format!("[{}] {}: {}", i.kind, i.location, i.message))
+            .collect::<Vec<_>>()
+            .join("; ");
+        anyhow::bail!("OpenAPI spec validation failed: {summary}");
+    }
     Ok(routes)
 }
 
@@ -767,10 +950,18 @@ fn push_route_from_operation(
         None => return,
     };
 
-    let (request_schema, request_body_required, request_content_types) =
+    let (request_schema, request_body_required, request_content_types, rb_issues) =
         extract_request_body_details(spec, operation);
-    let (response_schema, example, responses) =
-        extract_response_schema_and_example(spec, operation);
+    for mut issue in rb_issues {
+        issue.location = format!("{location} → {}", issue.location);
+        issues.push(issue);
+    }
+    let (response_schema, example, responses, resp_issues) =
+        extract_response_schema_and_example_with_issues(spec, operation);
+    for mut issue in resp_issues {
+        issue.location = format!("{location} → {}", issue.location);
+        issues.push(issue);
+    }
 
     let security =
         resolve_operation_security(path, method.as_str(), operation, spec, security_presence);

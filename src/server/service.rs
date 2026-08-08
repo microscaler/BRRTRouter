@@ -1649,6 +1649,29 @@ impl HttpService for AppService {
                 );
             }
 
+            // Story 12.4: required query/header/path params after auth (P6), before handler.
+            if let Err(fields) = super::param_validation::validate_route_parameters(
+                &route_match.route.parameters,
+                &route_match.path_params,
+                &route_match.query_params,
+                &headers,
+                &cookies,
+            ) {
+                warn!(
+                    method = %method,
+                    path = %path,
+                    handler = %route_match.handler_name,
+                    field_count = fields.len(),
+                    "Parameter validation failed"
+                );
+                _request_logger.respond_json_error(
+                    res,
+                    400,
+                    super::param_validation::param_validation_error_json(&fields),
+                );
+                return Ok(());
+            }
+
             // V1a: Content-Type enforcement (415 Unsupported Media Type)
             //
             // If the request carries a body, the client's Content-Type must be

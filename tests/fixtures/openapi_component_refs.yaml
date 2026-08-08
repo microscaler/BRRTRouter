@@ -1,0 +1,67 @@
+openapi: 3.1.0
+info:
+  title: Component Refs Fixture
+  version: "1.0.0"
+components:
+  schemas:
+    Item:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        nested:
+          $ref: "#/components/schemas/Nested"
+    Nested:
+      type: object
+      properties:
+        n:
+          type: integer
+  requestBodies:
+    ItemBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Item"
+  responses:
+    ItemOk:
+      description: ok
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Item"
+  pathItems:
+    ListedItem:
+      get:
+        operationId: getListedItem
+        x-handler: get_listed_item
+        responses:
+          "200":
+            $ref: "#/components/responses/ItemOk"
+paths:
+  /items:
+    post:
+      operationId: createItem
+      x-handler: create_item
+      requestBody:
+        $ref: "#/components/requestBodies/ItemBody"
+      responses:
+        "200":
+          $ref: "#/components/responses/ItemOk"
+  /items/listed:
+    $ref: "#/components/pathItems/ListedItem"
+  /items/mixed:
+    get:
+      operationId: listMixed
+      x-handler: list_mixed
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean

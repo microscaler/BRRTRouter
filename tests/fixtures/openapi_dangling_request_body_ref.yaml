@@ -1,0 +1,14 @@
+openapi: 3.1.0
+info:
+  title: Dangling RequestBody Ref
+  version: "1.0.0"
+paths:
+  /bad:
+    post:
+      operationId: badCreate
+      x-handler: bad_create
+      requestBody:
+        $ref: "#/components/requestBodies/MissingBody"
+      responses:
+        "200":
+          description: ok

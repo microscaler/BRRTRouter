@@ -47,13 +47,13 @@ pipeline **before** the handler runs — not only inside generated `TryFrom`.
 
 ### Acceptance criteria (tests)
 
-- [ ] N1/N2 mandatory; P1 mandatory.
+- [x] N1/N2 mandatory; P1 mandatory.
 
 ## Acceptance criteria
 
-- [ ] Required query/header missing → 400 before handler.
-- [ ] Error body lists fields.
-- [ ] Unit tests section complete.
+- [x] Required query/header missing → 400 before handler.
+- [x] Error body lists fields.
+- [x] Unit tests section complete.
 
 ## References
 
