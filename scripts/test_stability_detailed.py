@@ -290,11 +290,16 @@ def main():
         "detailed_results": results,
     }
 
-    with open("detailed_test_stability_results.json", "w") as f:
+    from pathlib import Path
+
+    out_dir = Path(__file__).resolve().parent / "artifacts"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / "detailed_test_stability_results.json"
+    with open(out_path, "w") as f:
         json.dump(detailed_results, f, indent=2)
 
     print()
-    print("💾 Detailed results saved to: detailed_test_stability_results.json")
+    print(f"💾 Detailed results saved to: {out_path}")
 
     # Final assessment
     print()

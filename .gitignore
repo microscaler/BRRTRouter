@@ -120,3 +120,12 @@ benches/baselines/.ms02-criterion-baseline
 .venv
 PR.md
 **.nfs.*
+
+# Ad-hoc probes / editor litter (keep repo root tidy)
+tmp_*/
+tmp_*
+._*
+Cargo.toml.bak
+test_stability_results.json
+detailed_test_stability_results.json
+scripts/artifacts/*.json

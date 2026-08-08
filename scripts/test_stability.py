@@ -168,8 +168,13 @@ def main():
                 if "error" in result:
                     print(f"  Error: {result['error']}")
 
-    # Save results to JSON file
-    with open("test_stability_results.json", "w") as f:
+    # Save results under scripts/artifacts/ (keep repo root tidy)
+    from pathlib import Path
+
+    out_dir = Path(__file__).resolve().parent / "artifacts"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / "test_stability_results.json"
+    with open(out_path, "w") as f:
         json.dump(
             {
                 "summary": {
@@ -192,7 +197,7 @@ def main():
         )
 
     print()
-    print("💾 Results saved to: test_stability_results.json")
+    print(f"💾 Results saved to: {out_path}")
 
     # Final assessment
     print()
