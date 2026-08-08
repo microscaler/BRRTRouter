@@ -1,8 +1,10 @@
+use brrtrouter::perf_harness::{
+    scalability_routes, CRITERION_MEASUREMENT_TIME, CRITERION_SAMPLE_SIZE, CRITERION_WARM_UP,
+};
 use brrtrouter::{router::Router, spec::RouteMeta};
 use criterion::{criterion_group, criterion_main, Criterion};
 use http::Method;
 use std::hint::black_box;
-use std::sync::Arc;
 
 fn example_spec() -> &'static str {
     r#"openapi: 3.1.0
@@ -88,6 +90,13 @@ fn parse_spec(yaml: &str) -> Vec<RouteMeta> {
     brrtrouter::spec::load_spec_from_spec(spec).expect("failed to load spec")
 }
 
+fn phase6_criterion() -> Criterion {
+    Criterion::default()
+        .sample_size(CRITERION_SAMPLE_SIZE)
+        .measurement_time(CRITERION_MEASUREMENT_TIME)
+        .warm_up_time(CRITERION_WARM_UP)
+}
+
 fn bench_route_throughput(c: &mut Criterion) {
     let routes = parse_spec(example_spec());
     let router = Router::new(routes);
@@ -109,43 +118,12 @@ fn bench_route_throughput(c: &mut Criterion) {
 }
 
 fn bench_route_scalability(c: &mut Criterion) {
-    // Test performance with increasing number of routes
+    // P2 — scalability curve 10→500 (documented in docs/PERFORMANCE.md Phase 6).
     let mut group = c.benchmark_group("route_scalability");
 
-    for route_count in [10, 50, 100, 200, 500].iter() {
-        let mut routes = Vec::new();
-        // Create many routes to test scalability
-        for i in 0..*route_count {
-            routes.push(RouteMeta {
-                x_service: None,
-                x_brrtrouter_downstream_path: None,
-                x_brrtrouter_impl: None,
-                method: Method::GET,
-                path_pattern: Arc::from(format!("/api/v1/resource{i}/{{id}}").as_str()),
-                handler_name: Arc::from(format!("handler_{i}").as_str()),
-                base_path: String::new(),
-                parameters: Vec::new(),
-                request_schema: None,
-                request_body_required: false,
-                request_content_types: Vec::new(),
-                response_schema: None,
-                example: None,
-                responses: std::collections::HashMap::new(),
-                security: Vec::new(),
-                example_name: "test".to_string(),
-                project_slug: "test".to_string(),
-                output_dir: std::path::PathBuf::from("test"),
-                sse: false,
-                estimated_request_body_bytes: None,
-                x_brrtrouter_stack_size: None,
-                cors_policy: brrtrouter::middleware::RouteCorsPolicy::Inherit,
-            });
-        }
-
-        let router = Router::new(routes);
-
+    for route_count in [10, 50, 100, 200, 500] {
+        let router = Router::new(scalability_routes(route_count));
         group.bench_function(format!("{route_count}_routes"), |b| {
-            // Test matching a route in the middle of the tree
             let test_path = format!("/api/v1/resource{}/123", route_count / 2);
             b.iter(|| {
                 let res = router.route(Method::GET, &test_path);
@@ -156,5 +134,9 @@ fn bench_route_scalability(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_route_throughput, bench_route_scalability);
+criterion_group! {
+    name = benches;
+    config = phase6_criterion();
+    targets = bench_route_throughput, bench_route_scalability
+}
 criterion_main!(benches);

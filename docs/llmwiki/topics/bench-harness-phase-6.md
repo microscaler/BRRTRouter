@@ -11,15 +11,22 @@
 
 | Bench | Purpose |
 |-------|---------|
-| [`benches/throughput.rs`](../../../benches/throughput.rs) | Radix / `Router` routing throughput (Verb Zoo spec) |
+| [`benches/throughput.rs`](../../../benches/throughput.rs) | Radix / `Router` routing throughput (Verb Zoo spec) + 10→500 scalability |
 | [`benches/jwt_cache_performance.rs`](../../../benches/jwt_cache_performance.rs) | JWT / security provider path |
 | [`benches/schema_validation_hot_path.rs`](../../../benches/schema_validation_hot_path.rs) | `ValidatorCache` hit + `jsonschema::Validator::iter_errors` (Phase 4 hot path) |
+| [`benches/match_vs_validate.rs`](../../../benches/match_vs_validate.rs) | **P5** comparative: match vs schema `is_valid` |
+| [`benches/request_guards.rs`](../../../benches/request_guards.rs) | Optional 12.2 / 12.4 guard microbenches |
+
+Shared Criterion knobs + timed helpers: [`src/perf_harness.rs`](../../../src/perf_harness.rs)  
+Operator write-up: [`docs/PERFORMANCE.md`](../../PERFORMANCE.md) § Phase 6.
 
 Run:
 
 ```bash
 cargo bench -p brrtrouter --bench throughput
 cargo bench -p brrtrouter --bench schema_validation_hot_path
+cargo bench -p brrtrouter --bench match_vs_validate
+cargo bench -p brrtrouter --bench request_guards
 ```
 
 **Compare vs a saved baseline:** Criterion stores data under `target/criterion/`. You must **`--save-baseline <tag>`** before **`--baseline <tag>`** on this machine (new clone / `cargo clean` → save again).

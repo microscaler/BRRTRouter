@@ -10,10 +10,20 @@
 #![allow(clippy::expect_used)]
 #![allow(clippy::unwrap_used)]
 
+use brrtrouter::perf_harness::{
+    CRITERION_MEASUREMENT_TIME, CRITERION_SAMPLE_SIZE, CRITERION_WARM_UP,
+};
 use brrtrouter::validator_cache::ValidatorCache;
 use criterion::{criterion_group, criterion_main, Criterion};
 use serde_json::json;
 use std::hint::black_box;
+
+fn phase6_criterion() -> Criterion {
+    Criterion::default()
+        .sample_size(CRITERION_SAMPLE_SIZE)
+        .measurement_time(CRITERION_MEASUREMENT_TIME)
+        .warm_up_time(CRITERION_WARM_UP)
+}
 
 fn pet_request_schema() -> serde_json::Value {
     json!({
@@ -90,5 +100,9 @@ fn bench_cache_hit(c: &mut Criterion) {
     });
 }
 
-criterion_group!(schema_benches, bench_iter_errors, bench_cache_hit);
+criterion_group! {
+    name = schema_benches;
+    config = phase6_criterion();
+    targets = bench_iter_errors, bench_cache_hit
+}
 criterion_main!(schema_benches);

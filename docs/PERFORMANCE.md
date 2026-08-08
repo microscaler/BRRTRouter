@@ -147,21 +147,108 @@ Build the fastest, most predictable scalable OpenAPI-native router in Rust — m
 
 > **Goal:** 15ms tight routing bounds prior to business logic execution, failing gracefully during localized pod exhaustion natively utilizing memory queue RAII protection mechanisms.
 
+## Phase 6 — harness science (Epic 12 / Story 12.8)
+
+Goal: make **sub-~15%** microbench deltas meaningful and decide the **next
+bottleneck from measurements**, not folklore.
+
+### Criterion defaults (stabilize variance)
+
+Shared helpers live in [`brrtrouter::perf_harness`](../src/perf_harness.rs):
+
+| Setting | Value | Why |
+|---------|------:|-----|
+| `sample_size` | 60 | Less single-outlier swing on laptop/CI hosts |
+| `measurement_time` | 5 s | Enough wall for noisy schedulers |
+| `warm_up_time` | 1 s | Drop cold-cache first samples |
+
+**Noise policy (N1):** if a Criterion compare flakes under load, re-run on an
+**idle ms02** (`just bench-against-ms02-all`) before changing code. Do **not**
+“fix” variance with radix churn (N6).
+
+**CPU pinning / seed:** optional; when comparing A/B on ms02, keep the same
+power state and avoid concurrent Tilt builds. Criterion’s statistical engine
+is the primary gate — pin with `taskset` only when documenting a host baseline.
+
+### Microbenches
+
+| Bench | Purpose |
+|-------|---------|
+| `throughput` | `route_match` + scalability **10→500** routes (P1/P2) |
+| `schema_validation_hot_path` | cached `is_valid` / `iter_errors` (P3) |
+| `match_vs_validate` | **P5 comparative** — match vs schema on one Criterion group |
+| `request_guards` | optional 12.2 body-limit + 12.4 param-validation helpers |
+| `jwt_cache_performance` | security path (unchanged) |
+
+```bash
+cargo bench -p brrtrouter --bench match_vs_validate
+cargo bench -p brrtrouter --bench request_guards
+just bench-baseline-ms02-all   # save host baseline tag
+```
+
+**CI note (N5):** Criterion benches are **local / ms02 optional** — unit tests
+in `tests/perf_science_tests.rs` + `perf_harness` guard P1/P5 without requiring
+`cargo bench` in every CI job.
+
+### P5 evidence — match vs validate (measured)
+
+Timed helpers (`match_vs_validate_ns_per_op`) and Criterion
+`match_vs_validate` on idle **ms02** (release, `--quick` smoke 2026-08-08):
+
+| Path | Observed |
+|------|----------|
+| `route_match` @ 100 routes | **~161 ns** |
+| `schema_is_valid` (happy path) | **~44 ns** |
+| `schema_iter_errors` (invalid pet body) | **~163 ns** |
+
+Takeaways:
+
+- Match, happy-path validate, and failure-path `iter_errors` are all **sub-µs**
+  and within ~4× on this schema — neither “routing dominates” nor “bare
+  `is_valid` always dominates match” is true (N2).
+- Scalability 10→500 stays flat; match is already negligible vs **multi-ms**
+  end-to-end latency under Goose load.
+- Therefore a **radix/trie rewrite is not the next win** (N6).
+
+### Next bottleneck (written recommendation)
+
+**Invest next in the full request pipeline / dispatch**, not a trie rewrite:
+
+1. **End-to-end `AppService` path** under flamegraph (body read, auth, param
+   guards, handler coroutine dispatch, response write) — where the multi-ms
+   budget actually goes.
+2. **Handler dispatch / reply path** (PRD Phase 3 reply-slot remains open;
+   out of scope for 12.8 implementation, but the evidence points here).
+3. Keep schema work on the **cache hit + `is_valid` first** pattern; treat
+   `iter_errors` as the failure-only path.
+4. **Keep** lock-free `SharedRouter` / `SharedDispatcher` (`ArcSwap`) — do not
+   reintroduce `RwLock` on the match path (P6).
+
+**Non-goals for this story:** Phase 3 reply-slot redesign; radix/trie rewrite;
+claims that “routing” dominates without P5 data (N2).
+
+### Scalability curve (P2)
+
+`route_scalability/{10,50,100,200,500}_routes` matches a mid-tree path. Expect
+near-flat ns/op growth with route count for the current radix; large jumps
+warrant investigation of tree shape — not an automatic rewrite.
+
 ## Running Benchmarks
 
 ```bash
 just bench  # Executes cargo bench with Criterion
 ```
 
-Recent profiling with `flamegraph` highlighted regex capture and `HashMap` allocations as hotspots. Preallocating buffers in `Router::route` and `path_to_regex` trimmed roughly 5% off benchmark times.
+Harness detail: [`llmwiki/topics/bench-harness-phase-6.md`](./llmwiki/topics/bench-harness-phase-6.md).
+
+Older notes: profiling once highlighted regex capture and `HashMap` allocations;
+preallocating buffers in `Router::route` trimmed roughly 5% off match times —
+still **secondary** to schema validation per Phase 6 P5 evidence.
 
 ## Generating Flamegraphs
 
-```bash
-cargo flamegraph -p brrtrouter  # Produces flamegraph.svg in the current directory
-```
-
-See [docs/flamegraph.md](flamegraph.md) for tips on reading the output.
+See [docs/flamegraph.md](flamegraph.md) for **validator-path** steps (P4) and
+general interpretation tips.
 
 ## Load Testing
 

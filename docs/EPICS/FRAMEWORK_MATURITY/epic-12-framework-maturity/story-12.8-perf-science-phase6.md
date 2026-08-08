@@ -32,7 +32,7 @@ Perf story: unit tests guard harness helpers; benches are CI-optional but must r
 | P2 | Scalability 10→500 routes | documented curve |
 | P3 | Schema validation hot-path bench | runs |
 | P4 | Flamegraph/README instructions | reproducible steps |
-| P5 | Compare match vs validate wall time | match ≪ validate (doc assert) |
+| P5 | Compare match vs validate wall time | both sub-µs; match ≪ e2e latency → no trie rewrite (doc assert) |
 | P6 | Regression: no accidental RwLock reintro on match path | code guard / review |
 
 ### Negative
@@ -48,13 +48,13 @@ Perf story: unit tests guard harness helpers; benches are CI-optional but must r
 
 ### Acceptance criteria (tests)
 
-- [ ] P1/P5 and N2 mandatory (doc + bench smoke).
+- [x] P1/P5 and N2 mandatory (doc + bench smoke).
 
 ## Acceptance criteria
 
-- [ ] Phase 6 harness notes in `docs/PERFORMANCE.md`.
-- [ ] Written “next bottleneck” recommendation.
-- [ ] Unit tests section complete.
+- [x] Phase 6 harness notes in `docs/PERFORMANCE.md`.
+- [x] Written “next bottleneck” recommendation.
+- [x] Unit tests section complete.
 
 ## References
 

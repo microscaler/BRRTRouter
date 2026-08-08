@@ -143,6 +143,14 @@ harness = false
 name = "schema_validation_hot_path"
 harness = false
 
+[[bench]]
+name = "match_vs_validate"
+harness = false
+
+[[bench]]
+name = "request_guards"
+harness = false
+
 [features]
 default = []
 jemalloc = ["tikv-jemallocator", "tikv-jemalloc-ctl"]  # Enable jemalloc for accurate heap tracking
