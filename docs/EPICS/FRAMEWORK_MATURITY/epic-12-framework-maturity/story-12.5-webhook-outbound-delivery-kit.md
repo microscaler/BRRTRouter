@@ -50,13 +50,13 @@ Subscription CRUD remains normal OpenAPI paths (already works).
 
 ### Acceptance criteria (tests)
 
-- [ ] P1/P2 and N1/N2 mandatory.
+- [x] P1/P2 and N1/N2 mandatory.
 
 ## Acceptance criteria
 
-- [ ] Library API callable from generated controllers.
-- [ ] Docs + sesame usage note.
-- [ ] Unit tests section complete.
+- [x] Library API callable from generated controllers (`brrtrouter::http::deliver_webhook`).
+- [x] Docs + sesame usage note (`docs/webhook_delivery.md`; Photon `docs/webhooks.md`).
+- [x] Unit tests section complete (`tests/webhook_delivery_tests.rs` + module unit tests).
 
 ## References
 

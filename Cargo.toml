@@ -88,6 +88,7 @@ jsonwebtoken = { version = "10.4.0", features = ["rust_crypto"] }
 urlencoding = "2.1"
 ulid = "1.1"
 sha2 = "0.11"
+hmac = "0.13" # Outbound webhook HMAC-SHA256 (Story 12.5)
 dashmap = "6.1"  # Lock-free concurrent HashMap for metrics
 lru = "0.16"  # LRU cache for JWT claims to prevent memory leaks
 once_cell = "1"  # Lazy static initialization for SPIFFE ID regex

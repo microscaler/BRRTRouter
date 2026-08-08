@@ -34,10 +34,12 @@ the docs’ “go look here” target.
 - Multi-crate workspace: OpenAPI per service → BRRTRouter codegen → `impl` controllers
 - Shared-k8s / Tilt layout for local iteration
 - Security schemes and public vs secured routes (`security: []` where intentional)
-- Webhook-style REST surfaces (outbound delivery kit is Epic 12.5)
+- Webhook-style REST surfaces — use [`webhook_delivery.md`](webhook_delivery.md)
+  (`deliver_webhook`); suite narrative in Photon [`docs/webhooks.md`](https://github.com/microscaler/photon/blob/main/docs/webhooks.md)
 
 ## Related
 
 - [Local development](LOCAL_DEVELOPMENT.md) (Tilt + kind for this repo / pet_store)
+- [Webhook delivery kit](webhook_delivery.md)
 - [Epic 12 — Framework maturity](EPICS/FRAMEWORK_MATURITY/BUILD_BOARD.md)
 - [Sibling repos (wiki)](../llmwiki/topics/sibling-repos-and-wikis.md)

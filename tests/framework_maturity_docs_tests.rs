@@ -133,6 +133,7 @@ fn docs_12_1_negative_n4_relative_links_exist() {
     for rel in [
         "docs/stack_size.md",
         "docs/request_body_limits.md",
+        "docs/webhook_delivery.md",
         "docs/OPENAPI_VERSION_SUPPORT.md",
         "docs/BUILDING_WITH_BRRTROUTER.md",
         "docs/EPICS/FRAMEWORK_MATURITY/BUILD_BOARD.md",

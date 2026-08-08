@@ -10,6 +10,7 @@ pub mod method_ext;
 pub mod openapi_query;
 mod proxy;
 pub mod uri_encode;
+mod webhook_delivery;
 
 pub use accept_query::{format_accept_query, parse_accept_query, ACCEPT_QUERY_HEADER};
 pub use method_ext::{is_query_method, method_allows_automatic_retry, method_query};
@@ -31,3 +32,8 @@ pub use proxy::{
     ProxyTransportKind,
 };
 pub use uri_encode::{encode_path_segment, encode_query_component};
+pub use webhook_delivery::{
+    deliver_webhook, sign_body_hmac_sha256, HmacSecret, WebhookDeliveryError,
+    WebhookDeliveryOptions, WebhookDeliveryResult, WebhookHmac, DEFAULT_HMAC_HEADER,
+    DEFAULT_MAX_REQUEST_BODY_BYTES, DEFAULT_MAX_RESPONSE_BODY_BYTES, IDEMPOTENCY_KEY_HEADER,
+};
