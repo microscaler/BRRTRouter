@@ -47,13 +47,13 @@ feed logging — not **413 Payload Too Large**.
 
 ### Acceptance criteria (tests)
 
-- [ ] N1/N2 mandatory; P1 mandatory.
+- [x] N1/N2 mandatory; P1 mandatory.
 
 ## Acceptance criteria
 
-- [ ] Oversize inbound → 413 before handler.
-- [ ] Config/env documented.
-- [ ] Unit tests section complete.
+- [x] Oversize inbound → 413 before handler.
+- [x] Config/env documented.
+- [x] Unit tests section complete.
 
 ## References
 

@@ -1106,29 +1106,40 @@ impl HttpService for AppService {
             cookies,
             query_params,
             body,
+            body_octets,
         } = match parse_request(req) {
             Ok(parsed) => parsed,
             Err(err) => {
-                let status = super::request_target::parse_request_error_status(&err);
-                if status == 414 {
+                if let Some(413) = super::body_limit::body_limit_error_status(&err) {
                     write_json_error(
                         res,
-                        414,
-                        serde_json::json!({
-                            "error": "URI Too Long",
-                            "message": "Request-target exceeds configured maximum length"
-                        }),
+                        413,
+                        super::body_limit::body_too_large_json(
+                            "Request body exceeds configured maximum size",
+                        ),
                     );
                 } else {
-                    // Reject invalid HTTP methods with 400 Bad Request
-                    write_json_error(
-                        res,
-                        400,
-                        serde_json::json!({
-                            "error": "Bad Request",
-                            "message": format!("Invalid HTTP method: {}", err)
-                        }),
-                    );
+                    let status = super::request_target::parse_request_error_status(&err);
+                    if status == 414 {
+                        write_json_error(
+                            res,
+                            414,
+                            serde_json::json!({
+                                "error": "URI Too Long",
+                                "message": "Request-target exceeds configured maximum length"
+                            }),
+                        );
+                    } else {
+                        // Reject invalid HTTP methods with 400 Bad Request
+                        write_json_error(
+                            res,
+                            400,
+                            serde_json::json!({
+                                "error": "Bad Request",
+                                "message": format!("Invalid HTTP method: {}", err)
+                            }),
+                        );
+                    }
                 }
                 return Ok(());
             }
@@ -1339,6 +1350,23 @@ impl HttpService for AppService {
         let route_opt = self.router.load().route(method.clone(), &path);
         if let Some(mut route_match) = route_opt {
             route_match.query_params = query_params.clone();
+
+            // Story 12.2: per-route hard cap (schema estimate / x-brrtrouter-body-size-bytes).
+            let route_limit = super::body_limit::effective_inbound_body_limit(
+                route_match.route.estimated_request_body_bytes,
+            );
+            let measured_body = body_size_bytes.max(body_octets);
+            if super::body_limit::body_exceeds_limit(measured_body, route_limit) {
+                write_json_error(
+                    res,
+                    413,
+                    super::body_limit::body_too_large_json(
+                        "Request body exceeds route maximum size",
+                    ),
+                );
+                _request_logger.record_http_status(413);
+                return Ok(());
+            }
 
             // Update total_size_bytes with estimated body size if Content-Length was not available
             if body_size_bytes == 0 && body.is_some() {

@@ -8,10 +8,10 @@
 
 | Priority | ID | Status | Issue | Notes |
 |----------|-----|--------|-------|-------|
-| **NOW** | 12.1 | todo | [#392](https://github.com/microscaler/BRRTRouter/issues/392) | Doc reconciliation |
-| **NOW** | 12.2 | todo | [#393](https://github.com/microscaler/BRRTRouter/issues/393) | Inbound body → 413 |
-| NEXT | 12.3 | todo | [#394](https://github.com/microscaler/BRRTRouter/issues/394) | `$ref` bodies/responses/pathItems |
-| NEXT | 12.4 | todo | [#395](https://github.com/microscaler/BRRTRouter/issues/395) | Pre-handler param validation |
+| **DONE** | 12.1 | done | [#392](https://github.com/microscaler/BRRTRouter/issues/392) | Doc reconciliation |
+| **DONE** | 12.2 | done | [#393](https://github.com/microscaler/BRRTRouter/issues/393) | Inbound body → 413 |
+| **NOW** | 12.3 | todo | [#394](https://github.com/microscaler/BRRTRouter/issues/394) | `$ref` bodies/responses/pathItems |
+| **NOW** | 12.4 | todo | [#395](https://github.com/microscaler/BRRTRouter/issues/395) | Pre-handler param validation |
 | LATER | 12.5 | todo | [#396](https://github.com/microscaler/BRRTRouter/issues/396) | Webhook outbound kit |
 | LATER | 12.6 | todo | [#397](https://github.com/microscaler/BRRTRouter/issues/397) | Multipart truth |
 | LATER | 12.7 | todo | [#398](https://github.com/microscaler/BRRTRouter/issues/398) | Multi-status codegen |
@@ -32,8 +32,8 @@ Wave 4 ──► 12.8
 | ID | Title | Wave | Status | GitHub |
 |----|--------|------|--------|--------|
 | Epic 12 | Framework maturity | — | todo | [#391](https://github.com/microscaler/BRRTRouter/issues/391) |
-| 12.1 | Doc / status reconciliation | 0 | todo | [#392](https://github.com/microscaler/BRRTRouter/issues/392) |
-| 12.2 | Hard inbound body limits → 413 | 0 | todo | [#393](https://github.com/microscaler/BRRTRouter/issues/393) |
+| 12.1 | Doc / status reconciliation | 0 | done | [#392](https://github.com/microscaler/BRRTRouter/issues/392) |
+| 12.2 | Hard inbound body limits → 413 | 0 | done | [#393](https://github.com/microscaler/BRRTRouter/issues/393) |
 | 12.3 | OpenAPI `$ref` requestBodies / responses / pathItems | 1 | todo | [#394](https://github.com/microscaler/BRRTRouter/issues/394) |
 | 12.4 | Pre-handler query/header validation | 1 | todo | [#395](https://github.com/microscaler/BRRTRouter/issues/395) |
 | 12.5 | Webhook outbound delivery kit | 2 | todo | [#396](https://github.com/microscaler/BRRTRouter/issues/396) |

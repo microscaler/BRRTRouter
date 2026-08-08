@@ -17,7 +17,7 @@ webhook delivery kit for sesame-idam, truthful docs, and measurable perf science
 ## Success criteria (epic-level)
 
 - [ ] Stories 12.1–12.8 meet TESTING_STANDARD (positive + negative unit tests).
-- [ ] Inbound oversize bodies → **413** (not OOM / silent truncate).
+- [x] Inbound oversize bodies → **413** (not OOM / silent truncate). (12.2)
 - [ ] `$ref` requestBodies/responses used by product specs resolve (no silent drop).
 - [ ] Required query/header params fail closed **before** handler.
 - [ ] Multipart either works or fails closed (no empty-object bypass).

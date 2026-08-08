@@ -44,6 +44,8 @@ percent-encoding.
 See [declaring-query-operations.md](declaring-query-operations.md) (`query:` or
 `x-brrtrouter-query` until OAS/`oas3` list QUERY natively).
 
+OpenAPI **3.1 + 3.2** dual contract: [OPENAPI_VERSION_SUPPORT.md](../../../OPENAPI_VERSION_SUPPORT.md).
+
 ## Retry policy
 
 See [query-retry-policy.md](query-retry-policy.md) (`method_allows_automatic_retry`).

@@ -78,6 +78,8 @@
 
 /// HTTP server implementation using may_minihttp
 pub mod app_config;
+/// Inbound request-body size limits (Story 12.2)
+pub mod body_limit;
 pub mod cors_setup;
 pub mod header_intern;
 pub mod http_server;
@@ -94,6 +96,10 @@ pub mod security_setup;
 /// Core application service that handles requests
 pub mod service;
 
+pub use body_limit::{
+    body_too_large_json, effective_inbound_body_limit, max_inbound_body_octets,
+    DEFAULT_MAX_REQUEST_BODY_OCTETS, MAX_REQUEST_BODY_ENV, REQUEST_BODY_TOO_LARGE,
+};
 pub use request::{decode_param_value, parse_request, ParsedRequest};
 pub use request_target::{
     assert_request_target_uri_ok, max_request_target_octets, parse_request_error_status, path_only,

@@ -68,3 +68,4 @@ Epic 11: 11.1 → 11.2 → 11.3 → 11.4  (after 10.1; 11.3 after 10.7)
 
 **Epics 10–11 done.** Full index: [`BUILD_BOARD.md`](../../docs/EPICS/URI_REQUEST_TARGET/BUILD_BOARD.md).
 Consumer guide: [`consumer-guide-query-method.md`](../../docs/EPICS/URI_REQUEST_TARGET/epic-11-http-query-method/consumer-guide-query-method.md).
+OpenAPI versions: [`OPENAPI_VERSION_SUPPORT.md`](../../docs/OPENAPI_VERSION_SUPPORT.md) (3.1 default; 3.2 QUERY via promote; track [oas3-rs#300](https://github.com/x52dev/oas3-rs/issues/300)).

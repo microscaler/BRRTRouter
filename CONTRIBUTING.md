@@ -22,7 +22,10 @@ This guide will help you get started quickly with our local development environm
 
 3. **📖 Read the contribution guide**: [CONTRIBUTING.md](CONTRIBUTING.md)
 
-4. **🔍 Pick an issue**: Look for [`good first issue`](https://github.com/microscaler/BRRTRouter/labels/good%20first%20issue) labels
+4. **🔍 Pick an issue**: Prefer the active board —
+   [**Epic 12 — Framework maturity**](docs/EPICS/FRAMEWORK_MATURITY/BUILD_BOARD.md)
+   ([#391](https://github.com/microscaler/BRRTRouter/issues/391)). Also see
+   [`good first issue`](https://github.com/microscaler/BRRTRouter/labels/good%20first%20issue).
 
 5. **🧪 Run tests before committing**:
    ```bash
@@ -32,26 +35,20 @@ This guide will help you get started quickly with our local development environm
 
 ## Areas for Contribution
 
-We welcome contributions that improve:
-- 🧵 Typed handler deserialization
-- ✨ Auto-generation of `impl From<HandlerRequest>` for `TypedHandlerRequest<T>` based on schema
-- 🚧 Dynamic dispatcher route registration
-- 🚧 Hot reload
-- 🚧 Header parsing and extraction
-- 🚧 Cookie parsing and extraction
-- 🚧 WebSocket support
-- 🚧 Server-side events
-- 🚧 SPIFFE support if we have enterprise interest for windows users single signon
-- 🧪 Test coverage and spec validation
-- 🧠 Coroutine handler ergonomics
-- 📊 Benchmarks for match throughput (goal: 100k matches/sec)
-- 🔐 Middleware hooks (metrics, tracing, auth, **RFC-compliant CORS with route-specific configuration**)
-- 💥 Reusable SDK packaging and publishing to crates.io
+**Primary (Epic 12 waves):** OpenAPI `$ref` fidelity, pre-handler param validation,
+webhook outbound kit, multipart truth, multi-status codegen, perf science.
+Board: [`docs/EPICS/FRAMEWORK_MATURITY/BUILD_BOARD.md`](docs/EPICS/FRAMEWORK_MATURITY/BUILD_BOARD.md).
 
-**Benchmark goal:**
-- Raspberry Pi 5
-- 100k route matches/sec
-- ≤8ms latency (excluding handler execution)
+Also welcome:
+- 🧪 Test coverage and OpenAPI fixture hardening
+- 🧠 Coroutine / typed-handler ergonomics
+- 📊 Evidence-based benchmarks (Epic 12.8) — not speculative radix rewrites
+- 💥 Crates.io packaging polish
+- 🚧 SPIFFE if there is enterprise Windows SSO demand
+
+**Parked (do not treat as MVP gaps):** native WebSocket upgrade (use SSE or a sidecar);
+see Epic 12 parked list. Legacy “regex routing” / “typed panics don’t catch” docs are obsolete —
+routing is radix/`PathCursor`; typed handlers use `catch_unwind`.
 
 ## 🏃 Quick Start
 

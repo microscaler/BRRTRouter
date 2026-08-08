@@ -1,5 +1,11 @@
 # Declaring QUERY operations in OpenAPI (Story 11.2)
 
+**Version policy:** see [`docs/OPENAPI_VERSION_SUPPORT.md`](../../../OPENAPI_VERSION_SUPPORT.md).
+Path-item `query:` works on **`openapi: 3.1.0`** today (promote path). Native
+Path Item `query` exists in **OAS 3.2.0**, but `oas3` does not model it yet
+([oas3-rs#300](https://github.com/x52dev/oas3-rs/issues/300)) — do **not** bump
+product specs to 3.2.0 solely for QUERY.
+
 Until OpenAPI / `oas3` expose a native path-item `query` field everywhere,
 BRRTRouter accepts RFC 10008 **QUERY** operations via one of:
 

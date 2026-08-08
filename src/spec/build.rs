@@ -97,7 +97,9 @@ pub fn expand_schema_refs(spec: &OpenApiV3Spec, value: &mut Value) {
 /// - Boolean: assumes 5 bytes ("true" or "false")
 ///
 /// The function also checks for vendor extension `x-brrtrouter-body-size-bytes`
-/// which allows explicit size overrides in the OpenAPI spec.
+/// which allows explicit size overrides in the OpenAPI spec. The resulting
+/// estimate feeds logging and Story 12.2 per-route **413** hard caps
+/// (see `docs/request_body_limits.md`).
 ///
 /// # Arguments
 ///
@@ -644,45 +646,38 @@ pub fn build_routes_with_security_presence(
                 );
             }
 
-            // RFC 10008 QUERY (Story 11.2): oas3 PathItem has no query field;
-            // loaders promote `query:` → `x-brrtrouter-query` (key `brrtrouter-query`).
-            if let Some(op_val) = item
-                .extensions
-                .get(super::load::QUERY_OPERATION_EXTENSION_KEY)
-            {
-                if !path_template_is_legal(path) {
-                    issues.push(ValidationIssue::new(
-                        format!("{path} → QUERY"),
-                        "IllegalPathTemplate",
-                        "QUERY path template is illegal (unbalanced or empty '{' '}' params)",
-                    ));
-                    continue;
-                }
-                match serde_json::from_value::<oas3::spec::Operation>(op_val.clone()) {
-                    Ok(operation) => {
-                        push_route_from_operation(
-                            &mut routes,
-                            &mut issues,
-                            spec,
-                            slug,
-                            &base_path,
-                            path,
-                            item,
-                            crate::http::method_query(),
-                            &operation,
-                            security_presence,
-                        );
-                    }
-                    Err(e) => {
+            // RFC 10008 QUERY: prefer native PathItem.query when oas3 gains OAS 3.2
+            // (https://github.com/x52dev/oas3-rs/issues/300); else promoted extension.
+            match query_operation_from_path_item(item) {
+                Ok(None) => {}
+                Ok(Some(operation)) => {
+                    if !path_template_is_legal(path) {
                         issues.push(ValidationIssue::new(
                             format!("{path} → QUERY"),
-                            "MalformedQueryOperation",
-                            format!(
-                                "failed to parse {} as Operation: {e}",
-                                super::load::QUERY_OPERATION_EXTENSION
-                            ),
+                            "IllegalPathTemplate",
+                            "QUERY path template is illegal (unbalanced or empty '{' '}' params)",
                         ));
+                        continue;
                     }
+                    push_route_from_operation(
+                        &mut routes,
+                        &mut issues,
+                        spec,
+                        slug,
+                        &base_path,
+                        path,
+                        item,
+                        crate::http::method_query(),
+                        &operation,
+                        security_presence,
+                    );
+                }
+                Err(msg) => {
+                    issues.push(ValidationIssue::new(
+                        format!("{path} → QUERY"),
+                        "MalformedQueryOperation",
+                        msg,
+                    ));
                 }
             }
         }
@@ -690,6 +685,37 @@ pub fn build_routes_with_security_presence(
 
     fail_if_issues(issues);
     Ok(routes)
+}
+
+/// Resolve a QUERY [`Operation`] from a path item.
+///
+/// **Prefer native `PathItem::query` when available** (OAS 3.2 / oas3-rs#300),
+/// then fall back to the promoted `x-brrtrouter-query` extension (Story 11.2).
+/// Today `oas3` 0.21/0.22 has no `query` field — only the extension path runs.
+fn query_operation_from_path_item(
+    item: &oas3::spec::PathItem,
+) -> Result<Option<oas3::spec::Operation>, String> {
+    // FUTURE(oas3-rs#300): when PathItem gains `pub query: Option<Operation>`:
+    //   if let Some(op) = &item.query {
+    //       return Ok(Some(op.clone()));
+    //   }
+    // Keep promote_query_operations for openapi: 3.1.x docs and tooling that
+    // still emit bare `query:` or `x-brrtrouter-query`.
+
+    let Some(op_val) = item
+        .extensions
+        .get(super::load::QUERY_OPERATION_EXTENSION_KEY)
+    else {
+        return Ok(None);
+    };
+    serde_json::from_value::<oas3::spec::Operation>(op_val.clone())
+        .map(Some)
+        .map_err(|e| {
+            format!(
+                "failed to parse {} as Operation: {e}",
+                super::load::QUERY_OPERATION_EXTENSION
+            )
+        })
 }
 
 /// Balanced `{param}` segments and leading `/` — fail closed for QUERY (Story 11.2 N5).

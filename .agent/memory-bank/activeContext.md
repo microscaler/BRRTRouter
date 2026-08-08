@@ -1,4 +1,23 @@
+## 2026-08-08 — Webhook / WebSocket / SSE audit (read-only)
+
+- **SSE:** Implemented via `x-sse` → `RouteMeta.sse` → `text/event-stream`; channel helper `src/sse.rs`. Buffered (`rx.collect()` + `body_vec`), not true chunked streaming. Tests: `tests/sse_tests.rs`, `sse_channel_tests.rs`, `spec_tests` YAML_SSE.
+- **OpenAPI callbacks / webhooks:** Documented gap in `OPENAPI_3.1.0_COMPLIANCE_GAP.md`; no parse/runtime. Pet store `callbacks:` on `POST /webhooks` is decorative; handler is mock REST only.
+- **WebSocket:** Not implemented (`src/websocket.rs` absent). Roadmap proposes `x-websocket` + tungstenite/may_minihttp upgrade; may_minihttp fork has no upgrade API. PriceWhisperer EPIC_17 assumes separate tokio-tungstenite server.
+- **Sesame-idam style:** Org-mgmt webhook CRUD is normal REST paths (no OAS `callbacks:` / top-level `webhooks:`); BRRTRouter already routes those. Gap is outbound delivery + optional callback codegen, not route registration.
+- **No dedicated BRRTRouter GH epic/issue** for WS/webhooks; tracked in README/ROADMAP/compliance gap only.
+
+## 2026-08-08 — OpenAPI 3.2 / oas3 research
+
+- No published `oas3` supports OAS 3.2 (`PathItem.query` / `querystring`). Stay on 0.21 + Story 11.2 promote path for QUERY.
+- Dual-support preferred over hard cutover: `load_spec` already preprocesses JSON before `OpenApiV3Spec` deserialize.
+
 # Active Context
+
+## 2026-08-08 — Wave 5 exploration (stories 10.9 / 10.10 / 10.8)
+
+- **ParamVec rebuild:** `encode_query_string` emits one `k=v` per entry (order preserved; duplicates → `a=1&a=2`). No style/explode awareness. `resolve_downstream_target` passthrough-or-rebuild; `resolve_path_template` always rebuilds.
+- **Style gap:** `decode_param_value` supports array delimiters by style; `_explode` unused. Proxy rebuild has no style matrix. Golden P6 is inbound-only (no rebuild). `proptest` not in Cargo.toml. Uri parse in proxy/goldens is `http_legacy` (0.2) only; `http` 1.0 used for `Method`.
+- **Next implement:** 10.9 style matrix doc + form explode true/false encode + fail-closed; 10.10 add `proptest` dev-dep; 10.8 Decision B (`RequestTarget` string bridge) + dual-stack golden `assert_uri_ok`.
 
 ## 2026-04-14 — CORS trusted `X-Forwarded-*`, Private Network Access, HTTP conformance tests
 
@@ -118,3 +137,9 @@
 - **Run-to-run spread widened 1.9 % → 3.8 %** because per-scenario throughput is now dominated by genuine handler work (kernel scheduling + tracing-serialization jitter visible) rather than mostly-fixed-cost short-circuits. Still inside the 5 % target.
 - **Client-bottleneck evidence:** 500u × 60s OpenAPI smoke showed avg 5.37 ms, vs 24 ms at 2000u. The client is the ceiling at 2000u. A proper L0–L5 scenario matrix (keep-alive on/off, pipelined 2/4/8) is needed to find the server's ceiling — captured as Phase 6.2.
 - **PRD version bumped to 1.8.** §Phase R rerun table now shows both Full-scope and OpenAPI-only columns with methodology note; status line reflects new canonical number.
+
+## 2026-08-08 — Epic 12 Wave 0 done
+
+- **12.1** README/ROADMAP/CONTRIBUTING reconciled; `tests/framework_maturity_docs_tests.rs`
+- **12.2** `src/server/body_limit.rs` + parse/service 413; `docs/request_body_limits.md`; integration tests
+- **Next:** Wave 1 — 12.3 `$ref`, 12.4 pre-handler params

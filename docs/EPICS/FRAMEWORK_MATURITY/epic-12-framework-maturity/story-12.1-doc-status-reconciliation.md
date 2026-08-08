@@ -46,10 +46,10 @@ Docs-only story: treat doc fixtures / link checks as the test surface.
 
 ### Acceptance criteria (tests)
 
-- [ ] Doc lint / `rg` fixture test (or checklist PR) covers P1–P3 and N1–N3.
+- [x] Doc lint / `rg` fixture test (or checklist PR) covers P1–P3 and N1–N3.
 
 ## Acceptance criteria
 
-- [ ] README feature table matches engineering truth.
-- [ ] ROADMAP either regenerated or clearly dated/archived for stale rows.
-- [ ] Unit tests section complete.
+- [x] README feature table matches engineering truth.
+- [x] ROADMAP either regenerated or clearly dated/archived for stale rows.
+- [x] Unit tests section complete.

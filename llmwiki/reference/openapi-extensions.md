@@ -12,7 +12,7 @@ This page is the source of truth for which `x-*` extensions BRRTRouter recognize
 | Extension | Where declared | Consumer | Effect |
 |---|---|---|---|
 | `x-handler` / `x-handler-*` | Operation | `src/spec/build.rs::resolve_handler_name` | Override the handler function name that gen would otherwise derive from `operationId`. Anything starting with `x-handler` is treated as a handler-name hint. |
-| `x-brrtrouter-body-size-bytes` | Operation | `src/spec/build.rs::estimate_body_size` | Override the auto-estimate used by `RouteMeta.estimated_request_body_bytes`. Feeds `RequestLogger.total_size_bytes` when `Content-Length` is absent. |
+| `x-brrtrouter-body-size-bytes` | Request schema | `src/spec/build.rs::estimate_body_size` → `RouteMeta.estimated_request_body_bytes` | Override the auto-estimate. Used for logging when `Content-Length` is absent **and** as a per-route hard cap (with global `BRRTROUTER_MAX_REQUEST_BODY_OCTETS`) → **413** before handler (Story 12.2). See [`docs/request_body_limits.md`](../../docs/request_body_limits.md). |
 | `x-brrtrouter-stack-size` (alias: `x-stack-size`) | Operation | `src/spec/build.rs::extract_stack_size_override` → `RouteMeta.x_brrtrouter_stack_size` | Per-route coroutine stack size override (bytes). Default comes from `WorkerPoolConfig` / `BRRTR_STACK_SIZE` env (32 KiB as of 2026-04-17). |
 | `x-sse` | Operation | `src/spec/build.rs` → `RouteMeta.sse` | Flags the route as Server-Sent Events; handler type and response shape differ. |
 | `x-cors` | Operation | `src/middleware/cors/route_config.rs::extract_route_cors_config` | Per-route CORS policy: `inherit` / `disabled` / `{allowed_origins, methods, headers, …}`. |

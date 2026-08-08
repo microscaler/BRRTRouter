@@ -14,6 +14,10 @@ fn fixture_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/openapi_query_method.yaml")
 }
 
+fn fixture_path_oas32() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/openapi_query_method_32.yaml")
+}
+
 /// P1 / P5 / P6 — fixture (docs declaration path) loads; GET + QUERY both registered.
 #[test]
 fn query_method_positive_loads_fixture_and_registers_both() {
@@ -47,6 +51,25 @@ fn query_method_positive_loads_fixture_and_registers_both() {
         .find(|r| r.handler_name.as_ref() == "query_via_extension")
         .expect("P6 extension declaration");
     assert!(is_query_method(&via_ext.method));
+}
+
+/// Dual-support: `openapi: 3.2.0` + path-item `query:` still loads via promote.
+#[test]
+fn query_method_positive_openapi_32_version_string_loads_query() {
+    let (routes, _) = load_spec(fixture_path_oas32().to_str().unwrap())
+        .expect("openapi: 3.2.0 fixture must load (dual contract)");
+    let query = routes
+        .iter()
+        .find(|r| r.handler_name.as_ref() == "query_search_32")
+        .expect("QUERY route from 3.2.0 fixture");
+    assert!(is_query_method(&query.method));
+    assert!(query.request_body_required);
+    assert!(
+        routes
+            .iter()
+            .any(|r| r.handler_name.as_ref() == "get_search_32"),
+        "GET sibling still registered"
+    );
 }
 
 /// P2 — generated handler Request includes body schema fields (typed body).

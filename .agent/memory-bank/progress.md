@@ -1,5 +1,20 @@
 # Progress
 
+## 2026-08-08 — Research: OpenAPI 3.2 / oas3 readiness (read-only)
+
+- BRRTRouter pins `oas3 = 0.21` (`Cargo.lock` → `0.21.0`); crate claims OpenAPI **v3.1.x** only (`~3.1` via `validate_version`).
+- Latest published `oas3` is **0.22.0** (2026-05-06): still 3.1.x; **no** `PathItem::query`, **no** `ParameterIn::Querystring`, `validate_version` rejects `3.2.0`.
+- Upstream intent: [x52dev/oas3-rs#300](https://github.com/x52dev/oas3-rs/issues/300) open; maintainer intends support; no published 3.2 crate yet.
+- BRRTRouter QUERY path: `promote_query_operations` + `x-brrtrouter-query` + `strip_unknown_verbs` in `src/spec/load.rs`; `build_routes` reads extension key `brrtrouter-query`.
+- Recommendation logged: keep dual-support 3.1 + QUERY workaround; hard cutover blocked until oas3 ships 3.2 types.
+
+## 2026-08-08 — Explored Wave 5 (10.9 / 10.10 / 10.8) — report only, no code
+
+- Mapped `encode_query_string` / `resolve_path_template` / `resolve_downstream_target` duplicate-key behaviour (flat ParamVec, no collapse).
+- Confirmed `proptest` absent; `http` 1.0 + `http_legacy` 0.2; Uri parse edge is legacy-only today.
+- Goldens: `tests/uri_golden/corpus.json` + `tests/uri_golden_harness.rs` ready for dual-stack and P6 rebuild extension.
+- Status: exploration complete; implementation not started.
+
 ## 2026-03-25 — Docker E2E: cross-process `flock` for pet_store build (fix flaky exit 139)
 
 - **Cause:** `cargo nextest` runs multiple test **processes** in parallel; each called `ensure_image_ready()` and concurrently wrote `target/x86_64-unknown-linux-musl/release/pet_store` → corrupted binary → **SIGSEGV** in container (exit **139**). Failure looked tied to `ui_list_user_posts` but was startup/race, not that route.
@@ -99,3 +114,8 @@
 ## 2026-03-24 — Goose CLI: `hatch-rate` → `increase-rate`
 
 - **Done:** Current Goose (git pin) uses `--increase-rate` / `-r`, not `--hatch-rate`. Updated `Tiltfile`, `.github/workflows/ci.yml`, `justfile` (`goose-jsf`), `scripts/run_goose_tests.py`, `scripts/generate_benchmark_report.py`, and example module docs. Python CLIs accept `-r`, `--increase-rate`, and `--hatch-rate` (alias) with `dest='hatch_rate'`.
+
+## 2026-08-08 — Wave 0 (12.1 + 12.2)
+
+- Docs fixture tests P1–P6 / N1–N6 pass
+- Body limit unit + integration (N1/N2/N4/P1) pass; server_tests green

@@ -1,0 +1,33 @@
+# Dual-support fixture: OAS 3.2 version string + path-item query.
+# Native PathItem.query is not in oas3 0.21; load_spec promotes query: → x-brrtrouter-query.
+openapi: 3.2.0
+info:
+  title: QUERY Method Fixture OAS32
+  version: 1.0.0
+paths:
+  /search:
+    get:
+      operationId: get_search_32
+      responses:
+        "200":
+          description: ok
+    query:
+      operationId: query_search_32
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - q
+              properties:
+                q:
+                  type: string
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object

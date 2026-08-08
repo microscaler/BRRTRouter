@@ -49,6 +49,8 @@ pub struct ParsedRequest {
     /// Parsed request body as JSON: `application/json`, `application/x-www-form-urlencoded`,
     /// or a placeholder object for `multipart/form-data` (see `parse_request_body`).
     pub body: Option<serde_json::Value>,
+    /// Raw body octets actually read (0 when empty). Used for Story 12.2 route caps.
+    pub body_octets: usize,
 }
 
 impl ParsedRequest {
@@ -398,20 +400,43 @@ pub fn parse_request(req: Request) -> Result<ParsedRequest, String> {
         "Query params parsed"
     );
 
+    // Story 12.2: reject oversize Content-Length before allocating/reading the body.
+    let global_body_max = super::body_limit::max_inbound_body_octets();
+    let cl_header = headers
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("content-length"))
+        .map(|(_, v)| v.as_str());
+    if super::body_limit::content_length_for_limit(cl_header, global_body_max).is_err() {
+        tracing::debug!(
+            max = global_body_max,
+            "Content-Length exceeds global body max or is hostile; rejecting with 413"
+        );
+        return Err(super::body_limit::REQUEST_BODY_TOO_LARGE.to_string());
+    }
+
     // R5 & R6: Request body read and parsed (JSON, form-urlencoded, multipart)
     let parse_start = std::time::Instant::now();
-    let body = {
+    let (body, body_octets) = {
+        // Cap the stream at max+1 so we detect overrun without reading unbounded input.
         let mut raw: Vec<u8> = Vec::new();
-        if let Ok(size) = req.body().read_to_end(&mut raw) {
-            if size > 0 {
-                // Find content-type header using the HeaderVec helper
+        let mut limited = req.body().take(global_body_max as u64 + 1);
+        match limited.read_to_end(&mut raw) {
+            Ok(_) if raw.len() > global_body_max => {
+                tracing::debug!(
+                    body_len = raw.len(),
+                    max = global_body_max,
+                    "Request body exceeded global max during read; rejecting with 413"
+                );
+                return Err(super::body_limit::REQUEST_BODY_TOO_LARGE.to_string());
+            }
+            Ok(_) if !raw.is_empty() => {
+                let size = raw.len();
                 let content_type = headers
                     .iter()
                     .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
                     .map(|(_, v)| v.as_str())
                     .unwrap_or("");
 
-                // R5: Request body read — per-request, demoted to debug (PRD 2.2).
                 debug!(
                     content_length = size,
                     content_type = %content_type,
@@ -435,12 +460,10 @@ pub fn parse_request(req: Request) -> Result<ParsedRequest, String> {
                     );
                 }
 
-                parsed
-            } else {
-                None
+                (parsed, size)
             }
-        } else {
-            None
+            Ok(_) => (None, 0),
+            Err(_) => (None, 0),
         }
     };
 
@@ -461,6 +484,7 @@ pub fn parse_request(req: Request) -> Result<ParsedRequest, String> {
         cookies,
         query_params,
         body,
+        body_octets,
     })
 }
 #[cfg(test)]
