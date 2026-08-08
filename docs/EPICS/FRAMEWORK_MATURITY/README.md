@@ -32,8 +32,17 @@ typed multi-status **runtime**, perf science.
 | 12 | Framework maturity — safety, OpenAPI fidelity, kits | [#391](https://github.com/microscaler/BRRTRouter/issues/391) | [epic-12-…](epic-12-framework-maturity/README.md) **done** |
 | 13 | Framework completeness — ops, errors, files, DevEx | [#400](https://github.com/microscaler/BRRTRouter/issues/400) | [epic-13-…](epic-13-framework-completeness/README.md) **active** |
 
+## Sibling themes (gap audit)
+
+| Epic | Theme | Board |
+|------|--------|--------|
+| 14 | Zero-trust SPIFFE/mTLS (**critical**) | [../ZERO_TRUST/BUILD_BOARD.md](../ZERO_TRUST/BUILD_BOARD.md) |
+| 15 | OpenAPI surface | [../OPENAPI_SURFACE/BUILD_BOARD.md](../OPENAPI_SURFACE/BUILD_BOARD.md) |
+| 16 | Release & observability | [../RELEASE_MATURITY/BUILD_BOARD.md](../RELEASE_MATURITY/BUILD_BOARD.md) |
+
 ## Related
 
 - OpenAPI version dual-support: [`docs/OPENAPI_VERSION_SUPPORT.md`](../../OPENAPI_VERSION_SUPPORT.md)
 - Compliance gap inventory: [`OPENAPI_3.1.0_COMPLIANCE_GAP.md`](../../OPENAPI_3.1.0_COMPLIANCE_GAP.md)
 - Hot-path / perf: [`docs/PERFORMANCE.md`](../../PERFORMANCE.md)
+- Parked: [`../PARKED.md`](../PARKED.md)
