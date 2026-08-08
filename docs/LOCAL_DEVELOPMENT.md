@@ -84,7 +84,8 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 ### 1. Kind cluster (shared; not created from this repo)
 
-Use the **microscaler** shared cluster (context `kind-kind`), same as PriceWhisperer / hauliage:
+Use the **microscaler** shared cluster (context `kind-kind`), same layout as
+[Sesame-IDAM](https://github.com/microscaler/sesame-idam) and other consumers:
 
 ```bash
 cd ../shared-kind-cluster   # sibling of BRRTRouter in the monorepo

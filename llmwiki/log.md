@@ -1,5 +1,10 @@
 # LLM Wiki Log
 
+## [2026-08-08] docs | Sesame-IDAM as public BRRTRouter reference
+
+- Added [`docs/BUILDING_WITH_BRRTROUTER.md`](../docs/BUILDING_WITH_BRRTROUTER.md); README / CONTRIBUTING / OPENAPI_VERSION_SUPPORT / FRAMEWORK_MATURITY / AGENTS point at [sesame-idam](https://github.com/microscaler/sesame-idam).
+- Sibling-repos wiki: Sesame = public learn path; Hauliage / PriceWhisperer private; RERP immature — not a reference.
+
 ## [2026-08-08] plan | Epic 12 Framework Maturity lined up
 
 - Theme `docs/EPICS/FRAMEWORK_MATURITY/`; epic [#391](https://github.com/microscaler/BRRTRouter/issues/391); stories 12.1–12.8 = #392–#399.

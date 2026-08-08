@@ -72,7 +72,7 @@ Sessions that skip this waste work. The wiki is the compounding artifact that ma
 - Primary language: Rust (workspace with `brrtrouter`, `brrtrouter_macros`, and `examples/pet_store`).
 - UI demo: SolidJS + Vite in `sample-ui/`.
 - Generated code: `examples/pet_store/` is auto-generated; do not edit directly.
-- Sibling repos (typical `microscaler/` checkout): **`../hauliage/`** (primary HTTP consumer + BFF) — [`docs/llmwiki/`](../hauliage/docs/llmwiki/). **`../lifeguard/`** (ORM + migrations) — [`docs/llmwiki/`](../lifeguard/docs/llmwiki/). Use [`llmwiki/topics/sibling-repos-and-wikis.md`](./llmwiki/topics/sibling-repos-and-wikis.md) for a responsibility split.
+- Sibling repos (typical `microscaler/` checkout): **`../sesame-idam/`** (**public** reference product on BRRTRouter) — [github.com/microscaler/sesame-idam](https://github.com/microscaler/sesame-idam); see [`docs/BUILDING_WITH_BRRTROUTER.md`](./docs/BUILDING_WITH_BRRTROUTER.md). **`../lifeguard/`** (ORM + migrations) — [`docs/llmwiki/`](../lifeguard/docs/llmwiki/). **`../hauliage/`** (private logistics + BFF) — not a public learn path. Use [`llmwiki/topics/sibling-repos-and-wikis.md`](./llmwiki/topics/sibling-repos-and-wikis.md) for the responsibility split.
 
 ---
 

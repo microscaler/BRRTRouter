@@ -134,12 +134,24 @@ fn docs_12_1_negative_n4_relative_links_exist() {
         "docs/stack_size.md",
         "docs/request_body_limits.md",
         "docs/OPENAPI_VERSION_SUPPORT.md",
+        "docs/BUILDING_WITH_BRRTROUTER.md",
         "docs/EPICS/FRAMEWORK_MATURITY/BUILD_BOARD.md",
         "docs/EPICS/EPICS_CATALOG.md",
     ] {
         assert!(root.join(rel).is_file(), "N4 missing {rel}");
     }
     assert!(!OPENAPI_VERSION.is_empty());
+}
+
+/// Public reference product is Sesame-IDAM (not private Hauliage / PW / immature RERP).
+#[test]
+fn docs_public_reference_is_sesame() {
+    assert!(README.contains("sesame-idam") || README.contains("Sesame-IDAM"));
+    assert!(README.contains("BUILDING_WITH_BRRTROUTER.md"));
+    let building = include_str!("../docs/BUILDING_WITH_BRRTROUTER.md");
+    assert!(building.contains("https://github.com/microscaler/sesame-idam"));
+    assert!(building.contains("Hauliage") && building.contains("Private"));
+    assert!(building.contains("RERP") && building.to_ascii_lowercase().contains("immature"));
 }
 
 /// N5 — Epic 10/11 not marked incomplete incorrectly on live ROADMAP.

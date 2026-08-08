@@ -39,6 +39,11 @@ This guide will help you get started quickly with our local development environm
 webhook outbound kit, multipart truth, multi-status codegen, perf science.
 Board: [`docs/EPICS/FRAMEWORK_MATURITY/BUILD_BOARD.md`](docs/EPICS/FRAMEWORK_MATURITY/BUILD_BOARD.md).
 
+**Learning / dogfooding a product layout:** use the public
+[Sesame-IDAM](https://github.com/microscaler/sesame-idam) suite —
+[Building with BRRTRouter](docs/BUILDING_WITH_BRRTROUTER.md). Do not point
+newcomers at private Hauliage / PriceWhisperer or immature RERP.
+
 Also welcome:
 - 🧪 Test coverage and OpenAPI fixture hardening
 - 🧠 Coroutine / typed-handler ergonomics

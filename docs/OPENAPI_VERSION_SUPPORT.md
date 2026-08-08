@@ -2,7 +2,11 @@
 
 BRRTRouter loads OpenAPI documents through `oas3` **0.21** (3.1.x types) plus a
 preprocess step for RFC 10008 **QUERY**. This page is the contract for product
-suites (hauliage, sesame-idam, rerp, PriceWhisperer, idam).
+suites. The **public** reference consumer is
+[Sesame-IDAM](https://github.com/microscaler/sesame-idam)
+([Building with BRRTRouter](BUILDING_WITH_BRRTROUTER.md)); Hauliage and
+PriceWhisperer are private, and RERP is not yet mature enough to cite as a
+reference.
 
 ## Supported version strings
 
@@ -47,7 +51,10 @@ See also: [declaring-query-operations.md](./EPICS/URI_REQUEST_TARGET/epic-11-htt
 native 3.2 types for the features you use, and release notes say so. Until then,
 **do not** mass-bump product `openapi:` to `3.2.0`.
 
-## Product suite policy (hauliage, sesame-idam, rerp, PriceWhisperer, idam)
+## Product suite policy
+
+Applies to Sesame-IDAM (public reference) and other consumers (private Hauliage /
+PriceWhisperer, immature RERP, etc.):
 
 1. Keep canonical specs at **`openapi: 3.1.0`**.
 2. When adding RFC 10008 search, add path-item **`query:`** (or `x-brrtrouter-query`)
@@ -56,6 +63,9 @@ native 3.2 types for the features you use, and release notes say so. Until then,
    suite `openapi:` to 3.2.0 until BRRTRouter release notes declare the 3.2
    subset you need.
 4. Leave `3.0.3` holdouts as a separate cleanup → 3.1.0 (unrelated to QUERY).
+5. For “how do I structure a product on BRRTRouter?”, point newcomers at
+   [Sesame-IDAM](https://github.com/microscaler/sesame-idam) — not Hauliage,
+   PriceWhisperer, or RERP.
 
 ## Upstream tracking
 

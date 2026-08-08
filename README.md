@@ -56,13 +56,16 @@ Detailed information on the systems architecture can be found in [Architecture D
 
 **BRRTRouter has reached Early Stage MVP status!**
 
-This marks a **monumental milestone** - BRRTRouter has successfully transitioned from conceptual stage to early stage MVP. The tool now supports running both the **petstore** example crate and **PriceWhisperer** production crates, demonstrating real-world viability across different use cases.
+Core functionality is exercised by the in-repo **pet_store** example and by
+production-shaped suites. The **open reference** for building a multi-service
+product on BRRTRouter is **[Sesame-IDAM](https://github.com/microscaler/sesame-idam)** —
+see [Building with BRRTRouter](docs/BUILDING_WITH_BRRTROUTER.md).
 
 **Status:**
 
 - ✅ Core functionality working
-- ✅ Multi-crate support (petstore + PriceWhisperer)
-- ✅ Real-world production crate validation
+- ✅ Multi-crate support (pet_store + product suites)
+- ✅ Public reference product: [Sesame-IDAM](https://github.com/microscaler/sesame-idam)
 - 🔧 API may change (breaking changes expected)
 - 🔧 Performance optimization ongoing
 - 🧪 Seeking early feedback and testing
@@ -210,11 +213,10 @@ See [docs/PERFORMANCE.md](docs/PERFORMANCE.md) for complete benchmarks, load tes
   - Comprehensive Clippy configuration with JSF-inspired thresholds
   - Fixed critical MPSC→MPMC worker pool bug (was causing double-free crashes)
   - **Result: 67k req/s with 0% failures** at 4,500+ concurrent users (no breaking point found!)
-- **🚀 Early Stage MVP Achievement**: BRRTRouter successfully supports both **petstore** example crate and **PriceWhisperer** production crates
-  - Validated real-world production use cases beyond examples
-  - Multi-crate support demonstrates tool maturity and flexibility
-  - One step closer to beta release
-  - Many thanks to the **PriceWhisperer.ai** startup team for trusting BRRTRouter with their mission-critical systems. Their testing and recommendations to adopt JSF have been transformational!
+- **🚀 Early Stage MVP Achievement**: pet_store example plus production-shaped consumers
+  - **Open reference:** [Sesame-IDAM](https://github.com/microscaler/sesame-idam) — [Building with BRRTRouter](docs/BUILDING_WITH_BRRTROUTER.md)
+  - Private dogfood (Hauliage, PriceWhisperer) informed hardening; RERP is not yet a reference
+  - Thanks to early adopters (including PriceWhisperer.ai) whose JSF-focused feedback shaped the hot path
 - **🎨 Sample SolidJS Dashboard**: Complete interactive UI showcasing all BRRTRouter capabilities
   - Live data display with auto-refresh and modal views
   - Real-time SSE streaming with visual connection indicator
@@ -321,6 +323,7 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for complete development guide, i
 ### Getting Started
 
 - [🚀 Local Development](docs/LOCAL_DEVELOPMENT.md) - **START HERE** for Tilt + kind setup
+- [🧱 Building with BRRTRouter](docs/BUILDING_WITH_BRRTROUTER.md) - **Open reference:** [Sesame-IDAM](https://github.com/microscaler/sesame-idam)
 - [🛠️ Development Guide](docs/DEVELOPMENT.md) - Development workflow and common tasks
 - [🧪 Testing](docs/TEST_DOCUMENTATION.md) - Complete test suite overview
 - [🦆 Load Testing](docs/GOOSE_LOAD_TESTING.md) - Goose load testing guide

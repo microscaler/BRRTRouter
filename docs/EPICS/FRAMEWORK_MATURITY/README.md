@@ -1,8 +1,12 @@
 # Theme: Framework Maturity (Epics 12+)
 
-**Goal:** Make BRRTRouter a trustworthy OpenAPI-first web framework for
-hauliage / sesame-idam / rerp / PriceWhisperer — safety, contract fidelity,
-and honest docs. WebSocket work is **parked** (separate may_minihttp epic).
+**Goal:** Make BRRTRouter a trustworthy OpenAPI-first web framework — safety,
+contract fidelity, and honest docs — with
+[**Sesame-IDAM**](https://github.com/microscaler/sesame-idam) as the **public**
+reference consumer ([Building with BRRTRouter](../../BUILDING_WITH_BRRTROUTER.md)).
+Private suites (Hauliage, PriceWhisperer) and immature RERP still consume the
+framework but are not the docs’ learn-by-example target. WebSocket work is
+**parked** (separate may_minihttp epic).
 
 **Testing:** [`TESTING_STANDARD.md`](TESTING_STANDARD.md) (positive + negative unit tests mandatory).  
 **Board:** [`BUILD_BOARD.md`](BUILD_BOARD.md)

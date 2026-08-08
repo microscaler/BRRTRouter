@@ -8,6 +8,8 @@
 >   [Epic 11 HTTP QUERY](EPICS/URI_REQUEST_TARGET/epic-11-http-query-method/README.md)
 > - **Parked:** WebSocket (no `may_minihttp` upgrade), radix rewrite, stack-size plumbing as product APIs —
 >   see Epic 12 parked list.
+> - **Open reference product:** [Sesame-IDAM](https://github.com/microscaler/sesame-idam) —
+>   [BUILDING_WITH_BRRTROUTER.md](BUILDING_WITH_BRRTROUTER.md) (not private Hauliage / PriceWhisperer; not immature RERP).
 
 Historical May 2025 notes below are retained for archaeology. Many items marked “Planned” there
 are **already shipped** (CORS, metrics, hot reload, typed panic recovery, schema validation, etc.).
