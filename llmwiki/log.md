@@ -1,5 +1,11 @@
 # LLM Wiki Log
 
+## [2026-08-08] ship | Story 10.7 error taxonomy (Wave 4)
+
+- `ProxyPathReason` + `proxy_error_response`: composition → 400, overlong → 414, timeout → 504, DNS/connect → 502.
+- Stable JSON `{error, reason, message}`; Display never embeds full request-target.
+- Matrix `REQ-ERROR-TAXONOMY` → **Pass**; **NOW** = Wave 5 (10.9 → 10.10 → 10.8).
+
 ## [2026-08-07] ship | Stories 10.5 + 10.6 (Wave 3)
 
 - `resolve_downstream_target`: query passthrough when raw octets match parsed params and are wire-safe; else rebuild via 10.4 encoders.

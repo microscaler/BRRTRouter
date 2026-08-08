@@ -25,7 +25,7 @@ silent corruption, or mis-labelled 502s.
 - [ ] Compliance matrix in Story 10.1 is entirely **Pass** (automated).
 - [ ] `docs/AUDIT-uri-request-target-and-rfc10008-2026-08.md` scorecard updated; no open “Gap” rows for URI parse/rebuild.
 - [ ] Inbound illegal inputs fail closed with correct status; legal Unicode/reserved inputs round-trip.
-- [ ] Proxy never returns **502** for URI composition failures.
+- [x] Proxy never returns **502** for URI composition failures.
 - [ ] Loadlinker-class geography names (spaces, diacritics) covered by golden + fuzz suites.
 - [ ] **Every story** meets [`TESTING_STANDARD.md`](../TESTING_STANDARD.md): comprehensive **positive and negative** unit tests (minima enforced in each story’s Unit tests section).
 

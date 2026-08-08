@@ -52,17 +52,17 @@ Split composition/client errors from upstream/transport errors.
 
 ### Acceptance criteria (tests)
 
-- [ ] Table-driven mapping for every URI-related `ProxyError` variant.
-- [ ] N1 mandatory (provinces-era classification).
+- [x] Table-driven mapping for every URI-related `ProxyError` variant.
+- [x] N1 mandatory (provinces-era classification).
 
 ## Acceptance criteria
 
-- [ ] Uri-build / overlong rebuild never returns 502.
-- [ ] DNS failure still 502 (or documented equivalent).
-- [ ] Timeout → 504 (if distinguishable) or documented 502 with reason.
-- [ ] Matrix row for error taxonomy marked Pass.
-- [ ] Loadlinker-style invalid rebuild (if forced) returns 400 in test.
-- [ ] Unit tests section complete (positive + negative).
+- [x] Uri-build / overlong rebuild never returns 502.
+- [x] DNS failure still 502 (or documented equivalent).
+- [x] Timeout → 504 (if distinguishable) or documented 502 with reason.
+- [x] Matrix row for error taxonomy marked Pass.
+- [x] Loadlinker-style invalid rebuild (if forced) returns 400 in test.
+- [x] Unit tests section complete (positive + negative).
 
 ## References
 

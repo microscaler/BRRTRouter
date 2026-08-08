@@ -13,8 +13,11 @@ pub use fetch::{
     HttpFetchError, HttpFetchOptions, HttpGetResponse,
 };
 pub use proxy::{
-    client_pool_key, downstream_host, downstream_http_port, encode_query_string, proxy_untyped,
-    query_params_match_raw, raw_query_is_wire_safe, resolve_downstream_target, resolve_path_only,
-    resolve_path_template, skip_forward_request_header, skip_forward_response_header, ProxyError,
+    classify_transport_error, client_pool_key, downstream_host, downstream_http_port,
+    encode_query_string, proxy_error_http_status, proxy_error_reason_code, proxy_error_response,
+    proxy_error_title, proxy_untyped, query_params_match_raw, raw_query_is_wire_safe,
+    resolve_downstream_target, resolve_path_only, resolve_path_template,
+    skip_forward_request_header, skip_forward_response_header, ProxyError, ProxyPathReason,
+    ProxyTransportKind,
 };
 pub use uri_encode::{encode_path_segment, encode_query_component};

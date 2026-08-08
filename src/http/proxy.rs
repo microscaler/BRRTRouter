@@ -23,43 +23,204 @@ const DEFAULT_DOWNSTREAM_PORT: u16 = 8080;
 const DEFAULT_PROXY_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_PROXY_BODY_BYTES: usize = 16 * 1024 * 1024;
 
+/// Composition failure reason for rebuilt request-targets (Story 10.7).
+///
+/// Every `InvalidPath` carries one of these — catch-all string-only path errors
+/// are forbidden so ops can grep stable `reason` codes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum ProxyPathReason {
+    /// Rebuilt target failed `http::Uri` parse (Loadlinker-class).
+    InvalidUri,
+    /// Path template still contains `{param}` after substitution.
+    UnresolvedPathParam,
+    /// Resolved path introduced a raw `?` (smuggling / misconfig).
+    PathContainsQuestion,
+    /// Passthrough raw query contained space/CTL/`#`.
+    UnsafeRawQuery,
+}
+
+impl ProxyPathReason {
+    /// Stable machine code for metrics / JSON `reason`.
+    #[must_use]
+    pub const fn code(self) -> &'static str {
+        match self {
+            Self::InvalidUri => "invalid_uri",
+            Self::UnresolvedPathParam => "unresolved_path_param",
+            Self::PathContainsQuestion => "path_contains_question",
+            Self::UnsafeRawQuery => "unsafe_raw_query",
+        }
+    }
+
+    /// Stable `invalid path: …` suffix for ops grep (no full URI).
+    #[must_use]
+    pub const fn display_detail(self) -> &'static str {
+        match self {
+            Self::InvalidUri => "invalid uri character",
+            Self::UnresolvedPathParam => "unresolved path template placeholder",
+            Self::PathContainsQuestion => "resolved path must not contain '?'",
+            Self::UnsafeRawQuery => "raw query contains unsafe octets for passthrough",
+        }
+    }
+}
+
 /// Errors from the BFF downstream proxy layer.
+///
+/// # Status taxonomy (Story 10.7)
+///
+/// | Class | Variants | HTTP |
+/// |-------|----------|------|
+/// | Composition | [`InvalidPath`], [`InvalidMethod`], [`RequestTargetTooLong`] | 400 / 414 |
+/// | Gateway timeout | [`Timeout`] | 504 |
+/// | Upstream / transport | [`Dns`], [`Connect`], [`Request`], [`Response`], [`BodyTooLarge`] | 502 |
+/// | Internal | [`BodySerialize`] | 500 |
+///
+/// Use [`proxy_error_http_status`] / [`proxy_error_response`] — never map all
+/// errors to 502.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProxyError {
-    InvalidMethod(String),
-    InvalidPath(String),
+    InvalidMethod,
+    /// URI composition failure — always carries a [`ProxyPathReason`].
+    InvalidPath {
+        reason: ProxyPathReason,
+    },
     /// Outbound or inbound request-target exceeds configured max (Story 10.6 → 414).
     RequestTargetTooLong {
         len: usize,
         max: usize,
     },
-    Dns(String),
-    Connect(String),
-    Request(String),
-    Response(String),
-    BodySerialize(String),
+    Dns,
+    Connect,
+    /// Dial or request deadline exceeded (when distinguishable from peer reset).
+    Timeout,
+    Request,
+    Response,
+    BodySerialize,
     BodyTooLarge,
+}
+
+impl ProxyError {
+    #[must_use]
+    pub const fn invalid_path(reason: ProxyPathReason) -> Self {
+        Self::InvalidPath { reason }
+    }
 }
 
 impl std::fmt::Display for ProxyError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::InvalidMethod(msg) => write!(f, "invalid method: {msg}"),
-            Self::InvalidPath(msg) => write!(f, "invalid path: {msg}"),
+            Self::InvalidMethod => write!(f, "invalid method"),
+            Self::InvalidPath { reason } => {
+                write!(f, "invalid path: {}", reason.display_detail())
+            }
             Self::RequestTargetTooLong { len, max } => {
                 write!(f, "request-target too long: {len} > {max}")
             }
-            Self::Dns(msg) => write!(f, "dns: {msg}"),
-            Self::Connect(msg) => write!(f, "connect: {msg}"),
-            Self::Request(msg) => write!(f, "request: {msg}"),
-            Self::Response(msg) => write!(f, "response: {msg}"),
-            Self::BodySerialize(msg) => write!(f, "body serialize: {msg}"),
+            Self::Dns => write!(f, "dns: resolution failed"),
+            Self::Connect => write!(f, "connect: connection failed"),
+            Self::Timeout => write!(f, "timeout: gateway timeout"),
+            Self::Request => write!(f, "request: request failed"),
+            Self::Response => write!(f, "response: response failed"),
+            Self::BodySerialize => write!(f, "body serialize: failed"),
             Self::BodyTooLarge => write!(f, "response body exceeds limit"),
         }
     }
 }
 
 impl std::error::Error for ProxyError {}
+
+/// HTTP status for a [`ProxyError`] (Story 10.7 taxonomy).
+#[must_use]
+pub fn proxy_error_http_status(err: &ProxyError) -> u16 {
+    match err {
+        ProxyError::InvalidMethod | ProxyError::InvalidPath { .. } => 400,
+        ProxyError::RequestTargetTooLong { .. } => 414,
+        ProxyError::Timeout => 504,
+        ProxyError::BodySerialize => 500,
+        ProxyError::Dns
+        | ProxyError::Connect
+        | ProxyError::Request
+        | ProxyError::Response
+        | ProxyError::BodyTooLarge => 502,
+    }
+}
+
+/// Stable reason code for metrics / JSON (`reason` field).
+#[must_use]
+pub fn proxy_error_reason_code(err: &ProxyError) -> &'static str {
+    match err {
+        ProxyError::InvalidMethod => "invalid_method",
+        ProxyError::InvalidPath { reason } => reason.code(),
+        ProxyError::RequestTargetTooLong { .. } => "request_target_too_long",
+        ProxyError::Dns => "dns",
+        ProxyError::Connect => "connect",
+        ProxyError::Timeout => "timeout",
+        ProxyError::Request => "request",
+        ProxyError::Response => "response",
+        ProxyError::BodySerialize => "body_serialize",
+        ProxyError::BodyTooLarge => "body_too_large",
+    }
+}
+
+/// Title string for the JSON `error` field (stable for ops).
+#[must_use]
+pub fn proxy_error_title(status: u16) -> &'static str {
+    match status {
+        400 => "Bad Request",
+        414 => "URI Too Long",
+        500 => "Internal Server Error",
+        504 => "Gateway Timeout",
+        _ => "Bad Gateway",
+    }
+}
+
+/// Map a proxy error to a client-facing [`HandlerResponse`].
+#[must_use]
+pub fn proxy_error_response(err: &ProxyError) -> HandlerResponse {
+    let status = proxy_error_http_status(err);
+    let mut resp = HandlerResponse::json(
+        status,
+        serde_json::json!({
+            "error": proxy_error_title(status),
+            "reason": proxy_error_reason_code(err),
+            "message": err.to_string(),
+        }),
+    );
+    resp.headers
+        .push((Arc::from("content-type"), "application/json".to_string()));
+    resp
+}
+
+/// Classify I/O / client errors; timeouts → [`ProxyError::Timeout`] (→ 504).
+#[must_use]
+pub fn classify_transport_error(kind: ProxyTransportKind, message: &str) -> ProxyError {
+    if looks_like_timeout(message) {
+        return ProxyError::Timeout;
+    }
+    match kind {
+        ProxyTransportKind::Dns => ProxyError::Dns,
+        ProxyTransportKind::Connect => ProxyError::Connect,
+        ProxyTransportKind::Request => ProxyError::Request,
+        ProxyTransportKind::Response => ProxyError::Response,
+    }
+}
+
+/// Transport stage for [`classify_transport_error`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProxyTransportKind {
+    Dns,
+    Connect,
+    Request,
+    Response,
+}
+
+fn looks_like_timeout(message: &str) -> bool {
+    let lower = message.to_ascii_lowercase();
+    lower.contains("timed out")
+        || lower.contains("timeout")
+        || lower.contains("deadline exceeded")
+        || lower.contains("time out")
+}
 
 /// Substitute `{param}` placeholders in a path template (no query).
 #[must_use]
@@ -129,14 +290,14 @@ pub fn resolve_downstream_target(
 ) -> Result<String, ProxyError> {
     let path = resolve_path_only(path_template, path_params);
     if path.contains('{') {
-        return Err(ProxyError::InvalidPath(format!(
-            "unresolved path template placeholder in {path_template}"
-        )));
+        return Err(ProxyError::invalid_path(
+            ProxyPathReason::UnresolvedPathParam,
+        ));
     }
     // N8: path must not introduce a second `?` (smuggling); encoders percent-encode `?`.
     if path.contains('?') {
-        return Err(ProxyError::InvalidPath(
-            "resolved path must not contain '?'".to_string(),
+        return Err(ProxyError::invalid_path(
+            ProxyPathReason::PathContainsQuestion,
         ));
     }
 
@@ -146,9 +307,7 @@ pub fn resolve_downstream_target(
                 // No pairs (incl. trailing `?` alone) → no spurious `?` on wire.
                 String::new()
             } else if !raw_query_is_wire_safe(raw) {
-                return Err(ProxyError::InvalidPath(
-                    "raw query contains unsafe octets for passthrough".to_string(),
-                ));
+                return Err(ProxyError::invalid_path(ProxyPathReason::UnsafeRawQuery));
             } else {
                 format!("?{raw}")
             }
@@ -255,7 +414,7 @@ fn read_bounded_body(reader: &mut impl Read, max_body: usize) -> Result<Vec<u8>,
         .by_ref()
         .take(max_body as u64 + 1)
         .read_to_end(&mut buf)
-        .map_err(|e| ProxyError::Response(e.to_string()))?;
+        .map_err(|e| classify_transport_error(ProxyTransportKind::Response, &e.to_string()))?;
     if buf.len() > max_body {
         return Err(ProxyError::BodyTooLarge);
     }
@@ -291,8 +450,7 @@ pub fn proxy_untyped(
 ) -> HandlerResponse {
     match proxy_untyped_inner(req, downstream_service, path_template) {
         Ok(res) => res,
-        Err(ProxyError::RequestTargetTooLong { .. }) => HandlerResponse::error(414, "URI Too Long"),
-        Err(e) => HandlerResponse::error(502, &e.to_string()),
+        Err(e) => proxy_error_response(&e),
     }
 }
 
@@ -311,19 +469,22 @@ fn proxy_untyped_inner(
     let port = downstream_http_port();
 
     let target_ip = ToSocketAddrs::to_socket_addrs(&(host.as_str(), port))
-        .map_err(|e| ProxyError::Dns(e.to_string()))?
+        .map_err(|e| classify_transport_error(ProxyTransportKind::Dns, &e.to_string()))?
         .next()
-        .ok_or_else(|| ProxyError::Dns("DNS resolution empty".to_string()))?;
+        .ok_or(ProxyError::Dns)?;
 
+    // Do not embed `resolved_path` in the error — reason code only (no URI leak).
     let uri: Uri = resolved_path
         .parse::<Uri>()
-        .map_err(|e: http_legacy::uri::InvalidUri| ProxyError::InvalidPath(e.to_string()))?;
+        .map_err(|_e: http_legacy::uri::InvalidUri| {
+            ProxyError::invalid_path(ProxyPathReason::InvalidUri)
+        })?;
 
     let method = Method::from_bytes(req.method.as_str().as_bytes())
-        .map_err(|e| ProxyError::InvalidMethod(e.to_string()))?;
+        .map_err(|_e| ProxyError::InvalidMethod)?;
 
-    let mut client =
-        HttpClient::connect(target_ip).map_err(|e| ProxyError::Connect(e.to_string()))?;
+    let mut client = HttpClient::connect(target_ip)
+        .map_err(|e| classify_transport_error(ProxyTransportKind::Connect, &e.to_string()))?;
     client.set_timeout(Some(proxy_timeout()));
 
     let mut proxy_req = client.new_request(method, uri);
@@ -354,16 +515,15 @@ fn proxy_untyped_inner(
     }
 
     if let Some(body_json) = &req.body {
-        let body_bytes =
-            serde_json::to_vec(body_json).map_err(|e| ProxyError::BodySerialize(e.to_string()))?;
+        let body_bytes = serde_json::to_vec(body_json).map_err(|_e| ProxyError::BodySerialize)?;
         proxy_req
             .send(&body_bytes)
-            .map_err(|e| ProxyError::Request(e.to_string()))?;
+            .map_err(|e| classify_transport_error(ProxyTransportKind::Request, &e.to_string()))?;
     }
 
     let mut rsp = client
         .send_request(proxy_req)
-        .map_err(|e| ProxyError::Request(e.to_string()))?;
+        .map_err(|e| classify_transport_error(ProxyTransportKind::Request, &e.to_string()))?;
 
     let buf = read_bounded_body(&mut rsp, MAX_PROXY_BODY_BYTES)?;
     let content_type = rsp
@@ -689,7 +849,7 @@ mod tests {
 
     #[test]
     fn proxy_error_invalid_path_display() {
-        let err = ProxyError::InvalidPath("invalid uri character".to_string());
+        let err = ProxyError::invalid_path(ProxyPathReason::InvalidUri);
         assert_eq!(err.to_string(), "invalid path: invalid uri character");
     }
 
@@ -849,7 +1009,10 @@ mod tests {
         // Crafted match via parse of space-containing raw is unusual; force match by using
         // decoded equivalent but unsafe wire octets.
         let err = resolve_downstream_target("/p", &ParamVec::new(), &q, Some("q=a b")).unwrap_err();
-        assert!(matches!(err, ProxyError::InvalidPath(_)));
+        assert_eq!(
+            err,
+            ProxyError::invalid_path(ProxyPathReason::UnsafeRawQuery)
+        );
     }
 
     #[test]
@@ -858,7 +1021,10 @@ mod tests {
         let q_hash = param_vec(&[("q", "a#frag")]);
         let err = resolve_downstream_target("/p", &ParamVec::new(), &q_hash, Some("q=a#frag"))
             .unwrap_err();
-        assert!(matches!(err, ProxyError::InvalidPath(_)));
+        assert_eq!(
+            err,
+            ProxyError::invalid_path(ProxyPathReason::UnsafeRawQuery)
+        );
         assert!(!raw_query_is_wire_safe("q=a\tb"));
     }
 
@@ -877,7 +1043,10 @@ mod tests {
         let err =
             resolve_downstream_target("/items/{id}", &ParamVec::new(), &ParamVec::new(), None)
                 .unwrap_err();
-        assert!(matches!(err, ProxyError::InvalidPath(_)));
+        assert_eq!(
+            err,
+            ProxyError::invalid_path(ProxyPathReason::UnresolvedPathParam)
+        );
     }
 
     #[test]
@@ -901,7 +1070,10 @@ mod tests {
         // that already contains `?` (misconfig).
         let err = resolve_downstream_target("/p?evil", &ParamVec::new(), &ParamVec::new(), None)
             .unwrap_err();
-        assert!(matches!(err, ProxyError::InvalidPath(_)));
+        assert_eq!(
+            err,
+            ProxyError::invalid_path(ProxyPathReason::PathContainsQuestion)
+        );
     }
 
     // --- Story 10.6 length / 414 ---
@@ -978,8 +1150,214 @@ mod tests {
         // DNS would fail anyway, but length check runs first.
         let res = proxy_untyped(&req, "no-such-service-xyz.invalid", "/p");
         assert_eq!(res.status, 414);
+        assert_eq!(res.body["reason"], "request_target_too_long");
         std::env::remove_var("BRRTROUTER_MAX_REQUEST_TARGET_OCTETS");
         std::env::remove_var("POD_NAMESPACE");
         crate::server::request_target::reset_max_request_target_cache_for_tests();
+    }
+
+    // --- Story 10.7 error taxonomy ---
+
+    fn taxonomy_cases() -> Vec<(ProxyError, u16, &'static str)> {
+        vec![
+            (ProxyError::InvalidMethod, 400, "invalid_method"),
+            (
+                ProxyError::invalid_path(ProxyPathReason::InvalidUri),
+                400,
+                "invalid_uri",
+            ),
+            (
+                ProxyError::invalid_path(ProxyPathReason::UnresolvedPathParam),
+                400,
+                "unresolved_path_param",
+            ),
+            (
+                ProxyError::invalid_path(ProxyPathReason::PathContainsQuestion),
+                400,
+                "path_contains_question",
+            ),
+            (
+                ProxyError::invalid_path(ProxyPathReason::UnsafeRawQuery),
+                400,
+                "unsafe_raw_query",
+            ),
+            (
+                ProxyError::RequestTargetTooLong { len: 9, max: 8 },
+                414,
+                "request_target_too_long",
+            ),
+            (ProxyError::Dns, 502, "dns"),
+            (ProxyError::Connect, 502, "connect"),
+            (ProxyError::Request, 502, "request"),
+            (ProxyError::Response, 502, "response"),
+            (ProxyError::BodyTooLarge, 502, "body_too_large"),
+            (ProxyError::Timeout, 504, "timeout"),
+            (ProxyError::BodySerialize, 500, "body_serialize"),
+        ]
+    }
+
+    #[test]
+    fn proxy_error_taxonomy_positive_p1_dns_still_502() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        std::env::set_var("POD_NAMESPACE", "logistics");
+        std::env::set_var("HAULIAGE_SERVICE_HTTP_PORT", "8080");
+        let req = empty_request(Method::GET);
+        let res = proxy_untyped(&req, "no-such-service-xyz.invalid", "/health");
+        assert_eq!(res.status, 502);
+        assert_eq!(res.body["reason"], "dns");
+        assert_eq!(res.body["error"], "Bad Gateway");
+        std::env::remove_var("POD_NAMESPACE");
+        std::env::remove_var("HAULIAGE_SERVICE_HTTP_PORT");
+    }
+
+    #[test]
+    fn proxy_error_taxonomy_positive_p2_timeout_maps_to_504() {
+        let err = classify_transport_error(ProxyTransportKind::Connect, "connection timed out");
+        assert_eq!(err, ProxyError::Timeout);
+        assert_eq!(proxy_error_http_status(&err), 504);
+        let res = proxy_error_response(&err);
+        assert_eq!(res.status, 504);
+        assert_eq!(res.body["error"], "Gateway Timeout");
+        assert_eq!(res.body["reason"], "timeout");
+    }
+
+    #[test]
+    fn proxy_error_taxonomy_positive_p3_upstream_status_passthrough_documented() {
+        // Upstream HTTP status is returned from Ok(HandlerResponse), not ProxyError.
+        // Locked: only Err(*) goes through taxonomy; Ok keeps peer status.
+        let upstream = HandlerResponse::error(503, "upstream unavailable");
+        assert_eq!(upstream.status, 503);
+        assert_ne!(proxy_error_http_status(&ProxyError::Response), 503);
+    }
+
+    #[test]
+    fn proxy_error_taxonomy_positive_p4_valid_rebuild_no_composition_error() {
+        let q = param_vec(&[("country", "South Africa")]);
+        let t = resolve_downstream_target("/provinces", &ParamVec::new(), &q, None).unwrap();
+        assert_eq!(t, "/provinces?country=South%20Africa");
+        assert_parseable_uri(&t);
+    }
+
+    #[test]
+    fn proxy_error_taxonomy_positive_p5_overlong_is_414_not_502() {
+        let err = ProxyError::RequestTargetTooLong {
+            len: 9000,
+            max: 8192,
+        };
+        assert_eq!(proxy_error_http_status(&err), 414);
+        assert_ne!(proxy_error_http_status(&err), 502);
+    }
+
+    #[test]
+    fn proxy_error_taxonomy_positive_p6_stable_reason_labels() {
+        let mut codes = std::collections::HashSet::new();
+        for (err, status, code) in taxonomy_cases() {
+            assert_eq!(proxy_error_reason_code(&err), code);
+            assert_eq!(proxy_error_http_status(&err), status);
+            assert!(codes.insert(code), "duplicate reason code {code}");
+        }
+    }
+
+    #[test]
+    fn proxy_error_taxonomy_negative_n1_loadlinker_class_invalid_rebuild_400() {
+        // Forced unsafe passthrough octets → composition 400 before dial (not 502).
+        let mut req = empty_request(Method::GET);
+        req.query_params = param_vec(&[("q", "a b")]);
+        req.raw_query = Some("q=a b".to_string());
+        let res = proxy_untyped(&req, "no-such-service-xyz.invalid", "/p");
+        assert_eq!(res.status, 400, "Loadlinker-class must not be 502");
+        assert_eq!(res.body["reason"], "unsafe_raw_query");
+        assert_eq!(res.body["error"], "Bad Request");
+        assert!(res.body["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("invalid path:"));
+    }
+
+    #[test]
+    fn proxy_error_taxonomy_negative_n2_missing_path_param_400() {
+        let req = empty_request(Method::GET);
+        let res = proxy_untyped(&req, "no-such-service-xyz.invalid", "/items/{id}");
+        assert_eq!(res.status, 400);
+        assert_eq!(res.body["reason"], "unresolved_path_param");
+        assert_ne!(res.status, 502);
+    }
+
+    #[test]
+    fn proxy_error_taxonomy_negative_n3_invalid_uri_composition_400() {
+        let err = ProxyError::invalid_path(ProxyPathReason::InvalidUri);
+        let res = proxy_error_response(&err);
+        assert_eq!(res.status, 400);
+        assert_eq!(res.body["reason"], "invalid_uri");
+        assert_eq!(res.body["message"], "invalid path: invalid uri character");
+    }
+
+    #[test]
+    fn proxy_error_taxonomy_negative_n4_path_reason_required() {
+        // Every InvalidPath carries ProxyPathReason; codes are non-empty.
+        for reason in [
+            ProxyPathReason::InvalidUri,
+            ProxyPathReason::UnresolvedPathParam,
+            ProxyPathReason::PathContainsQuestion,
+            ProxyPathReason::UnsafeRawQuery,
+        ] {
+            let err = ProxyError::InvalidPath { reason };
+            assert!(!proxy_error_reason_code(&err).is_empty());
+            assert!(!reason.display_detail().is_empty());
+        }
+    }
+
+    #[test]
+    fn proxy_error_taxonomy_negative_n5_display_no_full_uri_leak() {
+        let err = ProxyError::invalid_path(ProxyPathReason::InvalidUri);
+        let s = err.to_string();
+        assert!(!s.contains("/api/"));
+        assert!(!s.contains('?'));
+        assert!(!s.contains("secret"));
+        assert!(!s.contains("Bearer"));
+        // Length-only for overlong (no target body).
+        let long = ProxyError::RequestTargetTooLong {
+            len: 9000,
+            max: 8192,
+        };
+        assert_eq!(long.to_string(), "request-target too long: 9000 > 8192");
+    }
+
+    #[test]
+    fn proxy_error_taxonomy_negative_n6_table_driven_status_mapping() {
+        for (err, expected_status, expected_reason) in taxonomy_cases() {
+            assert_eq!(
+                proxy_error_http_status(&err),
+                expected_status,
+                "status mismatch for {err:?}"
+            );
+            assert_eq!(
+                proxy_error_reason_code(&err),
+                expected_reason,
+                "reason mismatch for {err:?}"
+            );
+            let res = proxy_error_response(&err);
+            assert_eq!(res.status, expected_status);
+            assert_eq!(res.body["reason"], expected_reason);
+            assert_eq!(res.body["error"], proxy_error_title(expected_status));
+        }
+    }
+
+    #[test]
+    fn proxy_error_taxonomy_negative_n7_error_path_no_panic() {
+        for (err, _, _) in taxonomy_cases() {
+            let _ = err.to_string();
+            let _ = proxy_error_response(&err);
+            let _ = classify_transport_error(ProxyTransportKind::Request, "timed out");
+        }
+    }
+
+    #[test]
+    fn proxy_error_taxonomy_negative_n8_body_json_shape() {
+        let res = proxy_error_response(&ProxyError::invalid_path(ProxyPathReason::InvalidUri));
+        assert!(res.body.get("error").and_then(|v| v.as_str()).is_some());
+        assert!(res.body.get("reason").and_then(|v| v.as_str()).is_some());
+        assert!(res.body.get("message").and_then(|v| v.as_str()).is_some());
+        assert_eq!(res.body.as_object().map(|o| o.len()), Some(3));
     }
 }

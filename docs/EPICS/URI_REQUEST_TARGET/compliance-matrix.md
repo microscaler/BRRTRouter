@@ -25,7 +25,7 @@ beyond WHATWG `application/x-www-form-urlencoded` decode.
 | REQ-PASSTHROUGH | Preserve original query octets when safe | Gateway practice | `resolve_downstream_target` | **Pass** | Story 10.5; `resolve_downstream_positive_p1_*` / `_negative_n3_*` |
 | REQ-414 | Request-target length → 414 | RFC 9110 | parse + proxy | **Pass** | Story 10.6; `request_target_length_*` / `proxy_untyped_maps_*_414` |
 | REQ-OPENAPI-STYLE | style/explode fidelity on rebuild | OpenAPI 3 | proxy / decode_param | **Gap** | Story 10.9 (P6 duplicates Pass as flat ParamVec) |
-| REQ-ERROR-TAXONOMY | Uri-build ≠ upstream 502 | Ops | `proxy_untyped` | **Gap** | Story 10.7 |
+| REQ-ERROR-TAXONOMY | Uri-build ≠ upstream 502 | Ops | `proxy_error_response` | **Pass** | Story 10.7; `proxy_error_taxonomy_*` |
 | REQ-HTTP-STACK | Unify http 0.2 / 1.0 URI handling | Internal | proxy / server | **Gap** | Story 10.8 |
 | REQ-FUZZ | Property/fuzz no-panic + Uri-OK | QA | parse + rebuild | **Gap** | Story 10.10 |
 | REQ-BOUNDARY | may_minihttp request-line contract | RFC 9110 §7.1 | httparse + `request_target_for_app` | **Pass** | Story 10.11; `request-line-boundary.md`; `request_line_boundary_tests` |

@@ -17,7 +17,8 @@ Track implementation here. Update **Status** as work lands (`todo` → `doing` �
 | DONE | 10.4 | done | [#378](https://github.com/microscaler/BRRTRouter/issues/378) | Named path/query encoders |
 | DONE | 10.5 | done | [#379](https://github.com/microscaler/BRRTRouter/issues/379) | Query passthrough when safe |
 | DONE | 10.6 | done | [#380](https://github.com/microscaler/BRRTRouter/issues/380) | Max request-target → 414 |
-| **NOW** | 10.7 | todo | [#381](https://github.com/microscaler/BRRTRouter/issues/381) | Wave 4: composition ≠ 502 |
+| DONE | 10.7 | done | [#381](https://github.com/microscaler/BRRTRouter/issues/381) | Composition → 400/414; DNS 502; timeout 504 |
+| **NOW** | 10.9 → 10.10 → 10.8 | todo | [#383](https://github.com/microscaler/BRRTRouter/issues/383) / [#384](https://github.com/microscaler/BRRTRouter/issues/384) / [#382](https://github.com/microscaler/BRRTRouter/issues/382) | Wave 5 |
 
 ## Wave plan (Epic 10)
 
@@ -64,7 +65,7 @@ Wave 5 ──► 10.9 OpenAPI style → 10.10 fuzz → 10.8 unify http stack
 | 10.4 | Component-specific encoders | 2 | done | [#378](https://github.com/microscaler/BRRTRouter/issues/378) |
 | 10.5 | Proxy path/query passthrough | 3 | done | [#379](https://github.com/microscaler/BRRTRouter/issues/379) |
 | 10.6 | Request-target length → 414 | 3 | done | [#380](https://github.com/microscaler/BRRTRouter/issues/380) |
-| 10.7 | Error taxonomy | 4 | todo | [#381](https://github.com/microscaler/BRRTRouter/issues/381) |
+| 10.7 | Error taxonomy | 4 | done | [#381](https://github.com/microscaler/BRRTRouter/issues/381) |
 | 10.8 | Unify http URI stack | 5 | todo | [#382](https://github.com/microscaler/BRRTRouter/issues/382) |
 | 10.9 | OpenAPI style/explode fidelity | 5 | todo | [#383](https://github.com/microscaler/BRRTRouter/issues/383) |
 | 10.10 | Property/fuzz compliance suite | 5 | todo | [#384](https://github.com/microscaler/BRRTRouter/issues/384) |

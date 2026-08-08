@@ -119,7 +119,7 @@ cargo test --lib http::proxy::tests
 | 2 | Unit coverage for spaces, accents, delimiters, unicode, negatives | Done (this change) |
 | 3 | Consumer postmortems (BRRTRouter + Loadlinker app) | Done |
 | 4 | Consumers bump `brrtrouter` git rev / rebuild BFF images | Loadlinker dogfood done via path patch; pin bump in hauliage follow-up |
-| 5 | Consider distinct status/body for Uri-build vs upstream connect failures | TODO (product) |
+| 5 | Distinct status/body for Uri-build vs upstream connect failures | Done (Story 10.7: composition → 400, DNS → 502) |
 
 ---
 
