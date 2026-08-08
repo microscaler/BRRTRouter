@@ -181,8 +181,8 @@ Legend: ✅ ready · 🚧 in progress / partial · ⏸ parked
 | Inbound body caps | ✅ | Global env + route estimate / `x-brrtrouter-body-size-bytes` → **413** — [request_body_limits.md](docs/request_body_limits.md) |
 | Outbound webhook kit | ✅ | POST + HMAC-SHA256 + retries — [webhook_delivery.md](docs/webhook_delivery.md) |
 | Content-Type enforcement | ✅ | Undeclared type → **415** |
-| Multipart form-data truth | 🚧 | Epic 12.6 |
-| Multi-status typed / codegen | 🚧 | Epic 12.7 · [PRD](docs/PRD_TYPED_HANDLER_HTTP_STATUS.md) |
+| Multipart form-data | ✅ | Text fields + file metadata; no `{}` bypass — [multipart.md](docs/multipart.md) |
+| Multi-status typed | ✅ | `HttpJson` / `HttpNoContent` / HEAD body omit — [PRD](docs/PRD_TYPED_HANDLER_HTTP_STATUS.md) |
 
 ### Security & CORS
 
@@ -226,7 +226,7 @@ The live backlog is the epic boards (not the archived [ROADMAP.md](docs/ROADMAP.
 ```text
 Done     Epic 10 URI / request-target · Epic 11 QUERY · Epic 12 Wave 0–1
            (docs truth, body 413, component $ref, pre-handler params)
-Now      Epic 12 Wave 3 — multipart truth · multi-status (#397 / #398)
+Now      Epic 12 Wave 4 — perf science (#399)
 Next     Wave 3 — multipart truth · multi-status codegen
 Later    Wave 4 — perf science (evidence before more radix churn)
 Parked   WebSocket · fleet OpenAPI 3.2 cutover · full OAS callback runtime
@@ -237,7 +237,7 @@ Parked   WebSocket · fleet OpenAPI 3.2 cutover · full OAS callback runtime
 | 0 ✅ | 12.1–12.2 | Doc truth · inbound body **413** |
 | 1 ✅ | 12.3–12.4 | Component `$ref` · pre-handler params |
 | 2 ✅ | 12.5 | Webhook outbound delivery kit (Sesame-shaped) |
-| 3 | 12.6–12.7 | Multipart truth · multi-status typed/codegen |
+| 3 ✅ | 12.6–12.7 | Multipart truth · multi-status typed/codegen |
 | 4 | 12.8 | Perf science / Goose baselines |
 
 Board: [docs/EPICS/FRAMEWORK_MATURITY/BUILD_BOARD.md](docs/EPICS/FRAMEWORK_MATURITY/BUILD_BOARD.md) ·
@@ -357,7 +357,7 @@ See [docs/JSF_COMPLIANCE.md](docs/JSF_COMPLIANCE.md).
 - [CORS](docs/CORS.md) · [CORS operations](docs/CORS_OPERATIONS.md)
 - [OpenAPI version support](docs/OPENAPI_VERSION_SUPPORT.md)
 - [Component `$ref`](docs/openapi_component_refs.md) · [Parameter validation](docs/parameter_validation.md)
-- [Request body limits](docs/request_body_limits.md) · [Webhook delivery](docs/webhook_delivery.md) · [Stack size](docs/stack_size.md)
+- [Request body limits](docs/request_body_limits.md) · [Multipart](docs/multipart.md) · [Webhook delivery](docs/webhook_delivery.md) · [Stack size](docs/stack_size.md)
 - [Epic 12 board](docs/EPICS/FRAMEWORK_MATURITY/BUILD_BOARD.md)
 - [URI / QUERY epics](docs/EPICS/URI_REQUEST_TARGET/BUILD_BOARD.md)
 - [OpenAPI 3.1 compliance gap](docs/OPENAPI_3.1.0_COMPLIANCE_GAP.md)

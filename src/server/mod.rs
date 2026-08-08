@@ -83,6 +83,8 @@ pub mod body_limit;
 pub mod cors_setup;
 pub mod header_intern;
 pub mod http_server;
+/// Multipart/form-data body parsing (Story 12.6)
+pub mod multipart;
 /// Pre-handler OpenAPI parameter validation (Story 12.4)
 pub mod param_validation;
 /// Request parsing and parameter extraction
@@ -101,6 +103,11 @@ pub mod service;
 pub use body_limit::{
     body_too_large_json, effective_inbound_body_limit, max_inbound_body_octets,
     DEFAULT_MAX_REQUEST_BODY_OCTETS, MAX_REQUEST_BODY_ENV, REQUEST_BODY_TOO_LARGE,
+};
+pub use multipart::{
+    extract_boundary, multipart_error_json, multipart_error_status, parse_multipart_form_data,
+    DEFAULT_MAX_FILE_PART_BYTES, MULTIPART_FILE_TOO_LARGE, MULTIPART_MALFORMED,
+    MULTIPART_MISSING_BOUNDARY,
 };
 pub use request::{decode_param_value, parse_request, ParsedRequest};
 pub use request_target::{

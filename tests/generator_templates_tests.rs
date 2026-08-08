@@ -433,6 +433,11 @@ fn controller_emits_http_json_when_operation_has_non_2xx_json_schema() {
     assert!(content.contains("use brrtrouter::typed::HttpJson;"));
     assert!(content.contains("-> HttpJson<Response>"));
     assert!(content.contains("HttpJson::ok(Response {"));
+    // N4 — new templates must not use panic for non-200 control flow.
+    assert!(
+        !content.contains("panic!"),
+        "generated HttpJson stub must not panic! for status control flow"
+    );
 
     fs::remove_dir_all(&dir).unwrap();
 }

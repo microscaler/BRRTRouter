@@ -48,13 +48,13 @@ with 415/501 when declared but unsupported.
 
 ### Acceptance criteria (tests)
 
-- [ ] N4 mandatory (no silent bypass); P1 or hard-reject path documented + tested.
+- [x] N4 mandatory (no silent bypass); P1 or hard-reject path documented + tested.
 
 ## Acceptance criteria
 
-- [ ] No empty-object bypass for multipart.
-- [ ] Policy documented (parse vs reject).
-- [ ] Unit tests section complete.
+- [x] No empty-object bypass for multipart.
+- [x] Policy documented (parse vs reject) — `docs/multipart.md` (MVP A).
+- [x] Unit tests section complete (`src/server/multipart.rs` + request parse tests).
 
 ## References
 

@@ -46,6 +46,18 @@ pub fn write_handler_response(
     is_sse: bool,
     headers: &HeaderVec,
 ) {
+    write_handler_response_with_body_policy(res, status, body, is_sse, headers, false);
+}
+
+/// Like [`write_handler_response`], with explicit body omission (Story 12.7 HEAD).
+pub fn write_handler_response_with_body_policy(
+    res: &mut Response,
+    status: u16,
+    body: Value,
+    is_sse: bool,
+    headers: &HeaderVec,
+    omit_body: bool,
+) {
     let reason = status_reason(status);
     res.status_code(status as usize, reason);
     // Owned headers are freed with the `Response` — `may_minihttp` accepts
@@ -75,7 +87,8 @@ pub fn write_handler_response(
         res.header("Content-Type: text/event-stream");
         has_content_type = true;
     }
-    if !response_status_allows_body(status) {
+    // 204/1xx/304 never carry a body; HEAD must not leak a payload (N5).
+    if omit_body || !response_status_allows_body(status) {
         return;
     }
     match body {
@@ -334,6 +347,41 @@ mod tests {
         assert_eq!(status_reason(200), "OK");
         assert_eq!(status_reason(403), "Forbidden");
         assert_eq!(status_reason(404), "Not Found");
+    }
+
+    /// N5 — omit_body must not write a payload.
+    #[derive(Clone)]
+    struct OmitBodyService;
+
+    impl HttpService for OmitBodyService {
+        fn call(&mut self, _req: Request, res: &mut Response) -> std::io::Result<()> {
+            let headers = HeaderVec::new();
+            write_handler_response_with_body_policy(
+                res,
+                200,
+                serde_json::json!({"secret": "leak"}),
+                false,
+                &headers,
+                true,
+            );
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_write_handler_response_omit_body_no_payload() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        drop(listener);
+        let handle = HttpServer(OmitBodyService).start(addr).unwrap();
+        let resp = send_request(&addr, "HEAD / HTTP/1.1\r\nHost: localhost\r\n\r\n");
+        // SAFETY: test cleanup
+        unsafe { handle.coroutine().cancel() };
+        let (_status, _info, body) = parse_parts(&resp);
+        assert!(
+            !body.contains("secret") && !body.contains("leak"),
+            "omit_body leaked payload: {body:?}"
+        );
     }
 
     #[test]

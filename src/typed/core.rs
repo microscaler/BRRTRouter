@@ -64,9 +64,33 @@ impl<T> HttpJson<T> {
         Self { status: 200, body }
     }
 
+    /// HTTP 201 Created with a JSON body.
+    #[must_use]
+    pub fn created(body: T) -> Self {
+        Self { status: 201, body }
+    }
+
     #[must_use]
     pub fn not_found(body: T) -> Self {
         Self { status: 404, body }
+    }
+}
+
+/// HTTP 204 No Content — empty wire body (Story 12.7).
+///
+/// Prefer this over panicking or returning a DTO when the OpenAPI response is
+/// `204` with no schema. Attempting to attach a JSON body is ignored on the wire
+/// by [`crate::server::response::response_status_allows_body`].
+#[derive(Debug, Default, Clone, Copy)]
+pub struct HttpNoContent;
+
+impl HandlerResponseOutput for HttpNoContent {
+    fn into_handler_response(self) -> Result<HandlerResponse, serde_json::Error> {
+        Ok(HandlerResponse::new(
+            204,
+            HeaderVec::new(),
+            serde_json::Value::Null,
+        ))
     }
 }
 
@@ -118,7 +142,11 @@ fn typed_handler_output_to_response(
 ) -> HandlerResponse {
     match result.into_handler_response() {
         Ok(hr) => {
-            if hr.body.is_null() {
+            // Null JSON body is a legacy mistake for statuses that carry content.
+            // 204/1xx/304 legitimately have no body (Story 12.7 HttpNoContent).
+            let status_allows_null =
+                matches!(hr.status, 204 | 205 | 304) || (100..200).contains(&hr.status);
+            if hr.body.is_null() && !status_allows_null {
                 let mut err = serde_json::json!({
                     "error": "Failed to serialize response",
                     "details": "Handler response serialized to JSON null — add an explicit `-> YourResponse` return type on #[handler] functions",
@@ -957,10 +985,33 @@ mod tests {
     #[test]
     fn test_http_json_201_json_value_body() {
         let hr = typed_handler_output_to_response(
-            HttpJson::new(201, serde_json::json!({"id": "new"})),
+            HttpJson::created(serde_json::json!({"id": "new"})),
             None,
         );
         assert_eq!(hr.status, 201);
         assert_eq!(hr.body["id"], "new");
+    }
+
+    /// P3 — typed 204 No Content.
+    #[test]
+    fn test_http_no_content_204() {
+        let hr = typed_handler_output_to_response(HttpNoContent, None);
+        assert_eq!(hr.status, 204);
+        assert!(hr.body.is_null());
+    }
+
+    /// P2 — alternate statuses via HttpJson (201 + 404).
+    #[test]
+    fn test_http_json_alternate_statuses_p2() {
+        let created = typed_handler_output_to_response(
+            HttpJson::created(serde_json::json!({"id": "1"})),
+            None,
+        );
+        assert_eq!(created.status, 201);
+        let missing = typed_handler_output_to_response(
+            HttpJson::not_found(serde_json::json!({"error": "missing"})),
+            None,
+        );
+        assert_eq!(missing.status, 404);
     }
 }

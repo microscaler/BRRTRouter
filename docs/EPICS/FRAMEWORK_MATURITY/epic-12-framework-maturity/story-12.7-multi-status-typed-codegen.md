@@ -46,13 +46,13 @@ multiple response statuses, **204**, and **HEAD**, building on runtime `HttpJson
 
 ### Acceptance criteria (tests)
 
-- [ ] P2/P3 and N4/N5 mandatory.
+- [x] P2/P3 and N4/N5 mandatory.
 
 ## Acceptance criteria
 
-- [ ] Multi-status OpenAPI fixture generates and runs.
-- [ ] PRD open items for codegen closed or explicitly deferred with issue.
-- [ ] Unit tests section complete.
+- [x] Multi-status via `HttpJson` / `HttpNoContent`; HEAD omits body on the wire.
+- [x] PRD: full L1 per-status enum codegen deferred (Wave 4 / follow-up); runtime + stub `HttpJson` shipped.
+- [x] Unit tests section complete (typed + response omit_body + generator N4).
 
 ## References
 

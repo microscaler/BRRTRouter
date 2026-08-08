@@ -47,7 +47,7 @@ pub struct ParsedRequest {
     /// Parsed query string parameters - stack-allocated for ≤8 params
     pub query_params: ParamVec,
     /// Parsed request body as JSON: `application/json`, `application/x-www-form-urlencoded`,
-    /// or a placeholder object for `multipart/form-data` (see `parse_request_body`).
+    /// or multipart field map (see [`super::multipart`] / `parse_request_body`).
     pub body: Option<serde_json::Value>,
     /// Raw body octets actually read (0 when empty). Used for Story 12.2 route caps.
     pub body_octets: usize,
@@ -278,31 +278,28 @@ fn form_urlencoded_body_to_json(raw: &[u8]) -> Value {
 
 /// Build a [`serde_json::Value`] from raw bytes and `Content-Type`.
 ///
-/// Supports `application/json`, `application/x-www-form-urlencoded`, and a minimal
-/// `multipart/form-data` placeholder so `request_body_required` routes receive `Some(body)`.
-fn parse_request_body(raw: &[u8], content_type: &str) -> Option<Value> {
+/// Supports `application/json`, `application/x-www-form-urlencoded`, and
+/// `multipart/form-data` (Story 12.6 — text fields + documented file-part policy).
+///
+/// Multipart failures return `Err` with [`super::multipart`] markers (400/413).
+fn parse_request_body(raw: &[u8], content_type: &str) -> Result<Option<Value>, String> {
     let ct = primary_content_type(content_type);
     let ct_lower = ct.to_ascii_lowercase();
     if ct_lower == "application/json" || ct_lower.ends_with("+json") {
-        return serde_json::from_slice(raw).ok();
+        return Ok(serde_json::from_slice(raw).ok());
     }
     if ct_lower == "application/x-www-form-urlencoded" {
-        return Some(form_urlencoded_body_to_json(raw));
+        return Ok(Some(form_urlencoded_body_to_json(raw)));
     }
-    // NOTE: `multipart/form-data` and unknown content types are intentionally
-    // not parsed into a JSON shape here. Returning `None` lets the service-level
-    // Content-Type enforcement (see `server::service::call` 415 check) decide
-    // how to respond against the operation's declared `request_content_types`.
-    //
-    // However, operations that *do* declare `multipart/form-data` as an accepted
-    // content type (e.g. /upload) need `Some(body)` to pass the "required body"
-    // check (V2 at service.rs:1520).  A placeholder empty JSON object lets the
-    // request proceed to the controller while the controller handles the actual
-    // multipart parsing independently.
     if ct_lower == "multipart/form-data" {
-        return Some(Value::Object(Map::new()));
+        let parsed = super::multipart::parse_multipart_form_data(
+            raw,
+            content_type,
+            super::multipart::DEFAULT_MAX_FILE_PART_BYTES,
+        )?;
+        return Ok(Some(parsed));
     }
-    serde_json::from_slice(raw).ok()
+    Ok(serde_json::from_slice(raw).ok())
 }
 
 /// Parse an incoming HTTP request into a ParsedRequest
@@ -444,7 +441,7 @@ pub fn parse_request(req: Request) -> Result<ParsedRequest, String> {
                     "Request body read"
                 );
 
-                let parsed = parse_request_body(&raw, content_type);
+                let parsed = parse_request_body(&raw, content_type)?;
                 let parse_duration_ms = parse_start.elapsed().as_millis() as u64;
 
                 if let Some(ref json) = parsed {
@@ -681,34 +678,31 @@ mod tests {
 
     #[test]
     fn test_parse_request_body_json() {
-        let v = parse_request_body(br#"{"x":1}"#, "application/json").expect("json");
+        let v = parse_request_body(br#"{"x":1}"#, "application/json")
+            .unwrap()
+            .expect("json");
         assert_eq!(v["x"], 1);
     }
 
     #[test]
     fn test_parse_request_body_form_urlencoded() {
         let v = parse_request_body(b"name=Bob&age=30", "application/x-www-form-urlencoded")
+            .unwrap()
             .expect("form");
         assert_eq!(v["name"], "Bob");
         assert_eq!(v["age"], 30);
     }
 
+    /// N4 — multipart must not silently become `{}` when parts are present.
     #[test]
-    fn test_parse_request_body_multipart_returns_empty_object() {
-        // Multipart returns an empty JSON object placeholder so that the
-        // "required body" check (V2 at service.rs:1520) passes.  The actual
-        // multipart parsing is handled independently by the controller.
-        let v = parse_request_body(
-            b"pretend-binary",
-            "multipart/form-data; boundary=----WebKit",
-        );
-        assert!(v.is_some(), "expected multipart body to be Some");
-        let v = v.unwrap();
-        assert!(
-            v.is_object(),
-            "expected multipart body to be an empty object"
-        );
-        assert_eq!(v.as_object().unwrap().len(), 0);
+    fn test_parse_request_body_multipart_parses_fields() {
+        let raw =
+            b"--WebKit\r\nContent-Disposition: form-data; name=\"a\"\r\n\r\n1\r\n--WebKit--\r\n";
+        let v = parse_request_body(raw, "multipart/form-data; boundary=WebKit")
+            .unwrap()
+            .expect("multipart");
+        assert_eq!(v["a"], 1);
+        assert_ne!(v, serde_json::json!({}));
     }
 
     /// `GET /matrix/1;2;3` captures `coords=1;2;3` as one path param; matrix style must split on `;`.

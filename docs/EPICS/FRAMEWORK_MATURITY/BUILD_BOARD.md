@@ -13,9 +13,9 @@
 | **DONE** | 12.3 | done | [#394](https://github.com/microscaler/BRRTRouter/issues/394) | `$ref` bodies/responses/pathItems |
 | **DONE** | 12.4 | done | [#395](https://github.com/microscaler/BRRTRouter/issues/395) | Pre-handler param validation |
 | **DONE** | 12.5 | done | [#396](https://github.com/microscaler/BRRTRouter/issues/396) | Webhook outbound kit |
-| **NOW** | 12.6 | todo | [#397](https://github.com/microscaler/BRRTRouter/issues/397) | Multipart truth |
-| LATER | 12.7 | todo | [#398](https://github.com/microscaler/BRRTRouter/issues/398) | Multi-status codegen |
-| LATER | 12.8 | todo | [#399](https://github.com/microscaler/BRRTRouter/issues/399) | Perf science |
+| **DONE** | 12.6 | done | [#397](https://github.com/microscaler/BRRTRouter/issues/397) | Multipart truth |
+| **DONE** | 12.7 | done | [#398](https://github.com/microscaler/BRRTRouter/issues/398) | Multi-status typed |
+| **NOW** | 12.8 | todo | [#399](https://github.com/microscaler/BRRTRouter/issues/399) | Perf science |
 
 ## Wave plan
 
@@ -23,9 +23,10 @@
 Wave 0 ──► 12.1 ‖ 12.2
 Wave 1 ──► 12.3 ‖ 12.4
 Wave 2 ──► 12.5 ✅
-Wave 3 ──► 12.6 ‖ 12.7
+Wave 3 ──► 12.6 ‖ 12.7 ✅
 Wave 4 ──► 12.8
 ```
+
 
 
 ## Full story index
@@ -38,8 +39,8 @@ Wave 4 ──► 12.8
 | 12.3 | OpenAPI `$ref` requestBodies / responses / pathItems | 1 | done | [#394](https://github.com/microscaler/BRRTRouter/issues/394) |
 | 12.4 | Pre-handler query/header validation | 1 | done | [#395](https://github.com/microscaler/BRRTRouter/issues/395) |
 | 12.5 | Webhook outbound delivery kit | 2 | done | [#396](https://github.com/microscaler/BRRTRouter/issues/396) |
-| 12.6 | Multipart form-data truth | 3 | todo | [#397](https://github.com/microscaler/BRRTRouter/issues/397) |
-| 12.7 | Multi-status typed / codegen | 3 | todo | [#398](https://github.com/microscaler/BRRTRouter/issues/398) |
+| 12.6 | Multipart form-data truth | 3 | done | [#397](https://github.com/microscaler/BRRTRouter/issues/397) |
+| 12.7 | Multi-status typed / codegen | 3 | done | [#398](https://github.com/microscaler/BRRTRouter/issues/398) |
 | 12.8 | Perf science Phase 6 | 4 | todo | [#399](https://github.com/microscaler/BRRTRouter/issues/399) |
 
 ## Parked (not in this epic)

@@ -1,5 +1,8 @@
 use super::request::{parse_request, ParsedRequest};
-use super::response::{response_status_allows_body, write_handler_response, write_json_error};
+use super::response::{
+    response_status_allows_body, write_handler_response, write_handler_response_with_body_policy,
+    write_json_error,
+};
 use crate::dispatcher::Dispatcher;
 use crate::ids::RequestId;
 use crate::middleware::MetricsMiddleware;
@@ -1034,10 +1037,13 @@ impl HttpService for AppService {
                 body: serde_json::Value,
                 is_sse: bool,
                 headers: &crate::dispatcher::HeaderVec,
+                omit_body: bool,
             ) {
                 self.record_http_status(status);
                 self.record_response_headers(headers);
-                write_handler_response(res, status, body, is_sse, headers);
+                write_handler_response_with_body_policy(
+                    res, status, body, is_sse, headers, omit_body,
+                );
             }
         }
 
@@ -1118,6 +1124,8 @@ impl HttpService for AppService {
                             "Request body exceeds configured maximum size",
                         ),
                     );
+                } else if let Some(status) = super::multipart::multipart_error_status(&err) {
+                    write_json_error(res, status, super::multipart::multipart_error_json(&err));
                 } else {
                     let status = super::request_target::parse_request_error_status(&err);
                     if status == 414 {
@@ -1932,7 +1940,9 @@ impl HttpService for AppService {
                             }
                         } // End if let Some(compiled)
                     } // End if let Some(schema)
-                    _request_logger.respond_handler(res, hr.status, hr.body, is_sse, &headers);
+                    let omit_body = method == Method::HEAD;
+                    _request_logger
+                        .respond_handler(res, hr.status, hr.body, is_sse, &headers, omit_body);
                 }
                 None => {
                     _request_logger.respond_json_error(
