@@ -65,12 +65,12 @@ Wraps existing may_minihttp / AppService test patterns behind a stable API.
 
 ### Acceptance criteria (tests)
 
-- [ ] P1/P2 and N1/N2 mandatory.
+- [x] P1/P2 and N1/N2 mandatory.
 
 ## Acceptance criteria
 
-- [ ] Public API documented; used by at least one in-repo example test.
-- [ ] FR/NFR + unit tests complete.
+- [x] Public API documented; used by at least one in-repo example test.
+- [x] FR/NFR + unit tests complete.
 
 ## References
 

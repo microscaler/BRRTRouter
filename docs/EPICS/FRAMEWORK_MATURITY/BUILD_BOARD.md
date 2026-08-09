@@ -17,7 +17,7 @@
 | **DONE** | 13.7 | done | [#407](https://github.com/microscaler/BRRTRouter/issues/407) | SSE live flush |
 | **DONE** | 13.8 | done | [#408](https://github.com/microscaler/BRRTRouter/issues/408) | Response compression |
 | **DONE** | 13.9 | done | [#409](https://github.com/microscaler/BRRTRouter/issues/409) | Multi-status codegen |
-| **NOW** | 13.10 | todo | [#410](https://github.com/microscaler/BRRTRouter/issues/410) | Public TestApp |
+| **DONE** | 13.10 | done | [#410](https://github.com/microscaler/BRRTRouter/issues/410) | Public TestApp |
 
 ## Wave plan (Epic 13)
 
@@ -34,7 +34,7 @@ Wave 5 ──► 13.9 ‖ 13.10
 
 | ID | Title | Wave | Status | GitHub |
 |----|--------|------|--------|--------|
-| Epic 13 | Framework completeness | — | todo | [#400](https://github.com/microscaler/BRRTRouter/issues/400) |
+| Epic 13 | Framework completeness | — | done | [#400](https://github.com/microscaler/BRRTRouter/issues/400) |
 | 13.1 | Doc truth & claim reconciliation | 0 | done | [#401](https://github.com/microscaler/BRRTRouter/issues/401) |
 | 13.2 | Rate limiting middleware | 1 | done | [#402](https://github.com/microscaler/BRRTRouter/issues/402) |
 | 13.3 | Problem Details (RFC 7807) | 1 | done | [#403](https://github.com/microscaler/BRRTRouter/issues/403) |
@@ -44,7 +44,7 @@ Wave 5 ──► 13.9 ‖ 13.10
 | 13.7 | SSE live flush streaming | 4 | done | [#407](https://github.com/microscaler/BRRTRouter/issues/407) |
 | 13.8 | Response compression middleware | 4 | done | [#408](https://github.com/microscaler/BRRTRouter/issues/408) |
 | 13.9 | Multi-status response codegen | 5 | done | [#409](https://github.com/microscaler/BRRTRouter/issues/409) |
-| 13.10 | Public TestApp / RequestBuilder | 5 | todo | [#410](https://github.com/microscaler/BRRTRouter/issues/410) |
+| 13.10 | Public TestApp / RequestBuilder | 5 | done | [#410](https://github.com/microscaler/BRRTRouter/issues/410) |
 
 ## Epic 12 — complete (archive)
 

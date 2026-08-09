@@ -171,9 +171,23 @@ fn build_jwks_service(
 
     let jwks_url = start_mock_jwks_server_inner(jwks_json);
 
-    // Verify the mock server responds before proceeding
+    // Verify the mock server responds before proceeding (retry: accept thread
+    // can lag under parallel `cargo test` load → fetch_get timeout flakes).
     eprintln!("DEBUG: Testing mock server at {}", jwks_url);
-    let (status, body) = fetch_get(&jwks_url, &HttpFetchOptions::default()).unwrap();
+    let (status, body) = {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut last_err = None;
+        loop {
+            match fetch_get(&jwks_url, &HttpFetchOptions::default()) {
+                Ok(ok) => break ok,
+                Err(e) if Instant::now() < deadline => {
+                    last_err = Some(e);
+                    thread::sleep(Duration::from_millis(50));
+                }
+                Err(e) => panic!("mock JWKS not ready: {e:?} (last={last_err:?})"),
+            }
+        }
+    };
     assert_eq!(status, 200);
     let body = String::from_utf8(body).unwrap();
     eprintln!("DEBUG: Mock server responded with: {}", body);

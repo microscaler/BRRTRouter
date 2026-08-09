@@ -1,13 +1,14 @@
-## 2026-08-09 — Epic 13 progress (autonomous)
+## 2026-08-09 — Epic 13 complete (13.10 shipping)
 
-**Shipped**
-- 13.6 deadlines · 13.8 compression · 13.7 SSE live · 13.9 multi-status codegen
-- may_minihttp chunked streaming · doctest repairs
+**Shipped (Epic 13)**
+- 13.1–13.9 previously done
+- **13.10** Public TestApp (#410): `brrtrouter::test_support` behind Cargo feature `testing`
+  - `TestApp::{from_service, from_spec, from_spec_with_options}`
+  - `RequestBuilder` / `TestResponse` / `TestAppError`
+  - Unit tests P1–P4, N1–N3, N5; pet_store integration smoke
+  - Docs: `docs/TESTING.md`; board + story acceptance marked done
+  - `just test` / `just nt` pass `--features testing`
 
-**13.9 DONE** (#409)
-- Spec load retains empty-content statuses (204)
-- Generator emits `ApiResponse` (200+201) and `HttpNoContent` (204-primary)
-- pet_store `post_item` / `delete_user` updated
-- Verified: `just test` + `just nt` on ms02
+**Gates:** `just test` + `just nt` green (2026-08-09).
 
-**NOW:** Story **13.10** Public TestApp (#410)
+**NOW:** Commit/push 13.10 + close #410. Next backlog: Epic 14 / 15 / 16 (not auto-started).

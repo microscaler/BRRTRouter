@@ -188,6 +188,7 @@ Legend: ✅ ready · 🚧 in progress / partial · ⏸ parked
 | Content-Type enforcement | ✅ | Undeclared type → **415** |
 | Multipart form-data | ✅ | Text fields + file metadata; no `{}` bypass — [multipart.md](docs/multipart.md) |
 | Multi-status typed | ✅ | `HttpJson` / `HttpNoContent` / HEAD body omit — [PRD](docs/PRD_TYPED_HANDLER_HTTP_STATUS.md) |
+| Public TestApp | ✅ | Feature `testing` → `brrtrouter::test_support` — [TESTING.md](docs/TESTING.md) |
 
 ### Security & CORS
 
@@ -344,7 +345,7 @@ See [docs/JSF_COMPLIANCE.md](docs/JSF_COMPLIANCE.md).
 - [Building with BRRTRouter](docs/BUILDING_WITH_BRRTROUTER.md) — Sesame-IDAM reference
 - [Microservice layout guide](docs/guides/BUILDING_MICROSERVICES.md)
 - [Development Guide](docs/DEVELOPMENT.md)
-- [Testing](docs/TEST_DOCUMENTATION.md) · [Goose load testing](docs/GOOSE_LOAD_TESTING.md)
+- [Testing](docs/TEST_DOCUMENTATION.md) · [Public TestApp](docs/TESTING.md) · [Goose load testing](docs/GOOSE_LOAD_TESTING.md)
 - [Suite brochure (Photon)](https://github.com/microscaler/photon/tree/main/brochure) — suite marketing site ([pointer](website/))
 
 ### Core

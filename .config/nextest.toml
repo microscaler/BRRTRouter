@@ -27,6 +27,12 @@ filter = 'test(/^test_bearer_jwks_/)'
 threads-required = 8
 
 [[profile.default.overrides]]
-# Same class of flake as test_bearer_jwks_*: status 0 when JWKS isn't ready yet.
-filter = 'test(/^integration_typ_|^security_typ_/)'
+# Same class of flake as test_bearer_jwks_*: status 0 / fetch timeout when JWKS
+# mock isn't ready under parallel may load.
+filter = 'test(/^integration_typ_|^security_typ_|^unit_wrong_typ_|^unit_valid_typ_|^unit_missing_typ_|^unit_empty_typ_|^unit_typ_/)'
+threads-required = 8
+
+[[profile.default.overrides]]
+# In-process TestApp servers share a may runtime; avoid parallel accept overload.
+filter = 'binary(test_app_client_tests) | binary(test_app_pet_store_tests)'
 threads-required = 8

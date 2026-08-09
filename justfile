@@ -272,11 +272,11 @@ smoke-test:
 
 # Run all tests
 test:
-	cargo test -- --nocapture
+	cargo test --features testing -- --nocapture
 
 # Run tests with nextest (faster, parallel execution)
 nt:
-	cargo nextest run --workspace --all-targets
+	cargo nextest run --workspace --all-targets --features testing
 
 # Run tests with code coverage
 coverage:

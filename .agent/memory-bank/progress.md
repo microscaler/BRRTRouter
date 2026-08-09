@@ -1,5 +1,12 @@
 # Progress
 
+## 2026-08-09 — Story 13.10 Public TestApp / RequestBuilder
+
+- Feature `testing` + `src/test_support/mod.rs` (`TestApp`, `RequestBuilder`, `TestResponse`).
+- Integration: `tests/test_app_pet_store_tests.rs` (list pets + from_spec 401).
+- Docs: `docs/TESTING.md`; BUILD_BOARD 13.10 + Epic 13 done; README index link.
+- `justfile`: `just test` / `just nt` enable `--features testing`.
+
 ## 2026-08-09 — Fix flaky test_bearer_jwks_success (status 0)
 
 - Root cause: one-shot mock JWKS `accept()` consumed by `JwksBearerProvider` background refresh; request path hung → empty client body → status 0.

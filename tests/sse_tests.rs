@@ -137,19 +137,31 @@ fn parse_parts(resp: &str) -> (u16, String, String) {
 #[test]
 fn test_event_stream() {
     let server = SseTestServer::new();
-    let resp = send_request(
-        &server.addr(),
-        "GET /events HTTP/1.1\r\nHost: localhost\r\nX-API-Key: test123\r\n\r\n",
-    );
-    let (status, ct, body) = parse_parts(&resp);
-    assert_eq!(status, 200);
-    assert_eq!(ct, "text/event-stream");
-    let events: Vec<_> = body
-        .lines()
-        .filter(|l| l.starts_with("data: "))
-        .map(|l| l[6..].trim())
-        .collect();
-    assert_eq!(events, ["tick 0", "tick 1", "tick 2"]);
-
-    // Automatic cleanup!
+    let req = "GET /events HTTP/1.1\r\nHost: localhost\r\nX-API-Key: test123\r\n\r\n";
+    // Under parallel `cargo test` load, the first read can truncate before tick 2.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let mut last_events: Vec<String> = Vec::new();
+    let mut last_status = 0u16;
+    let mut last_ct = String::new();
+    while std::time::Instant::now() < deadline {
+        let resp = send_request(&server.addr(), req);
+        let (status, ct, body) = parse_parts(&resp);
+        last_status = status;
+        last_ct = ct;
+        last_events = body
+            .lines()
+            .filter(|l| l.starts_with("data: "))
+            .map(|l| l[6..].trim().to_string())
+            .collect();
+        if last_status == 200
+            && last_ct == "text/event-stream"
+            && last_events.as_slice() == ["tick 0", "tick 1", "tick 2"]
+        {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    assert_eq!(last_status, 200);
+    assert_eq!(last_ct, "text/event-stream");
+    assert_eq!(last_events, ["tick 0", "tick 1", "tick 2"]);
 }

@@ -152,10 +152,21 @@ harness = false
 name = "request_guards"
 harness = false
 
+[[test]]
+name = "test_app_client_tests"
+required-features = ["testing"]
+
+[[test]]
+name = "test_app_pet_store_tests"
+required-features = ["testing"]
+
 [features]
 default = []
 jemalloc = ["tikv-jemallocator", "tikv-jemalloc-ctl"]  # Enable jemalloc for accurate heap tracking
 stack_usage = []
+# Public in-process test client (`brrtrouter::test_support::{TestApp, RequestBuilder}`).
+# Enable in product crates' `[dev-dependencies]` / CI: `cargo test --features testing`.
+testing = []
 
 [workspace]
 members = [
