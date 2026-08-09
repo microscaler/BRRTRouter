@@ -593,8 +593,8 @@ pub(crate) fn write_cargo_toml(base: &Path, slug: &str) -> anyhow::Result<()> {
 /// This allows BRRTRouter to automatically detect which dependencies are needed
 /// based on types used in generated code. New type→dependency mappings can be added here.
 ///
-/// Example usage:
-/// ```rust
+/// Example usage (internal — `DependencyRegistry` is crate-private):
+/// ```rust,ignore
 /// let registry = DependencyRegistry::default();
 /// let deps = registry.detect_from_types("rust_decimal::Decimal");
 /// // Returns: {"rust_decimal"}

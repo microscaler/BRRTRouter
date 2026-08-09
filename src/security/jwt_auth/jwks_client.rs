@@ -40,7 +40,7 @@ use crate::security::jwt_auth::types::{AccessClaims, AuthError};
 /// impl JwksClient for TestJwksClient {
 ///     fn validate_and_extract_claims(
 ///         &self,
-///         token: &str,
+///         _token: &str,
 ///     ) -> Result<AccessClaims, AuthError> {
 ///         // For testing, return pre-configured claims
 ///         Ok(AccessClaims {
@@ -49,6 +49,14 @@ use crate::security::jwt_auth::types::{AccessClaims, AuthError};
 ///             user_type: "customer".to_string(),
 ///             sx: Default::default(),
 ///         })
+///     }
+///
+///     fn issuer(&self) -> Option<&str> {
+///         Some("https://issuer.example/")
+///     }
+///
+///     fn audience(&self) -> Option<&str> {
+///         Some("my-api")
 ///     }
 /// }
 /// ```

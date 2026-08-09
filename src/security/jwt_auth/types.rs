@@ -50,7 +50,7 @@ use serde::{Deserialize, Serialize};
 /// # Example
 ///
 /// ```rust
-/// use brrtrouter::security::jwt_auth::AccessClaims;
+/// use brrtrouter::security::jwt_auth::{AccessClaims, SxClaims};
 ///
 /// let claims = AccessClaims {
 ///     sub: "user-123".to_string(),

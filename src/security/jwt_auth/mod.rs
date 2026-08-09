@@ -114,13 +114,16 @@ impl JwtAuthMiddleware {
     /// # Example
     ///
     /// ```rust
-    /// use brrtrouter::security::jwt_auth::{JwtAuthMiddleware, RoutePolicyStore, JwksClient, AuthError};
+    /// use brrtrouter::security::jwt_auth::{
+    ///     AccessClaims, AuthError, JwtAuthMiddleware, JwksClient, RoutePolicyStore,
+    /// };
+    /// use std::sync::Arc;
     ///
     /// // Minimal test client that doesn't validate signatures
     /// struct DummyClient;
     /// impl JwksClient for DummyClient {
-    ///     fn validate_and_extract_claims(&self, _token: &str) -> Result<types::AccessClaims, AuthError> {
-    ///         Ok(types::AccessClaims {
+    ///     fn validate_and_extract_claims(&self, _token: &str) -> Result<AccessClaims, AuthError> {
+    ///         Ok(AccessClaims {
     ///             sub: "user-1".to_string(),
     ///             tenant_id: "tenant-1".to_string(),
     ///             user_type: "customer".to_string(),
@@ -290,18 +293,29 @@ impl JwtAuthMiddleware {
     ///
     /// # Example
     ///
-    /// ```rust,no_run
-    /// use brrtrouter::security::jwt_auth::{JwtAuthMiddleware, RoutePolicyStore, RouteAuthCategory, JwksClient};
-    /// use std::sync::Arc;
+    /// ```rust
+    /// use brrtrouter::security::jwt_auth::{
+    ///     AccessClaims, AuthError, JwtAuthMiddleware, JwksClient, RoutePolicyStore,
+    /// };
     /// use std::collections::HashMap;
+    /// use std::sync::Arc;
     ///
-    /// // Setup (in real code, these would be properly initialized)
+    /// struct DummyClient;
+    /// impl JwksClient for DummyClient {
+    ///     fn validate_and_extract_claims(&self, _token: &str) -> Result<AccessClaims, AuthError> {
+    ///         Err(AuthError::TokenInvalid)
+    ///     }
+    ///     fn issuer(&self) -> Option<&str> { None }
+    ///     fn audience(&self) -> Option<&str> { None }
+    /// }
+    ///
     /// let policies = Arc::new(RoutePolicyStore::new());
-    /// let jwks_client: Arc<dyn JwksClient> = Arc::new(MyJwksClient);
+    /// let jwks_client: Arc<dyn JwksClient> = Arc::new(DummyClient);
     /// let middleware = JwtAuthMiddleware::new(policies, jwks_client);
     ///
     /// let headers = HashMap::new();
     /// let decision = middleware.validate_and_authorize("GET", "/api/users/me", &headers);
+    /// assert!(decision.is_err());
     /// ```
     pub fn validate_and_authorize(
         &self,
