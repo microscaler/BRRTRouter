@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::dispatcher::Dispatcher;
-use crate::middleware::{MetricsMiddleware, RateLimitMiddleware};
+use crate::middleware::{CompressionMiddleware, MetricsMiddleware, RateLimitMiddleware};
 use crate::router::Router;
 use crate::runtime_config::RuntimeConfig;
 use crate::spec::RouteMeta;
@@ -147,6 +147,14 @@ impl RunAppBuilder {
                 let rl = RateLimitMiddleware::new(rl_cfg).with_metrics_sink(metrics.clone());
                 dispatcher.add_middleware(Arc::new(rl));
                 println!("[startup] rate-limit middleware enabled");
+            }
+        }
+
+        if let Some(c_yaml) = app_config.compression.as_ref() {
+            if let Some(c_cfg) = c_yaml.to_middleware_config() {
+                let cm = CompressionMiddleware::new(c_cfg).with_metrics_sink(metrics.clone());
+                dispatcher.add_middleware(Arc::new(cm));
+                println!("[startup] response compression (gzip) enabled");
             }
         }
 

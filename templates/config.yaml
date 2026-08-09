@@ -68,6 +68,13 @@ http:
 #   routes:
 #     list_pets: 20        # optional per-handler tighter limit
 
+# Response gzip (Epic 13.8) — omitted / enabled: false → identity (safe default).
+# compression:
+#   enabled: true
+#   min_bytes: 256         # skip smaller bodies
+#   level: 6               # gzip 0–9
+# Never compresses text/event-stream or image/*; requires Accept-Encoding: gzip.
+
 cors:
   # Allowed Origins for browser clients — not listed in openapi.yaml; set here per environment.
   # OpenAPI: per-operation `x-cors` (inherit | false | object); see info.description in openapi.yaml.

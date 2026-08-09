@@ -18,6 +18,19 @@ pub struct AppConfig {
     pub cors: Option<CorsConfig>,
     /// Optional HTTP rate limiting (Epic 13.2). Absent / disabled → no-op.
     pub rate_limit: Option<RateLimitYamlConfig>,
+    /// Optional response gzip (Epic 13.8). Absent / disabled → identity.
+    pub compression: Option<CompressionYamlConfig>,
+}
+
+/// YAML shape for [`crate::middleware::CompressionMiddleware`] (Epic 13.8).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+pub struct CompressionYamlConfig {
+    /// When false or absent, compression is skipped (safe default).
+    pub enabled: Option<bool>,
+    /// Minimum uncompressed body size in bytes (default 256).
+    pub min_bytes: Option<usize>,
+    /// Gzip level 0–9 (default 6).
+    pub level: Option<u32>,
 }
 
 /// YAML shape for [`crate::middleware::RateLimitMiddleware`] (Epic 13.2).
@@ -112,6 +125,22 @@ pub struct CorsConfig {
     pub allow_credentials: Option<bool>,
     pub expose_headers: Option<Vec<String>>,
     pub max_age: Option<u32>,
+}
+
+impl CompressionYamlConfig {
+    /// Convert YAML config into middleware config. Returns `None` when disabled / unset.
+    pub fn to_middleware_config(&self) -> Option<crate::middleware::CompressionConfig> {
+        if !self.enabled.unwrap_or(false) {
+            return None;
+        }
+        Some(crate::middleware::CompressionConfig {
+            enabled: true,
+            min_bytes: self
+                .min_bytes
+                .unwrap_or(crate::middleware::DEFAULT_MIN_BYTES),
+            level: self.level.unwrap_or(6).min(9),
+        })
+    }
 }
 
 impl RateLimitYamlConfig {

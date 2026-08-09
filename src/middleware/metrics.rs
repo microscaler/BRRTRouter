@@ -210,6 +210,8 @@ pub struct MetricsMiddleware {
     rate_limit_sheds: AtomicUsize,
     /// Handler wait deadline timeouts (504) — Epic 13.6
     handler_deadline_timeouts: AtomicUsize,
+    /// Responses gzip-compressed by CompressionMiddleware (Epic 13.8).
+    compression_responses: AtomicUsize,
 }
 
 /// Default initialization for metrics middleware
@@ -247,6 +249,7 @@ impl Default for MetricsMiddleware {
             cors_route_disabled: AtomicUsize::new(0),
             rate_limit_sheds: AtomicUsize::new(0),
             handler_deadline_timeouts: AtomicUsize::new(0),
+            compression_responses: AtomicUsize::new(0),
         }
     }
 }
@@ -396,6 +399,17 @@ impl MetricsMiddleware {
     #[must_use]
     pub fn handler_deadline_timeouts(&self) -> usize {
         self.handler_deadline_timeouts.load(Ordering::Relaxed)
+    }
+
+    /// Increment gzip compression counter (Epic 13.8).
+    pub fn inc_compression_response(&self) {
+        self.compression_responses.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Total responses compressed with gzip.
+    #[must_use]
+    pub fn compression_responses(&self) -> usize {
+        self.compression_responses.load(Ordering::Relaxed)
     }
 
     /// Get connection health ratio (successful requests vs connection issues)

@@ -1,10 +1,10 @@
-## 2026-08-09 — Epic 13.6 handler deadlines shipped
+## 2026-08-09 — Epic 13.8 response compression shipping
 
-**Commit:** `62a6a37` · Issue [#406](https://github.com/microscaler/BRRTRouter/issues/406) closed.
+**Issue:** [#408](https://github.com/microscaler/BRRTRouter/issues/408)
 
-- `src/dispatcher/deadline.rs` — resolve + 504 problem; env `BRRTR_HANDLER_DEADLINE_MS`
-- Dispatcher `recv_timeout`; route `x-brrtrouter-deadline-ms`; metric callback
-- Docs: `docs/HANDLER_DEADLINES.md`
-- Tests: unit + `handler_deadline_integration_tests`
+- Opt-in gzip `CompressionMiddleware` (`compression` in config.yaml)
+- Docs: `docs/RESPONSE_COMPRESSION.md`
+- Metric: `brrtrouter_compression_responses_total`
 
-**NOW:** 13.7 SSE live flush (#407) · also 14.2 X.509 SVID (#415)
+**NOW:** 13.7 SSE live flush (#407) — needs may_minihttp streaming fork
+**NEXT:** 13.9 multi-status codegen · 13.10 TestApp

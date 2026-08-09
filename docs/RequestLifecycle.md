@@ -961,7 +961,7 @@ pub trait Middleware: Send + Sync {
 | **CorsMiddleware** | Add `Access-Control-Allow-Origin` | Finalize CORS headers |
 | **TracingMiddleware** | Start OpenTelemetry span | End span, add attributes |
 | **RateLimitMiddleware** | ✅ Shipped ([Epic 13.2](./EPICS/FRAMEWORK_MATURITY/epic-13-framework-completeness/story-13.2-rate-limiting-middleware.md)) — enable via `rate_limit` in `config.yaml` | `brrtrouter_rate_limit_sheds_total` |
-| **CompressionMiddleware** | 🚧 **Not shipped** — planned [Epic 13.8](./EPICS/FRAMEWORK_MATURITY/epic-13-framework-completeness/story-13.8-response-compression.md) | - |
+| **CompressionMiddleware** | ✅ Shipped ([Epic 13.8](./RESPONSE_COMPRESSION.md)) — opt-in `compression` in `config.yaml` | `brrtrouter_compression_responses_total` |
 
 Shipped middleware lives under `src/middleware/` (CORS, metrics, tracing, …).
 Do not treat the aspirational rows above as available APIs until those stories close.

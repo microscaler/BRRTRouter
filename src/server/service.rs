@@ -744,6 +744,16 @@ pub fn metrics_endpoint(
         metrics.handler_deadline_timeouts()
     );
 
+    body.push_str(
+        "# HELP brrtrouter_compression_responses_total Responses gzip-compressed (Epic 13.8)\n",
+    );
+    body.push_str("# TYPE brrtrouter_compression_responses_total counter\n");
+    let _ = writeln!(
+        body,
+        "brrtrouter_compression_responses_total {}",
+        metrics.compression_responses()
+    );
+
     // Connection metrics
     body.push_str("# HELP brrtrouter_connection_closes_total Total number of connection close events (client disconnects)\n");
     body.push_str("# TYPE brrtrouter_connection_closes_total counter\n");

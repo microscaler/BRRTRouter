@@ -68,12 +68,12 @@ to **ship gzip**.
 
 ### Acceptance criteria (tests)
 
-- [ ] P1/P2 and N1/N3 mandatory.
+- [x] P1/P2 and N1/N3 mandatory.
 
 ## Acceptance criteria
 
-- [ ] Middleware ships opt-in; docs accurate.
-- [ ] FR/NFR + unit tests complete.
+- [x] Middleware ships opt-in; docs accurate.
+- [x] FR/NFR + unit tests complete.
 
 ## References
 

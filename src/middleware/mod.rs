@@ -32,6 +32,7 @@
 //! - **[`CorsMiddleware`]** - Handles CORS headers and preflight requests
 //! - **[`MetricsMiddleware`]** - Collects Prometheus metrics
 //! - **[`RateLimitMiddleware`]** - Token-bucket rate limiting (429 + `Retry-After`)
+//! - **[`CompressionMiddleware`]** - Opt-in gzip response compression (Epic 13.8)
 //! - **[`TracingMiddleware`]** - Adds distributed tracing spans
 //!
 //! ## Creating Custom Middleware
@@ -90,6 +91,7 @@
 //! ```
 
 mod auth;
+mod compression;
 mod core;
 mod cors;
 pub mod jwks;
@@ -99,6 +101,7 @@ mod rate_limit;
 mod tracing;
 
 pub use auth::AuthMiddleware;
+pub use compression::{CompressionConfig, CompressionMiddleware, DEFAULT_MIN_BYTES};
 pub use core::Middleware;
 pub use cors::{
     build_route_cors_map, extract_route_cors_config, merge_route_policies_with_global_origins,

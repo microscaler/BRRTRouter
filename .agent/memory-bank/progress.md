@@ -1,5 +1,11 @@
 # Progress
 
+## 2026-08-09 — Explored 13.7 SSE live flush (read-only)
+
+- Mapped buffered path: `sse::collect` → handler String body → `response.rs` → may_minihttp `encode` (Content-Length).
+- Live flush requires may_minihttp fork (chunked / mid-call write) + non-collect SSE API + bounded backpressure.
+- Story: `docs/EPICS/.../story-13.7-sse-live-flush.md` (#407); README still “buffered channel helper”.
+
 ## 2026-08-09 — Fix test_panic_recovery vs problem+json
 
 - Panic path still returns 500; failure was `parse_response` only accepting `application/json`.
