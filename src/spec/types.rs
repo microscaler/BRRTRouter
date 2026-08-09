@@ -303,6 +303,136 @@ impl RouteMeta {
                     .is_some()
         })
     }
+
+    /// 2xx statuses that declare an `application/json` schema (sorted).
+    ///
+    /// Epic 13.9 — used to decide multi-status success enums.
+    #[must_use]
+    pub fn json_success_statuses(&self) -> Vec<u16> {
+        let mut out: Vec<u16> = self
+            .responses
+            .iter()
+            .filter(|(status, content_types)| {
+                let status = **status;
+                (200..300).contains(&status)
+                    && status != 204
+                    && content_types
+                        .get("application/json")
+                        .and_then(|spec| spec.schema.as_ref())
+                        .is_some()
+            })
+            .map(|(s, _)| *s)
+            .collect();
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
+
+    /// True when ≥2 JSON success statuses exist (e.g. 200+201) — emit `ApiResponse` enum.
+    #[must_use]
+    pub fn needs_multi_status_success_enum(&self) -> bool {
+        !self.sse && self.json_success_statuses().len() >= 2
+    }
+
+    /// Primary success is HTTP 204 (no JSON body) — codegen returns [`crate::typed::HttpNoContent`].
+    #[must_use]
+    pub fn is_no_content_primary(&self) -> bool {
+        if self.sse {
+            return false;
+        }
+        self.responses.contains_key(&204)
+            && !self
+                .responses
+                .keys()
+                .any(|s| (200..300).contains(s) && *s != 204)
+    }
+}
+
+#[cfg(test)]
+mod multi_status_codegen_tests {
+    use super::*;
+    use http::Method;
+    use std::collections::HashMap;
+    use std::path::PathBuf;
+    use std::sync::Arc;
+
+    fn route_with_responses(responses: Responses) -> RouteMeta {
+        RouteMeta {
+            x_service: None,
+            x_brrtrouter_downstream_path: None,
+            x_brrtrouter_impl: None,
+            method: Method::GET,
+            path_pattern: Arc::from("/x"),
+            handler_name: Arc::from("x"),
+            parameters: Vec::new(),
+            request_schema: None,
+            request_body_required: false,
+            request_content_types: Vec::new(),
+            response_schema: None,
+            example: None,
+            responses,
+            security: Vec::new(),
+            example_name: String::new(),
+            project_slug: String::new(),
+            output_dir: PathBuf::new(),
+            base_path: String::new(),
+            sse: false,
+            estimated_request_body_bytes: None,
+            x_brrtrouter_stack_size: None,
+            x_brrtrouter_deadline_ms: None,
+            cors_policy: crate::middleware::RouteCorsPolicy::Inherit,
+        }
+    }
+
+    fn json_schema_resp() -> ResponseSpec {
+        ResponseSpec {
+            schema: Some(serde_json::json!({"type": "object"})),
+            example: None,
+        }
+    }
+
+    #[test]
+    fn p1_200_plus_201_needs_multi_status_enum() {
+        let mut responses = HashMap::new();
+        let mut m200 = HashMap::new();
+        m200.insert("application/json".into(), json_schema_resp());
+        let mut m201 = HashMap::new();
+        m201.insert("application/json".into(), json_schema_resp());
+        responses.insert(200, m200);
+        responses.insert(201, m201);
+        let r = route_with_responses(responses);
+        assert_eq!(r.json_success_statuses(), vec![200, 201]);
+        assert!(r.needs_multi_status_success_enum());
+        assert!(!r.is_no_content_primary());
+    }
+
+    #[test]
+    fn p3_204_only_is_no_content_primary() {
+        let mut responses = HashMap::new();
+        responses.insert(204, HashMap::new());
+        let r = route_with_responses(responses);
+        assert!(r.is_no_content_primary());
+        assert!(!r.needs_multi_status_success_enum());
+    }
+
+    #[test]
+    fn p4_single_200_stays_simple() {
+        let mut responses = HashMap::new();
+        let mut m200 = HashMap::new();
+        m200.insert("application/json".into(), json_schema_resp());
+        responses.insert(200, m200);
+        let r = route_with_responses(responses);
+        assert_eq!(r.json_success_statuses(), vec![200]);
+        assert!(!r.needs_multi_status_success_enum());
+    }
+
+    #[test]
+    fn n2_empty_responses_no_panic() {
+        let r = route_with_responses(HashMap::new());
+        assert!(r.json_success_statuses().is_empty());
+        assert!(!r.needs_multi_status_success_enum());
+        assert!(!r.is_no_content_primary());
+    }
 }
 
 /// Metadata for a single parameter in an API route

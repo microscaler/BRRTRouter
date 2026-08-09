@@ -1,12 +1,12 @@
-## 2026-08-09 — Epic 13.7 SSE live flush shipping
+## 2026-08-09 — Epic 13 progress (autonomous)
 
-**Issue:** [#407](https://github.com/microscaler/BRRTRouter/issues/407)
+**Shipped**
+- 13.6 deadlines `62a6a37` · 13.8 compression `38512b4` · 13.7 SSE live `7589139`
+- may_minihttp chunked streaming `7f91f65`
+- test/docs fixtures `5ee255d`
 
-- may_minihttp `begin_chunked_stream` (`7f91f65`)
-- `HttpSse` + `HandlerResponse.sse` + service chunked flush
-- Docs: `docs/SSE_LIVE_FLUSH.md`
-- Pet Store `stream_events` uses live API
+**13.9 IN PROGRESS** (#409)
+- `RouteMeta::{json_success_statuses, needs_multi_status_success_enum, is_no_content_primary}` + unit tests
+- Next: wire `handler.rs.txt` / `controller.rs.txt` for `ApiResponse` enum + `HttpNoContent` stubs
 
-**Prior:** 13.8 compression `38512b4` (#408 closed)
-
-**NOW:** 13.9 multi-status codegen (#409) · 13.10 TestApp (#410)
+**NOW:** finish 13.9 template emission · then 13.10 TestApp (#410)
