@@ -559,6 +559,17 @@ mod tests {
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
+    /// Serialize against length-limit tests that mutate
+    /// `BRRTROUTER_MAX_REQUEST_TARGET_OCTETS` + the process-global cache.
+    /// Without this, parallel `--lib` runs can make
+    /// `resolve_downstream_target(...).unwrap()` fail with `RequestTargetTooLong`.
+    fn lock_default_request_target_limit() -> std::sync::MutexGuard<'static, ()> {
+        let guard = ENV_LOCK.lock().unwrap();
+        std::env::remove_var("BRRTROUTER_MAX_REQUEST_TARGET_OCTETS");
+        crate::server::request_target::reset_max_request_target_cache_for_tests();
+        guard
+    }
+
     fn empty_request(method: Method) -> HandlerRequest {
         let (tx, _rx) = mpsc::channel();
         HandlerRequest {
@@ -928,6 +939,7 @@ mod tests {
 
     #[test]
     fn resolve_downstream_positive_p1_passthrough_plus_and_pct2b() {
+        let _lock = lock_default_request_target_limit();
         let q = param_vec(&[("q", "a+b c")]);
         let raw = "q=a%2Bb+c";
         assert!(query_params_match_raw(raw, &q));
@@ -937,6 +949,7 @@ mod tests {
 
     #[test]
     fn resolve_downstream_positive_p2_passthrough_preserves_pct20() {
+        let _lock = lock_default_request_target_limit();
         let q = param_vec(&[("q", "South Africa")]);
         let raw = "q=South%20Africa";
         let t = resolve_downstream_target("/p", &ParamVec::new(), &q, Some(raw)).unwrap();
@@ -946,6 +959,7 @@ mod tests {
 
     #[test]
     fn resolve_downstream_positive_p3_path_param_rebuild_path() {
+        let _lock = lock_default_request_target_limit();
         let path = param_vec(&[("id", "a b")]);
         let t = resolve_downstream_target("/items/{id}", &path, &ParamVec::new(), None).unwrap();
         assert_eq!(t, "/items/a%20b");
@@ -954,6 +968,7 @@ mod tests {
 
     #[test]
     fn resolve_downstream_positive_p4_path_sub_query_passthrough() {
+        let _lock = lock_default_request_target_limit();
         let path = param_vec(&[("id", "x")]);
         let q = param_vec(&[("q", "a+b c")]);
         let raw = "q=a%2Bb+c";
@@ -963,6 +978,7 @@ mod tests {
 
     #[test]
     fn resolve_downstream_positive_p5_multi_param_passthrough() {
+        let _lock = lock_default_request_target_limit();
         let q = param_vec(&[("a", "1"), ("b", "2")]);
         let raw = "a=1&b=2";
         let t = resolve_downstream_target("/p", &ParamVec::new(), &q, Some(raw)).unwrap();
@@ -971,6 +987,7 @@ mod tests {
 
     #[test]
     fn resolve_downstream_positive_p6_empty_query_no_spurious_qmark() {
+        let _lock = lock_default_request_target_limit();
         let t =
             resolve_downstream_target("/p", &ParamVec::new(), &ParamVec::new(), Some("")).unwrap();
         assert_eq!(t, "/p");
@@ -980,6 +997,7 @@ mod tests {
 
     #[test]
     fn resolve_downstream_positive_p7_rebuild_space_to_pct20() {
+        let _lock = lock_default_request_target_limit();
         let q = param_vec(&[("k", "South Africa")]);
         let t = resolve_downstream_target("/p", &ParamVec::new(), &q, None).unwrap();
         assert_eq!(t, "/p?k=South%20Africa");
@@ -988,6 +1006,7 @@ mod tests {
 
     #[test]
     fn resolve_downstream_positive_p8_unmutated_selects_passthrough() {
+        let _lock = lock_default_request_target_limit();
         let q = param_vec(&[("q", "x")]);
         let raw = "q=x";
         assert!(query_params_match_raw(raw, &q));
@@ -997,6 +1016,7 @@ mod tests {
 
     #[test]
     fn resolve_downstream_negative_n1_raw_space_rejected() {
+        let _lock = lock_default_request_target_limit();
         let q = param_vec(&[("q", "a b")]);
         // Crafted match via parse of space-containing raw is unusual; force match by using
         // decoded equivalent but unsafe wire octets.
@@ -1009,6 +1029,7 @@ mod tests {
 
     #[test]
     fn resolve_downstream_negative_n2_ctl_and_hash_rejected() {
+        let _lock = lock_default_request_target_limit();
         // Unsafe hash with matching parse: form_urlencoded treats `#` as part of value.
         let q_hash = param_vec(&[("q", "a#frag")]);
         let err = resolve_downstream_target("/p", &ParamVec::new(), &q_hash, Some("q=a#frag"))
@@ -1022,6 +1043,7 @@ mod tests {
 
     #[test]
     fn resolve_downstream_negative_n3_mutation_forces_rebuild() {
+        let _lock = lock_default_request_target_limit();
         let mutated = param_vec(&[("q", "new")]);
         let raw = "q=old";
         assert!(!query_params_match_raw(raw, &mutated));
@@ -1032,6 +1054,7 @@ mod tests {
 
     #[test]
     fn resolve_downstream_negative_n4_missing_path_param() {
+        let _lock = lock_default_request_target_limit();
         let err =
             resolve_downstream_target("/items/{id}", &ParamVec::new(), &ParamVec::new(), None)
                 .unwrap_err();
@@ -1043,6 +1066,7 @@ mod tests {
 
     #[test]
     fn resolve_downstream_negative_n5_no_double_encode_on_passthrough() {
+        let _lock = lock_default_request_target_limit();
         let q = param_vec(&[("q", "%20")]); // decoded value is literal %20
         let raw = "q=%2520"; // wire was double-encoded once already as inbound
                              // If params match raw parse of %2520 → value "%20"
@@ -1058,6 +1082,7 @@ mod tests {
 
     #[test]
     fn resolve_downstream_negative_n8_question_in_resolved_path() {
+        let _lock = lock_default_request_target_limit();
         // encode_path_segment encodes `?` → should not hit this; force via template without `{`
         // that already contains `?` (misconfig).
         let err = resolve_downstream_target("/p?evil", &ParamVec::new(), &ParamVec::new(), None)
@@ -1229,6 +1254,7 @@ mod tests {
 
     #[test]
     fn proxy_error_taxonomy_positive_p4_valid_rebuild_no_composition_error() {
+        let _lock = lock_default_request_target_limit();
         let q = param_vec(&[("country", "South Africa")]);
         let t = resolve_downstream_target("/provinces", &ParamVec::new(), &q, None).unwrap();
         assert_eq!(t, "/provinces?country=South%20Africa");
