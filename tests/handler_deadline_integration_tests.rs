@@ -73,6 +73,7 @@ fn handler_deadline_p1_fast_under_limit() {
                 status: 200,
                 headers: Default::default(),
                 body: json!({"ok": true}),
+                sse: None,
             });
         });
     }
@@ -101,6 +102,7 @@ fn handler_deadline_p2_slow_returns_504() {
                 status: 200,
                 headers: Default::default(),
                 body: json!({"late": true}),
+                sse: None,
             });
         });
     }
@@ -140,6 +142,7 @@ fn handler_deadline_p3_metric_callback() {
                 status: 200,
                 headers: Default::default(),
                 body: json!({}),
+                sse: None,
             });
         });
     }
@@ -168,6 +171,7 @@ fn handler_deadline_p4_disabled_waits() {
                 status: 200,
                 headers: Default::default(),
                 body: json!({"ok": true}),
+                sse: None,
             });
         });
     }
@@ -196,6 +200,7 @@ fn handler_deadline_p6_problem_shape() {
                 status: 200,
                 headers: Default::default(),
                 body: json!({}),
+                sse: None,
             });
         });
     }
@@ -226,6 +231,7 @@ fn handler_deadline_route_override_alone() {
                 status: 200,
                 headers: Default::default(),
                 body: json!({}),
+                sse: None,
             });
         });
     }

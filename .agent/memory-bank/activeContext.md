@@ -1,10 +1,12 @@
-## 2026-08-09 — Epic 13.8 response compression shipping
+## 2026-08-09 — Epic 13.7 SSE live flush shipping
 
-**Issue:** [#408](https://github.com/microscaler/BRRTRouter/issues/408)
+**Issue:** [#407](https://github.com/microscaler/BRRTRouter/issues/407)
 
-- Opt-in gzip `CompressionMiddleware` (`compression` in config.yaml)
-- Docs: `docs/RESPONSE_COMPRESSION.md`
-- Metric: `brrtrouter_compression_responses_total`
+- may_minihttp `begin_chunked_stream` (`7f91f65`)
+- `HttpSse` + `HandlerResponse.sse` + service chunked flush
+- Docs: `docs/SSE_LIVE_FLUSH.md`
+- Pet Store `stream_events` uses live API
 
-**NOW:** 13.7 SSE live flush (#407) — needs may_minihttp streaming fork
-**NEXT:** 13.9 multi-status codegen · 13.10 TestApp
+**Prior:** 13.8 compression `38512b4` (#408 closed)
+
+**NOW:** 13.9 multi-status codegen (#409) · 13.10 TestApp (#410)

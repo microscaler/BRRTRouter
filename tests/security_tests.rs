@@ -207,6 +207,7 @@ paths:
                 status: 200,
                 headers: HeaderVec::new(),
                 body: json!({"ok": true}),
+                sse: None,
             });
         });
     }
@@ -278,6 +279,7 @@ paths:
                 status: 200,
                 headers: HeaderVec::new(),
                 body: json!({"one": true}),
+                sse: None,
             });
         });
         dispatcher.register_handler("two", |req: HandlerRequest| {
@@ -285,6 +287,7 @@ paths:
                 status: 200,
                 headers: HeaderVec::new(),
                 body: json!({"two": true}),
+                sse: None,
             });
         });
     }
@@ -353,6 +356,7 @@ paths:
                 status: 200,
                 headers: HeaderVec::new(),
                 body: json!({"header": true}),
+                sse: None,
             });
         });
         dispatcher.register_handler("cookie", |req: HandlerRequest| {
@@ -360,6 +364,7 @@ paths:
                 status: 200,
                 headers: HeaderVec::new(),
                 body: json!({"cookie": true}),
+                sse: None,
             });
         });
     }
@@ -548,6 +553,7 @@ paths:
                 status: 200,
                 headers: HeaderVec::new(),
                 body: json!({"ok": true}),
+                sse: None,
             });
         });
     }
@@ -665,6 +671,7 @@ paths:
                 status: 200,
                 headers: HeaderVec::new(),
                 body: json!({"header": true}),
+                sse: None,
             });
         });
     }
@@ -800,6 +807,7 @@ paths:
                 status: 200,
                 headers: HeaderVec::new(),
                 body: json!({"ok": true}),
+                sse: None,
             });
         });
     }

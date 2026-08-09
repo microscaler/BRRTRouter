@@ -336,7 +336,9 @@ fn parse_request_body(raw: &[u8], content_type: &str) -> Result<Option<Value>, S
 ///
 /// Uses SmallVec for headers, cookies, and query params to avoid heap
 /// allocation in the common case.
-pub fn parse_request(req: Request) -> Result<ParsedRequest, String> {
+pub fn parse_request<'buf, 'header, 'stream>(
+    req: Request<'buf, 'header, 'stream>,
+) -> Result<(ParsedRequest, &'stream mut may::net::TcpStream), String> {
     // JSF P1: Parse method directly to Method enum (avoids String allocation)
     // Reject invalid HTTP methods instead of defaulting to GET (security fix)
     let method_str = req.method();
@@ -421,54 +423,77 @@ pub fn parse_request(req: Request) -> Result<ParsedRequest, String> {
 
     // R5 & R6: Request body read and parsed (JSON, form-urlencoded, multipart)
     let parse_start = std::time::Instant::now();
-    let (body, body_octets) = {
-        // Cap the stream at max+1 so we detect overrun without reading unbounded input.
-        let mut raw: Vec<u8> = Vec::new();
-        let mut limited = req.body().take(global_body_max as u64 + 1);
-        match limited.read_to_end(&mut raw) {
-            Ok(_) if raw.len() > global_body_max => {
-                tracing::debug!(
-                    body_len = raw.len(),
-                    max = global_body_max,
-                    "Request body exceeded global max during read; rejecting with 413"
-                );
-                return Err(super::body_limit::REQUEST_BODY_TOO_LARGE.to_string());
-            }
-            Ok(_) if !raw.is_empty() => {
-                let size = raw.len();
-                let content_type = headers
-                    .iter()
-                    .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
-                    .map(|(_, v)| v.as_str())
-                    .unwrap_or("");
-
-                debug!(
-                    content_length = size,
-                    content_type = %content_type,
-                    body_size_bytes = size,
-                    "Request body read"
-                );
-
-                let parsed = parse_request_body(&raw, content_type)?;
-                let parse_duration_ms = parse_start.elapsed().as_millis() as u64;
-
-                if let Some(ref json) = parsed {
-                    debug!(
-                        parse_duration_ms = parse_duration_ms,
-                        body_fields = json.as_object().map(|o| o.len()),
-                        "Request body parsed"
+    let mut body_reader = req.body();
+    let mut raw: Vec<u8> = Vec::new();
+    let mut buf = [0u8; 8192];
+    let body_read_result: Result<(Option<Value>, usize), String> = loop {
+        if raw.len() > global_body_max {
+            tracing::debug!(
+                body_len = raw.len(),
+                max = global_body_max,
+                "Request body exceeded global max during read; rejecting with 413"
+            );
+            break Err(super::body_limit::REQUEST_BODY_TOO_LARGE.to_string());
+        }
+        match body_reader.read(&mut buf) {
+            Ok(0) => break Ok(()),
+            Ok(n) => {
+                raw.extend_from_slice(&buf[..n]);
+                if raw.len() > global_body_max {
+                    tracing::debug!(
+                        body_len = raw.len(),
+                        max = global_body_max,
+                        "Request body exceeded global max during read; rejecting with 413"
                     );
-                } else {
-                    debug!(
-                        parse_duration_ms = parse_duration_ms,
-                        "Request body not recognized or invalid JSON"
-                    );
+                    break Err(super::body_limit::REQUEST_BODY_TOO_LARGE.to_string());
                 }
-
-                (parsed, size)
             }
-            Ok(_) => (None, 0),
-            Err(_) => (None, 0),
+            Err(_) => break Ok(()),
+        }
+    }
+    .and_then(|()| {
+        if raw.is_empty() {
+            Ok((None, 0))
+        } else {
+            let size = raw.len();
+            let content_type = headers
+                .iter()
+                .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
+                .map(|(_, v)| v.as_str())
+                .unwrap_or("");
+
+            debug!(
+                content_length = size,
+                content_type = %content_type,
+                body_size_bytes = size,
+                "Request body read"
+            );
+
+            let parsed = parse_request_body(&raw, content_type)?;
+            let parse_duration_ms = parse_start.elapsed().as_millis() as u64;
+
+            if let Some(ref json) = parsed {
+                debug!(
+                    parse_duration_ms = parse_duration_ms,
+                    body_fields = json.as_object().map(|o| o.len()),
+                    "Request body parsed"
+                );
+            } else {
+                debug!(
+                    parse_duration_ms = parse_duration_ms,
+                    "Request body not recognized or invalid JSON"
+                );
+            }
+            Ok((parsed, size))
+        }
+    });
+
+    let (body, body_octets) = match body_read_result {
+        Ok(v) => v,
+        Err(e) => {
+            // Still release the stream so the connection can send an error response.
+            let _stream = body_reader.into_stream();
+            return Err(e);
         }
     };
 
@@ -481,16 +506,20 @@ pub fn parse_request(req: Request) -> Result<ParsedRequest, String> {
         "HTTP request parsed"
     );
 
-    Ok(ParsedRequest {
-        method,
-        path,
-        request_target,
-        headers,
-        cookies,
-        query_params,
-        body,
-        body_octets,
-    })
+    let stream = body_reader.into_stream();
+    Ok((
+        ParsedRequest {
+            method,
+            path,
+            request_target,
+            headers,
+            cookies,
+            query_params,
+            body,
+            body_octets,
+        },
+        stream,
+    ))
 }
 #[cfg(test)]
 mod tests {

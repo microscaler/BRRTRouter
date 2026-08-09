@@ -27,7 +27,7 @@ Do not treat those bullets as open work.
 - Dynamic handler dispatch, typed handlers + panic recovery
 - Request context (path, query, headers, cookies, JSON body)
 - Schema validation, JWT/OAuth2/API-key providers, CORS, Prometheus/OTEL
-- Hot reload, SSE (`x-sse`, buffered), stack sizing ([stack_size.md](stack_size.md))
+- Hot reload, SSE (`x-sse`, live flush via `HttpSse`), stack sizing ([stack_size.md](stack_size.md))
 - Inbound body hard caps → 413 ([request_body_limits.md](request_body_limits.md))
 - BFF auto-proxy integration; Pet Store example; Tilt + kind local stack
 

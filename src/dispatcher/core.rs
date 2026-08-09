@@ -209,7 +209,7 @@ impl HandlerRequest {
 /// # JSF Compliance
 ///
 /// Uses `SmallVec` for headers to avoid heap allocation in the common case.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Serialize)]
 pub struct HandlerResponse {
     /// HTTP status code (200, 404, 500, etc.)
     pub status: u16,
@@ -218,6 +218,22 @@ pub struct HandlerResponse {
     pub headers: HeaderVec,
     /// Response body as JSON
     pub body: Value,
+    /// Live SSE stream (Epic 13.7). When set, the HTTP layer flushes events
+    /// incrementally and ignores [`Self::body`] for the entity payload.
+    #[serde(skip)]
+    pub sse: Option<crate::sse::SseReceiver>,
+}
+
+impl Clone for HandlerResponse {
+    fn clone(&self) -> Self {
+        Self {
+            status: self.status,
+            headers: self.headers.clone(),
+            body: self.body.clone(),
+            // Live receivers are not cloneable — clones are identity/buffered only.
+            sse: None,
+        }
+    }
 }
 
 impl HandlerResponse {
@@ -228,6 +244,7 @@ impl HandlerResponse {
             status,
             headers,
             body,
+            sse: None,
         }
     }
 
@@ -244,6 +261,27 @@ impl HandlerResponse {
             status,
             headers: HeaderVec::new(),
             body,
+            sse: None,
+        }
+    }
+
+    /// Live SSE response (Epic 13.7) — frames flushed as produced.
+    #[must_use]
+    pub fn sse_live(receiver: crate::sse::SseReceiver) -> Self {
+        let mut headers = HeaderVec::new();
+        headers.push((
+            std::sync::Arc::from("content-type"),
+            "text/event-stream".to_string(),
+        ));
+        headers.push((
+            std::sync::Arc::from("cache-control"),
+            "no-cache".to_string(),
+        ));
+        Self {
+            status: 200,
+            headers,
+            body: Value::Null,
+            sse: Some(receiver),
         }
     }
 

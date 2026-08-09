@@ -14,9 +14,9 @@
 | **DONE** | 13.4 | done | [#404](https://github.com/microscaler/BRRTRouter/issues/404) | Streaming uploads/downloads |
 | **DONE** | 13.5 | done | [#405](https://github.com/microscaler/BRRTRouter/issues/405) | Browser security posture (Option B) |
 | **DONE** | 13.6 | done | [#406](https://github.com/microscaler/BRRTRouter/issues/406) | Handler deadlines → 504 |
-| **NOW** | 13.7 | todo | [#407](https://github.com/microscaler/BRRTRouter/issues/407) | SSE live flush (may_minihttp streaming) |
+| **DONE** | 13.7 | done | [#407](https://github.com/microscaler/BRRTRouter/issues/407) | SSE live flush |
 | **DONE** | 13.8 | done | [#408](https://github.com/microscaler/BRRTRouter/issues/408) | Response compression |
-| — | 13.9 | todo | [#409](https://github.com/microscaler/BRRTRouter/issues/409) | Multi-status codegen |
+| **NOW** | 13.9 | todo | [#409](https://github.com/microscaler/BRRTRouter/issues/409) | Multi-status codegen |
 | — | 13.10 | todo | [#410](https://github.com/microscaler/BRRTRouter/issues/410) | Public TestApp |
 
 ## Wave plan (Epic 13)
@@ -41,7 +41,7 @@ Wave 5 ──► 13.9 ‖ 13.10
 | 13.4 | Streaming uploads & download helpers | 2 | done | [#404](https://github.com/microscaler/BRRTRouter/issues/404) |
 | 13.5 | Browser security posture | 3 | done | [#405](https://github.com/microscaler/BRRTRouter/issues/405) |
 | 13.6 | Handler / request deadlines → 504 | 3 | done | [#406](https://github.com/microscaler/BRRTRouter/issues/406) |
-| 13.7 | SSE live flush streaming | 4 | todo | [#407](https://github.com/microscaler/BRRTRouter/issues/407) |
+| 13.7 | SSE live flush streaming | 4 | done | [#407](https://github.com/microscaler/BRRTRouter/issues/407) |
 | 13.8 | Response compression middleware | 4 | done | [#408](https://github.com/microscaler/BRRTRouter/issues/408) |
 | 13.9 | Multi-status response codegen | 5 | todo | [#409](https://github.com/microscaler/BRRTRouter/issues/409) |
 | 13.10 | Public TestApp / RequestBuilder | 5 | todo | [#410](https://github.com/microscaler/BRRTRouter/issues/410) |

@@ -209,7 +209,7 @@ Legend: ✅ ready · 🚧 in progress / partial · ⏸ parked
 | BFF auto-proxy | ✅ | Pure proxies skip unused stubs; `may_http` pooling |
 | Swagger UI + `/openapi.yaml` | ✅ | Bundled at `/docs` |
 | Interactive SolidJS dashboard | ✅ | Live data, SSE, API explorer, auth UI (Pet Store) |
-| SSE (`x-sse`) | ✅ | Buffered channel helper (not byte-streaming upgrade) |
+| SSE (`x-sse`) | ✅ | Live flush via `HttpSse` / chunked stream ([docs/SSE_LIVE_FLUSH.md](docs/SSE_LIVE_FLUSH.md)); `collect()` still available |
 | Zero-I/O `load_spec_from_spec` | ✅ | Programmatic tests |
 
 ### Observability & ops

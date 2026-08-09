@@ -461,6 +461,7 @@ fn test_headers_and_cookies() {
                 "headers": headers_map,
                 "cookies": cookies_map,
             }),
+            sse: None,
         };
         let _ = req.reply_tx.send(response);
     }
@@ -494,6 +495,7 @@ fn test_status_201_json() {
             status: 201,
             headers: HeaderVec::new(),
             body: json!({"created": true}),
+            sse: None,
         };
         let _ = req.reply_tx.send(response);
     }
@@ -521,6 +523,7 @@ fn test_text_plain_error() {
             status: 400,
             headers: HeaderVec::new(),
             body: json!("bad request"),
+            sse: None,
         };
         let _ = req.reply_tx.send(response);
     }
@@ -548,6 +551,7 @@ fn test_request_body_validation_failure() {
             status: 200,
             headers: HeaderVec::new(),
             body: json!({"ok": true}),
+            sse: None,
         };
         let _ = req.reply_tx.send(response);
     }
@@ -589,6 +593,7 @@ fn test_response_body_validation_failure() {
             status: 200,
             headers: HeaderVec::new(),
             body: json!({"name": 123}),
+            sse: None,
         };
         let _ = req.reply_tx.send(response);
     }
@@ -628,6 +633,7 @@ fn test_no_content_skips_body_validation_and_writes_no_body() {
             // Deliberately does not satisfy the configured response schema.
             // Bodyless statuses must not validate or serialize this sentinel.
             body: json!({}),
+            sse: None,
         };
         let _ = req.reply_tx.send(response);
     }
@@ -685,6 +691,7 @@ fn test_invalid_http_method_rejected() {
             status: 200,
             headers: HeaderVec::new(),
             body: json!({"ok": true}),
+            sse: None,
         };
         let _ = req.reply_tx.send(response);
     }

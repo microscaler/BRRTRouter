@@ -208,6 +208,7 @@ paths:
                 status: 200,
                 headers: HeaderVec::new(),
                 body: json!({"ok": true}),
+                sse: None,
             });
         });
     }

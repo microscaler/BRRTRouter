@@ -3,16 +3,15 @@
 // ⚠️ To modify API behavior, edit the OpenAPI spec and regenerate
 // ⚠️ To implement business logic, edit the corresponding controller file
 use brrtrouter::dispatcher::HandlerRequest;
-use brrtrouter::typed::TypedHandlerRequest;
+use brrtrouter::typed::{HttpSse, TypedHandlerRequest};
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Request {}
 
-#[derive(Debug, Deserialize, Serialize)]
-
-pub struct Response(pub String);
+/// SSE live response (Epic 13.7) — not a JSON DTO.
+pub type Response = HttpSse;
 
 impl TryFrom<HandlerRequest> for Request {
     type Error = anyhow::Error;

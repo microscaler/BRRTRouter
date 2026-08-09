@@ -63,6 +63,7 @@ fn start_server(
                 status: 200,
                 headers: Default::default(),
                 body: json!({"ok": true}),
+                sse: None,
             });
         });
     }

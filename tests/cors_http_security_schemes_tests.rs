@@ -95,6 +95,7 @@ impl MinimalCorsFixture {
                     status: 200,
                     headers: HeaderVec::new(),
                     body: json!({"ok": true}),
+                    sse: None,
                 });
             });
             dispatcher.register_handler("echo_options", |req: HandlerRequest| {
@@ -102,6 +103,7 @@ impl MinimalCorsFixture {
                     status: 200,
                     headers: HeaderVec::new(),
                     body: json!({"ok": true}),
+                    sse: None,
                 });
             });
         }

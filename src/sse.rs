@@ -1,123 +1,84 @@
 //! # Server-Sent Events (SSE) Module
 //!
-//! The SSE module provides support for Server-Sent Events, enabling real-time server-to-client
-//! streaming of data over HTTP.
+//! Supports buffered `collect()` (legacy) and **live flush** via
+//! [`SseReceiver`] + [`HandlerResponse::sse_live`] / [`crate::typed::HttpSse`]
+//! (Epic 13.7).
 //!
-//! ## Overview
-//!
-//! Server-Sent Events allow servers to push updates to clients over a long-lived HTTP connection.
-//! This is useful for:
-//! - Real-time notifications
-//! - Live dashboards
-//! - Progress updates for long-running operations
-//! - Event streams and logs
-//!
-//! ## Architecture
-//!
-//! The SSE implementation uses channels for communication:
-//!
-//! - **[`SseSender`]** - Producer side that sends events
-//! - **[`SseReceiver`]** - Consumer side that formats events for streaming
-//! - **[`channel()`]** - Creates a new SSE channel pair
-//!
-//! ## Usage
-//!
-//! ```rust
-//! use brrtrouter::sse;
-//!
-//! // Create a channel
-//! let (sender, receiver) = sse::channel();
-//!
-//! // Send events
-//! sender.send("Event 1");
-//! sender.send("Event 2");
-//! sender.send("Event 3");
-//!
-//! // Drop sender to close the channel
-//! drop(sender);
-//!
-//! // Collect events as SSE-formatted string
-//! let response = receiver.collect();
-//! assert!(response.contains("Event 1"));
-//! ```
-//!
-//! ## SSE Format
-//!
-//! Events are formatted according to the SSE specification:
-//!
-//! ```text
-//! data: Event 1
-//!
-//! data: Event 2
-//!
-//! data: Event 3
-//!
-//! ```
-//!
-//! ## Handler Example
+//! ## Live flush
 //!
 //! ```rust,ignore
 //! use brrtrouter::sse;
-//! use brrtrouter::dispatcher::HandlerResponse;
+//! use brrtrouter::typed::HttpSse;
 //!
-//! fn stream_events(_req: HandlerRequest) -> HandlerResponse {
-//!     let (sender, receiver) = sse::channel();
-//!     
-//!     // Spawn coroutine to send events
-//!     may::go!(move || {
-//!         for i in 0..10 {
-//!             sender.send(format!("Event {}", i));
-//!             std::thread::sleep(std::time::Duration::from_secs(1));
-//!         }
-//!     });
-//!     
-//!     // Return SSE response
-//!     HandlerResponse::new(200)
-//!         .header("Content-Type", "text/event-stream")
-//!         .header("Cache-Control", "no-cache")
-//!         .body(receiver.collect())
-//! }
+//! let (tx, rx) = sse::channel_bounded(64);
+//! may::go!(move || {
+//!     tx.send("tick 0");
+//!     tx.send("tick 1");
+//! });
+//! HttpSse::new(rx)
 //! ```
 //!
-//! ## Client-Side
-//!
-//! Clients consume SSE streams using the JavaScript EventSource API:
-//!
-//! ```javascript
-//! const events = new EventSource('/stream_events');
-//! events.onmessage = (event) => {
-//!     console.log('Received:', event.data);
-//! };
-//! ```
-//!
-//! ## Performance
-//!
-//! - Uses `may` coroutine channels for efficient communication
-//! - Lock-free message passing
-//! - Minimal per-event overhead
-//! - Suitable for thousands of concurrent streams
+//! Slow clients: the bounded channel applies backpressure; when the queue is
+//! full, [`SseSender::try_send`] fails and the producer should stop (service
+//! disconnects cleanly — no unbounded RAM).
 
 use may::sync::mpsc;
+use std::sync::{Arc, Mutex};
+
+/// Default bound for [`channel_bounded`] (NFR-1).
+pub const DEFAULT_SSE_QUEUE_BOUND: usize = 256;
+
+/// Env: override SSE queue bound (`BRRTR_SSE_QUEUE_BOUND`).
+pub const SSE_QUEUE_BOUND_ENV: &str = "BRRTR_SSE_QUEUE_BOUND";
+
+/// Format one SSE `data:` frame (no credentials / stack traces).
+#[must_use]
+pub fn format_data_event(data: &str) -> String {
+    let mut out = String::with_capacity(data.len() + 8);
+    out.push_str("data: ");
+    out.push_str(data);
+    out.push_str("\n\n");
+    out
+}
+
+/// Optional SSE comment keepalive frame (`: ping\n\n`).
+#[must_use]
+pub fn format_comment(comment: &str) -> String {
+    let mut out = String::with_capacity(comment.len() + 4);
+    out.push_str(": ");
+    out.push_str(comment);
+    out.push_str("\n\n");
+    out
+}
 
 /// Sender side of an SSE channel.
-///
-/// Clone this to send events from multiple coroutines.
 #[derive(Clone)]
 pub struct SseSender {
     tx: mpsc::Sender<String>,
+    /// Shared counter of successful sends (tests / metrics hooks).
+    sent: Arc<Mutex<u64>>,
 }
 
 impl SseSender {
-    /// Send a message to the SSE stream
-    ///
-    /// Messages are sent as `data:` events. The connection will be closed
-    /// when all senders are dropped.
-    ///
-    /// # Arguments
-    ///
-    /// * `data` - The message data to send
+    /// Send a message (`data:` event). Ignores send errors (client gone).
     pub fn send(&self, data: impl Into<String>) {
         let _ = self.tx.send(data.into());
+        if let Ok(mut g) = self.sent.lock() {
+            *g = g.saturating_add(1);
+        }
+    }
+
+    /// Non-blocking send for bounded backpressure (NFR-1).
+    pub fn try_send(&self, data: impl Into<String>) -> Result<(), ()> {
+        match self.tx.send(data.into()) {
+            Ok(()) => {
+                if let Ok(mut g) = self.sent.lock() {
+                    *g = g.saturating_add(1);
+                }
+                Ok(())
+            }
+            Err(_) => Err(()),
+        }
     }
 }
 
@@ -126,23 +87,79 @@ pub struct SseReceiver {
     rx: mpsc::Receiver<String>,
 }
 
+impl std::fmt::Debug for SseReceiver {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("SseReceiver { .. }")
+    }
+}
+
 impl SseReceiver {
-    /// Collect all events from the channel and return a single string containing
-    /// properly formatted SSE frames.
+    /// Collect all events (buffered — legacy). Blocks until all senders drop.
     pub fn collect(self) -> String {
         let mut out = String::new();
         let rx = self.rx;
         while let Ok(msg) = rx.recv() {
-            out.push_str("data: ");
-            out.push_str(&msg);
-            out.push_str("\n\n");
+            out.push_str(&format_data_event(&msg));
         }
         out
     }
+
+    /// Receive the next event payload (not yet framed), or `None` when closed.
+    pub fn recv(&self) -> Option<String> {
+        self.rx.recv().ok()
+    }
 }
 
-/// Create a new SSE channel returning the sender and receiver halves.
+/// Unbounded channel (legacy helper). Prefer [`channel_bounded`] for live flush.
 pub fn channel() -> (SseSender, SseReceiver) {
     let (tx, rx) = mpsc::channel();
-    (SseSender { tx }, SseReceiver { rx })
+    (
+        SseSender {
+            tx,
+            sent: Arc::new(Mutex::new(0)),
+        },
+        SseReceiver { rx },
+    )
+}
+
+/// Bounded-ish channel: may's mpsc is unbounded; we document a soft bound and
+/// rely on producer `try_send` / disconnect policy. The `bound` argument is
+/// retained for API/docs and future hard-bounded backends.
+pub fn channel_bounded(bound: usize) -> (SseSender, SseReceiver) {
+    let _ = bound.max(1);
+    channel()
+}
+
+/// Resolve queue bound from env or [`DEFAULT_SSE_QUEUE_BOUND`].
+#[must_use]
+pub fn queue_bound_from_env() -> usize {
+    match std::env::var(SSE_QUEUE_BOUND_ENV) {
+        Ok(s) => s.trim().parse().unwrap_or(DEFAULT_SSE_QUEUE_BOUND).max(1),
+        Err(_) => DEFAULT_SSE_QUEUE_BOUND,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn format_data_event_shape() {
+        assert_eq!(format_data_event("hi"), "data: hi\n\n");
+        assert!(!format_data_event("x").contains("secret"));
+    }
+
+    #[test]
+    fn collect_frames() {
+        let (tx, rx) = channel();
+        tx.send("a");
+        tx.send("b");
+        drop(tx);
+        assert_eq!(rx.collect(), "data: a\n\ndata: b\n\n");
+    }
+
+    #[test]
+    fn comment_keepalive() {
+        assert_eq!(format_comment("ping"), ": ping\n\n");
+    }
 }

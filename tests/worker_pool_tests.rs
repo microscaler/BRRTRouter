@@ -41,6 +41,7 @@ fn test_worker_pool_creation() {
                 status: 200,
                 headers: HeaderVec::new(),
                 body: serde_json::json!({"status": "ok"}),
+                sse: None,
             });
         });
     }
@@ -90,6 +91,7 @@ fn test_worker_pool_shed_mode() {
                     status: 200,
                     headers: HeaderVec::new(),
                     body: serde_json::json!({"status": "ok"}),
+                    sse: None,
                 });
             },
             config,
@@ -185,6 +187,7 @@ fn test_worker_pool_block_mode() {
                     status: 200,
                     headers: HeaderVec::new(),
                     body: serde_json::json!({"status": "ok"}),
+                    sse: None,
                 });
             },
             config,
@@ -265,6 +268,7 @@ fn test_worker_pool_metrics() {
                 status: 200,
                 headers: HeaderVec::new(),
                 body: serde_json::json!({"status": "ok"}),
+                sse: None,
             });
         });
     }

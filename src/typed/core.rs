@@ -94,6 +94,29 @@ impl HandlerResponseOutput for HttpNoContent {
     }
 }
 
+/// Live Server-Sent Events response (Epic 13.7).
+///
+/// Does **not** implement [`Serialize`], so it does not collide with the blanket
+/// [`HandlerResponseOutput`] impl. Prefer this over `Response(String)` +
+/// [`crate::sse::SseReceiver::collect`] so frames flush as they are produced.
+#[derive(Debug)]
+pub struct HttpSse {
+    receiver: crate::sse::SseReceiver,
+}
+
+impl HttpSse {
+    #[must_use]
+    pub fn new(receiver: crate::sse::SseReceiver) -> Self {
+        Self { receiver }
+    }
+}
+
+impl HandlerResponseOutput for HttpSse {
+    fn into_handler_response(self) -> Result<HandlerResponse, serde_json::Error> {
+        Ok(HandlerResponse::sse_live(self.receiver))
+    }
+}
+
 impl<T: Serialize + Send + 'static> HandlerResponseOutput for HttpJson<T> {
     fn into_handler_response(self) -> Result<HandlerResponse, serde_json::Error> {
         let body = serde_json::to_value(self.body)?;
@@ -293,7 +316,9 @@ fn typed_handler_output_to_response(
             // 204/1xx/304 legitimately have no body (Story 12.7 HttpNoContent).
             let status_allows_null =
                 matches!(hr.status, 204 | 205 | 304) || (100..200).contains(&hr.status);
-            if hr.body.is_null() && !status_allows_null {
+            // Epic 13.7: live SSE uses `hr.sse` with a null JSON body placeholder.
+            let sse_live = hr.sse.is_some();
+            if hr.body.is_null() && !status_allows_null && !sse_live {
                 let mut err = serde_json::json!({
                     "error": "Failed to serialize response",
                     "details": "Handler response serialized to JSON null — add an explicit `-> YourResponse` return type on #[handler] functions",
@@ -715,6 +740,7 @@ where
                             "details": format!("{:?}", panic),
                             "request_id": request_id.to_string(),
                         }),
+                        sse: None,
                     });
                     eprintln!("Handler '{handler_name_outer}' panicked: {panic:?}");
                 }

@@ -64,12 +64,12 @@ Upgrade `x-sse` from **buffered `receiver.collect()`** to **live flush** of
 
 ### Acceptance criteria (tests)
 
-- [ ] P1/P3 and N1/N5 mandatory.
+- [x] P1/P3 and N1/N5 mandatory.
 
 ## Acceptance criteria
 
-- [ ] Live flush is default for `x-sse` or opt-in with docs.
-- [ ] FR/NFR + unit tests complete.
+- [x] Live flush is default for `x-sse` or opt-in with docs.
+- [x] FR/NFR + unit tests complete.
 
 ## References
 

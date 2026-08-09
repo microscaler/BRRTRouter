@@ -70,6 +70,7 @@ fn start_echo_server(
                 status: 200,
                 headers: Default::default(),
                 body: json!({"ok": true}),
+                sse: None,
             });
         });
     }

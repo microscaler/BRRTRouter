@@ -1134,16 +1134,19 @@ impl HttpService for AppService {
         let request_start = std::time::Instant::now();
 
         // Parse request and validate HTTP method
-        let ParsedRequest {
-            method,
-            path,
-            request_target,
-            headers,
-            cookies,
-            query_params,
-            body,
-            body_octets,
-        } = match parse_request(req) {
+        let (
+            ParsedRequest {
+                method,
+                path,
+                request_target,
+                headers,
+                cookies,
+                query_params,
+                body,
+                body_octets,
+            },
+            conn_stream,
+        ) = match parse_request(req) {
             Ok(parsed) => parsed,
             Err(err) => {
                 if let Some(413) = super::body_limit::body_limit_error_status(&err) {
@@ -1924,16 +1927,20 @@ impl HttpService for AppService {
                         }
                     }
                     // Epic 13.4: HttpFile / format:binary — do not JSON-schema-validate raw bodies.
-                    let skip_response_schema = headers.iter().any(|(k, v)| {
-                        k.eq_ignore_ascii_case(super::response::RAW_BODY_ENCODING_HEADER)
-                            && v == super::response::RAW_BODY_ENCODING_BASE64
-                    }) || headers.iter().any(|(k, v)| {
-                        k.eq_ignore_ascii_case("content-type")
-                            && !v.to_ascii_lowercase().contains("json")
-                            && headers
-                                .iter()
-                                .any(|(dk, _)| dk.eq_ignore_ascii_case("content-disposition"))
-                    });
+                    // Epic 13.7: live SSE carries events on `hr.sse`, not JSON `hr.body`.
+                    let skip_response_schema = hr.sse.is_some()
+                        || is_sse
+                        || headers.iter().any(|(k, v)| {
+                            k.eq_ignore_ascii_case(super::response::RAW_BODY_ENCODING_HEADER)
+                                && v == super::response::RAW_BODY_ENCODING_BASE64
+                        })
+                        || headers.iter().any(|(k, v)| {
+                            k.eq_ignore_ascii_case("content-type")
+                                && !v.to_ascii_lowercase().contains("json")
+                                && headers
+                                    .iter()
+                                    .any(|(dk, _)| dk.eq_ignore_ascii_case("content-disposition"))
+                        });
                     if let Some(schema) =
                         if response_status_allows_body(hr.status) && !skip_response_schema {
                             response_body_schema_for_status(&route_match.route, hr.status)
@@ -1984,8 +1991,48 @@ impl HttpService for AppService {
                         } // End if let Some(compiled)
                     } // End if let Some(schema)
                     let omit_body = method == Method::HEAD;
-                    _request_logger
-                        .respond_handler(res, hr.status, hr.body, is_sse, &headers, omit_body);
+                    if let Some(sse_rx) = hr.sse {
+                        // Epic 13.7: live flush text/event-stream via chunked encoding.
+                        _request_logger.record_http_status(hr.status);
+                        _request_logger.record_response_headers(&headers);
+                        res.status_code(hr.status as usize, "OK");
+                        res.header("Content-Type: text/event-stream");
+                        res.header("Cache-Control: no-cache");
+                        for (k, v) in &headers {
+                            if k.eq_ignore_ascii_case("content-type")
+                                || k.eq_ignore_ascii_case("content-length")
+                                || k.eq_ignore_ascii_case("transfer-encoding")
+                            {
+                                continue;
+                            }
+                            res.header(format!("{k}: {v}"));
+                        }
+                        match res.begin_chunked_stream(conn_stream) {
+                            Ok(mut writer) => {
+                                while let Some(msg) = sse_rx.recv() {
+                                    let frame = crate::sse::format_data_event(&msg);
+                                    if writer.write_chunk(frame.as_bytes()).is_err() {
+                                        // N1: client disconnect — stop cleanly, no panic.
+                                        break;
+                                    }
+                                }
+                                let _ = writer.finish();
+                            }
+                            Err(e) => {
+                                error!(error = %e, "Failed to begin SSE chunked stream");
+                                _request_logger.respond_json_error(
+                                    res,
+                                    500,
+                                    json!({"error": "Failed to start event stream"}),
+                                );
+                            }
+                        }
+                    } else {
+                        _request_logger
+                            .respond_handler(res, hr.status, hr.body, is_sse, &headers, omit_body);
+                        // Keep conn_stream borrow scoped; unused for buffered responses.
+                        let _ = conn_stream;
+                    }
                 }
                 None => {
                     _request_logger.respond_json_error(
