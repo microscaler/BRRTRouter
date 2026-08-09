@@ -42,13 +42,31 @@ def _merge_schemas(
             _update_refs_in_value(all_schemas[prefixed], schema_name, prefixed)
 
 
+# Standard OpenAPI verbs plus RFC 10008 QUERY (path-item `query:` / promoted
+# `x-brrtrouter-query`). Must stay in sync with the merge loop in
+# `_merge_one_sub_service`.
+_HTTP_OPERATION_KEYS = frozenset(
+    {
+        "get",
+        "post",
+        "put",
+        "patch",
+        "delete",
+        "options",
+        "head",
+        "trace",
+        "query",
+        "x-brrtrouter-query",
+    }
+)
+
+
 def _update_refs_in_paths(paths: dict[str, Any], old_name: str, new_name: str) -> None:
-    methods = {"get", "post", "put", "patch", "delete", "options", "head", "trace"}
     for path_def in paths.values():
         if not isinstance(path_def, dict):
             continue
         for method, op in path_def.items():
-            if method not in methods or not isinstance(op, dict):
+            if method not in _HTTP_OPERATION_KEYS or not isinstance(op, dict):
                 continue
             if "requestBody" in op:
                 _update_refs_in_value(op["requestBody"], old_name, new_name)
@@ -104,16 +122,6 @@ def _merge_one_sub_service(
             all_tags.add(t.get("name", str(t)) if isinstance(t, dict) else str(t))
 
     if "paths" in spec:
-        http_methods = (
-            "get",
-            "post",
-            "put",
-            "patch",
-            "delete",
-            "options",
-            "head",
-            "trace",
-        )
         for path, path_def in spec["paths"].items():
             if not isinstance(path_def, dict):
                 continue
@@ -127,7 +135,7 @@ def _merge_one_sub_service(
                 existing = {}
             path_def = dict(path_def)
             for key in list(path_def.keys()):
-                if key not in http_methods:
+                if key not in _HTTP_OPERATION_KEYS:
                     # Preserve path-level properties (parameters, summary, description, servers).
                     if key not in existing:
                         existing[key] = path_def[key]

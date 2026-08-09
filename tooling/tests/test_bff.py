@@ -208,6 +208,78 @@ class TestUpdateRefsInValue:
         assert val["$ref"] == "#/components/schemas/Foo"
 
 
+class TestQueryMethodMerge:
+    """RFC 10008 path-item `query:` must get schema prefixing + x-service like POST."""
+
+    def test_query_operation_refs_prefixed(self, tmp_path: Path) -> None:
+        from brrtrouter_tooling.bff.merge import merge_sub_service_specs
+
+        spec = tmp_path / "locations.yaml"
+        spec.write_text(
+            "openapi: 3.1.0\n"
+            "info: { title: Locations, version: '1.0' }\n"
+            "paths:\n"
+            "  /route-preview:\n"
+            "    post:\n"
+            "      operationId: get_route_preview\n"
+            "      requestBody:\n"
+            "        content:\n"
+            "          application/json:\n"
+            "            schema:\n"
+            "              $ref: '#/components/schemas/RoutePreviewRequest'\n"
+            "      responses:\n"
+            "        '200':\n"
+            "          description: ok\n"
+            "          content:\n"
+            "            application/json:\n"
+            "              schema:\n"
+            "                $ref: '#/components/schemas/RoutePreviewResponse'\n"
+            "    query:\n"
+            "      operationId: query_route_preview\n"
+            "      requestBody:\n"
+            "        content:\n"
+            "          application/json:\n"
+            "            schema:\n"
+            "              $ref: '#/components/schemas/RoutePreviewRequest'\n"
+            "      responses:\n"
+            "        '200':\n"
+            "          description: ok\n"
+            "          content:\n"
+            "            application/json:\n"
+            "              schema:\n"
+            "                $ref: '#/components/schemas/RoutePreviewResponse'\n"
+            "components:\n"
+            "  schemas:\n"
+            "    RoutePreviewRequest:\n"
+            "      type: object\n"
+            "    RoutePreviewResponse:\n"
+            "      type: object\n"
+        )
+        merged = merge_sub_service_specs(
+            {
+                "locations": {
+                    "base_path": "/api/v1/locations",
+                    "spec_path": spec,
+                }
+            },
+            info={"title": "BFF", "version": "1.0.0"},
+        )
+        # Default gateway_path_style is as_spec (path not prefixed).
+        path_item = merged["paths"]["/route-preview"]
+        assert "query" in path_item and "post" in path_item
+        q = path_item["query"]
+        assert q["x-service"] == "locations"
+        assert q["x-brrtrouter-downstream-path"] == "/api/v1/locations/route-preview"
+        assert (
+            q["requestBody"]["content"]["application/json"]["schema"]["$ref"]
+            == "#/components/schemas/LocationsRoutePreviewRequest"
+        )
+        assert (
+            q["responses"]["200"]["content"]["application/json"]["schema"]["$ref"]
+            == "#/components/schemas/LocationsRoutePreviewResponse"
+        )
+
+
 class TestMergeSameSchemaNameAcrossServices:
     """When multiple sub-services have schemas with the same name, $ref resolves to the correct service."""
 

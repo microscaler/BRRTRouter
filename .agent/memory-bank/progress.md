@@ -3,9 +3,10 @@
 ## 2026-08-09 — Story 13.10 Public TestApp / RequestBuilder
 
 - Feature `testing` + `src/test_support/mod.rs` (`TestApp`, `RequestBuilder`, `TestResponse`).
-- Integration: `tests/test_app_pet_store_tests.rs` (list pets + from_spec 401).
+- Integration: `tests/test_app_client_tests.rs` + `tests/test_app_pet_store_tests.rs`.
 - Docs: `docs/TESTING.md`; BUILD_BOARD 13.10 + Epic 13 done; README index link.
 - `justfile`: `just test` / `just nt` enable `--features testing`.
+- Shipped: `a04b733`; closed #410 + #400. Gates green on ms02.
 
 ## 2026-08-09 — Fix flaky test_bearer_jwks_success (status 0)
 
