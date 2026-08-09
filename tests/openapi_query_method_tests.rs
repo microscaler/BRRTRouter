@@ -4,7 +4,7 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-use brrtrouter::generator::{extract_fields, write_handler};
+use brrtrouter::generator::{extract_fields, write_handler, HandlerReturnShape};
 use brrtrouter::http::{is_query_method, method_query};
 use brrtrouter::router::Router;
 use brrtrouter::spec::{load_spec, promote_query_operations, QUERY_OPERATION_EXTENSION};
@@ -98,7 +98,7 @@ fn query_method_positive_generated_handler_receives_body_fields() {
         &route.parameters,
         false,
         false,
-        false,
+        HandlerReturnShape::default(),
         true,
     )
     .unwrap();

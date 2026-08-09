@@ -17,7 +17,9 @@
 | Shared `typed_handler_output_to_response` used by `spawn_typed`, `spawn_typed_with_stack_size_and_name`, `register_typed_with_pool` | Shipped |
 | Unit tests in `typed::core::tests` | Shipped |
 | Integration test `test_spawn_typed_http_json_status_without_panic` in `tests/typed_tests.rs` | Shipped |
-| OpenAPI multi-status codegen, `components.responses` $ref, 204/HEAD helpers | Not started (see §12) |
+| OpenAPI multi-status codegen (`ApiResponse` / `HttpNoContent`) | Shipped (Epic 13.9) |
+| `components.responses` $ref completeness | Partial (Story 12.3); empty-content statuses retained for 204 |
+| HEAD helpers | Runtime omits body; codegen TBD |
 
 ---
 

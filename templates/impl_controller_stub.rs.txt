@@ -7,10 +7,16 @@
 // To patch signature/Response on protected stubs: brrtrouter-gen generate-stubs --sync
 
 use brrtrouter_macros::handler;
-use {{ rust_crate_ident }}::handlers::{{ handler_name }}::{Request, Response};
+{% if uses_http_no_content %}use {{ rust_crate_ident }}::handlers::{{ handler_name }}::Request;
+use brrtrouter::typed::{HttpNoContent, TypedHandlerRequest};
+{% else if uses_multi_status %}use {{ rust_crate_ident }}::handlers::{{ handler_name }}::{ApiResponse, Request, Response};
 use brrtrouter::typed::TypedHandlerRequest;
-{% if uses_http_json %}use brrtrouter::typed::HttpJson;
-{% endif %}{% if sse %}use brrtrouter::sse;{% endif %}
+{% else if uses_http_json %}use {{ rust_crate_ident }}::handlers::{{ handler_name }}::{Request, Response};
+use brrtrouter::typed::{HttpJson, TypedHandlerRequest};
+{% else %}use {{ rust_crate_ident }}::handlers::{{ handler_name }}::{Request, Response};
+use brrtrouter::typed::TypedHandlerRequest;
+{% endif %}
+{% if sse %}use brrtrouter::sse;{% endif %}
 {% if imports.len() > 0 %}
 {% for import in imports -%}
 #[allow(unused_imports)]
@@ -19,7 +25,7 @@ use {{ rust_crate_ident }}::handlers::types::{{ import }};
 {% endif %}
 
 #[handler({{ struct_name }})]
-pub fn handle(req: TypedHandlerRequest<Request>) -> {% if uses_http_json %}HttpJson<Response>{% else %}Response{% endif %} {
+pub fn handle(req: TypedHandlerRequest<Request>) -> {% if uses_http_no_content %}HttpNoContent{% else if uses_multi_status %}ApiResponse{% else if uses_http_json %}HttpJson<Response>{% else %}Response{% endif %} {
     // TODO: Implement your business logic here
     // 
     // Example: Access request data
@@ -31,7 +37,10 @@ pub fn handle(req: TypedHandlerRequest<Request>) -> {% if uses_http_json %}HttpJ
     // let result = your_service.process(&req.inner)?;
     //
     // Example: Return response
-    {% if sse %}
+    {% if uses_http_no_content %}
+    let _ = req;
+    HttpNoContent
+    {% elif sse %}
     // TODO: Implement Server-Sent Events logic
     let (tx, rx) = sse::channel();
     // Your SSE implementation here
@@ -40,12 +49,12 @@ pub fn handle(req: TypedHandlerRequest<Request>) -> {% if uses_http_json %}HttpJ
     Response(rx.collect())
     {% elif response_is_array %}
     // TODO: Return array of items from your business logic
-    {% if uses_http_json %}HttpJson::ok({% endif %}Response({{ response_array_literal }}){% if uses_http_json %}){% endif %}
+    {% if uses_multi_status %}ApiResponse::{{ default_variant }}({% else if uses_http_json %}HttpJson::ok({% endif %}Response({{ response_array_literal }}){% if uses_multi_status || uses_http_json %}){% endif %}
     {% else %}
-    {% if uses_http_json %}HttpJson::ok({% endif %}Response {
+    {% if uses_multi_status %}ApiResponse::{{ default_variant }}({% else if uses_http_json %}HttpJson::ok({% endif %}Response {
 {%- for field in response_fields %}
         {{ field.name }}: {% if field.optional %}None{% else %}{{ field.value }}{% endif %}, // TODO: Set from your business logic
 {%- endfor %}
-    }{% if uses_http_json %}){% endif %}
+    }{% if uses_multi_status || uses_http_json %}){% endif %}
     {% endif %}
 }

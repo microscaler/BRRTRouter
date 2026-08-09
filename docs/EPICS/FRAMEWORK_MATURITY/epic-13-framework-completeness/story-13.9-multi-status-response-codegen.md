@@ -66,12 +66,12 @@ not stuck with ad-hoc status selection or `panic!` stubs.
 
 ### Acceptance criteria (tests)
 
-- [ ] P1/P2 and N1/N2 mandatory.
+- [x] P1/P2 and N1/N2 mandatory.
 
 ## Acceptance criteria
 
-- [ ] Codegen docs updated (`PRD_TYPED_HANDLER_HTTP_STATUS` or successor).
-- [ ] FR/NFR + unit tests complete.
+- [x] Codegen docs updated (`PRD_TYPED_HANDLER_HTTP_STATUS` or successor).
+- [x] FR/NFR + unit tests complete.
 
 ## References
 

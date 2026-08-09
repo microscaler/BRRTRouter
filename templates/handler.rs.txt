@@ -5,7 +5,9 @@
 // ⚠️ To implement business logic, edit the corresponding controller file
 use serde::{Deserialize, Serialize};
 use brrtrouter::typed::TypedHandlerRequest;
-{% if uses_http_json %}use brrtrouter::typed::HttpJson;
+{% if uses_http_no_content %}use brrtrouter::typed::HttpNoContent;
+{% else if uses_multi_status %}use brrtrouter::typed::{HandlerResponseOutput, HttpJson};
+{% else if uses_http_json %}use brrtrouter::typed::HttpJson;
 {% endif %}use brrtrouter::dispatcher::HandlerRequest;
 use std::convert::TryFrom;
 {% for import in imports -%}
@@ -41,6 +43,26 @@ pub struct Response {
     {% else %}pub {% if field.name == "type" || field.original_name == "type" %}r#type{% else %}{{ field.name }}{% endif %}: {{ field.ty }},
     {% endif %}
     {% endfor -%}
+}
+{% endif %}
+
+{% if uses_multi_status %}
+/// OpenAPI multi-status success envelope (Epic 13.9).
+pub enum ApiResponse {
+{% for variant in success_variants %}
+    /// HTTP {{ variant.status }}
+    {{ variant.name }}(Response),
+{% endfor %}
+}
+
+impl HandlerResponseOutput for ApiResponse {
+    fn into_handler_response(self) -> Result<brrtrouter::dispatcher::HandlerResponse, serde_json::Error> {
+        match self {
+{% for variant in success_variants %}
+            Self::{{ variant.name }}(body) => HttpJson::new({{ variant.status }}, body).into_handler_response(),
+{% endfor %}
+        }
+    }
 }
 {% endif %}
 
@@ -97,7 +119,7 @@ impl TryFrom<HandlerRequest> for Request {
 
 {% if !is_proxy %}
 #[allow(dead_code)]
-pub fn handler(req: TypedHandlerRequest<Request>) -> {% if uses_http_json %}HttpJson<Response>{% else %}Response{% endif %} {
+pub fn handler(req: TypedHandlerRequest<Request>) -> {% if uses_http_no_content %}HttpNoContent{% else if uses_multi_status %}ApiResponse{% else if uses_http_json %}HttpJson<Response>{% else %}Response{% endif %} {
     crate::controllers::{{ handler_name }}::handle(req)
 }
 {% endif %}

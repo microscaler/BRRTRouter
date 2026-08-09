@@ -1,5 +1,13 @@
 # Progress
 
+## 2026-08-09 — Story 13.9 multi-status / HttpNoContent codegen
+
+- `HandlerReturnShape` + templates: `ApiResponse` enum, `HttpNoContent`, keep `HttpJson` for non-2xx JSON.
+- Spec `build.rs`: retain empty-content response statuses (204 was dropped before).
+- pet_store: `post_item` → `ApiResponse`, `delete_user` → `HttpNoContent`.
+- Tests: generator templates P1/P3/N1; `delete_user_is_no_content_primary`; doc-truth compression claim flipped for 13.8.
+- Gate: `just test` + `just nt` on ms02 (one flaky typ JWT integration retry).
+
 ## 2026-08-09 — Fix jwt_auth / templates doctests
 
 - `JwksClient` example: implement `issuer` / `audience`.

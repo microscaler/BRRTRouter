@@ -16,8 +16,8 @@
 | **DONE** | 13.6 | done | [#406](https://github.com/microscaler/BRRTRouter/issues/406) | Handler deadlines → 504 |
 | **DONE** | 13.7 | done | [#407](https://github.com/microscaler/BRRTRouter/issues/407) | SSE live flush |
 | **DONE** | 13.8 | done | [#408](https://github.com/microscaler/BRRTRouter/issues/408) | Response compression |
-| **NOW** | 13.9 | todo | [#409](https://github.com/microscaler/BRRTRouter/issues/409) | Multi-status codegen |
-| — | 13.10 | todo | [#410](https://github.com/microscaler/BRRTRouter/issues/410) | Public TestApp |
+| **DONE** | 13.9 | done | [#409](https://github.com/microscaler/BRRTRouter/issues/409) | Multi-status codegen |
+| **NOW** | 13.10 | todo | [#410](https://github.com/microscaler/BRRTRouter/issues/410) | Public TestApp |
 
 ## Wave plan (Epic 13)
 
@@ -43,7 +43,7 @@ Wave 5 ──► 13.9 ‖ 13.10
 | 13.6 | Handler / request deadlines → 504 | 3 | done | [#406](https://github.com/microscaler/BRRTRouter/issues/406) |
 | 13.7 | SSE live flush streaming | 4 | done | [#407](https://github.com/microscaler/BRRTRouter/issues/407) |
 | 13.8 | Response compression middleware | 4 | done | [#408](https://github.com/microscaler/BRRTRouter/issues/408) |
-| 13.9 | Multi-status response codegen | 5 | todo | [#409](https://github.com/microscaler/BRRTRouter/issues/409) |
+| 13.9 | Multi-status response codegen | 5 | done | [#409](https://github.com/microscaler/BRRTRouter/issues/409) |
 | 13.10 | Public TestApp / RequestBuilder | 5 | todo | [#410](https://github.com/microscaler/BRRTRouter/issues/410) |
 
 ## Epic 12 — complete (archive)

@@ -95,11 +95,17 @@ fn epic13_1_n2_beginner_guide_claims_shipped_7807_after_13_3() {
 }
 
 #[test]
-fn epic13_1_n3_no_shipped_compression_middleware_claim() {
+fn epic13_1_n3_compression_middleware_marked_shipped_after_13_8() {
     let life = include_str!("../docs/RequestLifecycle.md");
     assert!(
-        life.contains("CompressionMiddleware") && life.contains("Not shipped"),
-        "CompressionMiddleware must be marked not shipped"
+        life.contains("CompressionMiddleware")
+            && life.contains("Shipped")
+            && life.contains("Epic 13.8"),
+        "CompressionMiddleware must be marked shipped after 13.8"
+    );
+    assert!(
+        !life.contains("| **CompressionMiddleware** | ❌ Not shipped"),
+        "stale Not shipped row for CompressionMiddleware forbidden"
     );
 }
 

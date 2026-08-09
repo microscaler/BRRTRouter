@@ -116,7 +116,7 @@ Traditional Rust web frameworks require you to learn:
 - ✅ **Request/response types** that match your spec
 - ✅ **Validation logic** that enforces your constraints
 - ✅ **Error handling** with RFC 7807 Problem Details (`application/problem+json`) plus legacy `error` / `reason` / `message` aliases ([Epic 13.3](../EPICS/FRAMEWORK_MATURITY/epic-13-framework-completeness/story-13.3-problem-details-rfc7807.md); [catalog](../PROBLEM_DETAILS.md))
-- ✅ **Middleware integration** (metrics, tracing, CORS, rate limiting) — compression is still planned ([Epic 13.8](../EPICS/FRAMEWORK_MATURITY/BUILD_BOARD.md))
+- ✅ **Middleware integration** (metrics, tracing, CORS, rate limiting, opt-in gzip compression — [Epic 13.8](../RESPONSE_COMPRESSION.md))
 - ✅ **Serialization/deserialization** (automatic via serde)
 
 **You don't need to learn these libraries**—you just need to understand OpenAPI (which is language-agnostic and well-documented).

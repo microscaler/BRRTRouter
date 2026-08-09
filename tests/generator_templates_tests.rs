@@ -3,8 +3,8 @@
 use brrtrouter::generator::FieldDef;
 use brrtrouter::generator::{
     write_controller, write_handler, write_impl_controller_stub, write_impl_main_rs,
-    write_impl_registry_rs, write_main_rs, write_registry_rs, ImplControllerStubParams,
-    RegistryEntry,
+    write_impl_registry_rs, write_main_rs, write_registry_rs, HandlerReturnShape,
+    ImplControllerStubParams, RegistryEntry,
 };
 use brrtrouter::spec::{ParameterMeta, ResponseSpec, RouteMeta};
 use http::Method;
@@ -59,7 +59,7 @@ fn test_template_writers() {
         &params,
         false,
         true,
-        false,
+        HandlerReturnShape::default(),
         true,
     )
     .unwrap();
@@ -76,7 +76,7 @@ fn test_template_writers() {
         None,
         None,
         "crate::AppState".to_string(),
-        false,
+        HandlerReturnShape::default(),
     )
     .unwrap();
 
@@ -194,7 +194,7 @@ fn impl_controller_stub_maps_hyphenated_package_in_use_lines() {
         sse: false,
         example: None,
         force: true,
-        uses_http_json: false,
+        return_shape: HandlerReturnShape::default(),
     })
     .unwrap();
 
@@ -252,7 +252,7 @@ fn proxy_controller_template_delegates_to_shared_module() {
         Some("fleet".to_string()),
         Some("/api/v1/fleet/vehicles".to_string()),
         "GET".to_string(),
-        false,
+        HandlerReturnShape::default(),
     )
     .unwrap();
 
@@ -429,7 +429,7 @@ fn controller_emits_http_json_when_operation_has_non_2xx_json_schema() {
         None,
         None,
         "POST".to_string(),
-        route.needs_http_json_return_type(),
+        HandlerReturnShape::from_route(&route),
     )
     .unwrap();
 
@@ -442,6 +442,175 @@ fn controller_emits_http_json_when_operation_has_non_2xx_json_schema() {
         !content.contains("panic!"),
         "generated HttpJson stub must not panic! for status control flow"
     );
+
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn handler_emits_api_response_for_200_plus_201() {
+    let dir = temp_dir();
+    let handlers_dir = dir.join("handlers");
+    fs::create_dir_all(&handlers_dir).unwrap();
+
+    let mut responses = HashMap::new();
+    let mut m200 = HashMap::new();
+    m200.insert(
+        "application/json".to_string(),
+        ResponseSpec {
+            schema: Some(
+                serde_json::json!({"type":"object","properties":{"id":{"type":"string"}}}),
+            ),
+            example: None,
+        },
+    );
+    let mut m201 = HashMap::new();
+    m201.insert(
+        "application/json".to_string(),
+        ResponseSpec {
+            schema: Some(
+                serde_json::json!({"type":"object","properties":{"id":{"type":"string"}}}),
+            ),
+            example: None,
+        },
+    );
+    responses.insert(200, m200);
+    responses.insert(201, m201);
+
+    let route = RouteMeta {
+        method: Method::POST,
+        path_pattern: "/items/{id}".into(),
+        handler_name: "post_item".into(),
+        parameters: vec![],
+        request_schema: None,
+        request_body_required: false,
+        request_content_types: Vec::new(),
+        response_schema: Some(
+            serde_json::json!({"type":"object","properties":{"id":{"type":"string"}}}),
+        ),
+        example: None,
+        responses,
+        security: vec![],
+        example_name: String::new(),
+        project_slug: String::new(),
+        output_dir: PathBuf::new(),
+        base_path: String::new(),
+        sse: false,
+        estimated_request_body_bytes: None,
+        x_brrtrouter_stack_size: None,
+        x_brrtrouter_deadline_ms: None,
+        cors_policy: brrtrouter::middleware::RouteCorsPolicy::Inherit,
+        x_service: None,
+        x_brrtrouter_downstream_path: None,
+        x_brrtrouter_impl: None,
+    };
+    assert!(route.needs_multi_status_success_enum());
+
+    let res_fields = vec![FieldDef {
+        name: "id".into(),
+        original_name: "id".into(),
+        ty: "String".into(),
+        optional: true,
+        value: "None".into(),
+    }];
+    write_handler(
+        &handlers_dir.join("post_item.rs"),
+        "post_item",
+        &[],
+        &res_fields,
+        &BTreeSet::new(),
+        &[],
+        false,
+        false,
+        HandlerReturnShape::from_route(&route),
+        true,
+    )
+    .unwrap();
+    fs::create_dir_all(dir.join("controllers")).unwrap();
+    write_controller(
+        &dir.join("controllers").join("post_item.rs"),
+        "post_item",
+        "PostItemController",
+        &res_fields,
+        None,
+        false,
+        true,
+        None,
+        None,
+        "POST".to_string(),
+        HandlerReturnShape::from_route(&route),
+    )
+    .unwrap();
+
+    let handler = fs::read_to_string(handlers_dir.join("post_item.rs")).unwrap();
+    assert!(handler.contains("pub enum ApiResponse"));
+    assert!(handler.contains("Ok(Response)"));
+    assert!(handler.contains("Created(Response)"));
+    assert!(handler.contains("-> ApiResponse"));
+    assert!(!handler.contains("panic!"));
+
+    let controller = fs::read_to_string(dir.join("controllers").join("post_item.rs")).unwrap();
+    assert!(controller.contains("-> ApiResponse"));
+    assert!(controller.contains("ApiResponse::Ok(Response {"));
+    assert!(!controller.contains("panic!"));
+
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn controller_emits_http_no_content_for_204_primary() {
+    let dir = temp_dir();
+    let controllers_dir = dir.join("controllers");
+    fs::create_dir_all(&controllers_dir).unwrap();
+
+    let mut responses = HashMap::new();
+    responses.insert(204, HashMap::new());
+    let route = RouteMeta {
+        method: Method::DELETE,
+        path_pattern: "/users/{user_id}".into(),
+        handler_name: "delete_user".into(),
+        parameters: vec![],
+        request_schema: None,
+        request_body_required: false,
+        request_content_types: Vec::new(),
+        response_schema: None,
+        example: None,
+        responses,
+        security: vec![],
+        example_name: String::new(),
+        project_slug: String::new(),
+        output_dir: PathBuf::new(),
+        base_path: String::new(),
+        sse: false,
+        estimated_request_body_bytes: None,
+        x_brrtrouter_stack_size: None,
+        x_brrtrouter_deadline_ms: None,
+        cors_policy: brrtrouter::middleware::RouteCorsPolicy::Inherit,
+        x_service: None,
+        x_brrtrouter_downstream_path: None,
+        x_brrtrouter_impl: None,
+    };
+    assert!(route.is_no_content_primary());
+
+    write_controller(
+        &controllers_dir.join("delete_user.rs"),
+        "delete_user",
+        "DeleteUserController",
+        &[],
+        None,
+        false,
+        true,
+        None,
+        None,
+        "DELETE".to_string(),
+        HandlerReturnShape::from_route(&route),
+    )
+    .unwrap();
+
+    let content = fs::read_to_string(controllers_dir.join("delete_user.rs")).unwrap();
+    assert!(content.contains("use brrtrouter::typed::HttpNoContent;"));
+    assert!(content.contains("-> HttpNoContent"));
+    assert!(content.contains("HttpNoContent"));
+    assert!(!content.contains("panic!"));
 
     fs::remove_dir_all(&dir).unwrap();
 }

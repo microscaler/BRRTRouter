@@ -11,8 +11,13 @@ pub fn handle(req: HandlerRequest) -> HandlerResponse {
 {% else %}
 use brrtrouter_macros::handler;
 use brrtrouter::typed::TypedHandlerRequest;
-{% if uses_http_json %}use brrtrouter::typed::HttpJson;
-{% endif %}use crate::handlers::{{ handler_name }}::{ Request, Response };
+{% if uses_http_no_content %}use brrtrouter::typed::HttpNoContent;
+use crate::handlers::{{ handler_name }}::Request;
+{% else if uses_multi_status %}use crate::handlers::{{ handler_name }}::{ ApiResponse, Request, Response };
+{% else if uses_http_json %}use brrtrouter::typed::HttpJson;
+use crate::handlers::{{ handler_name }}::{ Request, Response };
+{% else %}use crate::handlers::{{ handler_name }}::{ Request, Response };
+{% endif %}
 {% if sse %}use brrtrouter::sse;{% endif %}
 {% if imports.len() > 0 %}
 {% for import in imports -%}
@@ -22,8 +27,10 @@ use crate::handlers::types::{{ import }};
 {% endif %}
 
 #[handler({{ struct_name }})]
-pub fn handle(_req: TypedHandlerRequest<Request>) -> {% if uses_http_json %}HttpJson<Response>{% else %}Response{% endif %} {
-    {% if sse %}
+pub fn handle(_req: TypedHandlerRequest<Request>) -> {% if uses_http_no_content %}HttpNoContent{% else if uses_multi_status %}ApiResponse{% else if uses_http_json %}HttpJson<Response>{% else %}Response{% endif %} {
+    {% if uses_http_no_content %}
+    HttpNoContent
+    {% else if sse %}
     let (tx, rx) = sse::channel();
     for i in 0..3 { tx.send(format!("tick {i}")); }
     drop(tx);
@@ -33,7 +40,7 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> {% if uses_http_json %}Http
     // Example response:
 {{ example_json }}
     match serde_json::from_str::<Response>(r###"{{ example|safe }}"###) {
-        Ok(parsed) => return {% if uses_http_json %}HttpJson::ok(parsed){% else %}parsed{% endif %},
+        Ok(parsed) => return {% if uses_multi_status %}ApiResponse::{{ default_variant }}(parsed){% else if uses_http_json %}HttpJson::ok(parsed){% else %}parsed{% endif %},
         Err(e) => {
             eprintln!("Failed to parse mock example JSON into Response: {}", e);
             // Fallback to empty default structs below
@@ -41,13 +48,13 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> {% if uses_http_json %}Http
     }
     {%- endif %}
     {% if response_is_array %}
-    {% if uses_http_json %}HttpJson::ok({% endif %}Response({{ response_array_literal }}){% if uses_http_json %}){% endif %}
+    {% if uses_multi_status %}ApiResponse::{{ default_variant }}({% else if uses_http_json %}HttpJson::ok({% endif %}Response({{ response_array_literal }}){% if uses_multi_status || uses_http_json %}){% endif %}
     {% else %}
-    {% if uses_http_json %}HttpJson::ok({% endif %}Response {
+    {% if uses_multi_status %}ApiResponse::{{ default_variant }}({% else if uses_http_json %}HttpJson::ok({% endif %}Response {
         {% for field in response_fields -%}
         {{ field.name }}: {{ field.value }},
         {%- endfor %}
-    }{% if uses_http_json %}){% endif %}
+    }{% if uses_multi_status || uses_http_json %}){% endif %}
     {% endif %}
     {% endif %}
 }

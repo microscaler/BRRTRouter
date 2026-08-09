@@ -480,6 +480,12 @@ pub fn extract_response_schema_and_example_with_issues(
                     continue;
                 }
             };
+            // Preserve statuses with no content map (e.g. 204 No Content) so codegen
+            // can detect HttpNoContent (Epic 13.9). Previously these were dropped.
+            if resp_obj.content.is_empty() {
+                all.entry(status).or_default();
+                continue;
+            }
             for (mt, media) in &resp_obj.content {
                 let example = match &media.examples {
                     Some(MediaTypeExamples::Example { example }) => Some(example.clone()),

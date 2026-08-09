@@ -1,11 +1,11 @@
 // User-owned controller for handler 'post_item'.
 
-use crate::handlers::post_item::{Request, Response};
+use crate::handlers::post_item::{ApiResponse, Request, Response};
 use brrtrouter::typed::TypedHandlerRequest;
 use brrtrouter_macros::handler;
 
 #[handler(PostItemController)]
-pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
+pub fn handle(_req: TypedHandlerRequest<Request>) -> ApiResponse {
     // Example response:
     // {
     //   "id": "item-001",
@@ -17,15 +17,15 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
   "name": "New Item"
 }"###,
     ) {
-        Ok(parsed) => return parsed,
+        Ok(parsed) => return ApiResponse::Ok(parsed),
         Err(e) => {
             eprintln!("Failed to parse mock example JSON into Response: {}", e);
             // Fallback to empty default structs below
         }
     }
 
-    Response {
+    ApiResponse::Ok(Response {
         id: Some("item-001".to_string()),
         name: Some("New Item".to_string()),
-    }
+    })
 }

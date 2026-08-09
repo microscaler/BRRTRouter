@@ -36,6 +36,88 @@ pub struct RegistryEntry {
     pub is_proxy: bool,
 }
 
+/// One OpenAPI JSON success status → Rust enum variant (Epic 13.9).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SuccessStatusVariant {
+    /// HTTP status code (e.g. 200, 201).
+    pub status: u16,
+    /// Rust enum variant name (`Ok`, `Created`, `Status202`, …).
+    pub name: String,
+}
+
+/// How a generated handler/controller expresses its success return type.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct HandlerReturnShape {
+    /// Emit `HttpJson<Response>` (non-2xx JSON schemas, BR-3).
+    pub uses_http_json: bool,
+    /// Emit `HttpNoContent` (primary success is 204).
+    pub uses_http_no_content: bool,
+    /// Emit `ApiResponse` enum for ≥2 JSON success statuses.
+    pub uses_multi_status: bool,
+    /// Variants for `ApiResponse` (empty unless `uses_multi_status`).
+    pub success_variants: Vec<SuccessStatusVariant>,
+    /// Default stub variant name (lowest success status).
+    pub default_variant: String,
+}
+
+impl HandlerReturnShape {
+    /// Derive return-type shape from OpenAPI route metadata (Epic 13.9).
+    #[must_use]
+    pub fn from_route(route: &RouteMeta) -> Self {
+        if route.is_no_content_primary() {
+            return Self {
+                uses_http_json: false,
+                uses_http_no_content: true,
+                uses_multi_status: false,
+                success_variants: Vec::new(),
+                default_variant: String::new(),
+            };
+        }
+        let statuses = route.json_success_statuses();
+        if statuses.len() >= 2 {
+            let success_variants: Vec<SuccessStatusVariant> = statuses
+                .iter()
+                .map(|&status| SuccessStatusVariant {
+                    status,
+                    name: success_status_variant_name(status),
+                })
+                .collect();
+            let default_variant = success_variants
+                .first()
+                .map(|v| v.name.clone())
+                .unwrap_or_default();
+            return Self {
+                uses_http_json: false,
+                uses_http_no_content: false,
+                uses_multi_status: true,
+                success_variants,
+                default_variant,
+            };
+        }
+        Self {
+            uses_http_json: route.needs_http_json_return_type(),
+            uses_http_no_content: false,
+            uses_multi_status: false,
+            success_variants: Vec::new(),
+            default_variant: String::new(),
+        }
+    }
+}
+
+/// Stable Rust variant name for an OpenAPI success status.
+#[must_use]
+pub fn success_status_variant_name(status: u16) -> String {
+    match status {
+        200 => "Ok".to_string(),
+        201 => "Created".to_string(),
+        202 => "Accepted".to_string(),
+        203 => "NonAuthoritativeInformation".to_string(),
+        205 => "ResetContent".to_string(),
+        206 => "PartialContent".to_string(),
+        other => format!("Status{other}"),
+    }
+}
+
 /// Parameters for writing implementation controller stub files
 ///
 /// Groups related parameters to avoid functions with too many arguments.
@@ -58,8 +140,8 @@ pub struct ImplControllerStubParams<'a> {
     pub sse: bool,
     /// Optional example data for the response
     pub example: Option<Value>,
-    /// Whether the handler returns `HttpJson<T>` (multi-status / non-2xx typed responses).
-    pub uses_http_json: bool,
+    /// Typed success return shape (HttpJson / ApiResponse / HttpNoContent).
+    pub return_shape: HandlerReturnShape,
     /// Whether to overwrite existing files
     pub force: bool,
 }
@@ -215,6 +297,14 @@ pub struct HandlerTemplateData {
     pub is_proxy: bool,
     /// Emit `HttpJson<Response>` when OpenAPI defines non-2xx JSON response schemas (BR-3)
     pub uses_http_json: bool,
+    /// Emit `HttpNoContent` when primary success is 204 (Epic 13.9)
+    pub uses_http_no_content: bool,
+    /// Emit `ApiResponse` enum when ≥2 JSON success statuses (Epic 13.9)
+    pub uses_multi_status: bool,
+    /// `ApiResponse` variants (status + name)
+    pub success_variants: Vec<SuccessStatusVariant>,
+    /// Default stub variant for multi-status returns
+    pub default_variant: String,
 }
 
 /// Template data for generating a controller module
@@ -253,6 +343,14 @@ pub struct ControllerTemplateData {
     pub method: String,
     /// Emit `HttpJson<Response>` when OpenAPI defines non-2xx JSON response schemas (BR-3)
     pub uses_http_json: bool,
+    /// Emit `HttpNoContent` when primary success is 204 (Epic 13.9)
+    pub uses_http_no_content: bool,
+    /// Emit `ApiResponse` enum when ≥2 JSON success statuses (Epic 13.9)
+    pub uses_multi_status: bool,
+    /// `ApiResponse` variants (status + name)
+    pub success_variants: Vec<SuccessStatusVariant>,
+    /// Default stub variant for multi-status returns
+    pub default_variant: String,
 }
 
 /// Write a handler module file
@@ -283,7 +381,7 @@ pub fn write_handler(
     params: &[ParameterMeta],
     sse: bool,
     is_proxy: bool,
-    uses_http_json: bool,
+    return_shape: HandlerReturnShape,
     force: bool,
 ) -> anyhow::Result<()> {
     if path.exists() && !force {
@@ -300,7 +398,11 @@ pub fn write_handler(
         parameters: params.to_vec(),
         sse,
         is_proxy,
-        uses_http_json,
+        uses_http_json: return_shape.uses_http_json,
+        uses_http_no_content: return_shape.uses_http_no_content,
+        uses_multi_status: return_shape.uses_multi_status,
+        success_variants: return_shape.success_variants,
+        default_variant: return_shape.default_variant,
     }
     .render()?;
     fs::write(path, rendered)?;
@@ -337,7 +439,7 @@ pub fn write_controller(
     downstream_service: Option<String>,
     downstream_path: Option<String>,
     method: String,
-    uses_http_json: bool,
+    return_shape: HandlerReturnShape,
 ) -> anyhow::Result<()> {
     if path.exists() && !force {
         println!("⚠️  Skipping existing controller file: {path:?}");
@@ -462,7 +564,11 @@ pub fn write_controller(
         proxy_service,
         proxy_path,
         method,
-        uses_http_json,
+        uses_http_json: return_shape.uses_http_json,
+        uses_http_no_content: return_shape.uses_http_no_content,
+        uses_multi_status: return_shape.uses_multi_status,
+        success_variants: return_shape.success_variants,
+        default_variant: return_shape.default_variant,
     };
     fs::write(path, context.render()?)?;
     println!("✅ Generated controller: {path:?}");
@@ -1228,6 +1334,12 @@ pub struct ImplControllerStubTemplateData {
     pub example_json: String,
     /// Emit `HttpJson<Response>` when OpenAPI defines non-2xx JSON response schemas (BR-3)
     pub uses_http_json: bool,
+    /// Emit `HttpNoContent` when primary success is 204 (Epic 13.9)
+    pub uses_http_no_content: bool,
+    /// Emit `ApiResponse` enum when ≥2 JSON success statuses (Epic 13.9)
+    pub uses_multi_status: bool,
+    /// Default stub variant for multi-status returns
+    pub default_variant: String,
 }
 
 /// Template data for generating implementation crate Cargo.toml
@@ -1339,7 +1451,10 @@ pub fn write_impl_controller_stub(params: ImplControllerStubParams) -> anyhow::R
         response_array_literal,
         has_example: params.example.is_some(),
         example_json,
-        uses_http_json: params.uses_http_json,
+        uses_http_json: params.return_shape.uses_http_json,
+        uses_http_no_content: params.return_shape.uses_http_no_content,
+        uses_multi_status: params.return_shape.uses_multi_status,
+        default_variant: params.return_shape.default_variant.clone(),
     };
 
     let rendered = stub_data.render()?;
@@ -1471,10 +1586,65 @@ pub fn sync_impl_stub_response(
     response_fields: &[FieldDef],
     sse: bool,
     example: Option<&Value>,
-    uses_http_json: bool,
+    return_shape: &HandlerReturnShape,
 ) -> anyhow::Result<String> {
     if sse {
         return Err(anyhow::anyhow!("Sync not supported for SSE handlers"));
+    }
+    if return_shape.uses_http_no_content {
+        let mut out = content.to_string();
+        for from in [
+            ") -> Response {",
+            ") -> HttpJson<Response> {",
+            ") -> ApiResponse {",
+        ] {
+            if out.contains(from) {
+                out = out.replace(from, ") -> HttpNoContent {");
+            }
+        }
+        if !out.contains("use brrtrouter::typed::HttpNoContent;") {
+            if let Some(pos) = out.find("use brrtrouter::typed::TypedHandlerRequest;") {
+                let insert_at = pos + "use brrtrouter::typed::TypedHandlerRequest;".len();
+                out.insert_str(insert_at, "\nuse brrtrouter::typed::HttpNoContent;");
+            }
+        }
+        out = out.replace("\nuse brrtrouter::typed::HttpJson;", "");
+        // Best-effort: replace a trailing Response { ... } return with HttpNoContent.
+        if let Some(inner_start) = out.rfind("Response {") {
+            let after_brace = inner_start + "Response {".len();
+            let mut depth = 1u32;
+            let mut i = after_brace;
+            let bytes = out.as_bytes();
+            while i < bytes.len() && depth > 0 {
+                match bytes[i] {
+                    b'{' => depth += 1,
+                    b'}' => depth -= 1,
+                    _ => {}
+                }
+                i += 1;
+            }
+            if depth == 0 {
+                let prefix = out[..inner_start].trim_end();
+                let replace_start = if prefix.ends_with("HttpJson::ok(") {
+                    prefix.len() - "HttpJson::ok(".len()
+                } else if prefix
+                    .ends_with(&format!("ApiResponse::{}(", return_shape.default_variant))
+                {
+                    prefix.len() - format!("ApiResponse::{}(", return_shape.default_variant).len()
+                } else {
+                    inner_start
+                };
+                let mut replace_end = i;
+                if out.as_bytes().get(i) == Some(&b')') {
+                    replace_end = i + 1;
+                }
+                let mut patched = out[..replace_start].to_string();
+                patched.push_str("HttpNoContent");
+                patched.push_str(&out[replace_end..]);
+                out = patched;
+            }
+        }
+        return Ok(out);
     }
     let response_is_array = response_fields.len() == 1
         && response_fields.get(0).map(|f| f.name.as_str()) == Some("items");
@@ -1503,38 +1673,30 @@ pub fn sync_impl_stub_response(
             }
         })
         .collect();
-    let new_block = if uses_http_json {
+    let response_literal = format!(
+        "Response {{\n        {}\n    }}",
+        enriched
+            .iter()
+            .map(|f| {
+                let val = if f.optional {
+                    "None".to_string()
+                } else {
+                    f.value.clone()
+                };
+                format!("{}: {},", f.name, val)
+            })
+            .collect::<Vec<_>>()
+            .join("\n        ")
+    );
+    let new_block = if return_shape.uses_multi_status {
         format!(
-            "HttpJson::ok(Response {{\n        {}\n    }})",
-            enriched
-                .iter()
-                .map(|f| {
-                    let val = if f.optional {
-                        "None".to_string()
-                    } else {
-                        f.value.clone()
-                    };
-                    format!("{}: {},", f.name, val)
-                })
-                .collect::<Vec<_>>()
-                .join("\n        ")
+            "ApiResponse::{}({})",
+            return_shape.default_variant, response_literal
         )
+    } else if return_shape.uses_http_json {
+        format!("HttpJson::ok({response_literal})")
     } else {
-        format!(
-            "Response {{\n        {}\n    }}",
-            enriched
-                .iter()
-                .map(|f| {
-                    let val = if f.optional {
-                        "None".to_string()
-                    } else {
-                        f.value.clone()
-                    };
-                    format!("{}: {},", f.name, val)
-                })
-                .collect::<Vec<_>>()
-                .join("\n        ")
-        )
+        response_literal
     };
     let inner_needle = "Response {";
     let inner_start = content
@@ -1557,47 +1719,58 @@ pub fn sync_impl_stub_response(
     }
     let inner_end = i;
 
-    // Include optional `HttpJson::ok(` wrapper in the replace range when present.
+    // Include optional wrappers (`HttpJson::ok(` / `ApiResponse::Variant(`) in the replace range.
     let prefix = content[..inner_start].trim_end();
-    let had_http_json_wrap = prefix.ends_with("HttpJson::ok(");
-    let replace_start = if had_http_json_wrap {
-        prefix.len() - "HttpJson::ok(".len()
+    let http_json_wrap = "HttpJson::ok(";
+    let api_wrap = format!("ApiResponse::{}(", return_shape.default_variant);
+    let (replace_start, had_paren_wrap) = if prefix.ends_with(http_json_wrap) {
+        (prefix.len() - http_json_wrap.len(), true)
+    } else if prefix.ends_with(&api_wrap) {
+        (prefix.len() - api_wrap.len(), true)
     } else {
-        inner_start
+        (inner_start, false)
     };
     let mut replace_end = inner_end;
-    if had_http_json_wrap && !uses_http_json {
-        if content.as_bytes().get(inner_end) == Some(&b')') {
-            replace_end = inner_end + 1;
-        }
+    if had_paren_wrap && content.as_bytes().get(inner_end) == Some(&b')') {
+        replace_end = inner_end + 1;
+    } else if !had_paren_wrap
+        && (return_shape.uses_http_json || return_shape.uses_multi_status)
+        && content.as_bytes().get(inner_end) == Some(&b')')
+    {
+        // leave as-is; new_block includes closing paren when wrapped
     }
 
     let mut out = content[..replace_start].to_string();
     out.push_str(&new_block);
     out.push_str(&content[replace_end..]);
 
-    // Patch handle() return type and ensure HttpJson import when needed.
-    let signature_from = if uses_http_json {
-        ") -> Response {"
-    } else {
-        ") -> HttpJson<Response> {"
-    };
-    let signature_to = if uses_http_json {
+    let target_sig = if return_shape.uses_multi_status {
+        ") -> ApiResponse {"
+    } else if return_shape.uses_http_json {
         ") -> HttpJson<Response> {"
     } else {
         ") -> Response {"
     };
-    if out.contains(signature_from) {
-        out = out.replace(signature_from, signature_to);
+    for from in [
+        ") -> Response {",
+        ") -> HttpJson<Response> {",
+        ") -> ApiResponse {",
+        ") -> HttpNoContent {",
+    ] {
+        if from != target_sig && out.contains(from) {
+            out = out.replace(from, target_sig);
+        }
     }
-    if uses_http_json && !out.contains("use brrtrouter::typed::HttpJson;") {
+
+    if return_shape.uses_http_json && !out.contains("use brrtrouter::typed::HttpJson;") {
         if let Some(pos) = out.find("use brrtrouter::typed::TypedHandlerRequest;") {
             let insert_at = pos + "use brrtrouter::typed::TypedHandlerRequest;".len();
             out.insert_str(insert_at, "\nuse brrtrouter::typed::HttpJson;");
         }
-    } else if !uses_http_json {
+    } else if !return_shape.uses_http_json {
         out = out.replace("\nuse brrtrouter::typed::HttpJson;", "");
     }
+    out = out.replace("\nuse brrtrouter::typed::HttpNoContent;", "");
 
     Ok(out)
 }

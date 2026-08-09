@@ -471,3 +471,25 @@ pub struct ResponseSpec {
 /// Example: `{ 200: { "application/json": ResponseSpec { ... } } }`
 pub type Responses =
     std::collections::HashMap<u16, std::collections::HashMap<String, ResponseSpec>>;
+
+#[cfg(test)]
+mod pet_store_no_content_tests {
+    #[test]
+    fn delete_user_is_no_content_primary() {
+        let (routes, _) = crate::spec::load_spec(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/examples/openapi.yaml"
+        ))
+        .unwrap();
+        let r = routes
+            .iter()
+            .find(|x| x.handler_name.as_ref() == "delete_user")
+            .expect("delete_user route");
+        assert!(
+            r.responses.contains_key(&204),
+            "empty-content 204 must be retained in RouteMeta.responses"
+        );
+        assert!(r.is_no_content_primary());
+        assert!(!r.needs_multi_status_success_enum());
+    }
+}
