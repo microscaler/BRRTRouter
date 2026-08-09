@@ -15,7 +15,7 @@ use brrtrouter::dispatcher::{Dispatcher, HandlerRequest, HandlerResponse, Header
 use brrtrouter::http::{fetch_get, HttpFetchOptions};
 use brrtrouter::middleware::TracingMiddleware;
 use brrtrouter::router::Router;
-use brrtrouter::security::JwksBearerProvider;
+use brrtrouter::security::{JwksBearerProvider, SecurityProvider};
 use brrtrouter::server::{AppService, HttpServer, ServerHandle};
 use serde_json::json;
 use std::io::{Read, Write};
@@ -23,7 +23,7 @@ use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 mod tracing_util;
 use tracing_util::TestTracing;
@@ -221,14 +221,25 @@ paths:
         Some(PathBuf::from("examples/pet_store/static_site")),
         Some(PathBuf::from("examples/pet_store/doc")),
     );
-    let provider = JwksBearerProvider::new(&jwks_url)
-        // This legacy fixture deliberately exercises typ enforcement independently of the
-        // production asymmetric-token profile. HMAC must therefore be opted in explicitly.
-        .allowed_algorithms(&[jsonwebtoken::Algorithm::HS256])
-        .issuer("https://issuer.example")
-        .audience("my-api")
-        .leeway(30);
-    service.register_security_provider("BearerAuth", Arc::new(provider));
+    let provider = Arc::new(
+        JwksBearerProvider::new(&jwks_url)
+            // This legacy fixture deliberately exercises typ enforcement independently of the
+            // production asymmetric-token profile. HMAC must therefore be opted in explicitly.
+            .allowed_algorithms(&[jsonwebtoken::Algorithm::HS256])
+            .issuer("https://issuer.example")
+            .audience("my-api")
+            .leeway(30),
+    );
+    // Wait for the background JWKS refresh before serving traffic — otherwise the
+    // first request blocks on fetch and short client read timeouts yield status 0.
+    let ready_deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < ready_deadline {
+        if provider.readiness().is_ok() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    service.register_security_provider("BearerAuth", provider as Arc<dyn SecurityProvider>);
 
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
@@ -241,11 +252,12 @@ paths:
 fn send_raw_request(addr: &SocketAddr, req: &str) -> String {
     let mut stream = TcpStream::connect(addr).unwrap();
     stream.write_all(req.as_bytes()).unwrap();
-    // CI runners under parallel nextest need a longer read window than local dev.
-    let timeout_ms: u64 = if std::env::var("CI").is_ok() {
-        2000
+    // Parallel nextest (NEXTEST_RUN_ID) + JWKS wait can exceed 500ms locally.
+    let timeout_ms: u64 = if std::env::var("CI").is_ok() || std::env::var("NEXTEST_RUN_ID").is_ok()
+    {
+        5_000
     } else {
-        500
+        2_000
     };
     stream
         .set_read_timeout(Some(Duration::from_millis(timeout_ms)))

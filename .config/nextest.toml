@@ -18,3 +18,15 @@ slow-timeout = { period = "60s", terminate-after = 4 }
 # may reach ~2 minutes. Kill after 3 periods (6 minutes) — that means a hang.
 filter = 'test(/^curl_/)'
 slow-timeout = { period = "120s", terminate-after = 3 }
+
+[[profile.default.overrides]]
+# JWKS bearer HTTP integration tests start a mock JWKS server + AppService and
+# wait for background key refresh. Give them exclusive slots so parallel may
+# runtimes in the same binary don't starve each other into status-0 flakes.
+filter = 'test(/^test_bearer_jwks_/)'
+threads-required = 8
+
+[[profile.default.overrides]]
+# Same class of flake as test_bearer_jwks_*: status 0 when JWKS isn't ready yet.
+filter = 'test(/^integration_typ_|^security_typ_/)'
+threads-required = 8

@@ -1,5 +1,10 @@
 # Progress
 
+## 2026-08-09 — Fix flaky test_bearer_jwks_success (status 0)
+
+- Root cause: one-shot mock JWKS `accept()` consumed by `JwksBearerProvider` background refresh; request path hung → empty client body → status 0.
+- Fix: multi-accept mock + readiness probe + longer `send_request` timeout under nextest + status-0 retry helper; nextest `threads-required` for `test_bearer_jwks_*`.
+
 ## 2026-08-09 — Story 13.9 multi-status / HttpNoContent codegen
 
 - `HandlerReturnShape` + templates: `ApiResponse` enum, `HttpNoContent`, keep `HttpJson` for non-2xx JSON.

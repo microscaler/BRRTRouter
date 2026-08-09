@@ -400,13 +400,17 @@ fn make_token(scope: &str) -> String {
 fn send_request(addr: &SocketAddr, req: &str) -> String {
     let mut stream = TcpStream::connect(addr).unwrap();
     stream.write_all(req.as_bytes()).unwrap();
-    // Allow slower CI environments (GitHub runners set CI=true; act sets ACT)
-    // a longer read window — under parallel nextest on a 2-core runner the
-    // 500ms local window starves and yields status-0 flakes.
-    let timeout_ms: u64 = if std::env::var("CI").is_ok() || std::env::var("ACT").is_ok() {
-        2000
+    // Auth paths that fetch JWKS on the request (or wait for an in-flight refresh)
+    // can take multiple seconds under parallel nextest. A 500ms local window produced
+    // status-0 flakes (`parse_status` on an empty body) for `test_bearer_jwks_*`.
+    // CI/act/nextest get a longer budget; plain `cargo test` still uses 2s.
+    let timeout_ms: u64 = if std::env::var("CI").is_ok()
+        || std::env::var("ACT").is_ok()
+        || std::env::var("NEXTEST_RUN_ID").is_ok()
+    {
+        5_000
     } else {
-        500
+        2_000
     };
     stream
         .set_read_timeout(Some(Duration::from_millis(timeout_ms)))
@@ -594,18 +598,48 @@ fn start_mock_jwks_server(body: String) -> String {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     let url = format!("http://{}:{}/jwks.json", addr.ip(), addr.port());
-    thread::spawn(move || {
-        if let Ok((mut stream, _)) = listener.accept() {
-            let mut buf = [0u8; 1024];
-            let _ = stream.read(&mut buf);
-            let resp = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
-                body.len(),
-                body
-            );
-            let _ = stream.write_all(resp.as_bytes());
+    // Serve forever: `JwksBearerProvider::new` starts a background refresh that
+    // consumes one connection, and the first authenticated request may refresh
+    // again (or race with the background thread). A one-shot accept left the
+    // request path hanging on JWKS fetch → empty HTTP client body → status 0.
+    thread::spawn(move || loop {
+        match listener.accept() {
+            Ok((mut stream, _)) => {
+                let mut buf = [0u8; 4096];
+                let _ = stream.read(&mut buf);
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = stream.write_all(resp.as_bytes());
+                let _ = stream.flush();
+            }
+            Err(_) => break,
         }
     });
+    // Cheap readiness probe (short timeouts — never call the full HTTP fetch
+    // client here; its default path can block far longer than this budget).
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < deadline {
+        match TcpStream::connect_timeout(&addr, Duration::from_millis(50)) {
+            Ok(mut stream) => {
+                let _ = stream.set_read_timeout(Some(Duration::from_millis(100)));
+                let _ = stream.set_write_timeout(Some(Duration::from_millis(100)));
+                let probe =
+                    b"GET /jwks.json HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n";
+                if stream.write_all(probe).is_ok() {
+                    let mut buf = [0u8; 64];
+                    if let Ok(n) = stream.read(&mut buf) {
+                        if n > 0 && buf.starts_with(b"HTTP/1.1 200") {
+                            break;
+                        }
+                    }
+                }
+            }
+            Err(_) => thread::sleep(Duration::from_millis(10)),
+        }
+    }
     url
 }
 
@@ -684,16 +718,44 @@ paths:
         Some(PathBuf::from("examples/pet_store/static_site")),
         Some(PathBuf::from("examples/pet_store/doc")),
     );
-    let provider = brrtrouter::security::JwksBearerProvider::new(jwks_url.to_string())
-        .issuer(iss.to_string())
-        .audience(aud.to_string());
-    service.register_security_provider("BearerAuth", Arc::new(provider));
+    let provider = Arc::new(
+        brrtrouter::security::JwksBearerProvider::new(jwks_url.to_string())
+            .issuer(iss.to_string())
+            .audience(aud.to_string()),
+    );
+    // Block until background JWKS refresh has keys — avoids status-0 flakes when the
+    // first authenticated request races an empty cache under parallel nextest.
+    let ready_deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < ready_deadline {
+        if provider.readiness().is_ok() {
+            break;
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    service.register_security_provider("BearerAuth", provider as Arc<dyn SecurityProvider>);
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     drop(listener);
     let handle = HttpServer(service).start(addr).unwrap();
     handle.wait_ready().unwrap();
     (tracing, handle, addr)
+}
+
+/// Retry when the HTTP client got no response yet (status 0) — typically the
+/// JWKS background refresh has not populated the cache and the request path is
+/// still waiting. Does **not** retry real 4xx/5xx outcomes.
+fn send_request_awaiting_status(addr: &SocketAddr, req: &str) -> u16 {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut last = 0u16;
+    while Instant::now() < deadline {
+        let resp = send_request(addr, req);
+        last = parse_status(&resp);
+        if last != 0 {
+            return last;
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+    last
 }
 
 #[test]
@@ -714,8 +776,7 @@ fn test_bearer_jwks_success() {
     let server = SecurityTestServer::from_jwks(&jwks_url, iss, aud);
     let req =
         format!("GET /header HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer {token}\r\n\r\n");
-    let resp = send_request(&server.addr(), &req);
-    let status_ok = parse_status(&resp);
+    let status_ok = send_request_awaiting_status(&server.addr(), &req);
     assert_eq!(status_ok, 200);
     // Automatic cleanup!
 }
@@ -738,8 +799,7 @@ fn test_bearer_jwks_invalid_signature() {
     let server = SecurityTestServer::from_jwks(&jwks_url, iss, aud);
     let req =
         format!("GET /header HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer {token}\r\n\r\n");
-    let resp = send_request(&server.addr(), &req);
-    let status = parse_status(&resp);
+    let status = send_request_awaiting_status(&server.addr(), &req);
     assert_eq!(status, 401);
     // Automatic cleanup!
 }
