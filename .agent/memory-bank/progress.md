@@ -1,12 +1,17 @@
 # Progress
 
+## 2026-08-09 — Fix test_panic_recovery vs problem+json
+
+- Panic path still returns 500; failure was `parse_response` only accepting `application/json`.
+- Updated helper + assertions for `application/problem+json` (Epic 13.3). Uncommitted until asked.
+
 ## 2026-08-09 — Story 13.6 handler deadlines → 504
 
 - `src/dispatcher/deadline.rs` + `recv_timeout` wait; default off.
 - Config: `BRRTR_HANDLER_DEADLINE_MS` / `http.handler_deadline_ms` / `x-brrtrouter-deadline-ms`.
 - Metric `brrtrouter_handler_deadline_timeouts_total`; docs `HANDLER_DEADLINES.md`.
 - Tests: `dispatcher::deadline` + `handler_deadline_integration_tests`.
-- Closed #406.
+- Closed #406. Pushed `62a6a37`.
 
 ## 2026-08-09 — Story 13.5 browser posture (Option B)
 

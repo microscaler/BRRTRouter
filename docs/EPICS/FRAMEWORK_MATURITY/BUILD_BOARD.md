@@ -51,7 +51,9 @@ Wave 5 ──► 13.9 ‖ 13.10
 | ID | Title | Status | GitHub |
 |----|--------|--------|--------|
 | Epic 12 | Framework maturity | done | [#391](https://github.com/microscaler/BRRTRouter/issues/391) |
-| 12.1–12.8 | See [epic-12 README](epic-12-framework-maturity/README.md) | done | #392–#399 |
+| 12.1 | Doc / status reconciliation | done | [#392](https://github.com/microscaler/BRRTRouter/issues/392) |
+| 12.2 | Hard inbound body limits → 413 | done | [#393](https://github.com/microscaler/BRRTRouter/issues/393) |
+| 12.3–12.8 | See [epic-12 README](epic-12-framework-maturity/README.md) | done | #394–#399 |
 
 ## Sibling epics (from gap audit — not in Epic 13)
 

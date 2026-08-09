@@ -361,7 +361,10 @@ fn parse_response_parts(resp: &str) -> (u16, String, String) {
 
 fn parse_response(resp: &str) -> (u16, Value) {
     let (status, content_type, body) = parse_response_parts(resp);
-    if content_type.starts_with("application/json") {
+    // Epic 13.3: framework errors use application/problem+json (still JSON).
+    let is_json = content_type.starts_with("application/json")
+        || content_type.starts_with("application/problem+json");
+    if is_json {
         let json: Value = serde_json::from_str(&body).unwrap_or_default();
         (status, json)
     } else {
@@ -414,9 +417,24 @@ fn test_panic_recovery() {
         &server.addr(),
         "GET /panic HTTP/1.1\r\nHost: localhost\r\n\r\n",
     );
-    let (status, body) = parse_response(&resp);
+    let (status, content_type, _) = parse_response_parts(&resp);
+    let (status2, body) = parse_response(&resp);
+    assert_eq!(status, status2);
+    // Panic is caught in the handler coroutine; client still gets 500 (not a hang / crash).
     assert_eq!(status, 500);
-    assert!(body.get("error").is_some());
+    assert!(
+        content_type.starts_with("application/problem+json")
+            || content_type.starts_with("application/json"),
+        "panic recovery should return JSON error body, got ct={content_type}"
+    );
+    assert!(
+        body.get("error").is_some() || body.get("detail").is_some(),
+        "expected problem/legacy error fields, got {body}"
+    );
+    assert!(
+        body.to_string().to_lowercase().contains("panic"),
+        "error body should mention panic: {body}"
+    );
 
     // Automatic cleanup!
 }

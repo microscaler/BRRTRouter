@@ -1,6 +1,6 @@
 ## 2026-08-09 — Epic 13.6 handler deadlines shipped
 
-**Issue:** [#406](https://github.com/microscaler/BRRTRouter/issues/406)
+**Commit:** `62a6a37` · Issue [#406](https://github.com/microscaler/BRRTRouter/issues/406) closed.
 
 - `src/dispatcher/deadline.rs` — resolve + 504 problem; env `BRRTR_HANDLER_DEADLINE_MS`
 - Dispatcher `recv_timeout`; route `x-brrtrouter-deadline-ms`; metric callback

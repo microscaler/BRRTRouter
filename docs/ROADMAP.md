@@ -9,7 +9,8 @@
 >   - [Epic 15 — OpenAPI surface](EPICS/OPENAPI_SURFACE/BUILD_BOARD.md)
 >   - [Epic 16 — Release & observability](EPICS/RELEASE_MATURITY/BUILD_BOARD.md)
 > - **Shipped recently:** [Epic 12](EPICS/FRAMEWORK_MATURITY/epic-12-framework-maturity/README.md),
->   Epics [10](EPICS/URI_REQUEST_TARGET/BUILD_BOARD.md)–[11](EPICS/URI_REQUEST_TARGET/epic-11-http-query-method/README.md)
+>   [Epic 10](EPICS/URI_REQUEST_TARGET/BUILD_BOARD.md),
+>   [Epic 11](EPICS/URI_REQUEST_TARGET/epic-11-http-query-method/README.md)
 > - **Parked:** WebSocket, OAS callback auto-fire engine, radix rewrite — [PARKED.md](EPICS/PARKED.md)
 > - **Open reference product:** [Sesame-IDAM](https://github.com/microscaler/sesame-idam) —
 >   [BUILDING_WITH_BRRTROUTER.md](BUILDING_WITH_BRRTROUTER.md) (not private Hauliage / PriceWhisperer; not immature RERP).
