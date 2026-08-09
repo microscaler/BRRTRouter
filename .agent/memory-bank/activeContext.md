@@ -4,6 +4,7 @@
 - 13.6 deadlines `62a6a37` · 13.8 compression `38512b4` · 13.7 SSE live `7589139`
 - may_minihttp chunked streaming `7f91f65`
 - test/docs fixtures `5ee255d`
+- doctest repairs (jwt_auth + DependencyRegistry ignore) — see progress.md
 
 **13.9 IN PROGRESS** (#409)
 - `RouteMeta::{json_success_statuses, needs_multi_status_success_enum, is_no_content_primary}` + unit tests

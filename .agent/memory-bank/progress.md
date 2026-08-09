@@ -1,5 +1,14 @@
 # Progress
 
+## 2026-08-09 — Fix jwt_auth / templates doctests
+
+- `JwksClient` example: implement `issuer` / `audience`.
+- `AccessClaims` example: import `SxClaims`.
+- `JwtAuthMiddleware` examples: `use std::sync::Arc`, `AccessClaims` (not `types::`), real `DummyClient` stub.
+- `DependencyRegistry` example: `rust,ignore` (crate-private).
+- Verified: `cargo test --doc` → 44 passed, 0 failed.
+- Pushed (doctest-only; left incidental `Cargo.lock` patch reorder uncommitted).
+
 ## 2026-08-09 — Explored 13.7 SSE live flush (read-only)
 
 - Mapped buffered path: `sse::collect` → handler String body → `response.rs` → may_minihttp `encode` (Content-Length).
