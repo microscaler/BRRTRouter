@@ -104,9 +104,9 @@ pub use auth::AuthMiddleware;
 pub use compression::{CompressionConfig, CompressionMiddleware, DEFAULT_MIN_BYTES};
 pub use core::Middleware;
 pub use cors::{
-    build_route_cors_map, extract_route_cors_config, merge_route_policies_with_global_origins,
-    merge_vary_field_value, CorsConfigError, CorsMiddleware, CorsMiddlewareBuilder,
-    OriginValidation, RouteCorsConfig, RouteCorsPolicy,
+    build_route_cors_map, default_cors_allowed_methods, extract_route_cors_config,
+    merge_route_policies_with_global_origins, merge_vary_field_value, CorsConfigError,
+    CorsMiddleware, CorsMiddlewareBuilder, OriginValidation, RouteCorsConfig, RouteCorsPolicy,
 };
 pub use jwks::JwksHeadersMiddleware;
 pub use memory::MemoryMiddleware;

@@ -51,13 +51,7 @@ impl RouteCorsConfig {
         Self {
             origin_validation: OriginValidation::Exact(vec![]), // Will be set from config.yaml
             allowed_headers: vec!["Content-Type".into(), "Authorization".into()],
-            allowed_methods: vec![
-                http::Method::GET,
-                http::Method::POST,
-                http::Method::PUT,
-                http::Method::DELETE,
-                http::Method::OPTIONS,
-            ],
+            allowed_methods: super::default_cors_allowed_methods(),
             allow_credentials: false,
             expose_headers: vec![],
             max_age: None,

@@ -100,6 +100,9 @@ cors:
     - "PUT"
     - "DELETE"
     - "OPTIONS"
+    # RFC 10008 QUERY — required for browser preflight (Epic 11 / Story 11.1).
+    # Do not remove: gen/config is overwritten from this template on every regen.
+    - "QUERY"
   allow_credentials: false
   expose_headers: []
   max_age: null  # Preflight cache duration in seconds (null = no caching)

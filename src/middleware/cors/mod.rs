@@ -55,6 +55,25 @@ use tracing::{debug, warn};
 use crate::dispatcher::{HandlerRequest, HandlerResponse, HeaderVec};
 use crate::middleware::{MetricsMiddleware, Middleware};
 
+/// Default CORS `Access-Control-Allow-Methods` list (Epic 11 / Story 11.1).
+///
+/// Includes RFC 10008 `QUERY` so browser preflights succeed when apps load the
+/// Askama-generated `config.yaml` (which replaces builder defaults via
+/// `cors_setup`). Single source of truth for [`CorsMiddleware::default`],
+/// [`CorsMiddleware::permissive`], [`CorsMiddlewareBuilder::new`], and
+/// [`RouteCorsConfig::default`].
+#[must_use]
+pub fn default_cors_allowed_methods() -> Vec<Method> {
+    vec![
+        Method::GET,
+        Method::POST,
+        Method::PUT,
+        Method::DELETE,
+        Method::OPTIONS,
+        crate::http::method_query(),
+    ]
+}
+
 /// First comma-separated value from `X-Forwarded-*` headers (typical reverse-proxy chains).
 fn first_forwarded_token(s: &str) -> &str {
     s.split(',').next().unwrap_or("").trim()
@@ -959,14 +978,7 @@ impl CorsMiddleware {
         Self {
             origin_validation: OriginValidation::Wildcard,
             allowed_headers: vec!["Content-Type".into(), "Authorization".into()],
-            allowed_methods: vec![
-                Method::GET,
-                Method::POST,
-                Method::PUT,
-                Method::DELETE,
-                Method::OPTIONS,
-                crate::http::method_query(),
-            ],
+            allowed_methods: default_cors_allowed_methods(),
             allow_credentials: false, // Cannot be true with wildcard
             expose_headers: vec![],
             max_age: None,
@@ -1013,14 +1025,7 @@ impl Default for CorsMiddleware {
         Self {
             origin_validation: OriginValidation::Exact(vec![]), // Empty - secure by default
             allowed_headers: vec!["Content-Type".into(), "Authorization".into()],
-            allowed_methods: vec![
-                Method::GET,
-                Method::POST,
-                Method::PUT,
-                Method::DELETE,
-                Method::OPTIONS,
-                crate::http::method_query(),
-            ],
+            allowed_methods: default_cors_allowed_methods(),
             allow_credentials: false,
             expose_headers: vec![],
             max_age: None,

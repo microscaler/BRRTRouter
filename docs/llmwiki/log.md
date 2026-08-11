@@ -86,3 +86,9 @@ HI-7 verified (`73744df`), company smoke 2/2, consignments JWKS, BFF login 200 (
 - Test: `controller_emits_http_json_when_operation_has_non_2xx_json_schema`.
 
 **Unblocks:** sesame SI-4 (`auth_refresh` OAuth 401) — consumer OpenAPI must include `401` JSON schema.
+
+## [2026-08-11] contribute | Epic 11 QUERY in Askama config CORS defaults
+
+- Root cause: `gen/config/config.yaml` is always overwritten from `templates/config.yaml`, which omitted `QUERY`; `CorsMiddlewareBuilder::new` and `RouteCorsConfig::default` also omitted QUERY while `CorsMiddleware::default` / `permissive` already included it. Hand-patching consumer gen/ was wrong and got clobbered on regen.
+- Fix: `default_cors_allowed_methods()` shared helper; Askama template + builder + RouteCorsConfig; `docs/CORS.md` + consumer-guide Allow-Methods aligned; tests for template / builder / route defaults.
+- OpenAPI `query:` parsing/codegen was already complete — CORS methods are static config, not derived from OpenAPI.

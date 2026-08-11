@@ -147,6 +147,48 @@ mod tests {
         );
     }
 
+    /// Builder defaults (used by generated `main` / cors_setup when config omits
+    /// methods) must include QUERY — same list as `CorsMiddleware::default`.
+    #[test]
+    fn query_method_positive_p3b_cors_builder_default_lists_query() {
+        let mw = CorsMiddlewareBuilder::new()
+            .allowed_origins(&["https://app.example"])
+            .build()
+            .unwrap();
+        let req = options_req("https://app.example", "QUERY");
+        let resp = mw.before(&req).expect("preflight response");
+        assert_eq!(resp.status, 200);
+        let methods = resp
+            .get_header("access-control-allow-methods")
+            .expect("Allow-Methods");
+        assert!(
+            methods.split(", ").any(|m| m == "QUERY"),
+            "builder default must list QUERY (Epic 11); got {methods}"
+        );
+    }
+
+    #[test]
+    fn query_method_positive_p3c_route_cors_config_default_includes_query() {
+        use crate::middleware::RouteCorsConfig;
+        assert!(
+            RouteCorsConfig::default()
+                .allowed_methods
+                .iter()
+                .any(|m| m == &method_query()),
+            "RouteCorsConfig::default must include QUERY when x-cors omits allowedMethods"
+        );
+    }
+
+    #[test]
+    fn query_method_positive_p3d_default_cors_methods_match_middleware_default() {
+        use crate::middleware::default_cors_allowed_methods;
+        let shared = default_cors_allowed_methods();
+        assert!(shared.iter().any(|m| m == &method_query()));
+        // CorsMiddleware::default uses the shared helper; empty origins still
+        // advertise the method list on a matching-origin preflight via builder path.
+        assert_eq!(shared.len(), 6);
+    }
+
     #[test]
     fn query_method_positive_p4_cors_allows_query_request_method() {
         let mw = CorsMiddleware::permissive();

@@ -35,6 +35,7 @@ cors:
     - "PUT"
     - "DELETE"
     - "OPTIONS"
+    - "QUERY"   # RFC 10008 — browser preflight (Epic 11)
   allow_credentials: false
   expose_headers: []
   max_age: null  # Preflight cache duration in seconds (null = no caching)

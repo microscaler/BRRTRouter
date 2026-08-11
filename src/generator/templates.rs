@@ -1266,9 +1266,11 @@ pub fn write_static_index(dir: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Write the default config.yaml
+/// Write the default `config.yaml` from [`ConfigYamlTemplate`].
 ///
-/// Generates a configuration file with default settings for the application.
+/// **Always overwrites** `dir/config.yaml` on docs-scoped generate. Do not hand-edit
+/// `gen/config/config.yaml` in consumers — fix [`templates/config.yaml`](../../../templates/config.yaml)
+/// instead (includes RFC 10008 `QUERY` under `cors.allowed_methods`, Epic 11).
 ///
 /// # Arguments
 ///
@@ -1824,6 +1826,39 @@ pub fn update_impl_mod_rs(
 
     fs::write(&mod_rs_path, new_content)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod config_yaml_template_tests {
+    use super::{write_default_config, ConfigYamlTemplate};
+    use askama::Template;
+
+    #[test]
+    fn config_yaml_template_positive_includes_query() {
+        let rendered = ConfigYamlTemplate
+            .render()
+            .expect("config.yaml Askama template must render");
+        assert!(
+            rendered.contains("- \"QUERY\""),
+            "templates/config.yaml must list QUERY so regen does not strip Epic 11 CORS; got:\n{rendered}"
+        );
+        let options = rendered
+            .find("- \"OPTIONS\"")
+            .expect("OPTIONS must precede QUERY in allowed_methods");
+        let query = rendered.find("- \"QUERY\"").expect("QUERY present");
+        assert!(query > options, "QUERY should follow OPTIONS in the list");
+    }
+
+    #[test]
+    fn write_default_config_positive_includes_query() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_default_config(dir.path()).expect("write_default_config");
+        let body = std::fs::read_to_string(dir.path().join("config.yaml")).expect("read");
+        assert!(
+            body.contains("- \"QUERY\""),
+            "write_default_config must emit QUERY for browser preflight"
+        );
+    }
 }
 
 #[cfg(test)]

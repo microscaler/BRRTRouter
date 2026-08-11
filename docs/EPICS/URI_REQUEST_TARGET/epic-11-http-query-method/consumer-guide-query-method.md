@@ -53,8 +53,9 @@ Access-Control-Request-Method: QUERY
 ```http
 HTTP/1.1 200 OK
 Access-Control-Allow-Origin: https://app.example
-Access-Control-Allow-Methods: GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS, TRACE, QUERY
+Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS, QUERY
 ```
+
 
 ## HTML forms
 

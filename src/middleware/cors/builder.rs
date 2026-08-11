@@ -44,7 +44,7 @@ impl CorsMiddlewareBuilder {
     /// Default configuration:
     /// - No origins allowed (empty list)
     /// - Common headers: `["Content-Type", "Authorization"]`
-    /// - Common methods: `GET, POST, PUT, DELETE, OPTIONS`
+    /// - Common methods: `GET, POST, PUT, DELETE, OPTIONS, QUERY` (Epic 11)
     /// - Credentials: `false`
     /// - Exposed headers: empty
     /// - Max age: `None` (no preflight caching)
@@ -63,13 +63,7 @@ impl CorsMiddlewareBuilder {
         Self {
             origin_validation: None,
             allowed_headers: vec!["Content-Type".into(), "Authorization".into()],
-            allowed_methods: vec![
-                Method::GET,
-                Method::POST,
-                Method::PUT,
-                Method::DELETE,
-                Method::OPTIONS,
-            ],
+            allowed_methods: super::default_cors_allowed_methods(),
             allow_credentials: false,
             expose_headers: vec![],
             max_age: None,
