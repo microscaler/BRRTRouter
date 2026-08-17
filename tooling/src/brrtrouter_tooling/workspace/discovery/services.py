@@ -9,7 +9,27 @@ from .sources import (
     discover_helm,
     discover_openapi_suite_microservice_localhost,
 )
-from .suites import iter_bffs, iter_suite_services
+from .suites import bff_suite_config_path, iter_bffs, iter_suite_services
+
+
+def package_prefix(project_root: Path, suite: str) -> str:
+    """Cargo package-name prefix for a suite (generic — no hauliage hardcoding).
+
+    Order: `package_prefix` in the suite's bff-suite-config.yaml, then the
+    BRRTROUTER_PACKAGE_PREFIX env var, then 'hauliage' for back-compat.
+    """
+    import os
+
+    import yaml
+
+    try:
+        cfg = yaml.safe_load(bff_suite_config_path(project_root, suite).read_text()) or {}
+        prefix = str(cfg.get("package_prefix") or "").strip()
+        if prefix:
+            return prefix
+    except (OSError, yaml.YAMLError):
+        pass
+    return os.environ.get("BRRTROUTER_PACKAGE_PREFIX", "").strip() or "hauliage"
 
 
 def get_package_names(project_root: Path, suite: str | None = None) -> dict[str, str]:
@@ -25,10 +45,10 @@ def get_package_names(project_root: Path, suite: str | None = None) -> dict[str,
     out: dict[str, str] = {}
     for _s, service_name in iter_suite_services(project_root, suite=suite):
         snake = service_name.replace("-", "_")
-        out[service_name] = f"hauliage_{snake}"
+        out[service_name] = f"{package_prefix(project_root, _s)}_{snake}"
     for bff_svc, _s in iter_bffs(project_root, suite=suite):
         snake = bff_svc.replace("-", "_")
-        out[bff_svc] = f"hauliage_{snake}"
+        out[bff_svc] = f"{package_prefix(project_root, _s)}_{snake}"
     return out
 
 

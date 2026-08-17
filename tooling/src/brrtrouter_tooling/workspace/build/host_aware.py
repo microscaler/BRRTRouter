@@ -194,7 +194,8 @@ def _build_service(
 ) -> bool:
     # Hauliage: microservices/<system>/<module>/impl (e.g. microservices/identity/impl)
     # Package name in impl/Cargo.toml is hauliage_<system>_<module_snake> (no _impl suffix)
-    package_name = f"hauliage_{system}_{module.replace('-', '_')}"
+    from brrtrouter_tooling.workspace.discovery.services import package_prefix as _pp
+    package_name = f"{_pp(project_root, system)}_{system}_{module.replace('-', '_')}"
     crate = project_root / WORKSPACE_DIR / system / module / "impl"
     manifest = project_root / WORKSPACE_DIR / "Cargo.toml"
     if not crate.exists():

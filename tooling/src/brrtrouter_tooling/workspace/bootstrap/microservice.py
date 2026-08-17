@@ -17,6 +17,13 @@ import yaml
 from brrtrouter_tooling.workspace.env_paths import discover_brrtrouter_root
 
 
+def _pkg_prefix(project_root, suite):
+    """Suite package prefix (generic): bff-suite-config package_prefix → env → 'hauliage'."""
+    from brrtrouter_tooling.workspace.discovery.services import package_prefix
+
+    return package_prefix(Path(project_root), suite or "hauliage")
+
+
 def _get_registry_path(project_root: Path) -> Path | None:
     p = (
         Path(os.environ.get("HAULIAGE_PORT_REGISTRY", "")).resolve()
@@ -50,17 +57,15 @@ def to_pascal_case(name: str) -> str:
 
 
 def derive_binary_name(openapi_spec: dict[str, Any], service_name: str) -> str:
-    title = (openapi_spec.get("info") or {}).get("title", "")
-    if title:
-        binary_name = to_snake_case(title)
-        if not binary_name.endswith("_api"):
-            binary_name = (
-                binary_name + "_api"
-                if binary_name.endswith("_service")
-                else binary_name + "_service_api"
-            )
-        return binary_name
-    return f"{service_name.replace('-', '_')}_service_api"
+    """Artifact/binary name for Dockerfile COPY and build_artifacts/.
+
+    The SERVICE NAME is authoritative (matches discovery.get_binary_names and
+    the Tilt image loop). Titles are prose — slugging them produced names like
+    `price_whisperer_trader_—_feedback_service_api` (em-dash included) when a
+    suite used human-readable spec titles.
+    """
+    del openapi_spec  # kept for signature compatibility
+    return service_name.replace("-", "_")
 
 
 def load_openapi_spec(spec_path: Path) -> dict[str, Any]:
@@ -124,11 +129,12 @@ ENTRYPOINT ["/app/{binary_name}", \\
     print(f"✅ Created Dockerfile: {output_path}")
 
 
-def create_config_yaml(output_path: Path) -> None:
-    config_content = """# BRRTRouter application configuration (YAML)
+def create_config_yaml(output_path: Path, port: int | str | None = None) -> None:
+    port_line = f"port: {port}\n" if port else ""
+    config_content = f"""# BRRTRouter application configuration (YAML)
 # Adjust values per environment and reload/restart the app.
 
-security:
+{port_line}security:
   api_keys:
     ApiKeyHeader:
       key: "test123"
@@ -282,11 +288,11 @@ def update_tiltfile(
         print("✅ Updated Tiltfile")
 
 
-def _update_gen_cargo_toml(cargo_path: Path, service_name: str) -> None:
+def _update_gen_cargo_toml(cargo_path: Path, service_name: str, prefix: str = "hauliage") -> None:
     """Update gen/Cargo.toml to be a library crate (version, [lib]). [package].name is NOT touched — it is set by brrtrouter-gen via --package-name."""
     content = cargo_path.read_text()
     service_snake = service_name.replace("-", "_")
-    gen_crate_name = f"hauliage_{service_snake}_gen"
+    gen_crate_name = f"{prefix}_{service_snake}_gen"
 
     # Do not overwrite [package].name — it is written by brrtrouter-gen when we pass --package-name.
     # Update version to match workspace
@@ -305,11 +311,11 @@ def _update_gen_cargo_toml(cargo_path: Path, service_name: str) -> None:
     cargo_path.write_text(content)
 
 
-def _create_impl_cargo_toml(cargo_path: Path, service_name: str) -> None:
+def _create_impl_cargo_toml(cargo_path: Path, service_name: str, prefix: str = "hauliage") -> None:
     """Create impl/Cargo.toml as a binary crate."""
     service_snake = service_name.replace("-", "_")
-    gen_crate_name = f"hauliage_{service_snake}_gen"
-    impl_crate_name = f"hauliage_{service_snake}"
+    gen_crate_name = f"{prefix}_{service_snake}_gen"
+    impl_crate_name = f"{prefix}_{service_snake}"
 
     cargo_content = f"""[package]
 name = "{impl_crate_name}"
@@ -331,6 +337,9 @@ jemalloc = ["tikv-jemallocator"]
 # BRRTRouter (re-exported from gen crate, but may need direct access)
 brrtrouter = {{ workspace = true }}
 brrtrouter_macros = {{ workspace = true }}
+
+# Generated main.rs uses arc_swap::ArcSwap (hot-reload router/dispatcher swap)
+arc-swap = {{ workspace = true }}
 
 # Decimal types from OpenAPI format: decimal / money (used in generated stubs)
 rust_decimal = {{ workspace = true }}
@@ -355,7 +364,9 @@ may_postgres = {{ git = "https://github.com/microscaler/may_postgres.git", branc
     cargo_path.write_text(cargo_content)
 
 
-def _create_impl_main(gen_main_path: Path, impl_main_path: Path, service_name: str) -> None:
+def _create_impl_main(
+    gen_main_path: Path, impl_main_path: Path, service_name: str, prefix: str = "hauliage"
+) -> None:
     """Create impl/src/main.rs from gen/src/main.rs with necessary modifications.
 
     Modifications:
@@ -371,7 +382,7 @@ def _create_impl_main(gen_main_path: Path, impl_main_path: Path, service_name: s
 
     content = gen_main_path.read_text()
     service_snake = service_name.replace("-", "_")
-    gen_crate_name = f"hauliage_{service_snake}_gen"
+    gen_crate_name = f"{prefix}_{service_snake}_gen"
 
     # 1. Remove the warning comments at the top (they're for gen, not impl)
     content = re.sub(
@@ -496,13 +507,17 @@ def _ensure_impl_scaffold(project_root: Path, suite: str, service_name: str) -> 
     (impl_dir / "src" / "controllers").mkdir(parents=True, exist_ok=True)
     config_path = impl_dir / "config" / "config.yaml"
     if not config_path.exists():
-        create_config_yaml(config_path)
+        from brrtrouter_tooling.workspace.build.constants import get_service_ports
+
+        create_config_yaml(config_path, port=get_service_ports(project_root).get(service_name))
     impl_cargo = impl_dir / "Cargo.toml"
-    _create_impl_cargo_toml(impl_cargo, service_name)
+    _create_impl_cargo_toml(impl_cargo, service_name, prefix=_pkg_prefix(project_root, suite))
     gen_main = gen_dir / "src" / "main.rs"
     impl_main = impl_dir / "src" / "main.rs"
     if gen_main.exists():
-        _create_impl_main(gen_main, impl_main, service_name)
+        _create_impl_main(
+            gen_main, impl_main, service_name, prefix=_pkg_prefix(project_root, suite)
+        )
     cargo_toml_path = project_root / "microservices" / "Cargo.toml"
     update_workspace_cargo_toml(service_name, cargo_toml_path, suite=suite)
     print(f"✅ Created impl scaffold for {service_name} (impl/, Cargo.toml, main.rs, config)")
@@ -655,7 +670,9 @@ def run_bootstrap_microservice(
 
         run_fix_cargo_paths(gen_cargo, project_root)
         # Update gen/Cargo.toml to be a library crate
-        _update_gen_cargo_toml(gen_cargo, service_name)
+        _update_gen_cargo_toml(
+            gen_cargo, service_name, prefix=_pkg_prefix(project_root, resolved_suite)
+        )
 
     # Create impl directory structure
     impl_dir.mkdir(parents=True, exist_ok=True)
@@ -663,18 +680,22 @@ def run_bootstrap_microservice(
     (impl_dir / "src" / "controllers").mkdir(parents=True, exist_ok=True)
 
     if not config_path.exists():
-        create_config_yaml(config_path)
+        create_config_yaml(config_path, port=port)
 
     # Create impl/Cargo.toml if it doesn't exist
     impl_cargo = impl_dir / "Cargo.toml"
     if not impl_cargo.exists():
-        _create_impl_cargo_toml(impl_cargo, service_name)
+        _create_impl_cargo_toml(
+            impl_cargo, service_name, prefix=_pkg_prefix(project_root, resolved_suite)
+        )
 
     # Create impl/src/main.rs if gen/src/main.rs exists
     impl_main = impl_dir / "src" / "main.rs"
     gen_main = gen_dir / "src" / "main.rs"
     if not impl_main.exists() and gen_main.exists():
-        _create_impl_main(gen_main, impl_main, service_name)
+        _create_impl_main(
+            gen_main, impl_main, service_name, prefix=_pkg_prefix(project_root, resolved_suite)
+        )
 
     # Generate impl controller stubs from OpenAPI (Decimal etc. come from brrtrouter-gen)
     generate_impl_stubs_with_brrtrouter(

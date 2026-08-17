@@ -16,9 +16,16 @@ def _fix_cargo_paths_callback(cargo_toml_path: Path, project_root: Path | None) 
     run_fix_cargo_paths(cargo_toml_path, project_root=project_root)
 
 
-def _gen_package_name(project_root: Path, service_name: str) -> str | None:
-    """Gen crate [package].name for a service (e.g. hauliage_identity_gen)."""
-    impl_name = get_package_names(project_root).get(service_name)
+def _gen_package_name(
+    project_root: Path, service_name: str, suite: str | None = None
+) -> str | None:
+    """Gen crate [package].name for a service (e.g. hauliage_identity_gen).
+
+    Scope discovery to the SUITE: with suite=None a service name that also
+    exists in another openapi/ tree (e.g. a draft-tier sketch without a
+    bff-suite-config) shadows the real one and picks up the fallback prefix.
+    """
+    impl_name = get_package_names(project_root, suite=suite).get(service_name)
     return f"{impl_name}_gen" if impl_name else None
 
 
@@ -29,7 +36,7 @@ def regenerate_service(
     brrtrouter_path: Path | None = None,
 ) -> int:
     """Regenerate a single service. Returns 0 on success, 1 on error."""
-    package_name = _gen_package_name(project_root, service_name)
+    package_name = _gen_package_name(project_root, service_name, suite=suite)
 
     if brrtrouter_path is None:
         brrtrouter_path = discover_brrtrouter_root(project_root)
