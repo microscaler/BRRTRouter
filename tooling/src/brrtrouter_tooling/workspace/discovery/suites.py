@@ -147,10 +147,18 @@ def openapi_bff_path(project_root: Path, suite: str) -> Path:
 
 
 def service_to_suite(project_root: Path, service_name: str) -> str | None:
-    """Return suite for a service if its OpenAPI spec exists (nested preferred, then flat)."""
+    """Return suite for a service if its OpenAPI spec exists (nested preferred, then flat).
+
+    Config-backed suites (those with a bff-suite-config.yaml) take precedence:
+    a name duplicated in a non-suite tree (draft/archive tiers) must not shadow
+    the real suite.
+    """
     d = _openapi_dir(project_root)
     if not d.exists():
         return None
+    for s in suites_with_bff(project_root):
+        if (d / s / service_name / "openapi.yaml").exists():
+            return s
     for suite_dir in d.iterdir():
         if suite_dir.is_dir() and (suite_dir / service_name / "openapi.yaml").exists():
             return suite_dir.name

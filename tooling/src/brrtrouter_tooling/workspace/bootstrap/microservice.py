@@ -509,7 +509,9 @@ def _ensure_impl_scaffold(project_root: Path, suite: str, service_name: str) -> 
     if not config_path.exists():
         from brrtrouter_tooling.workspace.build.constants import get_service_ports
 
-        create_config_yaml(config_path, port=get_service_ports(project_root).get(service_name))
+        create_config_yaml(
+            config_path, port=get_service_ports(project_root).get(service_name) or 8080
+        )
     impl_cargo = impl_dir / "Cargo.toml"
     _create_impl_cargo_toml(impl_cargo, service_name, prefix=_pkg_prefix(project_root, suite))
     gen_main = gen_dir / "src" / "main.rs"
@@ -637,10 +639,14 @@ def run_bootstrap_microservice(
     if port is None:
         port = _get_port_from_registry(project_root, service_name)
     if port is None:
+        # K8s-native convention (hauliage PRD, adopted by pricewhisperer
+        # 2026-08-17): all cluster services listen on 8080 — a real pod/service
+        # IP pool means no NodePort-clash concerns, so per-service ports and
+        # the port registry are legacy Kind artifacts. Default rather than fail.
+        port = 8080
         print(
-            f"⚠️  No port for {service_name}. Run: hauliage ports assign {service_name} --update-configs"
+            f"No port registry entry for {service_name}; defaulting to cluster-wide 8080 (k8s-native)."
         )
-        return 1
 
     resolved_suite = suite or service_to_suite(project_root, service_name) or "loadlinker"
     spec_file = f"{resolved_suite}/{service_name}/openapi.yaml"

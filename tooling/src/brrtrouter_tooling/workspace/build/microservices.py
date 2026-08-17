@@ -59,8 +59,16 @@ def build_microservices_workspace(project_root: Path, arch: str, release: bool) 
 
 
 def build_microservice(project_root: Path, name: str, release: bool) -> int:
-    """Build one hauliage microservice. name e.g. identity. Returns 0/1."""
-    package_names = get_package_names(project_root)
+    """Build one microservice. name e.g. identity. Returns 0/1.
+
+    Package names are resolved SUITE-scoped: a service name duplicated in a
+    non-suite openapi tree (e.g. a draft-tier sketch) must not shadow the real
+    crate name with the fallback prefix.
+    """
+    from brrtrouter_tooling.workspace.discovery.suites import service_to_suite
+
+    suite = service_to_suite(project_root, name)
+    package_names = get_package_names(project_root, suite=suite)
     pkg = package_names.get(name)
     if not pkg:
         print(
