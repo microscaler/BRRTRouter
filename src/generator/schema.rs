@@ -392,7 +392,7 @@ pub fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
                             if inner_ty == "serde_json::Value" || inner_ty == "Value" {
                                 // Target is Vec<Value>, use json! macro
                                 let json = serde_json::to_string(item).unwrap_or_else(|_| "null".to_string());
-                                format!("serde_json::json!({json})")
+                                format!(r##"serde_json::from_str::<serde_json::Value>(r#"{json}"#).unwrap_or(serde_json::Value::Null)"##)
                             } else if is_named_type(inner_ty) {
                                 // Target is Vec<CustomType>, deserialize with fallback
                                 let json = serde_json::to_string(item).unwrap_or_else(|_| "null".to_string());
@@ -406,7 +406,7 @@ pub fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
                         } else {
                             // No type info, fallback to json!
                             let json = serde_json::to_string(item).unwrap_or_else(|_| "null".to_string());
-                            format!("serde_json::json!({json})")
+                            format!(r##"serde_json::from_str::<serde_json::Value>(r#"{json}"#).unwrap_or(serde_json::Value::Null)"##)
                         }
                     }
                     // Other types (null, etc.) - use dummy or Default
@@ -428,14 +428,18 @@ pub fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
         Value::Object(_) => {
             let json = serde_json::to_string(example).unwrap_or_else(|_| "null".to_string());
             if field.ty == "serde_json::Value" || field.ty == "Value" {
-                format!("serde_json::json!({json})")
+                format!(
+                    r##"serde_json::from_str::<serde_json::Value>(r#"{json}"#).unwrap_or(serde_json::Value::Null)"##
+                )
             } else if is_named_type(&field.ty) {
                 format!(
                     "serde_json::from_value::<{}>(serde_json::json!({json})).unwrap_or_default()",
                     field.ty
                 )
             } else {
-                format!("serde_json::json!({json})")
+                format!(
+                    r##"serde_json::from_str::<serde_json::Value>(r#"{json}"#).unwrap_or(serde_json::Value::Null)"##
+                )
             }
         }
         _ => {
