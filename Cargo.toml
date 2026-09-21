@@ -62,7 +62,7 @@ minijinja = "2"
 tracing = "0.1"
 # Coroutine-scoped span context (ADR-0001/0002): the request span is the may coroutine's
 # context, never entered on a thread.
-may_tracing = { git = "https://github.com/microscaler/may_tracing.git", tag = "v0.1.0" }
+may_tracing = { git = "https://github.com/microscaler/may_tracing.git", tag = "v0.1.1" }
 opentelemetry = { version = "0.31", features = ["metrics", "trace"] }
 opentelemetry_sdk = { version = "0.31", features = ["metrics", "trace"] }
 opentelemetry-semantic-conventions = "0.31"

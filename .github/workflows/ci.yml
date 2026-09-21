@@ -150,6 +150,14 @@ jobs:
         # run: cargo clippy --all-targets --all-features -- -D warnings || true - runs clippy on all targets and features, but fails the build on warnings
         run: cargo clippy -- -D warnings || true
 
+      - name: ADR-0001 span discipline (may_tracing)
+        # No `Entered` guard across a may yield: the request span is the coroutine context.
+        # Script ships with the may_tracing git dependency; `no-yield:` annotates allowed sites.
+        run: |
+          cargo fetch
+          SCRIPT="$(find ~/.cargo/git/checkouts -path '*/may_tracing-*/*/scripts/check-span-discipline.sh' | head -1)"; test -n "$SCRIPT" || { echo "may_tracing >= v0.1.1 not fetched"; exit 1; }
+          sh "$SCRIPT" src
+
       - name: Check documentation
         run: |
           echo "Checking for missing documentation and broken intra-doc links..."
