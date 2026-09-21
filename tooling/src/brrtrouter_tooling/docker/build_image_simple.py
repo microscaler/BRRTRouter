@@ -6,7 +6,128 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
+
+
+def _push_oci_tag(root: Path, tag: str, *, attempts: int = 3) -> subprocess.CompletedProcess[str]:
+    """Push a local image tag to its registry as OCI (zot-friendly).
+
+    Plain ``docker push`` stores Docker schema2 manifests; zot often rejects
+    those (415) or later digest-mismatches when BuildKit rewrites the same
+    blobs as OCI for a ``:dev-*`` retag. Pushing ``:tilt`` via buildx with
+    ``oci-mediatypes=true`` keeps the whole Flux publish path on OCI.
+
+    Retries ``provided digest did not match uploaded content`` (intermittent
+    under parallel Tilt image publishes).
+    """
+    env = os.environ.copy()
+    env["BUILDX_NO_DEFAULT_ATTESTATIONS"] = "1"
+    cmd = [
+        "docker",
+        "buildx",
+        "build",
+        "--provenance=false",
+        "--sbom=false",
+        "--output",
+        f"type=image,name={tag},push=true,oci-mediatypes=true",
+        "-f",
+        "-",
+        ".",
+    ]
+    dockerfile = f"FROM {tag}\n"
+    last: subprocess.CompletedProcess[str] | None = None
+    for attempt in range(1, attempts + 1):
+        last = subprocess.run(
+            cmd,
+            cwd=str(root),
+            input=dockerfile,
+            text=True,
+            capture_output=True,
+            env=env,
+        )
+        if last.returncode == 0:
+            return last
+        err = f"{last.stderr or ''}{last.stdout or ''}"
+        if "digest did not match" in err.lower() and attempt < attempts:
+            print(
+                f"⚠️  Zot digest mismatch pushing {tag} (attempt {attempt}/{attempts}); retrying…",
+                file=sys.stderr,
+            )
+            time.sleep(2 * attempt)
+            continue
+        return last
+    assert last is not None
+    return last
+
+
+def _push_remote(root: Path, remote_tag: str) -> bool:
+    """Push ``remote_tag`` to its registry. Prefer plain docker push, then skopeo/crane, then buildx OCI.
+
+    BuildKit's docker driver + containerd image store often fails zot OCI pushes with
+    ``provided digest did not match uploaded content`` / ``blob upload unknown``.
+    Plain ``docker push`` (schema2) or skopeo usually works against the same zot.
+    """
+    legacy = subprocess.run(
+        ["docker", "push", remote_tag], cwd=str(root), capture_output=True, text=True
+    )
+    if legacy.returncode == 0:
+        print(f"✅ Docker image pushed to registry: {remote_tag}")
+        return True
+    legacy_err = f"{legacy.stderr or ''}{legacy.stdout or ''}".strip()
+    if legacy_err:
+        print(f"⚠️  docker push failed: {legacy_err.splitlines()[-1]}", file=sys.stderr)
+
+    if subprocess.run(["which", "skopeo"], capture_output=True).returncode == 0:
+        sk = subprocess.run(
+            [
+                "skopeo",
+                "copy",
+                "--dest-tls-verify=false",
+                f"docker-daemon:{remote_tag}",
+                f"docker://{remote_tag}",
+            ],
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+        )
+        if sk.returncode == 0:
+            print(f"✅ Docker image pushed via skopeo: {remote_tag}")
+            return True
+        sk_err = f"{sk.stderr or ''}{sk.stdout or ''}".strip()
+        if sk_err:
+            print(f"⚠️  skopeo copy failed: {sk_err.splitlines()[-1]}", file=sys.stderr)
+
+    if subprocess.run(["which", "crane"], capture_output=True).returncode == 0:
+        # crane push reads an OCI layout / tarball — use docker save.
+        save = subprocess.run(
+            ["docker", "save", remote_tag],
+            cwd=str(root),
+            capture_output=True,
+        )
+        if save.returncode == 0:
+            crane = subprocess.run(
+                ["crane", "push", "-", remote_tag],
+                cwd=str(root),
+                input=save.stdout,
+                capture_output=True,
+            )
+            if crane.returncode == 0:
+                print(f"✅ Docker image pushed via crane: {remote_tag}")
+                return True
+            crane_err = (crane.stderr or b"").decode("utf-8", errors="replace").strip()
+            if crane_err:
+                print(f"⚠️  crane push failed: {crane_err.splitlines()[-1]}", file=sys.stderr)
+
+    print("⚠️  Trying buildx OCI push (often flakes on zot)…", file=sys.stderr)
+    push = _push_oci_tag(root, remote_tag)
+    if push.returncode == 0:
+        print(f"✅ Docker image pushed to registry (OCI): {remote_tag}")
+        return True
+    err = f"{push.stderr or ''}{push.stdout or ''}".strip()
+    if err:
+        print(f"⚠️  OCI push failed: {err.splitlines()[-1]}", file=sys.stderr)
+    return False
 
 
 def _maybe_prune_dangling(prune_dangling_after: bool | None) -> None:
@@ -210,14 +331,24 @@ def run(
         ]
         temp_dockerfile_path = None
 
-    tag = f"{image_name}:tilt"
+    # Build to a LOCAL tag only. Tagging the build as registry:5000/... with the
+    # containerd image store makes BuildKit "unpack to" the registry name and
+    # subsequent OCI pushes to zot fail with digest / blob-upload errors.
+    remote_tag = f"{image_name}:tilt"
+    local_repo = image_name.rsplit("/", 1)[-1]
+    local_tag = f"brrtr-local/{local_repo}:tilt"
+    # Disable BuildKit provenance/SBOM attestations. Retagging + pushing an
+    # attestation-bearing image to the LAN registry (distribution/zot) fails with
+    # "provided digest did not match uploaded content".
     build_cmd = [
         "docker",
         "build",
         "-t",
-        tag,
+        local_tag,
         "--rm",
         "--force-rm",
+        "--provenance=false",
+        "--sbom=false",
         "-f",
         str(dockerfile_path),
         *build_args,
@@ -235,24 +366,37 @@ def run(
             print("❌ Docker build failed", file=sys.stderr)
             return 1
 
-        push = subprocess.run(
-            ["docker", "push", tag], cwd=str(root), capture_output=True, text=True
+        tag_remote = subprocess.run(
+            ["docker", "tag", local_tag, remote_tag], cwd=str(root), capture_output=True, text=True
         )
-        if push.returncode == 0:
-            print(f"✅ Docker image pushed to registry: {tag}")
-        else:
-            print("⚠️  Registry not available at localhost:5001; loading into Kind cluster...")
+        if tag_remote.returncode != 0:
+            print(f"❌ docker tag {local_tag} → {remote_tag} failed", file=sys.stderr)
+            return 1
+
+        pushed = _push_remote(root, remote_tag)
+        if not pushed:
+            # Kind/local workflow: load into the named cluster when registry push fails.
+            is_lan_registry = "10.177." in image_name or image_name.startswith("192.168.")
+            if is_lan_registry:
+                print(
+                    f"❌ Failed to push {remote_tag} to the LAN registry "
+                    "(docker/skopeo/crane/buildx all failed).",
+                    file=sys.stderr,
+                )
+                return 1
+            print("⚠️  Registry push failed; loading into Kind cluster...", file=sys.stderr)
             kind = subprocess.run(
-                ["kind", "load", "docker-image", tag, "--name", kind_cluster_name],
+                ["kind", "load", "docker-image", remote_tag, "--name", kind_cluster_name],
                 cwd=str(root),
                 capture_output=True,
                 text=True,
             )
             if kind.returncode == 0:
-                print(f"✅ Image loaded into Kind: {tag}")
+                print(f"✅ Image loaded into Kind: {remote_tag}")
             else:
-                print(f"⚠️  Could not push or kind load; image tagged as: {tag}")
-        print(f"✅ Docker image ready: {tag}")
+                print(f"⚠️  Could not push or kind load; image tagged as: {remote_tag}")
+                return 1
+        print(f"✅ Docker image ready: {remote_tag}")
         _maybe_prune_dangling(prune_dangling_after)
         return 0
     finally:
