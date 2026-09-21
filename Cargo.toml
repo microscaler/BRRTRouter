@@ -60,6 +60,9 @@ minijinja = "2"
 # OpenTelemetry versions are coordinated with microscaler-observability. BRRTRouter delegates
 # OTLP egress to that adapter, which uses gRPC/Tonic with HTTP exporters disabled.
 tracing = "0.1"
+# Coroutine-scoped span context (ADR-0001/0002): the request span is the may coroutine's
+# context, never entered on a thread.
+may_tracing = { git = "https://github.com/microscaler/may_tracing.git", tag = "v0.1.0" }
 opentelemetry = { version = "0.31", features = ["metrics", "trace"] }
 opentelemetry_sdk = { version = "0.31", features = ["metrics", "trace"] }
 opentelemetry-semantic-conventions = "0.31"

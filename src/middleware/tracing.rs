@@ -1,7 +1,5 @@
 use std::time::Duration;
 
-use tracing::info_span;
-
 use super::Middleware;
 use crate::dispatcher::{HandlerRequest, HandlerResponse};
 
@@ -68,17 +66,14 @@ impl Middleware for TracingMiddleware {
     ///
     /// Always returns `None` (never blocks requests)
     fn before(&self, req: &HandlerRequest) -> Option<HandlerResponse> {
-        // Create and immediately record a span for this request
-        let span = info_span!(
-            "http_request",
+        // One event on the request span (the coroutine context, may_tracing) — no
+        // throwaway span, nothing entered (ADR-0001).
+        may_tracing::info_in_current!(
             method = ?req.method,
             path = %req.path,
-            handler = %req.handler_name
+            handler = %req.handler_name,
+            "Request started"
         );
-
-        // Use the span to record the start event
-        let _guard = span.enter();
-        tracing::info!("Request started");
 
         None
     }
@@ -101,25 +96,15 @@ impl Middleware for TracingMiddleware {
     /// 3. Log completion event with status and latency
     /// 4. Explicitly drop guard to finalize span
     fn after(&self, req: &HandlerRequest, res: &mut HandlerResponse, latency: Duration) {
-        // Create a completed span for the response
-        let span = info_span!(
-            "http_response",
+        // One event on the request span; status and latency are also recorded on the span
+        // itself by the server's RequestLogger.
+        may_tracing::info_in_current!(
             method = ?req.method,
             path = %req.path,
             handler = %req.handler_name,
             status = res.status,
-            latency_ms = latency.as_millis() as u64
-        );
-
-        // Use the span to record the completion event
-        let _guard = span.enter();
-        tracing::info!(
-            status = res.status,
             latency_ms = latency.as_millis() as u64,
             "Request completed"
         );
-
-        // Explicitly drop the guard to finish the span
-        drop(_guard);
     }
 }

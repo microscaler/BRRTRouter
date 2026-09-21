@@ -124,6 +124,7 @@ fn test_worker_pool_shed_mode() {
             jwt_claims: None,
             reply_tx,
             queue_guard: None,
+            span: tracing::Span::none(),
         };
 
         match pool.dispatch(req) {
@@ -223,6 +224,7 @@ fn test_worker_pool_block_mode() {
             jwt_claims: None,
             reply_tx,
             queue_guard: None,
+            span: tracing::Span::none(),
         };
 
         match pool.dispatch(req) {
@@ -300,6 +302,7 @@ fn test_worker_pool_metrics() {
             jwt_claims: None,
             reply_tx,
             queue_guard: None,
+            span: tracing::Span::none(),
         };
 
         let _ = pool.dispatch(req);

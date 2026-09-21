@@ -59,6 +59,7 @@ fn test_from_handler_non_string_params() {
         jwt_claims: None,
         reply_tx: tx,
         queue_guard: None,
+        span: tracing::Span::none(),
     };
 
     let typed = TypedHandlerRequest::<Req>::from_handler(req).expect("conversion failed");
@@ -109,6 +110,7 @@ fn test_header_cookie_params() {
         jwt_claims: None,
         reply_tx: tx,
         queue_guard: None,
+        span: tracing::Span::none(),
     };
 
     let typed = TypedHandlerRequest::<HeaderCookieReq>::from_handler(req).unwrap();
@@ -178,6 +180,7 @@ fn test_spawn_typed_success_and_error() {
         jwt_claims: None,
         reply_tx,
         queue_guard: None,
+        span: tracing::Span::none(),
     })
     .unwrap();
     let resp = reply_rx.recv().unwrap();
@@ -200,6 +203,7 @@ fn test_spawn_typed_success_and_error() {
         jwt_claims: None,
         reply_tx,
         queue_guard: None,
+        span: tracing::Span::none(),
     })
     .unwrap();
     let resp = reply_rx.recv().unwrap();
@@ -253,6 +257,7 @@ fn test_spawn_typed_http_json_status_without_panic() {
         jwt_claims: None,
         reply_tx,
         queue_guard: None,
+        span: tracing::Span::none(),
     })
     .unwrap();
     let resp = reply_rx.recv().unwrap();
@@ -303,6 +308,7 @@ fn test_spawn_typed_preserves_jwt_claims() {
         jwt_claims: Some(serde_json::json!({ "sub": "10" })),
         reply_tx,
         queue_guard: None,
+        span: tracing::Span::none(),
     })
     .unwrap();
     let resp = reply_rx.recv().unwrap();

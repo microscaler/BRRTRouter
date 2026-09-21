@@ -192,6 +192,7 @@ fn test_cors_with_jwks_bearer_provider_preflight() {
         jwt_claims: None,
         reply_tx: tx,
         queue_guard: None,
+        span: tracing::Span::none(),
     };
 
     // CORS should handle preflight before security validation
@@ -256,6 +257,7 @@ fn test_cors_with_jwks_bearer_provider_authenticated_request() {
         jwt_claims: None,
         reply_tx: tx,
         queue_guard: None,
+        span: tracing::Span::none(),
     };
 
     // CORS should not block the request (it's not a preflight)
@@ -342,6 +344,7 @@ fn test_cors_invalid_origin_before_jwks_validation() {
         jwt_claims: None,
         reply_tx: tx,
         queue_guard: None,
+        span: tracing::Span::none(),
     };
 
     // CORS should reject invalid origin
@@ -401,6 +404,7 @@ fn test_cors_with_spiffe_provider_preflight() {
         jwt_claims: None,
         reply_tx: tx,
         queue_guard: None,
+        span: tracing::Span::none(),
     };
 
     // CORS should handle preflight before security validation
@@ -466,6 +470,7 @@ fn test_cors_with_spiffe_provider_authenticated_request() {
         jwt_claims: None,
         reply_tx: tx,
         queue_guard: None,
+        span: tracing::Span::none(),
     };
 
     // CORS should not block the request (it's not a preflight)
@@ -552,6 +557,7 @@ fn test_cors_invalid_origin_before_spiffe_validation() {
         jwt_claims: None,
         reply_tx: tx,
         queue_guard: None,
+        span: tracing::Span::none(),
     };
 
     // CORS should reject invalid origin
@@ -611,6 +617,7 @@ fn test_jwks_independent_usage() {
         jwt_claims: None,
         reply_tx: tx,
         queue_guard: None,
+        span: tracing::Span::none(),
     };
 
     let scheme = SecurityScheme::Http {
@@ -686,6 +693,7 @@ fn test_spiffe_requires_jwks_url() {
         jwt_claims: None,
         reply_tx: tx,
         queue_guard: None,
+        span: tracing::Span::none(),
     };
 
     let scheme = SecurityScheme::Http {
@@ -750,6 +758,7 @@ fn test_spiffe_succeeds_with_jwks_url() {
         jwt_claims: None,
         reply_tx: tx,
         queue_guard: None,
+        span: tracing::Span::none(),
     };
 
     let scheme = SecurityScheme::Http {
@@ -838,6 +847,7 @@ fn test_spiffe_algorithm_mismatch_validation() {
         jwt_claims: None,
         reply_tx: tx,
         queue_guard: None,
+        span: tracing::Span::none(),
     };
 
     let scheme = SecurityScheme::Http {

@@ -185,8 +185,8 @@ impl ShadowDecision {
                 route = route,
                 jwt_decision = ?jwt_dec,
             );
-            let _guard = span.enter();
-
+            // ADR-0001: created, not entered — this function awaits below, and an entered
+            // guard across an await/yield is the bug class may_tracing exists for.
             // Attempt online authorization check (shadow — best effort only)
             let online_decision = Self::call_authz_core().await;
 

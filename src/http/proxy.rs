@@ -586,6 +586,7 @@ mod tests {
             jwt_claims: None,
             reply_tx: tx,
             queue_guard: None,
+            span: tracing::Span::none(),
         }
     }
 
@@ -1510,6 +1511,7 @@ mod tests {
             jwt_claims: None,
             reply_tx: tx,
             queue_guard: None,
+            span: tracing::Span::none(),
         }
     }
 

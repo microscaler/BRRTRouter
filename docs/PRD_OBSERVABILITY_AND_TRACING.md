@@ -95,6 +95,19 @@ Across the entire `src/` tree:
 
 Net effect: even if OTLP were wired tomorrow, the resulting trace would be a single opaque `http_request` span per request with no sub-phases. We could not tell whether a 400 ms request spent 395 ms in the handler or in schema validation.
 
+> **Update 2026-09-21 — the request span is the coroutine context (may_tracing, Epic 02.1).**
+> `server/service.rs` no longer *enters* `http_request`: it makes it the may coroutine's
+> context with `may_tracing::set_current`, the dispatcher copies it onto
+> `HandlerRequest::span`, and every handler coroutine runs each request under it with
+> `may_tracing::with_span`. Inside a handler `may_tracing::current()` is the request span
+> and `may_tracing::child_span!` / `info_in_current!` nest under it (lifeguard's
+> `lifeguard.execute_query` does, once Epic 02.2 lands). `TracingMiddleware` now records
+> "Request started" / "Request completed" as **events on the request span**; the
+> `http_response` throwaway span is gone. Nothing in `src/` holds an `Entered` guard any
+> more — a span entered on one OS thread and exited on another (a may coroutine that
+> yielded in between) is what produced the `tried to clone a span that already closed`
+> panics of 20 Sep 2026. Rules: [may_tracing ADR-0001](https://github.com/microscaler/may_tracing/blob/main/docs/ADR/ADR-0001-no-entered-guard-across-a-yield.md).
+
 ### 4.4 Metrics shape does not support SLO queries
 
 From `src/server/service.rs::metrics_endpoint` (~444‑729) + `src/middleware/metrics.rs`:

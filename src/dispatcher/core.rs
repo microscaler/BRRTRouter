@@ -111,6 +111,12 @@ pub struct HandlerRequest {
     pub reply_tx: mpsc::Sender<HandlerResponse>,
     /// Guard for tracking queue depth and applying backpressure (decrements on Drop)
     pub queue_guard: Option<Arc<QueueDepthGuard>>,
+    /// The request span (`http_request`), captured from the dispatching coroutine's context.
+    /// Handler coroutines run each request under it via `may_tracing::with_span`, so
+    /// `may_tracing::current()` inside a handler is the request span and spans created
+    /// with `may_tracing::child_span!` (lifeguard queries, business events) nest under it.
+    /// Never entered on a thread (ADR-0001). `Span::none()` when there is no request context.
+    pub span: tracing::Span,
 }
 
 /// Guard that decreases queue depth counter when request processing completes and it drops
@@ -393,10 +399,13 @@ where
 
                 let execution_start = std::time::Instant::now();
 
-                if let Err(panic) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    let response = handler_fn(req);
-                    let _ = reply_tx.send(response);
-                })) {
+                let request_span = req.span.clone();
+                if let Err(panic) = may_tracing::with_span(request_span, || {
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        let response = handler_fn(req);
+                        let _ = reply_tx.send(response);
+                    }))
+                }) {
                     let panic_message = format!("{panic:?}");
                     error!(
                         request_id = %request_id,
@@ -630,11 +639,12 @@ impl Dispatcher {
 
                         let execution_start = Instant::now();
 
-                        if let Err(panic) =
+                        let request_span = req.span.clone();
+                        if let Err(panic) = may_tracing::with_span(request_span, || {
                             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                                 handler_fn(req);
                             }))
-                        {
+                        }) {
                             // H3: Handler panic caught - CRITICAL ERROR
                             let panic_message = format!("{panic:?}");
                             let backtrace = std::backtrace::Backtrace::capture();
@@ -843,6 +853,7 @@ impl Dispatcher {
             jwt_claims,
             reply_tx,
             queue_guard: None,
+            span: may_tracing::current(),
         };
 
         // D4: Middleware before execution

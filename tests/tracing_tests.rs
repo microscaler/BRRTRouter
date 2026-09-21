@@ -21,15 +21,33 @@ fn test_tracing_middleware_emits_spans() {
     }
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
 
+    // The server creates the `http_request` span and makes it the coroutine context
+    // (may_tracing; never entered). Here the test plays the server: the middleware's
+    // "Request started" / "Request completed" are events *on that span*, not spans of
+    // their own (Epic 02.1).
     let route_match = router.route(Method::GET, "/pets/12345").unwrap();
-    let resp = dispatcher
-        .dispatch(route_match, None, Default::default(), Default::default())
-        .unwrap();
+    let request_span = tracing::info_span!(parent: None, "http_request", path = "/pets/12345");
+    let resp = may_tracing::with_span(request_span.clone(), || {
+        dispatcher
+            .dispatch(route_match, None, Default::default(), Default::default())
+            .unwrap()
+    });
     assert_eq!(resp.status, 200);
+    drop(request_span);
 
     tracing.force_flush();
     tracing.wait_for_span("http_request");
 
     let spans = tracing.spans();
-    assert!(!spans.is_empty());
+    let req = spans
+        .iter()
+        .find(|s| s.name == "http_request")
+        .expect("http_request span exported");
+    let events: Vec<&str> = req.events.iter().map(|e| e.name.as_ref()).collect();
+    assert!(events.contains(&"Request started"), "events: {events:?}");
+    assert!(events.contains(&"Request completed"), "events: {events:?}");
+    assert!(
+        !spans.iter().any(|s| s.name == "http_response"),
+        "no throwaway http_response span any more"
+    );
 }

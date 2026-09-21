@@ -1204,7 +1204,10 @@ impl HttpService for AppService {
             duration_ms = tracing::field::Empty,
             stack_used_kb = tracing::field::Empty,
         );
-        let _enter = span.enter();
+        // ADR-0001: never entered. The span is the coroutine's context (may_tracing) for the
+        // rest of this connection turn; the dispatcher hands it to the handler coroutine on
+        // the HandlerRequest, and RequestLogger records status/duration on drop.
+        let _ctx = may_tracing::set_current(span.clone());
 
         // Calculate header size (always accurate)
         let header_size_bytes: usize = headers.iter().map(|(k, v)| k.len() + v.len()).sum();

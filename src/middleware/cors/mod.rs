@@ -1285,6 +1285,7 @@ mod cors_middleware_tests {
             jwt_claims: None,
             reply_tx,
             queue_guard: None,
+            span: tracing::Span::none(),
         }
     }
 

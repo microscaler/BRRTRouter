@@ -484,66 +484,70 @@ where
                 //
                 // KEY OPTIMIZATION: Move the owned `req` into the closure to avoid cloning it.
                 // Using a move closure ensures `req` is consumed instead of cloned for each request.
-                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe({
-                    // Capture the outer clones into the closure scope so the closure can be moved
-                    // without pulling `req` by reference.
-                    let reply_tx_outer = reply_tx_outer.clone();
-                    let handler = &handler; // Borrow handler so it can be reused across iterations
-                    move || {
-                        // Clone reply sender for inner scope use (cheap)
-                        let reply_tx_inner = reply_tx_outer.clone();
+                let request_span = req.span.clone();
+                let result = may_tracing::with_span(request_span, || {
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe({
+                        // Capture the outer clones into the closure scope so the closure can be moved
+                        // without pulling `req` by reference.
+                        let reply_tx_outer = reply_tx_outer.clone();
+                        let handler = &handler; // Borrow handler so it can be reused across iterations
+                        move || {
+                            // Clone reply sender for inner scope use (cheap)
+                            let reply_tx_inner = reply_tx_outer.clone();
 
-                        // Extract metadata fields before consuming req in try_from
-                        let method = req.method.clone();
-                        let path = req.path.clone();
-                        let handler_name = req.handler_name.clone();
-                        let request_id = req.request_id;
-                        // JSF: Map Arc<str> to String for HashMap
-                        let path_params: HashMap<String, String> = req
-                            .path_params
-                            .iter()
-                            .map(|(k, v)| (k.to_string(), v.clone()))
-                            .collect();
-                        let query_params: HashMap<String, String> = req
-                            .query_params
-                            .iter()
-                            .map(|(k, v)| (k.to_string(), v.clone()))
-                            .collect();
-                        let jwt_claims = req.jwt_claims.clone();
+                            // Extract metadata fields before consuming req in try_from
+                            let method = req.method.clone();
+                            let path = req.path.clone();
+                            let handler_name = req.handler_name.clone();
+                            let request_id = req.request_id;
+                            // JSF: Map Arc<str> to String for HashMap
+                            let path_params: HashMap<String, String> = req
+                                .path_params
+                                .iter()
+                                .map(|(k, v)| (k.to_string(), v.clone()))
+                                .collect();
+                            let query_params: HashMap<String, String> = req
+                                .query_params
+                                .iter()
+                                .map(|(k, v)| (k.to_string(), v.clone()))
+                                .collect();
+                            let jwt_claims = req.jwt_claims.clone();
 
-                        // STEP 1: Type conversion - consume the HandlerRequest to produce handler data
-                        // This intentionally consumes `req` (no req.clone()) to avoid heavy copies.
-                        let data = match H::Request::try_from(req) {
-                            Ok(v) => v,
-                            Err(err) => {
-                                // Validation failed - send 400 Bad Request
-                                let _ = reply_tx_inner.send(HandlerResponse::error(
-                                    400,
-                                    &format!("Invalid request data: {}", err),
-                                ));
-                                return; // Early return from closure
-                            }
-                        };
+                            // STEP 1: Type conversion - consume the HandlerRequest to produce handler data
+                            // This intentionally consumes `req` (no req.clone()) to avoid heavy copies.
+                            let data = match H::Request::try_from(req) {
+                                Ok(v) => v,
+                                Err(err) => {
+                                    // Validation failed - send 400 Bad Request
+                                    let _ = reply_tx_inner.send(HandlerResponse::error(
+                                        400,
+                                        &format!("Invalid request data: {}", err),
+                                    ));
+                                    return; // Early return from closure
+                                }
+                            };
 
-                        // STEP 2: Build typed request with validated data
-                        let typed_req = TypedHandlerRequest {
-                            method,
-                            path,
-                            handler_name,
-                            path_params,
-                            query_params,
-                            data, // Strongly-typed request data
-                            jwt_claims,
-                        };
+                            // STEP 2: Build typed request with validated data
+                            let typed_req = TypedHandlerRequest {
+                                method,
+                                path,
+                                handler_name,
+                                path_params,
+                                query_params,
+                                data, // Strongly-typed request data
+                                jwt_claims,
+                            };
 
-                        // STEP 3: Call the actual handler
-                        let result = handler.handle(typed_req);
+                            // STEP 3: Call the actual handler
+                            let result = handler.handle(typed_req);
 
-                        // STEP 4: Map typed output to HandlerResponse (supports HttpJson for non-200 REST)
-                        let response = typed_handler_output_to_response(result, Some(&request_id));
-                        let _ = reply_tx_inner.send(response);
-                    }
-                }));
+                            // STEP 4: Map typed output to HandlerResponse (supports HttpJson for non-200 REST)
+                            let response =
+                                typed_handler_output_to_response(result, Some(&request_id));
+                            let _ = reply_tx_inner.send(response);
+                        }
+                    }))
+                });
 
                 // PANIC RECOVERY: If handler panicked, send 500 error
                 if let Err(panic) = result {
@@ -669,66 +673,70 @@ where
                 //
                 // KEY OPTIMIZATION: Move the owned `req` into the closure to avoid cloning it.
                 // Using a move closure ensures `req` is consumed instead of cloned for each request.
-                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe({
-                    // Capture the outer clones into the closure scope so the closure can be moved
-                    // without pulling `req` by reference.
-                    let reply_tx_outer = reply_tx_outer.clone();
-                    let handler = &handler; // Borrow handler so it can be reused across iterations
-                    move || {
-                        // Clone reply sender for inner scope use (cheap)
-                        let reply_tx_inner = reply_tx_outer.clone();
+                let request_span = req.span.clone();
+                let result = may_tracing::with_span(request_span, || {
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe({
+                        // Capture the outer clones into the closure scope so the closure can be moved
+                        // without pulling `req` by reference.
+                        let reply_tx_outer = reply_tx_outer.clone();
+                        let handler = &handler; // Borrow handler so it can be reused across iterations
+                        move || {
+                            // Clone reply sender for inner scope use (cheap)
+                            let reply_tx_inner = reply_tx_outer.clone();
 
-                        // Extract metadata fields before consuming req in try_from
-                        let method = req.method.clone();
-                        let path = req.path.clone();
-                        let handler_name = req.handler_name.clone();
-                        // Convert SmallVec to HashMap for TypedHandlerRequest API
-                        // JSF: Map Arc<str> to String for HashMap
-                        let path_params: HashMap<String, String> = req
-                            .path_params
-                            .iter()
-                            .map(|(k, v)| (k.to_string(), v.clone()))
-                            .collect();
-                        let query_params: HashMap<String, String> = req
-                            .query_params
-                            .iter()
-                            .map(|(k, v)| (k.to_string(), v.clone()))
-                            .collect();
-                        let jwt_claims = req.jwt_claims.clone();
+                            // Extract metadata fields before consuming req in try_from
+                            let method = req.method.clone();
+                            let path = req.path.clone();
+                            let handler_name = req.handler_name.clone();
+                            // Convert SmallVec to HashMap for TypedHandlerRequest API
+                            // JSF: Map Arc<str> to String for HashMap
+                            let path_params: HashMap<String, String> = req
+                                .path_params
+                                .iter()
+                                .map(|(k, v)| (k.to_string(), v.clone()))
+                                .collect();
+                            let query_params: HashMap<String, String> = req
+                                .query_params
+                                .iter()
+                                .map(|(k, v)| (k.to_string(), v.clone()))
+                                .collect();
+                            let jwt_claims = req.jwt_claims.clone();
 
-                        // STEP 1: Type conversion - consume the HandlerRequest to produce handler data
-                        // This intentionally consumes `req` (no req.clone()) to avoid heavy copies.
-                        let data = match H::Request::try_from(req) {
-                            Ok(v) => v,
-                            Err(err) => {
-                                // Validation failed - send 400 Bad Request
-                                let _ = reply_tx_inner.send(HandlerResponse::error(
-                                    400,
-                                    &format!("Invalid request data: {}", err),
-                                ));
-                                return; // Early return from closure
-                            }
-                        };
+                            // STEP 1: Type conversion - consume the HandlerRequest to produce handler data
+                            // This intentionally consumes `req` (no req.clone()) to avoid heavy copies.
+                            let data = match H::Request::try_from(req) {
+                                Ok(v) => v,
+                                Err(err) => {
+                                    // Validation failed - send 400 Bad Request
+                                    let _ = reply_tx_inner.send(HandlerResponse::error(
+                                        400,
+                                        &format!("Invalid request data: {}", err),
+                                    ));
+                                    return; // Early return from closure
+                                }
+                            };
 
-                        // STEP 2: Build typed request with validated data
-                        let typed_req = TypedHandlerRequest {
-                            method,
-                            path,
-                            handler_name,
-                            path_params,
-                            query_params,
-                            data, // Strongly-typed request data
-                            jwt_claims,
-                        };
+                            // STEP 2: Build typed request with validated data
+                            let typed_req = TypedHandlerRequest {
+                                method,
+                                path,
+                                handler_name,
+                                path_params,
+                                query_params,
+                                data, // Strongly-typed request data
+                                jwt_claims,
+                            };
 
-                        // STEP 3: Call the actual handler
-                        let result = handler.handle(typed_req);
+                            // STEP 3: Call the actual handler
+                            let result = handler.handle(typed_req);
 
-                        // STEP 4: Map typed output to HandlerResponse (supports HttpJson for non-200 REST)
-                        let response = typed_handler_output_to_response(result, Some(&request_id));
-                        let _ = reply_tx_inner.send(response);
-                    }
-                }));
+                            // STEP 4: Map typed output to HandlerResponse (supports HttpJson for non-200 REST)
+                            let response =
+                                typed_handler_output_to_response(result, Some(&request_id));
+                            let _ = reply_tx_inner.send(response);
+                        }
+                    }))
+                });
 
                 // PANIC RECOVERY: If handler panicked, send 500 error
                 if let Err(panic) = result {

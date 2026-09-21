@@ -1525,8 +1525,8 @@ impl JwksBearerProvider {
     /// P1: Non-blocking - uses lock-free reads (RwLock) and triggers refresh in background.
     /// If refresh fails, uses stale cache (graceful degradation).
     pub(super) fn get_key_for(&self, kid: &str) -> Option<jsonwebtoken::DecodingKey> {
-        let span = tracing::span!(Level::DEBUG, "jwks_cache", kid = kid,);
-        let _guard = span.enter();
+        // ADR-0001: created (as a child of the request context), not entered.
+        let span = may_tracing::child_span!(Level::DEBUG, "jwks_cache", kid = kid);
 
         // Trigger refresh if needed (non-blocking)
         self.refresh_jwks_if_needed();
@@ -1676,8 +1676,7 @@ impl SecurityProvider for JwksBearerProvider {
             token_version = 0u64,
             result = tracing::field::Empty,
         );
-        let _guard = span.enter();
-
+        // ADR-0001: created, not entered; `record` below works on the handle.
         let result = validation::validate_token_impl(self, scheme, scopes, req);
 
         // Record result in span attribute
