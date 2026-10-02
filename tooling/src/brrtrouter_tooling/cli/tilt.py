@@ -16,7 +16,7 @@ from brrtrouter_tooling.tilt.teardown import run as run_teardown
 def run_tilt_argv() -> None:
     """Run tilt tool commands based on sys.argv."""
     if len(sys.argv) < 3:
-        print("Usage: brrtrouter client tilt <command> [args...]", file=sys.stderr)
+        print("Usage: brrtrouter-tooling client tilt <command> [args...]", file=sys.stderr)
         print("Commands:", file=sys.stderr)
         print("  setup-kind-registry      - Setup local Docker registry for Kind", file=sys.stderr)
         print("  setup-persistent-volumes - Setup PersistentVolumes for RERP", file=sys.stderr)
@@ -51,7 +51,7 @@ def run_tilt_argv() -> None:
         sys.exit(run_scan_argv())
     if t == "logs":
         if len(sys.argv) < 4:
-            print("Usage: brrtrouter client tilt logs <component>", file=sys.stderr)
+            print("Usage: brrtrouter-tooling client tilt logs <component>", file=sys.stderr)
             sys.exit(1)
         component = sys.argv[3]
         sys.exit(run_logs(component, project_root))

@@ -188,7 +188,7 @@ def validate(
     for w in warnings:
         print(f"Warning: {w}")
     if errors:
-        print("\nRun: brrtrouter ports list   and   brrtrouter ports validate")
+        print("\nRun: brrtrouter-tooling client ports list   and   brrtrouter-tooling client ports validate")
         return 1
     if warnings:
         print("\nNo hard conflicts; see warnings above.")

@@ -1,4 +1,4 @@
-"""CLI for openapi: brrtrouter openapi validate | fix-operation-id-casing | check-decimal-formats | fix-impl-controllers."""
+"""CLI for openapi: brrtrouter-tooling client openapi validate | fix-operation-id-casing | check-decimal-formats | fix-impl-controllers."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ def _parse_openapi_argv() -> tuple[Path, Path]:
 
 
 def run_openapi_validate_argv() -> None:
-    """brrtrouter openapi validate [--project-root <path>] [--openapi-dir <path>]."""
+    """brrtrouter-tooling client openapi validate [--project-root <path>] [--openapi-dir <path>]."""
     _project_root, openapi_dir = _parse_openapi_argv()
     errors = validate_specs(openapi_dir)
     for path, exc in errors:
@@ -48,7 +48,7 @@ def run_openapi_validate_argv() -> None:
 
 
 def run_openapi_fix_operation_id_argv() -> None:
-    """brrtrouter openapi fix-operation-id-casing [--project-root <path>] [--openapi-dir <path>] [--dry-run] [--verbose]."""
+    """brrtrouter-tooling client openapi fix-operation-id-casing [--project-root <path>] [--openapi-dir <path>] [--dry-run] [--verbose]."""
     args = sys.argv[3:]
     project_root, openapi_dir = _parse_openapi_argv()
     dry_run = "--dry-run" in args
@@ -69,7 +69,7 @@ def run_openapi_fix_operation_id_argv() -> None:
 
 
 def run_openapi_check_decimal_formats_argv() -> None:
-    """brrtrouter openapi check-decimal-formats [--project-root <path>] [--openapi-dir <path>]."""
+    """brrtrouter-tooling client openapi check-decimal-formats [--project-root <path>] [--openapi-dir <path>]."""
     project_root, openapi_dir = _parse_openapi_argv()
     if not openapi_dir.exists():
         print(f"❌ OpenAPI directory not found: {openapi_dir}", file=sys.stderr)
@@ -98,7 +98,7 @@ def run_openapi_check_decimal_formats_argv() -> None:
 
 
 def run_openapi_fix_impl_controllers_argv() -> None:
-    """brrtrouter openapi fix-impl-controllers [--project-root <path>] [--impl-dir <path>]."""
+    """brrtrouter-tooling client openapi fix-impl-controllers [--project-root <path>] [--impl-dir <path>]."""
     args = sys.argv[3:]
     parsed, _ = parse_flags(
         args,
@@ -126,9 +126,9 @@ def run_openapi_fix_impl_controllers_argv() -> None:
 
 
 def run_openapi_argv() -> None:
-    """Dispatch brrtrouter openapi <subcommand>."""
+    """Dispatch brrtrouter-tooling client openapi <subcommand>."""
     if len(sys.argv) < 3:
-        print("Usage: brrtrouter openapi <subcommand> [options]", file=sys.stderr)
+        print("Usage: brrtrouter-tooling client openapi <subcommand> [options]", file=sys.stderr)
         print(
             "Subcommands: validate, fix-operation-id-casing, check-decimal-formats, fix-impl-controllers",
             file=sys.stderr,

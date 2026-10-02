@@ -18,7 +18,7 @@ use std::sync::Arc;
 /// Provides commands for generating code from OpenAPI specifications
 /// and running development servers.
 #[derive(Parser)]
-#[command(name = "brrrouter")]
+#[command(name = "brrtrouter-gen")]
 #[command(about = "BRRTRouter CLI", long_about = None)]
 pub struct Cli {
     /// The subcommand to execute

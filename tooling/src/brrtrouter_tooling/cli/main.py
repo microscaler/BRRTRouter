@@ -24,7 +24,7 @@ from brrtrouter_tooling.cli import (
 def main() -> None:
     """Main CLI entry point."""
     if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help"):
-        print("Usage: brrtrouter <scope> <command> [args...]", file=sys.stderr)
+        print("Usage: brrtrouter-tooling <scope> <command> [args...]", file=sys.stderr)
         print("Scopes:", file=sys.stderr)
         print(
             "  client  - Commands for consumer repositories (gen, openapi, build, etc.)",
@@ -40,7 +40,7 @@ def main() -> None:
 
     if scope == "client":
         if len(sys.argv) < 3:
-            print("Usage: brrtrouter client <command> [args...]", file=sys.stderr)
+            print("Usage: brrtrouter-tooling client <command> [args...]", file=sys.stderr)
             print("Commands:", file=sys.stderr)
             print(
                 "  gen generate|generate-stubs - Call brrtrouter-gen (gen crate or impl stubs)",
@@ -83,7 +83,7 @@ def main() -> None:
             docker_cmd.run_docker_argv()
         elif command == "bff":
             if len(sys.argv) < 3:
-                print("Usage: brrtrouter client bff <generate|generate-system>", file=sys.stderr)
+                print("Usage: brrtrouter-tooling client bff <generate|generate-system>", file=sys.stderr)
                 sys.exit(1)
             subcommand = sys.argv[2]
             if subcommand == "generate":
@@ -105,7 +105,7 @@ def main() -> None:
 
     elif scope == "local":
         if len(sys.argv) < 3:
-            print("Usage: brrtrouter local <command> [args...]", file=sys.stderr)
+            print("Usage: brrtrouter-tooling local <command> [args...]", file=sys.stderr)
             print("Commands:", file=sys.stderr)
             print(
                 "  dependabot automerge        - Process and auto-merge Dependabot PRs",
@@ -127,7 +127,7 @@ def main() -> None:
 
         if command == "dependabot":
             if len(sys.argv) < 3:
-                print("Usage: brrtrouter local dependabot automerge", file=sys.stderr)
+                print("Usage: brrtrouter-tooling local dependabot automerge", file=sys.stderr)
                 sys.exit(1)
             subcommand = sys.argv[2]
             if subcommand == "automerge":

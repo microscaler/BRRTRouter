@@ -53,7 +53,7 @@ def run(directory: str, base_port: int) -> dict | int:
 
 def run_scan_argv() -> int:
     """Parse argv specifically for scan."""
-    parser = argparse.ArgumentParser(prog="brrtrouter client tilt scan")
+    parser = argparse.ArgumentParser(prog="brrtrouter-tooling client tilt scan")
     parser.add_argument(
         "--dir", required=True, help="Directory to scan (e.g. microservices/openapi/trader)"
     )

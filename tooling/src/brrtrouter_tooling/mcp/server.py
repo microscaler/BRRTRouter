@@ -6,7 +6,7 @@ Usage (programmatic):
     server.run()
 
 Usage (CLI):
-    brrtrouter mcp serve [--transport stdio|sse] [--host 127.0.0.1] [--port 8765]
+    brrtrouter-tooling client mcp serve [--transport stdio|sse] [--host 127.0.0.1] [--port 8765]
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ _SERVER_NAME = "BRRTRouter"
 _SERVER_DESCRIPTION = (
     "BRRTRouter MCP server — helps AI assistants build OpenAPI specs conformant to "
     "BRRTRouter, use brrtrouter-gen, understand the gen/impl directory layout, "
-    "run consumer `brrtrouter client build` (impl crate `-p` naming: "
+    "run consumer `brrtrouter-tooling client build` (impl crate `-p` naming: "
     "*_service_api_impl or camelCase BFF *_impl), and set up Backend-for-Frontend (BFF) services."
 )
 

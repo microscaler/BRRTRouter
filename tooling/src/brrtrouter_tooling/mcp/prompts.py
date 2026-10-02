@@ -69,7 +69,7 @@ def setup_bff_prompt(system_name: str, services: list[str]) -> GetPromptResult:
                         "   - A services map with base_path and spec_path for each service\n"
                         "   - metadata: title, version, security_schemes, security\n\n"
                         "2. A brief explanation of how to generate the merged spec using:\n"
-                        "   brrtrouter bff generate --suite-config bff-suite-config.yaml --validate\n\n"
+                        "   brrtrouter-tooling client bff generate --suite-config bff-suite-config.yaml --validate\n\n"
                         "BFF extensions added automatically:\n"
                         "  - x-brrtrouter-downstream-path: full downstream path for the proxy\n"
                         "  - x-service: name of the owning sub-service\n"

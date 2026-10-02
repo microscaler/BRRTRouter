@@ -27,7 +27,7 @@ mcp = [
 ]
 
 [project.scripts]
-brrtrouter = "brrtrouter_tooling.cli.main:main"
+brrtrouter-tooling = "brrtrouter_tooling.cli.main:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

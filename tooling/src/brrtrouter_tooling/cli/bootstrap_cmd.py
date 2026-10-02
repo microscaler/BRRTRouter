@@ -1,4 +1,4 @@
-"""CLI for bootstrap: brrtrouter bootstrap microservice <service>."""
+"""CLI for bootstrap: brrtrouter-tooling client bootstrap microservice <service>."""
 
 from __future__ import annotations
 
@@ -46,10 +46,10 @@ def _parse_layout_from_argv(args: list[str]) -> tuple[dict[str, Any], list[str]]
 
 
 def run_bootstrap_argv() -> None:
-    """Dispatch brrtrouter bootstrap microservice <service> [options]."""
+    """Dispatch brrtrouter-tooling client bootstrap microservice <service> [options]."""
     if len(sys.argv) < 4:
         print(
-            "Usage: brrtrouter bootstrap microservice <service_name> [options]",
+            "Usage: brrtrouter-tooling client bootstrap microservice <service_name> [options]",
             file=sys.stderr,
         )
         print(

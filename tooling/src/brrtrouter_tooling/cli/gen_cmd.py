@@ -1,4 +1,4 @@
-"""CLI for gen: brrtrouter gen generate | generate-stubs."""
+"""CLI for gen: brrtrouter-tooling client gen generate | generate-stubs."""
 
 from __future__ import annotations
 
@@ -44,7 +44,7 @@ def _run_gen_suite_argv(args: list[str]) -> None:
 
     if len(args) == 0 or args[0].startswith("-"):
         print(
-            "Usage: brrtrouter client gen suite <suite-name> [--service <name>]",
+            "Usage: brrtrouter-tooling client gen suite <suite-name> [--service <name>]",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -101,7 +101,7 @@ def _run_gen_stubs_argv(args: list[str]) -> None:
 
     if len(args) == 0 or args[0].startswith("-"):
         print(
-            "Usage: brrtrouter client gen stubs <suite-name> [<service-name>] [--force] [--sync]",
+            "Usage: brrtrouter-tooling client gen stubs <suite-name> [<service-name>] [--force] [--sync]",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -130,7 +130,7 @@ def _run_gen_stubs_argv(args: list[str]) -> None:
 
     if not service:
         print(
-            "Error: missing service name. Use: brrtrouter client gen stubs <suite> <service>",
+            "Error: missing service name. Use: brrtrouter-tooling client gen stubs <suite> <service>",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -183,10 +183,10 @@ def _run_gen_stubs_argv(args: list[str]) -> None:
 
 
 def run_gen_argv() -> None:
-    """Dispatch brrtrouter gen <subcommand>."""
+    """Dispatch brrtrouter-tooling client gen <subcommand>."""
     if len(sys.argv) < 3:
         print(
-            "Usage: brrtrouter gen <subcommand> [options]",
+            "Usage: brrtrouter-tooling client gen <subcommand> [options]",
             file=sys.stderr,
         )
         print(
