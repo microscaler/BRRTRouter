@@ -12,7 +12,7 @@
 - **Any consumer** can use it without depending on RERP.
 - **RERP** can either:
   - **Embed:** Import the Python module from BRRTRouter tooling (e.g. `from brrtrouter_tooling.bff import generate_bff_spec`) and call it from RERP’s own flow, or
-  - **Call:** Invoke BRRTRouter CLI (e.g. `brrtrouter bff generate --suite-config bff-suite-config.yaml --output openapi/bff.yaml`) and use the generated spec.
+  - **Call:** Invoke BRRTRouter CLI (e.g. `brrtrouter-tooling client bff generate --suite-config bff-suite-config.yaml --output openapi/bff.yaml`) and use the generated spec.
 
 ---
 
@@ -32,7 +32,7 @@ So today the BFF generator is **RERP-specific**; BRRTRouter only consumes the ge
 
 ### Option A — Extract BFF generator into BRRTRouter tooling (recommended)
 
-- **Where:** New package under `tooling/src/brrtrouter_tooling/bff/` (e.g. `generate.py`, `merge.py`, `config.py`) and a CLI subcommand `brrtrouter bff generate`.
+- **Where:** New package under `tooling/src/brrtrouter_tooling/bff/` (e.g. `generate.py`, `merge.py`, `config.py`) and a CLI subcommand `brrtrouter-tooling client bff generate`.
 - **What it does:**
   - Reads a suite config (e.g. YAML: list of services with `spec_path`, `base_path`, optional `port`).
   - Discovers and merges sub-service OpenAPI specs (paths, schemas) with prefixing.
@@ -40,8 +40,8 @@ So today the BFF generator is **RERP-specific**; BRRTRouter only consumes the ge
   - Merges or injects `components.parameters`, `components.securitySchemes`, and root `security` — **Story 1.3**.
   - Writes a single BFF OpenAPI spec (and optionally runs BRRTRouter validator).
 - **Consumers:**
-  - **Any project:** `pip install brrtrouter-tooling` then `brrtrouter bff generate ...` or `from brrtrouter_tooling.bff import generate_bff_spec`.
-  - **RERP:** Either (1) add `brrtrouter-tooling` as a dependency and call `generate_bff_spec(suite_config, output_path)` or (2) shell out to `brrtrouter bff generate ...` and use the output.
+  - **Any project:** `pip install brrtrouter-tooling` then `brrtrouter-tooling client bff generate ...` or `from brrtrouter_tooling.bff import generate_bff_spec`.
+  - **RERP:** Either (1) add `brrtrouter-tooling` as a dependency and call `generate_bff_spec(suite_config, output_path)` or (2) shell out to `brrtrouter-tooling client bff generate ...` and use the output.
 
 **Pros:** Single source of truth; BRRTRouter and BFF contract stay aligned; any consumer gets the same behaviour; RERP can still use it by import or CLI.  
 **Cons:** BRRTRouter repo owns and maintains the generator; RERP may need to adapt its current flow (paths, config shape) to match the tooling’s interface.
@@ -57,7 +57,7 @@ So today the BFF generator is **RERP-specific**; BRRTRouter only consumes the ge
 ### Option C — Hybrid: BRRTRouter provides library, RERP keeps orchestration
 
 - BRRTRouter tooling provides a **library** (e.g. `brrtrouter_tooling.bff.merge_specs`, `add_proxy_extensions`, `merge_components_security`) that implements the merge and extension logic.
-- RERP (or any consumer) keeps its own **orchestration** (discovery, config, file layout) and calls the library. Optionally, BRRTRouter also adds a thin CLI that uses the same library (e.g. `brrtrouter bff generate` with a standard config format).
+- RERP (or any consumer) keeps its own **orchestration** (discovery, config, file layout) and calls the library. Optionally, BRRTRouter also adds a thin CLI that uses the same library (e.g. `brrtrouter-tooling client bff generate` with a standard config format).
 
 **Pros:** Reusable logic in BRRTRouter; consumers can still customize discovery and config.  
 **Cons:** Two layers to maintain; config/suite format may still diverge unless the CLI is the “standard” and RERP aligns to it.
@@ -72,7 +72,7 @@ So today the BFF generator is **RERP-specific**; BRRTRouter only consumes the ge
 2. **BRRTRouter** owns the contract: same tooling that emits `x-brrtrouter-downstream-path` and `x-service` is the one BRRTRouter expects (Epic 1.1, 2.2).
 3. **RERP** can:
    - **Import:** Add `brrtrouter-tooling` as a dependency and call the generator as a library (e.g. in a RERP script that then runs BRRTRouter codegen), or
-   - **Call:** Run `brrtrouter bff generate ...` and use the generated spec in RERP’s pipeline (e.g. as input to BRRTRouter codegen or Tilt).
+   - **Call:** Run `brrtrouter-tooling client bff generate ...` and use the generated spec in RERP’s pipeline (e.g. as input to BRRTRouter codegen or Tilt).
 4. **Stories 1.2 and 1.3** are implemented **inside BRRTRouter tooling**; RERP either uses that implementation or delegates to it.
 
 If extraction is too heavy in the short term, **Option C** is a compromise: implement the merge and extension logic in `brrtrouter_tooling.bff` as a library first, add a minimal CLI that uses it, and let RERP call the library (or CLI) until RERP’s own generator is deprecated or aligned.
@@ -86,7 +86,7 @@ If extraction is too heavy in the short term, **Option C** is a compromise: impl
 | Item | Location |
 |------|----------|
 | **Python package** | `tooling/src/brrtrouter_tooling/bff/` — e.g. `__init__.py`, `config.py` (suite config schema), `merge.py` (merge paths/schemas), `extensions.py` (add `x-brrtrouter-downstream-path`, `x-service`), `components.py` (merge parameters, securitySchemes, security). |
-| **CLI** | `brrtrouter bff generate --suite-config <path> --output <path>` (and optional flags: `--validate`, `--base-path-prefix`). Wire in `tooling/src/brrtrouter_tooling/cli/main.py` (e.g. `command == "bff"` → `bff.generate()`). |
+| **CLI** | `brrtrouter-tooling client bff generate --suite-config <path> --output <path>` (and optional flags: `--validate`, `--base-path-prefix`). Wire in `tooling/src/brrtrouter_tooling/cli/main.py` (e.g. `command == "bff"` → `bff.generate()`). |
 | **Config format** | Document a standard suite config (YAML) that lists services with `name`, `spec_path`, `base_path`, optional `port`; align with RERP’s `bff-suite-config.yaml` where possible so RERP can pass the same file or a thin adapter. |
 | **Tests** | `tooling/tests/test_bff.py` — unit tests for merge, extensions, components merge; optional integration test with a fixture suite config. |
 
@@ -95,7 +95,7 @@ If extraction is too heavy in the short term, **Option C** is a compromise: impl
 | Mode | Usage |
 |------|--------|
 | **Import** | `pip install brrtrouter-tooling` (or install from BRRTRouter repo). In RERP: `from brrtrouter_tooling.bff import generate_bff_spec`; call with RERP’s suite config (or adapt config to the standard shape). RERP’s `generate_system.py` (or equivalent) becomes a thin wrapper that calls BRRTRouter and then runs RERP-specific steps (e.g. copy files, trigger BRRTRouter codegen). |
-| **CLI** | RERP (or CI) runs `brrtrouter bff generate --suite-config openapi/accounting/bff-suite-config.yaml --output openapi/accounting/bff/openapi.yaml`. Downstream steps use the generated spec. No Python import from RERP; only the `brrtrouter` binary (and standard config format). |
+| **CLI** | RERP (or CI) runs `brrtrouter-tooling client bff generate --suite-config openapi/accounting/bff-suite-config.yaml --output openapi/accounting/bff/openapi.yaml`. Downstream steps use the generated spec. No Python import from RERP; only the `brrtrouter-gen` binary (and standard config format). |
 
 Both modes give RERP a single, standard BFF generator; RERP chooses whether to embed via import or call the CLI.
 
@@ -106,8 +106,8 @@ Both modes give RERP a single, standard BFF generator; RERP chooses whether to e
 | Question | Answer |
 |----------|--------|
 | **Do we need to extract the BFF generator into BRRTRouter tooling?** | **Recommended: yes.** Gives any consumer a standard BFF tool set and keeps the BFF contract aligned with BRRTRouter. |
-| **Where does it live?** | `tooling/src/brrtrouter_tooling/bff/` + CLI `brrtrouter bff generate`. |
-| **How does RERP use it?** | Either **import** the Python module from `brrtrouter-tooling` or **call** `brrtrouter bff generate ...` directly. |
+| **Where does it live?** | `tooling/src/brrtrouter_tooling/bff/` + CLI `brrtrouter-tooling client bff generate`. |
+| **How does RERP use it?** | Either **import** the Python module from `brrtrouter-tooling` or **call** `brrtrouter-tooling client bff generate ...` directly. |
 | **What about Epic 1.2 and 1.3?** | Implement them in BRRTRouter tooling; RERP then uses that implementation (library or CLI) instead of maintaining its own generator logic. |
 
 ---

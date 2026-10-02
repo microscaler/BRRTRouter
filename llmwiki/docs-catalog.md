@@ -43,7 +43,7 @@
 - `docs/EPICS/BFF_PROXY/epic-1-spec-driven-proxy/story-1.1-route-meta-extensions.md`
 - `docs/EPICS/BFF_PROXY/epic-1-spec-driven-proxy/story-1.2-bff-generator-proxy-extensions.md`
 - `docs/EPICS/BFF_PROXY/epic-1-spec-driven-proxy/story-1.3-bff-generator-components-security.md`
-- `docs/EPICS/BFF_PROXY/epic-1-spec-driven-proxy/story-1.4-extract-bff-tooling-to-brrrouter.md`
+- `docs/EPICS/BFF_PROXY/epic-1-spec-driven-proxy/story-1.4-extract-bff-tooling-to-brrtrouter.md`
 - `docs/EPICS/BFF_PROXY/epic-2-proxy-library/README.md`
 - `docs/EPICS/BFF_PROXY/epic-2-proxy-library/story-2.1-proxy-library.md`
 - `docs/EPICS/BFF_PROXY/epic-2-proxy-library/story-2.2-downstream-base-url-config.md`

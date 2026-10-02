@@ -5,8 +5,8 @@
 > Built on `may` coroutines.
 
 [CI](https://github.com/microscaler/BRRTRouter/actions)
-[Crate](https://crates.io/crates/brrrouter)
-[Docs](https://docs.rs/brrrouter)
+[Crate](https://crates.io/crates/brrtrouter)
+[Docs](https://docs.rs/brrtrouter)
 
 | | |
 | -- | -- |
