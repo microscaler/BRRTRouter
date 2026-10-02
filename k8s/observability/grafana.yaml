@@ -53,14 +53,19 @@ data:
           "id": 1,
           "gridPos": { "x": 0, "y": 0, "w": 24, "h": 20 },
           "title": "CPU Flamegraph",
-          "type": "pyroscope-panel",
+          "type": "flamegraph",
           "datasource": "Pyroscope",
+          "targets": [
+            {
+              "refId": "A",
+              "queryType": "both",
+              "profileTypeId": "process_cpu:cpu:nanoseconds:cpu:nanoseconds",
+              "labelSelector": "{}",
+              "groupBy": ["filename"]
+            }
+          ],
           "options": {
-            "query": {
-              "queryType": "series",
-              "profileTypeId": "process_cpu:cpu:nanoseconds:cpu:nanoseconds"
-            },
-            "legend": true
+            "legend": { "show": true }
           }
         }
       ]
@@ -169,6 +174,9 @@ spec:
               mkdir -p /var/lib/grafana/plugins /var/lib/grafana/dashboards
               chmod -R 777 /var/lib/grafana
               chown -R 472:472 /var/lib/grafana
+              # Remove plugin dirs left by failed GF_INSTALL_PLUGINS downloads
+              # (broken artifacts crash grafana's plugin scan at startup).
+              rm -rf /var/lib/grafana/plugins/grafana-pyroscope-datasource
           volumeMounts:
             - name: storage
               mountPath: /var/lib/grafana
@@ -176,7 +184,7 @@ spec:
             runAsUser: 0
       containers:
         - name: grafana
-          image: grafana/grafana:10.2.2
+          image: grafana/grafana:11.6.16
           ports:
             - name: web
               containerPort: 3000

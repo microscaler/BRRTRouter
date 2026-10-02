@@ -877,6 +877,7 @@ mod linter_tests;
 pub mod middleware;
 pub mod otel;
 pub mod perf_harness;
+pub mod profiling;
 pub mod router;
 pub mod runtime_config;
 pub mod runtime_watchdog;

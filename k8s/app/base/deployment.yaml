@@ -77,6 +77,11 @@ spec:
           env:
             - name: PORT
               value: "8080"
+            # Continuous profiling → in-cluster Pyroscope (opt-in agent, see src/profiling.rs)
+            - name: PYROSCOPE_SERVER_ADDRESS
+              value: "http://pyroscope:4040"
+            - name: PYROSCOPE_APPLICATION_NAME
+              value: "petstore"
             # Base logging - production-like (info level)
             - name: RUST_LOG
               value: "info,may=warn,may_minihttp=warn"
