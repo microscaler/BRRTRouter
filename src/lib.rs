@@ -879,6 +879,7 @@ pub mod otel;
 pub mod perf_harness;
 pub mod router;
 pub mod runtime_config;
+pub mod runtime_watchdog;
 pub mod sanitize;
 pub mod security;
 pub mod server;

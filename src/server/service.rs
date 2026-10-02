@@ -529,9 +529,33 @@ impl AppService {
     }
 }
 
-/// Basic health check endpoint returning `{ "status": "ok" }`.
+/// Liveness: `{ "status": "ok" }`, or 503 `{ "status": "starved", ... }` while the
+/// [`crate::runtime_watchdog`] finds `may` workers blocked in OS calls - a pod in that state
+/// answers this endpoint from its remaining workers while everything else on the blocked ones
+/// (database I/O included) has stopped, so it must be restarted rather than reported alive.
+/// The first call starts the watchdog.
 pub fn health_endpoint(res: &mut Response) -> io::Result<()> {
     use crate::dispatcher::HeaderVec;
+    if let Some(w) = crate::runtime_watchdog::global() {
+        let v = w.verdict();
+        if !v.healthy {
+            write_handler_response(
+                res,
+                503,
+                serde_json::json!({
+                    "status": "starved",
+                    "detail": "may worker threads are blocked in OS calls; coroutines and sockets on them have stopped",
+                    "stalledProbes": v.stalled,
+                    "judgedProbes": v.judged,
+                    "mayWorkers": v.workers,
+                    "stalledWorkersEstimate": v.stalled_workers_estimate(),
+                }),
+                false,
+                &HeaderVec::new(),
+            );
+            return Ok(());
+        }
+    }
     write_handler_response(
         res,
         200,
@@ -953,7 +977,7 @@ pub fn swagger_ui_endpoint(res: &mut Response, docs: &StaticFiles) -> io::Result
 /// 2. **Apply Keep-Alive**: Set connection persistence headers (if configured)
 /// 3. **Metrics**: Increment top-level request counter
 /// 4. **Infrastructure Endpoints** (short-circuit):
-///    - `GET /health` → Health check (200 OK)
+///    - `GET /health` → Liveness (200 OK; 503 while may workers are starved - see `runtime_watchdog`)
 ///    - `GET /metrics` → Prometheus metrics
 ///    - `GET /openapi.yaml` → OpenAPI specification
 ///    - `GET /docs` → Swagger UI
@@ -966,7 +990,7 @@ pub fn swagger_ui_endpoint(res: &mut Response, docs: &StaticFiles) -> io::Result
 /// # Short-Circuit Paths (No Dispatch)
 ///
 /// These endpoints bypass the dispatcher for performance:
-/// - `/health` - Always returns 200 OK immediately
+/// - `/health` - 200 immediately, or 503 while the runtime watchdog finds may workers blocked
 /// - `/metrics` - Reads atomic counters and returns Prometheus text
 /// - `/openapi.yaml` - Serves spec file directly
 /// - `/docs` - Renders Swagger UI template
