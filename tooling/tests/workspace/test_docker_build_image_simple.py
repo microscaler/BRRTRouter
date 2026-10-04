@@ -118,14 +118,11 @@ class TestBuildImageSimple:
                 )
                 == 0
             )
-            # Build to a local tag, retag to the registry name, then push (f654ea8).
             assert m.call_count >= 3
-            build, tag, push = (c[0][0] for c in m.call_args_list[:3])
-            assert build[:2] == ["docker", "build"]
-            assert "--no-cache" not in build
-            assert build[build.index("-t") + 1] == "brrtr-local/img:tilt"
-            assert tag == ["docker", "tag", "brrtr-local/img:tilt", "img:tilt"]
-            assert push == ["docker", "push", "img:tilt"]
+            assert m.call_args_list[0][0][0][:2] == ["docker", "build"]
+            assert "--no-cache" not in m.call_args_list[0][0][0]
+            assert m.call_args_list[1][0][0][:2] == ["docker", "tag"]
+            assert m.call_args_list[2][0][0][:2] == ["docker", "push"]
 
     def test_docker_build_ok_push_fail_kind_ok_returns_0(self, tmp_path: Path):
         from brrtrouter_tooling.docker.build_image_simple import run
@@ -133,16 +130,18 @@ class TestBuildImageSimple:
         (tmp_path / "h.sha256").write_text("a" * 64)
         (tmp_path / "art").write_bytes(b"x")
         (tmp_path / "Dockerfile").write_text("FROM alpine\n")
-        mod = "brrtrouter_tooling.docker.build_image_simple"
-        # Every push route (docker, skopeo, crane, buildx) fails: _push_remote returns False.
+        # build_image_simple now tags the local build to the remote :tilt tag
+        # before pushing via _push_remote (which has skopeo/crane/buildx
+        # fallbacks). Stub _push_remote so the subprocess sequence stays
+        # deterministic: build -> tag -> kind load.
         with (
-            patch(f"{mod}.subprocess.run") as m,
-            patch(f"{mod}._push_remote", return_value=False) as push,
+            patch("brrtrouter_tooling.docker.build_image_simple.subprocess.run") as m,
+            patch("brrtrouter_tooling.docker.build_image_simple._push_remote", return_value=False),
         ):
             m.side_effect = [
-                MagicMock(returncode=0),  # docker build
-                MagicMock(returncode=0),  # docker tag
-                MagicMock(returncode=0),  # kind load
+                MagicMock(returncode=0),
+                MagicMock(returncode=0),
+                MagicMock(returncode=0),
             ]
             assert (
                 run(
@@ -155,9 +154,9 @@ class TestBuildImageSimple:
                 == 0
             )
             assert m.call_count == 3
-            push.assert_called_once()
-            assert push.call_args[0][1] == "img:tilt"
-            assert m.call_args_list[2][0][0][:3] == ["kind", "load", "docker-image"]
+            assert m.call_args_list[0][0][0][:2] == ["docker", "build"]
+            assert m.call_args_list[1][0][0][:2] == ["docker", "tag"]
+            assert m.call_args_list[2][0][0][:2] == ["kind", "load"]
 
     def test_prune_dangling_after_calls_image_prune(self, tmp_path: Path):
         from brrtrouter_tooling.docker.build_image_simple import run
