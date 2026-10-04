@@ -12,27 +12,27 @@ python3 -m venv ~/.local/share/brrtrouter/venv
 ~/.local/share/brrtrouter/venv/bin/pip install -e ./tooling[dev]
 ```
 
-Override the directory with **`BRRTROUTER_VENV`** (absolute path to the venv root, the directory that contains `bin/brrtrouter`).
+Override the directory with **`BRRTROUTER_VENV`** (absolute path to the venv root, the directory that contains `bin/brrtrouter-tooling`).
 
 **In-repo venv** (e.g. CI or quick try): `cd tooling && python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"` — still supported; GitHub Actions uses a workspace-local venv.
 
 ## Usage
 
 ```bash
-brrtrouter dependabot <command>
-brrtrouter bff generate --suite-config <path> [--output <path>] [--base-dir <path>] [--validate]
-brrtrouter bff generate-system [--openapi-dir <path>] [--system <name>] [--output <path>]
-brrtrouter ports validate [--project-root <path>] [--registry <path>] [--json]
-brrtrouter build <target> [arch] [--release] [--workspace-dir microservices]
-brrtrouter docker <cmd> ...   # generate-dockerfile, copy-binary, build-base, build-image-simple, copy-multiarch, build-multiarch, unpack-build-bins
-brrtrouter release bump [patch|minor|major|rc|release]
-brrtrouter release generate-notes --version X.Y.Z [--output PATH] [--template PATH] [--since-tag TAG]
-brrtrouter mcp serve [--transport stdio|sse] [--host HOST] [--port PORT]
+brrtrouter-tooling local dependabot automerge
+brrtrouter-tooling client bff generate --suite-config <path> [--output <path>] [--base-dir <path>] [--validate]
+brrtrouter-tooling client bff generate-system [--openapi-dir <path>] [--system <name>] [--output <path>]
+brrtrouter-tooling client ports validate [--project-root <path>] [--registry <path>] [--json]
+brrtrouter-tooling client build <target> [arch] [--release] [--workspace-dir microservices]
+brrtrouter-tooling client docker <cmd> ...   # generate-dockerfile, copy-binary, build-base, build-image-simple, copy-multiarch, build-multiarch, unpack-build-bins
+brrtrouter-tooling local release bump [patch|minor|major|rc|release]
+brrtrouter-tooling local release generate-notes --version X.Y.Z [--output PATH] [--template PATH] [--since-tag TAG]
+brrtrouter-tooling client mcp serve [--transport stdio|sse] [--host HOST] [--port PORT]
 ```
 
 ### Consumer workspace tooling (`brrtrouter_tooling.workspace`)
 
-Optional helpers for **any** downstream repo that uses BRRTRouter (not tied to a single product name). This includes port registry, Tilt lifecycle scripts, Docker helpers, and a second-layer CLI (e.g. the `hauliage` command in Microscaler) that wires argparse and **optional** OpenAPI layout overrides (e.g. flattened `openapi/<service>/` trees). Prefer **`brrtrouter client …`** for portable scripts; use **`workspace`** when you need the full project-oriented command surface. Same package installs from PyPI/Git as `brrtrouter-tooling`; configure with `BRRTROUTER_ROOT`, `BRRTROUTER_VENV`, and project root env vars documented in `workspace/cli/main.py`.
+Optional helpers for **any** downstream repo that uses BRRTRouter (not tied to a single product name). This includes port registry, Tilt lifecycle scripts, Docker helpers, and a second-layer CLI (e.g. the `hauliage` command in Microscaler) that wires argparse and **optional** OpenAPI layout overrides (e.g. flattened `openapi/<service>/` trees). Prefer **`brrtrouter-tooling client …`** for portable scripts; use **`workspace`** when you need the full project-oriented command surface. Same package installs from PyPI/Git as `brrtrouter-tooling`; configure with `BRRTROUTER_ROOT`, `BRRTROUTER_VENV`, and project root env vars documented in `workspace/cli/main.py`.
 
 ### BFF generator (Story 1.4)
 
@@ -52,7 +52,7 @@ Generates a BFF OpenAPI spec from a suite config YAML that lists sub-services. I
 
 ### MCP server
 
-The `brrtrouter mcp serve` command starts a [Model Context Protocol](https://modelcontextprotocol.io/) server that helps AI assistants (Claude Desktop, Cursor, VS Code Copilot, etc.) build OpenAPI specs conformant to BRRTRouter, use the code generator, and set up BFF services.
+The `brrtrouter-tooling client mcp serve` command starts a [Model Context Protocol](https://modelcontextprotocol.io/) server that helps AI assistants (Claude Desktop, Cursor, VS Code Copilot, etc.) build OpenAPI specs conformant to BRRTRouter, use the code generator, and set up BFF services.
 
 **Installation** (requires the `mcp` extra). Prefer the shared venv above, then from a BRRTRouter clone:
 
@@ -63,16 +63,16 @@ cd /path/to/BRRTRouter
 ~/.local/share/brrtrouter/venv/bin/pip install "brrtrouter-tooling[mcp] @ git+https://github.com/microscaler/BRRTRouter.git#subdirectory=tooling"
 ```
 
-Point Cursor / Claude Desktop at `~/.local/share/brrtrouter/venv/bin/brrtrouter` (or set `BRRTROUTER_VENV` and use `$BRRTROUTER_VENV/bin/brrtrouter`).
+Point Cursor / Claude Desktop at `~/.local/share/brrtrouter/venv/bin/brrtrouter-tooling` (or set `BRRTROUTER_VENV` and use `$BRRTROUTER_VENV/bin/brrtrouter-tooling`).
 
 **Running the server:**
 
 ```bash
 # stdio transport (for Claude Desktop / CLI integrations)
-brrtrouter mcp serve
+brrtrouter-tooling client mcp serve
 
 # SSE transport (for web-based clients)
-brrtrouter mcp serve --transport sse --host 127.0.0.1 --port 8765
+brrtrouter-tooling client mcp serve --transport sse --host 127.0.0.1 --port 8765
 ```
 
 **Claude Desktop config** (`~/Library/Application Support/Claude/claude_desktop_config.json`):
@@ -81,8 +81,8 @@ brrtrouter mcp serve --transport sse --host 127.0.0.1 --port 8765
 {
   "mcpServers": {
     "brrtrouter": {
-      "command": "brrtrouter",
-      "args": ["mcp", "serve"]
+      "command": "brrtrouter-tooling",
+      "args": ["client", "mcp", "serve"]
     }
   }
 }

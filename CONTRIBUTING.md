@@ -344,7 +344,7 @@ Example:
 
 **README overview** – BRRTRouter aims to be a “high‑performance, coroutine‑powered request router for Rust” driven entirely by an OpenAPI 3.1 specification. The vision calls for “millions of requests per second” with a goal of one million route matches per second on a Raspberry Pi 5.
 
-**Crate layout** – The library is defined in `src/` and exposes modules such as `router`, `dispatcher`, `server`, `spec`, `typed`, etc. (`lib.rs` re‑exports several of them). There is a small CLI binary `src/bin/brrrouter_gen.rs` which just invokes `brrrouter::cli::run_cli()`.
+**Crate layout** – The library is defined in `src/` and exposes modules such as `router`, `dispatcher`, `server`, `spec`, `typed`, etc. (`lib.rs` re‑exports several of them). There is a small CLI binary `src/bin/brrtrouter_gen.rs` which just invokes `brrtrouter::cli::run_cli()`.
 
 **OpenAPI specification parsing** – `spec.rs` reads a spec file (JSON or YAML) and produces `RouteMeta` values describing HTTP method, path, handler name, request/response schemas, and examples. The `build_routes` function walks the spec’s paths and operations to create `RouteMeta` entries and captures JSON schema info where available.
 

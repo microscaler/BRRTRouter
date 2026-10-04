@@ -25,7 +25,7 @@ init:
 	fi
 	tooling/.venv/bin/pip install --upgrade pip
 	tooling/.venv/bin/pip install -e ./tooling[dev]
-	echo "✅ Tooling .venv ready. Use: tooling/.venv/bin/brrtrouter or add tooling/.venv/bin to PATH"
+	echo "✅ Tooling .venv ready. Use: tooling/.venv/bin/brrtrouter-tooling or add tooling/.venv/bin to PATH"
 
 # Rebuild tooling (pip install -e) after source changes. Run `just init` first
 # if tooling/.venv does not exist.
@@ -647,27 +647,35 @@ dev-registry-wire:
 	kubectl apply -f k8s/core/local-registry-hosting.yaml 2>/dev/null || true
 	echo "[OK] Registry wired to Kind nodes"
 
-# Start Tilt against shared-k8s. Does NOT create/delete clusters.
-# Prerequisites: cd ../shared-gitops-k8s-cluster && just infra-up
+# Start Tilt. Uses shared-k8s when its kubeconfig exists; otherwise falls back
+# to the shared Kind cluster (created on demand via ../shared-kind-cluster).
 # Tilt UI: http://localhost:10353 (press 'space' to open)
 # Pet Store API: http://localhost:8081
 dev-up:
 	#!/usr/bin/env bash
 	set -euo pipefail
-	export KUBECONFIG="$(realpath {{shared_k8s_kubeconfig}})"
-	echo "Starting BRRTRouter Tilt (shared-k8s)..."
-	echo ""
 	just dev-registry
 	echo ""
-	if [[ ! -f "${KUBECONFIG}" ]]; then
-		echo "[FAIL] shared-k8s kubeconfig missing."
-		echo "  Create it: cd {{shared_k8s_root}} && just cluster-create"
-		exit 1
-	fi
-	(cd "{{shared_k8s_root}}" && just check-ready) || exit 1
-	if ! kubectl get svc -n data minio >/dev/null 2>&1; then
-		echo "Platform Tilt not up — starting shared-k8s platform..."
-		(cd "{{shared_k8s_root}}" && just systemd-tilt-up) || true
+	KCFG="{{shared_k8s_kubeconfig}}"
+	if [[ -f "$(realpath -q "${KCFG}" 2>/dev/null)" ]]; then
+		export KUBECONFIG="$(realpath "${KCFG}")"
+		echo "Starting BRRTRouter Tilt (shared-k8s)..."
+		just dev-disable-kind
+		(cd "{{shared_k8s_root}}" && just check-ready) || exit 1
+		if ! kubectl get svc -n data minio >/dev/null 2>&1; then
+			echo "Platform Tilt not up — starting shared-k8s platform..."
+			(cd "{{shared_k8s_root}}" && just systemd-tilt-up)
+		fi
+	else
+		echo "shared-k8s kubeconfig missing — falling back to Kind."
+		if ! kind get clusters 2>/dev/null | grep -q '^kind$'; then
+			echo "Kind cluster not found — creating..."
+			(cd "../shared-kind-cluster" && just cluster-create)
+		else
+			echo "[OK] Kind cluster already exists"
+		fi
+		kubectl config use-context kind-kind >/dev/null
+		just dev-enable-kind
 	fi
 	echo ""
 	echo "Starting BRRTRouter Tilt via systemd (port 10353)..."
@@ -692,22 +700,31 @@ dev-down:
 	echo "[OK] Tilt stopped (shared-k8s cluster unchanged)"
 
 # Switch systemd unit to legacy Kind (other developers without shared-k8s).
+# Writes the drop-in directly so it works without a shared-gitops-k8s-cluster checkout.
 dev-enable-kind:
 	#!/usr/bin/env bash
 	set -euo pipefail
 	dest="${HOME}/.config/systemd/user/tilt-brrtrouter.service.d"
 	mkdir -p "${dest}"
-	cp "{{shared_k8s_root}}/config/systemd-kind-override.example" "${dest}/kind.conf"
+	cat > "${dest}/kind.conf" <<-'EOF'
+	[Service]
+	Environment=TILT_K8S_CLUSTER=kind
+	Environment=TILT_USE_SHARED_KIND_INFRA=0
+	EOF
 	systemctl --user daemon-reload
-	systemctl --user restart tilt-brrtrouter.service
-	echo "BRRTRouter Tilt now uses Kind (TILT_K8S_CLUSTER=kind)"
+	if systemctl --user is-active --quiet tilt-brrtrouter.service; then
+		systemctl --user restart tilt-brrtrouter.service
+	fi
+	echo "BRRTRouter Tilt now uses Kind (TILT_K8S_CLUSTER=kind, bundled data stores)"
 
 dev-disable-kind:
 	#!/usr/bin/env bash
 	set -euo pipefail
 	rm -f "${HOME}/.config/systemd/user/tilt-brrtrouter.service.d/kind.conf"
 	systemctl --user daemon-reload
-	systemctl --user restart tilt-brrtrouter.service
+	if systemctl --user is-active --quiet tilt-brrtrouter.service; then
+		systemctl --user restart tilt-brrtrouter.service
+	fi
 	echo "BRRTRouter Tilt restored to shared-k8s default"
 
 # Check development environment status

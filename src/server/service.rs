@@ -244,6 +244,9 @@ impl AppService {
         static_dir: Option<PathBuf>,
         doc_dir: Option<PathBuf>,
     ) -> Self {
+        // Optional continuous profiling (no-op unless PYROSCOPE_SERVER_ADDRESS is set)
+        #[cfg(feature = "profiling")]
+        crate::profiling::init_from_env();
         // Load runtime config to determine if caching is enabled
         let runtime_config = crate::runtime_config::RuntimeConfig::from_env();
         let validator_cache = ValidatorCache::new(runtime_config.schema_cache_enabled);

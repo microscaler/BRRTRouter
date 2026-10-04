@@ -1,4 +1,4 @@
-"""CLI for pre-commit: brrtrouter pre-commit workspace-fmt."""
+"""CLI for pre-commit: brrtrouter-tooling local pre-commit workspace-fmt."""
 
 from __future__ import annotations
 
@@ -10,10 +10,10 @@ from brrtrouter_tooling.pre_commit import run_workspace_fmt
 
 
 def run_pre_commit_argv() -> None:
-    """Dispatch brrtrouter pre-commit <subcommand> [options]."""
+    """Dispatch brrtrouter-tooling local pre-commit <subcommand> [options]."""
     if len(sys.argv) < 3:
         print(
-            "Usage: brrtrouter pre-commit <subcommand> [options]",
+            "Usage: brrtrouter-tooling local pre-commit <subcommand> [options]",
             file=sys.stderr,
         )
         print(

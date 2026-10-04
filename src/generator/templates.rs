@@ -261,6 +261,10 @@ pub struct ModRsTemplateData {
 pub struct RegistryTemplateData {
     /// Registry entries for all handlers
     pub entries: Vec<RegistryEntry>,
+    /// Whether any entry is typed (non-proxy). Gates the
+    /// `spawn_typed_with_stack_size_and_name` import so all-proxy crates
+    /// (e.g. BFF) don't emit an unused import under `clippy -D warnings`.
+    pub has_typed_entries: bool,
 }
 
 /// Template data for generating handler_types.rs (type definitions)
@@ -616,6 +620,7 @@ pub fn write_registry_rs(dir: &Path, entries: &[RegistryEntry]) -> anyhow::Resul
     let path = dir.join("registry.rs");
     let rendered = RegistryTemplateData {
         entries: entries.to_vec(),
+        has_typed_entries: entries.iter().any(|e| !e.is_proxy),
     }
     .render()?;
     fs::write(path.clone(), rendered)?;

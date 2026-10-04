@@ -440,7 +440,7 @@ def __build_parser():
     )
     pdpr = pd_sub.add_parser(
         "prune",
-        help="Free local Docker disk (dangling images, stopped containers, buildx cache); same targets as brrtrouter docker prune",
+        help="Free local Docker disk (dangling images, stopped containers, buildx cache); same targets as brrtrouter-tooling client docker prune",
     )
     pdpr.add_argument(
         "prune_target",

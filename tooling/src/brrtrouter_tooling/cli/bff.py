@@ -1,4 +1,4 @@
-"""CLI for BFF spec generation: brrtrouter bff generate, brrtrouter bff generate-system."""
+"""CLI for BFF spec generation: brrtrouter-tooling client bff generate, brrtrouter-tooling client bff generate-system."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from brrtrouter_tooling.bff import (
 
 
 def run_bff_generate() -> None:
-    """Run brrtrouter bff generate --suite-config <path> [--output <path>] [--validate] [--base-dir <path>]."""
+    """Run brrtrouter-tooling client bff generate --suite-config <path> [--output <path>] [--validate] [--base-dir <path>]."""
     # argv: [script, bff, generate, --suite-config, path, ...] -> skip first 3
     args = sys.argv[3:]
     suite_config = None
@@ -39,7 +39,7 @@ def run_bff_generate() -> None:
         else:
             print(f"Error: Unknown argument: {args[i]}", file=sys.stderr)
             print(
-                "Usage: brrtrouter bff generate --suite-config <path> [--output <path>] [--base-dir <path>] [--validate]",
+                "Usage: brrtrouter-tooling client bff generate --suite-config <path> [--output <path>] [--base-dir <path>] [--validate]",
                 file=sys.stderr,
             )
             sys.exit(1)
@@ -47,7 +47,7 @@ def run_bff_generate() -> None:
     if not suite_config:
         print("Error: --suite-config <path> is required", file=sys.stderr)
         print(
-            "Usage: brrtrouter bff generate --suite-config <path> [--output <path>] [--base-dir <path>] [--validate]",
+            "Usage: brrtrouter-tooling client bff generate --suite-config <path> [--output <path>] [--base-dir <path>] [--validate]",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -69,7 +69,7 @@ def run_bff_generate() -> None:
 
 
 def run_bff_generate_system_argv() -> None:
-    """Parse argv for brrtrouter bff generate-system and run."""
+    """Parse argv for brrtrouter-tooling client bff generate-system and run."""
     args = sys.argv[3:]
     openapi_dir: Path = Path.cwd() / "openapi"
     system: str | None = None
@@ -89,7 +89,7 @@ def run_bff_generate_system_argv() -> None:
         else:
             print(f"Error: Unknown argument: {args[i]}", file=sys.stderr)
             print(
-                "Usage: brrtrouter bff generate-system [--openapi-dir <path>] [--system <name>] [--output <path>]",
+                "Usage: brrtrouter-tooling client bff generate-system [--openapi-dir <path>] [--system <name>] [--output <path>]",
                 file=sys.stderr,
             )
             sys.exit(1)
@@ -102,7 +102,7 @@ def run_bff_generate_system_argv() -> None:
 
 
 def run_bff_generate_system(openapi_dir: Path, system: str | None, output: str | None) -> None:
-    """Run brrtrouter bff generate-system: directory discovery then generate."""
+    """Run brrtrouter-tooling client bff generate-system: directory discovery then generate."""
     if system:
         out_path = Path(output) if output else None
         subs = discover_sub_services(openapi_dir, system)

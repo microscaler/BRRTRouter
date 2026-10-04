@@ -11,7 +11,7 @@ Extract the BFF generator from RERP into BRRTRouter Python tooling so any consum
 
 1. **Extract BFF generator into BRRTRouter tooling**
    - New package: `tooling/src/brrtrouter_tooling/bff/` (e.g. `config.py`, `merge.py`, `extensions.py`, `components.py`, `generate.py`).
-   - CLI: `brrtrouter bff generate --suite-config <path> --output <path>` (and optional `--validate`).
+   - CLI: `brrtrouter-tooling client bff generate --suite-config <path> --output <path>` (and optional `--validate`).
    - Behaviour: merge sub-service specs with prefixing; per operation set `x-brrtrouter-downstream-path` and `x-service` (Story 1.2); merge `components.parameters`, `components.securitySchemes`, root `security` (Story 1.3). Document suite config format (align with RERP `bff-suite-config.yaml` where possible).
 
 2. **Migrate all tests**
@@ -22,14 +22,14 @@ Extract the BFF generator from RERP into BRRTRouter Python tooling so any consum
 3. **Update RERP to use BRRTRouter tooling**
    - RERP removes (or deprecates) its in-repo BFF generator implementation and instead:
      - **Option A (import):** Add `brrtrouter-tooling` as a dependency and call `brrtrouter_tooling.bff` (e.g. `generate_bff_spec(suite_config, output_path)`).
-     - **Option B (CLI):** Invoke `brrtrouter bff generate ...` and use the generated spec.
+     - **Option B (CLI):** Invoke `brrtrouter-tooling client bff generate ...` and use the generated spec.
    - RERP’s pipeline (e.g. `generate_system.py` or equivalent) becomes a thin wrapper that uses BRRTRouter tooling; config shape is adapted if needed.
    - Document in RERP how to install/use BRRTRouter tooling (see “Consuming BRRTRouter tooling from GitHub” below).
 
 ## Acceptance criteria
 
 - [ ] BFF generator lives in `tooling/src/brrtrouter_tooling/bff/` and implements Stories 1.2 and 1.3.
-- [ ] CLI `brrtrouter bff generate` works with a documented suite config format.
+- [ ] CLI `brrtrouter-tooling client bff generate` works with a documented suite config format.
 - [ ] All BFF generator tests from RERP are migrated to BRRTRouter tooling and pass.
 - [ ] RERP uses BRRTRouter tooling (import or CLI); RERP’s own generator code is removed or deprecated.
 - [ ] Docs: suite config format, how to install/use from GitHub (pip from git URL).
@@ -55,11 +55,11 @@ Python does **not** load packages from a raw HTTP URL at runtime like Go’s `go
   ]
   ```
 
-So RERP can depend on BRRTRouter tooling **directly from GitHub** without publishing to PyPI. Once installed, use `from brrtrouter_tooling.bff import generate_bff_spec` or call the CLI `brrtrouter bff generate ...`. Optional: publish `brrtrouter-tooling` to PyPI later for `pip install brrtrouter-tooling`.
+So RERP can depend on BRRTRouter tooling **directly from GitHub** without publishing to PyPI. Once installed, use `from brrtrouter_tooling.bff import generate_bff_spec` or call the CLI `brrtrouter-tooling client bff generate ...`. Optional: publish `brrtrouter-tooling` to PyPI later for `pip install brrtrouter-tooling`.
 
 ## Example config (suite config)
 
-Suite config format (YAML) consumed by `brrtrouter bff generate`:
+Suite config format (YAML) consumed by `brrtrouter-tooling client bff generate`:
 
 ```yaml
 # bff-suite-config.yaml (or equivalent)
@@ -88,7 +88,7 @@ flowchart LR
   end
   subgraph BRRTRouter_tooling["BRRTRouter tooling"]
     BFF["brrtrouter_tooling.bff\n(merge, 1.2, 1.3)"]
-    CLI["brrtrouter bff generate"]
+    CLI["brrtrouter-tooling client bff generate"]
     Tests["tooling/tests/test_bff_*"]
   end
   subgraph RERP_after["RERP (after)"]

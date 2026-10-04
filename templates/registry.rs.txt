@@ -10,7 +10,8 @@
 
 use brrtrouter::dispatcher::Dispatcher;
 use brrtrouter::spec::RouteMeta;
-use brrtrouter::typed::spawn_typed_with_stack_size_and_name;
+{% if has_typed_entries %}use brrtrouter::typed::spawn_typed_with_stack_size_and_name;
+{% endif %}
 
 /// Register all gen handlers statically (legacy; prefer `register_from_spec`).
 ///

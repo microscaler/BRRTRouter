@@ -49,15 +49,15 @@ elif [[ ${target} == "pet" ]]; then
   # Native builds are useful for local testing and debugging.
   if [[ -n "${SKIP_CROSS_COMPILE:-}" ]]; then
     # Native build for local development (fast, no cross-compilation overhead)
-    exec cargo build -p pet_store
+    exec cargo build -p pet_store "$@"
   elif [[ ${use_zigbuild} == true ]]; then
     # Cross-compile for Docker (Linux x86_64 musl)
-    exec cargo zigbuild --target x86_64-unknown-linux-musl -p pet_store
+    exec cargo zigbuild --target x86_64-unknown-linux-musl -p pet_store "$@"
   else
     # Cross-compile for Docker (Linux x86_64 musl) using musl-gcc
     exec env CC_x86_64_unknown_linux_musl=musl-gcc \
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc \
-      cargo build --target x86_64-unknown-linux-musl -p pet_store
+      cargo build --target x86_64-unknown-linux-musl -p pet_store "$@"
   fi
 else
   echo "unknown build target: ${target} (expected 'brr' or 'pet')" >&2

@@ -5,8 +5,8 @@
 > Built on `may` coroutines.
 
 [CI](https://github.com/microscaler/BRRTRouter/actions)
-[Crate](https://crates.io/crates/brrrouter)
-[Docs](https://docs.rs/brrrouter)
+[Crate](https://crates.io/crates/brrtrouter)
+[Docs](https://docs.rs/brrtrouter)
 
 | | |
 | -- | -- |
@@ -251,6 +251,10 @@ OpenAPI gap inventory (post–12.3): [docs/OPENAPI_3.1.0_COMPLIANCE_GAP.md](docs
 
 **Goal: running in under five minutes**
 
+> Never used BRRTRouter before? Start with
+> [Getting Started](docs/guides/GETTING_STARTED.md) — including a
+> no-Kubernetes path (`cargo run` in ~10 minutes).
+
 1. Shared Kind (monorepo): `cd ../shared-kind-cluster && just dev-up`
 2. This repo: `just dev-up` (Tilt)
 3. Smoke:
@@ -259,6 +263,9 @@ OpenAPI gap inventory (post–12.3): [docs/OPENAPI_3.1.0_COMPLIANCE_GAP.md](docs
    curl -H "X-API-Key: test123" http://localhost:8081/pets
    ```
 4. Open the **dashboard** → http://localhost:8081/ · Swagger → `/docs`
+
+Running in a VM? The services listen on all interfaces — use the VM's IP
+instead of `localhost` (see [Getting Started](docs/guides/GETTING_STARTED.md#46-accessing-the-demo-from-another-machine-vm--remote-host)).
 
 Full setup: [CONTRIBUTING.md](CONTRIBUTING.md) · [LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md).
 

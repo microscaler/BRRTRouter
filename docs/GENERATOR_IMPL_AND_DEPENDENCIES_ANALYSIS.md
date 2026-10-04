@@ -40,7 +40,7 @@ Generate an **impl crate** that contains stub controller implementations for eac
 ### 2.2 Entry point and CLI
 
 - **Function:** `generate_impl_stubs()` in `src/generator/project/generate.rs`
-- **CLI:** `brrtrouter gen stubs --spec <path> --output <impl_output_dir> [--component-name <name>] [--path <handler>] [--force]`
+- **CLI:** `brrtrouter-gen generate-stubs --spec <path> --output <impl_output_dir> [--component-name <name>] [--path <handler>] [--force] [--sync]`
 
 ### 2.3 Directory layout
 
@@ -153,7 +153,7 @@ So: extra deps from `brrtrouter-dependencies.toml` apply only to the **main gene
 ### 3.7 CLI
 
 - **`brrtrouter gen`** accepts `--dependencies-config <path>`; this is passed as `dependencies_config_path` to `generate_project_with_options()`.
-- **`brrtrouter gen stubs`** has no dependency-config option; impl Cargo.toml is generated without config.
+- **`brrtrouter-tooling client gen stubs`** has no dependency-config option; impl Cargo.toml is generated without config.
 
 ### 3.8 Code locations (dependencies config)
 

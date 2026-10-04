@@ -63,13 +63,14 @@ elif skip_observability:
 
 # Host-aware build selection via shell script (exception approved)
 brr_build_cmd = 'scripts/host-aware-build.sh brr'
-pet_build_cmd = 'scripts/host-aware-build.sh pet'
+# The dev deployment sets PYROSCOPE_SERVER_ADDRESS, so build with profiling compiled in.
+pet_build_cmd = 'scripts/host-aware-build.sh pet --features profiling'
 
 # ============================================================================
 # LOCAL BUILDS (Fast incremental compilation on host)
 # ============================================================================
 
-# Python package: brrtrouter-tooling (CLI `brrtrouter`, workspace helpers, MCP, etc.)
+# Python package: brrtrouter-tooling (CLI `brrtrouter-tooling`, workspace helpers, MCP, etc.)
 # Mirrors `just init` / `just build-tooling`: editable install into tooling/.venv
 local_resource(
     'build-brrtrouter-tooling',
@@ -169,7 +170,7 @@ local_resource(
 local_resource(
     'build-petstore',
     pet_build_cmd + ' && mkdir -p build_artifacts && cp target/x86_64-unknown-linux-musl/debug/pet_store build_artifacts/',
-    deps=['examples/pet_store/src/', 'examples/pet_store/Cargo.toml'],
+    deps=['examples/pet_store/src/', 'examples/pet_store/Cargo.toml', 'src/', 'Cargo.toml', 'Cargo.lock'],
     resource_deps=['gen-petstore'],
     labels=['build'],
     allow_parallel=False,

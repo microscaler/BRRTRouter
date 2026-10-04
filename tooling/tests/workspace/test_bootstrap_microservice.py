@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 from brrtrouter_tooling.workspace.bootstrap.microservice import (
     _ensure_impl_scaffold,
@@ -30,13 +31,29 @@ class TestRunBootstrapMicroservice:
         rc = run_bootstrap_microservice("nosuch", 8001, tmp_path)
         assert rc == 1
 
-    def test_returns_1_when_no_port_and_not_in_registry(self, tmp_path: Path):
+    def test_defaults_to_8080_when_no_port_and_not_in_registry(self, tmp_path: Path):
+        # k8s-native convention: missing port registry entry defaults to
+        # cluster-wide 8080 instead of failing (microservice.py run_bootstrap_microservice).
         (tmp_path / "openapi" / "hauliage" / "x").mkdir(parents=True)
         (tmp_path / "openapi" / "hauliage" / "x" / "openapi.yaml").write_text(
-            "openapi: 3.1.0\ninfo: {}\n"
+            "openapi: 3.1.0\ninfo:\n  title: X\npaths: {}\n"
         )
-        rc = run_bootstrap_microservice("x", None, tmp_path)
-        assert rc == 1
+        (tmp_path / "docker" / "microservices").mkdir(parents=True)
+        with (
+            patch(
+                "brrtrouter_tooling.workspace.bootstrap.microservice.generate_code_with_brrtrouter"
+            ),
+            patch(
+                "brrtrouter_tooling.workspace.bootstrap.microservice"
+                ".generate_impl_stubs_with_brrtrouter"
+            ),
+            patch(
+                "brrtrouter_tooling.workspace.bootstrap.microservice.update_workspace_cargo_toml"
+            ),
+            patch("brrtrouter_tooling.workspace.bootstrap.microservice.update_tiltfile"),
+        ):
+            rc = run_bootstrap_microservice("x", None, tmp_path)
+        assert rc == 0
 
 
 class TestToSnakeCase:
@@ -53,14 +70,16 @@ class TestToPascalCase:
 
 
 class TestDeriveBinaryName:
-    def test_from_title(self):
+    def test_service_name_is_authoritative(self):
+        # Titles are prose and must not drive binary names; the service name
+        # is authoritative (see derive_binary_name docstring).
         assert (
-            derive_binary_name({"info": {"title": "Fleet Management"}}, "x")
-            == "fleet_management_service_api"
+            derive_binary_name({"info": {"title": "Fleet Management"}}, "market-data")
+            == "market_data"
         )
 
-    def test_fallback_service_name(self):
-        assert derive_binary_name({"info": {}}, "identity") == "identity_service_api"
+    def test_empty_info_uses_service_name(self):
+        assert derive_binary_name({"info": {}}, "identity") == "identity"
 
 
 class TestLoadOpenapiSpec:

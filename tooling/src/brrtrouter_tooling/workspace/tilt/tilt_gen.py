@@ -39,6 +39,17 @@ _BS = "\\"  # backslash
 _BSDQ = "\\" + _DQ  # \"
 _BSBS = "\\\\"  # \\
 
+_TOOLING_CLI = "brrtrouter-tooling"
+# Names meaning "the stock BRRTRouter tooling CLI" (unwrapped mode). "brrtrouter" is
+# the deprecated pre-rename name; configs that still set it stay unwrapped.
+_STOCK_CLI_NAMES = frozenset({_TOOLING_CLI, "brrtrouter"})
+
+
+def _cli_name(config: dict[str, Any]) -> str:
+    """Configured CLI name, with the deprecated stock name normalised to the new one."""
+    name = config.get("cli_name", _TOOLING_CLI)
+    return _TOOLING_CLI if name in _STOCK_CLI_NAMES else name
+
 
 def _w(parts: list[str], line: str) -> None:
     parts.append(line)
@@ -60,11 +71,11 @@ def _fmt(parts: list[str], template: str, *args: Any) -> None:
 
 def _render_header(parts: list[str], config: dict[str, Any]) -> None:
     pname = config["project_name"]
-    cli_name = config.get("cli_name", "brrtrouter")
+    cli_name = _cli_name(config)
     brrt_rel = config.get("brrtrouter_rel_path", "../BRRTRouter")
     brrt_venv = config.get("brrtrouter_venv", "~/.local/share/brrtrouter/venv")
     brrt_root = config["brrtrouter_root"]
-    wrapped = cli_name != "brrtrouter"
+    wrapped = cli_name not in _STOCK_CLI_NAMES
 
     port = "10351" if not wrapped else "10350"
     ns = f"kind-{pname}"
@@ -116,7 +127,7 @@ def _render_header(parts: list[str], config: dict[str, Any]) -> None:
         _w(parts, f"brrtrouter_bin = {cli_name}_bin")
         _w(parts, f"brrtrouter_gen_bin = {cli_name}_gen_bin")
     else:
-        _w(parts, f"brrtrouter_bin = '{cli_venv_name}/bin/brrtrouter' % brrtrouter_venv")
+        _w(parts, f"brrtrouter_bin = '{cli_venv_name}/bin/{_TOOLING_CLI}' % brrtrouter_venv")
         _w(
             parts,
             f"brrtrouter_gen_bin = '{cli_venv_name}/target/debug/brrtrouter-gen' % brrtrouter_root",
@@ -328,8 +339,8 @@ def _render_discovery(parts: list[str], config: dict[str, Any]) -> None:
 def _render_helpers(parts: list[str], config: dict[str, Any]) -> None:
     suite = config["suite_name"]
     pname = config["project_name"]
-    cli_name = config.get("cli_name", "brrtrouter")
-    wrapped = cli_name != "brrtrouter"
+    cli_name = _cli_name(config)
+    wrapped = cli_name not in _STOCK_CLI_NAMES
     upper = suite.upper().replace("-", "_")
     gen_bin = f"{pname}_bin" if wrapped else "brrtrouter_gen_bin"
 
@@ -484,12 +495,12 @@ def _render_helpers(parts: list[str], config: dict[str, Any]) -> None:
             "name",
         )
     else:
-        copy_cmd = f"{cli_name} docker copy-binary %s %s %s" % (
+        copy_cmd = f"{cli_name} client docker copy-binary %s %s %s" % (
             "target_path",
             "artifact_path",
             "binary_name",
         )
-        docker_cmd = f"{cli_name} docker build-image-simple %s %s %s --service %s" % (
+        docker_cmd = f"{cli_name} client docker build-image-simple %s %s %s --service %s" % (
             "image_name",
             "hash_path",
             "artifact_path",
@@ -561,7 +572,7 @@ def _render_helpers(parts: list[str], config: dict[str, Any]) -> None:
 def _render_service_blocks(parts: list[str], config: dict[str, Any]) -> None:
     pname = config["project_name"]
     suite = config["suite_name"]
-    wrapped = config.get("cli_name", "brrtrouter") != "brrtrouter"
+    wrapped = _cli_name(config) not in _STOCK_CLI_NAMES
     upper = suite.upper().replace("-", "_")
 
     _w(parts, "# === Service Code Generation ===")
@@ -607,7 +618,7 @@ def _render_service_blocks(parts: list[str], config: dict[str, Any]) -> None:
 def _render_bff(parts: list[str], config: dict[str, Any]) -> None:
     pname = config["project_name"]
     suite = config["suite_name"]
-    wrapped = config.get("cli_name", "brrtrouter") != "brrtrouter"
+    wrapped = _cli_name(config) not in _STOCK_CLI_NAMES
 
     if not config.get("has_bff", False):
         return
@@ -629,7 +640,7 @@ def _render_bff(parts: list[str], config: dict[str, Any]) -> None:
         bff_cmds = [
             "        set -e",
             f'        echo "🔄 Regenerating {suite} BFF OpenAPI spec..."',
-            f"        {pname} client gen suite bff --service traderBFF",
+            f"        {_TOOLING_CLI} client gen suite bff --service traderBFF",
             '        echo "✅ BFF spec regeneration complete"',
         ]
 

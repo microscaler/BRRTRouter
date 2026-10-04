@@ -1,4 +1,4 @@
-"""CLI for BRRTRouter MCP server: brrtrouter mcp serve."""
+"""CLI for BRRTRouter MCP server: brrtrouter-tooling client mcp serve."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import sys
 
 
 def run_mcp_argv() -> None:
-    """Dispatch brrtrouter mcp <subcommand>."""
+    """Dispatch brrtrouter-tooling client mcp <subcommand>."""
     args = sys.argv[2:]
     if not args or args[0] in ("-h", "--help"):
         _print_usage()
@@ -23,7 +23,7 @@ def run_mcp_argv() -> None:
 
 def _print_usage() -> None:
     print(
-        "Usage: brrtrouter mcp serve [--transport stdio|sse] [--host HOST] [--port PORT]\n"
+        "Usage: brrtrouter-tooling client mcp serve [--transport stdio|sse] [--host HOST] [--port PORT]\n"
         "\n"
         "Subcommands:\n"
         "  serve   Start the BRRTRouter MCP server\n"

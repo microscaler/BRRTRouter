@@ -97,6 +97,13 @@ dashmap = "6.1"  # Lock-free concurrent HashMap for metrics
 lru = "0.16"  # LRU cache for JWT claims to prevent memory leaks
 once_cell = "1"  # Lazy static initialization for SPIFFE ID regex
 arc-swap = "1.7"  # Lock-free ArcSwap for Router/Dispatcher hot-path reads (PRD Phase 1)
+# Continuous profiling (opt-in via PYROSCOPE_SERVER_ADDRESS).
+# Cargo.lock is hand-maintained to keep the diff vs main minimal: the windows-sys
+# dependency pointers of wide-range crates (errno, rustix, tempfile, anstyle-*,
+# dirs-sys, socket2, rustls-platform-verifier, nu-ansi-term, winapi-util) are kept
+# at main's versions (0.60.2 / 0.48.0). Any cargo update re-flips them to 0.61.2 —
+# re-apply by hand (pointers are Windows-only; no effect on Linux builds).
+pyroscope = { version = "2.1.1", optional = true, features = ["backend-pprof-rs"] }
 rustls-pemfile = "2.2.0"
 rustls-native-certs = "0.8.4"
 
@@ -167,6 +174,9 @@ required-features = ["testing"]
 default = []
 jemalloc = ["tikv-jemallocator", "tikv-jemalloc-ctl"]  # Enable jemalloc for accurate heap tracking
 stack_usage = []
+# Opt-in continuous CPU profiling (Pyroscope, pprof backend). Runtime-enabled by
+# PYROSCOPE_SERVER_ADDRESS; compiled out entirely unless this feature is on.
+profiling = ["dep:pyroscope"]
 # Public in-process test client (`brrtrouter::test_support::{TestApp, RequestBuilder}`).
 # Enable in product crates' `[dev-dependencies]` / CI: `cargo test --features testing`.
 testing = []

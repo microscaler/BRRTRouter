@@ -1,4 +1,4 @@
-"""CLI for ci: brrtrouter ci patch-brrtrouter | fix-cargo-paths | is-tag | get-latest-tag | validate-version."""
+"""CLI for ci: brrtrouter-tooling local ci patch-brrtrouter | fix-cargo-paths | is-tag | get-latest-tag | validate-version."""
 
 from __future__ import annotations
 
@@ -16,10 +16,10 @@ from brrtrouter_tooling.cli.parse_common import parse_flags, path_resolver
 
 
 def run_ci_argv() -> None:
-    """Dispatch brrtrouter ci <subcommand>."""
+    """Dispatch brrtrouter-tooling local ci <subcommand>."""
     if len(sys.argv) < 3:
         print(
-            "Usage: brrtrouter ci <subcommand> [options]",
+            "Usage: brrtrouter-tooling local ci <subcommand> [options]",
             file=sys.stderr,
         )
         print(

@@ -1,4 +1,4 @@
-"""CLI for ports validate: brrtrouter ports validate."""
+"""CLI for ports validate: brrtrouter-tooling client ports validate."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from brrtrouter_tooling.ports.layout import DEFAULT_LAYOUT
 
 
 def run_ports_validate_argv(args: list[str]) -> None:
-    """Parse argv for brrtrouter ports validate and run."""
+    """Parse argv for brrtrouter-tooling client ports validate and run."""
     parsed, rest = parse_flags(
         args,
         ("project_root", "--project-root", Path.cwd, path_resolver),
@@ -38,7 +38,7 @@ def run_ports_validate_argv(args: list[str]) -> None:
 
 
 def run_ports_reconcile_argv(args: list[str]) -> None:
-    """Parse argv for brrtrouter ports reconcile and run."""
+    """Parse argv for brrtrouter-tooling client ports reconcile and run."""
     parsed, rest = parse_flags(
         args,
         ("project_root", "--project-root", Path.cwd, path_resolver),
@@ -65,7 +65,7 @@ def run_ports_reconcile_argv(args: list[str]) -> None:
 
 
 def run_ports_fix_duplicates_argv(args: list[str]) -> None:
-    """Parse argv for brrtrouter ports fix-duplicates and run."""
+    """Parse argv for brrtrouter-tooling client ports fix-duplicates and run."""
     parsed, rest = parse_flags(
         args,
         ("project_root", "--project-root", Path.cwd, path_resolver),
@@ -94,7 +94,10 @@ def run_ports_fix_duplicates_argv(args: list[str]) -> None:
 def run_ports_argv() -> None:
     args = sys.argv[2:]
     if len(args) == 0:
-        print("Usage: brrtrouter client ports <validate|reconcile|fix-duplicates>", file=sys.stderr)
+        print(
+            "Usage: brrtrouter-tooling client ports <validate|reconcile|fix-duplicates>",
+            file=sys.stderr,
+        )
         sys.exit(1)
     subcommand = args[0]
     if subcommand == "validate":

@@ -1,4 +1,4 @@
-"""`brrtrouter docker` subcommands: generate-dockerfile, copy-binary, build-base, build-image-simple, prune, copy-multiarch, build-multiarch, unpack-build-bins."""
+"""`brrtrouter-tooling client docker` subcommands: generate-dockerfile, copy-binary, build-base, build-image-simple, prune, copy-multiarch, build-multiarch, unpack-build-bins."""
 
 import sys
 from pathlib import Path
@@ -18,7 +18,7 @@ def run_docker_argv(argv: list[str] | None = None) -> None:
     if argv is None:
         argv = sys.argv[2:] if len(sys.argv) > 2 else []
     if not argv:
-        print("brrtrouter docker: missing subcommand", file=sys.stderr)
+        print("brrtrouter-tooling client docker: missing subcommand", file=sys.stderr)
         print(
             "  generate-dockerfile, copy-binary, build-base, build-image-simple, prune, copy-multiarch, build-multiarch, unpack-build-bins",
             file=sys.stderr,
@@ -31,7 +31,7 @@ def run_docker_argv(argv: list[str] | None = None) -> None:
     if cmd == "generate-dockerfile":
         if len(rest) < 2:
             print(
-                "Usage: brrtrouter docker generate-dockerfile <system> <module> [--port N]",
+                "Usage: brrtrouter-tooling client docker generate-dockerfile <system> <module> [--port N]",
                 file=sys.stderr,
             )
             sys.exit(1)
@@ -53,7 +53,7 @@ def run_docker_argv(argv: list[str] | None = None) -> None:
     if cmd == "copy-binary":
         if len(rest) < 3:
             print(
-                "Usage: brrtrouter docker copy-binary <source> <dest> <binary_name>",
+                "Usage: brrtrouter-tooling client docker copy-binary <source> <dest> <binary_name>",
                 file=sys.stderr,
             )
             sys.exit(1)
@@ -69,7 +69,7 @@ def run_docker_argv(argv: list[str] | None = None) -> None:
     if cmd == "build-image-simple":
         if len(rest) < 3:
             print(
-                "Usage: brrtrouter docker build-image-simple <image_name> <hash_path> <artifact_path> "
+                "Usage: brrtrouter-tooling client docker build-image-simple <image_name> <hash_path> <artifact_path> "
                 "[--system S --module M --port N --binary-name B] [--no-cache] [--prune-dangling]",
                 file=sys.stderr,
             )
@@ -117,7 +117,7 @@ def run_docker_argv(argv: list[str] | None = None) -> None:
         mode = rest[0] if rest else "dev"
         if mode in ("help", "-h", "--help"):
             print(
-                "Usage: brrtrouter docker prune <dangling|containers|buildx|dev>",
+                "Usage: brrtrouter-tooling client docker prune <dangling|containers|buildx|dev>",
                 file=sys.stderr,
             )
             print(
@@ -145,7 +145,8 @@ def run_docker_argv(argv: list[str] | None = None) -> None:
     if cmd == "copy-multiarch":
         if len(rest) < 2:
             print(
-                "Usage: brrtrouter docker copy-multiarch <system> <module> [arch]", file=sys.stderr
+                "Usage: brrtrouter-tooling client docker copy-multiarch <system> <module> [arch]",
+                file=sys.stderr,
             )
             sys.exit(1)
         system, module = rest[0], rest[1]
@@ -156,7 +157,7 @@ def run_docker_argv(argv: list[str] | None = None) -> None:
     if cmd == "build-multiarch":
         if len(rest) < 3:
             print(
-                "Usage: brrtrouter docker build-multiarch <system> <module> <image_name> [--tag T] [--push] [--build-cmd 'cmd ...']",
+                "Usage: brrtrouter-tooling client docker build-multiarch <system> <module> <image_name> [--tag T] [--push] [--build-cmd 'cmd ...']",
                 file=sys.stderr,
             )
             sys.exit(1)
@@ -178,7 +179,7 @@ def run_docker_argv(argv: list[str] | None = None) -> None:
             else:
                 i += 1
         if not build_cmd:
-            build_cmd = ["brrtrouter", "build", f"{system}_{module}", "all"]
+            build_cmd = ["brrtrouter-tooling", "client", "build", f"{system}_{module}", "all"]
         rc = run_build_multiarch(
             system,
             module,
