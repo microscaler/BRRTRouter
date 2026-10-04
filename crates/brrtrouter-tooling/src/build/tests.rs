@@ -6,6 +6,7 @@ use crate::build::{
 
 #[test]
 fn test_arch_targets_has_three_entries() {
+    let _guard = crate::env_lock::env_lock();
     assert_eq!(ARCH_TARGETS.len(), 3);
     assert_eq!(ARCH_TARGETS[0], ("amd64", "x86_64-unknown-linux-musl"));
     assert_eq!(ARCH_TARGETS[1], ("arm64", "aarch64-unknown-linux-musl"));
@@ -16,6 +17,7 @@ fn test_arch_targets_has_three_entries() {
 
 #[test]
 fn test_detect_host_architecture_x86_64_env() {
+    let _guard = crate::env_lock::env_lock();
     std::env::set_var("CARGO_TARGET_ARCH", "x86_64");
     assert_eq!(detect_host_architecture(), "amd64");
     std::env::remove_var("CARGO_TARGET_ARCH");
@@ -23,6 +25,7 @@ fn test_detect_host_architecture_x86_64_env() {
 
 #[test]
 fn test_detect_host_architecture_amd64_env() {
+    let _guard = crate::env_lock::env_lock();
     std::env::set_var("CARGO_TARGET_ARCH", "amd64");
     assert_eq!(detect_host_architecture(), "amd64");
     std::env::remove_var("CARGO_TARGET_ARCH");
@@ -30,6 +33,7 @@ fn test_detect_host_architecture_amd64_env() {
 
 #[test]
 fn test_detect_host_architecture_aarch64_env() {
+    let _guard = crate::env_lock::env_lock();
     std::env::set_var("CARGO_TARGET_ARCH", "aarch64");
     assert_eq!(detect_host_architecture(), "arm64");
     std::env::remove_var("CARGO_TARGET_ARCH");
@@ -37,6 +41,7 @@ fn test_detect_host_architecture_aarch64_env() {
 
 #[test]
 fn test_detect_host_architecture_arm64_env() {
+    let _guard = crate::env_lock::env_lock();
     std::env::set_var("CARGO_TARGET_ARCH", "arm64");
     assert_eq!(detect_host_architecture(), "arm64");
     std::env::remove_var("CARGO_TARGET_ARCH");
@@ -44,6 +49,7 @@ fn test_detect_host_architecture_arm64_env() {
 
 #[test]
 fn test_detect_host_architecture_case_insensitive() {
+    let _guard = crate::env_lock::env_lock();
     std::env::set_var("CARGO_TARGET_ARCH", "X86_64");
     assert_eq!(detect_host_architecture(), "amd64");
     std::env::remove_var("CARGO_TARGET_ARCH");
@@ -55,6 +61,7 @@ fn test_detect_host_architecture_case_insensitive() {
 
 #[test]
 fn test_detect_host_architecture_fallback_to_target() {
+    let _guard = crate::env_lock::env_lock();
     std::env::remove_var("CARGO_TARGET_ARCH");
     std::env::set_var("TARGET", "aarch64");
     assert_eq!(detect_host_architecture(), "arm64");
@@ -63,6 +70,7 @@ fn test_detect_host_architecture_fallback_to_target() {
 
 #[test]
 fn test_detect_host_architecture_fallback_default() {
+    let _guard = crate::env_lock::env_lock();
     std::env::remove_var("CARGO_TARGET_ARCH");
     std::env::remove_var("TARGET");
     assert_eq!(detect_host_architecture(), "amd64");
@@ -72,6 +80,7 @@ fn test_detect_host_architecture_fallback_default() {
 
 #[test]
 fn test_should_use_cross_true() {
+    let _guard = crate::env_lock::env_lock();
     std::env::set_var("Hauliage_USE_CROSS", "1");
     assert!(should_use_cross());
     std::env::remove_var("Hauliage_USE_CROSS");
@@ -79,12 +88,14 @@ fn test_should_use_cross_true() {
 
 #[test]
 fn test_should_use_cross_false_when_unset() {
+    let _guard = crate::env_lock::env_lock();
     std::env::remove_var("Hauliage_USE_CROSS");
     assert!(!should_use_cross());
 }
 
 #[test]
 fn test_should_use_cross_false_for_other_value() {
+    let _guard = crate::env_lock::env_lock();
     std::env::set_var("Hauliage_USE_CROSS", "0");
     assert!(!should_use_cross());
     std::env::remove_var("Hauliage_USE_CROSS");
@@ -94,6 +105,7 @@ fn test_should_use_cross_false_for_other_value() {
 
 #[test]
 fn test_should_use_zigbuild_true_when_macos() {
+    let _guard = crate::env_lock::env_lock();
     std::env::remove_var("TARGET_OS");
     std::env::set_var("TARGET_OS", "macos");
     assert!(should_use_zigbuild());
@@ -102,6 +114,7 @@ fn test_should_use_zigbuild_true_when_macos() {
 
 #[test]
 fn test_should_use_zigbuild_false_for_linux() {
+    let _guard = crate::env_lock::env_lock();
     std::env::set_var("TARGET_OS", "linux");
     assert!(!should_use_zigbuild());
     std::env::remove_var("TARGET_OS");
@@ -109,6 +122,7 @@ fn test_should_use_zigbuild_false_for_linux() {
 
 #[test]
 fn test_should_use_zigbuild_false_when_unset() {
+    let _guard = crate::env_lock::env_lock();
     std::env::remove_var("TARGET_OS");
     assert!(!should_use_zigbuild());
 }
@@ -117,6 +131,7 @@ fn test_should_use_zigbuild_false_when_unset() {
 
 #[test]
 fn test_get_linker_env_x86_64() {
+    let _guard = crate::env_lock::env_lock();
     let env = get_linker_env("x86_64-unknown-linux-musl");
     assert_eq!(env.len(), 2);
     assert_eq!(env[0], ("CC_x86_64_unknown_linux_musl", "musl-gcc"));
@@ -128,6 +143,7 @@ fn test_get_linker_env_x86_64() {
 
 #[test]
 fn test_get_linker_env_aarch64() {
+    let _guard = crate::env_lock::env_lock();
     let env = get_linker_env("aarch64-unknown-linux-musl");
     assert_eq!(env.len(), 2);
     assert_eq!(
@@ -145,6 +161,7 @@ fn test_get_linker_env_aarch64() {
 
 #[test]
 fn test_get_linker_env_armv7() {
+    let _guard = crate::env_lock::env_lock();
     let env = get_linker_env("armv7-unknown-linux-musleabihf");
     assert_eq!(env.len(), 2);
     assert_eq!(
@@ -165,12 +182,14 @@ fn test_get_linker_env_armv7() {
 
 #[test]
 fn test_get_linker_env_unknown_target_empty() {
+    let _guard = crate::env_lock::env_lock();
     let env = get_linker_env("unknown-target-foo");
     assert!(env.is_empty());
 }
 
 #[test]
 fn test_get_linker_env_all_targets_have_linker_env() {
+    let _guard = crate::env_lock::env_lock();
     // Every ARCH_TARGETS triple should have a non-empty linker env
     for &(_, triple) in ARCH_TARGETS {
         let env = get_linker_env(triple);
