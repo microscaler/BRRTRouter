@@ -237,6 +237,11 @@ want to reach it from your own machine, note:
   # browser: http://192.168.1.50:8081/  (dashboard)  ·  /docs  (Swagger)
   ```
 
+  > **Security:** `test123` is a public, demo-only API key and is sent over
+  > plain HTTP. Do not expose port 8081 to untrusted networks — prefer the SSH
+  > tunnel below, and if you must open the firewall, restrict it to trusted
+  > source addresses.
+
 - **NAT networking (VirtualBox/VMware default) has no inbound access.**
   Either configure port forwarding in the VM manager (host port → guest
   8081), use bridged networking so the VM gets a LAN IP, or tunnel over SSH
@@ -262,11 +267,13 @@ The same Pet Store demo, now in a local Kubernetes cluster with hot reload,
 a SolidJS dashboard, Swagger UI, Prometheus, Grafana, and Jaeger.
 
 ```bash
-# 1. Bring up the shared kind cluster (sibling monorepo; one-time):
-cd ../shared-kind-cluster && just dev-up
+# Optional: shared kind cluster (sibling monorepo; one-time). Skip this if you
+# don't have ../shared-kind-cluster — `just dev-up` falls back to a local Kind
+# cluster automatically when the shared kubeconfig is missing.
+(cd ../shared-kind-cluster && just dev-up)
 
-# 2. Bring up the demo in this repo:
-cd - && just dev-up            # Tilt; watch the browser UI that opens
+# Bring up the demo (run from the BRRTRouter repo root):
+just dev-up                    # Tilt; watch the browser UI that opens
 ```
 
 Once Tilt shows everything green:

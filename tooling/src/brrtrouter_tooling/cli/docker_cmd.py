@@ -145,7 +145,8 @@ def run_docker_argv(argv: list[str] | None = None) -> None:
     if cmd == "copy-multiarch":
         if len(rest) < 2:
             print(
-                "Usage: brrtrouter-tooling client docker copy-multiarch <system> <module> [arch]", file=sys.stderr
+                "Usage: brrtrouter-tooling client docker copy-multiarch <system> <module> [arch]",
+                file=sys.stderr,
             )
             sys.exit(1)
         system, module = rest[0], rest[1]
@@ -178,7 +179,7 @@ def run_docker_argv(argv: list[str] | None = None) -> None:
             else:
                 i += 1
         if not build_cmd:
-            build_cmd = ["brrtrouter", "build", f"{system}_{module}", "all"]
+            build_cmd = ["brrtrouter-tooling", "client", "build", f"{system}_{module}", "all"]
         rc = run_build_multiarch(
             system,
             module,

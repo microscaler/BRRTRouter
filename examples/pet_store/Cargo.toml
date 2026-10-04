@@ -10,6 +10,8 @@ default = []
 # provided by musl, causing link errors. Use default = [] and enable jemalloc only for
 # amd64/arm64 glibc builds where it is supported. See: https://github.com/rust-lang/compiler-builtins
 jemalloc = ["tikv-jemallocator"]
+# Opt-in Pyroscope continuous profiling (runtime-enabled by PYROSCOPE_SERVER_ADDRESS).
+profiling = ["brrtrouter/profiling"]
 
 # Gen crates expose request/response types in handlers/types.rs that are only constructed
 # in the impl crate (via serde). When CI runs clippy -p <gen> -- -D warnings, those types

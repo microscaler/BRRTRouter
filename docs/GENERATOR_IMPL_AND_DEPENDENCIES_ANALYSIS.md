@@ -40,7 +40,7 @@ Generate an **impl crate** that contains stub controller implementations for eac
 ### 2.2 Entry point and CLI
 
 - **Function:** `generate_impl_stubs()` in `src/generator/project/generate.rs`
-- **CLI:** `brrtrouter-tooling client gen stubs --spec <path> --output <impl_output_dir> [--component-name <name>] [--path <handler>] [--force]`
+- **CLI:** `brrtrouter-gen generate-stubs --spec <path> --output <impl_output_dir> [--component-name <name>] [--path <handler>] [--force] [--sync]`
 
 ### 2.3 Directory layout
 

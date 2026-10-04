@@ -12,7 +12,10 @@ def run_release_argv(argv: list[str] | None = None) -> None:
     if argv is None:
         argv = sys.argv[2:] if len(sys.argv) > 2 else []
     if not argv:
-        print("brrtrouter-tooling local release: missing subcommand (bump, generate-notes)", file=sys.stderr)
+        print(
+            "brrtrouter-tooling local release: missing subcommand (bump, generate-notes)",
+            file=sys.stderr,
+        )
         sys.exit(1)
     cmd = argv[0]
     rest = argv[1:]
@@ -53,7 +56,10 @@ def run_release_argv(argv: list[str] | None = None) -> None:
             else:
                 i += 1
         if not version:
-            print("brrtrouter-tooling local release generate-notes: --version is required", file=sys.stderr)
+            print(
+                "brrtrouter-tooling local release generate-notes: --version is required",
+                file=sys.stderr,
+            )
             sys.exit(1)
         rc = run_notes(
             project_root,
@@ -66,5 +72,8 @@ def run_release_argv(argv: list[str] | None = None) -> None:
         )
         sys.exit(rc)
 
-    print("brrtrouter-tooling local release: use subcommand 'bump' or 'generate-notes'", file=sys.stderr)
+    print(
+        "brrtrouter-tooling local release: use subcommand 'bump' or 'generate-notes'",
+        file=sys.stderr,
+    )
     sys.exit(1)

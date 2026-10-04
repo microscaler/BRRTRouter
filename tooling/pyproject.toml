@@ -28,6 +28,8 @@ mcp = [
 
 [project.scripts]
 brrtrouter-tooling = "brrtrouter_tooling.cli.main:main"
+# Deprecated alias kept for one release so existing scripts/Tiltfiles keep working.
+brrtrouter = "brrtrouter_tooling.cli.main:deprecated_main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

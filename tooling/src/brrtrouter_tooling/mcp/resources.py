@@ -704,11 +704,11 @@ BRRTRouter encourages using [Tilt](https://tilt.dev/) for local environment orch
 This document outlines the standard loop-based architecture for deploying microservices
 efficiently without duplicating `Dockerfile` and Tilt resource definitions.
 
-## 0. Shared Python environment (`brrtrouter` CLI)
-Use **one** virtualenv on your machine for the `brrtrouter` CLI (and, in Hauliage, the `hauliage` CLI installed into the same env):
+## 0. Shared Python environment (`brrtrouter-tooling` CLI)
+Use **one** virtualenv on your machine for the `brrtrouter-tooling` CLI (and, in Hauliage, the `hauliage` CLI installed into the same env):
 
 - **Default path:** `~/.local/share/brrtrouter/venv`
-- **Override:** set `BRRTROUTER_VENV` to the venv directory (the one that contains `bin/brrtrouter`).
+- **Override:** set `BRRTROUTER_VENV` to the venv directory (the one that contains `bin/brrtrouter-tooling`).
 
 Create and install (from a BRRTRouter clone):
 
@@ -847,9 +847,9 @@ Keep the **root `Tiltfile` thin**: `load()` one library file, then loops and `co
 def brrtrouter_bin():
     v = os.getenv("BRRTROUTER_VENV", "").strip().rstrip("/")
     if v:
-        return v + "/bin/brrtrouter"
+        return v + "/bin/brrtrouter-tooling"
     h = os.getenv("HOME", "") or os.getenv("USERPROFILE", "")
-    return h + "/.local/share/brrtrouter/venv/bin/brrtrouter"
+    return h + "/.local/share/brrtrouter/venv/bin/brrtrouter-tooling"
 
 
 def create_trader_service_gen(name, openapi_spec_relpath):

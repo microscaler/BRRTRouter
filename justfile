@@ -25,7 +25,7 @@ init:
 	fi
 	tooling/.venv/bin/pip install --upgrade pip
 	tooling/.venv/bin/pip install -e ./tooling[dev]
-	echo "✅ Tooling .venv ready. Use: tooling/.venv/bin/brrtrouter or add tooling/.venv/bin to PATH"
+	echo "✅ Tooling .venv ready. Use: tooling/.venv/bin/brrtrouter-tooling or add tooling/.venv/bin to PATH"
 
 # Rebuild tooling (pip install -e) after source changes. Run `just init` first
 # if tooling/.venv does not exist.
@@ -664,7 +664,7 @@ dev-up:
 		(cd "{{shared_k8s_root}}" && just check-ready) || exit 1
 		if ! kubectl get svc -n data minio >/dev/null 2>&1; then
 			echo "Platform Tilt not up — starting shared-k8s platform..."
-			(cd "{{shared_k8s_root}}" && just systemd-tilt-up) || true
+			(cd "{{shared_k8s_root}}" && just systemd-tilt-up)
 		fi
 	else
 		echo "shared-k8s kubeconfig missing — falling back to Kind."

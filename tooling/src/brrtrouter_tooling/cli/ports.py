@@ -94,7 +94,10 @@ def run_ports_fix_duplicates_argv(args: list[str]) -> None:
 def run_ports_argv() -> None:
     args = sys.argv[2:]
     if len(args) == 0:
-        print("Usage: brrtrouter-tooling client ports <validate|reconcile|fix-duplicates>", file=sys.stderr)
+        print(
+            "Usage: brrtrouter-tooling client ports <validate|reconcile|fix-duplicates>",
+            file=sys.stderr,
+        )
         sys.exit(1)
     subcommand = args[0]
     if subcommand == "validate":
