@@ -245,12 +245,11 @@ fn test_rust_literal_for_example_json_value() {
 
     let example = json!({"key": "value"});
     let result = rust_literal_for_example(&field, &example);
-    // from_str on a raw string, not json!(...): an inlined integer literal would be typed i32 (a1c833d).
-    assert_eq!(
-        result,
-        r##"serde_json::from_str::<serde_json::Value>(r#"{"key":"value"}"#).unwrap_or(serde_json::Value::Null)"##
-    );
-    assert!(!result.contains("json!"));
+    // Object examples for serde_json::Value fields are embedded via
+    // from_str::<serde_json::Value>(r#"..."#) so arbitrary JSON survives
+    // literal emission (json! was replaced by the Aug 2026 generator fix).
+    assert!(result.contains("serde_json::from_str::<serde_json::Value>"));
+    assert!(result.contains(r#"{"key":"value"}"#));
 }
 
 #[test]
