@@ -74,6 +74,27 @@ def _get_cargo_env(rust_target: str) -> Dict[str, str]:
     return env
 
 
+def _local_dep_config_args() -> List[str]:
+    """Lines in $PW_CARGO_CONFIG, each passed as `cargo --config <line>`.
+
+    The file is produced from [workspace.metadata.local-deps] when
+    PW_LOCAL_DEPS=1. It is gitignored. CI leaves the variable unset.
+    """
+    path = os.environ.get("PW_CARGO_CONFIG", "").strip()
+    if not path:
+        return []
+    file = Path(path)
+    if not file.is_file():
+        return []
+    args: List[str] = []
+    for line in file.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        args.extend(["--config", line])
+    return args
+
+
 def _run_build(
     project_root: Path,
     workspace_dir: str,
@@ -96,6 +117,9 @@ def _run_build(
         return False
 
     package_args = ["--workspace"] if package_name is None else ["-p", package_name]
+    # PW_CARGO_CONFIG is a gitignored file of `cargo --config` lines, written
+    # when PW_LOCAL_DEPS=1. Unset in CI, so CI keeps the git revs in Cargo.toml.
+    config_args = _local_dep_config_args()
 
     if use_cross:
         cmd = [
@@ -116,6 +140,7 @@ def _run_build(
     if use_zigbuild:
         cmd = [
             "cargo",
+            *config_args,
             "zigbuild",
             "--manifest-path",
             str(manifest),
@@ -125,6 +150,7 @@ def _run_build(
     else:
         cmd = [
             "cargo",
+            *config_args,
             "build",
             "--manifest-path",
             str(manifest),
