@@ -2,6 +2,9 @@
 
 import json
 from pathlib import Path
+from unittest.mock import patch
+
+import pytest
 
 from brrtrouter_tooling.workspace.bootstrap.microservice import (
     _ensure_impl_scaffold,
@@ -30,13 +33,28 @@ class TestRunBootstrapMicroservice:
         rc = run_bootstrap_microservice("nosuch", 8001, tmp_path)
         assert rc == 1
 
-    def test_returns_1_when_no_port_and_not_in_registry(self, tmp_path: Path):
+    def test_no_port_and_not_in_registry_defaults_to_8080(self, tmp_path: Path, capsys):
+        """k8s-native: every service listens on 8080 when the registry has no entry (68a972a)."""
         (tmp_path / "openapi" / "hauliage" / "x").mkdir(parents=True)
         (tmp_path / "openapi" / "hauliage" / "x" / "openapi.yaml").write_text(
             "openapi: 3.1.0\ninfo: {}\n"
         )
-        rc = run_bootstrap_microservice("x", None, tmp_path)
-        assert rc == 1
+
+        class _StopError(Exception):
+            pass
+
+        def _stop(*_a, **_k):
+            raise _StopError
+
+        mod = "brrtrouter_tooling.workspace.bootstrap.microservice"
+        with (
+            patch(f"{mod}.generate_code_with_brrtrouter", side_effect=_stop),
+            pytest.raises(_StopError),
+        ):
+            run_bootstrap_microservice("x", None, tmp_path, suite="hauliage")
+        out = capsys.readouterr().out
+        assert "defaulting to cluster-wide 8080" in out
+        assert "(port 8080, binary x)" in out
 
 
 class TestToSnakeCase:
@@ -53,14 +71,14 @@ class TestToPascalCase:
 
 
 class TestDeriveBinaryName:
-    def test_from_title(self):
-        assert (
-            derive_binary_name({"info": {"title": "Fleet Management"}}, "x")
-            == "fleet_management_service_api"
-        )
+    """The service name is authoritative; spec titles are prose (bab2b88)."""
 
-    def test_fallback_service_name(self):
-        assert derive_binary_name({"info": {}}, "identity") == "identity_service_api"
+    def test_service_name_wins_over_title(self):
+        spec = {"info": {"title": "PriceWhisperer Trader — Feedback Service"}}
+        assert derive_binary_name(spec, "feedback") == "feedback"
+
+    def test_hyphens_become_underscores(self):
+        assert derive_binary_name({"info": {}}, "fleet-management") == "fleet_management"
 
 
 class TestLoadOpenapiSpec:
