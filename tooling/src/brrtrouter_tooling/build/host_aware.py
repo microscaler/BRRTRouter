@@ -75,12 +75,14 @@ def _get_cargo_env(rust_target: str) -> Dict[str, str]:
 
 
 def _local_dep_config_args() -> List[str]:
-    """Lines in $PW_CARGO_CONFIG, each passed as `cargo --config <line>`.
+    """Lines in $OCTOPILOT_CARGO_CONFIG, each passed as `cargo --config <line>`.
 
-    The file is produced from [workspace.metadata.local-deps] when
-    PW_LOCAL_DEPS=1. It is gitignored. CI leaves the variable unset.
+    Any application built with BRRTRouter and Octopilot (PriceWhisperer,
+    hauliage, ...) can point it at a gitignored file of local overrides, e.g.
+    sibling-checkout paths generated from [workspace.metadata.local-deps].
+    CI leaves the variable unset.
     """
-    path = os.environ.get("PW_CARGO_CONFIG", "").strip()
+    path = os.environ.get("OCTOPILOT_CARGO_CONFIG", "").strip()
     if not path:
         return []
     file = Path(path)
@@ -117,8 +119,8 @@ def _run_build(
         return False
 
     package_args = ["--workspace"] if package_name is None else ["-p", package_name]
-    # PW_CARGO_CONFIG is a gitignored file of `cargo --config` lines, written
-    # when PW_LOCAL_DEPS=1. Unset in CI, so CI keeps the git revs in Cargo.toml.
+    # OCTOPILOT_CARGO_CONFIG names a gitignored file of `cargo --config` lines
+    # (local dev overrides). Unset in CI, so CI keeps the git revs in Cargo.toml.
     config_args = _local_dep_config_args()
 
     if use_cross:
