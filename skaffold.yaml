@@ -21,15 +21,20 @@ metadata:
   name: brrtrouter
 build:
   artifacts:
-    # image function: the pet_store microservice container.
-    # Built via the repo's canonical Dockerfile (musl + scratch, assets copied
-    # in) instead of the rust buildpack: pack's imgutil cannot export images
-    # on containerd-image-store daemons (Docker 29+ default, incl. GH runners)
-    # and fails with "failed to fetch base layers". docker build is unaffected.
+    # image function: the pet_store microservice container
     - image: ghcr.io/microscaler/brrtrouter-petstore
       context: .
-      docker:
-        dockerfile: dockerfiles/Dockerfile
+      buildpacks:
+        builder: ghcr.io/octopilot/builder-jammy-base:rust-builder-ab65609
+        buildpacks:
+          - octopilot/rust
+        env:
+          - BP_RUST_PACKAGE=pet_store
+          - BP_RUST_BINARY_NAME=pet_store
+          # rust >= 0.1.12 prunes source from the run image; pet_store loads
+          # its spec/config/static site from the source tree at runtime
+          # (paths compiled in via CARGO_MANIFEST_DIR), so keep exactly those.
+          - BP_RUST_KEEP=examples/pet_store/doc,examples/pet_store/config,examples/pet_store/static_site
     # lib function (-lib suffix): "build and test it all" for the Rust lib.
     # publish=none → the deliverable is the verified rev that downstream repos
     # (hauliage et al.) pin as a git dependency.
