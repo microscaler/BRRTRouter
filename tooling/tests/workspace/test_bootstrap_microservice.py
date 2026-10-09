@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from brrtrouter_tooling.workspace.bootstrap.microservice import (
     _ensure_impl_scaffold,
     _get_port_from_registry,
@@ -31,29 +33,28 @@ class TestRunBootstrapMicroservice:
         rc = run_bootstrap_microservice("nosuch", 8001, tmp_path)
         assert rc == 1
 
-    def test_defaults_to_8080_when_no_port_and_not_in_registry(self, tmp_path: Path):
-        # k8s-native convention: missing port registry entry defaults to
-        # cluster-wide 8080 instead of failing (microservice.py run_bootstrap_microservice).
+    def test_no_port_and_not_in_registry_defaults_to_8080(self, tmp_path: Path, capsys):
+        """k8s-native: every service listens on 8080 when the registry has no entry (68a972a)."""
         (tmp_path / "openapi" / "hauliage" / "x").mkdir(parents=True)
         (tmp_path / "openapi" / "hauliage" / "x" / "openapi.yaml").write_text(
-            "openapi: 3.1.0\ninfo:\n  title: X\npaths: {}\n"
+            "openapi: 3.1.0\ninfo: {}\n"
         )
-        (tmp_path / "docker" / "microservices").mkdir(parents=True)
+
+        class _StopError(Exception):
+            pass
+
+        def _stop(*_a, **_k):
+            raise _StopError
+
+        mod = "brrtrouter_tooling.workspace.bootstrap.microservice"
         with (
-            patch(
-                "brrtrouter_tooling.workspace.bootstrap.microservice.generate_code_with_brrtrouter"
-            ),
-            patch(
-                "brrtrouter_tooling.workspace.bootstrap.microservice"
-                ".generate_impl_stubs_with_brrtrouter"
-            ),
-            patch(
-                "brrtrouter_tooling.workspace.bootstrap.microservice.update_workspace_cargo_toml"
-            ),
-            patch("brrtrouter_tooling.workspace.bootstrap.microservice.update_tiltfile"),
+            patch(f"{mod}.generate_code_with_brrtrouter", side_effect=_stop),
+            pytest.raises(_StopError),
         ):
-            rc = run_bootstrap_microservice("x", None, tmp_path)
-        assert rc == 0
+            run_bootstrap_microservice("x", None, tmp_path, suite="hauliage")
+        out = capsys.readouterr().out
+        assert "defaulting to cluster-wide 8080" in out
+        assert "(port 8080, binary x)" in out
 
 
 class TestToSnakeCase:
@@ -70,16 +71,14 @@ class TestToPascalCase:
 
 
 class TestDeriveBinaryName:
-    def test_service_name_is_authoritative(self):
-        # Titles are prose and must not drive binary names; the service name
-        # is authoritative (see derive_binary_name docstring).
-        assert (
-            derive_binary_name({"info": {"title": "Fleet Management"}}, "market-data")
-            == "market_data"
-        )
+    """The service name is authoritative; spec titles are prose (bab2b88)."""
 
-    def test_empty_info_uses_service_name(self):
-        assert derive_binary_name({"info": {}}, "identity") == "identity"
+    def test_service_name_wins_over_title(self):
+        spec = {"info": {"title": "PriceWhisperer Trader — Feedback Service"}}
+        assert derive_binary_name(spec, "feedback") == "feedback"
+
+    def test_hyphens_become_underscores(self):
+        assert derive_binary_name({"info": {}}, "fleet-management") == "fleet_management"
 
 
 class TestLoadOpenapiSpec:
