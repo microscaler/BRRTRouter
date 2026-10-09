@@ -6,6 +6,7 @@ use tempfile::TempDir;
 
 #[test]
 fn test_venv_bin_constructs_correct_path() {
+    let _guard = crate::env_lock::env_lock();
     let bin = venv_bin(&["cargo"]);
     assert_eq!(bin.file_name().unwrap(), "cargo");
 
@@ -17,6 +18,7 @@ fn test_venv_bin_constructs_correct_path() {
 
 #[test]
 fn test_is_brrtrouter_root_true_when_cargo_toml_exists() {
+    let _guard = crate::env_lock::env_lock();
     let dir = TempDir::new().unwrap();
     fs::write(dir.path().join("Cargo.toml"), "[package]").unwrap();
     assert!(is_brrtrouter_root(dir.path()));
@@ -24,12 +26,14 @@ fn test_is_brrtrouter_root_true_when_cargo_toml_exists() {
 
 #[test]
 fn test_is_brrtrouter_root_false_when_no_cargo_toml() {
+    let _guard = crate::env_lock::env_lock();
     let dir = TempDir::new().unwrap();
     assert!(!is_brrtrouter_root(dir.path()));
 }
 
 #[test]
 fn test_is_brrtrouter_root_false_for_nonexistent() {
+    let _guard = crate::env_lock::env_lock();
     let dir = TempDir::new().unwrap();
     let fake = dir.path().join("nonexistent");
     assert!(!is_brrtrouter_root(&fake));
@@ -83,6 +87,7 @@ fn create_relative_env_override_fixture() -> TempDir {
 
 #[test]
 fn test_discover_brrtrouter_root_finds_via_candidates() {
+    let _guard = crate::env_lock::env_lock();
     let dir = create_brrtrouter_fixture();
     let project_root = dir.path().join("project").join("microservices");
     let root = discover_brrtrouter_root(&project_root);
@@ -91,6 +96,7 @@ fn test_discover_brrtrouter_root_finds_via_candidates() {
 
 #[test]
 fn test_discover_brrtrouter_root_uses_env_override() {
+    let _guard = crate::env_lock::env_lock();
     let dir = create_env_override_fixture();
     let project_root = dir.path().join("project");
     fs::create_dir_all(&project_root).unwrap();
@@ -102,6 +108,7 @@ fn test_discover_brrtrouter_root_uses_env_override() {
 
 #[test]
 fn test_discover_brrtrouter_root_uses_relative_env_override() {
+    let _guard = crate::env_lock::env_lock();
     let dir = create_relative_env_override_fixture();
     let project_root = dir.path().join("project");
     let root = discover_brrtrouter_root(&project_root);
@@ -112,6 +119,7 @@ fn test_discover_brrtrouter_root_uses_relative_env_override() {
 
 #[test]
 fn test_discover_brrtrouter_root_env_takes_precedence_over_candidates() {
+    let _guard = crate::env_lock::env_lock();
     // Ensure no stale env var from previous tests
     std::env::remove_var("BRRTROUTER_ROOT");
 
@@ -135,6 +143,7 @@ fn test_discover_brrtrouter_root_env_takes_precedence_over_candidates() {
 
 #[test]
 fn test_discover_brrtrouter_root_returns_last_candidate_when_nothing_found() {
+    let _guard = crate::env_lock::env_lock();
     let dir = TempDir::new().unwrap();
     let project_root = dir.path().join("some").join("path");
     fs::create_dir_all(&project_root).unwrap();
@@ -147,12 +156,14 @@ fn test_discover_brrtrouter_root_returns_last_candidate_when_nothing_found() {
 
 #[test]
 fn test_brrtrouter_venv_root_default_path() {
+    let _guard = crate::env_lock::env_lock();
     let root = brrtrouter_venv_root();
     assert!(root.ends_with("brrtrouter/venv"));
 }
 
 #[test]
 fn test_brrtrouter_venv_root_uses_env_var_when_valid() {
+    let _guard = crate::env_lock::env_lock();
     let dir = TempDir::new().unwrap();
     std::env::set_var("BRRTROUTER_VENV", dir.path());
     let root = brrtrouter_venv_root();
@@ -162,6 +173,7 @@ fn test_brrtrouter_venv_root_uses_env_var_when_valid() {
 
 #[test]
 fn test_brrtrouter_venv_root_ignores_nonexistent_env_var() {
+    let _guard = crate::env_lock::env_lock();
     let dir = TempDir::new().unwrap();
     let fake = dir.path().join("nonexistent_venv");
     std::env::set_var("BRRTROUTER_VENV", fake.to_str().unwrap());

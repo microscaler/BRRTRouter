@@ -36,6 +36,10 @@ jobs:
       pull-requests: write
     uses: octopilot/actions/.github/workflows/pipeline.yml@main
     with:
+      # actions@main sends op the --artifact-key flag (added upstream late Sep
+      # 2026), which no tagged op release supports yet — `latest` is the only
+      # published image that accepts it. Revisit when a tagged release lands.
+      op_version: latest
       integration: false
     # Pass explicitly (not `inherit`): inherit does not reliably cross the
     # org boundary to octopilot/actions.

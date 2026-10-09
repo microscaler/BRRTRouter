@@ -257,7 +257,8 @@ pub(crate) fn unique_handler_name(seen: &mut HashSet<String>, name: &str) -> Str
 ///   - `Vec<String>` - each item becomes `"x".to_string()`
 ///   - `Vec<serde_json::Value>` - each item becomes `serde_json::Value::String(...)`
 ///   - `Vec<CustomType>` - attempts JSON deserialization with fallback to Default
-/// - **Objects**: Attempts deserialization for named types, or uses `serde_json::json!(...)`
+/// - **Objects**: `serde_json::Value` targets embed via `from_str::<Value>(r#"..."#)`;
+///   named types attempt deserialization with `serde_json::json!(...)`
 ///
 /// # Arguments
 ///

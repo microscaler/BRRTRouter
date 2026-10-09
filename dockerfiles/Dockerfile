@@ -1,5 +1,5 @@
 # ---- Builder stage: produce a static musl binary ----
-FROM --platform=linux/amd64 rust:1.84-alpine AS builder
+FROM --platform=linux/amd64 rust:1.95-alpine AS builder
 RUN apk add --no-cache musl-dev openssl-dev pkgconfig build-base
 RUN rustup target add x86_64-unknown-linux-musl
 WORKDIR /build
