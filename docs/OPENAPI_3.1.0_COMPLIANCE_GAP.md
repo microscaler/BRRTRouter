@@ -129,7 +129,7 @@ When using **bff-generator** to produce a BFF spec consumed by BRRTRouter:
 | **security (root) not merged** | BFF does not set `security`; if embedded script did, BRRTRouter would use it. |
 | **Shared Error schema / components** | bff-generator does not add a shared `Error` schema; BRRTRouter does not require it, but docs/contracts may. |
 
-**Recommendation (addressed by BFF Epic 1.3):** Extend the BFF generator to merge **components.parameters**, **components.securitySchemes**, and root **security** so the emitted BFF spec is self-contained. This is the scope of [Epic 1 Story 1.3 — BFF generator components/security merge](docs/EPICS/BFF_PROXY/epic-1-spec-driven-proxy/story-1.3-bff-generator-components-security.md). Once the generator merges these, BRRTRouter does not need to resolve missing refs for BFF specs.
+**Recommendation (addressed by BFF Epic 1.3):** Extend the BFF generator to merge **components.parameters**, **components.securitySchemes**, and root **security** so the emitted BFF spec is self-contained. This is the scope of [Epic 1 Story 1.3 — BFF generator components/security merge](EPICS/BFF_PROXY/epic-1-spec-driven-proxy/story-1.3-bff-generator-components-security.md). Once the generator merges these, BRRTRouter does not need to resolve missing refs for BFF specs.
 
 ---
 

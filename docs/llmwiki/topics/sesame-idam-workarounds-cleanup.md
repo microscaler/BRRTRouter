@@ -6,7 +6,7 @@ updated: 2026-07-14
 
 # Sesame-IDAM Workarounds — BRRTRouter Cleanup Tasks
 
-Implementation backlog for BRRTRouter changes that let **sesame-idam** and **hauliage** remove local workarounds. Sesame-side mirror: [`sesame-idam/docs/llmwiki/topics/topic-brrtrouter-refactor-backlog.md`](../../../../seasame-idam/docs/llmwiki/topics/topic-brrtrouter-refactor-backlog.md).
+Implementation backlog for BRRTRouter changes that let **sesame-idam** and **hauliage** remove local workarounds. Sesame-side mirror: [`sesame-idam/docs/llmwiki/topics/topic-brrtrouter-refactor-backlog.md`](../../../../sesame-idam/docs/llmwiki/topics/topic-brrtrouter-refactor-backlog.md).
 
 ## Context
 
@@ -112,7 +112,7 @@ contains neither `reqwest` nor AWS-LC.
   the async Goose/Prometheus load harness; ordinary protocol and security tests use the production
   native client.
 
-See sesame [`topic-http-client-policy.md`](../../../../seasame-idam/docs/llmwiki/topics/topic-http-client-policy.md).
+See sesame [`topic-http-client-policy.md`](../../../../sesame-idam/docs/llmwiki/topics/topic-http-client-policy.md).
 
 ---
 
@@ -151,5 +151,5 @@ See sesame [`topic-http-client-policy.md`](../../../../seasame-idam/docs/llmwiki
 
 ## Related
 
-- [`topic-http-client-policy.md`](../../../../seasame-idam/docs/llmwiki/topics/topic-http-client-policy.md) (sesame)
+- [`topic-http-client-policy.md`](../../../../sesame-idam/docs/llmwiki/topics/topic-http-client-policy.md) (sesame)
 - [`PRD_TYPED_HANDLER_HTTP_STATUS.md`](../../PRD_TYPED_HANDLER_HTTP_STATUS.md) (if present)

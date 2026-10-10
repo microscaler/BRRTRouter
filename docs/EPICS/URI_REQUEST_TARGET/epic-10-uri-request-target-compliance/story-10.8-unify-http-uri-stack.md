@@ -70,10 +70,10 @@ may_minihttp’s client API still requires `http` **0.2** (`http_legacy`). Waiti
 upstream http 1.x (Decision A) is out of band. BRRTRouter therefore:
 
 1. Treats origin-form path+query **strings** as the internal type of truth
-   ([`RequestTarget`](../../../src/server/request_target.rs)).
+   ([`RequestTarget`](../../../../src/server/request_target.rs)).
 2. Converts to `http_legacy::Uri` only at the may_minihttp edge (`proxy_untyped_inner`).
 3. Hard-gates every golden / rebuild assert with
-   [`assert_request_target_uri_ok`](../../../src/server/request_target.rs) so
+   [`assert_request_target_uri_ok`](../../../../src/server/request_target.rs) so
    **both** `http` 1.0 and `http_legacy` 0.2 accept the same octets (CI fails on
    divergence).
 

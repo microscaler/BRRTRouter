@@ -156,7 +156,7 @@ redis-cli -h localhost -p 6379
 
 ### Option D: Add a Feature (Advanced)
 
-1. Check [docs/ROADMAP.md](ROADMAP.md) for planned features
+1. Check [docs/ROADMAP.md](../ROADMAP.md) for planned features
 2. Create an issue to discuss your approach
 3. Implement with tests
 4. Ensure coverage ≥80%: `just coverage`
@@ -239,11 +239,11 @@ tilt down
 
 | Resource | Link | Purpose |
 |----------|------|---------|
-| **Local Development Guide** | [docs/LOCAL_DEVELOPMENT.md](LOCAL_DEVELOPMENT.md) | Complete Tilt setup |
-| **Architecture** | [docs/ARCHITECTURE.md](ARCHITECTURE.md) | System design |
-| **Contributing Guide** | [CONTRIBUTING.md](../CONTRIBUTING.md) | Full workflow |
-| **Test Documentation** | [docs/TEST_DOCUMENTATION.md](TEST_DOCUMENTATION.md) | Test suite overview |
-| **Roadmap** | [docs/ROADMAP.md](ROADMAP.md) | Future plans |
+| **Local Development Guide** | [docs/LOCAL_DEVELOPMENT.md](../LOCAL_DEVELOPMENT.md) | Complete Tilt setup |
+| **Architecture** | [docs/ARCHITECTURE.md](../ARCHITECTURE.md) | System design |
+| **Contributing Guide** | [CONTRIBUTING.md](../../CONTRIBUTING.md) | Full workflow |
+| **Test Documentation** | [docs/TEST_DOCUMENTATION.md](../TEST_DOCUMENTATION.md) | Test suite overview |
+| **Roadmap** | [docs/ROADMAP.md](../ROADMAP.md) | Future plans |
 
 ## 🔧 Troubleshooting
 
@@ -305,7 +305,7 @@ brew install zig  # macOS
 
 1. **Week 1**: Get familiar with the codebase
    - Run the pet store example
-   - Read [docs/ARCHITECTURE.md](ARCHITECTURE.md)
+   - Read [docs/ARCHITECTURE.md](../ARCHITECTURE.md)
    - Browse `src/` and understand module structure
 
 2. **Week 2**: Make small improvements

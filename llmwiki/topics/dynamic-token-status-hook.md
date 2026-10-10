@@ -24,7 +24,7 @@ status-dependency decisions without changing the response oracle.
 
 This split lets Sesame avoid negative-caching active tokens while still performing one Redis
 pipeline per successful protected request. See Sesame
-[ADR-003](../../../seasame-idam/docs/ADR-003-token-status-dependency-outage.md).
+[ADR-003](../../../sesame-idam/docs/ADR-003-token-status-dependency-outage.md).
 
 ## Public API
 

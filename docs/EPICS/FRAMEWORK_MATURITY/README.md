@@ -3,7 +3,7 @@
 **Goal:** Make BRRTRouter a trustworthy OpenAPI-first web framework — safety,
 contract fidelity, ops completeness, and honest docs — with
 [**Sesame-IDAM**](https://github.com/microscaler/sesame-idam) as the **public**
-reference consumer ([Building with BRRTRouter](../../BUILDING_WITH_BRRTRouter.md)).
+reference consumer ([Building with BRRTRouter](../../BUILDING_WITH_BRRTROUTER.md)).
 WebSocket work is **parked** (separate may_minihttp epic).
 
 **Testing:** [`TESTING_STANDARD.md`](TESTING_STANDARD.md) (positive + negative unit tests mandatory).  

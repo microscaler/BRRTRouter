@@ -115,6 +115,6 @@ Both modes give RERP a single, standard BFF generator; RERP chooses whether to e
 ## 7. References
 
 - Epic 1: [Spec-driven proxy](epic-1-spec-driven-proxy/README.md) — Stories 1.2, 1.3, **1.4 (extract to BRRTRouter tooling, migrate tests, update RERP)**
-- [BFF_PROXY_ANALYSIS.md](../BFF_PROXY_ANALYSIS.md) §3.4, §5.2, §5.6
+- [BFF_PROXY_ANALYSIS.md](../../BFF_PROXY_ANALYSIS.md) §3.4, §5.2, §5.6
 - OPENAPI_3.1.0_COMPLIANCE_GAP.md §8 (components/security merge)
 - BRRTRouter tooling: `tooling/README.md`, `tooling/src/brrtrouter_tooling/cli/main.py`

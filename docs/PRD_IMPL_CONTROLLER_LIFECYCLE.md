@@ -405,7 +405,7 @@ for route in &routes {
 
 ### Sesame-IDAM
 
-- [`docs/llmwiki/topics/topic-account-first-onboarding-checkpoint.md`](../../seasame-idam/docs/llmwiki/topics/topic-account-first-onboarding-checkpoint.md)
+- [`docs/llmwiki/topics/topic-account-first-onboarding-checkpoint.md`](../../sesame-idam/docs/llmwiki/topics/topic-account-first-onboarding-checkpoint.md)
 
 ### External
 

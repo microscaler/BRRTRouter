@@ -169,5 +169,5 @@ When adding documentation:
 
 - [Rust Documentation Guidelines](https://rust-lang.github.io/rfcs/1574-more-api-documentation-conventions.html)
 - [How to write good documentation](https://doc.rust-lang.org/rustdoc/how-to-write-documentation.html)
-- [BRRTRouter CONTRIBUTING.md](../CONTRIBUTING.md) - Documentation standards section
+- [BRRTRouter CONTRIBUTING.md](../../CONTRIBUTING.md) - Documentation standards section
 

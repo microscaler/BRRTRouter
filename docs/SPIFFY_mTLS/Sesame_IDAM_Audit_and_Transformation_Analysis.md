@@ -1,16 +1,16 @@
-# Seasame-IDAM: Audit and Transformation Analysis
+# Sesame-IDAM: Audit and Transformation Analysis
 
 **Status:** Draft  
 **Last Updated:** 2025-02-02  
-**Scope:** Analyse `../seasame-idam` against IDAM goals derived from `./docs/SPIFFY_mTLS`; preserve pre-pivot state; then transform into a microservice IDAM component.
+**Scope:** Analyse `../sesame-idam` against IDAM goals derived from `./docs/SPIFFY_mTLS`; preserve pre-pivot state; then transform into a microservice IDAM component.
 
-This document provides a **comprehensive audit** of the seasame-idam repository, positions it relative to our overall IDAM goals (including SPIFFY/mTLS, service-account auth, and user auth/authZ), and outlines how to transform it into an **IDAM component for microservices** (RERP, PriceWhisperer, BRRTRouter-backed services) — not a standalone SaaS IDAM product.
+This document provides a **comprehensive audit** of the sesame-idam repository, positions it relative to our overall IDAM goals (including SPIFFY/mTLS, service-account auth, and user auth/authZ), and outlines how to transform it into an **IDAM component for microservices** (RERP, PriceWhisperer, BRRTRouter-backed services) — not a standalone SaaS IDAM product.
 
 ---
 
 ## 0. Pivot: From SaaS IDAM to Microservice IDAM Component
 
-**Decision:** Seasame was originally conceived as a **SaaS IDAM solution**. The market is well served by such systems. We are **pivoting** seasame to an **IDAM component** that fits inside our microservice architecture (Identity + Access Management as defined in `./docs/SPIFFY_mTLS`).
+**Decision:** Sesame was originally conceived as a **SaaS IDAM solution**. The market is well served by such systems. We are **pivoting** sesame to an **IDAM component** that fits inside our microservice architecture (Identity + Access Management as defined in `./docs/SPIFFY_mTLS`).
 
 **Implications:**
 
@@ -40,7 +40,7 @@ This document provides a **comprehensive audit** of the seasame-idam repository,
   - **authentication** — Identity, login, refresh, logout, token exchange, register, sessions, JWKS/OIDC (aligns with Identity Service / `identity-openapi.yaml`).
   - **authorization** — Access Management: apps, roles, permissions, principal/effective, authorize (aligns with AM Service / `access-management-openapi.yaml`).
 - **openapi/idam/:** OpenAPI spec locations; canonical sources are `./openapi/identity-openapi.yaml` and `./openapi/access-management-openapi.yaml` in this (BRRTRouter) repo.
-- **AGENTS.md** and **README.md** in seasame-idam describe the layout and point to this audit. When implementing, add `gen/` + `impl/` per microservice (BRRTRouter codegen + lifeguard) and register them in `microservices/Cargo.toml`.
+- **AGENTS.md** and **README.md** in sesame-idam describe the layout and point to this audit. When implementing, add `gen/` + `impl/` per microservice (BRRTRouter codegen + lifeguard) and register them in `microservices/Cargo.toml`.
 
 ---
 
@@ -48,10 +48,10 @@ This document provides a **comprehensive audit** of the seasame-idam repository,
 
 | Aspect | Finding |
 |--------|--------|
-| **Seasame-idam today** | Early-stage IDAM: rich OpenAPI (auth, RBAC, orgs, API keys, MFA, SAML, SCIM), Sea-ORM entities and migrations aligned to that spec, but **no request routing or AM integration**; development was **blocked** on BRRTRouter (dynamic dispatch), lifeguard (pooling), and photon. |
+| **Sesame-idam today** | Early-stage IDAM: rich OpenAPI (auth, RBAC, orgs, API keys, MFA, SAML, SCIM), Sea-ORM entities and migrations aligned to that spec, but **no request routing or AM integration**; development was **blocked** on BRRTRouter (dynamic dispatch), lifeguard (pooling), and photon. |
 | **BRRTRouter since** | BRRTRouter has gained **SPIFFE JWT SVID validation** (tests in `tests/spiffe_tests.rs`), and the SPIFFY_mTLS design has crystallised **Identity + Access Management** as separate services with tenant/org model, JWT enrichment from AM, and dot-notation namespacing. |
-| **Three-pillar split** | Our target architecture splits: **(1)** Interservice SPIFFY/mTLS authentication; **(2)** Service-account authentication and authorization to obtain SPIFFE credentials; **(3)** User authentication and authorization. Seasame-idam currently addresses only **(3)** in design and partially in spec; **(1)** and **(2)** are absent. |
-| **Transformation direction** | Align seasame-idam with the **Identity Service** from `Generic_Identity_Service_IDAM_Design.md` and `identity-openapi.yaml`; introduce or integrate a separate **Access Management** service; add **tenant/organisation** model and **no-PII-in-URIs**; leave **SPIFFE credential issuance** to infrastructure (SPIRE/cert-manager) and use Identity only for **user and service-account tokens** (OAuth 2.1, Client Credentials, Token Exchange). |
+| **Three-pillar split** | Our target architecture splits: **(1)** Interservice SPIFFY/mTLS authentication; **(2)** Service-account authentication and authorization to obtain SPIFFE credentials; **(3)** User authentication and authorization. Sesame-idam currently addresses only **(3)** in design and partially in spec; **(1)** and **(2)** are absent. |
+| **Transformation direction** | Align sesame-idam with the **Identity Service** from `Generic_Identity_Service_IDAM_Design.md` and `identity-openapi.yaml`; introduce or integrate a separate **Access Management** service; add **tenant/organisation** model and **no-PII-in-URIs**; leave **SPIFFE credential issuance** to infrastructure (SPIRE/cert-manager) and use Identity only for **user and service-account tokens** (OAuth 2.1, Client Credentials, Token Exchange). |
 
 ---
 
@@ -67,7 +67,7 @@ From the SPIFFY_mTLS docs, our IDAM-related work splits into three pillars.
 - Design: `04_Design Plan_ SPIFFE-Based mTLS for BRRTRouter Services.md`, `SPIFFE_SPIRE Mutual TLS Architecture for BRRTRouter Services.md`, PRD EPIC 3 (mTLS infra), EPIC 4 (BRRTRouter mTLS).  
 - Implementation: BRRTRouter has **SPIFFE JWT SVID** validation (trust domain, audience, signature via JWKS); X.509 SVID handling and trust-bundle loading are in the design/plan phase.
 
-**Seasame-idam relevance:** **None.** Interservice mTLS is an infrastructure and gateway concern. Identity/AM services *consume* mTLS (they are called over mTLS by the gateway and other services) but do not *issue* SPIFFE SVIDs; that is the role of SPIRE or cert-manager + CSI.
+**Sesame-idam relevance:** **None.** Interservice mTLS is an infrastructure and gateway concern. Identity/AM services *consume* mTLS (they are called over mTLS by the gateway and other services) but do not *issue* SPIFFE SVIDs; that is the role of SPIRE or cert-manager + CSI.
 
 ---
 
@@ -83,7 +83,7 @@ Separately, **application-level** service-to-service calls (e.g. “Invoice Serv
 - Design: `02_High-Security Multi-Tenant Auth & AuthZ Architecture-Part2.md` (Client Credentials, Token Exchange, audience-scoped tokens, `act` claim), PRD stories 1.3 (Client Credentials), 1.5 (Token Exchange).  
 - OpenAPI: `identity-openapi.yaml` should (or will) define client credentials and token-exchange endpoints.
 
-**Seasame-idam relevance:** **Partial.** Seasame’s OpenAPI has **API Key** login (exchange API key for JWT) and an **OAuth2 token** endpoint with `grant_type: authorization_code | refresh_token` only — **no `client_credentials` or `urn:ietf:params:oauth:grant-type:token-exchange`**. So seasame does not yet model **service principals** or **Client Credentials / Token Exchange**. Transformation: add these grants and a clear notion of “service” vs “user” principals in Identity.
+**Sesame-idam relevance:** **Partial.** Sesame’s OpenAPI has **API Key** login (exchange API key for JWT) and an **OAuth2 token** endpoint with `grant_type: authorization_code | refresh_token` only — **no `client_credentials` or `urn:ietf:params:oauth:grant-type:token-exchange`**. So sesame does not yet model **service principals** or **Client Credentials / Token Exchange**. Transformation: add these grants and a clear notion of “service” vs “user” principals in Identity.
 
 ---
 
@@ -98,17 +98,17 @@ Separately, **application-level** service-to-service calls (e.g. “Invoice Serv
 - OpenAPI: `identity-openapi.yaml` (auth, identity, discovery), `access-management-openapi.yaml` (apps, roles, permissions, principal/effective, authorize).  
 - PRD: EPIC 1 (Identity & Auth), EPIC 1.6 (RBAC/ABAC/ACL and AM).
 
-**Seasame-idam relevance:** **High.** Seasame’s spec and schema cover **user** login (email/password, OIDC, passkey, API key), sessions, organisations, **RBAC** (roles, permissions, role_permissions, user_roles, role_inheritance), MFA, SAML, SCIM, audit, impersonation. So it overlaps heavily with **user auth** and with **RBAC**, but:
+**Sesame-idam relevance:** **High.** Sesame’s spec and schema cover **user** login (email/password, OIDC, passkey, API key), sessions, organisations, **RBAC** (roles, permissions, role_permissions, user_roles, role_inheritance), MFA, SAML, SCIM, audit, impersonation. So it overlaps heavily with **user auth** and with **RBAC**, but:
 
-- **Tenant/organisation model:** Seasame has **organisations** and **user_organization_info**; it does **not** have an explicit **tenant** entity or **tenant_id** in tokens. Our target model has **organisations** (legal entity) and **tenants** (e.g. divisions under an org) with clear demarcation; JWT and AM use `organization_id` and `tenant_id`.
-- **Identity vs AM:** Seasame embeds RBAC **inside** the same service (roles/permissions in same DB as users). Our target **splits** Identity (who you are, issue JWT) and AM (what you can do, register apps/roles, evaluate permissions). So seasame’s RBAC would need to move to an AM service or be mirrored there, with Identity calling AM for JWT enrichment.
-- **No PII in URIs:** Target Identity uses POST + body for email/phone lookups. Seasame’s OpenAPI uses path params in places (e.g. `/users/{id}`); any email-in-path patterns must be removed.
-- **JWKS / OIDC discovery:** Required for JWT verification by gateway and services; should be explicit in Identity API (e.g. `/.well-known/jwks.json`, `/.well-known/openid-configuration`). Seasame spec does not clearly surface these.
-- **Refresh / logout:** Target has explicit refresh and logout; seasame has logout and session management — align path and behaviour with target.
+- **Tenant/organisation model:** Sesame has **organisations** and **user_organization_info**; it does **not** have an explicit **tenant** entity or **tenant_id** in tokens. Our target model has **organisations** (legal entity) and **tenants** (e.g. divisions under an org) with clear demarcation; JWT and AM use `organization_id` and `tenant_id`.
+- **Identity vs AM:** Sesame embeds RBAC **inside** the same service (roles/permissions in same DB as users). Our target **splits** Identity (who you are, issue JWT) and AM (what you can do, register apps/roles, evaluate permissions). So sesame’s RBAC would need to move to an AM service or be mirrored there, with Identity calling AM for JWT enrichment.
+- **No PII in URIs:** Target Identity uses POST + body for email/phone lookups. Sesame’s OpenAPI uses path params in places (e.g. `/users/{id}`); any email-in-path patterns must be removed.
+- **JWKS / OIDC discovery:** Required for JWT verification by gateway and services; should be explicit in Identity API (e.g. `/.well-known/jwks.json`, `/.well-known/openid-configuration`). Sesame spec does not clearly surface these.
+- **Refresh / logout:** Target has explicit refresh and logout; sesame has logout and session management — align path and behaviour with target.
 
 ---
 
-## 3. Current State of Seasame-IDAM
+## 3. Current State of Sesame-IDAM
 
 ### 3.1 Repository Structure (excluding target/)
 
@@ -125,7 +125,7 @@ Separately, **application-level** service-to-service calls (e.g. “Invoice Serv
 
 ### 3.2 OpenAPI vs Target Identity/AM
 
-| Dimension | Seasame `specs/openapi.yaml` | Target `identity-openapi.yaml` | Target `access-management-openapi.yaml` |
+| Dimension | Sesame `specs/openapi.yaml` | Target `identity-openapi.yaml` | Target `access-management-openapi.yaml` |
 |-----------|-----------------------------|--------------------------------|----------------------------------------|
 | **Auth** | Login (email/password, OIDC, passkey, api_key), logout, MFA, password-reset | Login, refresh, logout, token (exchange), register | N/A (Identity authenticates; AM authorizes) |
 | **Identity** | Users, orgs; user_organization_info | Organizations, tenants, email/phone lookup (POST body), users/me, profile | N/A |
@@ -138,31 +138,31 @@ Separately, **application-level** service-to-service calls (e.g. “Invoice Serv
 | **Service auth** | API key → JWT only | Client Credentials, Token Exchange (RFC 8693) | N/A |
 | **PII in URIs** | Some path params (e.g. user id) | No email/phone in path; POST body for lookups | No PII in path |
 
-### 3.3 Database: Seasame vs Target
+### 3.3 Database: Sesame vs Target
 
-- **Seasame:** Single schema with users, organizations, user_organization_info, roles, permissions, role_permissions, user_roles, role_inheritance, sessions, api_keys, mfa, identity_providers, scim_*, audit, metrics, rate_limit_*. No `tenants` table; no separate “AM” schema.
+- **Sesame:** Single schema with users, organizations, user_organization_info, roles, permissions, role_permissions, user_roles, role_inheritance, sessions, api_keys, mfa, identity_providers, scim_*, audit, metrics, rate_limit_*. No `tenants` table; no separate “AM” schema.
 - **Target Identity (from IDAM_OpenAPI_and_Integration.md):** organizations, tenants (under org), users, sessions, etc.; tenant_id and organization_id in relevant tables.
 - **Target AM:** applications, roles, permissions, role_permissions, principal_roles, principal_attributes (with organization_id), optional policies. Separate AM DB or schema.
 
-Seasame’s schema is a good base for **Identity** (with the addition of **tenants** and tenant_id/organization_id where needed) but currently mixes in **RBAC** that the target design assigns to **AM**. So either: (a) migrate seasame’s RBAC into a separate AM service and DB, or (b) keep a single deployment but split logical “Identity” vs “AM” APIs and data (e.g. AM tables in same DB, separate service later).
+Sesame’s schema is a good base for **Identity** (with the addition of **tenants** and tenant_id/organization_id where needed) but currently mixes in **RBAC** that the target design assigns to **AM**. So either: (a) migrate sesame’s RBAC into a separate AM service and DB, or (b) keep a single deployment but split logical “Identity” vs “AM” APIs and data (e.g. AM tables in same DB, separate service later).
 
 ---
 
-## 4. Gap Analysis: Seasame vs Target (by Pillar)
+## 4. Gap Analysis: Sesame vs Target (by Pillar)
 
 ### 4.1 Pillar 1 (Interservice SPIFFY/mTLS)
 
 | Gap | Severity | Note |
 |-----|----------|------|
-| Seasame does not implement mTLS or SPIFFE | N/A | Not in scope for Identity/AM; handled by BRRTRouter and cert-manager/SPIRE. |
-| Seasame will be **called over** mTLS | Info | When deployed, gateway and services will call Identity/AM over mTLS; no change required in seasame for “consuming” mTLS. |
+| Sesame does not implement mTLS or SPIFFE | N/A | Not in scope for Identity/AM; handled by BRRTRouter and cert-manager/SPIRE. |
+| Sesame will be **called over** mTLS | Info | When deployed, gateway and services will call Identity/AM over mTLS; no change required in sesame for “consuming” mTLS. |
 
 ### 4.2 Pillar 2 (Service-Account Auth for Tokens)
 
 | Gap | Severity | Note |
 |-----|----------|------|
 | No Client Credentials grant | High | Target: service principals get JWT via client_credentials; audience-scoped. Add to OpenAPI and implementation. |
-| No Token Exchange (RFC 8693) | High | Target: exchange user token for down-scoped token for another audience; act claim. Seasame has “OAuth2 token” with only authorization_code/refresh_token. Add grant_type token-exchange and implement. |
+| No Token Exchange (RFC 8693) | High | Target: exchange user token for down-scoped token for another audience; act claim. Sesame has “OAuth2 token” with only authorization_code/refresh_token. Add grant_type token-exchange and implement. |
 | API key → JWT is present | OK | Covers “machine” login to get a JWT; align with “service” principal and audience/scope. |
 | No explicit “service” vs “user” principal type in JWT | Medium | Target JWT has aud, scope, act for delegation; service tokens have no user sub (or act only). Define in spec and tokens. |
 
@@ -171,22 +171,22 @@ Seasame’s schema is a good base for **Identity** (with the addition of **tenan
 | Gap | Severity | Note |
 |-----|----------|------|
 | No tenant entity; org-only | High | Add tenants table and tenant_id to sessions, JWTs, and APIs; document org → tenant relationship. |
-| RBAC inside Identity | High | Target: AM service owns roles/permissions/assignments; Identity calls AM for JWT enrichment. Either split AM out (new service + DB) or add AM API and tables to seasame and have “Identity” API call “AM” module for effective roles/permissions. |
-| No AM-style registration (apps, dot-notation slugs) | High | Target: consuming apps register with AM (app slug, roles, permissions); principal/effective and authorize are app-scoped. Seasame has no “applications” or app-scoped RBAC; add or integrate AM. |
+| RBAC inside Identity | High | Target: AM service owns roles/permissions/assignments; Identity calls AM for JWT enrichment. Either split AM out (new service + DB) or add AM API and tables to sesame and have “Identity” API call “AM” module for effective roles/permissions. |
+| No AM-style registration (apps, dot-notation slugs) | High | Target: consuming apps register with AM (app slug, roles, permissions); principal/effective and authorize are app-scoped. Sesame has no “applications” or app-scoped RBAC; add or integrate AM. |
 | No explicit JWKS / OIDC discovery paths | Medium | Add `/.well-known/jwks.json` and `/.well-known/openid-configuration` (or equivalent) to spec and implementation. |
 | PII in URIs | Medium | Audit paths: avoid email/phone in path/query; use POST body for lookups (already required in target Identity). |
-| Refresh / logout | Low | Seasame has logout and session handling; ensure refresh and logout match target semantics and paths. |
+| Refresh / logout | Low | Sesame has logout and session handling; ensure refresh and logout match target semantics and paths. |
 | Organisation vs tenant semantics | Medium | Target: organisation = legal entity; tenant = subdivision (e.g. division/region). Align naming and docs. |
 
 ---
 
 ## 5. Positioning and Transformation Roadmap
 
-### 5.1 Where Seasame Fits Today
+### 5.1 Where Sesame Fits Today
 
 - **Pillar 1 (mTLS):** Out of scope; no change.
-- **Pillar 2 (service tokens):** Spec and code lack Client Credentials and Token Exchange; API key login is a partial stand-in. **Position:** Extend seasame to be the **Identity Service** that issues both user JWTs and **service JWTs** (Client Credentials + Token Exchange).
-- **Pillar 3 (user auth/authZ):** Seasame is **mostly aligned** with user auth (login, sessions, orgs, RBAC) but: (1) RBAC should live in or be integrated with an **AM** service; (2) **tenant** and **organisation** model must be brought in; (3) Identity should call AM for **JWT enrichment** (roles/permissions in token).
+- **Pillar 2 (service tokens):** Spec and code lack Client Credentials and Token Exchange; API key login is a partial stand-in. **Position:** Extend sesame to be the **Identity Service** that issues both user JWTs and **service JWTs** (Client Credentials + Token Exchange).
+- **Pillar 3 (user auth/authZ):** Sesame is **mostly aligned** with user auth (login, sessions, orgs, RBAC) but: (1) RBAC should live in or be integrated with an **AM** service; (2) **tenant** and **organisation** model must be brought in; (3) Identity should call AM for **JWT enrichment** (roles/permissions in token).
 
 ### 5.2 Target End-State (from SPIFFY_mTLS)
 
@@ -203,7 +203,7 @@ Seasame’s schema is a good base for **Identity** (with the addition of **tenan
 
 2. **Introduce AM and split RBAC**
    - Option A: New Access Management service and DB (per `access-management-openapi.yaml` and IDAM integration doc); Identity calls AM `POST /api/v1/am/principal/effective` at login and embeds roles/permissions in JWT.
-   - Option B: Add AM as a **module** and **schema** inside seasame (same process, same DB or schema), implement AM API and registration model; later split to a separate service if needed. Either way, **registration model** (apps with dot-notation slugs, role/permission definitions, principal assignments) and **authorize** + **principal/effective** must match the Generic AM design.
+   - Option B: Add AM as a **module** and **schema** inside sesame (same process, same DB or schema), implement AM API and registration model; later split to a separate service if needed. Either way, **registration model** (apps with dot-notation slugs, role/permission definitions, principal assignments) and **authorize** + **principal/effective** must match the Generic AM design.
 
 3. **Service principals and tokens**
    - Add **Client Credentials** grant: client_id + client_secret (or equivalent) → JWT with audience and scope for a service.
@@ -211,19 +211,19 @@ Seasame’s schema is a good base for **Identity** (with the addition of **tenan
    - Store and manage “clients” (service principals) and their scopes/audiences; document in OpenAPI.
 
 4. **Unblock implementation**
-   - README blockers: BRRTRouter (routing) and lifeguard (pooling) have evolved; re-evaluate whether seasame can use current BRRTRouter for routing and current lifeguard (or another pooler) for DB. If so, wire sesame to real routing and DB and implement the aligned Identity (and optionally AM) APIs.
+   - README blockers: BRRTRouter (routing) and lifeguard (pooling) have evolved; re-evaluate whether sesame can use current BRRTRouter for routing and current lifeguard (or another pooler) for DB. If so, wire sesame to real routing and DB and implement the aligned Identity (and optionally AM) APIs.
 
-5. **Keep seasame as “Identity” and optional AM**
-   - Do not implement SPIFFE SVID issuance in seasame; that remains with SPIRE/cert-manager. Seasame only issues **application-layer** JWTs (user and service) and, if integrated, performs or calls AM for authorization.
+5. **Keep sesame as “Identity” and optional AM**
+   - Do not implement SPIFFE SVID issuance in sesame; that remains with SPIRE/cert-manager. Sesame only issues **application-layer** JWTs (user and service) and, if integrated, performs or calls AM for authorization.
 
 ---
 
 ## 6. Recommendations
 
-1. **Treat seasame-idam as the Identity Service candidate** — Align its OpenAPI and data model with `Generic_Identity_Service_IDAM_Design.md` and `identity-openapi.yaml`; add tenants, organization_id/tenant_id in tokens and DB; add JWKS and OIDC discovery.
+1. **Treat sesame-idam as the Identity Service candidate** — Align its OpenAPI and data model with `Generic_Identity_Service_IDAM_Design.md` and `identity-openapi.yaml`; add tenants, organization_id/tenant_id in tokens and DB; add JWKS and OIDC discovery.
 2. **Add Client Credentials and Token Exchange** — Implement and spec service-principal auth (Client Credentials) and RFC 8693 Token Exchange so that gateway and services can obtain audience-scoped JWTs and down-scoped delegation tokens.
-3. **Decide AM placement** — Either (a) new AM service + DB (clean split, matches IDAM_OpenAPI_and_Integration.md) or (b) AM module inside seasame with shared or separate schema, then split later. In both cases, adopt the **registration model** and **principal/effective** and **authorize** semantics from Generic_Access_Management_Service_Design.md.
-4. **Migrate RBAC from “per-org” to “per-app + tenant”** — Target uses app slugs (e.g. `accounting.invoice`) and tenant/organization_id for assignments. Plan migration from seasame’s current org-scoped roles/permissions to AM’s application-scoped model (and, if keeping seasame’s RBAC temporarily, add tenant_id and app_id where needed).
+3. **Decide AM placement** — Either (a) new AM service + DB (clean split, matches IDAM_OpenAPI_and_Integration.md) or (b) AM module inside sesame with shared or separate schema, then split later. In both cases, adopt the **registration model** and **principal/effective** and **authorize** semantics from Generic_Access_Management_Service_Design.md.
+4. **Migrate RBAC from “per-org” to “per-app + tenant”** — Target uses app slugs (e.g. `accounting.invoice`) and tenant/organization_id for assignments. Plan migration from sesame’s current org-scoped roles/permissions to AM’s application-scoped model (and, if keeping sesame’s RBAC temporarily, add tenant_id and app_id where needed).
 5. **Revisit blockers** — Confirm BRRTRouter and lifeguard (or alternatives) are sufficient to resume implementation; wire routing and DB so that real auth and AM flows can be implemented and tested.
 6. **Document the three pillars** — Keep a short doc (or section) that states: (1) mTLS/SPIFFE is infra + gateway; (2) service JWTs are Identity’s job (Client Credentials + Token Exchange); (3) user auth and authZ are Identity + AM, with JWT enrichment from AM. This avoids conflating “getting a SPIFFE cert” with “getting a service JWT.”
 
@@ -240,7 +240,7 @@ Seasame’s schema is a good base for **Identity** (with the addition of **tenan
 - `./04_Design Plan_ SPIFFE-Based mTLS for BRRTRouter Services.md` — cert-manager/SPIRE options.
 - `./SPIFFE_SPIRE Mutual TLS Architecture for BRRTRouter Services.md` — SPIFFE primer, workload identity.
 - `./02_High-Security Multi-Tenant Auth & AuthZ Architecture-Part2.md` — OAuth 2.1, Client Credentials, Token Exchange, JWT design.
-- `../seasame-idam/README.md` — Current features and blockers.
-- `../seasame-idam/specs/openapi.yaml` — Current Sesame API spec.
-- `../seasame-idam/sesame/migrations/001__initial_schema.sql` — Current schema.
-- `../seasame-idam/docs/pdfs/BRRTRouter as a Unified Proxy Gateway with AuthZ for Microservices.md` — Gateway + Sesame-IDAM vision.
+- `../sesame-idam/README.md` — Current features and blockers.
+- `../sesame-idam/specs/openapi.yaml` — Current Sesame API spec.
+- `../sesame-idam/sesame/migrations/001__initial_schema.sql` — Current schema.
+- `../sesame-idam/docs/pdfs/BRRTRouter as a Unified Proxy Gateway with AuthZ for Microservices.md` — Gateway + Sesame-IDAM vision.

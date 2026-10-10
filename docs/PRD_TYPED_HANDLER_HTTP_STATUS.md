@@ -4,7 +4,7 @@
 **Document version:** 1.0  
 **Date:** 2026-04-13  
 **Status:** Partially implemented (core runtime + `HttpJson`; see §11)  
-**Related:** [OpenAPI 3.1.0 Compliance Gap](../OPENAPI_3.1.0_COMPLIANCE_GAP.md), [Request Lifecycle](RequestLifecycle.md)
+**Related:** [OpenAPI 3.1.0 Compliance Gap](./OPENAPI_3.1.0_COMPLIANCE_GAP.md), [Request Lifecycle](RequestLifecycle.md)
 
 ---
 
@@ -81,7 +81,7 @@ Typed handlers (`brrtrouter::typed::Handler`, `#[handler]`, `spawn_typed*`) dese
 ### 3.2 Non-goals (for initial phases)
 
 - Replacing `HandlerResponse` or the core HTTP write path (`write_handler_response`).
-- Changing OpenAPI parser behavior for unrelated features (see [OPENAPI_3.1.0_COMPLIANCE_GAP.md](../OPENAPI_3.1.0_COMPLIANCE_GAP.md) for separate tracks).
+- Changing OpenAPI parser behavior for unrelated features (see [OPENAPI_3.1.0_COMPLIANCE_GAP.md](./OPENAPI_3.1.0_COMPLIANCE_GAP.md) for separate tracks).
 - Guaranteeing automatic mapping from domain errors to HTTP status without explicit handler decisions (optional later via helpers).
 
 ---
@@ -212,7 +212,7 @@ These extend the core feature set and are **explicitly out of scope** for the mi
 
 | # | Deliverable | Description |
 |---|-------------|-------------|
-| **L1** | **OpenAPI-driven multi-status codegen** | For each operation, generate Rust types covering **all** declared `responses` (2xx/4xx/5xx), not only the default success schema—aligned with [OPENAPI 3.1.0 COMPLIANCE_GAP.md](../OPENAPI_3.1.0_COMPLIANCE_GAP.md) where relevant. |
+| **L1** | **OpenAPI-driven multi-status codegen** | For each operation, generate Rust types covering **all** declared `responses` (2xx/4xx/5xx), not only the default success schema—aligned with [OPENAPI 3.1.0 COMPLIANCE_GAP.md](./OPENAPI_3.1.0_COMPLIANCE_GAP.md) where relevant. |
 | **L2** | **First-class `components.responses` $ref resolution** | Today some component-level response references are incomplete (see gap doc §3); resolving them improves codegen and validation for multi-status operations. |
 | **L3** | **Ergonomic domain-error mapping** | Helpers such as `not_found()`, `conflict()`, `unprocessable()` building validated JSON error bodies from shared types—optional `thiserror` / `ProblemDetails` style. |
 | **L4** | **204 / empty / HEAD semantics** | Explicit support for **no-content** responses, `Content-Length`, and HEAD without allocating JSON bodies. |
@@ -258,7 +258,7 @@ These extend the core feature set and are **explicitly out of scope** for the mi
 ### Related documents
 
 - [Consumer migration: `HttpJson` and panic replacement](./MIGRATION_TYPED_HANDLER_HTTP_STATUS.md)
-- [OPENAPI 3.1.0 Compliance Gap](../OPENAPI_3.1.0_COMPLIANCE_GAP.md)
+- [OPENAPI 3.1.0 Compliance Gap](./OPENAPI_3.1.0_COMPLIANCE_GAP.md)
 - [Request Lifecycle](RequestLifecycle.md)
 - [JSF Compliance](JSF_COMPLIANCE.md) (hot-path allocation constraints)
 
