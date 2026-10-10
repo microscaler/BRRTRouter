@@ -137,7 +137,7 @@ See [docs/LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md) for full installation
 
 **Dashboard showcasing all BRRTRouter capabilities:**
 
-![Dashboard Screenshot](docs/images/petstore.png)
+![Dashboard Screenshot](images/petstore.png)
 
 **Features:**
 - 🐾 **Live Data Display** - Real-time pets/users with auto-refresh and modal views
@@ -153,7 +153,7 @@ See [docs/LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md) for full installation
 
 **Full monitoring with Tilt + kind:**
 
-![Tilt Screenshot](docs/images/tilt.png)
+![Tilt Screenshot](images/tilt.png)
 
 - **Metrics**: Prometheus for request rates, latency, errors
 - **Logs**: Loki + Promtail for centralized logging with LogQL

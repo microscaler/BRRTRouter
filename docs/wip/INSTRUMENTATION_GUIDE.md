@@ -250,10 +250,10 @@ While cargo-instruments requires macOS, you can:
 
 ## Related Documentation
 
-- [Memory Middleware](../src/middleware/memory.rs): Real-time memory tracking
-- [Runtime Config](../src/runtime_config.rs): Stack size configuration
-- [Grafana Dashboards](../k8s/observability/grafana-dashboards.yaml): Memory visualization
-- [Performance Tips](../src/lib.rs): Optimization guidelines
+- [Memory Middleware](../../src/middleware/memory.rs): Real-time memory tracking
+- [Runtime Config](../../src/runtime_config.rs): Stack size configuration
+- [Grafana Dashboards](../../k8s/observability/grafana-dashboards.yaml): Memory visualization
+- [Performance Tips](../../src/lib.rs): Optimization guidelines
 
 ## Conclusion
 

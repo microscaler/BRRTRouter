@@ -353,8 +353,8 @@ async fn check_metrics(user: &mut GooseUser) -> TransactionResult {
 - [Goose Documentation](https://docs.rs/goose/latest/goose/)
 - [The Goose Book](https://book.goose.rs/)
 - [Goose GitHub](https://github.com/tag1consulting/goose)
-- [BRRTRouter Static Files Guide](./STATIC_FILES_AND_TEMPLATES.md)
-- [Example Test](../tests/goose_load_tests_simple.rs)
+- [BRRTRouter Static Files Tests](../../tests/static_files_tests.rs)
+- [Example Test](../../examples/api_load_test.rs)
 
 ## Troubleshooting
 

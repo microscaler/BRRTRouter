@@ -29,7 +29,7 @@ Updated all contributor-facing documentation to highlight the **Tilt + kind loca
 
 #### Documentation Organization
 - Reorganized into "For Contributors" and "For API Users" sections
-- Highlighted [docs/LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md) as the **START HERE** guide
+- Highlighted [docs/LOCAL_DEVELOPMENT.md](../LOCAL_DEVELOPMENT.md) as the **START HERE** guide
 
 #### New Contributing Section
 - Complete 5-step onboarding process
@@ -188,7 +188,7 @@ README.md (Front page - START HERE)
 After reading this update:
 
 1. **New Contributors**: Start with [docs/CONTRIBUTOR_ONBOARDING.md](CONTRIBUTOR_ONBOARDING.md)
-2. **Existing Contributors**: Migrate to Tilt with [docs/LOCAL_DEVELOPMENT.md](LOCAL_DEVELOPMENT.md)
+2. **Existing Contributors**: Migrate to Tilt with [docs/LOCAL_DEVELOPMENT.md](../LOCAL_DEVELOPMENT.md)
 3. **Maintainers**: Update PR template to reference new docs
 
 ## 📝 Future Improvements

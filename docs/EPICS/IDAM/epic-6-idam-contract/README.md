@@ -2,7 +2,7 @@
 
 **GitHub issue:** [#278](https://github.com/microscaler/BRRTRouter/issues/278)
 
-**Catalog:** [Epics 1–9](../EPICS_CATALOG.md) | **Theme:** IDAM (Epics 6–9)
+**Catalog:** [Epics 1–9](../../EPICS_CATALOG.md) | **Theme:** IDAM (Epics 6–9)
 
 ## Overview
 

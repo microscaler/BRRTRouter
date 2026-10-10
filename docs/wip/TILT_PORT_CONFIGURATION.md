@@ -205,7 +205,7 @@ Then run before starting:
 ## 📚 Related Documentation
 
 - [Tilt Official Docs](https://docs.tilt.dev/)
-- [Local Development Guide](LOCAL_DEVELOPMENT.md)
+- [Local Development Guide](../LOCAL_DEVELOPMENT.md)
 - [Port Mapping Fix](PORT_MAPPING_FIX.md)
 
 ---

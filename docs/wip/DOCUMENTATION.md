@@ -181,13 +181,13 @@ When adding new public APIs:
 5. Run `cargo doc` to verify rendering
 6. Run `cargo fmt` before committing
 
-For more details, see [CONTRIBUTING.md](../CONTRIBUTING.md).
+For more details, see [CONTRIBUTING.md](../../CONTRIBUTING.md).
 
 ## Architecture Documentation
 
 For detailed architectural information, see:
 
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** - Comprehensive architecture guide with sequence diagrams
+- **[ARCHITECTURE.md](../ARCHITECTURE.md)** - Comprehensive architecture guide with sequence diagrams
   - Code generation flow
   - Request handling flow
   - Key components and patterns

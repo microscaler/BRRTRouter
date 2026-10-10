@@ -106,7 +106,7 @@ Reasons:
 
 ### Phase 4 — Validator fast path (in progress)
 
-Optimize the schema validation pipeline for the common-case path. **Map and anchors:** [`docs/llmwiki/topics/schema-validation-pipeline.md`](./llmwiki/topics/schema-validation-pipeline.md) (`ValidatorCache`, `AppService::call` V1a/V2/V1&V3, `parse_request_body`). **Measurement:** Criterion bench [`benches/schema_validation_hot_path.rs`](./benches/schema_validation_hot_path.rs) (`iter_errors` valid/invalid + cache hit); compare with `--baseline ms02` on the bench host.
+Optimize the schema validation pipeline for the common-case path. **Map and anchors:** [`docs/llmwiki/topics/schema-validation-pipeline.md`](./llmwiki/topics/schema-validation-pipeline.md) (`ValidatorCache`, `AppService::call` V1a/V2/V1&V3, `parse_request_body`). **Measurement:** Criterion bench [`benches/schema_validation_hot_path.rs`](../benches/schema_validation_hot_path.rs) (`iter_errors` valid/invalid + cache hit); compare with `--baseline ms02` on the bench host.
 
 **Landed:** bounded `iter_errors` collection (`MAX_JSON_SCHEMA_ERRORS`); removed per-request `Vec` allocation for `required` in DEBUG logs (log raw `required` JSON). Further ideas (trivial-schema fast path, etc.) only after profiling shows validation on the flamegraph.
 

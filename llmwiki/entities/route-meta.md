@@ -24,7 +24,7 @@ Every field listed with: *what it is*, *populated from where*, *consumed by whom
 | `request_body_required` | `bool` | `requestBody.required` (default `false`) | `server::service::call` §V2 (400 "Request body required") |
 | `request_content_types` | `Vec<String>` | Keys of `requestBody.content` (e.g. `["application/json", "multipart/form-data"]`). Added 2026-04-17 for 415 enforcement. See [`entities/request-body-parsing.md`](./request-body-parsing.md). | `server::service::call` §V1a (415 Unsupported Media Type) |
 | `response_schema` | `Option<Value>` | Default response (200 `application/json`), via `extract_response_schema_and_example` | `server::service::call` §V6/V7 (response validation) |
-| `example` | `Option<Value>` | `responses[<status>].content.<ct>.example` (first found, 200 preferred) | Gen-stub controllers (serve as mock data when no impl is wired — see [`topics/register-and-overwrite-lifecycle.md`](../topics/register-and-overwrite-lifecycle.md)) |
+| `example` | `Option<Value>` | `responses[<status>].content.<ct>.example` (first found, 200 preferred) | Gen-stub controllers (serve as mock data when no impl is wired — see [`topics/impl-controller-lifecycle-rollout.md`](../topics/impl-controller-lifecycle-rollout.md)) |
 | `responses` | `Responses` (map status→content-type→response) | Every declared `responses.*` entry | Gen-stub codegen; response validation (selects schema by status + content-type) |
 | `security` | `Vec<SecurityRequirement>` | `operation.security` with fallback to spec-level `security` | `server::service::call` §S1–S7 (security gate) |
 | `example_name` | `String` | Codegen slug derived from `handler_name` | Template rendering only |
