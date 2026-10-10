@@ -104,5 +104,5 @@ Once these are green you can:
 
 1. Write *real* controller logic (now they get typed input).
 2. Add proper auth providers (PropelAuth, JWT, etc.) behind the middleware hook.
-3. Publish the crate; downstream projects will use it the same way your `examples/pet_store` does – by shipping an OpenAPI spec and letting `brrrouter-gen` scaffold the service.
+3. Publish the crate; downstream projects will use it the same way your `examples/pet_store` does – by shipping an OpenAPI spec and letting `brrtrouter-gen` scaffold the service.
 

@@ -6,7 +6,7 @@
 
 ## Table of Contents
 
-1. [What is BRRTRouter?](#1-what-is-brrrouter)
+1. [What is BRRTRouter?](#1-what-is-brrtrouter)
 2. [Concepts](#2-concepts)
 3. [How It Works (Two Flows)](#3-how-it-works-two-flows)
 4. [Core Components of the Codebase](#4-core-components-of-the-codebase)
