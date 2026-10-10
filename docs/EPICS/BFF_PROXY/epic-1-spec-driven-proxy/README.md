@@ -18,7 +18,7 @@ Enable proxy target to be defined in the BFF OpenAPI spec and consumed by BRRTRo
 | 1.1 | RouteMeta extensions in BRRTRouter | [story-1.1-route-meta-extensions.md](story-1.1-route-meta-extensions.md) |
 | 1.2 | BFF generator proxy extensions | [story-1.2-bff-generator-proxy-extensions.md](story-1.2-bff-generator-proxy-extensions.md) |
 | 1.3 | BFF generator components/security merge | [story-1.3-bff-generator-components-security.md](story-1.3-bff-generator-components-security.md) |
-| 1.4 | Extract BFF generator to BRRTRouter tooling | [story-1.4-extract-bff-tooling-to-brrrouter.md](story-1.4-extract-bff-tooling-to-brrrouter.md) |
+| 1.4 | Extract BFF generator to BRRTRouter tooling | [story-1.4-extract-bff-tooling-to-brrtrouter.md](story-1.4-extract-bff-tooling-to-brrtrouter.md) |
 
 ## References
 
