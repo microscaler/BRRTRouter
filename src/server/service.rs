@@ -1416,6 +1416,50 @@ impl HttpService for AppService {
         // No `RwLock::read()` → no reader queuing behind writers, no poison
         // surface. `load()` returns a `Guard<Arc<Router>>` that we auto-deref.
         let route_opt = self.router.load().route(method.clone(), &path);
+
+        // CORS preflight (Fetch standard): an OPTIONS carrying Origin and
+        // Access-Control-Request-Method asks whether the actual request may be
+        // sent. Specs rarely declare `options` operations, so this used to be a
+        // routing miss (404) and every cross-origin request needing a preflight
+        // (PUT/PATCH/DELETE, Authorization, a JSON body) failed before it was
+        // sent. Answer it from the CORS policy of the route the actual request
+        // would hit. Security is not applied - browsers never send credentials on
+        // a preflight - and no handler runs. A declared `options` operation still
+        // takes the normal path above.
+        if route_opt.is_none() && method == Method::OPTIONS {
+            let header = |name: &str| {
+                headers
+                    .iter()
+                    .find(|(k, _)| k.eq_ignore_ascii_case(name))
+                    .map(|(_, v)| v.trim().to_string())
+            };
+            if let (Some(_), Some(acrm)) =
+                (header("origin"), header("access-control-request-method"))
+            {
+                let target = Method::from_bytes(acrm.as_bytes())
+                    .ok()
+                    .filter(|m| *m != Method::OPTIONS)
+                    .and_then(|m| self.router.load().route(m, &path));
+                if let Some(mut target) = target {
+                    target.query_params = query_params.clone();
+                    let req_id = _request_logger
+                        .request_id
+                        .unwrap_or(canonical_req_id)
+                        .to_string();
+                    let answer = self.dispatcher.load().preflight(
+                        target,
+                        headers.clone(),
+                        cookies.clone(),
+                        req_id,
+                    );
+                    if let Some(hr) = answer {
+                        write_handler_response(res, hr.status, hr.body, false, &hr.headers);
+                        _request_logger.record_http_status(hr.status);
+                        return Ok(());
+                    }
+                }
+            }
+        }
         if let Some(mut route_match) = route_opt {
             route_match.query_params = query_params.clone();
 

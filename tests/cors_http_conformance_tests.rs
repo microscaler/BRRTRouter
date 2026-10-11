@@ -380,3 +380,111 @@ fn http_cors_idna_origin_exact_bytes_reflected() {
         "expected reflected punycode origin: {body}"
     );
 }
+
+/// Preflight for a route that declares no `options` operation: answered from
+/// the CORS policy of the actual method's route, without credentials (browsers
+/// never send them on a preflight) and without running a handler.
+#[test]
+fn http_cors_synthesized_preflight_allows_listed_method() {
+    let cors = Arc::new(
+        CorsMiddlewareBuilder::new()
+            .allowed_origins(&["https://client.example"])
+            .allowed_methods(&[Method::GET, Method::POST, Method::OPTIONS])
+            .build()
+            .unwrap(),
+    );
+    let f = CorsHttpFixture::new(cors);
+    let port = f.addr().port();
+    let req = format!(
+        "OPTIONS /pets HTTP/1.1\r\n\
+         Host: 127.0.0.1:{port}\r\n\
+         Origin: https://client.example\r\n\
+         Access-Control-Request-Method: POST\r\n\
+         Access-Control-Request-Headers: content-type\r\n\r\n"
+    );
+    let resp = send_request(&f.addr(), &req);
+    let (status, body) = parse_response_parts(&resp);
+    assert!(
+        status == 200 || status == 204,
+        "synthesized preflight should succeed: {body}"
+    );
+    let lower = body.to_ascii_lowercase();
+    assert!(
+        lower.contains("access-control-allow-origin: https://client.example"),
+        "expected ACAO: {body}"
+    );
+    assert!(
+        lower.contains("access-control-allow-methods:"),
+        "expected ACAM: {body}"
+    );
+}
+
+#[test]
+fn http_cors_synthesized_preflight_denies_unlisted_method() {
+    let cors = Arc::new(
+        CorsMiddlewareBuilder::new()
+            .allowed_origins(&["https://client.example"])
+            .allowed_methods(&[Method::GET, Method::OPTIONS])
+            .build()
+            .unwrap(),
+    );
+    let f = CorsHttpFixture::new(cors);
+    let port = f.addr().port();
+    let req = format!(
+        "OPTIONS /pets HTTP/1.1\r\n\
+         Host: 127.0.0.1:{port}\r\n\
+         Origin: https://client.example\r\n\
+         Access-Control-Request-Method: POST\r\n\r\n"
+    );
+    let resp = send_request(&f.addr(), &req);
+    let (status, body) = parse_response_parts(&resp);
+    assert_eq!(status, 403, "method not allowed by policy: {body}");
+}
+
+#[test]
+fn http_cors_synthesized_preflight_denies_unlisted_origin() {
+    let cors = Arc::new(
+        CorsMiddlewareBuilder::new()
+            .allowed_origins(&["https://client.example"])
+            .allowed_methods(&[Method::GET, Method::POST, Method::OPTIONS])
+            .build()
+            .unwrap(),
+    );
+    let f = CorsHttpFixture::new(cors);
+    let port = f.addr().port();
+    let req = format!(
+        "OPTIONS /pets HTTP/1.1\r\n\
+         Host: 127.0.0.1:{port}\r\n\
+         Origin: https://evil.example\r\n\
+         Access-Control-Request-Method: POST\r\n\r\n"
+    );
+    let resp = send_request(&f.addr(), &req);
+    let (status, body) = parse_response_parts(&resp);
+    assert_eq!(status, 403, "origin not allowed: {body}");
+}
+
+/// No route for the requested method, or no Access-Control-Request-Method at
+/// all: still a routing miss.
+#[test]
+fn http_cors_options_without_matching_route_is_404() {
+    let cors = Arc::new(
+        CorsMiddlewareBuilder::new()
+            .allowed_origins(&["https://client.example"])
+            .allowed_methods(&[Method::GET, Method::POST, Method::DELETE, Method::OPTIONS])
+            .build()
+            .unwrap(),
+    );
+    let f = CorsHttpFixture::new(cors);
+    let port = f.addr().port();
+    for extra in ["Access-Control-Request-Method: DELETE\r\n", ""] {
+        let req = format!(
+            "OPTIONS /pets HTTP/1.1\r\n\
+             Host: 127.0.0.1:{port}\r\n\
+             Origin: https://client.example\r\n\
+             {extra}\r\n"
+        );
+        let resp = send_request(&f.addr(), &req);
+        let (status, body) = parse_response_parts(&resp);
+        assert_eq!(status, 404, "{extra:?}: {body}");
+    }
+}
