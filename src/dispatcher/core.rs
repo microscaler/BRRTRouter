@@ -803,6 +803,42 @@ impl Dispatcher {
         self.dispatch_with_request_id(route_match, body, headers, cookies, request_id, None, None)
     }
 
+    /// Answer a CORS preflight for `route_match`, the route the *actual* request
+    /// would hit, from the middleware chain alone.
+    ///
+    /// No handler runs: a preflight asks the server whether the browser may send
+    /// the real request; it carries no credentials and must not execute the
+    /// operation. The request reaches middleware as `OPTIONS` under the target
+    /// route's handler name, so per-route CORS policy (`x-cors`) applies.
+    /// Returns `None` when no middleware answers (no CORS configured).
+    #[must_use]
+    pub fn preflight(
+        &self,
+        route_match: RouteMatch,
+        headers: HeaderVec,
+        cookies: HeaderVec,
+        request_id: String,
+    ) -> Option<HandlerResponse> {
+        let (reply_tx, _reply_rx) = mpsc::channel();
+        let request = HandlerRequest {
+            request_id: request_id.parse().unwrap_or_else(|_| RequestId::new()),
+            method: Method::OPTIONS,
+            path: route_match.route.path_pattern.to_string(),
+            handler_name: route_match.handler_name,
+            path_params: route_match.path_params,
+            query_params: route_match.query_params,
+            raw_query: None,
+            headers,
+            cookies,
+            body: None,
+            jwt_claims: None,
+            reply_tx,
+            queue_guard: None,
+            span: may_tracing::current(),
+        };
+        self.middlewares.iter().find_map(|mw| mw.before(&request))
+    }
+
     /// Dispatch a request with a pre-determined request_id (for correlation)
     pub fn dispatch_with_request_id(
         &self,
