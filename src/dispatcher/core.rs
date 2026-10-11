@@ -810,7 +810,10 @@ impl Dispatcher {
     /// the real request; it carries no credentials and must not execute the
     /// operation. The request reaches middleware as `OPTIONS` under the target
     /// route's handler name, so per-route CORS policy (`x-cors`) applies.
-    /// Returns `None` when no middleware answers (no CORS configured).
+    /// Middleware sees the same lifecycle as [`Self::dispatch_with_request_id`]:
+    /// every `before` runs (the first early response wins), then every `after`
+    /// on the response, so metrics close out the request they opened. When no
+    /// middleware answers (no CORS configured) the response is the routing 404.
     #[must_use]
     pub fn preflight(
         &self,
@@ -818,7 +821,8 @@ impl Dispatcher {
         headers: HeaderVec,
         cookies: HeaderVec,
         request_id: String,
-    ) -> Option<HandlerResponse> {
+    ) -> HandlerResponse {
+        let start = Instant::now();
         let (reply_tx, _reply_rx) = mpsc::channel();
         let request = HandlerRequest {
             request_id: request_id.parse().unwrap_or_else(|_| RequestId::new()),
@@ -836,7 +840,28 @@ impl Dispatcher {
             queue_guard: None,
             span: may_tracing::current(),
         };
-        self.middlewares.iter().find_map(|mw| mw.before(&request))
+        let mut early_resp: Option<HandlerResponse> = None;
+        for mw in &self.middlewares {
+            let r = mw.before(&request);
+            if early_resp.is_none() {
+                early_resp = r;
+            }
+        }
+        let mut resp = early_resp.unwrap_or_else(|| {
+            HandlerResponse::json(
+                404,
+                serde_json::json!({
+                    "error": "Not Found",
+                    "method": "OPTIONS",
+                    "path": request.path.clone()
+                }),
+            )
+        });
+        let latency = start.elapsed();
+        for mw in &self.middlewares {
+            mw.after(&request, &mut resp, latency);
+        }
+        resp
     }
 
     /// Dispatch a request with a pre-determined request_id (for correlation)
