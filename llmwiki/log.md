@@ -353,3 +353,17 @@ Hauliage Phase 3 unblockers for Vite dev proxy and frontend-aligned BFF routes.
   tests were not run. The failure reproduces in isolation and is outside the
   generator paths changed here. The 57 generator unit tests and the new
   selective-scope integration test pass.
+
+## [2026-10-11] fix | synthesized CORS preflights (#443, #444, follow-up)
+- CORS ran after routing, so a preflight reached `CorsMiddleware` only when the spec declared an
+  `options` operation; elsewhere it was a routing 404 and cross-origin PUT/PATCH/DELETE (or any
+  request needing a preflight) failed in the browser.
+- #443: on an `OPTIONS` routing miss with `Origin` + `Access-Control-Request-Method`, route the
+  requested method and answer from the middleware chain (`Dispatcher::preflight`) under that
+  route's handler name. No security, no handler.
+- #444: run `after` hooks so `MetricsMiddleware` (ahead of CORS) no longer leaks
+  `active_requests`.
+- Follow-up: stop `before` at the first answer and run `after` only for entered middleware, so
+  rate limiting behind CORS spends no budget on preflights.
+- Details: [`cors-operations-vs-codebase.md`](./reconciliation/cors-operations-vs-codebase.md)
+  item 6. CORS conformance suite 17/17.

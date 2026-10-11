@@ -51,6 +51,15 @@ struct CorsHttpFixture {
 
 impl CorsHttpFixture {
     fn new(cors: Arc<CorsMiddleware>) -> Self {
+        Self::with_after_cors(cors, Vec::new())
+    }
+
+    /// Like `new`, with extra middleware registered after CORS (the production
+    /// position of rate limiting).
+    fn with_after_cors(
+        cors: Arc<CorsMiddleware>,
+        after_cors: Vec<Arc<dyn brrtrouter::middleware::Middleware>>,
+    ) -> Self {
         std::env::set_var("BRRTR_STACK_SIZE", "0x8000");
         let config = brrtrouter::runtime_config::RuntimeConfig::from_env();
         may::config().set_stack_size(config.stack_size);
@@ -61,6 +70,9 @@ impl CorsHttpFixture {
         let metrics = Arc::new(MetricsMiddleware::new());
         dispatcher.add_middleware(metrics.clone());
         dispatcher.add_middleware(cors);
+        for mw in after_cors {
+            dispatcher.add_middleware(mw);
+        }
         dispatcher.add_middleware(Arc::new(TracingMiddleware));
         unsafe {
             registry::register_from_spec(&mut dispatcher, &routes);
@@ -523,4 +535,61 @@ fn http_cors_synthesized_preflight_closes_metrics() {
         .find(|l| l.starts_with("brrtrouter_active_requests "))
         .unwrap_or_else(|| panic!("no active-requests gauge in /metrics: {metrics}"));
     assert_eq!(gauge.trim(), "brrtrouter_active_requests 0", "{metrics}");
+}
+
+/// Records whether a middleware registered after CORS was entered.
+struct EnteredProbe {
+    before: std::sync::atomic::AtomicUsize,
+    after: std::sync::atomic::AtomicUsize,
+}
+
+impl brrtrouter::middleware::Middleware for EnteredProbe {
+    fn before(
+        &self,
+        _req: &brrtrouter::dispatcher::HandlerRequest,
+    ) -> Option<brrtrouter::dispatcher::HandlerResponse> {
+        self.before
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        None
+    }
+
+    fn after(
+        &self,
+        _req: &brrtrouter::dispatcher::HandlerRequest,
+        _res: &mut brrtrouter::dispatcher::HandlerResponse,
+        _latency: std::time::Duration,
+    ) {
+        self.after.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+/// Middleware behind CORS (rate limiting in production) is not entered by a
+/// synthesized preflight that CORS answered: it spends no rate-limit budget and
+/// gets no unmatched `after`.
+#[test]
+fn http_cors_synthesized_preflight_stops_at_cors() {
+    let cors = Arc::new(
+        CorsMiddlewareBuilder::new()
+            .allowed_origins(&["https://client.example"])
+            .allowed_methods(&[Method::GET, Method::POST, Method::OPTIONS])
+            .build()
+            .unwrap(),
+    );
+    let probe = Arc::new(EnteredProbe {
+        before: std::sync::atomic::AtomicUsize::new(0),
+        after: std::sync::atomic::AtomicUsize::new(0),
+    });
+    let f = CorsHttpFixture::with_after_cors(cors, vec![probe.clone()]);
+    let port = f.addr().port();
+    let req = format!(
+        "OPTIONS /pets HTTP/1.1\r\n\
+         Host: 127.0.0.1:{port}\r\n\
+         Origin: https://client.example\r\n\
+         Access-Control-Request-Method: POST\r\n\r\n"
+    );
+    let resp = send_request(&f.addr(), &req);
+    let (status, body) = parse_response_parts(&resp);
+    assert!(status == 200 || status == 204, "{body}");
+    assert_eq!(probe.before.load(std::sync::atomic::Ordering::SeqCst), 0);
+    assert_eq!(probe.after.load(std::sync::atomic::Ordering::SeqCst), 0);
 }

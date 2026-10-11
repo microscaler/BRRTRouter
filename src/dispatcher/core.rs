@@ -810,10 +810,12 @@ impl Dispatcher {
     /// the real request; it carries no credentials and must not execute the
     /// operation. The request reaches middleware as `OPTIONS` under the target
     /// route's handler name, so per-route CORS policy (`x-cors`) applies.
-    /// Middleware sees the same lifecycle as [`Self::dispatch_with_request_id`]:
-    /// every `before` runs (the first early response wins), then every `after`
-    /// on the response, so metrics close out the request they opened. When no
-    /// middleware answers (no CORS configured) the response is the routing 404.
+    /// `before` hooks run in order and stop at the first one that answers (CORS);
+    /// `after` then runs for exactly the middleware that were entered, so metrics
+    /// registered ahead of CORS close out the request they opened, while middleware
+    /// behind CORS (rate limiting) never sees the preflight and spends no budget on
+    /// it. When no middleware answers (no CORS configured) every middleware was
+    /// entered and the response is the routing 404.
     #[must_use]
     pub fn preflight(
         &self,
@@ -840,11 +842,13 @@ impl Dispatcher {
             queue_guard: None,
             span: may_tracing::current(),
         };
+        let mut entered = 0usize;
         let mut early_resp: Option<HandlerResponse> = None;
         for mw in &self.middlewares {
-            let r = mw.before(&request);
-            if early_resp.is_none() {
-                early_resp = r;
+            entered += 1;
+            if let Some(r) = mw.before(&request) {
+                early_resp = Some(r);
+                break;
             }
         }
         let mut resp = early_resp.unwrap_or_else(|| {
@@ -858,7 +862,7 @@ impl Dispatcher {
             )
         });
         let latency = start.elapsed();
-        for mw in &self.middlewares {
+        for mw in self.middlewares.iter().take(entered) {
             mw.after(&request, &mut resp, latency);
         }
         resp
