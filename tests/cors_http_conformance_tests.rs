@@ -488,3 +488,39 @@ fn http_cors_options_without_matching_route_is_404() {
         assert_eq!(status, 404, "{extra:?}: {body}");
     }
 }
+
+/// A synthesized preflight runs the full middleware lifecycle: MetricsMiddleware
+/// (registered before CORS) sees `after` too, so the active-request gauge does
+/// not leak and the request is counted.
+#[test]
+fn http_cors_synthesized_preflight_closes_metrics() {
+    let cors = Arc::new(
+        CorsMiddlewareBuilder::new()
+            .allowed_origins(&["https://client.example"])
+            .allowed_methods(&[Method::GET, Method::POST, Method::OPTIONS])
+            .build()
+            .unwrap(),
+    );
+    let f = CorsHttpFixture::new(cors);
+    let port = f.addr().port();
+    let req = format!(
+        "OPTIONS /pets HTTP/1.1\r\n\
+         Host: 127.0.0.1:{port}\r\n\
+         Origin: https://client.example\r\n\
+         Access-Control-Request-Method: POST\r\n\r\n"
+    );
+    for _ in 0..3 {
+        let resp = send_request(&f.addr(), &req);
+        let (status, body) = parse_response_parts(&resp);
+        assert!(status == 200 || status == 204, "{body}");
+    }
+    let metrics = send_request(
+        &f.addr(),
+        &format!("GET /metrics HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\r\n"),
+    );
+    let gauge = metrics
+        .lines()
+        .find(|l| l.starts_with("brrtrouter_active_requests "))
+        .unwrap_or_else(|| panic!("no active-requests gauge in /metrics: {metrics}"));
+    assert_eq!(gauge.trim(), "brrtrouter_active_requests 0", "{metrics}");
+}

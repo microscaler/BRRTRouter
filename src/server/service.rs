@@ -1446,17 +1446,15 @@ impl HttpService for AppService {
                         .request_id
                         .unwrap_or(canonical_req_id)
                         .to_string();
-                    let answer = self.dispatcher.load().preflight(
+                    let hr = self.dispatcher.load().preflight(
                         target,
                         headers.clone(),
                         cookies.clone(),
                         req_id,
                     );
-                    if let Some(hr) = answer {
-                        write_handler_response(res, hr.status, hr.body, false, &hr.headers);
-                        _request_logger.record_http_status(hr.status);
-                        return Ok(());
-                    }
+                    write_handler_response(res, hr.status, hr.body, false, &hr.headers);
+                    _request_logger.record_http_status(hr.status);
+                    return Ok(());
                 }
             }
         }
