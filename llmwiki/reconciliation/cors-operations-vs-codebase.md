@@ -20,6 +20,19 @@
    - `tests/cors_http_security_schemes_tests.rs`
    - `tests/middleware_tests.rs`
 
+6. Preflights for paths without a declared `options` operation are synthesized after the routing
+   miss (`src/server/service.rs`, `Dispatcher::preflight` in `src/dispatcher/core.rs`):
+   - trigger: `OPTIONS` + `Origin` + `Access-Control-Request-Method`, and a route exists for the
+     requested method on that path; otherwise the routing 404 stands;
+   - answered under the *target* route's handler name, so per-route `x-cors` policy applies;
+   - no security check (browsers never send credentials on a preflight) and no handler runs;
+   - middleware lifecycle: `before` hooks run in order and stop at the first answer (CORS);
+     `after` runs only for middleware that were entered. Metrics registered ahead of CORS
+     therefore close out the request; middleware behind CORS (rate limiting) never sees it.
+   - A declared `options` operation keeps the normal path (security first, full dispatch).
+   - Tests: `http_cors_synthesized_preflight_*`, `http_cors_options_without_matching_route_is_404`
+     in `tests/cors_http_conformance_tests.rs`.
+
 ## Reconciled conclusions
 
 - `docs/CORS_OPERATIONS.md` is aligned with current CORS middleware and test coverage for:
