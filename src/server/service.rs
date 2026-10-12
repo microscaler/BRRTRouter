@@ -598,6 +598,7 @@ fn stream_sse(
     res.header("Cache-Control: no-cache");
     for (k, v) in headers {
         if k.eq_ignore_ascii_case("content-type")
+            || k.eq_ignore_ascii_case("cache-control")
             || k.eq_ignore_ascii_case("content-length")
             || k.eq_ignore_ascii_case("transfer-encoding")
         {
@@ -606,8 +607,7 @@ fn stream_sse(
         res.header(format!("{k}: {v}"));
     }
     let mut writer = res.begin_chunked_stream(conn_stream)?;
-    while let Some(msg) = sse_rx.recv() {
-        let frame = crate::sse::format_data_event(&msg);
+    while let Some(frame) = sse_rx.recv_frame() {
         if writer.write_chunk(frame.as_bytes()).is_err() {
             // N1: client disconnect — stop cleanly, no panic.
             break;

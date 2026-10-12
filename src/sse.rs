@@ -51,10 +51,17 @@ pub fn format_comment(comment: &str) -> String {
     out
 }
 
+/// One queued item: a `data:` payload the receiver frames, or a complete frame
+/// that is already in wire format and is written unchanged.
+enum Event {
+    Data(String),
+    Frame(String),
+}
+
 /// Sender side of an SSE channel.
 #[derive(Clone)]
 pub struct SseSender {
-    tx: mpsc::Sender<String>,
+    tx: mpsc::Sender<Event>,
     /// Shared counter of successful sends (tests / metrics hooks).
     sent: Arc<Mutex<u64>>,
 }
@@ -62,7 +69,7 @@ pub struct SseSender {
 impl SseSender {
     /// Send a message (`data:` event). Ignores send errors (client gone).
     pub fn send(&self, data: impl Into<String>) {
-        let _ = self.tx.send(data.into());
+        let _ = self.tx.send(Event::Data(data.into()));
         if let Ok(mut g) = self.sent.lock() {
             *g = g.saturating_add(1);
         }
@@ -70,7 +77,20 @@ impl SseSender {
 
     /// Non-blocking send for bounded backpressure (NFR-1).
     pub fn try_send(&self, data: impl Into<String>) -> Result<(), ()> {
-        match self.tx.send(data.into()) {
+        self.queue(Event::Data(data.into()))
+    }
+
+    /// Queue a complete event frame (its `data:`, `event:`, `id:` or comment
+    /// lines and the blank line that ends it), written to the client unchanged.
+    /// A proxy relays a downstream stream this way without losing event names
+    /// or ids. `Err` when the client has gone.
+    #[allow(clippy::result_unit_err)]
+    pub fn send_frame(&self, frame: impl Into<String>) -> Result<(), ()> {
+        self.queue(Event::Frame(frame.into()))
+    }
+
+    fn queue(&self, event: Event) -> Result<(), ()> {
+        match self.tx.send(event) {
             Ok(()) => {
                 if let Ok(mut g) = self.sent.lock() {
                     *g = g.saturating_add(1);
@@ -84,7 +104,7 @@ impl SseSender {
 
 /// Receiver side that converts queued events into `text/event-stream` frames.
 pub struct SseReceiver {
-    rx: mpsc::Receiver<String>,
+    rx: mpsc::Receiver<Event>,
 }
 
 impl std::fmt::Debug for SseReceiver {
@@ -97,16 +117,26 @@ impl SseReceiver {
     /// Collect all events (buffered — legacy). Blocks until all senders drop.
     pub fn collect(self) -> String {
         let mut out = String::new();
-        let rx = self.rx;
-        while let Ok(msg) = rx.recv() {
-            out.push_str(&format_data_event(&msg));
+        while let Some(frame) = self.recv_frame() {
+            out.push_str(&frame);
         }
         out
     }
 
     /// Receive the next event payload (not yet framed), or `None` when closed.
+    /// A frame queued with [`SseSender::send_frame`] comes back as sent.
     pub fn recv(&self) -> Option<String> {
-        self.rx.recv().ok()
+        self.rx.recv().ok().map(|event| match event {
+            Event::Data(s) | Event::Frame(s) => s,
+        })
+    }
+
+    /// Receive the next event as it goes on the wire, or `None` when closed.
+    pub fn recv_frame(&self) -> Option<String> {
+        self.rx.recv().ok().map(|event| match event {
+            Event::Data(s) => format_data_event(&s),
+            Event::Frame(s) => s,
+        })
     }
 }
 
@@ -156,6 +186,27 @@ mod tests {
         tx.send("b");
         drop(tx);
         assert_eq!(rx.collect(), "data: a\n\ndata: b\n\n");
+    }
+
+    #[test]
+    fn frames_pass_through_unchanged() {
+        let (tx, rx) = channel();
+        tx.send("a");
+        tx.send_frame("data: b\nevent: alert\nid: 7\n\n").unwrap();
+        drop(tx);
+        assert_eq!(rx.recv_frame().as_deref(), Some("data: a\n\n"));
+        assert_eq!(
+            rx.recv_frame().as_deref(),
+            Some("data: b\nevent: alert\nid: 7\n\n")
+        );
+        assert_eq!(rx.recv_frame(), None);
+    }
+
+    #[test]
+    fn send_frame_fails_once_the_client_is_gone() {
+        let (tx, rx) = channel();
+        drop(rx);
+        assert!(tx.send_frame(": ping\n\n").is_err());
     }
 
     #[test]

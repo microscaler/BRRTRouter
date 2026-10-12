@@ -3,10 +3,10 @@
 {% if is_untyped_proxy %}
 // Native untyped proxy route — delegates to shared k8s Service-targeted proxy (FR-20).
 use brrtrouter::dispatcher::{HandlerRequest, HandlerResponse};
-use brrtrouter::http::proxy_untyped;
+use brrtrouter::http::{% if sse %}proxy_sse{% else %}proxy_untyped{% endif %};
 
 pub fn handle(req: HandlerRequest) -> HandlerResponse {
-    proxy_untyped(&req, "{{ proxy_service }}", "{{ proxy_path }}")
+    {% if sse %}proxy_sse{% else %}proxy_untyped{% endif %}(&req, "{{ proxy_service }}", "{{ proxy_path }}")
 }
 {% else %}
 use brrtrouter_macros::handler;
