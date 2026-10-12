@@ -148,10 +148,11 @@ def gateway_public_path(
 
 
 def downstream_path(base_path: str, bff_path: str) -> str:
-    """Exact path on downstream: base_path + path (normalized)."""
+    """Exact path on downstream: base_path + path (normalized). An empty base_path
+    gives the service-relative path."""
     base = base_path.rstrip("/")
     path = normalize_spec_path(bff_path).strip("/")
-    return f"{base}/{path}" if path else base
+    return f"{base}/{path}" if path else (base or "/")
 
 
 def find_openapi_files(root: Path) -> list[Path]:

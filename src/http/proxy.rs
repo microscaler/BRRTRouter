@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use http_legacy::{Method, Uri};
-use may_minihttp::client::HttpClient;
+use may_minihttp::client::{HttpClient, Response as DownstreamResponse};
 use serde_json::Value;
 
 use crate::dispatcher::{HandlerRequest, HandlerResponse, HeaderVec};
@@ -22,6 +22,18 @@ use crate::server::request_target::{max_request_target_octets, request_target_ex
 const DEFAULT_DOWNSTREAM_PORT: u16 = 8080;
 const DEFAULT_PROXY_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_PROXY_BODY_BYTES: usize = 16 * 1024 * 1024;
+
+/// Env: how long a proxied event stream may stay silent before the relay ends
+/// it (seconds, default 300). The browser's `EventSource` then reconnects with
+/// `Last-Event-ID`. Downstream keepalive comments reset the clock.
+pub const PROXY_SSE_IDLE_ENV: &str = "BRRTR_PROXY_SSE_IDLE_SECS";
+const DEFAULT_PROXY_SSE_IDLE: Duration = Duration::from_secs(300);
+/// A downstream that never ends a frame stops being relayed past this size.
+const MAX_SSE_FRAME_BYTES: usize = 1024 * 1024;
+/// Most payload a relayed stream may queue for a client that reads slowly; past
+/// it (or past `BRRTR_SSE_QUEUE_BOUND` frames) the relay ends and the client
+/// reconnects from its last event id.
+const MAX_SSE_QUEUED_BYTES: usize = 4 * 1024 * 1024;
 
 /// Composition failure reason for rebuilt request-targets (Story 10.7).
 ///
@@ -431,27 +443,15 @@ fn response_body_value(buf: &[u8], content_type: Option<&str>) -> Value {
     Value::String(String::from_utf8_lossy(buf).into_owned())
 }
 
-/// Proxy an untyped BFF route to a downstream Kubernetes Service.
-///
-/// `downstream_service` is the OpenAPI `x-service` value (e.g. `fleet`).
-/// `path_template` is `x-brrtrouter-downstream-path` with `{param}` placeholders.
-#[must_use]
-pub fn proxy_untyped(
+/// Connect to the downstream Service and send the request. The client comes
+/// back with the response because it owns the connection the body is read from.
+fn send_downstream(
     req: &HandlerRequest,
     downstream_service: &str,
     path_template: &str,
-) -> HandlerResponse {
-    match proxy_untyped_inner(req, downstream_service, path_template) {
-        Ok(res) => res,
-        Err(e) => proxy_error_response(&e),
-    }
-}
-
-fn proxy_untyped_inner(
-    req: &HandlerRequest,
-    downstream_service: &str,
-    path_template: &str,
-) -> Result<HandlerResponse, ProxyError> {
+    default_accept: &str,
+    identity_encoding: bool,
+) -> Result<(HttpClient, DownstreamResponse), ProxyError> {
     let resolved_path = resolve_downstream_target(
         path_template,
         &req.path_params,
@@ -483,7 +483,9 @@ fn proxy_untyped_inner(
 
     for (hk, hv) in &req.headers {
         let name = hk.as_ref();
-        if skip_forward_request_header(name) {
+        if skip_forward_request_header(name)
+            || (identity_encoding && name.eq_ignore_ascii_case("accept-encoding"))
+        {
             continue;
         }
         if let (Ok(hname), Ok(hval)) = (
@@ -494,12 +496,19 @@ fn proxy_untyped_inner(
         }
     }
 
+    if identity_encoding {
+        proxy_req.headers_mut().insert(
+            http_legacy::header::ACCEPT_ENCODING,
+            http_legacy::header::HeaderValue::from_static("identity"),
+        );
+    }
+
     if proxy_req
         .headers()
         .get(http_legacy::header::ACCEPT)
         .is_none()
     {
-        if let Ok(safe_accept) = http_legacy::header::HeaderValue::from_str("application/json") {
+        if let Ok(safe_accept) = http_legacy::header::HeaderValue::from_str(default_accept) {
             proxy_req
                 .headers_mut()
                 .insert(http_legacy::header::ACCEPT, safe_accept);
@@ -513,9 +522,225 @@ fn proxy_untyped_inner(
             .map_err(|e| classify_transport_error(ProxyTransportKind::Request, &e.to_string()))?;
     }
 
-    let mut rsp = client
+    let rsp = client
         .send_request(proxy_req)
         .map_err(|e| classify_transport_error(ProxyTransportKind::Request, &e.to_string()))?;
+    Ok((client, rsp))
+}
+
+/// Proxy an `x-sse` BFF route to a downstream event stream, relaying each event
+/// as it arrives.
+///
+/// Frames pass through byte for byte, so `event:`, `id:` and `retry:` lines and
+/// comments reach the client; [`proxy_untyped`] would buffer the whole stream.
+/// A downstream that answers with anything but a `2xx` `text/event-stream` (an
+/// error, a 401) is answered as [`proxy_untyped`] answers it. The relay ends
+/// when either side closes, or after [`PROXY_SSE_IDLE_ENV`] of silence.
+#[must_use]
+pub fn proxy_sse(
+    req: &HandlerRequest,
+    downstream_service: &str,
+    path_template: &str,
+) -> HandlerResponse {
+    match proxy_sse_inner(req, downstream_service, path_template) {
+        Ok(res) => res,
+        Err(e) => proxy_error_response(&e),
+    }
+}
+
+fn proxy_sse_idle() -> Duration {
+    std::env::var(PROXY_SSE_IDLE_ENV)
+        .ok()
+        .and_then(|s| s.trim().parse::<u64>().ok())
+        .map(|secs| Duration::from_secs(secs.max(1)))
+        .unwrap_or(DEFAULT_PROXY_SSE_IDLE)
+}
+
+fn proxy_sse_inner(
+    req: &HandlerRequest,
+    downstream_service: &str,
+    path_template: &str,
+) -> Result<HandlerResponse, ProxyError> {
+    let (mut client, mut rsp) = send_downstream(
+        req,
+        downstream_service,
+        path_template,
+        "text/event-stream",
+        true,
+    )?;
+    let status = rsp.status().as_u16();
+    let content_type = rsp
+        .headers()
+        .get(http_legacy::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_owned);
+    let is_stream = (200..300).contains(&status)
+        && content_type.as_deref().is_some_and(|ct| {
+            ct.trim_start()
+                .to_ascii_lowercase()
+                .starts_with("text/event-stream")
+        });
+
+    // The relay reads frames out of the body: it must be plain text. The request
+    // asked for identity; a downstream that compresses anyway is refused.
+    let encoded = rsp
+        .headers()
+        .get(http_legacy::header::CONTENT_ENCODING)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|e| !e.trim().is_empty() && !e.trim().eq_ignore_ascii_case("identity"));
+    if is_stream && encoded {
+        return Err(ProxyError::Response);
+    }
+
+    let mut headers = HeaderVec::new();
+    for (name, value) in rsp.headers().iter() {
+        let name = name.as_str();
+        if skip_forward_response_header(name)
+            || (is_stream
+                && (name.eq_ignore_ascii_case("content-type")
+                    || name.eq_ignore_ascii_case("cache-control")))
+        {
+            continue;
+        }
+        if let Ok(v) = value.to_str() {
+            headers.push((Arc::from(name), v.to_string()));
+        }
+    }
+
+    if !is_stream {
+        let buf = read_bounded_body(&mut rsp, MAX_PROXY_BODY_BYTES)?;
+        let body = response_body_value(&buf, content_type.as_deref());
+        if !headers
+            .iter()
+            .any(|(k, _)| k.eq_ignore_ascii_case("content-type"))
+        {
+            headers.push((
+                Arc::from("content-type"),
+                content_type.unwrap_or_else(|| "application/json".to_string()),
+            ));
+        }
+        return Ok(HandlerResponse::new(status, headers, body));
+    }
+
+    client.set_timeout(Some(proxy_sse_idle()));
+    let (tx, rx) =
+        crate::sse::channel_limited(crate::sse::queue_bound_from_env(), MAX_SSE_QUEUED_BYTES);
+    // SAFETY: the coroutine owns the connection, the response and the sender,
+    // touches no thread-local state, and ends when either side closes.
+    let spawned = unsafe {
+        may::coroutine::Builder::new()
+            .name("brrtr-proxy-sse".to_owned())
+            .stack_size(0x10000)
+            .spawn(move || relay_sse(client, rsp, &tx))
+    };
+    if spawned.is_err() {
+        return Err(classify_transport_error(
+            ProxyTransportKind::Response,
+            "could not start the event stream relay",
+        ));
+    }
+    let mut out = HandlerResponse::sse_live(rx);
+    out.status = status;
+    out.headers.extend(headers);
+    Ok(out)
+}
+
+/// Read the downstream stream and queue each complete event frame, until the
+/// downstream closes or goes quiet, or the client goes away or falls too far
+/// behind.
+fn relay_sse(client: HttpClient, mut rsp: DownstreamResponse, tx: &crate::sse::SseSender) {
+    let _connection = client;
+    relay_frames(&mut rsp, tx);
+}
+
+fn relay_frames(body: &mut impl Read, tx: &crate::sse::SseSender) {
+    let mut chunk = vec![0u8; 8192];
+    let mut pending: Vec<u8> = Vec::new();
+    // A frame that ended on a CR at the end of what had arrived: if the next byte
+    // is LF, the two were one CRLF line end, already relayed.
+    let mut skip_lf = false;
+    loop {
+        let n = match body.read(&mut chunk) {
+            Ok(0) | Err(_) => return,
+            Ok(n) => n,
+        };
+        let mut new = &chunk[..n];
+        if std::mem::take(&mut skip_lf) && new.first() == Some(&b'\n') {
+            new = &new[1..];
+        }
+        pending.extend_from_slice(new);
+        while let Some(end) = sse_frame_end(&pending) {
+            let frame: Vec<u8> = pending.drain(..end).collect();
+            skip_lf = pending.is_empty() && frame.last() == Some(&b'\r');
+            if tx
+                .send_frame(String::from_utf8_lossy(&frame).into_owned())
+                .is_err()
+            {
+                return;
+            }
+        }
+        if pending.len() > MAX_SSE_FRAME_BYTES {
+            return;
+        }
+    }
+}
+
+/// End (exclusive) of the first complete event frame in `buf`: just past the
+/// first empty line. Event streams may end lines with CRLF, LF or CR. A CR at the
+/// very end of `buf` ends the frame when it closes the empty line (CR or CRLF,
+/// the frame is complete either way); otherwise the next byte decides.
+fn sse_frame_end(buf: &[u8]) -> Option<usize> {
+    let mut after_line_end = false;
+    let mut i = 0;
+    while i < buf.len() {
+        let eol = match buf[i] {
+            b'\n' => 1,
+            b'\r' if buf.get(i + 1) == Some(&b'\n') => 2,
+            b'\r' if i + 1 == buf.len() && !after_line_end => return None,
+            b'\r' => 1,
+            _ => {
+                after_line_end = false;
+                i += 1;
+                continue;
+            }
+        };
+        if after_line_end {
+            return Some(i + eol);
+        }
+        after_line_end = true;
+        i += eol;
+    }
+    None
+}
+
+/// Proxy an untyped BFF route to a downstream Kubernetes Service.
+///
+/// `downstream_service` is the OpenAPI `x-service` value (e.g. `fleet`).
+/// `path_template` is `x-brrtrouter-downstream-path` with `{param}` placeholders.
+#[must_use]
+pub fn proxy_untyped(
+    req: &HandlerRequest,
+    downstream_service: &str,
+    path_template: &str,
+) -> HandlerResponse {
+    match proxy_untyped_inner(req, downstream_service, path_template) {
+        Ok(res) => res,
+        Err(e) => proxy_error_response(&e),
+    }
+}
+
+fn proxy_untyped_inner(
+    req: &HandlerRequest,
+    downstream_service: &str,
+    path_template: &str,
+) -> Result<HandlerResponse, ProxyError> {
+    let (_connection, mut rsp) = send_downstream(
+        req,
+        downstream_service,
+        path_template,
+        "application/json",
+        false,
+    )?;
 
     let buf = read_bounded_body(&mut rsp, MAX_PROXY_BODY_BYTES)?;
     let content_type = rsp
@@ -1627,5 +1852,190 @@ mod tests {
         let req = query_proxy_request(Some(serde_json::json!({"q":"x"})), &[]);
         let _ = proxy_untyped(&req, "no-such-service-xyz.invalid", "/search");
         let _ = proxy_untyped(&req, "127.0.0.1", "/p?bad");
+    }
+
+    #[test]
+    fn sse_frame_end_finds_the_blank_line() {
+        assert_eq!(sse_frame_end(b"data: a\n\nrest"), Some(9));
+        assert_eq!(sse_frame_end(b"data: a\r\n\r\n"), Some(11));
+        assert_eq!(sse_frame_end(b"data: a\r\rx"), Some(9));
+        assert_eq!(
+            sse_frame_end(b"data: {}\nevent: alert\nid: 7\n\n"),
+            Some(29)
+        );
+        assert_eq!(sse_frame_end(b"data: a\n"), None);
+        assert_eq!(sse_frame_end(b"data: a\r"), None);
+        // The empty line's CR is the last byte: the frame is complete.
+        assert_eq!(sse_frame_end(b"data: a\n\r"), Some(9));
+        assert_eq!(sse_frame_end(b"data: a\r\r"), Some(9));
+    }
+
+    /// Reads one chunk per call, as a socket would hand them over.
+    struct Chunks(Vec<&'static [u8]>);
+
+    impl Read for Chunks {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            if self.0.is_empty() {
+                return Ok(0);
+            }
+            let c = self.0.remove(0);
+            buf[..c.len()].copy_from_slice(c);
+            Ok(c.len())
+        }
+    }
+
+    fn relayed(chunks: Vec<&'static [u8]>) -> Vec<String> {
+        let (tx, rx) = crate::sse::channel();
+        relay_frames(&mut Chunks(chunks), &tx);
+        drop(tx);
+        std::iter::from_fn(|| rx.recv_frame()).collect()
+    }
+
+    #[test]
+    fn a_cr_terminated_last_event_is_delivered() {
+        assert_eq!(relayed(vec![b"data: a\r\r"]), vec!["data: a\r\r"]);
+    }
+
+    #[test]
+    fn a_crlf_split_across_reads_is_not_an_extra_line() {
+        assert_eq!(
+            relayed(vec![b"data: a\r\n\r", b"\ndata: b\r\n\r\n"]),
+            vec!["data: a\r\n\r", "data: b\r\n\r\n"]
+        );
+    }
+
+    #[test]
+    fn a_client_that_falls_behind_ends_the_relay() {
+        let (tx, rx) = crate::sse::channel_limited(2, usize::MAX);
+        relay_frames(
+            &mut Chunks(vec![b"data: 1\n\ndata: 2\n\ndata: 3\n\ndata: 4\n\n"]),
+            &tx,
+        );
+        drop(tx);
+        let got: Vec<String> = std::iter::from_fn(|| rx.recv_frame()).collect();
+        assert_eq!(got, vec!["data: 1\n\n", "data: 2\n\n"]);
+    }
+
+    /// One downstream that answers with `head`, then writes `chunks` as HTTP chunks.
+    fn spawn_sse_downstream(head: &'static str, chunks: Vec<&'static str>) -> u16 {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            let Ok((mut stream, _)) = listener.accept() else {
+                return;
+            };
+            let mut buf = Vec::new();
+            let mut tmp = [0u8; 1024];
+            while find_http_header_end(&buf).is_none() {
+                match stream.read(&mut tmp) {
+                    Ok(0) | Err(_) => return,
+                    Ok(n) => buf.extend_from_slice(&tmp[..n]),
+                }
+            }
+            let _ = stream.write_all(head.as_bytes());
+            for c in chunks {
+                let _ = stream.write_all(format!("{:x}\r\n{c}\r\n", c.len()).as_bytes());
+                let _ = stream.flush();
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            let _ = stream.write_all(b"0\r\n\r\n");
+        });
+        port
+    }
+
+    #[test]
+    fn proxy_sse_relays_frames_with_event_names_and_ids() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        std::env::remove_var("POD_NAMESPACE");
+        let port = spawn_sse_downstream(
+            "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\nX-Stream: alerts\r\n\r\n",
+            vec![
+                "data: {\"cursor\":1}\nevent: hello\n\n",
+                "data: {\"id\":\"a\"}\neve",
+                "nt: alert\nid: 7\n\ndata: \n: ping\n\n",
+            ],
+        );
+        std::env::set_var("HAULIAGE_SERVICE_HTTP_PORT", port.to_string());
+        let res = proxy_sse(&empty_request(Method::GET), "127.0.0.1", "/stream");
+        std::env::remove_var("HAULIAGE_SERVICE_HTTP_PORT");
+
+        assert_eq!(res.status, 200);
+        assert!(res
+            .headers
+            .iter()
+            .any(|(k, v)| k.as_ref() == "x-stream" && v == "alerts"));
+        let rx = res.sse.expect("a live stream");
+        let mut frames = Vec::new();
+        while let Some(f) = rx.recv_frame() {
+            frames.push(f);
+        }
+        assert_eq!(
+            frames,
+            vec![
+                "data: {\"cursor\":1}\nevent: hello\n\n",
+                "data: {\"id\":\"a\"}\nevent: alert\nid: 7\n\n",
+                "data: \n: ping\n\n",
+            ]
+        );
+    }
+
+    #[test]
+    fn proxy_sse_asks_for_and_requires_an_uncompressed_stream() {
+        use std::io::{Read as _, Write};
+        let _lock = ENV_LOCK.lock().unwrap();
+        std::env::remove_var("POD_NAMESPACE");
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let seen = Arc::new(Mutex::new(String::new()));
+        let slot = Arc::clone(&seen);
+        std::thread::spawn(move || {
+            let Ok((mut stream, _)) = listener.accept() else {
+                return;
+            };
+            let mut buf = Vec::new();
+            let mut tmp = [0u8; 1024];
+            while find_http_header_end(&buf).is_none() {
+                match stream.read(&mut tmp) {
+                    Ok(0) | Err(_) => return,
+                    Ok(n) => buf.extend_from_slice(&tmp[..n]),
+                }
+            }
+            *slot.lock().unwrap() = String::from_utf8_lossy(&buf).to_ascii_lowercase();
+            let _ = stream.write_all(
+                b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Encoding: gzip\r\nContent-Length: 0\r\n\r\n",
+            );
+        });
+        std::env::set_var("HAULIAGE_SERVICE_HTTP_PORT", port.to_string());
+        let mut req = empty_request(Method::GET);
+        req.headers
+            .push((Arc::from("accept-encoding"), "gzip, br".to_string()));
+        let res = proxy_sse(&req, "127.0.0.1", "/stream");
+        std::env::remove_var("HAULIAGE_SERVICE_HTTP_PORT");
+
+        let sent = seen.lock().unwrap().clone();
+        assert!(sent.contains("accept-encoding: identity"), "{sent}");
+        assert!(!sent.contains("gzip"), "{sent}");
+        assert!(res.sse.is_none());
+        assert_eq!(res.status, proxy_error_http_status(&ProxyError::Response));
+    }
+
+    #[test]
+    fn proxy_sse_answers_a_downstream_error_as_is() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        std::env::remove_var("POD_NAMESPACE");
+        let port = spawn_sse_downstream(
+            "HTTP/1.1 401 Unauthorized\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\n\r\n",
+            vec!["{\"error\":\"unauthorized\"}"],
+        );
+        std::env::set_var("HAULIAGE_SERVICE_HTTP_PORT", port.to_string());
+        let res = proxy_sse(&empty_request(Method::GET), "127.0.0.1", "/stream");
+        std::env::remove_var("HAULIAGE_SERVICE_HTTP_PORT");
+
+        assert_eq!(res.status, 401);
+        assert!(res.sse.is_none());
+        assert_eq!(res.body["error"], "unauthorized");
     }
 }

@@ -648,3 +648,37 @@ fn generate_stubs_force_preserves_sentinel_file() {
 
     fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn sse_proxy_controller_template_relays_the_stream() {
+    let dir = temp_dir();
+    let controllers_dir = dir.join("controllers");
+    fs::create_dir_all(&controllers_dir).unwrap();
+
+    write_controller(
+        &controllers_dir.join("get_alerts_stream.rs"),
+        "get_alerts_stream",
+        "GetAlertsStreamController",
+        &[],
+        None,
+        true,
+        true,
+        Some("alerts".to_string()),
+        Some("/stream".to_string()),
+        "GET".to_string(),
+        HandlerReturnShape::default(),
+    )
+    .unwrap();
+
+    let content = fs::read_to_string(controllers_dir.join("get_alerts_stream.rs")).unwrap();
+    assert!(
+        content.contains("use brrtrouter::http::proxy_sse;"),
+        "{content}"
+    );
+    assert!(
+        content.contains("proxy_sse(&req, \"alerts\", \"/stream\")"),
+        "{content}"
+    );
+    assert!(!content.contains("proxy_untyped"), "{content}");
+    fs::remove_dir_all(&dir).unwrap();
+}

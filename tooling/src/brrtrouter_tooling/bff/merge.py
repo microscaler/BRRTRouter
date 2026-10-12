@@ -110,6 +110,7 @@ def _merge_one_sub_service(
     operation_origin: dict[str, tuple[str, str, str]],
     gateway_path_style: str = "as_spec",
     bff_impl_operations: set[str] | None = None,
+    downstream_base_path: str | None = None,
 ) -> None:
     if not spec_path.exists():
         logger.warning("Spec file not found for service %r: %s", sname, spec_path)
@@ -155,7 +156,11 @@ def _merge_one_sub_service(
                 _register_operation_id(operation_origin, operation_id, sname, path, method)
                 op["x-service"] = sname
                 op["x-service-base-path"] = base_path
-                op["x-brrtrouter-downstream-path"] = downstream_path(base_path, path)
+                # The service serves its paths under base_path unless the suite says
+                # otherwise (downstream_base_path: "" for a version-free service).
+                op["x-brrtrouter-downstream-path"] = downstream_path(
+                    base_path if downstream_base_path is None else downstream_base_path, path
+                )
                 # BFF gen owns proxy routes; only listed operations get impl overrides.
                 oid = op.get("operationId", "")
                 impl_ops = bff_impl_operations or set()
@@ -338,6 +343,7 @@ def merge_sub_service_specs(
             operation_origin,
             gateway_path_style=cfg.get("gateway_path_style", "as_spec"),
             bff_impl_operations=bff_impl_operations,
+            downstream_base_path=cfg.get("downstream_base_path"),
         )
 
     bff["components"]["parameters"] = merged_params

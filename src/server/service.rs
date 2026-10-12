@@ -583,6 +583,15 @@ fn header_value<'a>(headers: &'a crate::dispatcher::HeaderVec, name: &str) -> Op
         .map(|(_, v)| v.as_str())
 }
 
+/// The response names a Content-Type that is not an event stream.
+fn declares_other_content_type(headers: &crate::dispatcher::HeaderVec) -> bool {
+    header_value(headers, "content-type").is_some_and(|v| {
+        !v.trim_start()
+            .to_ascii_lowercase()
+            .starts_with("text/event-stream")
+    })
+}
+
 /// Write a live `text/event-stream` response (Epic 13.7): status and headers,
 /// then one chunk per event until the sender closes or the client goes away.
 /// `Err` only when the stream could not start (nothing has been written then).
@@ -598,6 +607,7 @@ fn stream_sse(
     res.header("Cache-Control: no-cache");
     for (k, v) in headers {
         if k.eq_ignore_ascii_case("content-type")
+            || k.eq_ignore_ascii_case("cache-control")
             || k.eq_ignore_ascii_case("content-length")
             || k.eq_ignore_ascii_case("transfer-encoding")
         {
@@ -606,8 +616,7 @@ fn stream_sse(
         res.header(format!("{k}: {v}"));
     }
     let mut writer = res.begin_chunked_stream(conn_stream)?;
-    while let Some(msg) = sse_rx.recv() {
-        let frame = crate::sse::format_data_event(&msg);
+    while let Some(frame) = sse_rx.recv_frame() {
         if writer.write_chunk(frame.as_bytes()).is_err() {
             // N1: client disconnect — stop cleanly, no panic.
             break;
@@ -1441,7 +1450,9 @@ impl HttpService for AppService {
                 cookies = super::request::parse_cookies(&headers);
             }
             if let Some(answer) = answer {
-                if let Some(sse_rx) = answer.sse {
+                // HEAD gets headers only: a stream answer's receiver is dropped unread (its
+                // producer sees the client gone) and the answer is written without a body.
+                if let Some(sse_rx) = answer.sse.filter(|_| method != Method::HEAD) {
                     _request_logger.record_http_status(answer.status);
                     _request_logger.record_response_headers(&answer.headers);
                     if let Err(e) =
@@ -2162,7 +2173,8 @@ impl HttpService for AppService {
                         } // End if let Some(compiled)
                     } // End if let Some(schema)
                     let omit_body = method == Method::HEAD;
-                    if let Some(sse_rx) = hr.sse {
+                    // HEAD gets headers only: a live stream's receiver is dropped unread.
+                    if let Some(sse_rx) = hr.sse.filter(|_| !omit_body) {
                         // Epic 13.7: live flush text/event-stream via chunked encoding.
                         _request_logger.record_http_status(hr.status);
                         _request_logger.record_response_headers(&headers);
@@ -2175,6 +2187,10 @@ impl HttpService for AppService {
                             );
                         }
                     } else {
+                        // An x-sse route can answer without a stream (a proxied downstream error, a
+                        // refusal): a Content-Type of its own other than text/event-stream wins over
+                        // the route's event-stream framing. Buffered event bodies keep it.
+                        let is_sse = is_sse && !declares_other_content_type(&headers);
                         _request_logger
                             .respond_handler(res, hr.status, hr.body, is_sse, &headers, omit_body);
                         // Keep conn_stream borrow scoped; unused for buffered responses.
