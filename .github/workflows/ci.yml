@@ -305,12 +305,18 @@ jobs:
           cache: 'yarn'
           cache-dependency-path: 'sample-ui/yarn.lock'
 
+      - name: Enable Corepack and use project Yarn version
+        run: |
+          corepack enable
+          corepack prepare yarn@4.4.1 --activate
+          yarn --version
+
       - name: Build sample UI (if exists)
         run: |
           if [ -d "sample-ui" ]; then
             cd sample-ui
             echo "Building sample UI with yarn..."
-            yarn install --frozen-lockfile
+            yarn install --immutable
             yarn build:petstore || true
           fi
 

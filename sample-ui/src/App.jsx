@@ -35,38 +35,50 @@ function App() {
       const [petsRes, usersRes, searchRes, specRes] = await Promise.all([
         fetch(`${API_BASE}/pets`, {
           headers: { 'X-API-Key': API_KEY }
-        }),
+      }).catch(() => null),
         fetch(`${API_BASE}/users`, {
           headers: { 'X-API-Key': API_KEY }
-        }),
+      }).catch(() => null),
         fetch(`${API_BASE}/search?q=test`, {
           headers: { 'X-API-Key': API_KEY }
-        }).catch(() => ({ ok: false })),
-        fetch(`${API_BASE}/openapi.yaml`).catch(() => ({ ok: false }))
+      }).catch(() => null),
+      fetch(`${API_BASE}/openapi.yaml`).catch(() => null)
       ]);
-      
-      const petsData = await petsRes.json();
-      const usersData = await usersRes.json();
-      
-      setPets(petsData);
-      setUsers(usersData.users || []);
-      
-      if (searchRes.ok) {
-        const searchData = await searchRes.json();
-        setSearchResults(searchData);
-      }
-      
-      if (specRes.ok) {
-        const specText = await specRes.text();
-        setOpenApiSpec(specText);
-      }
-      
-      setLoading(false);
-      console.log('Loading complete!');
-    } catch (error) {
-      console.error('Load error:', error);
-      setLoading(false);
+
+    if (petsRes && typeof petsRes.json === 'function') {
+      const petsData = await petsRes.json().catch(() => []);
+      setPets(petsRes.ok ? petsData : []);
+    } else {
+      setPets([]);
     }
+
+    if (usersRes && typeof usersRes.json === 'function') {
+      const usersData = await usersRes.json().catch(() => ({ users: [] }));
+      setUsers(usersRes.ok ? (usersData.users || []) : []);
+    } else {
+      setUsers([]);
+    }
+      
+    if (searchRes && typeof searchRes.json === 'function') {
+      const searchData = await searchRes.json().catch(() => null);
+      setSearchResults(searchRes.ok ? searchData : null);
+    } else {
+      setSearchResults(null);
+    }
+      
+    if (specRes && typeof specRes.text === 'function') {
+      const specText = await specRes.text().catch(() => null);
+      setOpenApiSpec(specRes.ok ? specText : null);
+    } else {
+      setOpenApiSpec(null);
+    }
+      
+    setLoading(false);
+    console.log('Loading complete!');
+  } catch (error) {
+    console.error('Load error:', error);
+    setLoading(false);
+  }
   };
 
   // Setup SSE for real-time events using fetch with auth headers
@@ -78,13 +90,18 @@ function App() {
       try {
         const response = await fetch(`${API_BASE}/events`, {
           headers: { 'X-API-Key': API_KEY }
-        });
+        }).catch(() => null);
         
-        if (!response.ok) {
-          console.log('SSE connection failed:', response.status);
+        if (!response || !response.ok) {
+          console.log('SSE connection failed:', response?.status ?? 0);
           return;
         }
         
+        if (!response.body) {
+          console.log('SSE connection failed: missing response body');
+          return;
+        }
+
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         

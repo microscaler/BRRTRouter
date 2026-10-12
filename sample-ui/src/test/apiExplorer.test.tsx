@@ -56,7 +56,7 @@ paths:
     await user.click(button);
 
     await waitFor(() => {
-      expect(screen.getByText(/API Explorer/i)).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: /API Explorer/i })).toBeInTheDocument();
     });
   });
 
@@ -68,8 +68,8 @@ paths:
     await user.click(button);
 
     await waitFor(() => {
-      expect(screen.getByText(/GET/i)).toBeInTheDocument();
-      expect(screen.getByText(/\/pets/i)).toBeInTheDocument();
+      expect(screen.getAllByText(/GET/i).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/\/pets/i).length).toBeGreaterThan(0);
     }, { timeout: 3000 });
   });
 
