@@ -34,6 +34,7 @@ jobs:
       packages: write
       id-token: write
       pull-requests: write
+      actions: read     # acceptance-promote downloads this run's build results (octopilot/actions#16)
     uses: octopilot/actions/.github/workflows/pipeline.yml@main
     with:
       # actions@main sends op the --artifact-key flag (added upstream late Sep
