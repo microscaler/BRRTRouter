@@ -135,9 +135,10 @@ fn hook_can_remove_headers_before_security() {
 #[test]
 fn hook_can_answer_a_request() {
     let f = start(Some(session_hook()));
-    let resp = get(&f, "/hooked", "");
+    let resp = get(&f, "/hooked?echo=a%20b", "");
     assert_eq!(status(&resp), 418, "{resp}");
     assert!(resp.contains("by the hook"), "{resp}");
+    assert!(resp.contains("\"echo\":\"a b\""), "query decoded: {resp}");
 }
 
 #[test]

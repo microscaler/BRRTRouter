@@ -1435,6 +1435,7 @@ impl HttpService for AppService {
                 path: &path,
                 headers: &mut headers,
                 cookies: &cookies,
+                query: &query_params,
             };
             if let Some(answer) = hook(&mut ctx) {
                 write_handler_response(res, answer.status, answer.body, false, &answer.headers);

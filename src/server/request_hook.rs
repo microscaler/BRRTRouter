@@ -11,6 +11,7 @@
 //! docs) and before routing, CORS preflight handling and security.
 
 use crate::dispatcher::{HandlerResponse, HeaderVec};
+use crate::router::ParamVec;
 use http::Method;
 use std::sync::Arc;
 
@@ -22,6 +23,8 @@ pub struct RequestHookContext<'a> {
     pub headers: &'a mut HeaderVec,
     /// Parsed `Cookie` header pairs.
     pub cookies: &'a HeaderVec,
+    /// Decoded query parameters.
+    pub query: &'a ParamVec,
 }
 
 impl RequestHookContext<'_> {
@@ -44,6 +47,15 @@ impl RequestHookContext<'_> {
     #[must_use]
     pub fn cookie(&self, name: &str) -> Option<&str> {
         self.cookies
+            .iter()
+            .find(|(k, _)| k.as_ref() == name)
+            .map(|(_, v)| v.as_str())
+    }
+
+    /// A query parameter by name (the first, if repeated).
+    #[must_use]
+    pub fn query_param(&self, name: &str) -> Option<&str> {
+        self.query
             .iter()
             .find(|(k, _)| k.as_ref() == name)
             .map(|(_, v)| v.as_str())
