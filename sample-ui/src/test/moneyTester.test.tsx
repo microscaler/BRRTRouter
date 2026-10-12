@@ -38,7 +38,7 @@ describe('Money Tester', () => {
     await waitFor(() => {
       expect(screen.getByText(/Example Request \(format: money in OpenAPI\):/i)).toBeInTheDocument();
       expect(screen.getByText(/Payment Test \(format: money\)/i)).toBeInTheDocument();
-      expect(screen.getByText(/format: money/i)).toBeInTheDocument();
+      expect(screen.getAllByText(/format: money/i).length).toBeGreaterThan(0);
     });
   });
 
@@ -54,7 +54,7 @@ describe('Money Tester', () => {
     await waitFor(() => {
       expect(screen.getByText(/Test Results/i)).toBeInTheDocument();
       expect(screen.getByText(/Money Format Demonstration/i)).toBeInTheDocument();
-      expect(screen.getByText(/314 cents/i)).toBeInTheDocument();
+      expect(screen.getAllByText(/314 cents/i).length).toBeGreaterThan(0);
     });
   });
 
@@ -66,7 +66,7 @@ describe('Money Tester', () => {
 
     await waitFor(() => {
       expect(screen.getByText(/Test money types with amount:/i)).toBeInTheDocument();
-      expect(screen.getByText(/3\.14/i)).toBeInTheDocument();
+      expect(screen.getAllByText(/3\.14/i).length).toBeGreaterThan(0);
     });
   });
 
