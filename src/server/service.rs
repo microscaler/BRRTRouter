@@ -583,6 +583,15 @@ fn header_value<'a>(headers: &'a crate::dispatcher::HeaderVec, name: &str) -> Op
         .map(|(_, v)| v.as_str())
 }
 
+/// The response names a Content-Type that is not an event stream.
+fn declares_other_content_type(headers: &crate::dispatcher::HeaderVec) -> bool {
+    header_value(headers, "content-type").is_some_and(|v| {
+        !v.trim_start()
+            .to_ascii_lowercase()
+            .starts_with("text/event-stream")
+    })
+}
+
 /// Write a live `text/event-stream` response (Epic 13.7): status and headers,
 /// then one chunk per event until the sender closes or the client goes away.
 /// `Err` only when the stream could not start (nothing has been written then).
@@ -2175,6 +2184,10 @@ impl HttpService for AppService {
                             );
                         }
                     } else {
+                        // An x-sse route can answer without a stream (a proxied downstream error, a
+                        // refusal): a Content-Type of its own other than text/event-stream wins over
+                        // the route's event-stream framing. Buffered event bodies keep it.
+                        let is_sse = is_sse && !declares_other_content_type(&headers);
                         _request_logger
                             .respond_handler(res, hr.status, hr.body, is_sse, &headers, omit_body);
                         // Keep conn_stream borrow scoped; unused for buffered responses.

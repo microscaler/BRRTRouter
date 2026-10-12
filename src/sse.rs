@@ -23,6 +23,7 @@
 //! disconnects cleanly — no unbounded RAM).
 
 use may::sync::mpsc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 /// Default bound for [`channel_bounded`] (NFR-1).
@@ -58,24 +59,79 @@ enum Event {
     Frame(String),
 }
 
+impl Event {
+    fn len(&self) -> usize {
+        match self {
+            Self::Data(s) | Self::Frame(s) => s.len(),
+        }
+    }
+}
+
+/// What is queued between a sender and its receiver, and the most that may be
+/// ([`channel_limited`]); `usize::MAX` for no limit.
+struct Backlog {
+    frames: AtomicUsize,
+    bytes: AtomicUsize,
+    max_frames: usize,
+    max_bytes: usize,
+}
+
+impl Backlog {
+    fn unlimited() -> Arc<Self> {
+        Self::limited(usize::MAX, usize::MAX)
+    }
+
+    fn limited(max_frames: usize, max_bytes: usize) -> Arc<Self> {
+        Arc::new(Self {
+            frames: AtomicUsize::new(0),
+            bytes: AtomicUsize::new(0),
+            max_frames,
+            max_bytes,
+        })
+    }
+
+    /// Reserve room for one event of `len` bytes; `false` when the queue is full.
+    fn reserve(&self, len: usize, enforce: bool) -> bool {
+        let frames = self.frames.fetch_add(1, Ordering::AcqRel);
+        let bytes = self.bytes.fetch_add(len, Ordering::AcqRel);
+        if enforce && (frames >= self.max_frames || bytes.saturating_add(len) > self.max_bytes) {
+            self.release(len);
+            return false;
+        }
+        true
+    }
+
+    fn release(&self, len: usize) {
+        self.frames.fetch_sub(1, Ordering::AcqRel);
+        self.bytes.fetch_sub(len, Ordering::AcqRel);
+    }
+}
+
 /// Sender side of an SSE channel.
 #[derive(Clone)]
 pub struct SseSender {
     tx: mpsc::Sender<Event>,
     /// Shared counter of successful sends (tests / metrics hooks).
     sent: Arc<Mutex<u64>>,
+    backlog: Arc<Backlog>,
 }
 
 impl SseSender {
     /// Send a message (`data:` event). Ignores send errors (client gone).
     pub fn send(&self, data: impl Into<String>) {
-        let _ = self.tx.send(Event::Data(data.into()));
+        let event = Event::Data(data.into());
+        let len = event.len();
+        self.backlog.reserve(len, false);
+        if self.tx.send(event).is_err() {
+            self.backlog.release(len);
+        }
         if let Ok(mut g) = self.sent.lock() {
             *g = g.saturating_add(1);
         }
     }
 
-    /// Non-blocking send for bounded backpressure (NFR-1).
+    /// Non-blocking send for bounded backpressure (NFR-1). `Err` when the client
+    /// has gone, or when a [`channel_limited`] queue is full.
     pub fn try_send(&self, data: impl Into<String>) -> Result<(), ()> {
         self.queue(Event::Data(data.into()))
     }
@@ -83,13 +139,18 @@ impl SseSender {
     /// Queue a complete event frame (its `data:`, `event:`, `id:` or comment
     /// lines and the blank line that ends it), written to the client unchanged.
     /// A proxy relays a downstream stream this way without losing event names
-    /// or ids. `Err` when the client has gone.
+    /// or ids. `Err` when the client has gone, or when a [`channel_limited`]
+    /// queue is full (the producer should then stop: the client reconnects).
     #[allow(clippy::result_unit_err)]
     pub fn send_frame(&self, frame: impl Into<String>) -> Result<(), ()> {
         self.queue(Event::Frame(frame.into()))
     }
 
     fn queue(&self, event: Event) -> Result<(), ()> {
+        let len = event.len();
+        if !self.backlog.reserve(len, true) {
+            return Err(());
+        }
         match self.tx.send(event) {
             Ok(()) => {
                 if let Ok(mut g) = self.sent.lock() {
@@ -97,7 +158,10 @@ impl SseSender {
                 }
                 Ok(())
             }
-            Err(_) => Err(()),
+            Err(_) => {
+                self.backlog.release(len);
+                Err(())
+            }
         }
     }
 }
@@ -105,6 +169,7 @@ impl SseSender {
 /// Receiver side that converts queued events into `text/event-stream` frames.
 pub struct SseReceiver {
     rx: mpsc::Receiver<Event>,
+    backlog: Arc<Backlog>,
 }
 
 impl std::fmt::Debug for SseReceiver {
@@ -126,14 +191,20 @@ impl SseReceiver {
     /// Receive the next event payload (not yet framed), or `None` when closed.
     /// A frame queued with [`SseSender::send_frame`] comes back as sent.
     pub fn recv(&self) -> Option<String> {
-        self.rx.recv().ok().map(|event| match event {
+        self.next().map(|event| match event {
             Event::Data(s) | Event::Frame(s) => s,
         })
     }
 
+    fn next(&self) -> Option<Event> {
+        let event = self.rx.recv().ok()?;
+        self.backlog.release(event.len());
+        Some(event)
+    }
+
     /// Receive the next event as it goes on the wire, or `None` when closed.
     pub fn recv_frame(&self) -> Option<String> {
-        self.rx.recv().ok().map(|event| match event {
+        self.next().map(|event| match event {
             Event::Data(s) => format_data_event(&s),
             Event::Frame(s) => s,
         })
@@ -142,13 +213,28 @@ impl SseReceiver {
 
 /// Unbounded channel (legacy helper). Prefer [`channel_bounded`] for live flush.
 pub fn channel() -> (SseSender, SseReceiver) {
+    with_backlog(Backlog::unlimited())
+}
+
+/// A channel whose queue is held to `max_frames` events and `max_bytes` of
+/// payload: [`SseSender::try_send`] and [`SseSender::send_frame`] fail once it
+/// is full, so a client that reads slower than the producer writes is
+/// disconnected (and reconnects) instead of growing the queue without limit.
+/// [`SseSender::send`] is fire-and-forget and is not held to the limits.
+#[must_use]
+pub fn channel_limited(max_frames: usize, max_bytes: usize) -> (SseSender, SseReceiver) {
+    with_backlog(Backlog::limited(max_frames.max(1), max_bytes.max(1)))
+}
+
+fn with_backlog(backlog: Arc<Backlog>) -> (SseSender, SseReceiver) {
     let (tx, rx) = mpsc::channel();
     (
         SseSender {
             tx,
             sent: Arc::new(Mutex::new(0)),
+            backlog: Arc::clone(&backlog),
         },
-        SseReceiver { rx },
+        SseReceiver { rx, backlog },
     )
 }
 
@@ -207,6 +293,35 @@ mod tests {
         let (tx, rx) = channel();
         drop(rx);
         assert!(tx.send_frame(": ping\n\n").is_err());
+    }
+
+    #[test]
+    fn a_limited_queue_refuses_frames_past_its_limits() {
+        let (tx, rx) = channel_limited(2, 1024);
+        tx.send_frame("data: a\n\n").unwrap();
+        tx.send_frame("data: b\n\n").unwrap();
+        assert!(
+            tx.send_frame("data: c\n\n").is_err(),
+            "third frame over the frame limit"
+        );
+        assert_eq!(rx.recv_frame().as_deref(), Some("data: a\n\n"));
+        tx.send_frame("data: c\n\n").unwrap();
+
+        let (tx, rx) = channel_limited(100, 16);
+        tx.send_frame("data: 0123456\n\n").unwrap();
+        assert!(tx.send_frame("data: 7\n\n").is_err(), "over the byte limit");
+        assert!(rx.recv_frame().is_some());
+        tx.send_frame("data: 7\n\n").unwrap();
+    }
+
+    #[test]
+    fn an_unlimited_queue_takes_everything() {
+        let (tx, rx) = channel();
+        for i in 0..1000 {
+            tx.send_frame(format!("data: {i}\n\n")).unwrap();
+        }
+        drop(tx);
+        assert_eq!(rx.collect().matches("data: ").count(), 1000);
     }
 
     #[test]
