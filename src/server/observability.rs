@@ -129,6 +129,25 @@ pub fn undefined_security_schemes<S>(
     undefined
 }
 
+/// The W3C trace context a caller sent (`traceparent`, optional `tracestate`), to parent this request's span on:
+/// a BFF and the service it proxies to then form one trace. `None` when absent or malformed.
+#[must_use]
+pub fn remote_parent(
+    traceparent: Option<&str>,
+    tracestate: Option<&str>,
+) -> Option<opentelemetry::Context> {
+    use opentelemetry::propagation::TextMapPropagator;
+    use opentelemetry::trace::TraceContextExt;
+
+    let mut carrier: HashMap<String, String> = HashMap::with_capacity(2);
+    carrier.insert("traceparent".to_string(), traceparent?.to_string());
+    if let Some(state) = tracestate {
+        carrier.insert("tracestate".to_string(), state.to_string());
+    }
+    let cx = opentelemetry_sdk::propagation::TraceContextPropagator::new().extract(&carrier);
+    cx.span().span_context().is_valid().then_some(cx)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -177,6 +196,31 @@ mod tests {
         let cut = truncate("é".repeat(400));
         assert!(cut.len() <= MAX_REASON_BYTES + '…'.len_utf8());
         assert!(cut.ends_with('…'));
+    }
+
+    #[test]
+    fn a_valid_traceparent_becomes_the_parent() {
+        use opentelemetry::trace::TraceContextExt;
+        let cx = remote_parent(
+            Some("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"),
+            None,
+        )
+        .expect("valid traceparent");
+        assert_eq!(
+            cx.span().span_context().trace_id().to_string(),
+            "4bf92f3577b34da6a3ce929d0e0e4736"
+        );
+    }
+
+    #[test]
+    fn a_missing_or_malformed_traceparent_is_ignored() {
+        assert!(remote_parent(None, None).is_none());
+        assert!(remote_parent(Some("not-a-traceparent"), None).is_none());
+        assert!(remote_parent(
+            Some("00-00000000000000000000000000000000-00f067aa0ba902b7-01"),
+            None
+        )
+        .is_none());
     }
 
     #[test]

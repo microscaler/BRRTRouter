@@ -414,6 +414,20 @@ fn apply_extra_headers(request: &mut may_minihttp::client::Request, options: &Ht
             request.headers_mut().insert(header_name, header_value);
         }
     }
+    // W3C trace context: the call joins the current request's trace, unless the caller set its own.
+    let caller_set = options
+        .extra_headers
+        .iter()
+        .any(|(name, _)| name.eq_ignore_ascii_case("traceparent"));
+    if !caller_set {
+        if let Some(traceparent) = may_tracing::traceparent_of_current() {
+            if let Ok(value) = http_legacy::HeaderValue::from_str(&traceparent) {
+                request
+                    .headers_mut()
+                    .insert(http_legacy::HeaderName::from_static("traceparent"), value);
+            }
+        }
+    }
 }
 
 fn fetch_method_via_client(

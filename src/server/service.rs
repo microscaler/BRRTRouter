@@ -1346,6 +1346,14 @@ impl HttpService for AppService {
         // ADR-0001: never entered. The span is the coroutine's context (may_tracing) for the
         // rest of this connection turn; the dispatcher hands it to the handler coroutine on
         // the HandlerRequest, and RequestLogger records status/duration on drop.
+        // Join the caller's trace (W3C traceparent): a BFF hop and the service it calls are one trace.
+        if let Some(parent) = super::observability::remote_parent(
+            header_value(&headers, "traceparent"),
+            header_value(&headers, "tracestate"),
+        ) {
+            use tracing_opentelemetry::OpenTelemetrySpanExt;
+            let _ = span.set_parent(parent);
+        }
         let _ctx = may_tracing::set_current(span.clone());
 
         // Calculate header size (always accurate)
