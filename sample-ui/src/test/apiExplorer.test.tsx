@@ -90,11 +90,11 @@ paths:
     await user.click(button);
 
     await waitFor(() => {
-      const tryButton = screen.getByText(/🚀 Try it/i);
-      expect(tryButton).toBeInTheDocument();
+      const tryButtons = screen.getAllByText(/🚀 Try it/i);
+      expect(tryButtons.length).toBeGreaterThan(0);
     });
 
-    const tryButton = screen.getByText(/🚀 Try it/i);
+    const tryButton = screen.getAllByText(/🚀 Try it/i)[0];
     await user.click(tryButton);
 
     await waitFor(() => {
