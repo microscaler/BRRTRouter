@@ -85,6 +85,44 @@ def test_merge_prefixed_gateway_paths(tmp_path: Path) -> None:
     assert get_op["x-brrtrouter-downstream-path"] == "/api/v1/consignments/jobs"
 
 
+def test_merge_service_relative_downstream(tmp_path: Path) -> None:
+    """downstream_base_path "" proxies to the service's own (version-free) paths."""
+    spec_path = tmp_path / "openapi.yaml"
+    spec_path.write_text(
+        "openapi: 3.1.0\ninfo: { title: S, version: 1.0 }\npaths:\n"
+        "  /:\n    get:\n      operationId: listAlerts\n      responses: { '200': { description: OK } }\n"
+        "  /stream:\n    get:\n      operationId: alertsStream\n      responses: { '200': { description: OK } }\n"
+    )
+    sub_services = {
+        "alerts": {
+            "base_path": "/api/v1/alerts",
+            "spec_path": spec_path,
+            "gateway_path_style": "prefixed",
+            "downstream_base_path": "",
+        },
+    }
+    bff = merge_sub_service_specs(sub_services)
+    assert bff["paths"]["/alerts/stream"]["get"]["x-brrtrouter-downstream-path"] == "/stream"
+    assert bff["paths"]["/alerts"]["get"]["x-brrtrouter-downstream-path"] == "/"
+    assert bff["paths"]["/alerts/stream"]["get"]["x-service-base-path"] == "/api/v1/alerts"
+
+
+def test_load_suite_config_reads_downstream_base_path(tmp_path: Path) -> None:
+    (tmp_path / "alerts").mkdir()
+    (tmp_path / "alerts" / "openapi.yaml").write_text(
+        "openapi: 3.1.0\ninfo: { title: S, version: 1.0 }\npaths: {}\n"
+    )
+    cfg = tmp_path / "suite.yaml"
+    cfg.write_text(
+        "suite: s\nopenapi_base_dir: .\noutput_path: bff.yaml\nservices:\n"
+        "  alerts:\n    base_path: /api/v1/alerts\n    downstream_base_path: ''\n"
+        "  orders:\n    base_path: /api/v1/orders\n"
+    )
+    resolved = load_suite_config(cfg)["_resolved"]["services"]
+    assert resolved["alerts"]["downstream_base_path"] == ""
+    assert resolved["orders"]["downstream_base_path"] is None
+
+
 def test_merge_as_spec_keeps_product_paths(tmp_path: Path) -> None:
     """as_spec keeps company/marketing-style paths without a service prefix."""
     spec_path = tmp_path / "openapi.yaml"

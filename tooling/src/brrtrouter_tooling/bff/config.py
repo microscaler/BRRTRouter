@@ -53,6 +53,9 @@ def load_suite_config(config_path: Path, base_dir: Path | None = None) -> dict[s
             "spec_path": full_spec,
             "port": svc.get("port"),
             "gateway_path_style": svc.get("gateway_path_style", "as_spec"),
+            # Where the service serves its paths, when not under base_path: "" for a
+            # version-free service the edge used to strip base_path for.
+            "downstream_base_path": svc.get("downstream_base_path"),
         }
 
     data["_resolved"] = resolved
