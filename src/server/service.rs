@@ -152,6 +152,8 @@ pub struct AppService {
     pub extra_prometheus: Option<Arc<dyn Fn() -> String + Send + Sync>>,
     /// Optional dependency readiness check for `GET /ready`.
     pub readiness_check: Option<Arc<dyn Fn() -> Result<(), String> + Send + Sync>>,
+    /// Application hook run before routing and security ([`super::RequestHook`]).
+    pub request_hook: Option<super::RequestHook>,
     /// Optional memory tracking middleware
     pub memory: Option<Arc<crate::middleware::MemoryMiddleware>>,
     /// Path to the OpenAPI specification file
@@ -209,6 +211,7 @@ impl Clone for AppService {
             metrics: self.metrics.clone(),
             extra_prometheus: self.extra_prometheus.clone(),
             readiness_check: self.readiness_check.clone(),
+            request_hook: self.request_hook.clone(),
             memory: self.memory.clone(),
             spec_path: self.spec_path.clone(),
             static_files: self.static_files.clone(),
@@ -256,6 +259,7 @@ impl AppService {
             metrics: None,
             extra_prometheus: None,
             readiness_check: None,
+            request_hook: None,
             memory: None,
             spec_path,
             static_files: static_dir.map(StaticFiles::new),
@@ -308,6 +312,12 @@ impl AppService {
         check: Option<Arc<dyn Fn() -> Result<(), String> + Send + Sync>>,
     ) {
         self.readiness_check = check;
+    }
+
+    /// Install an application hook that sees every request before routing and
+    /// security, and may change its headers or answer it ([`super::RequestHook`]).
+    pub fn set_request_hook(&mut self, hook: Option<super::RequestHook>) {
+        self.request_hook = hook;
     }
 
     pub fn set_metrics_middleware(&mut self, metrics: Arc<MetricsMiddleware>) {
@@ -563,6 +573,47 @@ pub fn health_endpoint(res: &mut Response) -> io::Result<()> {
         false,
         &HeaderVec::new(),
     );
+    Ok(())
+}
+
+fn header_value<'a>(headers: &'a crate::dispatcher::HeaderVec, name: &str) -> Option<&'a str> {
+    headers
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case(name))
+        .map(|(_, v)| v.as_str())
+}
+
+/// Write a live `text/event-stream` response (Epic 13.7): status and headers,
+/// then one chunk per event until the sender closes or the client goes away.
+/// `Err` only when the stream could not start (nothing has been written then).
+fn stream_sse(
+    res: &mut Response,
+    conn_stream: &mut may::net::TcpStream,
+    status: u16,
+    headers: &crate::dispatcher::HeaderVec,
+    sse_rx: crate::sse::SseReceiver,
+) -> io::Result<()> {
+    res.status_code(status as usize, "OK");
+    res.header("Content-Type: text/event-stream");
+    res.header("Cache-Control: no-cache");
+    for (k, v) in headers {
+        if k.eq_ignore_ascii_case("content-type")
+            || k.eq_ignore_ascii_case("content-length")
+            || k.eq_ignore_ascii_case("transfer-encoding")
+        {
+            continue;
+        }
+        res.header(format!("{k}: {v}"));
+    }
+    let mut writer = res.begin_chunked_stream(conn_stream)?;
+    while let Some(msg) = sse_rx.recv() {
+        let frame = crate::sse::format_data_event(&msg);
+        if writer.write_chunk(frame.as_bytes()).is_err() {
+            // N1: client disconnect — stop cleanly, no panic.
+            break;
+        }
+    }
+    let _ = writer.finish();
     Ok(())
 }
 
@@ -1366,6 +1417,57 @@ impl HttpService for AppService {
             }
         }
 
+        // Application hook (for example a BFF turning its session cookie into the
+        // bearer the route's security and the proxied backends expect). It runs
+        // after the built-in endpoints and before static files, routing and
+        // security, and may answer the request itself.
+        let mut headers = headers;
+        let mut cookies = cookies;
+        if let Some(hook) = &self.request_hook {
+            let cookie_before = header_value(&headers, "cookie").map(str::to_string);
+            let answer = {
+                let mut ctx = super::RequestHookContext {
+                    method: &method,
+                    path: &path,
+                    headers: &mut headers,
+                    cookies: &cookies,
+                    query: &query_params,
+                };
+                hook(&mut ctx)
+            };
+            // Security and handlers read parsed cookies: keep them in step with a
+            // Cookie header the hook removed or replaced.
+            if header_value(&headers, "cookie") != cookie_before.as_deref() {
+                cookies = super::request::parse_cookies(&headers);
+            }
+            if let Some(answer) = answer {
+                if let Some(sse_rx) = answer.sse {
+                    _request_logger.record_http_status(answer.status);
+                    _request_logger.record_response_headers(&answer.headers);
+                    if let Err(e) =
+                        stream_sse(res, conn_stream, answer.status, &answer.headers, sse_rx)
+                    {
+                        error!(error = %e, "Failed to begin SSE chunked stream");
+                        _request_logger.respond_json_error(
+                            res,
+                            500,
+                            json!({"error": "Failed to start event stream"}),
+                        );
+                    }
+                } else {
+                    _request_logger.respond_handler(
+                        res,
+                        answer.status,
+                        answer.body,
+                        false,
+                        &answer.headers,
+                        method == Method::HEAD,
+                    );
+                }
+                return Ok(());
+            }
+        }
+
         if method == Method::GET {
             if let Some(sf) = &self.static_files {
                 let p = path.trim_start_matches('/');
@@ -2064,37 +2166,13 @@ impl HttpService for AppService {
                         // Epic 13.7: live flush text/event-stream via chunked encoding.
                         _request_logger.record_http_status(hr.status);
                         _request_logger.record_response_headers(&headers);
-                        res.status_code(hr.status as usize, "OK");
-                        res.header("Content-Type: text/event-stream");
-                        res.header("Cache-Control: no-cache");
-                        for (k, v) in &headers {
-                            if k.eq_ignore_ascii_case("content-type")
-                                || k.eq_ignore_ascii_case("content-length")
-                                || k.eq_ignore_ascii_case("transfer-encoding")
-                            {
-                                continue;
-                            }
-                            res.header(format!("{k}: {v}"));
-                        }
-                        match res.begin_chunked_stream(conn_stream) {
-                            Ok(mut writer) => {
-                                while let Some(msg) = sse_rx.recv() {
-                                    let frame = crate::sse::format_data_event(&msg);
-                                    if writer.write_chunk(frame.as_bytes()).is_err() {
-                                        // N1: client disconnect — stop cleanly, no panic.
-                                        break;
-                                    }
-                                }
-                                let _ = writer.finish();
-                            }
-                            Err(e) => {
-                                error!(error = %e, "Failed to begin SSE chunked stream");
-                                _request_logger.respond_json_error(
-                                    res,
-                                    500,
-                                    json!({"error": "Failed to start event stream"}),
-                                );
-                            }
+                        if let Err(e) = stream_sse(res, conn_stream, hr.status, &headers, sse_rx) {
+                            error!(error = %e, "Failed to begin SSE chunked stream");
+                            _request_logger.respond_json_error(
+                                res,
+                                500,
+                                json!({"error": "Failed to start event stream"}),
+                            );
                         }
                     } else {
                         _request_logger
