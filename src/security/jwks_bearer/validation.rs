@@ -240,6 +240,9 @@ pub(super) fn validate_token_impl(
         Ok(valid) => valid,
         Err(e) => {
             e.log();
+            // The request span (the coroutine's current span) says why the credential was
+            // refused; the validating coroutine is the request's own, so this is that request.
+            may_tracing::current().record("brrtrouter.auth.reason", e.error_reason().as_str());
             false
         }
     }
