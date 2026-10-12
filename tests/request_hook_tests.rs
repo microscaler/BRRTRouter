@@ -247,3 +247,32 @@ fn a_hook_can_answer_with_a_live_event_stream() {
         "{resp}"
     );
 }
+
+fn is_chunked(resp: &str) -> bool {
+    resp.lines()
+        .take_while(|l| !l.is_empty())
+        .any(|l| l.to_ascii_lowercase().replace(' ', "") == "transfer-encoding:chunked")
+}
+
+#[test]
+fn a_hook_stream_answer_to_head_is_headers_only() {
+    // The sender is never closed: a HEAD that started the stream would wait on it.
+    let f = start(Some(Arc::new(|ctx| {
+        (ctx.path == "/hooked-stream").then(|| {
+            let (tx, rx) = brrtrouter::sse::channel();
+            std::mem::forget(tx);
+            HandlerResponse::sse_live(rx)
+        })
+    })));
+    let port = f.addr.port();
+    let resp = send_request(
+        &f.addr,
+        &format!("HEAD /hooked-stream HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\r\n"),
+    );
+    assert_eq!(status(&resp), 200, "{resp}");
+    assert!(!is_chunked(&resp), "HEAD must not start a stream: {resp}");
+    assert!(
+        resp.to_ascii_lowercase().contains("text/event-stream"),
+        "{resp}"
+    );
+}

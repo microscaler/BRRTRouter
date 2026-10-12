@@ -47,6 +47,11 @@ impl SecurityProvider for ApiKeyProvider {
 
 /// The pet store, with `stream_events` (`GET /events`, `x-sse: true`) answering `answer`.
 fn start(answer: HandlerResponse) -> Fixture {
+    start_with(move || answer.clone())
+}
+
+/// The pet store, with `stream_events` answering whatever `answer` builds per request.
+fn start_with(answer: impl Fn() -> HandlerResponse + Send + Clone + 'static) -> Fixture {
     std::env::set_var("BRRTR_STACK_SIZE", "0x8000");
     let config = brrtrouter::runtime_config::RuntimeConfig::from_env();
     may::config().set_stack_size(config.stack_size);
@@ -57,7 +62,7 @@ fn start(answer: HandlerResponse) -> Fixture {
     unsafe {
         registry::register_from_spec(&mut dispatcher, &routes);
         dispatcher.register_handler("stream_events", move |req: HandlerRequest| {
-            let _ = req.reply_tx.send(answer.clone());
+            let _ = req.reply_tx.send(answer());
         });
     }
     let mut service = AppService::new(

@@ -1450,7 +1450,9 @@ impl HttpService for AppService {
                 cookies = super::request::parse_cookies(&headers);
             }
             if let Some(answer) = answer {
-                if let Some(sse_rx) = answer.sse {
+                // HEAD gets headers only: a stream answer's receiver is dropped unread (its
+                // producer sees the client gone) and the answer is written without a body.
+                if let Some(sse_rx) = answer.sse.filter(|_| method != Method::HEAD) {
                     _request_logger.record_http_status(answer.status);
                     _request_logger.record_response_headers(&answer.headers);
                     if let Err(e) =
@@ -2171,7 +2173,8 @@ impl HttpService for AppService {
                         } // End if let Some(compiled)
                     } // End if let Some(schema)
                     let omit_body = method == Method::HEAD;
-                    if let Some(sse_rx) = hr.sse {
+                    // HEAD gets headers only: a live stream's receiver is dropped unread.
+                    if let Some(sse_rx) = hr.sse.filter(|_| !omit_body) {
                         // Epic 13.7: live flush text/event-stream via chunked encoding.
                         _request_logger.record_http_status(hr.status);
                         _request_logger.record_response_headers(&headers);
