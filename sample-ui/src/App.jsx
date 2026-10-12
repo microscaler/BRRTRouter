@@ -33,7 +33,16 @@ function App() {
     if (typeof fetch !== 'function') {
       return Promise.resolve(null);
     }
-    return fetch(url, options).catch(() => null);
+
+    return Promise.resolve(fetch(url, options)).catch((error) => {
+      if (import.meta.env.MODE === 'test') {
+        console.warn('safeFetch suppressed test-time network failure:', error);
+        return null;
+      }
+
+      console.error('Fetch failed in production:', error);
+      return null;
+    });
   };
 
   const loadData = async () => {
@@ -52,40 +61,40 @@ function App() {
         safeFetch(`${API_BASE}/openapi.yaml`)
       ]);
 
-    if (petsRes && typeof petsRes.json === 'function') {
-      const petsData = await petsRes.json().catch(() => []);
-      setPets(petsRes.ok ? petsData : []);
-    } else {
-      setPets([]);
-    }
+      if (petsRes && typeof petsRes.json === 'function') {
+        const petsData = await petsRes.json().catch(() => []);
+        setPets(petsRes.ok ? petsData : []);
+      } else {
+        setPets([]);
+      }
 
-    if (usersRes && typeof usersRes.json === 'function') {
-      const usersData = await usersRes.json().catch(() => ({ users: [] }));
-      setUsers(usersRes.ok ? (usersData.users || []) : []);
-    } else {
-      setUsers([]);
+      if (usersRes && typeof usersRes.json === 'function') {
+        const usersData = await usersRes.json().catch(() => ({ users: [] }));
+        setUsers(usersRes.ok ? (usersData.users || []) : []);
+      } else {
+        setUsers([]);
+      }
+
+      if (searchRes && typeof searchRes.json === 'function') {
+        const searchData = await searchRes.json().catch(() => null);
+        setSearchResults(searchRes.ok ? searchData : null);
+      } else {
+        setSearchResults(null);
+      }
+
+      if (specRes && typeof specRes.text === 'function') {
+        const specText = await specRes.text().catch(() => null);
+        setOpenApiSpec(specRes.ok ? specText : null);
+      } else {
+        setOpenApiSpec(null);
+      }
+
+      setLoading(false);
+      console.log('Loading complete!');
+    } catch (error) {
+      console.error('Load error:', error);
+      setLoading(false);
     }
-      
-    if (searchRes && typeof searchRes.json === 'function') {
-      const searchData = await searchRes.json().catch(() => null);
-      setSearchResults(searchRes.ok ? searchData : null);
-    } else {
-      setSearchResults(null);
-    }
-      
-    if (specRes && typeof specRes.text === 'function') {
-      const specText = await specRes.text().catch(() => null);
-      setOpenApiSpec(specRes.ok ? specText : null);
-    } else {
-      setOpenApiSpec(null);
-    }
-      
-    setLoading(false);
-    console.log('Loading complete!');
-  } catch (error) {
-    console.error('Load error:', error);
-    setLoading(false);
-  }
   };
 
   // Setup SSE for real-time events using fetch with auth headers
