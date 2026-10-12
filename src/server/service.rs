@@ -576,6 +576,47 @@ pub fn health_endpoint(res: &mut Response) -> io::Result<()> {
     Ok(())
 }
 
+fn header_value<'a>(headers: &'a crate::dispatcher::HeaderVec, name: &str) -> Option<&'a str> {
+    headers
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case(name))
+        .map(|(_, v)| v.as_str())
+}
+
+/// Write a live `text/event-stream` response (Epic 13.7): status and headers,
+/// then one chunk per event until the sender closes or the client goes away.
+/// `Err` only when the stream could not start (nothing has been written then).
+fn stream_sse(
+    res: &mut Response,
+    conn_stream: &mut may::net::TcpStream,
+    status: u16,
+    headers: &crate::dispatcher::HeaderVec,
+    sse_rx: crate::sse::SseReceiver,
+) -> io::Result<()> {
+    res.status_code(status as usize, "OK");
+    res.header("Content-Type: text/event-stream");
+    res.header("Cache-Control: no-cache");
+    for (k, v) in headers {
+        if k.eq_ignore_ascii_case("content-type")
+            || k.eq_ignore_ascii_case("content-length")
+            || k.eq_ignore_ascii_case("transfer-encoding")
+        {
+            continue;
+        }
+        res.header(format!("{k}: {v}"));
+    }
+    let mut writer = res.begin_chunked_stream(conn_stream)?;
+    while let Some(msg) = sse_rx.recv() {
+        let frame = crate::sse::format_data_event(&msg);
+        if writer.write_chunk(frame.as_bytes()).is_err() {
+            // N1: client disconnect — stop cleanly, no panic.
+            break;
+        }
+    }
+    let _ = writer.finish();
+    Ok(())
+}
+
 /// Dependency-aware readiness for Kubernetes probes (`GET /ready`).
 ///
 /// When `check` is `None`, returns 200 (process accepts traffic). When present,
@@ -1376,6 +1417,57 @@ impl HttpService for AppService {
             }
         }
 
+        // Application hook (for example a BFF turning its session cookie into the
+        // bearer the route's security and the proxied backends expect). It runs
+        // after the built-in endpoints and before static files, routing and
+        // security, and may answer the request itself.
+        let mut headers = headers;
+        let mut cookies = cookies;
+        if let Some(hook) = &self.request_hook {
+            let cookie_before = header_value(&headers, "cookie").map(str::to_string);
+            let answer = {
+                let mut ctx = super::RequestHookContext {
+                    method: &method,
+                    path: &path,
+                    headers: &mut headers,
+                    cookies: &cookies,
+                    query: &query_params,
+                };
+                hook(&mut ctx)
+            };
+            // Security and handlers read parsed cookies: keep them in step with a
+            // Cookie header the hook removed or replaced.
+            if header_value(&headers, "cookie") != cookie_before.as_deref() {
+                cookies = super::request::parse_cookies(&headers);
+            }
+            if let Some(answer) = answer {
+                if let Some(sse_rx) = answer.sse {
+                    _request_logger.record_http_status(answer.status);
+                    _request_logger.record_response_headers(&answer.headers);
+                    if let Err(e) =
+                        stream_sse(res, conn_stream, answer.status, &answer.headers, sse_rx)
+                    {
+                        error!(error = %e, "Failed to begin SSE chunked stream");
+                        _request_logger.respond_json_error(
+                            res,
+                            500,
+                            json!({"error": "Failed to start event stream"}),
+                        );
+                    }
+                } else {
+                    _request_logger.respond_handler(
+                        res,
+                        answer.status,
+                        answer.body,
+                        false,
+                        &answer.headers,
+                        method == Method::HEAD,
+                    );
+                }
+                return Ok(());
+            }
+        }
+
         if method == Method::GET {
             if let Some(sf) = &self.static_files {
                 let p = path.trim_start_matches('/');
@@ -1425,25 +1517,6 @@ impl HttpService for AppService {
         // Router lookup: lock-free ArcSwap load on the request path (PRD Phase 1).
         // No `RwLock::read()` → no reader queuing behind writers, no poison
         // surface. `load()` returns a `Guard<Arc<Router>>` that we auto-deref.
-        // Application hook (for example a BFF turning its session cookie into the
-        // bearer the route's security and the proxied backends expect). It runs
-        // before routing and security and may answer the request itself.
-        let mut headers = headers;
-        if let Some(hook) = &self.request_hook {
-            let mut ctx = super::RequestHookContext {
-                method: &method,
-                path: &path,
-                headers: &mut headers,
-                cookies: &cookies,
-                query: &query_params,
-            };
-            if let Some(answer) = hook(&mut ctx) {
-                write_handler_response(res, answer.status, answer.body, false, &answer.headers);
-                _request_logger.record_http_status(answer.status);
-                return Ok(());
-            }
-        }
-
         let route_opt = self.router.load().route(method.clone(), &path);
 
         // CORS preflight (Fetch standard): an OPTIONS carrying Origin and
@@ -2093,37 +2166,13 @@ impl HttpService for AppService {
                         // Epic 13.7: live flush text/event-stream via chunked encoding.
                         _request_logger.record_http_status(hr.status);
                         _request_logger.record_response_headers(&headers);
-                        res.status_code(hr.status as usize, "OK");
-                        res.header("Content-Type: text/event-stream");
-                        res.header("Cache-Control: no-cache");
-                        for (k, v) in &headers {
-                            if k.eq_ignore_ascii_case("content-type")
-                                || k.eq_ignore_ascii_case("content-length")
-                                || k.eq_ignore_ascii_case("transfer-encoding")
-                            {
-                                continue;
-                            }
-                            res.header(format!("{k}: {v}"));
-                        }
-                        match res.begin_chunked_stream(conn_stream) {
-                            Ok(mut writer) => {
-                                while let Some(msg) = sse_rx.recv() {
-                                    let frame = crate::sse::format_data_event(&msg);
-                                    if writer.write_chunk(frame.as_bytes()).is_err() {
-                                        // N1: client disconnect — stop cleanly, no panic.
-                                        break;
-                                    }
-                                }
-                                let _ = writer.finish();
-                            }
-                            Err(e) => {
-                                error!(error = %e, "Failed to begin SSE chunked stream");
-                                _request_logger.respond_json_error(
-                                    res,
-                                    500,
-                                    json!({"error": "Failed to start event stream"}),
-                                );
-                            }
+                        if let Err(e) = stream_sse(res, conn_stream, hr.status, &headers, sse_rx) {
+                            error!(error = %e, "Failed to begin SSE chunked stream");
+                            _request_logger.respond_json_error(
+                                res,
+                                500,
+                                json!({"error": "Failed to start event stream"}),
+                            );
                         }
                     } else {
                         _request_logger

@@ -8,7 +8,11 @@
 //! (a CSRF refusal, a session store outage), and the route never runs.
 //!
 //! The hook runs after the built-in endpoints (`/health`, `/ready`, `/metrics`,
-//! docs) and before routing, CORS preflight handling and security.
+//! docs) and before static files, routing, CORS preflight handling and
+//! security. A `Cookie` header it changes is reparsed, so security and
+//! handlers see the same cookies the hook left. Its answer follows the same
+//! rules as a handler's: no body on `HEAD`, and a live SSE response
+//! ([`HandlerResponse::sse`]) is streamed.
 
 use crate::dispatcher::{HandlerResponse, HeaderVec};
 use crate::router::ParamVec;
@@ -64,8 +68,11 @@ impl RequestHookContext<'_> {
     /// Replace every header called `name` (case-insensitive) with one `value`.
     pub fn set_header(&mut self, name: &str, value: impl Into<String>) {
         self.remove_header(name);
-        self.headers
-            .push((Arc::from(name.to_ascii_lowercase()), value.into()));
+        // Interned: a hook sets the same few names (authorization) on every request.
+        self.headers.push((
+            super::header_intern::intern_header_name(name.as_bytes()),
+            value.into(),
+        ));
     }
 
     /// Remove every header called `name` (case-insensitive).

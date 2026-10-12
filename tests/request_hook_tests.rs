@@ -38,9 +38,11 @@ struct ApiKeyProvider;
 impl SecurityProvider for ApiKeyProvider {
     fn validate(&self, scheme: &SecurityScheme, _scopes: &[String], req: &SecurityRequest) -> bool {
         match scheme {
-            SecurityScheme::ApiKey { name, .. } => req
-                .get_header(&name.to_ascii_lowercase())
-                .is_some_and(|v| v == "test123"),
+            SecurityScheme::ApiKey { name, .. } => {
+                req.get_header(&name.to_ascii_lowercase())
+                    .is_some_and(|v| v == "test123")
+                    || req.get_cookie("session").is_some_and(|v| v == "test123")
+            }
             _ => false,
         }
     }
@@ -156,4 +158,92 @@ fn without_a_hook_nothing_changes() {
     let f = start(None);
     assert_eq!(status(&get(&f, "/pets", "X-API-Key: test123\r\n")), 200);
     assert_eq!(status(&get(&f, "/pets", "")), 401);
+}
+
+fn send(f: &Fixture, method: &str, path: &str, extra: &str) -> String {
+    let port = f.addr.port();
+    send_request(
+        &f.addr,
+        &format!("{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n{extra}\r\n"),
+    )
+}
+
+#[test]
+fn a_hook_answer_to_head_has_no_body() {
+    let f = start(Some(session_hook()));
+    let resp = send(&f, "HEAD", "/hooked", "");
+    assert_eq!(status(&resp), 418, "{resp}");
+    assert!(
+        !resp.contains("by the hook"),
+        "HEAD must not carry a body: {resp}"
+    );
+}
+
+#[test]
+fn cookies_follow_the_cookie_header_the_hook_leaves() {
+    // Without a hook the cookie authenticates.
+    let plain = start(None);
+    assert_eq!(
+        status(&send(&plain, "GET", "/pets", "Cookie: session=test123\r\n")),
+        200
+    );
+    drop(plain);
+    // A hook that removes the Cookie header revokes it for security too.
+    let strip: RequestHook = Arc::new(|ctx| {
+        ctx.remove_header("cookie");
+        None
+    });
+    let f = start(Some(strip));
+    assert_eq!(
+        status(&send(&f, "GET", "/pets", "Cookie: session=test123\r\n")),
+        401
+    );
+    drop(f);
+    // And a Cookie header the hook sets is what security sees.
+    let set: RequestHook = Arc::new(|ctx| {
+        ctx.set_header("Cookie", "session=test123");
+        None
+    });
+    let f = start(Some(set));
+    assert_eq!(status(&send(&f, "GET", "/pets", "")), 200);
+}
+
+#[test]
+fn the_hook_runs_before_static_files() {
+    let plain = start(None);
+    assert_eq!(status(&send(&plain, "GET", "/favicon.svg", "")), 200);
+    drop(plain);
+    let deny: RequestHook = Arc::new(|ctx| {
+        (ctx.path == "/favicon.svg")
+            .then(|| HandlerResponse::json(403, serde_json::json!({ "error": "no" })))
+    });
+    let f = start(Some(deny));
+    assert_eq!(status(&send(&f, "GET", "/favicon.svg", "")), 403);
+}
+
+#[test]
+fn a_hook_can_answer_with_a_live_event_stream() {
+    let hook: RequestHook = Arc::new(|ctx| {
+        if ctx.path != "/events" {
+            return None;
+        }
+        let (tx, rx) = brrtrouter::sse::channel();
+        std::thread::spawn(move || {
+            tx.send("one");
+            tx.send("two");
+        });
+        Some(HandlerResponse::sse_live(rx))
+    });
+    let f = start(Some(hook));
+    let resp = send(&f, "GET", "/events", "");
+    assert_eq!(status(&resp), 200, "{resp}");
+    assert!(
+        resp.to_ascii_lowercase()
+            .contains("content-type: text/event-stream"),
+        "{resp}"
+    );
+    assert!(
+        resp.contains("data: one") && resp.contains("data: two"),
+        "{resp}"
+    );
 }
