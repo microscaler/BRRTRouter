@@ -117,6 +117,27 @@ impl RunAppBuilder {
             .ok_or_else(|| io::Error::other("OpenAPI spec path contains invalid UTF-8"))?;
         let (routes, schemes, _slug) = crate::spec::load_spec_full(spec_str)
             .map_err(|e| io::Error::other(format!("failed to load OpenAPI spec: {e}")))?;
+        let undefined = super::observability::undefined_security_schemes(&routes, &schemes);
+        if !undefined.is_empty() {
+            let list = undefined
+                .iter()
+                .map(|(scheme, route)| format!("{scheme} (e.g. {route})"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let message = format!(
+                "OpenAPI spec {spec_str} requires security schemes it does not define: {list}. Every \
+                 request to those routes would answer 401. Define them under \
+                 components.securitySchemes, or set BRRTR_ALLOW_UNDEFINED_SECURITY_SCHEMES=1 to \
+                 start anyway"
+            );
+            if std::env::var("BRRTR_ALLOW_UNDEFINED_SECURITY_SCHEMES")
+                .is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            {
+                tracing::error!(%message, "Starting with undefined security schemes");
+            } else {
+                return Err(io::Error::other(message));
+            }
+        }
 
         let mut dispatcher = Dispatcher::new();
         let metrics = Arc::new(MetricsMiddleware::new());
@@ -211,6 +232,25 @@ impl RunAppBuilder {
         service.set_keep_alive(enable, timeout, max);
 
         register_security_from_config(&mut service, &app_config, args.test_api_key.as_deref());
+        // A defined scheme that routes require but no provider serves refuses every request too.
+        let mut unserved: Vec<&str> = routes
+            .iter()
+            .flat_map(|route| route.security.iter())
+            .flat_map(|req| req.0.keys().map(String::as_str))
+            .filter(|name| {
+                service.security_schemes.contains_key(*name)
+                    && !service.security_providers.contains_key(*name)
+            })
+            .collect();
+        unserved.sort_unstable();
+        unserved.dedup();
+        if !unserved.is_empty() {
+            tracing::error!(
+                schemes = %unserved.join(","),
+                "Routes require security schemes with no provider configured (config.yaml \
+                 security.*): every request to them will answer 401"
+            );
+        }
 
         let port = app_config
             .port

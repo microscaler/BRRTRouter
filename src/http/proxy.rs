@@ -502,6 +502,15 @@ fn send_downstream(
             http_legacy::header::HeaderValue::from_static("identity"),
         );
     }
+    // W3C trace context: this hop is the downstream request's parent (replacing the client's).
+    if let Some(traceparent) = may_tracing::traceparent_of_current() {
+        if let Ok(value) = http_legacy::header::HeaderValue::from_str(&traceparent) {
+            proxy_req.headers_mut().insert(
+                http_legacy::header::HeaderName::from_static("traceparent"),
+                value,
+            );
+        }
+    }
 
     if proxy_req
         .headers()

@@ -2949,7 +2949,10 @@ version = "0.1.1"
 source = "git+https://github.com/microscaler/may_tracing.git?tag=v0.1.1#121de43e6e5e96d45f3339a238150804070a4be8"
 dependencies = [
  "may",
+ "opentelemetry",
+ "opentelemetry_sdk",
  "tracing",
+ "tracing-opentelemetry",
 ]
 
 [[package]]

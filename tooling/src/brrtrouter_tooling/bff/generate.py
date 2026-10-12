@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from brrtrouter_tooling.bff.components import merge_components_and_security
+from brrtrouter_tooling.bff.components import (
+    merge_components_and_security,
+    require_defined_security_schemes,
+)
 from brrtrouter_tooling.bff.config import load_suite_config
 from brrtrouter_tooling.bff.merge import merge_sub_service_specs
 from brrtrouter_tooling.helpers import validate_openapi_spec
@@ -57,6 +60,7 @@ def generate_bff_spec(
 
     if "metadata" in config and "servers" in config["metadata"]:
         bff["servers"] = config["metadata"]["servers"]
+    require_defined_security_schemes(bff, str(suite_config_path))
 
     out = (
         output_path

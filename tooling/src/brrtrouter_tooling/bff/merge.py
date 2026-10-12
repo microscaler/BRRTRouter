@@ -323,6 +323,11 @@ def merge_sub_service_specs(
     param_origin: dict[str, str] = {}
     operation_origin: dict[str, tuple[str, str, str]] = {}
 
+    from brrtrouter_tooling.bff.components import collect_security_schemes
+
+    service_schemes = collect_security_schemes(sub_services)
+    if service_schemes:
+        bff["components"]["securitySchemes"] = service_schemes
     for sname, cfg in sorted(sub_services.items()):
         spec_path = cfg.get("spec_path")
         base_path = cfg.get("base_path", f"/api/{sname}")

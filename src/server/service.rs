@@ -1114,13 +1114,51 @@ impl HttpService for AppService {
             /// Redacted response headers as JSON object string (set on respond_*).
             response_headers: Option<String>,
             span: Span,
+            /// Matched route template (`/orders/{id}`), once routed.
+            route: Option<String>,
         }
 
         impl RequestLogger {
             fn record_http_status(&mut self, status: u16) {
                 self.http_status = Some(status);
                 self.span.record("status", status);
-                self.span.record("http.status_code", status);
+                self.span.record("http.response.status_code", status);
+            }
+
+            /// Why a 4xx/5xx happened, from its JSON body: on the span, and at WARN once a
+            /// minute per (method, route, status, reason). 5xx also marks the span an error.
+            fn record_failure(&self, status: u16, body: &serde_json::Value) {
+                if status < 400 {
+                    return;
+                }
+                let reason = super::observability::error_reason(body);
+                if let Some(reason) = reason.as_deref() {
+                    self.span.record("brrtrouter.error.reason", reason);
+                }
+                if status >= 500 {
+                    self.span.record("error.type", status.to_string().as_str());
+                    self.span.record(
+                        "otel.status_description",
+                        reason.as_deref().unwrap_or("server error"),
+                    );
+                }
+                let route = self.route.as_deref().unwrap_or(self.path.as_str());
+                let key = format!(
+                    "{} {} {} {}",
+                    self.method,
+                    route,
+                    status,
+                    reason.as_deref().unwrap_or("")
+                );
+                if super::observability::first_in_window(&key) {
+                    warn!(
+                        method = %self.method,
+                        route = %route,
+                        status = status,
+                        reason = reason.as_deref().unwrap_or(""),
+                        "Request refused or failed (logged once a minute per route, status and reason)"
+                    );
+                }
             }
 
             fn record_response_headers(&mut self, headers: &crate::dispatcher::HeaderVec) {
@@ -1134,6 +1172,7 @@ impl HttpService for AppService {
                 body: serde_json::Value,
             ) {
                 self.record_http_status(status);
+                self.record_failure(status, &body);
                 // JSON errors use default Content-Type only; still record empty map
                 // so Discover always shows the field on completed requests.
                 if self.response_headers.is_none() {
@@ -1154,6 +1193,7 @@ impl HttpService for AppService {
                 omit_body: bool,
             ) {
                 self.record_http_status(status);
+                self.record_failure(status, &body);
                 self.record_response_headers(headers);
                 write_handler_response_with_body_policy(
                     res, status, body, is_sse, headers, omit_body,
@@ -1278,8 +1318,12 @@ impl HttpService for AppService {
             .unwrap_or("");
 
         // Create a span for this request with key fields
+        // Span fields follow the OpenTelemetry HTTP server conventions; `otel.name` becomes
+        // "{method} {route}" once the request is routed. The `brrtrouter.*` fields say why a
+        // request was refused or failed (see `super::observability`).
         let span = info_span!(
             "http_request",
+            otel.name = %method,
             method = %method,
             path = %path,
             tenant_id = %tenant_id,
@@ -1287,10 +1331,29 @@ impl HttpService for AppService {
             status = tracing::field::Empty,
             duration_ms = tracing::field::Empty,
             stack_used_kb = tracing::field::Empty,
+            "http.request.method" = %method,
+            "http.route" = tracing::field::Empty,
+            "http.response.status_code" = tracing::field::Empty,
+            "error.type" = tracing::field::Empty,
+            otel.status_description = tracing::field::Empty,
+            "brrtrouter.error.reason" = tracing::field::Empty,
+            "brrtrouter.auth.result" = tracing::field::Empty,
+            "brrtrouter.auth.schemes" = tracing::field::Empty,
+            "brrtrouter.auth.reason" = tracing::field::Empty,
+            "brrtrouter.validation.error" = tracing::field::Empty,
+            "brrtrouter.hook" = tracing::field::Empty,
         );
         // ADR-0001: never entered. The span is the coroutine's context (may_tracing) for the
         // rest of this connection turn; the dispatcher hands it to the handler coroutine on
         // the HandlerRequest, and RequestLogger records status/duration on drop.
+        // Join the caller's trace (W3C traceparent): a BFF hop and the service it calls are one trace.
+        if let Some(parent) = super::observability::remote_parent(
+            header_value(&headers, "traceparent"),
+            header_value(&headers, "tracestate"),
+        ) {
+            use tracing_opentelemetry::OpenTelemetrySpanExt;
+            let _ = span.set_parent(parent);
+        }
         let _ctx = may_tracing::set_current(span.clone());
 
         // Calculate header size (always accurate)
@@ -1324,6 +1387,7 @@ impl HttpService for AppService {
             request_headers: request_headers_log.clone(),
             response_headers: None,
             span: span.clone(),
+            route: None,
         };
 
         // Log incoming request with redacted headers (TooManyHeaders / triage).
@@ -1434,6 +1498,7 @@ impl HttpService for AppService {
         let mut cookies = cookies;
         if let Some(hook) = &self.request_hook {
             let cookie_before = header_value(&headers, "cookie").map(str::to_string);
+            let had_authorization = header_value(&headers, "authorization").is_some();
             let answer = {
                 let mut ctx = super::RequestHookContext {
                     method: &method,
@@ -1449,6 +1514,16 @@ impl HttpService for AppService {
             if header_value(&headers, "cookie") != cookie_before.as_deref() {
                 cookies = super::request::parse_cookies(&headers);
             }
+            let has_authorization = header_value(&headers, "authorization").is_some();
+            let hook_outcome = match (&answer, had_authorization, has_authorization) {
+                (Some(answer), _, _) => format!("answered {}", answer.status),
+                (None, false, true) => "authorization set".to_string(),
+                (None, true, false) => "authorization removed".to_string(),
+                (None, _, _) => "continued".to_string(),
+            };
+            _request_logger
+                .span
+                .record("brrtrouter.hook", hook_outcome.as_str());
             if let Some(answer) = answer {
                 // HEAD gets headers only: a stream answer's receiver is dropped unread (its
                 // producer sees the client gone) and the answer is written without a body.
@@ -1573,6 +1648,14 @@ impl HttpService for AppService {
         }
         if let Some(mut route_match) = route_opt {
             route_match.query_params = query_params.clone();
+            {
+                let route = route_match.route.path_pattern.to_string();
+                _request_logger
+                    .span
+                    .record("otel.name", format!("{method} {route}").as_str());
+                _request_logger.span.record("http.route", route.as_str());
+                _request_logger.route = Some(route);
+            }
 
             // Story 12.2: per-route hard cap (schema estimate / x-brrtrouter-body-size-bytes).
             let route_limit = super::body_limit::effective_inbound_body_limit(
@@ -1611,6 +1694,9 @@ impl HttpService for AppService {
 
             let mut authorized = route_match.route.security.is_empty();
             let mut insufficient_scope = false;
+            // Why BRRTRouter could not evaluate a requirement; a provider records its own
+            // reason (e.g. token_expired) on the request span while validating.
+            let mut auth_reason: Option<String> = None;
 
             // Helper to perform the actual auth check for both pre-resolved and raw paths
             fn validate_requirements(
@@ -1715,6 +1801,7 @@ impl HttpService for AppService {
                                         scheme_name = %scheme_name,
                                         "Security scheme not found"
                                     );
+                                    auth_reason = Some(format!("scheme_undefined: {scheme_name}"));
                                     ok = false;
                                     break;
                                 }
@@ -1729,6 +1816,7 @@ impl HttpService for AppService {
                                         scheme_name = %scheme_name,
                                         "Security provider not found"
                                     );
+                                    auth_reason = Some(format!("provider_missing: {scheme_name}"));
                                     ok = false;
                                     break;
                                 }
@@ -1794,6 +1882,31 @@ impl HttpService for AppService {
                 }
             }
 
+            if !route_match.route.security.is_empty() {
+                let mut schemes: Vec<&str> = route_match
+                    .route
+                    .security
+                    .iter()
+                    .flat_map(|req| req.0.keys().map(String::as_str))
+                    .collect();
+                schemes.sort_unstable();
+                schemes.dedup();
+                let span = &_request_logger.span;
+                span.record("brrtrouter.auth.schemes", schemes.join(",").as_str());
+                span.record(
+                    "brrtrouter.auth.result",
+                    if authorized {
+                        "allowed"
+                    } else if insufficient_scope {
+                        "insufficient_scope"
+                    } else {
+                        "denied"
+                    },
+                );
+                if let Some(reason) = auth_reason.as_deref() {
+                    span.record("brrtrouter.auth.reason", reason);
+                }
+            }
             if !authorized {
                 if let Some(metrics) = &self.metrics {
                     metrics.inc_auth_failure();
@@ -2033,6 +2146,10 @@ impl HttpService for AppService {
                         schema_path = %schema_path,
                         invalid_fields = ?invalid_fields,
                         "Request schema validation failed"
+                    );
+                    _request_logger.span.record(
+                        "brrtrouter.validation.error",
+                        super::observability::truncate(error_details.join("; ")).as_str(),
                     );
 
                     _request_logger.respond_json_error(

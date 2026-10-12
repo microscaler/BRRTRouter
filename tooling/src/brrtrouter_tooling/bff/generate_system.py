@@ -90,6 +90,9 @@ def generate_system_bff_spec(
         if pname not in bff["components"]["parameters"]:
             bff["components"]["parameters"][pname] = pdef
 
+    from brrtrouter_tooling.bff.components import require_defined_security_schemes
+
+    require_defined_security_schemes(bff, f"{system} system BFF")
     out.parent.mkdir(parents=True, exist_ok=True)
     if out.exists():
         out.unlink()

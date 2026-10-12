@@ -76,7 +76,6 @@
 //! # }
 //! ```
 
-/// HTTP server implementation using may_minihttp
 pub mod app_config;
 /// Inbound request-body size limits (Story 12.2)
 pub mod body_limit;
@@ -87,6 +86,8 @@ pub mod http_server;
 pub mod multipart;
 /// Stream multipart file parts to disk (Epic 13.4)
 pub mod multipart_stream;
+/// HTTP server implementation using may_minihttp
+pub mod observability;
 /// Pre-handler OpenAPI parameter validation (Story 12.4)
 pub mod param_validation;
 /// Request parsing and parameter extraction
