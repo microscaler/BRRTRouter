@@ -29,20 +29,27 @@ function App() {
   const [moneyTestResult, setMoneyTestResult] = createSignal(null);
   const [moneyTestLoading, setMoneyTestLoading] = createSignal(false);
 
+  const safeFetch = (url, options = undefined) => {
+    if (typeof fetch !== 'function') {
+      return Promise.resolve(null);
+    }
+    return fetch(url, options).catch(() => null);
+  };
+
   const loadData = async () => {
     console.log('Loading data from:', API_BASE);
     try {
       const [petsRes, usersRes, searchRes, specRes] = await Promise.all([
-        fetch(`${API_BASE}/pets`, {
+        safeFetch(`${API_BASE}/pets`, {
           headers: { 'X-API-Key': API_KEY }
-      }).catch(() => null),
-        fetch(`${API_BASE}/users`, {
+        }),
+        safeFetch(`${API_BASE}/users`, {
           headers: { 'X-API-Key': API_KEY }
-      }).catch(() => null),
-        fetch(`${API_BASE}/search?q=test`, {
+        }),
+        safeFetch(`${API_BASE}/search?q=test`, {
           headers: { 'X-API-Key': API_KEY }
-      }).catch(() => null),
-      fetch(`${API_BASE}/openapi.yaml`).catch(() => null)
+        }),
+        safeFetch(`${API_BASE}/openapi.yaml`)
       ]);
 
     if (petsRes && typeof petsRes.json === 'function') {
@@ -88,9 +95,9 @@ function App() {
     
     const connectSSE = async () => {
       try {
-        const response = await fetch(`${API_BASE}/events`, {
+        const response = await safeFetch(`${API_BASE}/events`, {
           headers: { 'X-API-Key': API_KEY }
-        }).catch(() => null);
+        });
         
         if (!response || !response.ok) {
           console.log('SSE connection failed:', response?.status ?? 0);
