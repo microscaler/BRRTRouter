@@ -130,3 +130,6 @@ pub use app_config::{
 pub use http_server::{HttpServer, ServerHandle};
 pub use run_app::{RegisterHandlersFn, RunAppArgs, RunAppBuilder, RunAppHooks};
 pub use service::{health_endpoint, ready_endpoint, AppService, SharedDispatcher, SharedRouter};
+
+mod request_hook;
+pub use request_hook::{RequestHook, RequestHookContext};

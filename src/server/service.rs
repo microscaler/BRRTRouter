@@ -152,6 +152,8 @@ pub struct AppService {
     pub extra_prometheus: Option<Arc<dyn Fn() -> String + Send + Sync>>,
     /// Optional dependency readiness check for `GET /ready`.
     pub readiness_check: Option<Arc<dyn Fn() -> Result<(), String> + Send + Sync>>,
+    /// Application hook run before routing and security ([`super::RequestHook`]).
+    pub request_hook: Option<super::RequestHook>,
     /// Optional memory tracking middleware
     pub memory: Option<Arc<crate::middleware::MemoryMiddleware>>,
     /// Path to the OpenAPI specification file
@@ -209,6 +211,7 @@ impl Clone for AppService {
             metrics: self.metrics.clone(),
             extra_prometheus: self.extra_prometheus.clone(),
             readiness_check: self.readiness_check.clone(),
+            request_hook: self.request_hook.clone(),
             memory: self.memory.clone(),
             spec_path: self.spec_path.clone(),
             static_files: self.static_files.clone(),
@@ -256,6 +259,7 @@ impl AppService {
             metrics: None,
             extra_prometheus: None,
             readiness_check: None,
+            request_hook: None,
             memory: None,
             spec_path,
             static_files: static_dir.map(StaticFiles::new),
@@ -308,6 +312,12 @@ impl AppService {
         check: Option<Arc<dyn Fn() -> Result<(), String> + Send + Sync>>,
     ) {
         self.readiness_check = check;
+    }
+
+    /// Install an application hook that sees every request before routing and
+    /// security, and may change its headers or answer it ([`super::RequestHook`]).
+    pub fn set_request_hook(&mut self, hook: Option<super::RequestHook>) {
+        self.request_hook = hook;
     }
 
     pub fn set_metrics_middleware(&mut self, metrics: Arc<MetricsMiddleware>) {
@@ -1415,6 +1425,24 @@ impl HttpService for AppService {
         // Router lookup: lock-free ArcSwap load on the request path (PRD Phase 1).
         // No `RwLock::read()` → no reader queuing behind writers, no poison
         // surface. `load()` returns a `Guard<Arc<Router>>` that we auto-deref.
+        // Application hook (for example a BFF turning its session cookie into the
+        // bearer the route's security and the proxied backends expect). It runs
+        // before routing and security and may answer the request itself.
+        let mut headers = headers;
+        if let Some(hook) = &self.request_hook {
+            let mut ctx = super::RequestHookContext {
+                method: &method,
+                path: &path,
+                headers: &mut headers,
+                cookies: &cookies,
+            };
+            if let Some(answer) = hook(&mut ctx) {
+                write_handler_response(res, answer.status, answer.body, false, &answer.headers);
+                _request_logger.record_http_status(answer.status);
+                return Ok(());
+            }
+        }
+
         let route_opt = self.router.load().route(method.clone(), &path);
 
         // CORS preflight (Fetch standard): an OPTIONS carrying Origin and

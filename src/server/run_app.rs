@@ -44,6 +44,8 @@ pub struct RunAppHooks {
     /// Optional dependency readiness for `GET /ready`. `Ok(())` → 200; `Err` → 503.
     /// When unset, `/ready` returns 200 (same as shallow `/health`).
     pub readiness_check: Option<Arc<dyn Fn() -> Result<(), String> + Send + Sync>>,
+    /// Runs before routing and security on every request ([`super::RequestHook`]).
+    pub request_hook: Option<super::RequestHook>,
 }
 
 /// Registers gen + impl handlers. Must be `unsafe` because it spawns coroutines.
@@ -183,6 +185,9 @@ impl RunAppBuilder {
         }
         if let Some(ready) = hooks.readiness_check {
             service.set_readiness_check(Some(ready));
+        }
+        if let Some(hook) = hooks.request_hook {
+            service.set_request_hook(Some(hook));
         }
         service.set_memory_middleware(memory);
 
