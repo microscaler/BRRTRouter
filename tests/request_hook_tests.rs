@@ -95,9 +95,10 @@ fn status(resp: &str) -> u16 {
 fn session_hook() -> RequestHook {
     Arc::new(|ctx| {
         if ctx.path == "/hooked" {
+            let echo = ctx.query_param("echo").unwrap_or("").to_string();
             return Some(HandlerResponse::json(
                 418,
-                serde_json::json!({ "answered": "by the hook" }),
+                serde_json::json!({ "answered": "by the hook", "echo": echo }),
             ));
         }
         if ctx.cookie("session") == Some("good") {
