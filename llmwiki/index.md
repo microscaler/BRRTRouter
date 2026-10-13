@@ -29,6 +29,7 @@
 
 ## Topics
 
+- [`topics/http-server-metrics.md`](./topics/http-server-metrics.md) — `/metrics`: OpenTelemetry HTTP server histogram, process collector, recording model.
 - [Schema validation pipeline](./topics/schema-validation-pipeline.md)
 - [Auto-research perf loop](./topics/auto-research-perf-loop.md) — cron / background perf iterations; charter in `auto-research/docs/`
 - [Runtime stack map](./topics/runtime-stack-map.md) — spec → router → dispatcher → `server/service`

@@ -65,8 +65,8 @@ data:
             "datasource": "Prometheus",
             "targets": [
               {
-                "expr": "rate(brrtrouter_requests_total[1m])",
-                "legendFormat": "{{method}} {{path}}",
+                "expr": "rate(http_server_request_duration_seconds_count[1m])",
+                "legendFormat": "{{http_request_method}} {{http_route}}",
                 "refId": "A"
               }
             ],
@@ -91,17 +91,17 @@ data:
             "datasource": "Prometheus",
             "targets": [
               {
-                "expr": "histogram_quantile(0.50, rate(brrtrouter_request_duration_seconds_bucket[1m]))",
+                "expr": "histogram_quantile(0.50, sum by (le) (rate(http_server_request_duration_seconds_bucket[1m])))",
                 "legendFormat": "p50",
                 "refId": "A"
               },
               {
-                "expr": "histogram_quantile(0.95, rate(brrtrouter_request_duration_seconds_bucket[1m]))",
+                "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket[1m])))",
                 "legendFormat": "p95",
                 "refId": "B"
               },
               {
-                "expr": "histogram_quantile(0.99, rate(brrtrouter_request_duration_seconds_bucket[1m]))",
+                "expr": "histogram_quantile(0.99, sum by (le) (rate(http_server_request_duration_seconds_bucket[1m])))",
                 "legendFormat": "p99",
                 "refId": "C"
               }
@@ -127,7 +127,7 @@ data:
             "datasource": "Prometheus",
             "targets": [
               {
-                "expr": "max_over_time(brrtrouter_active_requests[1m])",
+                "expr": "max_over_time(sum(http_server_active_requests)[1m:])",
                 "legendFormat": "Peak (1m)",
                 "refId": "A"
               }
@@ -157,7 +157,7 @@ data:
             "datasource": "Prometheus",
             "targets": [
               {
-                "expr": "sum(brrtrouter_requests_total)",
+                "expr": "sum(http_server_request_duration_seconds_count)",
                 "refId": "A"
               }
             ],
@@ -179,7 +179,7 @@ data:
             "datasource": "Prometheus",
             "targets": [
               {
-                "expr": "rate(brrtrouter_requests_total{status=~\"5..\"}[1m])",
+                "expr": "rate(http_server_request_duration_seconds_count{http_response_status_code=~\"5..\"}[1m])",
                 "refId": "A"
               }
             ],
@@ -246,8 +246,8 @@ data:
             "datasource": "Prometheus",
             "targets": [
               {
-                "expr": "sum by(status) (rate(brrtrouter_requests_total[5m]))",
-                "legendFormat": "{{status}}",
+                "expr": "sum by(http_response_status_code) (rate(http_server_request_duration_seconds_count[5m]))",
+                "legendFormat": "{{http_response_status_code}}",
                 "refId": "A"
               }
             ]
@@ -265,8 +265,8 @@ data:
             "datasource": "Prometheus",
             "targets": [
               {
-                "expr": "topk(10, sum by(path) (rate(brrtrouter_requests_total[5m])))",
-                "legendFormat": "{{path}}",
+                "expr": "topk(10, sum by(http_route) (rate(http_server_request_duration_seconds_count[5m])))",
+                "legendFormat": "{{http_route}}",
                 "refId": "A"
               }
             ],
@@ -288,8 +288,8 @@ data:
             "datasource": "Prometheus",
             "targets": [
               {
-                "expr": "topk(10, sum by(path) (rate(brrtrouter_requests_total{status!~\"2..\"}[5m])))",
-                "legendFormat": "{{path}}",
+                "expr": "topk(10, sum by(http_route) (rate(http_server_request_duration_seconds_count{http_response_status_code!~\"2..\"}[5m])))",
+                "legendFormat": "{{http_route}}",
                 "refId": "A"
               }
             ],
@@ -334,7 +334,7 @@ data:
             "datasource": "Prometheus",
             "targets": [
               {
-                "expr": "sum(rate(brrtrouter_request_duration_seconds_bucket[1m])) by (le)",
+                "expr": "sum(rate(http_server_request_duration_seconds_bucket[1m])) by (le)",
                 "format": "heatmap",
                 "legendFormat": "{{le}}",
                 "refId": "A"
@@ -412,7 +412,7 @@ data:
             "datasource": "Prometheus",
             "targets": [
               {
-                "expr": "sum(rate(brrtrouter_requests_total[1m]))",
+                "expr": "sum(rate(http_server_request_duration_seconds_count[1m]))",
                 "legendFormat": "Total",
                 "refId": "A"
               }

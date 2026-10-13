@@ -41,10 +41,12 @@ fn curl_metrics_exposes_prometheus() {
     };
     let ex = run_http_with(&format!("{}/metrics", curl_harness::base_url()), &opts);
     assert!(ex.success, "GET /metrics failed: {}", ex.headers_dump);
-    assert!(ex.body.contains("brrtrouter_requests_total"));
-    assert!(ex.body.contains("brrtrouter_top_level_requests_total"));
+    assert!(ex
+        .body
+        .contains("http_server_request_duration_seconds_count{"));
+    assert!(ex.body.contains("http_server_active_requests{"));
+    assert!(ex.body.contains("process_resident_memory_bytes "));
     assert!(ex.body.contains("brrtrouter_auth_failures_total"));
-    assert!(ex.body.contains("brrtrouter_request_latency_seconds"));
 }
 
 #[test]

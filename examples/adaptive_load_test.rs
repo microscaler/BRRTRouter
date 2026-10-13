@@ -329,7 +329,7 @@ async fn get_system_metrics(
     // Query 1: Error rate (non-2xx responses / total responses * 100)
     // Use 30s window to focus on most recent data from the just-completed test
     let error_rate_query = urlencoding::encode(
-        "100 * (sum(rate(brrtrouter_requests_total{status!~\"2..\"}[30s])) or vector(0)) / (sum(rate(brrtrouter_requests_total[30s])) or vector(1))"
+        "100 * (sum(rate(http_server_request_duration_seconds_count{http_response_status_code!~\"2..\"}[30s])) or vector(0)) / (sum(rate(http_server_request_duration_seconds_count[30s])) or vector(1))"
     );
     let error_rate_url = format!("{prometheus_url}/api/v1/query?query={error_rate_query}");
     let error_rate_resp = client.get(&error_rate_url).send().await?;
@@ -343,7 +343,7 @@ async fn get_system_metrics(
 
     // Query 2: P99 latency
     let p99_query = urlencoding::encode(
-        "histogram_quantile(0.99, rate(brrtrouter_request_duration_seconds_bucket[1m]))",
+        "histogram_quantile(0.99, sum by (le) (rate(http_server_request_duration_seconds_bucket[1m])))",
     );
     let p99_url = format!("{prometheus_url}/api/v1/query?query={p99_query}");
     let p99_resp = client.get(&p99_url).send().await?;
@@ -356,7 +356,7 @@ async fn get_system_metrics(
         .unwrap_or(0.0);
 
     // Query 3: Active requests (peak over 1m window)
-    let active_query = urlencoding::encode("max_over_time(brrtrouter_active_requests[1m])");
+    let active_query = urlencoding::encode("max_over_time(sum(http_server_active_requests)[1m:])");
     let active_url = format!("{prometheus_url}/api/v1/query?query={active_query}");
     let active_resp = client.get(&active_url).send().await?;
     let active_json: serde_json::Value = active_resp.json().await?;
@@ -368,7 +368,8 @@ async fn get_system_metrics(
         .unwrap_or(0.0);
 
     // Query 4: Throughput (requests per second)
-    let rps_query = urlencoding::encode("sum(rate(brrtrouter_requests_total[1m]))");
+    let rps_query =
+        urlencoding::encode("sum(rate(http_server_request_duration_seconds_count[1m]))");
     let rps_url = format!("{prometheus_url}/api/v1/query?query={rps_query}");
     let rps_resp = client.get(&rps_url).send().await?;
     let rps_json: serde_json::Value = rps_resp.json().await?;

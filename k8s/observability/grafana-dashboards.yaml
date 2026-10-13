@@ -94,7 +94,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "process_memory_rss_bytes",
+              "expr": "process_resident_memory_bytes",
               "refId": "A"
             }
           ],
@@ -163,7 +163,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "process_memory_heap_bytes",
+              "expr": "brrtrouter_memory_heap_bytes",
               "refId": "A"
             }
           ],
@@ -232,7 +232,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "process_memory_growth_bytes",
+              "expr": "brrtrouter_memory_growth_bytes",
               "refId": "A"
             }
           ],
@@ -301,7 +301,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "process_memory_peak_rss_bytes",
+              "expr": "brrtrouter_memory_peak_rss_bytes",
               "refId": "A"
             }
           ],
@@ -435,7 +435,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "process_memory_rss_bytes",
+              "expr": "process_resident_memory_bytes",
               "legendFormat": "RSS",
               "refId": "A"
             },
@@ -444,7 +444,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "process_memory_heap_bytes",
+              "expr": "brrtrouter_memory_heap_bytes",
               "legendFormat": "Heap",
               "refId": "B"
             },
@@ -453,7 +453,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "process_memory_vss_bytes",
+              "expr": "process_virtual_memory_bytes",
               "legendFormat": "VSS",
               "refId": "C"
             }
@@ -542,7 +542,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "rate(process_memory_rss_bytes[5m])",
+              "expr": "rate(process_resident_memory_bytes[5m])",
               "legendFormat": "RSS Growth Rate",
               "refId": "A"
             },
@@ -551,7 +551,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "rate(process_memory_heap_bytes[5m])",
+              "expr": "rate(brrtrouter_memory_heap_bytes[5m])",
               "legendFormat": "Heap Growth Rate",
               "refId": "B"
             }
@@ -809,8 +809,8 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "rate(brrtrouter_requests_total[1m])",
-              "legendFormat": "{{path}} - {{status}}",
+              "expr": "rate(http_server_request_duration_seconds_count[1m])",
+              "legendFormat": "{{http_route}} - {{http_response_status_code}}",
               "refId": "A"
             }
           ],
@@ -883,7 +883,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "increase(process_memory_rss_bytes[1h])",
+              "expr": "increase(process_resident_memory_bytes[1h])",
               "format": "table",
               "instant": true,
               "legendFormat": "Hourly Growth",
