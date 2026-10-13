@@ -13,13 +13,15 @@
 | `docs/SPIFFY_mTLS` | 10 | Security architecture/design docs |
 | `docs/tasks` | 7 | Task and PRD planning docs |
 | `docs/JSF` + `docs/JSF_COMPLIANCE.md` | 7 | Safety/performance discipline docs |
-| `docs/ADRS` | 2 | Architectural decision records |
+| `docs/ADRS` | 4 | Architectural decision records |
 | root-level docs in `docs/` | 45 | Mixed operational, architecture, performance, and audits |
 
 ## Full file inventory
 
 - `docs/ADRS/001-async-generators-and-finding-an-alternative.md`
 - `docs/ADRS/002-BFF-Implementations-for-microservices.md`
+- `docs/ADRS/003-k8s-downstream-service-proxy.md`
+- `docs/ADRS/004-no-in-process-continuous-profiling.md`
 - `docs/ARCHITECTURE.md`
 - `docs/BFF_PROXY_ANALYSIS.md`
 - `docs/BRRTRouter_OVERVIEW.md`
