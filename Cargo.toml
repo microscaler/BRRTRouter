@@ -29,7 +29,7 @@ jsonschema = { version = "0.45", default-features = false }
 serde_yaml = "0.9.33"
 toml = "1.1"
 # Needed for simple JWT parsing in security providers
-base64 = "0.22"
+base64 = "0.23"
 # OpenAPI 3.1.x types only (no PathItem::query). OAS 3.2 dual-support via promote —
 # see docs/OPENAPI_VERSION_SUPPORT.md and https://github.com/x52dev/oas3-rs/issues/300.
 # Do not bump to 0.22+ without evaluating MSRV / boolean Schema churn separately from 3.2.

@@ -562,7 +562,7 @@ dependencies = [
  "anyhow",
  "arc-swap",
  "askama",
- "base64 0.22.1",
+ "base64 0.23.1",
  "bollard",
  "bytes",
  "clap",
