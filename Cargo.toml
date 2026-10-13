@@ -66,7 +66,7 @@ may_tracing = { git = "https://github.com/microscaler/may_tracing.git", tag = "v
 opentelemetry = { version = "0.31", features = ["metrics", "trace"] }
 opentelemetry_sdk = { version = "0.31", features = ["metrics", "trace"] }
 opentelemetry-semantic-conventions = "0.31"
-tracing-opentelemetry = "0.32"
+tracing-opentelemetry = "0.34"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-appender = "0.2"
 
