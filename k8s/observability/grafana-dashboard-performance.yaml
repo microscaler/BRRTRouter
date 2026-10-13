@@ -340,7 +340,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "rate(brrtrouter_requests_total[1m]) / (rate(process_cpu_seconds_total[1m]) * 100)",
+              "expr": "rate(http_server_request_duration_seconds_count[1m]) / (rate(process_cpu_seconds_total[1m]) * 100)",
               "legendFormat": "Requests per CPU %",
               "refId": "A"
             }
@@ -488,7 +488,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "process_memory_rss_bytes",
+              "expr": "process_resident_memory_bytes",
               "legendFormat": "RSS",
               "refId": "A"
             },
@@ -497,7 +497,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "process_memory_heap_bytes",
+              "expr": "brrtrouter_memory_heap_bytes",
               "legendFormat": "Heap",
               "refId": "B"
             },
@@ -506,7 +506,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "brrtrouter_coroutine_stack_bytes * brrtrouter_active_requests",
+              "expr": "brrtrouter_coroutine_stack_bytes * sum(http_server_active_requests)",
               "legendFormat": "Stack (Active)",
               "refId": "C"
             },
@@ -515,7 +515,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "process_memory_vss_bytes",
+              "expr": "process_virtual_memory_bytes",
               "legendFormat": "VSS",
               "refId": "D"
             }
@@ -604,7 +604,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "rate(process_memory_heap_bytes[1m])",
+              "expr": "rate(brrtrouter_memory_heap_bytes[1m])",
               "legendFormat": "Heap Allocation Rate",
               "refId": "A"
             },
@@ -613,7 +613,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "rate(process_memory_rss_bytes[1m])",
+              "expr": "rate(process_resident_memory_bytes[1m])",
               "legendFormat": "RSS Growth Rate",
               "refId": "B"
             }
@@ -681,7 +681,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "rate(brrtrouter_requests_total[1m]) / (process_memory_rss_bytes / 1024 / 1024)",
+              "expr": "rate(http_server_request_duration_seconds_count[1m]) / (process_resident_memory_bytes / 1024 / 1024)",
               "legendFormat": "Requests per MB",
               "refId": "A"
             }
@@ -1021,7 +1021,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "brrtrouter_request_latency_seconds * 1000",
+              "expr": "(sum(rate(http_server_request_duration_seconds_sum[1m])) / sum(rate(http_server_request_duration_seconds_count[1m]))) * 1000",
               "legendFormat": "Latency",
               "refId": "B"
             }
@@ -1110,7 +1110,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "histogram_quantile(0.50, sum(rate(brrtrouter_request_duration_seconds_bucket[1m])) by (le)) * 1000",
+              "expr": "histogram_quantile(0.50, sum(rate(http_server_request_duration_seconds_bucket[1m])) by (le)) * 1000",
               "legendFormat": "p50",
               "refId": "A"
             },
@@ -1119,7 +1119,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "histogram_quantile(0.90, sum(rate(brrtrouter_request_duration_seconds_bucket[1m])) by (le)) * 1000",
+              "expr": "histogram_quantile(0.90, sum(rate(http_server_request_duration_seconds_bucket[1m])) by (le)) * 1000",
               "legendFormat": "p90",
               "refId": "B"
             },
@@ -1128,7 +1128,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "histogram_quantile(0.95, sum(rate(brrtrouter_request_duration_seconds_bucket[1m])) by (le)) * 1000",
+              "expr": "histogram_quantile(0.95, sum(rate(http_server_request_duration_seconds_bucket[1m])) by (le)) * 1000",
               "legendFormat": "p95",
               "refId": "C"
             },
@@ -1137,7 +1137,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "histogram_quantile(0.99, sum(rate(brrtrouter_request_duration_seconds_bucket[1m])) by (le)) * 1000",
+              "expr": "histogram_quantile(0.99, sum(rate(http_server_request_duration_seconds_bucket[1m])) by (le)) * 1000",
               "legendFormat": "p99",
               "refId": "D"
             }
@@ -1225,7 +1225,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "(process_memory_rss_bytes / (1024*1024*1024)) * 100",
+              "expr": "(process_resident_memory_bytes / (1024*1024*1024)) * 100",
               "legendFormat": "Memory Usage",
               "refId": "A"
             },
@@ -1384,7 +1384,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "brrtrouter_active_requests",
+              "expr": "sum(http_server_active_requests)",
               "legendFormat": "Active Requests",
               "refId": "A"
             },
@@ -1393,7 +1393,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum(rate(brrtrouter_requests_total{status=~\"5..\"}[1m])) / sum(rate(brrtrouter_requests_total[1m])) * 100",
+              "expr": "sum(rate(http_server_request_duration_seconds_count{http_response_status_code=~\"5..\"}[1m])) / sum(rate(http_server_request_duration_seconds_count[1m])) * 100",
               "legendFormat": "Error Rate",
               "refId": "B"
             },
@@ -1402,7 +1402,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "histogram_quantile(0.99, sum(rate(brrtrouter_request_duration_seconds_bucket[1m])) by (le)) * 1000",
+              "expr": "histogram_quantile(0.99, sum(rate(http_server_request_duration_seconds_bucket[1m])) by (le)) * 1000",
               "legendFormat": "p99 Latency",
               "refId": "C"
             }

@@ -351,7 +351,7 @@ jobs:
           curl -f -H "X-API-Key: test123" http://localhost:8080/pets || (echo "Auth test failed" && exit 1)
           
           echo "Checking per-path metrics..."
-          curl -f http://localhost:8080/metrics | grep brrtrouter_path_requests_total || (echo "Per-path metrics missing" && exit 1)
+          curl -f http://localhost:8080/metrics | grep http_server_request_duration_seconds_count || (echo "HTTP server request metrics missing" && exit 1)
           
           kill $PF_PID || true
           

@@ -367,3 +367,12 @@ Hauliage Phase 3 unblockers for Vite dev proxy and frontend-aligned BFF routes.
   rate limiting behind CORS spends no budget on preflights.
 - Details: [`cors-operations-vs-codebase.md`](./reconciliation/cors-operations-vs-codebase.md)
   item 6. CORS conformance suite 17/17.
+
+## [2026-10-13] feat | industry-standard `/metrics` (#473)
+- Request metrics are now `http_server_request_duration_seconds` (OpenTelemetry HTTP semconv: method, route template,
+  status, error_type, semconv buckets) and `http_server_active_requests`, recorded once per request by the request
+  logger. That includes pre-routing refusals, preflights (under their target route), built-ins and parse failures
+  (`_OTHER`).
+- Process metrics use the Prometheus process collector names. BRRTRouter memory views moved to `brrtrouter_memory_*`.
+  The `brrtrouter_requests_total` / `_request_duration_seconds` / `_path_*` / `_active_requests` exports are removed.
+- Details: [`topics/http-server-metrics.md`](./topics/http-server-metrics.md); mapping in `docs/METRICS.md`.
