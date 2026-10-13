@@ -111,8 +111,8 @@ data:
           "datasource": "Prometheus",
           "targets": [
             {
-              "expr": "rate(brrtrouter_requests_total[5m])",
-              "legendFormat": "{{method}} {{path}}"
+              "expr": "rate(http_server_request_duration_seconds_count[5m])",
+              "legendFormat": "{{http_request_method}} {{http_route}}"
             }
           ]
         },
@@ -129,11 +129,11 @@ data:
           "datasource": "Prometheus",
           "targets": [
             {
-              "expr": "histogram_quantile(0.95, rate(brrtrouter_request_duration_seconds_bucket[5m]))",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket[5m])))",
               "legendFormat": "p95"
             },
             {
-              "expr": "histogram_quantile(0.50, rate(brrtrouter_request_duration_seconds_bucket[5m]))",
+              "expr": "histogram_quantile(0.50, sum by (le) (rate(http_server_request_duration_seconds_bucket[5m])))",
               "legendFormat": "p50"
             }
           ]

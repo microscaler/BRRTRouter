@@ -686,74 +686,14 @@ pub fn metrics_endpoint(
     extra_prometheus: Option<&(dyn Fn() -> String + Send + Sync)>,
 ) -> io::Result<()> {
     let (stack_size, used_stack) = metrics.stack_usage();
+    let mut body = String::with_capacity(16384);
 
-    // Pre-allocate buffer with better capacity estimation
-    // Estimate: ~200 bytes per metric line × expected paths
-    let status_stats = metrics.status_stats();
-    let path_stats = metrics.path_stats();
-    let estimated_capacity = 8192 + (status_stats.len() + path_stats.len() * 4) * 200;
-    let mut body = String::with_capacity(estimated_capacity);
+    // Industry-standard names first (OpenTelemetry HTTP semantic conventions, Prometheus process collector): what
+    // Google Cloud Managed Service for Prometheus, Application Monitoring and stock dashboards read.
+    super::http_metrics::render_http(&mut body);
+    super::http_metrics::render_process(&mut body);
 
-    // Active requests (NEW - for Grafana "Active Requests" panel)
-    body.push_str(
-        "# HELP brrtrouter_active_requests Number of requests currently being processed\n",
-    );
-    body.push_str("# TYPE brrtrouter_active_requests gauge\n");
-    let _ = writeln!(
-        body,
-        "brrtrouter_active_requests {}",
-        metrics.active_requests()
-    );
-
-    // Requests with status code labels (NEW - for Grafana "Error Rate" panel)
-    body.push_str(
-        "# HELP brrtrouter_requests_total Total number of HTTP requests by path and status\n",
-    );
-    body.push_str("# TYPE brrtrouter_requests_total counter\n");
-    for ((path, status), count) in &status_stats {
-        let escaped_path = escape_prometheus_label(path);
-        let _ = writeln!(
-            body,
-            "brrtrouter_requests_total{{path=\"{escaped_path}\",status=\"{status}\"}} {count}",
-        );
-    }
-
-    // Request duration histogram (NEW - for Grafana "Response Latency" p50/p95/p99 panel)
-    body.push_str("# HELP brrtrouter_request_duration_seconds Request duration in seconds\n");
-    body.push_str("# TYPE brrtrouter_request_duration_seconds histogram\n");
-    let (buckets, sum_ns, count) = metrics.histogram_data();
-    let bucket_boundaries = MetricsMiddleware::histogram_buckets();
-
-    // Emit histogram buckets
-    for (i, &boundary) in bucket_boundaries.iter().enumerate() {
-        let _ = writeln!(
-            body,
-            "brrtrouter_request_duration_seconds_bucket{{le=\"{boundary}\"}} {}",
-            buckets[i]
-        );
-    }
-    // +Inf bucket (cumulative)
-    let _ = writeln!(
-        body,
-        "brrtrouter_request_duration_seconds_bucket{{le=\"+Inf\"}} {}",
-        buckets[bucket_boundaries.len()]
-    );
-    // Histogram sum and count
-    let sum_secs = sum_ns as f64 / 1_000_000_000.0;
-    let _ = writeln!(
-        body,
-        "brrtrouter_request_duration_seconds_sum {sum_secs:.6}"
-    );
-    let _ = writeln!(body, "brrtrouter_request_duration_seconds_count {count}");
-
-    // Legacy metrics (backward compatible)
-    body.push_str("# HELP brrtrouter_top_level_requests_total Total number of received requests\n");
-    body.push_str("# TYPE brrtrouter_top_level_requests_total counter\n");
-    let _ = writeln!(
-        body,
-        "brrtrouter_top_level_requests_total {}",
-        metrics.top_level_request_count()
-    );
+    // BRRTRouter-specific operational detail (no standard equivalent).
 
     body.push_str(
         "# HELP brrtrouter_auth_failures_total Total number of authentication failures\n",
@@ -763,19 +703,6 @@ pub fn metrics_endpoint(
         body,
         "brrtrouter_auth_failures_total {}",
         metrics.auth_failures()
-    );
-
-    // PRD Phase 0.3: visibility into the path-metrics soft cap (see
-    // BRRTR_METRICS_PATH_MAX). Non-zero means one or more requests were
-    // recorded against the `__other` bucket because the cap was reached.
-    body.push_str(
-        "# HELP brrtrouter_metrics_path_overflow_total Requests folded into the __other path bucket when the path-metrics soft cap was exceeded\n",
-    );
-    body.push_str("# TYPE brrtrouter_metrics_path_overflow_total counter\n");
-    let _ = writeln!(
-        body,
-        "brrtrouter_metrics_path_overflow_total {}",
-        metrics.path_overflow_total()
     );
 
     body.push_str(
@@ -863,11 +790,6 @@ pub fn metrics_endpoint(
         metrics.connection_health_ratio()
     );
 
-    body.push_str("# HELP brrtrouter_request_latency_seconds Average request latency in seconds\n");
-    body.push_str("# TYPE brrtrouter_request_latency_seconds gauge\n");
-    let avg = metrics.average_latency().as_secs_f64();
-    let _ = writeln!(body, "brrtrouter_request_latency_seconds {avg:.6}");
-
     body.push_str("# HELP brrtrouter_coroutine_stack_bytes Configured coroutine stack size\n");
     body.push_str("# TYPE brrtrouter_coroutine_stack_bytes gauge\n");
     let _ = writeln!(body, "brrtrouter_coroutine_stack_bytes {stack_size}");
@@ -922,56 +844,6 @@ pub fn metrics_endpoint(
                 );
             }
         }
-    }
-
-    // Legacy per-path metrics (backward compatible)
-    // Pre-escape all paths once to avoid repeated escaping
-    let escaped_paths: HashMap<&String, String> = path_stats
-        .keys()
-        .map(|path| (path, escape_prometheus_label(path)))
-        .collect();
-
-    body.push_str("# HELP brrtrouter_path_requests_total Total requests per path (legacy)\n");
-    body.push_str("# TYPE brrtrouter_path_requests_total counter\n");
-    for (path, (count, _, _, _)) in &path_stats {
-        let escaped_path = escaped_paths.get(path).unwrap();
-        let _ = writeln!(
-            body,
-            "brrtrouter_path_requests_total{{path=\"{escaped_path}\"}} {count}",
-        );
-    }
-
-    body.push_str("# HELP brrtrouter_path_latency_seconds_avg Average latency per path\n");
-    body.push_str("# TYPE brrtrouter_path_latency_seconds_avg gauge\n");
-    for (path, (_, avg_ns, _, _)) in &path_stats {
-        let escaped_path = escaped_paths.get(path).unwrap();
-        let avg_secs = (*avg_ns as f64) / 1_000_000_000.0;
-        let _ = writeln!(
-            body,
-            "brrtrouter_path_latency_seconds_avg{{path=\"{escaped_path}\"}} {avg_secs:.6}",
-        );
-    }
-
-    body.push_str("# HELP brrtrouter_path_latency_seconds_min Minimum latency per path\n");
-    body.push_str("# TYPE brrtrouter_path_latency_seconds_min gauge\n");
-    for (path, (_, _, min_ns, _)) in &path_stats {
-        let escaped_path = escaped_paths.get(path).unwrap();
-        let min_secs = (*min_ns as f64) / 1_000_000_000.0;
-        let _ = writeln!(
-            body,
-            "brrtrouter_path_latency_seconds_min{{path=\"{escaped_path}\"}} {min_secs:.6}",
-        );
-    }
-
-    body.push_str("# HELP brrtrouter_path_latency_seconds_max Maximum latency per path\n");
-    body.push_str("# TYPE brrtrouter_path_latency_seconds_max gauge\n");
-    for (path, (_, _, _, max_ns)) in &path_stats {
-        let escaped_path = escaped_paths.get(path).unwrap();
-        let max_secs = (*max_ns as f64) / 1_000_000_000.0;
-        let _ = writeln!(
-            body,
-            "brrtrouter_path_latency_seconds_max{{path=\"{escaped_path}\"}} {max_secs:.6}",
-        );
     }
 
     // Add memory metrics if middleware is available
@@ -1116,6 +988,8 @@ impl HttpService for AppService {
             span: Span,
             /// Matched route template (`/orders/{id}`), once routed.
             route: Option<String>,
+            /// Counts this request in `http_server_active_requests` until it completes.
+            _active: super::http_metrics::ActiveRequest,
         }
 
         impl RequestLogger {
@@ -1203,7 +1077,16 @@ impl HttpService for AppService {
 
         impl Drop for RequestLogger {
             fn drop(&mut self) {
-                let duration_ms = self.start.elapsed().as_millis() as u64;
+                let elapsed = self.start.elapsed();
+                if let Some(status) = self.http_status {
+                    super::http_metrics::observe(
+                        self.method.as_str(),
+                        self.route.as_deref(),
+                        status,
+                        elapsed,
+                    );
+                }
+                let duration_ms = elapsed.as_millis() as u64;
 
                 // Get current coroutine stack usage if available
                 // Note: May coroutines don't expose actual stack usage, only size
@@ -1273,7 +1156,7 @@ impl HttpService for AppService {
         ) = match parse_request(req) {
             Ok(parsed) => parsed,
             Err(err) => {
-                if let Some(413) = super::body_limit::body_limit_error_status(&err) {
+                let status = if let Some(413) = super::body_limit::body_limit_error_status(&err) {
                     write_json_error(
                         res,
                         413,
@@ -1281,8 +1164,10 @@ impl HttpService for AppService {
                             "Request body exceeds configured maximum size",
                         ),
                     );
+                    413
                 } else if let Some(status) = super::multipart::multipart_error_status(&err) {
                     write_json_error(res, status, super::multipart::multipart_error_json(&err));
+                    status
                 } else {
                     let status = super::request_target::parse_request_error_status(&err);
                     if status == 414 {
@@ -1294,6 +1179,7 @@ impl HttpService for AppService {
                                 "message": "Request-target exceeds configured maximum length"
                             }),
                         );
+                        414
                     } else {
                         // Reject invalid HTTP methods with 400 Bad Request
                         write_json_error(
@@ -1304,8 +1190,11 @@ impl HttpService for AppService {
                                 "message": format!("Invalid HTTP method: {}", err)
                             }),
                         );
+                        400
                     }
-                }
+                };
+                // Unparsed requests count too (method unknown or unread: `_OTHER`, no route).
+                super::http_metrics::observe("_OTHER", None, status, request_start.elapsed());
                 return Ok(());
             }
         };
@@ -1388,6 +1277,7 @@ impl HttpService for AppService {
             response_headers: None,
             span: span.clone(),
             route: None,
+            _active: super::http_metrics::ActiveRequest::start(method.as_str()),
         };
 
         // Log incoming request with redacted headers (TooManyHeaders / triage).
@@ -1415,6 +1305,14 @@ impl HttpService for AppService {
             metrics.inc_top_level_request();
         }
 
+        if method == Method::GET
+            && matches!(
+                path.as_str(),
+                "/health" | "/ready" | "/metrics" | "/openapi.yaml" | "/docs"
+            )
+        {
+            _request_logger.route = Some(path.to_string());
+        }
         if method == Method::GET && path == "/health" {
             _request_logger.record_http_status(200);
             return health_endpoint(res);
@@ -1630,6 +1528,8 @@ impl HttpService for AppService {
                     .and_then(|m| self.router.load().route(m, &path));
                 if let Some(mut target) = target {
                     target.query_params = query_params.clone();
+                    // Recorded under the route being pre-flighted.
+                    _request_logger.route = Some(target.route.path_pattern.to_string());
                     let req_id = _request_logger
                         .request_id
                         .unwrap_or(canonical_req_id)

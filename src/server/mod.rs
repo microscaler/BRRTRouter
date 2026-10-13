@@ -81,12 +81,13 @@ pub mod app_config;
 pub mod body_limit;
 pub mod cors_setup;
 pub mod header_intern;
+/// HTTP server implementation using may_minihttp
+pub mod http_metrics;
 pub mod http_server;
 /// Multipart/form-data body parsing (Story 12.6)
 pub mod multipart;
 /// Stream multipart file parts to disk (Epic 13.4)
 pub mod multipart_stream;
-/// HTTP server implementation using may_minihttp
 pub mod observability;
 /// Pre-handler OpenAPI parameter validation (Story 12.4)
 pub mod param_validation;

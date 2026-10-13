@@ -530,11 +530,15 @@ fn http_cors_synthesized_preflight_closes_metrics() {
         &f.addr(),
         &format!("GET /metrics HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\r\n"),
     );
-    let gauge = metrics
-        .lines()
-        .find(|l| l.starts_with("brrtrouter_active_requests "))
-        .unwrap_or_else(|| panic!("no active-requests gauge in /metrics: {metrics}"));
-    assert_eq!(gauge.trim(), "brrtrouter_active_requests 0", "{metrics}");
+    // The preflights left nothing active; the only active request is this GET /metrics itself.
+    assert!(
+        !metrics.contains("http_server_active_requests{http_request_method=\"OPTIONS\"}"),
+        "{metrics}"
+    );
+    assert!(
+        metrics.contains("http_server_active_requests{http_request_method=\"GET\"} 1"),
+        "{metrics}"
+    );
 }
 
 /// Records whether a middleware registered after CORS was entered.

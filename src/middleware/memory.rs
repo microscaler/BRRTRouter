@@ -191,53 +191,46 @@ impl MemoryMiddleware {
 
         let mut output = String::with_capacity(2048);
 
-        // Current memory metrics
-        output.push_str("# HELP process_memory_rss_bytes Resident Set Size in bytes\n");
-        output.push_str("# TYPE process_memory_rss_bytes gauge\n");
-        output.push_str(&format!("process_memory_rss_bytes {}\n", current.rss_bytes));
-
-        output.push_str("# HELP process_memory_vss_bytes Virtual memory size in bytes\n");
-        output.push_str("# TYPE process_memory_vss_bytes gauge\n");
-        output.push_str(&format!("process_memory_vss_bytes {}\n", current.vss_bytes));
-
+        // RSS and virtual size are the standard process_resident_memory_bytes and process_virtual_memory_bytes
+        // (server::http_metrics); these are BRRTRouter's own allocator and growth views.
         // Only export heap metrics if we have real data
         if current.heap_bytes > 0 {
-            output.push_str("# HELP process_memory_heap_bytes Heap allocated bytes\n");
-            output.push_str("# TYPE process_memory_heap_bytes gauge\n");
+            output.push_str("# HELP brrtrouter_memory_heap_bytes Heap allocated bytes\n");
+            output.push_str("# TYPE brrtrouter_memory_heap_bytes gauge\n");
             output.push_str(&format!(
-                "process_memory_heap_bytes {}\n",
+                "brrtrouter_memory_heap_bytes {}\n",
                 current.heap_bytes
             ));
         }
 
         // Peak memory metrics
-        output.push_str("# HELP process_memory_peak_rss_bytes Peak RSS in bytes\n");
-        output.push_str("# TYPE process_memory_peak_rss_bytes gauge\n");
+        output.push_str("# HELP brrtrouter_memory_peak_rss_bytes Peak RSS in bytes\n");
+        output.push_str("# TYPE brrtrouter_memory_peak_rss_bytes gauge\n");
         output.push_str(&format!(
-            "process_memory_peak_rss_bytes {}\n",
+            "brrtrouter_memory_peak_rss_bytes {}\n",
             peak.rss_bytes
         ));
 
         // Only export peak heap if we have real data
         if peak.heap_bytes > 0 {
-            output.push_str("# HELP process_memory_peak_heap_bytes Peak heap in bytes\n");
-            output.push_str("# TYPE process_memory_peak_heap_bytes gauge\n");
+            output.push_str("# HELP brrtrouter_memory_peak_heap_bytes Peak heap in bytes\n");
+            output.push_str("# TYPE brrtrouter_memory_peak_heap_bytes gauge\n");
             output.push_str(&format!(
-                "process_memory_peak_heap_bytes {}\n",
+                "brrtrouter_memory_peak_heap_bytes {}\n",
                 peak.heap_bytes
             ));
         }
 
         // Growth metrics
-        output.push_str("# HELP process_memory_growth_bytes Memory growth since startup\n");
-        output.push_str("# TYPE process_memory_growth_bytes gauge\n");
-        output.push_str(&format!("process_memory_growth_bytes {}\n", growth));
+        output.push_str("# HELP brrtrouter_memory_growth_bytes Memory growth since startup\n");
+        output.push_str("# TYPE brrtrouter_memory_growth_bytes gauge\n");
+        output.push_str(&format!("brrtrouter_memory_growth_bytes {}\n", growth));
 
         // Baseline metrics
-        output.push_str("# HELP process_memory_baseline_rss_bytes RSS at startup\n");
-        output.push_str("# TYPE process_memory_baseline_rss_bytes gauge\n");
+        output.push_str("# HELP brrtrouter_memory_baseline_rss_bytes RSS at startup\n");
+        output.push_str("# TYPE brrtrouter_memory_baseline_rss_bytes gauge\n");
         output.push_str(&format!(
-            "process_memory_baseline_rss_bytes {}\n",
+            "brrtrouter_memory_baseline_rss_bytes {}\n",
             self.baseline.rss_bytes
         ));
 
@@ -246,22 +239,26 @@ impl MemoryMiddleware {
             return output; // Return what we have if lock poisoned
         };
         if !handler_stats.is_empty() {
-            output.push_str("# HELP handler_invocations_total Number of invocations per handler\n");
-            output.push_str("# TYPE handler_invocations_total counter\n");
+            output.push_str(
+                "# HELP brrtrouter_handler_invocations_total Number of invocations per handler\n",
+            );
+            output.push_str("# TYPE brrtrouter_handler_invocations_total counter\n");
 
             for (handler, stats) in handler_stats.iter() {
                 output.push_str(&format!(
-                    "handler_invocations_total{{handler=\"{}\"}} {}\n",
+                    "brrtrouter_handler_invocations_total{{handler=\"{}\"}} {}\n",
                     handler, stats.invocations
                 ));
             }
         }
 
         // Measurement metadata
-        output.push_str("# HELP memory_measurements_total Number of memory measurements taken\n");
-        output.push_str("# TYPE memory_measurements_total counter\n");
+        output.push_str(
+            "# HELP brrtrouter_memory_measurements_total Number of memory measurements taken\n",
+        );
+        output.push_str("# TYPE brrtrouter_memory_measurements_total counter\n");
         output.push_str(&format!(
-            "memory_measurements_total {}\n",
+            "brrtrouter_memory_measurements_total {}\n",
             self.measurements.load(Ordering::Relaxed)
         ));
 

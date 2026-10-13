@@ -151,12 +151,17 @@ fn test_metrics_endpoint() {
     let (status, ct, body) = parse_response_parts(&resp);
     assert_eq!(status, 200);
     assert_eq!(ct, "text/plain");
-    assert!(body.contains("brrtrouter_requests_total"));
-    assert!(body.contains("brrtrouter_request_latency_seconds"));
+    // OpenTelemetry HTTP semantic conventions: the routed request is in its route/status series.
+    assert!(body.contains("# TYPE http_server_request_duration_seconds histogram"));
+    assert!(body.contains(
+        "http_server_request_duration_seconds_count{http_request_method=\"GET\",http_route=\"/pets\",http_response_status_code=\"200\"} 1"
+    ), "{body}");
+    assert!(body.contains("http_server_active_requests{http_request_method=\"GET\"}"));
+    // The BRRTRouter-specific duplicates are gone.
+    assert!(!body.contains("brrtrouter_requests_total"));
+    assert!(!body.contains("brrtrouter_request_duration_seconds"));
     assert!(body.contains("brrtrouter_coroutine_stack_bytes"));
     assert!(body.contains("brrtrouter_coroutine_stack_used_bytes"));
-    // With labeled counters, expect at least one labeled series incremented
-    assert!(body.contains("brrtrouter_requests_total{"));
     assert!(body.contains("brrtrouter_cors_origin_rejections_total"));
     assert!(body.contains("brrtrouter_cors_preflight_denials_total"));
     assert!(body.contains("brrtrouter_cors_route_disabled_total"));
