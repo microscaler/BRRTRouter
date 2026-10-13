@@ -376,3 +376,12 @@ Hauliage Phase 3 unblockers for Vite dev proxy and frontend-aligned BFF routes.
 - Process metrics use the Prometheus process collector names. BRRTRouter memory views moved to `brrtrouter_memory_*`.
   The `brrtrouter_requests_total` / `_request_duration_seconds` / `_path_*` / `_active_requests` exports are removed.
 - Details: [`topics/http-server-metrics.md`](./topics/http-server-metrics.md); mapping in `docs/METRICS.md`.
+
+## [2026-10-14] decision | no in-process continuous profiling (ADR 004)
+
+- Production BRRTRouter services run no profiler (no Cloud Profiler agent, no Pyroscope push, no `pprof` sampler):
+  every option costs the hot path, may coroutine stacks make signal-based samples doubtful, OpenTelemetry profiles are
+  alpha with no Google Cloud backend, and the eBPF profiler cannot run on GKE Autopilot.
+- Performance work uses Pyroscope and Grafana on the local development cluster, plus `cargo flamegraph` and the Goose
+  load tests.
+- Details and revisit conditions: [`docs/ADRS/004-no-in-process-continuous-profiling.md`](../docs/ADRS/004-no-in-process-continuous-profiling.md)
