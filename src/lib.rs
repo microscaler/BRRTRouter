@@ -643,49 +643,13 @@
 //!
 //! #### Available Metrics
 //!
-//! **Request Metrics:**
-//! - `http_requests_total` - Total number of HTTP requests by method, path, and status
-//! - `http_request_duration_seconds` - Request latency histogram
-//! - `http_requests_in_flight` - Number of requests currently being processed
+//! Standard names, so a stock Prometheus scrape works (full list and migration table: `docs/METRICS.md`):
 //!
-//! **Handler Metrics:**
-//! - `handler_invocations_total` - Number of times each handler was called
-//! - `handler_errors_total` - Handler errors and panics by handler name
-//! - `handler_duration_seconds` - Handler execution time
-//!
-//! **Security Metrics:**
-//! - `auth_attempts_total` - Authentication attempts by scheme and result
-//! - `auth_failures_total` - Failed authentication attempts by reason
-//! - `auth_cache_hits_total` - Authentication cache hit rate
-//!
-//! **System Metrics:**
-//! - `coroutine_count` - Number of active coroutines
-//! - `coroutine_stack_size_bytes` - Configured stack size per coroutine
-//! - `dispatcher_queue_depth` - Pending requests in dispatcher queues
-//!
-//! **Validation Metrics:**
-//! - `request_validation_failures_total` - Request validation errors by type
-//! - `response_validation_failures_total` - Response validation errors by endpoint
-//!
-//! ### OpenTelemetry Tracing
-//!
-//! BRRTRouter includes OpenTelemetry-oriented tracing hooks and test utilities. **Production
-//! subscriber setup** lives in the [`otel`](crate::otel) module: see [`otel::init_logging_with_config`].
-//! That function is the **canonical place** to add a global `TracerProvider` and
-//! `tracing_opentelemetry::OpenTelemetryLayer` when OTLP is wired — **one** provider, **one**
-//! `tracing_subscriber::Registry` stack, composed with `.with(...)`.
-//!
-//! If you use **[Lifeguard](https://github.com/microscaler/lifeguard)**, add `lifeguard::channel_layer()`
-//! to that same layer chain (Lifeguard does not call `set_tracer_provider`). See Lifeguard’s
-//! `docs/OBSERVABILITY_APP_INTEGRATION.md`. Tests use `tests/tracing_util.rs` (`TestTracing`) with
-//! `set_default` instead of a second global init.
-//!
-//! ```rust,ignore
-//! use brrtrouter::middleware::TracingMiddleware;
-//!
-//! // Tracing is automatically enabled in generated services
-//! service.add_middleware(TracingMiddleware::new());
-//! ```
+//! - `http_server_request_duration_seconds` - OpenTelemetry HTTP server histogram by `http_request_method`,
+//!   `http_route`, `http_response_status_code` (and `error_type` on 5xx); traffic, errors and latency derive from it
+//! - `http_server_active_requests` - in-flight requests by `http_request_method`
+//! - `process_cpu_seconds_total`, `process_resident_memory_bytes`, `process_open_fds`, ... - process collector
+//! - `brrtrouter_*` - BRRTRouter-specific detail: auth failures, CORS, worker pools, coroutine stacks, memory views
 //!
 //! #### Trace Spans
 //!
@@ -840,14 +804,13 @@
 //! just curls
 //!
 //! # View metrics
-//! curl http://localhost:8081/metrics | grep http_requests_total
+//! curl http://localhost:8081/metrics | grep http_server_request_duration_seconds_count
 //! ```
 //!
 //! Output:
 //! ```text
-//! # HELP http_requests_total Total HTTP requests
-//! # TYPE http_requests_total counter
-//! http_requests_total{method="GET",path="/pets",status="200"} 42
+//! # TYPE http_server_request_duration_seconds histogram
+//! http_server_request_duration_seconds_count{http_request_method="GET",http_route="/pets",http_response_status_code="200"} 42
 //! http_requests_total{method="GET",path="/pets/:id",status="200"} 18
 //! http_requests_total{method="POST",path="/pets",status="201"} 5
 //! http_requests_total{method="GET",path="/health",status="200"} 120

@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed (breaking: metric names)
+
+- **`/metrics` uses the industry-standard names** (OpenTelemetry HTTP semantic conventions, Prometheus process collector).
+  - Request metrics are now `http_server_request_duration_seconds{http_request_method,http_route,http_response_status_code,error_type}`, with the semantic-convention buckets, and `http_server_active_requests`. Every request is recorded, including those refused before routing.
+  - Process metrics are now `process_cpu_seconds_total`, `process_resident_memory_bytes`, `process_virtual_memory_bytes`, `process_start_time_seconds`, `process_open_fds` and `process_max_fds`.
+  - Removed: `brrtrouter_requests_total`, `brrtrouter_request_duration_seconds`, `brrtrouter_active_requests`, `brrtrouter_top_level_requests_total`, `brrtrouter_request_latency_seconds`, `brrtrouter_path_*` and `brrtrouter_metrics_path_overflow_total`.
+  - Renamed: BRRTRouter's own memory views moved from `process_memory_*` to `brrtrouter_memory_*`.
+  - The bundled Grafana dashboards and CI are updated.
+  - Mapping: `docs/METRICS.md`.
+
 ### Added
 - **Typed handlers — REST status without panicking:** `HandlerResponseOutput` and `HttpJson<T>` in `brrtrouter::typed`. Plain `Serialize` return types still produce HTTP 200; use `HttpJson::new(status, body)` (or `not_found`, `ok`) for other status codes. Response mapping is unified across `spawn_typed*`, `register_typed_with_pool`. Tests: `typed::core::tests`, `tests/typed_tests.rs` (`test_spawn_typed_http_json_status_without_panic`).
 - Docs: `docs/MIGRATION_TYPED_HANDLER_HTTP_STATUS.md` — consumer migration from `panic!` to `HttpJson` on typed handlers.
