@@ -1156,7 +1156,7 @@ impl HttpService for AppService {
         ) = match parse_request(req) {
             Ok(parsed) => parsed,
             Err(err) => {
-                if let Some(413) = super::body_limit::body_limit_error_status(&err) {
+                let status = if let Some(413) = super::body_limit::body_limit_error_status(&err) {
                     write_json_error(
                         res,
                         413,
@@ -1164,8 +1164,10 @@ impl HttpService for AppService {
                             "Request body exceeds configured maximum size",
                         ),
                     );
+                    413
                 } else if let Some(status) = super::multipart::multipart_error_status(&err) {
                     write_json_error(res, status, super::multipart::multipart_error_json(&err));
+                    status
                 } else {
                     let status = super::request_target::parse_request_error_status(&err);
                     if status == 414 {
@@ -1177,6 +1179,7 @@ impl HttpService for AppService {
                                 "message": "Request-target exceeds configured maximum length"
                             }),
                         );
+                        414
                     } else {
                         // Reject invalid HTTP methods with 400 Bad Request
                         write_json_error(
@@ -1187,8 +1190,11 @@ impl HttpService for AppService {
                                 "message": format!("Invalid HTTP method: {}", err)
                             }),
                         );
+                        400
                     }
-                }
+                };
+                // Unparsed requests count too (method unknown or unread: `_OTHER`, no route).
+                super::http_metrics::observe("_OTHER", None, status, request_start.elapsed());
                 return Ok(());
             }
         };
@@ -1302,7 +1308,7 @@ impl HttpService for AppService {
         if method == Method::GET
             && matches!(
                 path.as_str(),
-                "/health" | "/ready" | "/metrics" | "/openapi.yaml"
+                "/health" | "/ready" | "/metrics" | "/openapi.yaml" | "/docs"
             )
         {
             _request_logger.route = Some(path.to_string());
@@ -1522,6 +1528,8 @@ impl HttpService for AppService {
                     .and_then(|m| self.router.load().route(m, &path));
                 if let Some(mut target) = target {
                     target.query_params = query_params.clone();
+                    // Recorded under the route being pre-flighted.
+                    _request_logger.route = Some(target.route.path_pattern.to_string());
                     let req_id = _request_logger
                         .request_id
                         .unwrap_or(canonical_req_id)

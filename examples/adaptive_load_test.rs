@@ -343,7 +343,7 @@ async fn get_system_metrics(
 
     // Query 2: P99 latency
     let p99_query = urlencoding::encode(
-        "histogram_quantile(0.99, rate(http_server_request_duration_seconds_bucket[1m]))",
+        "histogram_quantile(0.99, sum by (le) (rate(http_server_request_duration_seconds_bucket[1m])))",
     );
     let p99_url = format!("{prometheus_url}/api/v1/query?query={p99_query}");
     let p99_resp = client.get(&p99_url).send().await?;

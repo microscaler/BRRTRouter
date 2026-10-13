@@ -810,7 +810,7 @@ data:
                 "uid": "prometheus"
               },
               "expr": "rate(http_server_request_duration_seconds_count[1m])",
-              "legendFormat": "{{path}} - {{status}}",
+              "legendFormat": "{{http_route}} - {{http_response_status_code}}",
               "refId": "A"
             }
           ],

@@ -13,7 +13,7 @@
 
 use std::collections::HashMap;
 use std::fmt::Write as _;
-use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicI64, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock, RwLock};
 use std::time::Duration;
 
@@ -37,13 +37,6 @@ fn method_label(method: &str) -> &'static str {
         .find(|m| m.eq_ignore_ascii_case(method))
         .copied()
         .unwrap_or("_OTHER")
-}
-
-#[derive(Clone, PartialEq, Eq, Hash)]
-struct SeriesKey {
-    method: &'static str,
-    route: Option<String>,
-    status: u16,
 }
 
 struct Histogram {
@@ -79,8 +72,13 @@ impl Histogram {
     }
 }
 
+/// Series by (method, status), then by route template (`""` = no route matched). The route level is keyed by `String`
+/// so the hot-path lookup borrows the request's `&str`: a route allocates only when its series is first registered.
+type SeriesMap = HashMap<(&'static str, u16), HashMap<String, Arc<Histogram>>>;
+
 struct Registry {
-    series: RwLock<HashMap<SeriesKey, Arc<Histogram>>>,
+    series: RwLock<SeriesMap>,
+    series_count: AtomicUsize,
     active: [AtomicI64; KNOWN_METHODS.len() + 1],
 }
 
@@ -88,9 +86,15 @@ fn registry() -> &'static Registry {
     static REGISTRY: OnceLock<Registry> = OnceLock::new();
     REGISTRY.get_or_init(|| Registry {
         series: RwLock::new(HashMap::new()),
+        series_count: AtomicUsize::new(0),
         active: std::array::from_fn(|_| AtomicI64::new(0)),
     })
 }
+
+/// The route label for an unmatched request (omitted on export).
+const NO_ROUTE: &str = "";
+/// Where new routes go once `MAX_SERIES` is reached.
+const OVERFLOW_ROUTE: &str = "_OTHER";
 
 fn method_index(label: &'static str) -> usize {
     KNOWN_METHODS
@@ -102,26 +106,31 @@ fn method_index(label: &'static str) -> usize {
 /// Record one completed request.
 pub fn observe(method: &str, route: Option<&str>, status: u16, duration: Duration) {
     let reg = registry();
-    let mut key = SeriesKey {
-        method: method_label(method),
-        route: route.filter(|r| !r.is_empty()).map(str::to_string),
-        status,
-    };
-    let existing = reg.series.read().ok().and_then(|s| s.get(&key).cloned());
+    let key = (method_label(method), status);
+    let route = route.filter(|r| !r.is_empty()).unwrap_or(NO_ROUTE);
+    let existing = reg
+        .series
+        .read()
+        .ok()
+        .and_then(|s| s.get(&key).and_then(|routes| routes.get(route)).cloned());
     let histogram = match existing {
         Some(h) => h,
         None => {
             let Ok(mut series) = reg.series.write() else {
                 return;
             };
-            if !series.contains_key(&key) && series.len() >= MAX_SERIES {
-                key.route = Some("_OTHER".to_string());
-            }
-            Arc::clone(
-                series
-                    .entry(key)
-                    .or_insert_with(|| Arc::new(Histogram::new())),
-            )
+            let routes = series.entry(key).or_default();
+            let route = if routes.contains_key(route)
+                || reg.series_count.load(Ordering::Relaxed) < MAX_SERIES
+            {
+                route
+            } else {
+                OVERFLOW_ROUTE
+            };
+            Arc::clone(routes.entry(route.to_string()).or_insert_with(|| {
+                reg.series_count.fetch_add(1, Ordering::Relaxed);
+                Arc::new(Histogram::new())
+            }))
         }
     };
     histogram.observe(duration);
@@ -158,19 +167,23 @@ pub fn render_http(out: &mut String) {
     out.push_str("# HELP http_server_request_duration_seconds Duration of HTTP server requests.\n");
     out.push_str("# TYPE http_server_request_duration_seconds histogram\n");
     if let Ok(series) = reg.series.read() {
-        let mut keys: Vec<&SeriesKey> = series.keys().collect();
-        keys.sort_by(|a, b| {
-            (a.route.as_deref(), a.method, a.status).cmp(&(b.route.as_deref(), b.method, b.status))
-        });
-        for key in keys {
-            let h = &series[key];
-            let mut labels = format!("http_request_method=\"{}\"", key.method);
-            if let Some(route) = &key.route {
+        let mut rows: Vec<(&str, &'static str, u16, &Histogram)> = series
+            .iter()
+            .flat_map(|((method, status), routes)| {
+                routes
+                    .iter()
+                    .map(move |(route, h)| (route.as_str(), *method, *status, h.as_ref()))
+            })
+            .collect();
+        rows.sort_by(|a, b| (a.0, a.1, a.2).cmp(&(b.0, b.1, b.2)));
+        for (route, method, status, h) in rows {
+            let mut labels = format!("http_request_method=\"{method}\"");
+            if route != NO_ROUTE {
                 let _ = write!(labels, ",http_route=\"{}\"", escape(route));
             }
-            let _ = write!(labels, ",http_response_status_code=\"{}\"", key.status);
-            if key.status >= 500 {
-                let _ = write!(labels, ",error_type=\"{}\"", key.status);
+            let _ = write!(labels, ",http_response_status_code=\"{status}\"");
+            if status >= 500 {
+                let _ = write!(labels, ",error_type=\"{status}\"");
             }
             for (i, le) in DURATION_BUCKETS.iter().enumerate() {
                 let _ = writeln!(
