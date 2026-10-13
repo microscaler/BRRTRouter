@@ -2,7 +2,7 @@
 //!
 //! Replaces generated inline proxy logic in `templates/controller.rs.txt`.
 //! Downstream targets are resolved by OpenAPI `x-service` (Kubernetes Service name)
-//! and `HAULIAGE_SERVICE_HTTP_PORT` (default 8080). Each request opens a fresh
+//! and `SERVICE_HTTP_PORT` (default 8080). Each request opens a fresh
 //! `may_minihttp` connection to avoid cross-service client reuse (FR-26).
 
 use std::io::Read;
@@ -368,7 +368,7 @@ pub fn downstream_host(service: &str) -> String {
 /// Cluster-wide downstream HTTP port (PRD: uniform 8080).
 #[must_use]
 pub fn downstream_http_port() -> u16 {
-    std::env::var("HAULIAGE_SERVICE_HTTP_PORT")
+    std::env::var("SERVICE_HTTP_PORT")
         .ok()
         .and_then(|p| p.parse().ok())
         .unwrap_or(DEFAULT_DOWNSTREAM_PORT)
@@ -406,7 +406,7 @@ pub fn skip_forward_response_header(name: &str) -> bool {
 }
 
 fn proxy_timeout() -> Duration {
-    std::env::var("HAULIAGE_PROXY_TIMEOUT_SECS")
+    std::env::var("PROXY_TIMEOUT_SECS")
         .ok()
         .and_then(|s| s.parse::<u64>().ok())
         .map(|secs| Duration::from_secs(secs.max(1)))
@@ -1112,16 +1112,16 @@ mod tests {
     #[test]
     fn downstream_http_port_defaults_to_8080() {
         let _lock = ENV_LOCK.lock().unwrap();
-        std::env::remove_var("HAULIAGE_SERVICE_HTTP_PORT");
+        std::env::remove_var("SERVICE_HTTP_PORT");
         assert_eq!(downstream_http_port(), 8080);
     }
 
     #[test]
     fn downstream_http_port_reads_env() {
         let _lock = ENV_LOCK.lock().unwrap();
-        std::env::set_var("HAULIAGE_SERVICE_HTTP_PORT", "9090");
+        std::env::set_var("SERVICE_HTTP_PORT", "9090");
         assert_eq!(downstream_http_port(), 9090);
-        std::env::remove_var("HAULIAGE_SERVICE_HTTP_PORT");
+        std::env::remove_var("SERVICE_HTTP_PORT");
     }
 
     #[test]
@@ -1162,12 +1162,12 @@ mod tests {
     fn proxy_untyped_returns_502_on_dns_failure() {
         let _lock = ENV_LOCK.lock().unwrap();
         std::env::set_var("POD_NAMESPACE", "logistics");
-        std::env::set_var("HAULIAGE_SERVICE_HTTP_PORT", "8080");
+        std::env::set_var("SERVICE_HTTP_PORT", "8080");
         let req = empty_request(Method::GET);
         let res = proxy_untyped(&req, "no-such-service-xyz.invalid", "/health");
         assert_eq!(res.status, 502);
         std::env::remove_var("POD_NAMESPACE");
-        std::env::remove_var("HAULIAGE_SERVICE_HTTP_PORT");
+        std::env::remove_var("SERVICE_HTTP_PORT");
     }
 
     // --- Story 10.5 query passthrough ---
@@ -1457,14 +1457,14 @@ mod tests {
     fn proxy_error_taxonomy_positive_p1_dns_still_502() {
         let _lock = ENV_LOCK.lock().unwrap();
         std::env::set_var("POD_NAMESPACE", "logistics");
-        std::env::set_var("HAULIAGE_SERVICE_HTTP_PORT", "8080");
+        std::env::set_var("SERVICE_HTTP_PORT", "8080");
         let req = empty_request(Method::GET);
         let res = proxy_untyped(&req, "no-such-service-xyz.invalid", "/health");
         assert_eq!(res.status, 502);
         assert_eq!(res.body["reason"], "dns");
         assert_eq!(res.body["error"], "Bad Gateway");
         std::env::remove_var("POD_NAMESPACE");
-        std::env::remove_var("HAULIAGE_SERVICE_HTTP_PORT");
+        std::env::remove_var("SERVICE_HTTP_PORT");
     }
 
     #[test]
@@ -1755,7 +1755,7 @@ mod tests {
         let _lock = ENV_LOCK.lock().unwrap();
         std::env::remove_var("POD_NAMESPACE");
         let (port, captured) = spawn_capture_downstream();
-        std::env::set_var("HAULIAGE_SERVICE_HTTP_PORT", port.to_string());
+        std::env::set_var("SERVICE_HTTP_PORT", port.to_string());
 
         let body = serde_json::json!({"q":"South Africa","limit":2});
         let expected = serde_json::to_vec(&body).unwrap();
@@ -1788,7 +1788,7 @@ mod tests {
         );
         assert!(got.saw_request_id, "P3 end-to-end headers still forward");
 
-        std::env::remove_var("HAULIAGE_SERVICE_HTTP_PORT");
+        std::env::remove_var("SERVICE_HTTP_PORT");
     }
 
     /// P2 / N6 — legacy http 0.2 Method bridge accepts QUERY.
@@ -1823,12 +1823,12 @@ mod tests {
     fn query_proxy_negative_n2_dns_is_502() {
         let _lock = ENV_LOCK.lock().unwrap();
         std::env::set_var("POD_NAMESPACE", "logistics");
-        std::env::set_var("HAULIAGE_SERVICE_HTTP_PORT", "8080");
+        std::env::set_var("SERVICE_HTTP_PORT", "8080");
         let req = query_proxy_request(Some(serde_json::json!({"q":"x"})), &[]);
         let res = proxy_untyped(&req, "no-such-service-xyz.invalid", "/search");
         assert_eq!(res.status, 502);
         std::env::remove_var("POD_NAMESPACE");
-        std::env::remove_var("HAULIAGE_SERVICE_HTTP_PORT");
+        std::env::remove_var("SERVICE_HTTP_PORT");
     }
 
     /// N3 — empty body when none attached: proxy does not panic (required-body 400 is service).
@@ -1837,14 +1837,14 @@ mod tests {
         let _lock = ENV_LOCK.lock().unwrap();
         std::env::remove_var("POD_NAMESPACE");
         let (port, captured) = spawn_capture_downstream();
-        std::env::set_var("HAULIAGE_SERVICE_HTTP_PORT", port.to_string());
+        std::env::set_var("SERVICE_HTTP_PORT", port.to_string());
         let req = query_proxy_request(None, &[("content-type", "application/json")]);
         let res = proxy_untyped(&req, "127.0.0.1", "/search");
         assert_eq!(res.status, 200);
         let got = captured.lock().unwrap().clone().unwrap();
         assert_eq!(got.method, "QUERY");
         assert!(got.body.is_empty(), "N3/N5 empty body not fabricated");
-        std::env::remove_var("HAULIAGE_SERVICE_HTTP_PORT");
+        std::env::remove_var("SERVICE_HTTP_PORT");
     }
 
     /// N4 — oversized *response* body → BodyTooLarge → 502; no panic.
@@ -1967,9 +1967,9 @@ mod tests {
                 "nt: alert\nid: 7\n\ndata: \n: ping\n\n",
             ],
         );
-        std::env::set_var("HAULIAGE_SERVICE_HTTP_PORT", port.to_string());
+        std::env::set_var("SERVICE_HTTP_PORT", port.to_string());
         let res = proxy_sse(&empty_request(Method::GET), "127.0.0.1", "/stream");
-        std::env::remove_var("HAULIAGE_SERVICE_HTTP_PORT");
+        std::env::remove_var("SERVICE_HTTP_PORT");
 
         assert_eq!(res.status, 200);
         assert!(res
@@ -2017,12 +2017,12 @@ mod tests {
                 b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Encoding: gzip\r\nContent-Length: 0\r\n\r\n",
             );
         });
-        std::env::set_var("HAULIAGE_SERVICE_HTTP_PORT", port.to_string());
+        std::env::set_var("SERVICE_HTTP_PORT", port.to_string());
         let mut req = empty_request(Method::GET);
         req.headers
             .push((Arc::from("accept-encoding"), "gzip, br".to_string()));
         let res = proxy_sse(&req, "127.0.0.1", "/stream");
-        std::env::remove_var("HAULIAGE_SERVICE_HTTP_PORT");
+        std::env::remove_var("SERVICE_HTTP_PORT");
 
         let sent = seen.lock().unwrap().clone();
         assert!(sent.contains("accept-encoding: identity"), "{sent}");
@@ -2039,9 +2039,9 @@ mod tests {
             "HTTP/1.1 401 Unauthorized\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\n\r\n",
             vec!["{\"error\":\"unauthorized\"}"],
         );
-        std::env::set_var("HAULIAGE_SERVICE_HTTP_PORT", port.to_string());
+        std::env::set_var("SERVICE_HTTP_PORT", port.to_string());
         let res = proxy_sse(&empty_request(Method::GET), "127.0.0.1", "/stream");
-        std::env::remove_var("HAULIAGE_SERVICE_HTTP_PORT");
+        std::env::remove_var("SERVICE_HTTP_PORT");
 
         assert_eq!(res.status, 401);
         assert!(res.sse.is_none());
