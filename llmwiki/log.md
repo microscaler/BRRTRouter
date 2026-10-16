@@ -396,3 +396,10 @@ Hauliage Phase 3 unblockers for Vite dev proxy and frontend-aligned BFF routes.
   integration tests (one `Host`, `extra_headers` override replaces rather than duplicates).
 - Details: [`topics/native-http-client-and-tls.md`](./topics/native-http-client-and-tls.md#host-header),
   [`topics/bff-gateway-merge-and-proxy-headers.md`](./topics/bff-gateway-merge-and-proxy-headers.md).
+
+## [2026-10-16] feat | refused credentials by reason; JWKS refresh metrics
+
+- `brrtrouter_auth_failures_by_reason_total{reason}`: the JWKS validator's reason (token_expired, key_not_found, …)
+  handed to the router through a coroutine-local slot, counted once per refused request and logged in the 401 line.
+- `brrtrouter_jwks_refresh_total{outcome}`, `brrtrouter_jwks_keys`, `brrtrouter_jwks_last_success_timestamp_seconds`.
+- Details: [`topics/http-server-metrics.md`](./topics/http-server-metrics.md#why-credentials-are-refused-2026-10-16).

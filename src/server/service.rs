@@ -704,6 +704,7 @@ pub fn metrics_endpoint(
         "brrtrouter_auth_failures_total {}",
         metrics.auth_failures()
     );
+    crate::security::telemetry::render_prometheus(&mut body);
 
     body.push_str(
         "# HELP brrtrouter_cors_origin_rejections_total CORS rejections: Origin not allowed (403)\n",
@@ -1597,6 +1598,8 @@ impl HttpService for AppService {
             // Why BRRTRouter could not evaluate a requirement; a provider records its own
             // reason (e.g. token_expired) on the request span while validating.
             let mut auth_reason: Option<String> = None;
+            // A reason left by an earlier request on this coroutine must not be taken for this one.
+            let _ = crate::security::telemetry::take_refusal_reason();
 
             // Helper to perform the actual auth check for both pre-resolved and raw paths
             fn validate_requirements(
@@ -1811,6 +1814,21 @@ impl HttpService for AppService {
                 if let Some(metrics) = &self.metrics {
                     metrics.inc_auth_failure();
                 }
+                // Why, as one fixed token: the provider's own reason when it gave one (token_expired,
+                // key_not_found, invalid_audience, ...), else what the router itself found.
+                let provider_reason = crate::security::telemetry::take_refusal_reason();
+                let refusal: &'static str = if insufficient_scope {
+                    "insufficient_scope"
+                } else if let Some(reason) = provider_reason {
+                    reason
+                } else {
+                    match auth_reason.as_deref() {
+                        Some(r) if r.starts_with("scheme_undefined") => "scheme_undefined",
+                        Some(r) if r.starts_with("provider_missing") => "provider_missing",
+                        _ => "invalid_credentials",
+                    }
+                };
+                crate::security::telemetry::count_refusal(refusal);
 
                 let status = if insufficient_scope { 403 } else { 401 };
                 let title = if status == 403 {
@@ -1842,7 +1860,7 @@ impl HttpService for AppService {
                         path = %path,
                         handler = %route_match.handler_name,
                         status = 401,
-                        reason = "invalid_credentials",
+                        reason = refusal,
                         "Authentication failed (401 unauthorized)"
                     );
                 }

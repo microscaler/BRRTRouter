@@ -48,3 +48,24 @@ signals, Grafana HTTP and process dashboards, and alert packs.
 
 > **Open:** export through OTLP as well (the request span already carries `http.route`), or stay with the Prometheus
 > scrape only?
+
+## Why credentials are refused (2026-10-16)
+
+`brrtrouter_auth_failures_total` counts every refused request. `brrtrouter_auth_failures_by_reason_total{reason}`
+says why, one fixed token per refusal:
+
+| reason | from |
+|--------|------|
+| `token_expired`, `key_not_found`, `invalid_signature`, `invalid_issuer`, `invalid_audience`, `missing_token`, `invalid_token_format`, `missing_kid`, `unsupported_algorithm`, `invalid_token_type`, `missing_required_claim`, `token_revoked`, `stale_token_version`, `token_status_unavailable`, `invalid_token_status_claims` | the JWKS bearer provider (`ValidationError::metric_reason`) |
+| `insufficient_scope`, `scheme_undefined`, `provider_missing`, `invalid_credentials` | the router (`invalid_credentials` when the provider gave no reason) |
+
+Mechanism (`src/security/telemetry.rs`): a provider calls `set_refusal_reason` (coroutine-local slot); the router
+`take_refusal_reason`s once per refused request, counts it, and logs it in its `Authentication failed` line. The
+router's second, scope-probing `validate` call overwrites the slot, so a refusal is never counted twice. Any provider
+may record its own reason the same way.
+
+JWKS freshness at a consumer: `brrtrouter_jwks_refresh_total{outcome="ok|failed"}`, `brrtrouter_jwks_keys`,
+`brrtrouter_jwks_last_success_timestamp_seconds` (rendered only once a JWKS provider has refreshed). A consumer whose
+last success is older than its cache TTL by a wide margin cannot validate tokens signed with a newly rotated key.
+
+Tests: `security::telemetry::tests`.

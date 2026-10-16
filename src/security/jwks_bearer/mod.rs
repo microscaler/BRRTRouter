@@ -1095,6 +1095,8 @@ impl JwksBearerProvider {
         let _guard = lock.lock().unwrap();
         cvar.notify_all();
 
+        crate::security::telemetry::jwks_refresh_succeeded(key_count);
+
         if key_count == 0 {
             // A parseable but empty keyset is a legitimate response (see the note in
             // `refresh_jwks_if_needed`), yet it still means nothing can be validated. Say so.
@@ -1136,6 +1138,7 @@ impl JwksBearerProvider {
         reason: &str,
     ) {
         let consecutive_failures = fetch_state.record_failure();
+        crate::security::telemetry::jwks_refresh_failed();
         let elapsed_ms = refresh_start.elapsed().as_millis() as u64;
         let timeout_ms = fetch_timeout.as_millis() as u64;
 
