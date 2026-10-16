@@ -33,7 +33,7 @@
 - [Schema validation pipeline](./topics/schema-validation-pipeline.md)
 - [Auto-research perf loop](./topics/auto-research-perf-loop.md) — cron / background perf iterations; charter in `auto-research/docs/`
 - [Runtime stack map](./topics/runtime-stack-map.md) — spec → router → dispatcher → `server/service`
-- [BFF gateway merge and proxy headers](./topics/bff-gateway-merge-and-proxy-headers.md) — suite-config path keys, duplicate Content-Length fix
+- [BFF gateway merge and proxy headers](./topics/bff-gateway-merge-and-proxy-headers.md) — suite-config path keys, duplicate Content-Length fix, downstream `Host`
 - [Generator CLI and Askama](./topics/generator-cli-and-askama.md) — `brrtrouter_gen`, templates, Hauliage codegen pointers
 - [Impl controller lifecycle rollout](./topics/impl-controller-lifecycle-rollout.md) — Tier 1 registry, `regen-impl-registry`, **bidding main deferred**
 - [Sibling repos and wikis](./topics/sibling-repos-and-wikis.md) — Sesame (public reference) + Lifeguard + private Hauliage

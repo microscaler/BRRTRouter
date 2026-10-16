@@ -3,6 +3,11 @@
 //! Uses [`may_minihttp::client::HttpClient`] for HTTP and rustls-backed HTTPS.
 //! Replaces `reqwest::blocking` in the request hot path so fetches run on `may::net::TcpStream`
 //! without a separate tokio runtime.
+//!
+//! Every outbound request carries exactly one `Host`: [`fetch_get`] and friends take it from
+//! the URL authority (`HttpClient::from_url`), and the BFF proxy sets the downstream Service's
+//! name with [`host_header_value`] because it connects by address. See
+//! `llmwiki/topics/native-http-client-and-tls.md`.
 
 mod accept_query;
 mod fetch;
@@ -44,3 +49,140 @@ pub use webhook_delivery::{
     WebhookDeliveryOptions, WebhookDeliveryResult, WebhookHmac, DEFAULT_HMAC_HEADER,
     DEFAULT_MAX_REQUEST_BODY_BYTES, DEFAULT_MAX_RESPONSE_BODY_BYTES, IDEMPOTENCY_KEY_HEADER,
 };
+
+/// The `Host` header value for an HTTP/1.1 request to `host` on `port`.
+///
+/// HTTP/1.1 requires every request to carry exactly one `Host`, and strict servers (Go's
+/// `net/http`, nginx, Envoy, Google front ends) answer `400` without it. `may_minihttp` only
+/// adds `Host` on its own when the client was built with `HttpClient::from_url`
+/// or the request target is an absolute URI. A client built with `HttpClient::connect(addr)`
+/// that sends origin-form targets (`/path?query`), as the BFF proxy does, must set it itself.
+///
+/// # Arguments
+///
+/// * `host` - DNS name or IP literal of the server. A bare IPv6 literal is bracketed;
+///   one that is already bracketed is kept as is.
+/// * `port` - TCP port the request is sent to.
+/// * `default_port` - the scheme's default port (`80` for `http`, `443` for `https`).
+///
+/// # Returns
+///
+/// `host` when `port == default_port`, otherwise `host:port` (RFC 9110 §7.2).
+///
+/// # Example
+///
+/// ```
+/// use brrtrouter::http::host_header_value;
+///
+/// assert_eq!(host_header_value("orders.shop.svc.cluster.local", 8080, 80), "orders.shop.svc.cluster.local:8080");
+/// assert_eq!(host_header_value("api.example.com", 443, 443), "api.example.com");
+/// assert_eq!(host_header_value("::1", 8080, 80), "[::1]:8080");
+/// ```
+#[must_use]
+pub fn host_header_value(host: &str, port: u16, default_port: u16) -> String {
+    // Called once per proxied request: build the value in a single preallocated String
+    // (brackets + ':' + up to five port digits) rather than formatting intermediates.
+    let bracket = host.contains(':') && !host.starts_with('[');
+    let mut value = String::with_capacity(host.len() + 8);
+    if bracket {
+        value.push('[');
+    }
+    value.push_str(host);
+    if bracket {
+        value.push(']');
+    }
+    if port != default_port {
+        value.push(':');
+        let mut digits = [0u8; 5];
+        let mut n = port;
+        let mut i = digits.len();
+        loop {
+            i -= 1;
+            digits[i] = b'0' + (n % 10) as u8;
+            n /= 10;
+            if n == 0 {
+                break;
+            }
+        }
+        for &d in &digits[i..] {
+            value.push(char::from(d));
+        }
+    }
+    value
+}
+
+#[cfg(test)]
+mod host_header_tests {
+    //! Unit tests for [`super::host_header_value`].
+    //!
+    //! Coverage: the port is omitted only when it equals the scheme default (for both `http`
+    //! and `https` defaults, and a default port used with the other scheme keeps it), DNS
+    //! names and IPv4 literals pass through, IPv6 literals are bracketed exactly once, every port
+    //! digit is written, and the value is built in one preallocated `String` (hot path).
+    //! The wire-level behaviour (one `Host` reaching a downstream) is covered by
+    //! `http::proxy::tests::proxy_sends_the_downstream_host_*` and `tests/http_fetch_tests.rs`.
+
+    use super::host_header_value;
+
+    #[test]
+    fn omits_the_http_default_port() {
+        assert_eq!(host_header_value("svc.ns.svc", 80, 80), "svc.ns.svc");
+    }
+
+    #[test]
+    fn omits_the_https_default_port() {
+        assert_eq!(
+            host_header_value("api.example.com", 443, 443),
+            "api.example.com"
+        );
+    }
+
+    #[test]
+    fn keeps_a_non_default_port() {
+        assert_eq!(host_header_value("svc.ns.svc", 8080, 80), "svc.ns.svc:8080");
+    }
+
+    #[test]
+    fn keeps_the_other_schemes_default_port() {
+        assert_eq!(
+            host_header_value("api.example.com", 80, 443),
+            "api.example.com:80"
+        );
+        assert_eq!(
+            host_header_value("api.example.com", 443, 80),
+            "api.example.com:443"
+        );
+    }
+
+    #[test]
+    fn passes_ipv4_literals_through() {
+        assert_eq!(host_header_value("127.0.0.1", 9000, 80), "127.0.0.1:9000");
+        assert_eq!(host_header_value("10.0.0.7", 80, 80), "10.0.0.7");
+    }
+
+    #[test]
+    fn writes_every_port_digit() {
+        assert_eq!(host_header_value("h", 1, 80), "h:1");
+        assert_eq!(host_header_value("h", 10, 80), "h:10");
+        assert_eq!(host_header_value("h", 65535, 80), "h:65535");
+        assert_eq!(host_header_value("h", 0, 80), "h:0");
+    }
+
+    #[test]
+    fn allocates_the_value_once() {
+        let value = host_header_value("platform-metrics.pw.svc.cluster.local", 8080, 80);
+        assert!(value.capacity() >= value.len());
+        assert_eq!(
+            value.capacity(),
+            "platform-metrics.pw.svc.cluster.local".len() + 8
+        );
+    }
+
+    #[test]
+    fn brackets_ipv6_literals_once() {
+        assert_eq!(host_header_value("::1", 8080, 80), "[::1]:8080");
+        assert_eq!(host_header_value("fd00::7", 80, 80), "[fd00::7]");
+        assert_eq!(host_header_value("[::1]", 443, 443), "[::1]");
+        assert_eq!(host_header_value("[::1]", 8443, 443), "[::1]:8443");
+    }
+}

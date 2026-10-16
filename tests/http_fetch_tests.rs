@@ -338,3 +338,95 @@ fn fetch_get_connect_error_on_dead_port() {
     let result = fetch_get("http://127.0.0.1:1/closed", &options);
     assert!(result.is_err());
 }
+
+/// Capture one request on an ephemeral port; returns the URL to call and the captured head.
+fn start_capturing_server(
+    path: &str,
+) -> (
+    String,
+    Arc<std::sync::Mutex<String>>,
+    thread::JoinHandle<()>,
+) {
+    let seen = Arc::new(std::sync::Mutex::new(String::new()));
+    let seen_clone = Arc::clone(&seen);
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let url = format!("http://{}:{}{path}", addr.ip(), addr.port());
+    let server = thread::spawn(move || {
+        if let Ok((mut stream, _)) = listener.accept() {
+            *seen_clone.lock().unwrap() = read_request(&mut stream);
+            write_response(&mut stream, 200, "ok");
+        }
+    });
+    (url, seen, server)
+}
+
+fn host_lines(request: &str) -> Vec<String> {
+    request
+        .lines()
+        .filter_map(|l| {
+            let lower = l.to_ascii_lowercase();
+            lower.strip_prefix("host:").map(|v| v.trim().to_string())
+        })
+        .collect()
+}
+
+fn plain_options(extra_headers: Vec<(String, String)>) -> HttpFetchOptions {
+    HttpFetchOptions {
+        timeout: Duration::from_secs(2),
+        max_body_bytes: 1024,
+        extra_headers,
+    }
+}
+
+/// Strict HTTP/1.1 servers reject a request without Host; fetch must send exactly one, naming
+/// the URL's authority (regression guard for the origin-form request target).
+#[test]
+fn fetch_get_http_sends_one_host_naming_the_url_authority() {
+    let (url, seen, server) = start_capturing_server("/jwks");
+    let (status, _) = fetch_get(&url, &plain_options(vec![])).unwrap();
+    assert_eq!(status, 200);
+    server.join().ok();
+
+    let req = seen.lock().unwrap().clone();
+    let authority = url.trim_start_matches("http://").trim_end_matches("/jwks");
+    assert_eq!(
+        host_lines(&req),
+        vec![authority.to_string()],
+        "request: {req}"
+    );
+}
+
+#[test]
+fn fetch_post_http_sends_one_host_naming_the_url_authority() {
+    let (url, seen, server) = start_capturing_server("/hook");
+    let (status, _) = brrtrouter::http::fetch_post(&url, b"{}", &plain_options(vec![])).unwrap();
+    assert_eq!(status, 200);
+    server.join().ok();
+
+    let req = seen.lock().unwrap().clone();
+    let authority = url.trim_start_matches("http://").trim_end_matches("/hook");
+    assert_eq!(
+        host_lines(&req),
+        vec![authority.to_string()],
+        "request: {req}"
+    );
+}
+
+/// A caller-supplied Host (virtual-host routing through an ingress) replaces the default,
+/// never duplicates it.
+#[test]
+fn fetch_get_http_extra_host_header_replaces_the_default() {
+    let (url, seen, server) = start_capturing_server("/vhost");
+    let options = plain_options(vec![("Host".to_string(), "api.example.com".to_string())]);
+    let (status, _) = fetch_get(&url, &options).unwrap();
+    assert_eq!(status, 200);
+    server.join().ok();
+
+    let req = seen.lock().unwrap().clone();
+    assert_eq!(
+        host_lines(&req),
+        vec!["api.example.com".to_string()],
+        "request: {req}"
+    );
+}
