@@ -516,7 +516,7 @@ fn send_downstream(
     // `HttpClient::connect` has no URL to take a Host from and the target is origin-form, so
     // without this the downstream gets no Host at all (strict HTTP/1.1 servers answer 400).
     if let Ok(host_value) =
-        http_legacy::header::HeaderValue::from_str(&crate::http::host_header_value(&host, port, 80))
+        http_legacy::header::HeaderValue::try_from(crate::http::host_header_value(&host, port, 80))
     {
         proxy_req
             .headers_mut()
