@@ -1095,7 +1095,7 @@ impl JwksBearerProvider {
         let _guard = lock.lock().unwrap();
         cvar.notify_all();
 
-        crate::security::telemetry::jwks_refresh_succeeded(key_count);
+        crate::security::telemetry::jwks_refresh_succeeded(jwks_url, key_count);
 
         if key_count == 0 {
             // A parseable but empty keyset is a legitimate response (see the note in
@@ -1138,7 +1138,7 @@ impl JwksBearerProvider {
         reason: &str,
     ) {
         let consecutive_failures = fetch_state.record_failure();
-        crate::security::telemetry::jwks_refresh_failed();
+        crate::security::telemetry::jwks_refresh_failed(jwks_url);
         let elapsed_ms = refresh_start.elapsed().as_millis() as u64;
         let timeout_ms = fetch_timeout.as_millis() as u64;
 

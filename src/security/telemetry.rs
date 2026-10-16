@@ -13,21 +13,41 @@
 //!
 //! `brrtrouter_jwks_refresh_total{outcome}`, `brrtrouter_jwks_keys` and
 //! `brrtrouter_jwks_last_success_timestamp_seconds` say whether consumers can still validate a newly rotated key.
-//! A process has one JWKS bearer provider in practice; with several, the gauges show the last one refreshed.
+//! Labelled by `jwks_url`, so a service with several providers gets one series set per endpoint.
 //!
 //! Reasons are fixed `snake_case` tokens chosen by code, never request data, so the label set stays small.
 
 use std::cell::Cell;
 use std::fmt::Write as _;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 may::coroutine_local!(static REFUSAL: Cell<Option<&'static str>> = Cell::new(None));
 
-static JWKS_REFRESH_OK: AtomicU64 = AtomicU64::new(0);
-static JWKS_REFRESH_FAILED: AtomicU64 = AtomicU64::new(0);
-static JWKS_KEYS: AtomicU64 = AtomicU64::new(0);
-static JWKS_LAST_SUCCESS: AtomicU64 = AtomicU64::new(0);
+/// One JWKS endpoint's refresh record. Touched only on refresh (minutes apart), never per request.
+#[derive(Default)]
+struct JwksStats {
+    ok: AtomicU64,
+    failed: AtomicU64,
+    keys: AtomicU64,
+    last_success: AtomicU64,
+}
+
+/// Per JWKS URL: a service with several providers (two issuers, say) gets one series set per endpoint.
+static JWKS: Mutex<Vec<(String, Arc<JwksStats>)>> = Mutex::new(Vec::new());
+
+fn jwks_stats(url: &str) -> Arc<JwksStats> {
+    let mut all = JWKS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some((_, s)) = all.iter().find(|(u, _)| u == url) {
+        return Arc::clone(s);
+    }
+    let s = Arc::new(JwksStats::default());
+    all.push((url.to_string(), Arc::clone(&s)));
+    s
+}
 
 /// Record why the current request's credential was refused. Use a fixed `snake_case` token.
 pub fn set_refusal_reason(reason: &'static str) {
@@ -113,50 +133,71 @@ impl RefusalCounters {
     }
 }
 
-pub(crate) fn jwks_refresh_succeeded(keys: usize) {
-    JWKS_REFRESH_OK.fetch_add(1, Ordering::Relaxed);
-    JWKS_KEYS.store(keys as u64, Ordering::Relaxed);
+pub(crate) fn jwks_refresh_succeeded(jwks_url: &str, keys: usize) {
+    let stats = jwks_stats(jwks_url);
+    stats.ok.fetch_add(1, Ordering::Relaxed);
+    stats.keys.store(keys as u64, Ordering::Relaxed);
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or_default();
-    JWKS_LAST_SUCCESS.store(now, Ordering::Relaxed);
+    stats.last_success.store(now, Ordering::Relaxed);
 }
 
-pub(crate) fn jwks_refresh_failed() {
-    JWKS_REFRESH_FAILED.fetch_add(1, Ordering::Relaxed);
+pub(crate) fn jwks_refresh_failed(jwks_url: &str) {
+    jwks_stats(jwks_url).failed.fetch_add(1, Ordering::Relaxed);
 }
 
-/// Append the JWKS series to a Prometheus text body (nothing until a JWKS provider has refreshed).
+/// Append the JWKS series, one set per JWKS URL (label `jwks_url`), to a Prometheus text body. Nothing until a
+/// JWKS provider has refreshed.
 pub fn render_jwks_prometheus(body: &mut String) {
-    let ok = JWKS_REFRESH_OK.load(Ordering::Relaxed);
-    let failed = JWKS_REFRESH_FAILED.load(Ordering::Relaxed);
-    if ok + failed == 0 {
-        return; // no JWKS provider in this process
+    let all: Vec<(String, Arc<JwksStats>)> = JWKS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
+    if all.is_empty() {
+        return;
     }
-    body.push_str("# HELP brrtrouter_jwks_refresh_total JWKS refreshes by outcome\n");
+    let label = |u: &str| u.replace('\\', "\\\\").replace('"', "\\\"");
+    body.push_str("# HELP brrtrouter_jwks_refresh_total JWKS refreshes by endpoint and outcome\n");
     body.push_str("# TYPE brrtrouter_jwks_refresh_total counter\n");
-    let _ = writeln!(body, "brrtrouter_jwks_refresh_total{{outcome=\"ok\"}} {ok}");
-    let _ = writeln!(
-        body,
-        "brrtrouter_jwks_refresh_total{{outcome=\"failed\"}} {failed}"
-    );
-    body.push_str("# HELP brrtrouter_jwks_keys Usable keys in the last JWKS document loaded\n");
-    body.push_str("# TYPE brrtrouter_jwks_keys gauge\n");
-    let _ = writeln!(
-        body,
-        "brrtrouter_jwks_keys {}",
-        JWKS_KEYS.load(Ordering::Relaxed)
-    );
+    for (u, s) in &all {
+        let u = label(u);
+        let _ = writeln!(
+            body,
+            "brrtrouter_jwks_refresh_total{{jwks_url=\"{u}\",outcome=\"ok\"}} {}",
+            s.ok.load(Ordering::Relaxed)
+        );
+        let _ = writeln!(
+            body,
+            "brrtrouter_jwks_refresh_total{{jwks_url=\"{u}\",outcome=\"failed\"}} {}",
+            s.failed.load(Ordering::Relaxed)
+        );
+    }
     body.push_str(
-        "# HELP brrtrouter_jwks_last_success_timestamp_seconds Unix time of the last successful JWKS refresh\n",
+        "# HELP brrtrouter_jwks_keys Usable keys in the last JWKS document loaded, by endpoint\n",
+    );
+    body.push_str("# TYPE brrtrouter_jwks_keys gauge\n");
+    for (u, s) in &all {
+        let _ = writeln!(
+            body,
+            "brrtrouter_jwks_keys{{jwks_url=\"{}\"}} {}",
+            label(u),
+            s.keys.load(Ordering::Relaxed)
+        );
+    }
+    body.push_str(
+        "# HELP brrtrouter_jwks_last_success_timestamp_seconds Unix time of the last successful JWKS refresh, by endpoint\n",
     );
     body.push_str("# TYPE brrtrouter_jwks_last_success_timestamp_seconds gauge\n");
-    let _ = writeln!(
-        body,
-        "brrtrouter_jwks_last_success_timestamp_seconds {}",
-        JWKS_LAST_SUCCESS.load(Ordering::Relaxed)
-    );
+    for (u, s) in &all {
+        let _ = writeln!(
+            body,
+            "brrtrouter_jwks_last_success_timestamp_seconds{{jwks_url=\"{}\"}} {}",
+            label(u),
+            s.last_success.load(Ordering::Relaxed)
+        );
+    }
 }
 
 #[cfg(test)]
@@ -193,10 +234,13 @@ mod tests {
 
     #[test]
     fn renders_jwks_after_a_refresh() {
-        jwks_refresh_succeeded(2);
+        jwks_refresh_succeeded("http://issuer-a/jwks.json", 2);
+        jwks_refresh_succeeded("http://issuer-b/jwks.json", 3);
+        jwks_refresh_failed("http://issuer-b/jwks.json");
         let mut body = String::new();
         render_jwks_prometheus(&mut body);
-        assert!(body.contains("brrtrouter_jwks_keys 2"));
-        assert!(body.contains("brrtrouter_jwks_refresh_total{outcome=\"ok\"}"));
+        assert!(body.contains("brrtrouter_jwks_keys{jwks_url=\"http://issuer-a/jwks.json\"} 2"));
+        assert!(body.contains("brrtrouter_jwks_keys{jwks_url=\"http://issuer-b/jwks.json\"} 3"));
+        assert!(body.contains("brrtrouter_jwks_refresh_total{jwks_url=\"http://issuer-b/jwks.json\",outcome=\"failed\"} 1"));
     }
 }

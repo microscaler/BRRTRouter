@@ -67,7 +67,8 @@ router's second, scope-probing `validate` call overwrites the slot, so a refusal
 may record its own reason the same way.
 
 JWKS freshness at a consumer: `brrtrouter_jwks_refresh_total{outcome="ok|failed"}`, `brrtrouter_jwks_keys`,
-`brrtrouter_jwks_last_success_timestamp_seconds` (rendered only once a JWKS provider has refreshed). A consumer whose
+`brrtrouter_jwks_last_success_timestamp_seconds`, each labelled `jwks_url` (one set per JWKS endpoint; rendered only
+once a JWKS provider has refreshed). A consumer whose
 last success is older than its cache TTL by a wide margin cannot validate tokens signed with a newly rotated key.
 
 Tests: `security::telemetry::tests`.
