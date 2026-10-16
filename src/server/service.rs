@@ -1691,6 +1691,9 @@ impl HttpService for AppService {
                         if req.0.is_empty() {
                             continue;
                         }
+                        // Each alternative stands alone: what an earlier one could not resolve (an undefined
+                        // scheme, a missing provider) must not be reported for a later one's refusal.
+                        auth_reason = None;
                         let mut ok = true;
                         for (scheme_name, scopes) in &req.0 {
                             // S2: Security scheme lookup

@@ -34,18 +34,21 @@ struct JwksStats {
     last_success: AtomicU64,
 }
 
-/// Per JWKS URL: a service with several providers (two issuers, say) gets one series set per endpoint.
+/// Per JWKS endpoint, keyed by its `jwks_url` label: a service with several providers (two issuers, say) gets one
+/// series set per endpoint. Keying by the label, not the raw URL, keeps one series per label: URLs that differ only in
+/// what the label drops (query, user info) share one record instead of emitting duplicate samples.
 static JWKS: Mutex<Vec<(String, Arc<JwksStats>)>> = Mutex::new(Vec::new());
 
 fn jwks_stats(url: &str) -> Arc<JwksStats> {
+    let key = jwks_label(url);
     let mut all = JWKS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    if let Some((_, s)) = all.iter().find(|(u, _)| u == url) {
+    if let Some((_, s)) = all.iter().find(|(k, _)| *k == key) {
         return Arc::clone(s);
     }
     let s = Arc::new(JwksStats::default());
-    all.push((url.to_string(), Arc::clone(&s)));
+    all.push((key, Arc::clone(&s)));
     s
 }
 
@@ -177,7 +180,8 @@ pub fn render_jwks_prometheus(body: &mut String) {
     if all.is_empty() {
         return;
     }
-    let label = |u: &str| jwks_label(u);
+    // Entries are keyed by their label already.
+    let label = |u: &str| u.to_string();
     body.push_str("# HELP brrtrouter_jwks_refresh_total JWKS refreshes by endpoint and outcome\n");
     body.push_str("# TYPE brrtrouter_jwks_refresh_total counter\n");
     for (u, s) in &all {
@@ -249,6 +253,21 @@ mod tests {
             body.contains("brrtrouter_auth_failures_by_reason_total{reason=\"token_expired\"} 2")
         );
         assert!(!body.contains("reason=\"key_not_found\""));
+    }
+
+    #[test]
+    fn jwks_urls_with_the_same_label_share_one_series() {
+        jwks_refresh_succeeded("https://dup.example/jwks?tenant=a", 2);
+        jwks_refresh_failed("https://dup.example/jwks?tenant=b");
+        let mut body = String::new();
+        render_jwks_prometheus(&mut body);
+        let ok =
+            "brrtrouter_jwks_refresh_total{jwks_url=\"https://dup.example/jwks\",outcome=\"ok\"}";
+        assert_eq!(body.matches(ok).count(), 1, "{body}");
+        assert!(body.contains(&format!("{ok} 1")), "{body}");
+        assert!(body.contains(
+            "brrtrouter_jwks_refresh_total{jwks_url=\"https://dup.example/jwks\",outcome=\"failed\"} 1"
+        ));
     }
 
     #[test]
