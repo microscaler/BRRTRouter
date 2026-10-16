@@ -148,6 +148,25 @@ pub(crate) fn jwks_refresh_failed(jwks_url: &str) {
     jwks_stats(jwks_url).failed.fetch_add(1, Ordering::Relaxed);
 }
 
+/// The `jwks_url` label for a configured JWKS URL: scheme, host, port and path only. User info, query and fragment
+/// are dropped (a signed or credentialed URL must not reach `/metrics`, which every scraper stores), surrounding
+/// whitespace is trimmed, and what is left is escaped for the Prometheus text format (backslash, quote, newline).
+fn jwks_label(raw: &str) -> String {
+    let safe = match url::Url::parse(raw.trim()) {
+        Ok(u) => {
+            let host = u.host_str().unwrap_or("");
+            match u.port() {
+                Some(p) => format!("{}://{host}:{p}{}", u.scheme(), u.path()),
+                None => format!("{}://{host}{}", u.scheme(), u.path()),
+            }
+        }
+        Err(_) => "unparseable".to_string(),
+    };
+    safe.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+}
+
 /// Append the JWKS series, one set per JWKS URL (label `jwks_url`), to a Prometheus text body. Nothing until a
 /// JWKS provider has refreshed.
 pub fn render_jwks_prometheus(body: &mut String) {
@@ -158,7 +177,7 @@ pub fn render_jwks_prometheus(body: &mut String) {
     if all.is_empty() {
         return;
     }
-    let label = |u: &str| u.replace('\\', "\\\\").replace('"', "\\\"");
+    let label = |u: &str| jwks_label(u);
     body.push_str("# HELP brrtrouter_jwks_refresh_total JWKS refreshes by endpoint and outcome\n");
     body.push_str("# TYPE brrtrouter_jwks_refresh_total counter\n");
     for (u, s) in &all {
@@ -230,6 +249,22 @@ mod tests {
             body.contains("brrtrouter_auth_failures_by_reason_total{reason=\"token_expired\"} 2")
         );
         assert!(!body.contains("reason=\"key_not_found\""));
+    }
+
+    #[test]
+    fn jwks_label_drops_credentials_and_escapes() {
+        assert_eq!(
+            jwks_label(
+                "https://user:secret@issuer.example.com:8443/.well-known/jwks.json?sig=abc#x"
+            ),
+            "https://issuer.example.com:8443/.well-known/jwks.json"
+        );
+        assert_eq!(
+            jwks_label("http://svc.ns.svc/jwks.json\n"),
+            "http://svc.ns.svc/jwks.json"
+        );
+        assert_eq!(jwks_label("not a url"), "unparseable");
+        assert!(!jwks_label("https://a.example/p\"q").contains('\n'));
     }
 
     #[test]

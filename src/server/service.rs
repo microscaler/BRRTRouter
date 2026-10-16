@@ -1611,6 +1611,9 @@ impl HttpService for AppService {
                 for req_group in requirements {
                     let mut ok = true;
                     for resolved in req_group {
+                        // Each alternative records its own reason: a reason left by an earlier, failed alternative must not
+                        // be blamed for this provider's refusal.
+                        let _ = crate::security::telemetry::take_refusal_reason();
                         let auth_result = resolved.provider.validate(
                             resolved.scheme.as_ref(),
                             &resolved.scopes,
@@ -1735,6 +1738,9 @@ impl HttpService for AppService {
 
                             // Measure authentication/authorization performance
                             let auth_start = std::time::Instant::now();
+                            // Each alternative records its own reason: a reason left by an earlier, failed alternative must not
+                            // be blamed for this provider's refusal.
+                            let _ = crate::security::telemetry::take_refusal_reason();
                             let auth_result = provider.validate(scheme, scopes, &sec_req);
                             let auth_duration = auth_start.elapsed();
 
