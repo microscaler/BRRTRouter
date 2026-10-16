@@ -444,6 +444,7 @@ pub use spiffe::{
 // Decision types (Story 9.4 — shadow decision observability)
 pub mod decision;
 pub mod shadow;
+pub mod telemetry;
 
 // JWT common-path middleware types (Story 4.2 — hybrid authz model)
 pub mod jwt_auth;

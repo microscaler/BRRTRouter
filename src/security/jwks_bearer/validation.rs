@@ -140,6 +140,30 @@ impl ValidationError {
         }
     }
 
+    /// The refusal reason as a fixed metric label (no kid, claim or algorithm values).
+    fn metric_reason(&self) -> &'static str {
+        match self {
+            ValidationError::MissingToken => "missing_token",
+            ValidationError::InvalidTokenFormat { .. } => "invalid_token_format",
+            ValidationError::MissingKeyId => "missing_kid",
+            ValidationError::MissingKey { .. } => "key_not_found",
+            ValidationError::InvalidSignature => "invalid_signature",
+            ValidationError::ExpiredToken { .. } => "token_expired",
+            ValidationError::InvalidIssuer { .. } => "invalid_issuer",
+            ValidationError::InvalidAudience { .. } => "invalid_audience",
+            ValidationError::MissingRequiredClaim { .. } => "missing_required_claim",
+            ValidationError::UnsupportedAlgorithm { .. } => "unsupported_algorithm",
+            ValidationError::InvalidTokenType { .. } => "invalid_token_type",
+            ValidationError::JwksFetchError { .. } => "jwks_fetch_error",
+            ValidationError::InsufficientScopes { .. } => "insufficient_scope",
+            ValidationError::TokenRevoked => "token_revoked",
+            ValidationError::StaleToken => "stale_token_version",
+            ValidationError::TokenStatusUnavailable => "token_status_unavailable",
+            ValidationError::InvalidTokenStatusClaims => "invalid_token_status_claims",
+            ValidationError::InvalidSecurityScheme { .. } => "invalid_security_scheme",
+        }
+    }
+
     /// Log the error with structured logging
     fn log(&self) {
         match self {
@@ -243,6 +267,7 @@ pub(super) fn validate_token_impl(
             // The request span (the coroutine's current span) says why the credential was
             // refused; the validating coroutine is the request's own, so this is that request.
             may_tracing::current().record("brrtrouter.auth.reason", e.error_reason().as_str());
+            crate::security::telemetry::set_refusal_reason(e.metric_reason());
             false
         }
     }

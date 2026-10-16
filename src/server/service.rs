@@ -704,6 +704,8 @@ pub fn metrics_endpoint(
         "brrtrouter_auth_failures_total {}",
         metrics.auth_failures()
     );
+    metrics.auth_failure_reasons().render_prometheus(&mut body);
+    crate::security::telemetry::render_jwks_prometheus(&mut body);
 
     body.push_str(
         "# HELP brrtrouter_cors_origin_rejections_total CORS rejections: Origin not allowed (403)\n",
@@ -1597,6 +1599,8 @@ impl HttpService for AppService {
             // Why BRRTRouter could not evaluate a requirement; a provider records its own
             // reason (e.g. token_expired) on the request span while validating.
             let mut auth_reason: Option<String> = None;
+            // A reason left by an earlier request on this coroutine must not be taken for this one.
+            let _ = crate::security::telemetry::take_refusal_reason();
 
             // Helper to perform the actual auth check for both pre-resolved and raw paths
             fn validate_requirements(
@@ -1607,6 +1611,9 @@ impl HttpService for AppService {
                 for req_group in requirements {
                     let mut ok = true;
                     for resolved in req_group {
+                        // Each alternative records its own reason: a reason left by an earlier, failed alternative must not
+                        // be blamed for this provider's refusal.
+                        let _ = crate::security::telemetry::take_refusal_reason();
                         let auth_result = resolved.provider.validate(
                             resolved.scheme.as_ref(),
                             &resolved.scopes,
@@ -1684,6 +1691,9 @@ impl HttpService for AppService {
                         if req.0.is_empty() {
                             continue;
                         }
+                        // Each alternative stands alone: what an earlier one could not resolve (an undefined
+                        // scheme, a missing provider) must not be reported for a later one's refusal.
+                        auth_reason = None;
                         let mut ok = true;
                         for (scheme_name, scopes) in &req.0 {
                             // S2: Security scheme lookup
@@ -1731,6 +1741,9 @@ impl HttpService for AppService {
 
                             // Measure authentication/authorization performance
                             let auth_start = std::time::Instant::now();
+                            // Each alternative records its own reason: a reason left by an earlier, failed alternative must not
+                            // be blamed for this provider's refusal.
+                            let _ = crate::security::telemetry::take_refusal_reason();
                             let auth_result = provider.validate(scheme, scopes, &sec_req);
                             let auth_duration = auth_start.elapsed();
 
@@ -1808,8 +1821,23 @@ impl HttpService for AppService {
                 }
             }
             if !authorized {
+                // Why, as one fixed token: the provider's own reason when it gave one (token_expired,
+                // key_not_found, invalid_audience, ...), else what the router itself found.
+                let provider_reason = crate::security::telemetry::take_refusal_reason();
+                let refusal: &'static str = if insufficient_scope {
+                    "insufficient_scope"
+                } else if let Some(reason) = provider_reason {
+                    reason
+                } else {
+                    match auth_reason.as_deref() {
+                        Some(r) if r.starts_with("scheme_undefined") => "scheme_undefined",
+                        Some(r) if r.starts_with("provider_missing") => "provider_missing",
+                        _ => "invalid_credentials",
+                    }
+                };
                 if let Some(metrics) = &self.metrics {
                     metrics.inc_auth_failure();
+                    metrics.inc_auth_failure_reason(refusal);
                 }
 
                 let status = if insufficient_scope { 403 } else { 401 };
@@ -1842,7 +1870,7 @@ impl HttpService for AppService {
                         path = %path,
                         handler = %route_match.handler_name,
                         status = 401,
-                        reason = "invalid_credentials",
+                        reason = refusal,
                         "Authentication failed (401 unauthorized)"
                     );
                 }
