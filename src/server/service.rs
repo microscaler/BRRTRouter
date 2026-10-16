@@ -1691,9 +1691,11 @@ impl HttpService for AppService {
                         if req.0.is_empty() {
                             continue;
                         }
-                        // Each alternative stands alone: what an earlier one could not resolve (an undefined
-                        // scheme, a missing provider) must not be reported for a later one's refusal.
+                        // Each alternative stands alone: neither what an earlier one could not resolve (an undefined
+                        // scheme, a missing provider) nor an earlier provider's reason may be reported for this one's
+                        // refusal, including when this one fails at lookup before any provider runs.
                         auth_reason = None;
+                        let _ = crate::security::telemetry::take_refusal_reason();
                         let mut ok = true;
                         for (scheme_name, scopes) in &req.0 {
                             // S2: Security scheme lookup
