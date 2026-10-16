@@ -60,7 +60,9 @@ says why, one fixed token per refusal:
 | `insufficient_scope`, `scheme_undefined`, `provider_missing`, `invalid_credentials` | the router (`invalid_credentials` when the provider gave no reason) |
 
 Mechanism (`src/security/telemetry.rs`): a provider calls `set_refusal_reason` (coroutine-local slot); the router
-`take_refusal_reason`s once per refused request, counts it, and logs it in its `Authentication failed` line. The
+`take_refusal_reason`s once per refused request, counts it in its own service's `RefusalCounters` (one atomic per
+reason in `telemetry::REASONS`, unknown reasons as `other`; per service like `brrtrouter_auth_failures_total`, no
+lock), and logs it in its `Authentication failed` line. The
 router's second, scope-probing `validate` call overwrites the slot, so a refusal is never counted twice. Any provider
 may record its own reason the same way.
 

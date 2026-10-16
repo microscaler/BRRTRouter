@@ -174,6 +174,8 @@ pub struct MetricsMiddleware {
     used_stack: AtomicUsize,
     top_level_requests: AtomicUsize,
     auth_failures: AtomicUsize,
+    /// Refused requests by reason (lock-free, per service).
+    auth_failure_reasons: crate::security::telemetry::RefusalCounters,
     /// Active requests currently being processed (incremented on start, decremented on completion)
     active_requests: AtomicI64,
     /// Per-path metrics for detailed monitoring (lock-free concurrent map)
@@ -234,6 +236,7 @@ impl Default for MetricsMiddleware {
             used_stack: AtomicUsize::new(0),
             top_level_requests: AtomicUsize::new(0),
             auth_failures: AtomicUsize::new(0),
+            auth_failure_reasons: crate::security::telemetry::RefusalCounters::default(),
             active_requests: AtomicI64::new(0),
             path_metrics: Arc::new(DashMap::new()),
             status_metrics: Arc::new(DashMap::new()),
@@ -309,6 +312,17 @@ impl MetricsMiddleware {
     /// Increment the authentication failure counter
     pub fn inc_auth_failure(&self) {
         self.auth_failures.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Count one refused request under its reason (see `security::telemetry::REASONS`).
+    pub fn inc_auth_failure_reason(&self, reason: &str) {
+        self.auth_failure_reasons.count(reason);
+    }
+
+    /// Refused requests by reason.
+    #[must_use]
+    pub fn auth_failure_reasons(&self) -> &crate::security::telemetry::RefusalCounters {
+        &self.auth_failure_reasons
     }
 
     /// Get the total number of authentication failures

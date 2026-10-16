@@ -704,7 +704,8 @@ pub fn metrics_endpoint(
         "brrtrouter_auth_failures_total {}",
         metrics.auth_failures()
     );
-    crate::security::telemetry::render_prometheus(&mut body);
+    metrics.auth_failure_reasons().render_prometheus(&mut body);
+    crate::security::telemetry::render_jwks_prometheus(&mut body);
 
     body.push_str(
         "# HELP brrtrouter_cors_origin_rejections_total CORS rejections: Origin not allowed (403)\n",
@@ -1811,9 +1812,6 @@ impl HttpService for AppService {
                 }
             }
             if !authorized {
-                if let Some(metrics) = &self.metrics {
-                    metrics.inc_auth_failure();
-                }
                 // Why, as one fixed token: the provider's own reason when it gave one (token_expired,
                 // key_not_found, invalid_audience, ...), else what the router itself found.
                 let provider_reason = crate::security::telemetry::take_refusal_reason();
@@ -1828,7 +1826,10 @@ impl HttpService for AppService {
                         _ => "invalid_credentials",
                     }
                 };
-                crate::security::telemetry::count_refusal(refusal);
+                if let Some(metrics) = &self.metrics {
+                    metrics.inc_auth_failure();
+                    metrics.inc_auth_failure_reason(refusal);
+                }
 
                 let status = if insufficient_scope { 403 } else { 401 };
                 let title = if status == 403 {

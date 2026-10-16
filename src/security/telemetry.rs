@@ -20,12 +20,10 @@
 use std::cell::Cell;
 use std::fmt::Write as _;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 may::coroutine_local!(static REFUSAL: Cell<Option<&'static str>> = Cell::new(None));
 
-static REFUSALS: Mutex<Vec<(&'static str, u64)>> = Mutex::new(Vec::new());
 static JWKS_REFRESH_OK: AtomicU64 = AtomicU64::new(0);
 static JWKS_REFRESH_FAILED: AtomicU64 = AtomicU64::new(0);
 static JWKS_KEYS: AtomicU64 = AtomicU64::new(0);
@@ -42,24 +40,77 @@ pub fn take_refusal_reason() -> Option<&'static str> {
     REFUSAL.with(Cell::take)
 }
 
-/// Count one refused request under `reason`.
-pub fn count_refusal(reason: &'static str) {
-    let mut refusals = REFUSALS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    match refusals.iter_mut().find(|(r, _)| *r == reason) {
-        Some((_, n)) => *n += 1,
-        None => refusals.push((reason, 1)),
+/// Every reason the router and the bundled providers record; anything else counts as `other`.
+pub const REASONS: [&str; 23] = [
+    "missing_token",
+    "invalid_token_format",
+    "missing_kid",
+    "key_not_found",
+    "invalid_signature",
+    "token_expired",
+    "invalid_issuer",
+    "invalid_audience",
+    "missing_required_claim",
+    "unsupported_algorithm",
+    "invalid_token_type",
+    "jwks_fetch_error",
+    "insufficient_scope",
+    "token_revoked",
+    "stale_token_version",
+    "token_status_unavailable",
+    "invalid_token_status_claims",
+    "invalid_security_scheme",
+    "scheme_undefined",
+    "provider_missing",
+    "invalid_credentials",
+    "invalid_api_key",
+    "other",
+];
+
+/// Per-service refusal counts, one atomic per [`REASONS`] entry: no lock on the refusal path.
+#[derive(Debug)]
+pub struct RefusalCounters([AtomicU64; REASONS.len()]);
+
+impl Default for RefusalCounters {
+    fn default() -> Self {
+        Self(std::array::from_fn(|_| AtomicU64::new(0)))
     }
 }
 
-/// Refusal counts so far, by reason.
-#[must_use]
-pub fn refusals() -> Vec<(&'static str, u64)> {
-    REFUSALS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .clone()
+impl RefusalCounters {
+    /// Count one refused request under `reason` (`other` when it is not in [`REASONS`]).
+    pub fn count(&self, reason: &str) {
+        let i = REASONS
+            .iter()
+            .position(|r| *r == reason)
+            .unwrap_or(REASONS.len() - 1);
+        self.0[i].fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Non-zero counts, by reason.
+    #[must_use]
+    pub fn snapshot(&self) -> Vec<(&'static str, u64)> {
+        REASONS
+            .iter()
+            .zip(self.0.iter())
+            .map(|(r, n)| (*r, n.load(Ordering::Relaxed)))
+            .filter(|(_, n)| *n > 0)
+            .collect()
+    }
+
+    /// Append `brrtrouter_auth_failures_by_reason_total` to a Prometheus text body.
+    pub fn render_prometheus(&self, body: &mut String) {
+        body.push_str(
+            "# HELP brrtrouter_auth_failures_by_reason_total Refused credentials by reason (token_expired, key_not_found, invalid_audience, insufficient_scope, ...)\n",
+        );
+        body.push_str("# TYPE brrtrouter_auth_failures_by_reason_total counter\n");
+        for (reason, n) in self.snapshot() {
+            let _ = writeln!(
+                body,
+                "brrtrouter_auth_failures_by_reason_total{{reason=\"{reason}\"}} {n}"
+            );
+        }
+    }
 }
 
 pub(crate) fn jwks_refresh_succeeded(keys: usize) {
@@ -76,18 +127,8 @@ pub(crate) fn jwks_refresh_failed() {
     JWKS_REFRESH_FAILED.fetch_add(1, Ordering::Relaxed);
 }
 
-/// Append the refusal and JWKS series to a Prometheus text body.
-pub fn render_prometheus(body: &mut String) {
-    body.push_str(
-        "# HELP brrtrouter_auth_failures_by_reason_total Refused credentials by reason (token_expired, key_not_found, invalid_audience, insufficient_scope, ...)\n",
-    );
-    body.push_str("# TYPE brrtrouter_auth_failures_by_reason_total counter\n");
-    for (reason, n) in refusals() {
-        let _ = writeln!(
-            body,
-            "brrtrouter_auth_failures_by_reason_total{{reason=\"{reason}\"}} {n}"
-        );
-    }
+/// Append the JWKS series to a Prometheus text body (nothing until a JWKS provider has refreshed).
+pub fn render_jwks_prometheus(body: &mut String) {
     let ok = JWKS_REFRESH_OK.load(Ordering::Relaxed);
     let failed = JWKS_REFRESH_FAILED.load(Ordering::Relaxed);
     if ok + failed == 0 {
@@ -120,8 +161,8 @@ pub fn render_prometheus(body: &mut String) {
 
 #[cfg(test)]
 mod tests {
-    //! The refusal slot is take-once, counts accumulate per reason, and the rendered text carries both the
-    //! refusal and JWKS series once a refresh has happened.
+    //! The refusal slot is take-once; counters are per instance and fold unknown reasons into `other`; the JWKS
+    //! series render once a refresh has happened.
     use super::*;
 
     #[test]
@@ -133,19 +174,28 @@ mod tests {
     }
 
     #[test]
-    fn counts_and_renders_by_reason() {
-        count_refusal("test_reason_a");
-        count_refusal("test_reason_a");
-        count_refusal("test_reason_b");
-        let got = refusals();
-        assert!(got.contains(&("test_reason_a", 2)));
-        assert!(got.contains(&("test_reason_b", 1)));
+    fn counts_per_service_by_reason() {
+        let a = RefusalCounters::default();
+        let b = RefusalCounters::default();
+        a.count("token_expired");
+        a.count("token_expired");
+        a.count("something_custom");
+        b.count("key_not_found");
+        assert_eq!(a.snapshot(), vec![("token_expired", 2), ("other", 1)]);
+        assert_eq!(b.snapshot(), vec![("key_not_found", 1)]);
+        let mut body = String::new();
+        a.render_prometheus(&mut body);
+        assert!(
+            body.contains("brrtrouter_auth_failures_by_reason_total{reason=\"token_expired\"} 2")
+        );
+        assert!(!body.contains("reason=\"key_not_found\""));
+    }
+
+    #[test]
+    fn renders_jwks_after_a_refresh() {
         jwks_refresh_succeeded(2);
         let mut body = String::new();
-        render_prometheus(&mut body);
-        assert!(
-            body.contains("brrtrouter_auth_failures_by_reason_total{reason=\"test_reason_a\"} 2")
-        );
+        render_jwks_prometheus(&mut body);
         assert!(body.contains("brrtrouter_jwks_keys 2"));
         assert!(body.contains("brrtrouter_jwks_refresh_total{outcome=\"ok\"}"));
     }
