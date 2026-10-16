@@ -512,6 +512,17 @@ fn send_downstream(
         }
     }
 
+    // The client's Host named this service and is dropped by `skip_forward_request_header`.
+    // `HttpClient::connect` has no URL to take a Host from and the target is origin-form, so
+    // without this the downstream gets no Host at all (strict HTTP/1.1 servers answer 400).
+    if let Ok(host_value) =
+        http_legacy::header::HeaderValue::from_str(&crate::http::host_header_value(&host, port, 80))
+    {
+        proxy_req
+            .headers_mut()
+            .insert(http_legacy::header::HOST, host_value);
+    }
+
     if proxy_req
         .headers()
         .get(http_legacy::header::ACCEPT)
@@ -1630,6 +1641,7 @@ mod tests {
         /// True if the client-supplied `Connection: keep-alive` was forwarded (must be false).
         saw_forwarded_keep_alive: bool,
         saw_request_id: bool,
+        hosts: Vec<String>,
     }
 
     fn spawn_capture_downstream() -> (u16, Arc<Mutex<Option<CapturedDownstream>>>) {
@@ -1703,6 +1715,7 @@ mod tests {
         let mut content_type = None;
         let mut saw_forwarded_keep_alive = false;
         let mut saw_request_id = false;
+        let mut hosts = Vec::new();
         for line in lines {
             let lower = line.to_ascii_lowercase();
             if let Some(rest) = lower.strip_prefix("content-type:") {
@@ -1714,6 +1727,9 @@ mod tests {
             if lower.starts_with("x-request-id:") {
                 saw_request_id = true;
             }
+            if let Some(rest) = lower.strip_prefix("host:") {
+                hosts.push(rest.trim().to_string());
+            }
         }
         let body = buf.get(end..).unwrap_or(&[]).to_vec();
         CapturedDownstream {
@@ -1722,6 +1738,7 @@ mod tests {
             body,
             saw_forwarded_keep_alive,
             saw_request_id,
+            hosts,
         }
     }
 
@@ -1789,6 +1806,65 @@ mod tests {
         assert!(got.saw_request_id, "P3 end-to-end headers still forward");
 
         std::env::remove_var("SERVICE_HTTP_PORT");
+    }
+
+    /// The downstream sees exactly one Host naming itself, never the client's.
+    #[test]
+    fn proxy_sends_the_downstream_host_not_the_clients() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        std::env::remove_var("POD_NAMESPACE");
+        let (port, captured) = spawn_capture_downstream();
+        std::env::set_var("SERVICE_HTTP_PORT", port.to_string());
+
+        let req = query_proxy_request(None, &[("host", "platform.example.com")]);
+        let res = proxy_untyped(&req, "127.0.0.1", "/search");
+        assert_eq!(res.status, 200, "2xx from mock: {:?}", res.body);
+
+        let got = captured
+            .lock()
+            .unwrap()
+            .clone()
+            .expect("downstream should receive request");
+        assert_eq!(got.hosts, vec![format!("127.0.0.1:{port}")]);
+
+        std::env::remove_var("SERVICE_HTTP_PORT");
+    }
+
+    /// A client request without Host (HTTP/1.0, internal callers) still yields one downstream Host.
+    #[test]
+    fn proxy_sends_the_downstream_host_when_the_client_sent_none() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        std::env::remove_var("POD_NAMESPACE");
+        let (port, captured) = spawn_capture_downstream();
+        std::env::set_var("SERVICE_HTTP_PORT", port.to_string());
+
+        let req = query_proxy_request(None, &[("x-request-id", "req-host-1")]);
+        let res = proxy_untyped(&req, "127.0.0.1", "/search");
+        assert_eq!(res.status, 200, "2xx from mock: {:?}", res.body);
+
+        let got = captured
+            .lock()
+            .unwrap()
+            .clone()
+            .expect("downstream should receive request");
+        assert_eq!(got.hosts, vec![format!("127.0.0.1:{port}")]);
+
+        std::env::remove_var("SERVICE_HTTP_PORT");
+    }
+
+    /// The Host the proxy builds for a namespaced Service is its cluster DNS name and port.
+    #[test]
+    fn downstream_host_header_for_a_namespaced_service() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        std::env::set_var("POD_NAMESPACE", "pw");
+        std::env::remove_var("SERVICE_HTTP_PORT");
+        let value = crate::http::host_header_value(
+            &downstream_host("platform-metrics"),
+            downstream_http_port(),
+            80,
+        );
+        assert_eq!(value, "platform-metrics.pw.svc.cluster.local:8080");
+        std::env::remove_var("POD_NAMESPACE");
     }
 
     /// P2 / N6 — legacy http 0.2 Method bridge accepts QUERY.

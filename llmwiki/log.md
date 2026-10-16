@@ -385,3 +385,14 @@ Hauliage Phase 3 unblockers for Vite dev proxy and frontend-aligned BFF routes.
 - Performance work uses Pyroscope and Grafana on the local development cluster, plus `cargo flamegraph` and the Goose
   load tests.
 - Details and revisit conditions: [`docs/ADRS/004-no-in-process-continuous-profiling.md`](../docs/ADRS/004-no-in-process-continuous-profiling.md)
+
+## [2026-10-16] fix | outbound `Host` on proxied requests (#475)
+
+- `proxy_untyped` sent no `Host`: it connects by address (`HttpClient::connect`) with an origin-form
+  target, and `may_minihttp` only writes `Host` for absolute URIs. Strict servers answered 400 (Google
+  Managed Prometheus query frontend behind the PriceWhisperer platform BFF).
+- New `http::host_header_value`; the proxy sets the downstream's own `Host`, the client's is still dropped.
+- Fetch helpers already send the URL authority via `HttpClient::from_url`; now covered by
+  integration tests (one `Host`, `extra_headers` override replaces rather than duplicates).
+- Details: [`topics/native-http-client-and-tls.md`](./topics/native-http-client-and-tls.md#host-header),
+  [`topics/bff-gateway-merge-and-proxy-headers.md`](./topics/bff-gateway-merge-and-proxy-headers.md).

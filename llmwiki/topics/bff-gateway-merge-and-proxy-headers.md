@@ -3,7 +3,7 @@
 - **Status**: `active`
 - **Code anchors**: `tooling/src/brrtrouter_tooling/bff/merge.py`, `tooling/src/brrtrouter_tooling/helpers.py`, `tooling/src/brrtrouter_tooling/workspace/bff/generate_system.py`, `src/http/proxy.rs`, `src/server/response.rs`
 - **Sibling**: Hauliage [`docs/llmwiki/topics/k8s-native-bff-routing.md`](../../../../hauliage/docs/llmwiki/topics/k8s-native-bff-routing.md)
-- **Last updated**: 2026-07-07
+- **Last updated**: 2026-10-16
 
 ## Gateway public paths (suite config merge)
 
@@ -51,3 +51,21 @@ If downstream `Content-Length` is forwarded, clients see **duplicate** `Content-
 - Python: `TestGatewayPublicPath`, `test_merge_prefixed_gateway_paths`, `test_suite_config_uses_prefixed_gateway_paths`
 
 Run Rust tests on **ms02** (Mac cross-compile may fail on `ring`/CPU features).
+
+## Proxy request `Host` (2026-10-16)
+
+`proxy_untyped` connects with `HttpClient::connect(addr)` and sends an origin-form target, so
+`may_minihttp` adds no `Host`; the client's `Host` (the BFF's public name) is deliberately not
+forwarded (`skip_forward_request_header`). Until this fix the downstream got **no** `Host`, which
+strict HTTP/1.1 servers reject with 400 (seen against Google Managed Prometheus's Go frontend).
+
+The proxy now inserts exactly one `Host` naming the downstream:
+`host_header_value(downstream_host(service), downstream_http_port(), 80)` →
+`<service>.<ns>.svc.cluster.local:8080`. Details: [native HTTP client](./native-http-client-and-tls.md#host-header).
+
+**Tests**
+
+- `http::proxy::tests::proxy_sends_the_downstream_host_not_the_clients`
+- `http::proxy::tests::proxy_sends_the_downstream_host_when_the_client_sent_none`
+- `http::proxy::tests::downstream_host_header_for_a_namespaced_service`
+- `http::host_header_tests::*`
