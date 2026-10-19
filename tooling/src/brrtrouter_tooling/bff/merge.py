@@ -98,6 +98,207 @@ def _register_operation_id(
     operation_origin[operation_id] = (service, path, method)
 
 
+def _component_refs(val: Any, kind: str) -> set[str]:
+    """Names referenced as ``#/components/{kind}/<name>`` anywhere in ``val``."""
+    prefix = f"#/components/{kind}/"
+    found: set[str] = set()
+    stack = [val]
+    while stack:
+        cur = stack.pop()
+        if isinstance(cur, dict):
+            ref = cur.get("$ref")
+            if isinstance(ref, str) and ref.startswith(prefix):
+                found.add(ref[len(prefix) :])
+            stack.extend(cur.values())
+        elif isinstance(cur, list):
+            stack.extend(cur)
+    return found
+
+
+def _schema_closure(roots: set[str], schemas: dict[str, Any]) -> set[str]:
+    """``roots`` plus every schema they reference, transitively (within one service spec)."""
+    keep: set[str] = set()
+    todo = [r for r in roots if r in schemas]
+    while todo:
+        name = todo.pop()
+        if name in keep:
+            continue
+        keep.add(name)
+        todo.extend(r for r in _component_refs(schemas[name], "schemas") if r in schemas)
+    return keep
+
+
+def _kept(oid: str, include_ops: set[str] | None, exclude_ops: set[str] | None) -> bool:
+    if include_ops is not None:
+        return oid in include_ops
+    if exclude_ops is not None:
+        return oid not in exclude_ops
+    return True
+
+
+def _select_operations(
+    sname: str,
+    spec: dict[str, Any],
+    spec_path: Path,
+    include_operations: set[str] | None,
+    exclude_operations: set[str] | None,
+) -> dict[str, dict[str, Any]]:
+    """The operations a suite takes from a service, by spec path then method (spec order).
+
+    Every operation unless filtered; a filter naming an operationId the spec lacks is an error.
+    """
+    if include_operations is not None and exclude_operations is not None:
+        msg = f"Service {sname!r}: set include_operations or exclude_operations, not both"
+        raise ValueError(msg)
+    seen_ops: set[str] = set()
+    kept: dict[str, dict[str, Any]] = {}
+    for path, path_def in (spec.get("paths") or {}).items():
+        if not isinstance(path_def, dict):
+            continue
+        for method, op in path_def.items():
+            if method not in _HTTP_OPERATION_KEYS or not isinstance(op, dict):
+                continue
+            oid = op.get("operationId") or ""
+            seen_ops.add(oid)
+            if _kept(oid, include_operations, exclude_operations):
+                kept.setdefault(path, {})[method] = op
+    unknown = sorted(((include_operations or set()) | (exclude_operations or set())) - seen_ops)
+    if unknown:
+        msg = (
+            f"Service {sname!r}: operation filter names operationIds not in {spec_path}: {unknown}"
+        )
+        raise ValueError(msg)
+    return kept
+
+
+def _merge_tags(
+    spec: dict[str, Any], kept: dict[str, dict[str, Any]], filtered: bool, all_tags: set[str]
+) -> None:
+    if "tags" not in spec:
+        return
+    used = {t for ops in kept.values() for op in ops.values() for t in op.get("tags") or []}
+    for t in spec["tags"]:
+        name = t.get("name", str(t)) if isinstance(t, dict) else str(t)
+        if not filtered or name in used:
+            all_tags.add(name)
+
+
+def _proxy_operation(
+    op_def: dict[str, Any],
+    sname: str,
+    base_path: str,
+    path: str,
+    downstream_base_path: str | None,
+    bff_impl_operations: set[str] | None,
+) -> dict[str, Any]:
+    op = dict(op_def)
+    op["x-service"] = sname
+    op["x-service-base-path"] = base_path
+    # The service serves its paths under base_path unless the suite says
+    # otherwise (downstream_base_path: "" for a version-free service).
+    op["x-brrtrouter-downstream-path"] = downstream_path(
+        base_path if downstream_base_path is None else downstream_base_path, path
+    )
+    # BFF gen owns proxy routes; only listed operations get impl overrides.
+    op["x-brrtrouter-impl"] = op.get("operationId", "") in (bff_impl_operations or set())
+    return op
+
+
+def _merge_paths(
+    sname: str,
+    spec: dict[str, Any],
+    kept: dict[str, dict[str, Any]],
+    base_path: str,
+    all_paths: dict[str, Any],
+    operation_origin: dict[str, tuple[str, str, str]],
+    gateway_path_style: str,
+    bff_impl_operations: set[str] | None,
+    downstream_base_path: str | None,
+) -> None:
+    """Merge the kept operations in spec order, as an unfiltered merge does; a path with no kept
+    operation is left out together with its path-level properties."""
+    for path, ops in kept.items():
+        path_def = spec["paths"][path]
+        gateway_path = gateway_public_path(base_path, path, gateway_path_style=gateway_path_style)
+        existing = all_paths.get(gateway_path)
+        if existing is None:
+            existing = {}
+        for key, value in path_def.items():
+            if key not in _HTTP_OPERATION_KEYS:
+                # Preserve path-level properties (parameters, summary, description, servers).
+                if key not in existing:
+                    existing[key] = value
+                elif existing[key] != value:
+                    logger.warning(
+                        "Path-level property %r conflict for %s, keeping first", key, gateway_path
+                    )
+                continue
+            if key not in ops:
+                continue
+            method = key
+            op = _proxy_operation(
+                ops[method], sname, base_path, path, downstream_base_path, bff_impl_operations
+            )
+            _register_operation_id(operation_origin, op.get("operationId"), sname, path, method)
+            if method in existing:
+                existing_service = (existing.get(method) or {}).get("x-service")
+                if existing_service is not None and existing_service != sname:
+                    msg = (
+                        f"Path conflict: {gateway_path!r} method {method!r} already "
+                        f"defined by service {existing_service!r}, duplicate from {sname!r}"
+                    )
+                    raise ValueError(msg)
+            existing[method] = op
+        all_paths[gateway_path] = existing
+
+
+def _merge_components(
+    sname: str,
+    spec: dict[str, Any],
+    kept: dict[str, dict[str, Any]],
+    filtered: bool,
+    all_schemas: dict[str, Any],
+    all_paths: dict[str, Any],
+    merged_params: dict[str, Any],
+    param_origin: dict[str, str],
+) -> None:
+    """Schemas and parameters; a filtered service contributes only what its kept operations reach."""
+    components = spec.get("components") or {}
+    params = components.get("parameters") or {}
+    kept_tree = {
+        path: {k: v for k, v in spec["paths"][path].items() if k not in _HTTP_OPERATION_KEYS} | ops
+        for path, ops in kept.items()
+    }
+    used_params = _component_refs(kept_tree, "parameters")
+
+    if "schemas" in components:
+        schemas = components["schemas"]
+        if filtered:
+            roots = _component_refs(kept_tree, "schemas")
+            for pn in used_params:
+                roots |= _component_refs(params.get(pn), "schemas")
+            keep = _schema_closure(roots, schemas)
+            schemas = {k: v for k, v in schemas.items() if k in keep}
+        _merge_schemas(all_schemas, sname, schemas)
+        for schema_name in schemas:
+            prefixed = f"{to_pascal_case(sname)}{schema_name}"
+            _update_refs_in_paths(all_paths, schema_name, prefixed)
+
+    if "parameters" in components:
+        if filtered:
+            params = {k: v for k, v in params.items() if k in used_params}
+        for pn, pd in params.items():
+            if pn in merged_params and merged_params[pn] != pd:
+                first_service = param_origin.get(pn, "?")
+                msg = (
+                    f"Parameter conflict for {pn!r}: already defined by service "
+                    f"{first_service!r}, conflicting definition from {sname!r}"
+                )
+                raise ValueError(msg)
+            merged_params.setdefault(pn, pd)
+            param_origin.setdefault(pn, sname)
+
+
 def _merge_one_sub_service(
     sname: str,
     base_path: str,
@@ -111,88 +312,30 @@ def _merge_one_sub_service(
     gateway_path_style: str = "as_spec",
     bff_impl_operations: set[str] | None = None,
     downstream_base_path: str | None = None,
+    include_operations: set[str] | None = None,
+    exclude_operations: set[str] | None = None,
 ) -> None:
     if not spec_path.exists():
         logger.warning("Spec file not found for service %r: %s", sname, spec_path)
         return
     spec = load_yaml_spec(spec_path)
-    components = spec.get("components") or {}
-
-    if "tags" in spec:
-        for t in spec["tags"]:
-            all_tags.add(t.get("name", str(t)) if isinstance(t, dict) else str(t))
-
-    if "paths" in spec:
-        for path, path_def in spec["paths"].items():
-            if not isinstance(path_def, dict):
-                continue
-            gateway_path = gateway_public_path(
-                base_path,
-                path,
-                gateway_path_style=gateway_path_style,
-            )
-            existing = all_paths.get(gateway_path)
-            if existing is None:
-                existing = {}
-            path_def = dict(path_def)
-            for key in list(path_def.keys()):
-                if key not in _HTTP_OPERATION_KEYS:
-                    # Preserve path-level properties (parameters, summary, description, servers).
-                    if key not in existing:
-                        existing[key] = path_def[key]
-                    elif existing[key] != path_def[key]:
-                        logger.warning(
-                            "Path-level property %r conflict for %s, keeping first",
-                            key,
-                            gateway_path,
-                        )
-                    continue
-                method = key
-                op = path_def[method]
-                if not isinstance(op, dict):
-                    continue
-                op = dict(op)
-                operation_id = op.get("operationId")
-                _register_operation_id(operation_origin, operation_id, sname, path, method)
-                op["x-service"] = sname
-                op["x-service-base-path"] = base_path
-                # The service serves its paths under base_path unless the suite says
-                # otherwise (downstream_base_path: "" for a version-free service).
-                op["x-brrtrouter-downstream-path"] = downstream_path(
-                    base_path if downstream_base_path is None else downstream_base_path, path
-                )
-                # BFF gen owns proxy routes; only listed operations get impl overrides.
-                oid = op.get("operationId", "")
-                impl_ops = bff_impl_operations or set()
-                op["x-brrtrouter-impl"] = oid in impl_ops
-                if method in existing:
-                    existing_service = (existing.get(method) or {}).get("x-service")
-                    if existing_service is not None and existing_service != sname:
-                        msg = (
-                            f"Path conflict: {gateway_path!r} method {method!r} already "
-                            f"defined by service {existing_service!r}, duplicate from {sname!r}"
-                        )
-                        raise ValueError(msg)
-                existing[method] = op
-            all_paths[gateway_path] = existing
-
-    if "schemas" in components:
-        _merge_schemas(all_schemas, sname, components["schemas"])
-        for schema_name in components["schemas"]:
-            prefixed = f"{to_pascal_case(sname)}{schema_name}"
-            _update_refs_in_paths(all_paths, schema_name, prefixed)
-
-    if "parameters" in components:
-        for pn, pd in components["parameters"].items():
-            if pn in merged_params and merged_params[pn] != pd:
-                first_service = param_origin.get(pn, "?")
-                msg = (
-                    f"Parameter conflict for {pn!r}: already defined by service "
-                    f"{first_service!r}, conflicting definition from {sname!r}"
-                )
-                raise ValueError(msg)
-            merged_params.setdefault(pn, pd)
-            param_origin.setdefault(pn, sname)
+    filtered = include_operations is not None or exclude_operations is not None
+    kept = _select_operations(sname, spec, spec_path, include_operations, exclude_operations)
+    _merge_tags(spec, kept, filtered, all_tags)
+    _merge_paths(
+        sname,
+        spec,
+        kept,
+        base_path,
+        all_paths,
+        operation_origin,
+        gateway_path_style,
+        bff_impl_operations,
+        downstream_base_path,
+    )
+    _merge_components(
+        sname, spec, kept, filtered, all_schemas, all_paths, merged_params, param_origin
+    )
 
 
 def _schema_name_mapping(
@@ -298,7 +441,7 @@ def merge_sub_service_specs(
 ) -> dict[str, Any]:
     """Merge sub-service specs into one BFF spec with prefixed schemas and proxy extensions.
 
-    sub_services: name -> { base_path, spec_path (Path) }
+    sub_services: name -> { base_path, spec_path (Path), include_operations? | exclude_operations? }
     info: optional openapi info override (title, version, description).
     """
     bff: dict[str, Any] = {
@@ -349,6 +492,8 @@ def merge_sub_service_specs(
             gateway_path_style=cfg.get("gateway_path_style", "as_spec"),
             bff_impl_operations=bff_impl_operations,
             downstream_base_path=cfg.get("downstream_base_path"),
+            include_operations=cfg.get("include_operations"),
+            exclude_operations=cfg.get("exclude_operations"),
         )
 
     bff["components"]["parameters"] = merged_params

@@ -3,7 +3,8 @@
 Suite config YAML format (aligned with RERP bff-suite-config.yaml):
 - openapi_base_dir: base directory for spec_path (relative to base_dir)
 - output_path: path for merged BFF spec (relative to base_dir)
-- services: map service name -> { base_path, spec_path, port? }
+- services: map service name -> { base_path, spec_path, port?, include_operations? | exclude_operations? }
+  (operation filters are lists of operationIds; at most one of the two per service)
 - metadata (optional): title, version, description, servers, etc. for merged spec
 """
 
@@ -48,6 +49,11 @@ def load_suite_config(config_path: Path, base_dir: Path | None = None) -> dict[s
             continue
         spec_path = svc.get("spec_path") or f"{name}/openapi.yaml"
         full_spec = (openapi_base_dir / spec_path).resolve()
+        include_ops = _operation_ids(name, "include_operations", svc.get("include_operations"))
+        exclude_ops = _operation_ids(name, "exclude_operations", svc.get("exclude_operations"))
+        if include_ops is not None and exclude_ops is not None:
+            msg = f"Service {name!r}: set include_operations or exclude_operations, not both"
+            raise ValueError(msg)
         resolved["services"][name] = {
             "base_path": svc.get("base_path", f"/api/{name}"),
             "spec_path": full_spec,
@@ -56,7 +62,21 @@ def load_suite_config(config_path: Path, base_dir: Path | None = None) -> dict[s
             # Where the service serves its paths, when not under base_path: "" for a
             # version-free service the edge used to strip base_path for.
             "downstream_base_path": svc.get("downstream_base_path"),
+            # Operation filter (operationIds): a suite takes only some of a service's operations,
+            # e.g. an operator route proxied by one BFF and not another. None = all operations.
+            "include_operations": include_ops,
+            "exclude_operations": exclude_ops,
         }
 
     data["_resolved"] = resolved
     return data
+
+
+def _operation_ids(service: str, key: str, raw: Any) -> set[str] | None:
+    """Normalise an operation filter list; None when the key is absent."""
+    if raw is None:
+        return None
+    if not isinstance(raw, list) or not all(isinstance(x, str) and x for x in raw):
+        msg = f"Service {service!r}: {key} must be a list of operationIds"
+        raise ValueError(msg)
+    return set(raw)

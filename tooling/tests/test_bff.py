@@ -830,3 +830,145 @@ class TestGenerateSystemBffSpec:
         schemas = data["components"]["schemas"]
         assert "MySvcItem" in schemas
         assert schemas["MySvcItem"].get("type") == "object"
+
+
+_FILTER_SPEC = """openapi: 3.1.0
+info: { title: Billing, version: '1.0' }
+tags:
+  - name: checkout
+  - name: ops
+paths:
+  /checkout:
+    post:
+      operationId: create_checkout
+      tags: [checkout]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Checkout' }
+  /ops/overview:
+    parameters:
+      - $ref: '#/components/parameters/Window'
+    get:
+      operationId: get_ops_overview
+      tags: [ops]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OpsOverview' }
+components:
+  parameters:
+    Window:
+      name: window
+      in: query
+      schema: { $ref: '#/components/schemas/WindowSpec' }
+  schemas:
+    Checkout:
+      type: object
+      properties:
+        money: { $ref: '#/components/schemas/Money' }
+    OpsOverview:
+      type: object
+      properties:
+        mrr: { $ref: '#/components/schemas/Money' }
+        rows: { type: array, items: { $ref: '#/components/schemas/OpsRow' } }
+    OpsRow: { type: object }
+    Money: { type: object }
+    WindowSpec: { type: string }
+"""
+
+
+def _filter_service(tmp_path: Path, **flt: list[str]) -> dict:
+    spec_path = tmp_path / "openapi.yaml"
+    spec_path.write_text(_FILTER_SPEC)
+    cfg = {"base_path": "/api/v1/billing", "spec_path": spec_path, "gateway_path_style": "prefixed"}
+    cfg.update({k: set(v) for k, v in flt.items()})
+    return merge_sub_service_specs({"billing": cfg})
+
+
+def test_exclude_operations_drops_the_operation_and_what_only_it_uses(tmp_path: Path) -> None:
+    bff = _filter_service(tmp_path, exclude_operations=["get_ops_overview"])
+    assert list(bff["paths"]) == ["/billing/checkout"]
+    schemas = bff["components"]["schemas"]
+    assert {"BillingCheckout", "BillingMoney"} <= set(schemas)
+    assert not {"BillingOpsOverview", "BillingOpsRow", "BillingWindowSpec"} & set(schemas)
+    assert "Window" not in bff["components"]["parameters"]
+    assert [t["name"] for t in bff["tags"]] == ["checkout"]
+
+
+def test_include_operations_keeps_only_the_listed_operation_and_its_closure(tmp_path: Path) -> None:
+    bff = _filter_service(tmp_path, include_operations=["get_ops_overview"])
+    assert list(bff["paths"]) == ["/billing/ops/overview"]
+    path = bff["paths"]["/billing/ops/overview"]
+    assert path["parameters"] == [{"$ref": "#/components/parameters/Window"}]  # path-level kept
+    assert path["get"]["x-brrtrouter-downstream-path"] == "/api/v1/billing/ops/overview"
+    schemas = bff["components"]["schemas"]
+    # the op's schema, what it references (transitively), and what its parameters reference
+    assert {"BillingOpsOverview", "BillingOpsRow", "BillingMoney", "BillingWindowSpec"} <= set(
+        schemas
+    )
+    assert "BillingCheckout" not in schemas
+    assert (
+        schemas["BillingOpsOverview"]["properties"]["mrr"]["$ref"]
+        == "#/components/schemas/BillingMoney"
+    )
+    assert "Window" in bff["components"]["parameters"]
+    assert [t["name"] for t in bff["tags"]] == ["ops"]
+
+
+def test_no_filter_merges_everything_as_before(tmp_path: Path) -> None:
+    bff = _filter_service(tmp_path)
+    assert set(bff["paths"]) == {"/billing/checkout", "/billing/ops/overview"}
+    assert {
+        "BillingCheckout",
+        "BillingOpsOverview",
+        "BillingOpsRow",
+        "BillingMoney",
+        "BillingWindowSpec",
+    } <= set(bff["components"]["schemas"])
+    assert [t["name"] for t in bff["tags"]] == ["checkout", "ops"]
+
+
+def test_operation_filter_rejects_unknown_operation_ids(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="not_an_op"):
+        _filter_service(tmp_path, exclude_operations=["not_an_op"])
+
+
+def test_operation_filter_rejects_include_and_exclude_together(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="not both"):
+        _filter_service(
+            tmp_path,
+            include_operations=["create_checkout"],
+            exclude_operations=["get_ops_overview"],
+        )
+
+
+def test_load_suite_config_reads_operation_filters(tmp_path: Path) -> None:
+    cfg = tmp_path / "suite.yaml"
+    cfg.write_text(
+        "suite: s\nopenapi_base_dir: .\noutput_path: bff.yaml\nservices:\n"
+        "  billing:\n    exclude_operations: [get_ops_overview]\n"
+        "  ops:\n    spec_path: billing/openapi.yaml\n    include_operations: [get_ops_overview]\n"
+        "  plain: {}\n"
+    )
+    resolved = load_suite_config(cfg)["_resolved"]["services"]
+    assert resolved["billing"]["exclude_operations"] == {"get_ops_overview"}
+    assert resolved["billing"]["include_operations"] is None
+    assert resolved["ops"]["include_operations"] == {"get_ops_overview"}
+    assert resolved["plain"]["include_operations"] is None
+    assert resolved["plain"]["exclude_operations"] is None
+    cfg.write_text(
+        "suite: s\nopenapi_base_dir: .\nservices:\n"
+        "  billing:\n    include_operations: [a]\n    exclude_operations: [b]\n"
+    )
+    with pytest.raises(ValueError, match="not both"):
+        load_suite_config(cfg)
+    cfg.write_text(
+        "suite: s\nopenapi_base_dir: .\nservices:\n  billing:\n    include_operations: a\n"
+    )
+    with pytest.raises(ValueError, match="list of operationIds"):
+        load_suite_config(cfg)
