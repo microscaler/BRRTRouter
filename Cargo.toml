@@ -25,7 +25,7 @@ default-target = "x86_64-unknown-linux-gnu"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 # OpenAPI schemas are resolved locally; disable remote retrieval and its reqwest stack.
-jsonschema = { version = "0.45", default-features = false }
+jsonschema = { version = "0.49", default-features = false }
 serde_yaml = "0.9.33"
 toml = "1.1"
 # Needed for simple JWT parsing in security providers
