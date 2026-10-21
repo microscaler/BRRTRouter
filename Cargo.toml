@@ -102,7 +102,7 @@ rustls-native-certs = "0.8.4"
 
 # SIGTERM / SIGINT for Kubernetes graceful shutdown (scale-down, rollouts).
 [target.'cfg(unix)'.dependencies]
-signal-hook = { version = "0.3", features = ["iterator"] }
+signal-hook = { version = "0.4", features = ["iterator"] }
 
 [dev-dependencies]
 pet_store = { path = "./examples/pet_store" }
