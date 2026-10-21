@@ -1,4 +1,4 @@
-"""Setup PersistentVolumes for RERP (k8s/data, k8s/monitoring). Replaces setup-persistent-volumes.sh."""
+"""Setup PersistentVolumes for the project (k8s/data, k8s/monitoring). Replaces setup-persistent-volumes.sh."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ def _first_existing(*candidates: Path) -> Path | None:
 def run(project_root: Path) -> int:
     """Apply data + monitoring PersistentVolume manifests. Returns 0 or 1.
 
-    Looks for k8s paths under the project first; PriceWhisperer moved PV YAML to
+    Looks for k8s paths under the project first; some projects keep PV YAML under
     ``shared-kind-cluster/k8s/platform-data/`` (sibling of the app repo).
     """
     if _skip_persistent_volume_setup():

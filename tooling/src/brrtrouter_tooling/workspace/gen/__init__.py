@@ -1,4 +1,4 @@
-"""Code generation utilities for Hauliage services. Re-exports brrtrouter_tooling.gen when available."""
+"""Code generation utilities for workspace services. Re-exports brrtrouter_tooling.gen when available."""
 
 try:
     from brrtrouter_tooling.gen import (

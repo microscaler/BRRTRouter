@@ -16,6 +16,7 @@ from brrtrouter_tooling.bootstrap.helpers import (
     derive_binary_name,
 )
 from brrtrouter_tooling.helpers import load_yaml_spec, to_pascal_case
+from brrtrouter_tooling.workspace.profile import cli_name
 
 # Initial version for generated *_gen crates (conventional 0.1.0 for first pre-1.0 release).
 GEN_CRATE_INITIAL_VERSION = "0.1.0"
@@ -442,7 +443,7 @@ def run_bootstrap_microservice(
     layout: dict[str, Any] | None = None,
 ) -> int:
     """Bootstrap microservice. Returns 0 on success, 1 on error."""
-    cfg = resolve_bootstrap_layout(layout)
+    cfg = resolve_bootstrap_layout(layout, project_root)
     openapi_dir = cfg["openapi_dir"]
     suite = cfg["suite"]
     workspace_dir = cfg["workspace_dir"]
@@ -453,7 +454,7 @@ def run_bootstrap_microservice(
         port = _get_port_from_registry(project_root, service_name, layout)
     if port is None:
         print(
-            f"⚠️  No port for {service_name}. Run: rerp ports assign {service_name} --update-configs"
+            f"⚠️  No port for {service_name}. Run: {cli_name()} ports assign {service_name} --update-configs"
         )
         return 1
 

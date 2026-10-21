@@ -28,7 +28,7 @@ except ImportError:
     process_file = None  # type: ignore[assignment]
     to_snake_case = None  # type: ignore[assignment]
 
-# Hauliage's fix_operation_id is used by cli/openapi (works with or without brrtrouter)
+# The workspace's fix_operation_id is used by cli/openapi (works with or without brrtrouter)
 from brrtrouter_tooling.workspace.openapi.fix_operation_id import run as fix_operation_id_run
 
 __all__ = [

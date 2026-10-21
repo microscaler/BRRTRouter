@@ -27,14 +27,15 @@ def run(  # noqa: C901
     push: bool,
     project_root: Path,
     build_cmd: list[str],
-    base_image_name: str = "rerp-base",
+    base_image_name: str | None = None,
     binary_name: str | None = None,
     docker_dir: str = "docker",
     base_image_local: str | None = None,
 ) -> int:
     """Build binaries (via build_cmd), copy, buildx images, manifest, optional push. Returns 0 or 1.
 
-    base_image_local: If set (e.g. 'rerp/base'), use FROM base_image_local:{arch} in per-arch
+    base_image_name: default the project profile's naming.base_image.
+    base_image_local: If set (e.g. 'acme/base'), use FROM base_image_local:{arch} in per-arch
     Dockerfiles and tag locally built base as base_image_local:{arch}. If None, use ARG BASE_IMAGE
     and ghcr.io/owner/base_image_name for pull/build.
     """
@@ -46,6 +47,10 @@ def run(  # noqa: C901
         return 1
 
     root = project_root
+    if base_image_name is None:
+        from brrtrouter_tooling.workspace.profile import load_profile
+
+        base_image_name = load_profile(root).base_image
 
     template_path = root / docker_dir / "microservices" / "Dockerfile.template"
     if not template_path.exists():
@@ -53,7 +58,7 @@ def run(  # noqa: C901
         return 1
 
     port = 8000
-    bin_name = binary_name or default_binary_name(system, module)
+    bin_name = binary_name or default_binary_name(system, module, project_root=root)
 
     build_args = [
         "--build-arg",

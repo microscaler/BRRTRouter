@@ -1,6 +1,6 @@
 """Suite config loading for BFF generator.
 
-Suite config YAML format (aligned with RERP bff-suite-config.yaml):
+Suite config YAML format (bff-suite-config.yaml):
 - openapi_base_dir: base directory for spec_path (relative to base_dir)
 - output_path: path for merged BFF spec (relative to base_dir)
 - services: map service name -> { base_path, spec_path, port?, include_operations? | exclude_operations? }
@@ -29,7 +29,7 @@ def load_suite_config(config_path: Path, base_dir: Path | None = None) -> dict[s
         data = yaml.safe_load(f) or {}
 
     # Paths in config (openapi_base_dir, output_path, spec_path) are relative to base_dir.
-    # base_dir defaults to cwd so that running from project root works (e.g. RERP).
+    # base_dir defaults to cwd so that running from project root works.
     base = (Path(base_dir) if base_dir else Path.cwd()).resolve()
     openapi_base = data.get("openapi_base_dir", "")
     output_path = data.get("output_path", "openapi_bff.yaml")

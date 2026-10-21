@@ -143,3 +143,51 @@ pytest
 ```bash
 pip install -e .
 ```
+
+## Project profile (`brrtrouter.toml`)
+
+The tooling names no project. A consuming repository describes itself once, in `brrtrouter.toml` at its root or
+`[tool.brrtrouter]` in `tooling/pyproject.toml`. Every field defaults from `project.name`, and `project.name` defaults
+to the repository directory's name, so most projects need no file at all.
+
+```toml
+[project]
+name = "acme"                          # default: the directory name
+cli = "acme"                           # console script name in usage and help
+
+[naming]
+package_prefix = "acme"
+crate_pattern = "{prefix}_{service}"   # crates acme_market / acme_market_gen; "{prefix}_{suite}_{service}" for
+                                       # suite-qualified crates. A suite's bff-suite-config package_prefix wins.
+binary_pattern = "{prefix}_{system}_{module}_impl"
+image_prefix = "acme"
+image_pattern = "{prefix}-{service}"   # images acme-market; "{prefix}-{suite}-{service}" for suite-qualified images
+base_image = "acme-base"
+zip_prefix = "acme-binaries-"
+
+[layout]
+openapi_dir = "openapi"
+workspace_dir = "microservices"
+helm_values = "helm/acme-microservice/values"
+flat_suite = "acme"                    # the suite of a flat openapi/<service>/ layout
+default_suite = "acme"                 # bootstrap's suite when none is given
+
+[dev]
+kind_cluster = "acme"
+tilt_port = 10350
+```
+
+**One name per thing.** `crate_pattern` is the only crate-naming rule: bootstrap scaffolds, discovery and the
+single-crate build all derive names from it, so they cannot disagree. `image_pattern` is the only image-naming rule:
+`ports update-configs` writes it into Helm values (the chart directory is a separate path, `layout.helm_values`), and
+Tilt teardown and the docker commands use it. Every `layout.*` path is honoured by discovery, generation, build,
+bootstrap and ports; an explicit `layout` passed to a command still wins.
+
+**A service is a workspace member.** Generation only touches a service whose gen crate the workspace manifest's
+`members` name (patterns such as `trader/*/gen` match before the directory exists; nested `{suite}/{service}/gen` is
+tried before flat `{service}/gen`). A spec the BFF only proxies never gets a crate; `gen suite --service X --new`
+creates a new service's first one. With no manifest, an existing gen directory counts.
+
+Environment variables are `BRRTROUTER_PROJECT_ROOT`, `BRRTROUTER_PORT_REGISTRY`, `BRRTROUTER_TILT_PORT` and
+`BRRTROUTER_USE_CROSS`. Older project-named variables are still read for one release, with a deprecation warning
+(`workspace/legacy_env.py`).

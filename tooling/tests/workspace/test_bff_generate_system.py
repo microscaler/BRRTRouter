@@ -1,4 +1,4 @@
-"""TDD: tests for brrtrouter_tooling.workspace.bff.generate_system (hauliage bff generate-system)."""
+"""TDD: tests for brrtrouter_tooling.workspace.bff.generate_system (acme bff generate-system)."""
 
 from pathlib import Path
 
@@ -94,7 +94,7 @@ class TestDiscoverSubServices:
 
         (tmp_path / "identity").mkdir(parents=True)
         (tmp_path / "identity" / "openapi.yaml").write_text("openapi: 3.1.0\ninfo: {}\npaths: {}")
-        got = discover_sub_services(tmp_path, "hauliage")
+        got = discover_sub_services(tmp_path, "acme")
         assert got["identity"]["base_path"] == "/api/v1/identity"
 
 
@@ -106,7 +106,7 @@ class TestListSystemsWithSubServices:
         from brrtrouter_tooling.workspace.bff.generate_system import list_systems_with_sub_services
 
         # No openapi/ content at all -> no systems (matches the test's name; the
-        # legacy implicit-"hauliage" only applies when a flat config file exists).
+        # legacy implicit-"acme" only applies when a flat config file exists).
         assert list_systems_with_sub_services(tmp_path) == []
 
     def __skip1(self):
@@ -258,7 +258,7 @@ class TestGenerateSystemBffSpec:
             "    spec_path: bidding/openapi.yaml\n"
         )
         out = openapi_dir / "openapi_bff.yaml"
-        generate_system_bff_spec(openapi_dir, "hauliage", output_path=out)
+        generate_system_bff_spec(openapi_dir, "acme", output_path=out)
         import yaml
 
         data = yaml.safe_load(out.read_text())

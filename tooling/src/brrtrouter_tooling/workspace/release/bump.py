@@ -184,9 +184,11 @@ def _cargo_toml_paths(project_root: Path) -> list[Path]:
 
 def run(project_root: Path, bump: str) -> int:
     """Bump version: read from microservices/Cargo.toml, walk all Cargo.toml, replace in [package]/[workspace.package]. Returns 0 or 1."""
-    microservices_toml = project_root / "microservices" / "Cargo.toml"
+    from brrtrouter_tooling.workspace.profile import load_profile
+
+    microservices_toml = load_profile(project_root).workspace_path / "Cargo.toml"
     if not microservices_toml.is_file():
-        print("microservices/Cargo.toml not found", file=sys.stderr)
+        print(f"{microservices_toml} not found", file=sys.stderr)
         return 1
 
     old = _read_current(microservices_toml)

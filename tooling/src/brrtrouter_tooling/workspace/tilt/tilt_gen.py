@@ -1,7 +1,7 @@
 """Tiltfile generation for BRRTRouter-based projects.
 
 Single pattern: parse bff-suite-config.yaml for service discovery, then render
-the standard Tiltfile sections. Works for RERP, PriceWhisperer, Hauliage, etc.
+the standard Tiltfile sections, for any project.
 
 Usage:
     from brrtrouter_tooling.workspace.tilt.tilt_gen import generate_tiltfile
@@ -346,7 +346,8 @@ def _render_helpers(parts: list[str], config: dict[str, Any]) -> None:
     # get_package_name
     _w(parts, "def get_package_name(name):")
     if wrapped:
-        _w(parts, f"    fallback_pkg = 'rerp_{suite}_' % ('{suite}') + name.replace('-', '_')")
+        prefix = config.get("package_prefix") or pname.replace("-", "_")
+        _w(parts, f"    fallback_pkg = '{prefix}_{suite}_' + name.replace('-', '_')")
     else:
         _w(
             parts,

@@ -41,7 +41,7 @@ def _make_openapi_spec(project_root: Path, suite: str, service: str, port: int =
 
 def test_resolve_service_openapi_spec_path_flat_layout(tmp_path: Path) -> None:
     spec = _make_openapi_spec_flat(tmp_path, "identity")
-    got = resolve_service_openapi_spec_path(tmp_path, "hauliage", "identity")
+    got = resolve_service_openapi_spec_path(tmp_path, "acme", "identity")
     assert got == spec
 
 
@@ -54,7 +54,7 @@ def test_resolve_service_openapi_spec_path_nested_layout(tmp_path: Path) -> None
 def test_resolve_service_microservice_dir_flat_layout(tmp_path: Path) -> None:
     flat = tmp_path / "microservices" / "identity" / "gen"
     flat.mkdir(parents=True)
-    got = resolve_service_microservice_dir(tmp_path, "hauliage", "identity")
+    got = resolve_service_microservice_dir(tmp_path, "acme", "identity")
     assert got == tmp_path / "microservices" / "identity"
 
 
@@ -73,7 +73,7 @@ def test_project_uses_flat_openapi_layout(tmp_path: Path) -> None:
 
 def test_service_openapi_spec_path_flat_layout(tmp_path: Path) -> None:
     spec = _make_openapi_spec_flat(tmp_path, "identity")
-    got = service_openapi_spec_path(tmp_path, "hauliage", "identity")
+    got = service_openapi_spec_path(tmp_path, "acme", "identity")
     assert got == spec
 
 
@@ -82,12 +82,12 @@ def test_get_package_names_empty(tmp_path: Path) -> None:
 
 
 def test_get_package_names_derived(tmp_path: Path) -> None:
-    _make_openapi_spec(tmp_path, "hauliage", "identity")
-    _make_openapi_spec(tmp_path, "hauliage", "fleet")
+    _make_openapi_spec(tmp_path, "acme", "identity")
+    _make_openapi_spec(tmp_path, "acme", "fleet")
     got = get_package_names(tmp_path)
     assert got == {
-        "identity": "hauliage_identity",
-        "fleet": "hauliage_fleet",
+        "identity": "acme_identity",
+        "fleet": "acme_fleet",
     }
 
 
@@ -96,34 +96,34 @@ def test_get_binary_names_empty(tmp_path: Path) -> None:
 
 
 def test_get_binary_names_derived(tmp_path: Path) -> None:
-    _make_openapi_spec(tmp_path, "hauliage", "identity")
+    _make_openapi_spec(tmp_path, "acme", "identity")
     got = get_binary_names(tmp_path)
     assert got == {"identity": "identity"}
 
 
 def test_get_package_names_includes_bff(tmp_path: Path) -> None:
-    _make_openapi_spec(tmp_path, "hauliage", "identity")
+    _make_openapi_spec(tmp_path, "acme", "identity")
     (tmp_path / "openapi").mkdir(parents=True, exist_ok=True)
     (tmp_path / "openapi" / "bff-suite-config.yaml").write_text(
-        "suite: hauliage\nbff_service_name: bff\noutput_path: openapi/openapi_bff.yaml\n"
+        "suite: acme\nbff_service_name: bff\noutput_path: openapi/openapi_bff.yaml\n"
     )
     got = get_package_names(tmp_path)
-    assert got["identity"] == "hauliage_identity"
-    assert got["bff"] == "hauliage_bff"
+    assert got["identity"] == "acme_identity"
+    assert got["bff"] == "acme_bff"
 
 
 def test_get_binary_names_includes_bff(tmp_path: Path) -> None:
     (tmp_path / "openapi").mkdir(parents=True, exist_ok=True)
     (tmp_path / "openapi" / "bff-suite-config.yaml").write_text(
-        "suite: hauliage\nbff_service_name: bff\n"
+        "suite: acme\nbff_service_name: bff\n"
     )
     got = get_binary_names(tmp_path)
     assert got["bff"] == "bff"
 
 
 def test_get_service_ports_from_openapi(tmp_path: Path) -> None:
-    _make_openapi_spec(tmp_path, "hauliage", "identity", port=8001)
-    _make_openapi_spec(tmp_path, "hauliage", "fleet", port=8002)
+    _make_openapi_spec(tmp_path, "acme", "identity", port=8001)
+    _make_openapi_spec(tmp_path, "acme", "fleet", port=8002)
     got = get_service_ports(tmp_path)
     assert got["identity"] == "8001"
     assert got["fleet"] == "8002"

@@ -136,9 +136,9 @@ class TestCallBrrtrouterGenerate:
                 output_dir=output_dir,
                 project_root=project_root,
                 brrtrouter_path=brrtrouter_path,
-                package_name="rerp_accounting_financial_reports_gen",
+                package_name="acme_accounting_financial_reports_gen",
                 capture_output=True,
             )
             cmd = run.call_args[0][0]
             assert "--package-name" in cmd
-            assert "rerp_accounting_financial_reports_gen" in cmd
+            assert "acme_accounting_financial_reports_gen" in cmd

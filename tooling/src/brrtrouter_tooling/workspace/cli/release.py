@@ -1,10 +1,11 @@
-"""CLI for hauliage release: bump, generate-notes."""
+"""CLI for `<cli> release`: bump, generate-notes."""
 
 from __future__ import annotations
 
 import sys
 from pathlib import Path
 
+from brrtrouter_tooling.workspace.profile import cli_name
 from brrtrouter_tooling.workspace.release.bump import run as bump_run
 from brrtrouter_tooling.workspace.release.notes import run as notes_run
 
@@ -18,7 +19,7 @@ def run_release(args, project_root: Path) -> None:
     if cmd == "generate-notes":
         version = getattr(args, "version", None) or ""
         if not version:
-            print("hauliage release generate-notes: --version is required", file=sys.stderr)
+            print(f"{cli_name()} release generate-notes: --version is required", file=sys.stderr)
             sys.exit(1)
         rc = notes_run(
             project_root,
@@ -30,9 +31,9 @@ def run_release(args, project_root: Path) -> None:
             provider=getattr(args, "provider", None),
         )
         sys.exit(rc)
-    print("hauliage release: use subcommand 'bump' or 'generate-notes'")
-    print("  hauliage release bump [patch|minor|major|rc|release]")
+    print(f"{cli_name()} release: use subcommand 'bump' or 'generate-notes'")
+    print(f"  {cli_name()} release bump [patch|minor|major|rc|release]")
     print(
-        "  hauliage release generate-notes --version X.Y.Z [--output PATH] [--template PATH] [--since-tag TAG] [--provider openai|anthropic]"
+        f"  {cli_name()} release generate-notes --version X.Y.Z [--output PATH] [--template PATH] [--since-tag TAG] [--provider openai|anthropic]"
     )
     sys.exit(1)

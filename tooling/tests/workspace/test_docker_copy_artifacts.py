@@ -27,14 +27,14 @@ class TestValidateBuildArtifacts:
         assert validate_build_artifacts(tmp_path) == 1
 
     def test_missing_binary_in_dir_returns_1(self, tmp_path: Path):
-        _make_openapi_layout(tmp_path, [("hauliage", "identity"), ("hauliage", "fleet")])
+        _make_openapi_layout(tmp_path, [("acme", "identity"), ("acme", "fleet")])
         for arch in ("amd64", "arm64", "arm"):
             (tmp_path / "build_artifacts" / arch).mkdir(parents=True)
         (tmp_path / "build_artifacts" / "amd64" / "fleet").write_bytes(b"")
         assert validate_build_artifacts(tmp_path) == 1
 
     def test_all_present_returns_0(self, tmp_path: Path):
-        _make_openapi_layout(tmp_path, [("hauliage", "identity"), ("hauliage", "fleet")])
+        _make_openapi_layout(tmp_path, [("acme", "identity"), ("acme", "fleet")])
         binary_names = get_binary_names(tmp_path)
         for arch in ("amd64", "arm64", "arm"):
             d = tmp_path / "build_artifacts" / arch
@@ -49,13 +49,13 @@ class TestCopyArtifacts:
         assert run("x64", tmp_path) == 1
 
     def test_missing_binary_returns_1(self, tmp_path: Path):
-        _make_openapi_layout(tmp_path, [("hauliage", "identity")])
+        _make_openapi_layout(tmp_path, [("acme", "identity")])
         triple = "x86_64-unknown-linux-musl"
         (tmp_path / "microservices" / "target" / triple / "release").mkdir(parents=True)
         assert run("amd64", tmp_path) == 1
 
     def test_copies_all_to_build_artifacts_amd64(self, tmp_path: Path):
-        _make_openapi_layout(tmp_path, [("hauliage", "identity"), ("hauliage", "fleet")])
+        _make_openapi_layout(tmp_path, [("acme", "identity"), ("acme", "fleet")])
         package_names = get_package_names(tmp_path)
         binary_names = get_binary_names(tmp_path)
         triple = "x86_64-unknown-linux-musl"
@@ -74,7 +74,7 @@ class TestCopyArtifacts:
         pass
 
     def xtest_arm7_uses_artifact_dir_arm(self, tmp_path: Path):
-        _make_openapi_layout(tmp_path, [("hauliage", "identity")])
+        _make_openapi_layout(tmp_path, [("acme", "identity")])
         package_names = get_package_names(tmp_path)
         triple = "armv7-unknown-linux-musleabihf"
         rel = tmp_path / "microservices" / "target" / triple / "release"

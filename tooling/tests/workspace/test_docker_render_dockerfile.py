@@ -15,7 +15,7 @@ def test_render_dockerfile_template_derives_port_and_binary(tmp_path: Path) -> N
     _make_openapi_spec(tmp_path, "fleet", port=8002)
     (tmp_path / "openapi").mkdir(exist_ok=True, parents=True)
     (tmp_path / "openapi" / "Dockerfile.template").write_text(
-        "FROM alpine\nCOPY ./build_artifacts/${TARGETARCH}/{{binary_name}} /app/{{binary_name}}\nCOPY ./microservices/hauliage/{{service_name}}/impl/config /app/config\nEXPOSE {{port}}\n"
+        "FROM alpine\nCOPY ./build_artifacts/${TARGETARCH}/{{binary_name}} /app/{{binary_name}}\nCOPY ./microservices/acme/{{service_name}}/impl/config /app/config\nEXPOSE {{port}}\n"
     )
 
     out = render_dockerfile_template(

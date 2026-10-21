@@ -1,11 +1,11 @@
 # Minimal runtime-only Dockerfile for {{service_name}} Service (Tilt development)
 # Binary is cross-compiled on host and copied in.
-# Rendered from this template with: hauliage docker generate-dockerfile <system> <module> [--port N]
-# Build with: hauliage docker build-image-simple <image> docker/microservices/Dockerfile.template <hash> <artifact> --service <module>
+# Rendered from this template with: <cli> docker generate-dockerfile <system> <module> [--port N]
+# Build with: <cli> docker build-image-simple <image> docker/microservices/Dockerfile.template <hash> <artifact> --service <module>
 #
 # Multi-arch: buildx sets TARGETARCH (amd64 | arm64 | arm/v7). Defaults for local.
 
-ARG BASE_IMAGE=hauliage-base:latest
+ARG BASE_IMAGE=brrtrouter-base:latest
 FROM ${BASE_IMAGE}
 
 # TARGETARCH: amd64 | arm64 (Apple Silicon) | arm (armv7)

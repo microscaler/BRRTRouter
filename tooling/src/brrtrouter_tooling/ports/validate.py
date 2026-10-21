@@ -25,6 +25,7 @@ from brrtrouter_tooling.discovery import (
     suites_with_bff,
 )
 from brrtrouter_tooling.ports.registry import TILT_MANAGED_RANGE, PortRegistry
+from brrtrouter_tooling.workspace.profile import cli_name
 
 log = logging.getLogger(__name__)
 
@@ -120,7 +121,7 @@ def _validate_bff_suite_configs(
                         errors.append(
                             f"openapi/{suite}/bff-suite-config.yaml metadata.servers localhost port "
                             f"{m.group(1)} differs from registry {bff_svc}={reg[bff_svc]}. "
-                            f"Run: rerp ports update-configs {bff_svc}"
+                            f"Run: {cli_name()} ports update-configs {bff_svc}"
                         )
                     break
         except (OSError, yaml.YAMLError, KeyError, TypeError, ValueError, re.error) as e:
@@ -148,7 +149,7 @@ def _validate_openapi_localhost(
         if r is not None and r != port:
             errors.append(
                 f"openapi/{suite}/{svc}/openapi.yaml localhost server port {port} differs from "
-                f"registry {svc}={r}. Run: rerp ports update-configs {svc}"
+                f"registry {svc}={r}. Run: {cli_name()} ports update-configs {svc}"
             )
 
 

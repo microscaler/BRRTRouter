@@ -31,9 +31,12 @@ def run(
         )
         return 1
 
-    fn = binary_name_fn or default_binary_name
     root = project_root
-    binary_name = fn(system, module)
+    binary_name = (
+        binary_name_fn(system, module)
+        if binary_name_fn
+        else default_binary_name(system, module, project_root=root)
+    )
     microservices_target = root / workspace_dir / "target"
     base_dest = root / "build_artifacts" / f"{system}_{module}"
     any_ok = False

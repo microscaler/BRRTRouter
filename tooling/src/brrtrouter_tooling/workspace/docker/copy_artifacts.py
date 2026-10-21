@@ -1,4 +1,4 @@
-"""Hauliage copy-artifacts: wrap brrtrouter_tooling.docker.copy_artifacts with discovery-derived names."""
+"""Workspace copy-artifacts: wrap brrtrouter_tooling.docker.copy_artifacts with discovery-derived names."""
 
 from __future__ import annotations
 

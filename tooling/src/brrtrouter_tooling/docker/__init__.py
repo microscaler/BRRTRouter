@@ -1,4 +1,4 @@
-"""Docker helpers: generate Dockerfile, copy binaries, build images (single/multiarch). Consumed by RERP and other projects."""
+"""Docker helpers: generate Dockerfile, copy binaries, build images (single/multiarch). For any BRRTRouter project."""
 
 from .copy_artifacts import run as run_copy_artifacts
 from .copy_artifacts import validate_build_artifacts

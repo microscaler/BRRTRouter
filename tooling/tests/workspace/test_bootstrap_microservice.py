@@ -34,8 +34,8 @@ class TestRunBootstrapMicroservice:
     def test_defaults_to_8080_when_no_port_and_not_in_registry(self, tmp_path: Path):
         # k8s-native convention: missing port registry entry defaults to
         # cluster-wide 8080 instead of failing (microservice.py run_bootstrap_microservice).
-        (tmp_path / "openapi" / "hauliage" / "x").mkdir(parents=True)
-        (tmp_path / "openapi" / "hauliage" / "x" / "openapi.yaml").write_text(
+        (tmp_path / "openapi" / "acme" / "x").mkdir(parents=True)
+        (tmp_path / "openapi" / "acme" / "x" / "openapi.yaml").write_text(
             "openapi: 3.1.0\ninfo:\n  title: X\npaths: {}\n"
         )
         (tmp_path / "docker" / "microservices").mkdir(parents=True)
@@ -96,7 +96,7 @@ class TestUpdateWorkspaceCargoToml:
         cargo.write_text(
             "[workspace]\n"
             "members = [\n"
-            '    "hauliage/foo",\n'
+            '    "acme/foo",\n'
             "]\n"
             'resolver = "2"\n\n'
             "[workspace.package]\n"
@@ -120,11 +120,11 @@ class TestUpdateWorkspaceCargoToml:
     def test_no_op_if_already_member(self, tmp_path: Path):
         cargo = tmp_path / "Cargo.toml"
         cargo.write_text(
-            '[workspace]\nmembers = ["hauliage/baz/gen", "hauliage/baz/impl"]\nresolver = "2"\n'
+            '[workspace]\nmembers = ["acme/baz/gen", "acme/baz/impl"]\nresolver = "2"\n'
         )
         update_workspace_cargo_toml("baz", cargo)
-        assert cargo.read_text().count('"hauliage/baz/gen"') == 1
-        assert cargo.read_text().count('"hauliage/baz/impl"') == 1
+        assert cargo.read_text().count('"acme/baz/gen"') == 1
+        assert cargo.read_text().count('"acme/baz/impl"') == 1
 
 
 class TestUpdateTiltfile:
@@ -168,7 +168,7 @@ class TestUpdateTiltfile:
         tilt.write_text(
             "local_resource('build-x', 'echo',\n"
             "    deps=['./microservices/a/gen/Cargo.toml', './microservices/a/impl/Cargo.toml']\n"
-            "    resource_deps=['hauliage-all-gens'],\n"
+            "    resource_deps=['acme-all-gens'],\n"
             ")\n"
         )
         update_tiltfile("b", "b/openapi.yaml", "b_api", 8002, tilt)
@@ -233,7 +233,7 @@ class TestUpdateTiltfile:
 
 
 class TestEnsureImplScaffold:
-    """When impl/ was deleted, 'hauliage gen stubs' should recreate it via _ensure_impl_scaffold."""
+    """When impl/ was deleted, 'acme gen stubs' should recreate it via _ensure_impl_scaffold."""
 
     def test_creates_impl_when_gen_exists_and_impl_missing(self, tmp_path: Path) -> None:
         (tmp_path / "openapi" / "company").mkdir(parents=True)
@@ -242,7 +242,7 @@ class TestEnsureImplScaffold:
         )
         gen_dir = tmp_path / "microservices" / "company" / "gen"
         gen_dir.mkdir(parents=True)
-        (gen_dir / "Cargo.toml").write_text('[package]\nname = "hauliage_company_gen"\n')
+        (gen_dir / "Cargo.toml").write_text('[package]\nname = "acme_company_gen"\n')
         (gen_dir / "src").mkdir(parents=True)
         (gen_dir / "src" / "main.rs").write_text("fn main() {}")
         (tmp_path / "microservices" / "Cargo.toml").write_text(
@@ -251,7 +251,7 @@ class TestEnsureImplScaffold:
         impl_dir = tmp_path / "microservices" / "company" / "impl"
         assert not impl_dir.exists()
 
-        _ensure_impl_scaffold(tmp_path, "hauliage", "company")
+        _ensure_impl_scaffold(tmp_path, "acme", "company")
 
         assert impl_dir.exists()
         assert (impl_dir / "Cargo.toml").exists()
@@ -259,8 +259,8 @@ class TestEnsureImplScaffold:
         assert (impl_dir / "config" / "config.yaml").exists()
         assert (impl_dir / "src" / "controllers").exists()
         cargo = (impl_dir / "Cargo.toml").read_text()
-        assert "hauliage_company" in cargo
-        assert "hauliage_company_gen" in cargo
+        assert "acme_company" in cargo
+        assert "acme_company_gen" in cargo
         workspace = (tmp_path / "microservices" / "Cargo.toml").read_text()
         assert "company/impl" in workspace
 
@@ -273,7 +273,7 @@ class TestEnsureImplScaffold:
         import pytest
 
         with pytest.raises(FileNotFoundError, match="gen/ not found"):
-            _ensure_impl_scaffold(tmp_path, "hauliage", "company")
+            _ensure_impl_scaffold(tmp_path, "acme", "company")
 
     def test_no_op_when_impl_already_exists(self, tmp_path: Path) -> None:
         impl_dir = tmp_path / "microservices" / "company" / "impl"
@@ -284,7 +284,7 @@ class TestEnsureImplScaffold:
         (gen_dir / "src").mkdir(parents=True)
         (gen_dir / "src" / "main.rs").write_text("fn main() {}")
 
-        _ensure_impl_scaffold(tmp_path, "hauliage", "company")
+        _ensure_impl_scaffold(tmp_path, "acme", "company")
 
         assert (impl_dir / "Cargo.toml").read_text() == "existing"
 
@@ -303,7 +303,7 @@ class TestRegenerateImplStubsCreatesImplWhenMissing:
         )
         gen_dir = tmp_path / "microservices" / "company" / "gen"
         gen_dir.mkdir(parents=True)
-        (gen_dir / "Cargo.toml").write_text('[package]\nname = "hauliage_company_gen"\n')
+        (gen_dir / "Cargo.toml").write_text('[package]\nname = "acme_company_gen"\n')
         (gen_dir / "src").mkdir(parents=True)
         (gen_dir / "src" / "main.rs").write_text("fn main() {}")
         (tmp_path / "microservices" / "Cargo.toml").write_text(
@@ -315,7 +315,7 @@ class TestRegenerateImplStubsCreatesImplWhenMissing:
         with patch(
             "brrtrouter_tooling.workspace.bootstrap.microservice.generate_impl_stubs_with_brrtrouter"
         ) as m_stubs:
-            rc = regenerate_impl_stubs(tmp_path, "hauliage", service="company")
+            rc = regenerate_impl_stubs(tmp_path, "acme", service="company")
 
         assert rc == 0
         assert impl_dir.exists()
@@ -339,7 +339,7 @@ class TestRegenerateImplStubsCreatesImplWhenMissing:
         impl_dir = tmp_path / "microservices" / "company" / "impl"
         assert not impl_dir.exists()
 
-        rc = regenerate_impl_stubs(tmp_path, "hauliage", service="company")
+        rc = regenerate_impl_stubs(tmp_path, "acme", service="company")
 
         # When gen is missing we skip (continue); impl is not created; function still returns 0
         assert rc == 0

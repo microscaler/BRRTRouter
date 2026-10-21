@@ -1,4 +1,4 @@
-"""Host-aware build: cargo/cross/zigbuild, multi-arch (amd64, arm64, arm7). Generic for BRRTRouter and RERP-style workspaces."""
+"""Host-aware build: cargo/cross/zigbuild, multi-arch (amd64, arm64, arm7), for any BRRTRouter workspace."""
 
 from __future__ import annotations
 
@@ -38,8 +38,10 @@ def should_use_zigbuild() -> bool:
 
 
 def should_use_cross() -> bool:
-    """True if RERP_USE_CROSS=1 (or BRRT_USE_CROSS=1)."""
-    return os.environ.get("RERP_USE_CROSS") == "1" or os.environ.get("BRRT_USE_CROSS") == "1"
+    """True if BRRTROUTER_USE_CROSS=1 (older names read with a deprecation warning)."""
+    from brrtrouter_tooling.workspace.legacy_env import env_flag
+
+    return env_flag("BRRTROUTER_USE_CROSS")
 
 
 def _install_rust_target(rust_target: str) -> bool:
@@ -77,8 +79,7 @@ def _get_cargo_env(rust_target: str) -> Dict[str, str]:
 def _local_dep_config_args() -> List[str]:
     """Lines in $OCTOPILOT_CARGO_CONFIG, each passed as `cargo --config <line>`.
 
-    Any application built with BRRTRouter and Octopilot (PriceWhisperer,
-    hauliage, ...) can point it at a gitignored file of local overrides, e.g.
+    Any application built with BRRTRouter and Octopilot can point it at a gitignored file of local overrides, e.g.
     sibling-checkout paths generated from [workspace.metadata.local-deps].
     CI leaves the variable unset.
     """
@@ -198,7 +199,11 @@ def _build_for_arch(
         )
         return False
     _system, module = parts
-    crate_name = resolve_cargo_impl_package_name(package, module)
+    from brrtrouter_tooling.workspace.profile import load_profile
+
+    crate_name = resolve_cargo_impl_package_name(
+        package, module, prefix=load_profile(project_root).package_prefix
+    )
 
     return _run_build(
         project_root,

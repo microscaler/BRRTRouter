@@ -1,4 +1,4 @@
-"""`hauliage ports` subcommand: assign, list, validate, update-configs, reconcile, fix-duplicates."""
+"""`<cli> ports` subcommand: assign, list, validate, update-configs, reconcile, fix-duplicates."""
 
 from pathlib import Path
 
@@ -8,6 +8,7 @@ from brrtrouter_tooling.workspace.ports import (
     reconcile,
     validate,
 )
+from brrtrouter_tooling.workspace.profile import cli_name
 
 
 def run_ports(args, project_root: Path, registry_path: Path) -> int:
@@ -60,7 +61,7 @@ def run_ports(args, project_root: Path, registry_path: Path) -> int:
             print(f"  NodePort: {node_port}")
         else:
             print(f"⚠️  Service '{args.service_name}' has no assigned port")
-            print(f"   Assign one with: hauliage ports assign {args.service_name}")
+            print(f"   Assign one with: {cli_name()} ports assign {args.service_name}")
             return 1
         return 0
 
@@ -70,7 +71,7 @@ def run_ports(args, project_root: Path, registry_path: Path) -> int:
             registry.update_config_files(args.service_name, port)
         else:
             print(f"⚠️  Service '{args.service_name}' has no assigned port")
-            print(f"   Assign one first with: hauliage ports assign {args.service_name}")
+            print(f"   Assign one first with: {cli_name()} ports assign {args.service_name}")
             return 1
         return 0
 

@@ -1,4 +1,4 @@
-"""Tests for hauliage docker copy-binary (delegates to brrtrouter_tooling.docker.copy_binary)."""
+"""Tests for acme docker copy-binary (delegates to brrtrouter_tooling.docker.copy_binary)."""
 
 from pathlib import Path
 

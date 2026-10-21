@@ -1,4 +1,4 @@
-"""Tests for hauliage docker generate-dockerfile (delegates to brrtrouter_tooling.docker.generate_dockerfile)."""
+"""Tests for acme docker generate-dockerfile (delegates to brrtrouter_tooling.docker.generate_dockerfile)."""
 
 from pathlib import Path
 
@@ -21,11 +21,11 @@ class TestGenerateDockerfile:
             "idam",
             port=8000,
             project_root=tmp_path,
-            binary_name_pattern="hauliage_{system}_{module}_impl",
+            binary_name_pattern="acme_{system}_{module}_impl",
         )
         assert out == tmp_path / "docker" / "microservices" / "Dockerfile.auth_idam"
         text = out.read_text()
-        assert "hauliage_auth_idam_impl" in text
+        assert "acme_auth_idam_impl" in text
         assert "8000" in text
         assert "auth-idam" in text
         assert "auth" in text

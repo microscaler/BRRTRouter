@@ -1,4 +1,4 @@
-"""Tests for brrtrouter_tooling.workspace.ci.validate_version (hauliage ci validate-version)."""
+"""Tests for brrtrouter_tooling.workspace.ci.validate_version (acme ci validate-version)."""
 
 from io import StringIO
 from unittest.mock import patch

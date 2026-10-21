@@ -81,8 +81,8 @@ class TestReconcile:
     def test_reconcile_adds_helm_only_service(self, tmp_path: Path, capsys):
         from brrtrouter_tooling.workspace.ports import PortRegistry, reconcile
 
-        (tmp_path / "helm" / "hauliage-microservice" / "values").mkdir(parents=True)
-        (tmp_path / "helm" / "hauliage-microservice" / "values" / "new-svc.yaml").write_text(
+        (tmp_path / "helm" / "acme-microservice" / "values").mkdir(parents=True)
+        (tmp_path / "helm" / "acme-microservice" / "values" / "new-svc.yaml").write_text(
             "service:\n  name: new-svc\n  port: 8010\n"
         )
         reg_path = tmp_path / "reg.json"
@@ -108,11 +108,11 @@ class TestFixDuplicates:
     def test_fix_duplicates_dry_run(self, tmp_path: Path, capsys):
         from brrtrouter_tooling.workspace.ports import PortRegistry, fix_duplicates
 
-        (tmp_path / "helm" / "hauliage-microservice" / "values").mkdir(parents=True)
-        (tmp_path / "helm" / "hauliage-microservice" / "values" / "a.yaml").write_text(
+        (tmp_path / "helm" / "acme-microservice" / "values").mkdir(parents=True)
+        (tmp_path / "helm" / "acme-microservice" / "values" / "a.yaml").write_text(
             "service:\n  name: a\n  port: 8001\n"
         )
-        (tmp_path / "helm" / "hauliage-microservice" / "values" / "b.yaml").write_text(
+        (tmp_path / "helm" / "acme-microservice" / "values" / "b.yaml").write_text(
             "service:\n  name: b\n  port: 8001\n"
         )
         reg_path = tmp_path / "reg.json"

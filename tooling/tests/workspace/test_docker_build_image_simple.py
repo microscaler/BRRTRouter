@@ -1,4 +1,4 @@
-"""Tests for hauliage docker build-image-simple (delegates to brrtrouter_tooling.docker.build_image_simple)."""
+"""Tests for acme docker build-image-simple (delegates to brrtrouter_tooling.docker.build_image_simple)."""
 
 from pathlib import Path
 from unittest.mock import MagicMock, patch

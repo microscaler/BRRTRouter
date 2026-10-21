@@ -1,4 +1,4 @@
-"""Generate system-level BFF OpenAPI from directory discovery (RERP-style).
+"""Generate system-level BFF OpenAPI from directory discovery.
 
 openapi_dir/{system}/{service}/openapi.yaml -> openapi_dir/{system}/openapi.yaml.
 """
@@ -13,7 +13,7 @@ from brrtrouter_tooling.bff.discovery import discover_sub_services
 from brrtrouter_tooling.bff.merge import merge_sub_service_specs
 from brrtrouter_tooling.helpers import extract_readme_overview, to_pascal_case
 
-# Default parameters injected into BFF (RERP compatibility).
+# Default parameters injected into the BFF.
 _DEFAULT_PARAMETERS = {
     "Page": {
         "name": "page",

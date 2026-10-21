@@ -1,4 +1,4 @@
-"""`hauliage ci` subcommands: patch-brrtrouter, fix-cargo-paths, is-tag, get-latest-tag, validate-version."""
+"""`<cli> ci` subcommands: patch-brrtrouter, fix-cargo-paths, is-tag, get-latest-tag, validate-version."""
 
 import sys
 from pathlib import Path

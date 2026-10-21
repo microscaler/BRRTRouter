@@ -245,9 +245,11 @@ def fibonacci_backoff_sequence(max_total_seconds: int = 300) -> list[int]:
 # --- Naming ---
 
 
-def default_binary_name(system: str, module: str) -> str:
-    """Default RERP-style binary name: rerp_{system}_{module}_impl."""
-    return f"rerp_{system}_{module.replace('-', '_')}_impl"
+def default_binary_name(system: str, module: str, project_root: Path | None = None) -> str:
+    """Impl binary name from the project profile's naming.binary_pattern (default ``{prefix}_{system}_{module}_impl``)."""
+    from brrtrouter_tooling.workspace.profile import load_profile
+
+    return load_profile(project_root or Path.cwd()).binary_name(system, module)
 
 
 def default_gen_package_name(service_dir_name: str) -> str:
@@ -264,13 +266,16 @@ def brrtrouter_impl_package_name(module: str) -> str:
     return f"{to_snake_case(module)}_service_api_impl"
 
 
-def resolve_cargo_impl_package_name(package: str | None, module: str) -> str:
+def resolve_cargo_impl_package_name(
+    package: str | None, module: str, prefix: str | None = None
+) -> str:
     """Resolve ``cargo -p`` name for host-aware builds.
 
     * If ``package`` is ``None``, use :func:`brrtrouter_impl_package_name` with ``module``,
       unless ``module`` contains uppercase letters (e.g. BFF ``traderBFF``) — then
       ``{module}_impl`` is used (matches common ``impl/Cargo.toml`` names).
-    * If ``package`` starts with ``rerp_``, return unchanged (legacy RERP workspace layout).
+    * If ``package`` starts with ``{prefix}_`` (the project's package prefix) or a pre-profile prefix, return it
+      unchanged: a workspace that names its crates ``<prefix>_<system>_<module>`` is not expanded.
     * If ``package`` already ends with ``_service_api_impl``, return unchanged.
     * If ``package`` ends with ``_impl`` but not the full suffix above: when the stem
       contains uppercase (e.g. ``traderBFF_impl``), return ``package`` unchanged; otherwise
@@ -281,7 +286,10 @@ def resolve_cargo_impl_package_name(package: str | None, module: str) -> str:
         if any(c.isupper() for c in module):
             return f"{module}_impl"
         return brrtrouter_impl_package_name(module)
-    if package.startswith("rerp_"):
+    from brrtrouter_tooling.workspace.legacy_env import LEGACY_PACKAGE_PREFIXES
+
+    keep = (f"{prefix}_",) if prefix else ()
+    if package.startswith(keep + LEGACY_PACKAGE_PREFIXES):
         return package
     if package.endswith("_service_api_impl"):
         return package

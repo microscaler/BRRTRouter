@@ -42,7 +42,7 @@ def call_brrtrouter_generate(
         project_root: Consumer project root (cwd for cargo run)
         brrtrouter_path: Optional path to BRRTRouter (defaults to ../BRRTRouter)
         deps_config_path: Optional path to brrtrouter-dependencies.toml
-        package_name: Optional [package].name for generated Cargo.toml (e.g. rerp_accounting_financial_reports_gen)
+        package_name: Optional [package].name for generated Cargo.toml (e.g. acme_accounting_financial_reports_gen)
         capture_output: Whether to capture stdout/stderr
 
     Returns:

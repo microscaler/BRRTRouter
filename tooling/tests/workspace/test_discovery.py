@@ -22,34 +22,34 @@ class TestSuites:
     def test_suites_with_bff_returns_suites_with_config(self, tmp_path: Path):
         (tmp_path / "openapi").mkdir(exist_ok=True, parents=True)
         (tmp_path / "openapi" / "bff-suite-config.yaml").write_text("")
-        assert suites_with_bff(tmp_path) == ["hauliage"]
+        assert suites_with_bff(tmp_path) == ["acme"]
 
     def test_bff_suite_config_path_prefers_nested_default(self, tmp_path: Path):
         # Nothing on disk: the nested (suite-scoped) path is the default.
         assert (
-            bff_suite_config_path(tmp_path, "hauliage")
-            == tmp_path / "openapi" / "hauliage" / "bff-suite-config.yaml"
+            bff_suite_config_path(tmp_path, "acme")
+            == tmp_path / "openapi" / "acme" / "bff-suite-config.yaml"
         )
 
     def test_bff_suite_config_path_flat_legacy_fallback(self, tmp_path: Path):
-        # Legacy hauliage layout: flat file exists, no nested — fallback applies.
+        # Legacy acme layout: flat file exists, no nested — fallback applies.
         (tmp_path / "openapi").mkdir(parents=True)
         (tmp_path / "openapi" / "bff-suite-config.yaml").write_text("")
         assert (
-            bff_suite_config_path(tmp_path, "hauliage")
+            bff_suite_config_path(tmp_path, "acme")
             == tmp_path / "openapi" / "bff-suite-config.yaml"
         )
 
     def test_openapi_bff_path_flat_legacy_fallback(self, tmp_path: Path):
         (tmp_path / "openapi").mkdir(parents=True)
         (tmp_path / "openapi" / "openapi_bff.yaml").write_text("")
-        assert openapi_bff_path(tmp_path, "hauliage") == tmp_path / "openapi" / "openapi_bff.yaml"
+        assert openapi_bff_path(tmp_path, "acme") == tmp_path / "openapi" / "openapi_bff.yaml"
 
     def test_service_to_suite_finds_spec(self, tmp_path: Path):
         d = tmp_path / "openapi" / "identity"
         d.mkdir(parents=True)
         (d / "openapi.yaml").write_text("")
-        assert service_to_suite(tmp_path, "identity") == "hauliage"
+        assert service_to_suite(tmp_path, "identity") == "acme"
 
     def test_get_bff_service_name_from_config(self):
         assert get_bff_service_name_from_config({"bff_service_name": "x"}) == "x"
@@ -58,12 +58,12 @@ class TestSuites:
     def test_iter_bffs_yields_bff_name_and_suite(self, tmp_path: Path):
         (tmp_path / "openapi").mkdir(exist_ok=True, parents=True)
         (tmp_path / "openapi" / "bff-suite-config.yaml").write_text("bff_service_name: bff\n")
-        assert list(iter_bffs(tmp_path)) == [("bff", "hauliage")]
+        assert list(iter_bffs(tmp_path)) == [("bff", "acme")]
 
     def test_bff_service_to_suite(self, tmp_path: Path):
         (tmp_path / "openapi").mkdir(exist_ok=True, parents=True)
         (tmp_path / "openapi" / "bff-suite-config.yaml").write_text("bff_service_name: bff\n")
-        assert bff_service_to_suite(tmp_path, "bff") == "hauliage"
+        assert bff_service_to_suite(tmp_path, "bff") == "acme"
 
     def test_load_suite_services_returns_keys_and_bff_name(self, tmp_path: Path):
         (tmp_path / "openapi").mkdir(exist_ok=True, parents=True)
@@ -77,12 +77,12 @@ class TestSuites:
         (tmp_path / "openapi" / "svc-b").mkdir(parents=True)
         (tmp_path / "openapi" / "svc-a" / "openapi.yaml").write_text("")
         (tmp_path / "openapi" / "svc-b" / "openapi.yaml").write_text("")
-        assert suite_sub_service_names(tmp_path, "hauliage") == ["svc-a", "svc-b"]
+        assert suite_sub_service_names(tmp_path, "acme") == ["svc-a", "svc-b"]
 
     def test_iter_suite_services_yields_all(self, tmp_path: Path):
         (tmp_path / "openapi" / "svc").mkdir(parents=True)
         (tmp_path / "openapi" / "svc" / "openapi.yaml").write_text("")
-        assert list(iter_suite_services(tmp_path)) == [("hauliage", "svc")]
+        assert list(iter_suite_services(tmp_path)) == [("acme", "svc")]
 
     def test_tilt_service_names_includes_bff_and_services(self, tmp_path: Path):
         (tmp_path / "openapi").mkdir(exist_ok=True, parents=True)

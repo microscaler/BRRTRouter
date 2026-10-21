@@ -13,10 +13,12 @@ from .suites import bff_suite_config_path, iter_bffs, iter_suite_services
 
 
 def package_prefix(project_root: Path, suite: str) -> str:
-    """Cargo package-name prefix for a suite (generic — no hauliage hardcoding).
+    """Cargo package-name prefix for a suite.
 
     Order: `package_prefix` in the suite's bff-suite-config.yaml, then the
-    BRRTROUTER_PACKAGE_PREFIX env var, then 'hauliage' for back-compat.
+    BRRTROUTER_PACKAGE_PREFIX env var, then the project profile (``ProjectProfile.crate_prefix``: naming.package_prefix
+    shaped by naming.crate_pattern). Bootstrap, discovery and the single-crate build all call this, so a scaffolded
+    crate and a discovered one always have the same name.
     """
     import os
 
@@ -29,16 +31,20 @@ def package_prefix(project_root: Path, suite: str) -> str:
             return prefix
     except (OSError, yaml.YAMLError):
         pass
-    return os.environ.get("BRRTROUTER_PACKAGE_PREFIX", "").strip() or "hauliage"
+    from brrtrouter_tooling.workspace.profile import load_profile
+
+    return os.environ.get("BRRTROUTER_PACKAGE_PREFIX", "").strip() or load_profile(
+        project_root
+    ).crate_prefix(suite)
 
 
 def get_package_names(project_root: Path, suite: str | None = None) -> dict[str, str]:
     """Cargo [package].name per service: from openapi/{suite}/{service}/openapi.yaml and BFFs.
 
     Returns dict mapping service name (e.g. 'identity', 'bff') to package name
-    (e.g. 'hauliage_identity', 'hauliage_bff'). Includes BFF services
+    (e.g. 'acme_identity', 'acme_bff'). Includes BFF services
     from bff-suite-config so brrtrouter-gen receives --package-name and writes correct
-    [package].name in gen/Cargo.toml (e.g. hauliage_bff_gen).
+    [package].name in gen/Cargo.toml (e.g. acme_bff_gen).
 
     When suite is set, only include services from that suite; when None, include all suites.
     """

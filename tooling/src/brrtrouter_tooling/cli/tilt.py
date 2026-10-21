@@ -1,4 +1,4 @@
-"""`rerp tilt` subcommands: setup-kind-registry, setup-persistent-volumes, setup, teardown, logs."""
+"""`brrtrouter tilt` subcommands: setup-kind-registry, setup-persistent-volumes, setup, teardown, logs."""
 
 import sys
 from pathlib import Path
@@ -19,7 +19,9 @@ def run_tilt_argv() -> None:
         print("Usage: brrtrouter client tilt <command> [args...]", file=sys.stderr)
         print("Commands:", file=sys.stderr)
         print("  setup-kind-registry      - Setup local Docker registry for Kind", file=sys.stderr)
-        print("  setup-persistent-volumes - Setup PersistentVolumes for RERP", file=sys.stderr)
+        print(
+            "  setup-persistent-volumes - Setup PersistentVolumes for the project", file=sys.stderr
+        )
         print("  setup                    - Setup Tilt environment", file=sys.stderr)
         print("  teardown                 - Teardown Tilt environment", file=sys.stderr)
         print("  scan                     - Scan OpenAPI dirs for Tilt mapping", file=sys.stderr)

@@ -1,4 +1,4 @@
-"""`hauliage docker` subcommands: delegate to brrtrouter_tooling.docker with Hauliage params."""
+"""`<cli> docker` subcommands: delegate to brrtrouter_tooling.docker with the project profile's names."""
 
 import sys
 from pathlib import Path
@@ -10,17 +10,23 @@ from brrtrouter_tooling.workspace.docker.render_dockerfile import (
     render_dockerfile_to_temp,
 )
 from brrtrouter_tooling.workspace.env_paths import venv_bin
+from brrtrouter_tooling.workspace.profile import ProjectProfile, load_profile
 
-# Hauliage-specific docker params (image names, kind cluster, paths)
-Hauliage_BASE_IMAGE = "hauliage-base"
-Hauliage_BASE_IMAGE_LOCAL = "hauliage/base"
-Hauliage_DOCKER_DIR = "docker"
-Hauliage_KIND_CLUSTER = "hauliage"
-Hauliage_ZIP_PREFIX = "hauliage-binaries-"
-Hauliage_BINARY_PATTERN = "hauliage_{system}_{module}_impl"
+DOCKER_DIR = "docker"
+
+
+def _binary_pattern(profile: ProjectProfile) -> str:
+    """The profile's binary pattern with the prefix filled in ({system} and {module} stay for the generator)."""
+    return profile.binary_pattern.replace("{prefix}", profile.package_prefix)
+
+
+def _base_image_local(profile: ProjectProfile) -> str:
+    """Local tag of the per-arch base image: ``<name>/base``."""
+    return f"{profile.name}/base"
 
 
 def run_docker(args, project_root: Path) -> None:
+    profile = load_profile(project_root)
     if args.docker_cmd == "render-dockerfile":
         template_path = Path(args.template)
         if not template_path.is_absolute():
@@ -42,7 +48,7 @@ def run_docker(args, project_root: Path) -> None:
             args.module,
             port=getattr(args, "port", 8000),
             project_root=project_root,
-            binary_name_pattern=Hauliage_BINARY_PATTERN,
+            binary_name_pattern=_binary_pattern(profile),
         )
         sys.exit(rc)
     if args.docker_cmd == "unpack-build-bins":
@@ -50,7 +56,7 @@ def run_docker(args, project_root: Path) -> None:
 
         inp = Path(args.input_dir)
         inp = (project_root / inp) if not inp.is_absolute() else inp
-        rc = run_unpack_build_bins(inp, project_root, zip_prefix=Hauliage_ZIP_PREFIX)
+        rc = run_unpack_build_bins(inp, project_root, zip_prefix=profile.zip_prefix)
         sys.exit(rc)
     if args.docker_cmd == "validate-build-artifacts":
         rc = validate_build_artifacts(project_root, suite=getattr(args, "suite", None))
@@ -65,8 +71,8 @@ def run_docker(args, project_root: Path) -> None:
             project_root,
             push=args.push,
             dry_run=args.dry_run,
-            base_image_name=Hauliage_BASE_IMAGE,
-            docker_dir=Hauliage_DOCKER_DIR,
+            base_image_name=profile.base_image,
+            docker_dir=DOCKER_DIR,
             tag_kind_registry=False,
             tag_dockerhub=False,
         )
@@ -98,8 +104,8 @@ def run_docker(args, project_root: Path) -> None:
                     Path(args.artifact_path),
                     project_root,
                     dockerfile=temp_dockerfile,
-                    kind_cluster_name=Hauliage_KIND_CLUSTER,
-                    base_image_name=Hauliage_BASE_IMAGE,
+                    kind_cluster_name=profile.kind_cluster,
+                    base_image_name=profile.base_image,
                     dev_sync_only=getattr(args, "dev_sync_only", False),
                     no_cache=getattr(args, "no_cache", False),
                     prune_dangling_after=(True if getattr(args, "prune_dangling", False) else None),
@@ -115,8 +121,8 @@ def run_docker(args, project_root: Path) -> None:
                 Path(args.artifact_path),
                 project_root,
                 dockerfile=dockerfile_path,
-                kind_cluster_name=Hauliage_KIND_CLUSTER,
-                base_image_name=Hauliage_BASE_IMAGE,
+                kind_cluster_name=profile.kind_cluster,
+                base_image_name=profile.base_image,
                 dev_sync_only=getattr(args, "dev_sync_only", False),
                 no_cache=getattr(args, "no_cache", False),
                 prune_dangling_after=(True if getattr(args, "prune_dangling", False) else None),
@@ -150,7 +156,7 @@ def run_docker(args, project_root: Path) -> None:
         from brrtrouter_tooling.docker.build_multiarch import run as run_build_multiarch
 
         build_cmd = [
-            venv_bin("hauliage"),
+            venv_bin(profile.cli),
             "build",
             f"{args.system}_{args.module}",
             "all",
@@ -163,9 +169,9 @@ def run_docker(args, project_root: Path) -> None:
             getattr(args, "push", False),
             project_root,
             build_cmd=build_cmd,
-            base_image_name=Hauliage_BASE_IMAGE,
-            docker_dir=Hauliage_DOCKER_DIR,
-            base_image_local=Hauliage_BASE_IMAGE_LOCAL,
+            base_image_name=profile.base_image,
+            docker_dir=DOCKER_DIR,
+            base_image_local=_base_image_local(profile),
         )
         sys.exit(rc)
     sys.exit(1)

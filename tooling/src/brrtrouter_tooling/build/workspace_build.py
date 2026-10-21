@@ -26,13 +26,15 @@ from brrtrouter_tooling.build.host_aware import (
 def _ensure_manifest_exists(
     project_root: Path,
     workspace_dir: str,
-    gen_if_missing_callback: Callable[[Path], None] | None,
+    gen_if_missing_callback: Callable[[Path], int | None] | None,
 ) -> bool:
     """Ensure workspace Cargo.toml exists; optionally run gen_if_missing_callback. Returns False on failure (prints to stderr)."""
     manifest = project_root / workspace_dir / "Cargo.toml"
     if not manifest.exists():
-        if gen_if_missing_callback is not None:
-            gen_if_missing_callback(project_root)
+        if gen_if_missing_callback is not None and gen_if_missing_callback(project_root):
+            # a callback returning a non-zero int reports failed generation: do not build on it
+            print("❌ code generation failed", file=sys.stderr)
+            return False
         if not manifest.exists():
             print(f"❌ {manifest} not found", file=sys.stderr)
             return False
@@ -57,7 +59,7 @@ def build_workspace_with_options(
     workspace_dir: str = "microservices",
     arch: str = "amd64",
     release: bool = True,
-    gen_if_missing_callback: Callable[[Path], None] | None = None,
+    gen_if_missing_callback: Callable[[Path], int | None] | None = None,
 ) -> int:
     """Build workspace at project_root/workspace_dir. arch: amd64|arm64|arm7. Returns 0/1."""
     if not _ensure_manifest_exists(project_root, workspace_dir, gen_if_missing_callback):
@@ -84,7 +86,7 @@ def build_package_with_options(
     package_name: str = "",
     arch: str = "amd64",
     release: bool = True,
-    gen_if_missing_callback: Callable[[Path], None] | None = None,
+    gen_if_missing_callback: Callable[[Path], int | None] | None = None,
 ) -> int:
     """Build one package (-p package_name) in workspace. Returns 0/1."""
     if not package_name:

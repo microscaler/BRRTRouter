@@ -1,4 +1,4 @@
-"""Setup PersistentVolumes for Hauliage (k8s/data, k8s/monitoring). Replaces setup-persistent-volumes.sh."""
+"""Setup PersistentVolumes for the workspace (k8s/data, k8s/monitoring). Replaces setup-persistent-volumes.sh."""
 
 from __future__ import annotations
 

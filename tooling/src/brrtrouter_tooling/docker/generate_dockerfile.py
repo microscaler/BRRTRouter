@@ -24,12 +24,13 @@ def generate_dockerfile(
     project_root: Path | None = None,
     template_path: Path | None = None,
     output_path: Path | None = None,
-    binary_name_pattern: str = "rerp_{system}_{module}_impl",
+    binary_name_pattern: str | None = None,
 ) -> Path:
     """
     Generate a Dockerfile for a specific service from the template.
     Writes to docker/microservices/Dockerfile.{system}_{module} unless output_path is set.
-    binary_name_pattern may use {system} and {module} (with - replaced by _ for module).
+    binary_name_pattern may use {system} and {module} (with - replaced by _ for module); default: the project
+    profile's naming.binary_pattern.
     Returns the output path.
     """
     root = Path(project_root) if project_root is not None else Path.cwd()
@@ -44,7 +45,12 @@ def generate_dockerfile(
             msg = f"Template not found: {tpl} nor bundled template"
             raise FileNotFoundError(msg)
 
-    binary_name = binary_name_pattern.format(system=system, module=module.replace("-", "_"))
+    if binary_name_pattern is None:
+        from brrtrouter_tooling.workspace.profile import load_profile
+
+        binary_name = load_profile(root).binary_name(system, module)
+    else:
+        binary_name = binary_name_pattern.format(system=system, module=module.replace("-", "_"))
     content = tpl.read_text()
     content = content.replace("{{service_name}}", f"{system}-{module}")
     content = content.replace("{{binary_name}}", binary_name)
@@ -63,7 +69,7 @@ def run(
     module: str,
     port: int = 8000,
     project_root: Path | None = None,
-    binary_name_pattern: str = "rerp_{system}_{module}_impl",
+    binary_name_pattern: str | None = None,
 ) -> int:
     """CLI entry: generate Dockerfile. Returns 0 on success, 1 on error."""
     try:

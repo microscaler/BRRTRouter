@@ -1,4 +1,4 @@
-"""Hauliage build: package names, binary names, and ports derived from OpenAPI (no hardcoding)."""
+"""Workspace build: package names, binary names, and ports derived from OpenAPI (no hardcoding)."""
 
 from __future__ import annotations
 

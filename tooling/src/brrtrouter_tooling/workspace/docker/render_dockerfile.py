@@ -8,6 +8,7 @@ from pathlib import Path
 from brrtrouter_tooling.workspace.build.constants import get_binary_names, get_service_ports
 from brrtrouter_tooling.workspace.build.host_aware import detect_host_architecture
 from brrtrouter_tooling.workspace.discovery.suites import service_to_suite
+from brrtrouter_tooling.workspace.profile import load_profile
 
 
 def render_dockerfile_template(
@@ -19,9 +20,13 @@ def render_dockerfile_template(
     """Render Dockerfile.template with {{service_name}}, {{system}}, {{module}}, {{port}}, {{binary_name}}.
 
     service_name: e.g. 'fleet', 'identity' (directory name under openapi/{suite}/).
-    system: e.g. 'hauliage'. If None, derived from discovery (service_to_suite).
+    system: e.g. 'trader'. If None, derived from discovery (service_to_suite), else the profile's flat suite.
     """
-    system = system or service_to_suite(project_root, service_name) or "hauliage"
+    system = (
+        system
+        or service_to_suite(project_root, service_name)
+        or load_profile(project_root).flat_suite
+    )
     ports = get_service_ports(project_root)
     binaries = get_binary_names(project_root)
     port = ports.get(service_name, "8080")

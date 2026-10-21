@@ -1,4 +1,4 @@
-"""Tests for brrtrouter_tooling.workspace.tilt (hauliage tilt setup-kind-registry, setup-persistent-volumes, logs)."""
+"""Tests for brrtrouter_tooling.workspace.tilt (acme tilt setup-kind-registry, setup-persistent-volumes, logs)."""
 
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -154,19 +154,34 @@ class TestTeardown:
         with patch("subprocess.run", return_value=MagicMock(returncode=0)) as m:
             run(tmp_path, remove_images=True, remove_volumes=False, system_prune=False)
         calls = [c[0][0] for c in m.call_args_list]
-        # Container stop/rm: hauliage-{name}-dev for edi, financial-reports, bff
-        assert ["docker", "stop", "hauliage-bff-dev"] in [
+        # Container stop/rm: acme-{name}-dev for edi, financial-reports, bff
+        assert ["docker", "stop", "acme-bff-dev"] in [
             c[:3] for c in calls if c[:2] == ["docker", "stop"] and len(c) > 2
         ]
-        assert ["docker", "stop", "hauliage-edi-dev"] in [
+        assert ["docker", "stop", "acme-edi-dev"] in [
             c[:3] for c in calls if c[:2] == ["docker", "stop"] and len(c) > 2
         ]
-        assert ["docker", "stop", "hauliage-financial-reports-dev"] in [
+        assert ["docker", "stop", "acme-financial-reports-dev"] in [
             c[:3] for c in calls if c[:2] == ["docker", "stop"] and len(c) > 2
         ]
-        # Image rmi: hauliage-hauliage-{name}:latest and localhost:5001/hauliage-hauliage-{name}:tilt
+        # Image rmi: the profile's image contract, default {prefix}-{service}
         rmi_calls = [c for c in calls if c[:2] == ["docker", "rmi"] and len(c) > 2]
         rmi_args = [c[2] for c in rmi_calls]
-        assert "hauliage-hauliage-bff:latest" in rmi_args
-        assert "hauliage-hauliage-edi:latest" in rmi_args
-        assert "localhost:5001/hauliage-hauliage-financial-reports:tilt" in rmi_args
+        assert "acme-bff:latest" in rmi_args
+        assert "acme-edi:latest" in rmi_args
+        assert "localhost:5001/acme-financial-reports:tilt" in rmi_args
+
+    def test_suite_qualified_image_pattern_from_profile(self, tmp_path: Path):
+        from brrtrouter_tooling.workspace.tilt.teardown import run
+
+        (tmp_path / "brrtrouter.toml").write_text(
+            '[naming]\nimage_pattern = "{prefix}-{suite}-{service}"\n'
+        )
+        (tmp_path / "openapi").mkdir(exist_ok=True, parents=True)
+        (tmp_path / "openapi" / "bff-suite-config.yaml").write_text(
+            "bff_service_name: bff\nservices:\n  edi: {}"
+        )
+        with patch("subprocess.run", return_value=MagicMock(returncode=0)) as m:
+            run(tmp_path, remove_images=True, remove_volumes=False, system_prune=False)
+        rmi_args = [c[0][0][2] for c in m.call_args_list if c[0][0][:2] == ["docker", "rmi"]]
+        assert "acme-acme-edi:latest" in rmi_args
