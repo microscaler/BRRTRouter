@@ -243,13 +243,17 @@ def run(
     binary_name: str | None = None,
     dockerfile: Path | None = None,
     base_image_name: str = "brrtrouter-base",
-    kind_cluster_name: str = "rerp",
+    kind_cluster_name: str | None = None,
     dev_sync_only: bool = False,
     no_cache: bool = False,
     prune_dangling_after: bool | None = None,
 ) -> int:
     """Build Docker image using template or static Dockerfile. Returns 0 on success, 1 on error."""
     root = project_root
+    if kind_cluster_name is None:
+        from brrtrouter_tooling.workspace.profile import load_profile
+
+        kind_cluster_name = load_profile(root).kind_cluster
     temp_dockerfile_path = None
     h = root / hash_path if not hash_path.is_absolute() else hash_path
     a = root / artifact_path if not artifact_path.is_absolute() else artifact_path

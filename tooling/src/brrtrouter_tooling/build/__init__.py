@@ -1,4 +1,4 @@
-"""Host-aware Rust build (cargo/cross/zigbuild, multi-arch). Consumed by RERP and other projects."""
+"""Host-aware Rust build (cargo/cross/zigbuild, multi-arch). For any BRRTRouter project."""
 
 from .host_aware import (
     ARCH_TARGETS,

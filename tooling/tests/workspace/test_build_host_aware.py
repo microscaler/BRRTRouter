@@ -1,4 +1,4 @@
-"""TDD: tests for brrtrouter_tooling.workspace.build.host_aware (hauliage build)."""
+"""TDD: tests for brrtrouter_tooling.workspace.build.host_aware (acme build)."""
 
 from pathlib import Path
 from unittest.mock import patch
@@ -82,13 +82,13 @@ class TestShouldUseCross:
     def test_env_set_returns_true(self, monkeypatch):
         from brrtrouter_tooling.workspace.build.host_aware import should_use_cross
 
-        monkeypatch.setenv("Hauliage_USE_CROSS", "1")
+        monkeypatch.setenv("BRRTROUTER_USE_CROSS", "1")
         assert should_use_cross() is True
 
     def test_env_unset_returns_false(self, monkeypatch):
         from brrtrouter_tooling.workspace.build.host_aware import should_use_cross
 
-        monkeypatch.delenv("Hauliage_USE_CROSS", raising=False)
+        monkeypatch.delenv("BRRTROUTER_USE_CROSS", raising=False)
         assert should_use_cross() is False
 
 
@@ -133,7 +133,7 @@ class TestRun:
     def test_run_returns_one_when_microservices_missing(self, tmp_path: Path, monkeypatch):
         from brrtrouter_tooling.workspace.build.host_aware import run
 
-        monkeypatch.setenv("Hauliage_USE_CROSS", "1")  # skip rustup in _build_for_arch
+        monkeypatch.setenv("BRRTROUTER_USE_CROSS", "1")  # skip rustup in _build_for_arch
         # No microservices/Cargo.toml
         rc = run("workspace", arch="amd64", project_root=tmp_path)
         assert rc == 1
@@ -141,7 +141,7 @@ class TestRun:
     def test_run_returns_one_when_service_crate_missing(self, tmp_path: Path, monkeypatch):
         from brrtrouter_tooling.workspace.build.host_aware import run
 
-        monkeypatch.setenv("Hauliage_USE_CROSS", "1")
+        monkeypatch.setenv("BRRTROUTER_USE_CROSS", "1")
         (tmp_path / "microservices").mkdir()
         (tmp_path / "microservices" / "Cargo.toml").write_text("[workspace]\n")
         # auth_idam → microservices/auth/idam/impl must exist for _build_service
@@ -162,21 +162,21 @@ class TestBuildMicroservices:
         rc = build_microservices_workspace(tmp_path, "amd64", release=False)
         assert rc == 1
 
-    def test_run_hauliage_gen_if_missing_noop_when_probe_exists(self, tmp_path: Path):
-        from brrtrouter_tooling.workspace.build.microservices import run_hauliage_gen_if_missing
+    def test_gen_if_missing_noop_when_probe_exists(self, tmp_path: Path):
+        from brrtrouter_tooling.workspace.build.microservices import gen_if_missing
 
-        (tmp_path / "microservices" / "hauliage" / "identity").mkdir(parents=True)
-        (tmp_path / "microservices" / "hauliage" / "identity" / "Cargo.toml").write_text("")
-        run_hauliage_gen_if_missing(tmp_path)  # no raise, no subprocess
+        (tmp_path / "microservices" / "acme" / "identity").mkdir(parents=True)
+        (tmp_path / "microservices" / "acme" / "identity" / "Cargo.toml").write_text("")
+        gen_if_missing(tmp_path)  # no raise, no subprocess
 
     def test_build_microservices_workspace_success_mocked(self, tmp_path: Path, monkeypatch):
         from brrtrouter_tooling.workspace.build.microservices import build_microservices_workspace
 
         (tmp_path / "microservices").mkdir(parents=True)
         (tmp_path / "microservices" / "Cargo.toml").write_text("[workspace]\n")
-        (tmp_path / "microservices" / "hauliage" / "identity").mkdir(parents=True)
-        (tmp_path / "microservices" / "hauliage" / "identity" / "Cargo.toml").write_text("")
-        monkeypatch.setenv("Hauliage_USE_CROSS", "")
+        (tmp_path / "microservices" / "acme" / "identity").mkdir(parents=True)
+        (tmp_path / "microservices" / "acme" / "identity" / "Cargo.toml").write_text("")
+        monkeypatch.setenv("BRRTROUTER_USE_CROSS", "")
         with patch(
             "brrtrouter_tooling.workspace.build.microservices.run_host_aware",
             return_value=0,
@@ -195,9 +195,9 @@ class TestBuildMicroservices:
 
         (tmp_path / "microservices").mkdir(parents=True)
         (tmp_path / "microservices" / "Cargo.toml").write_text("[workspace]\n")
-        (tmp_path / "microservices" / "hauliage" / "identity").mkdir(parents=True)
-        (tmp_path / "microservices" / "hauliage" / "identity" / "Cargo.toml").write_text("")
-        monkeypatch.setenv("Hauliage_USE_CROSS", "1")
+        (tmp_path / "microservices" / "acme" / "identity").mkdir(parents=True)
+        (tmp_path / "microservices" / "acme" / "identity" / "Cargo.toml").write_text("")
+        monkeypatch.setenv("BRRTROUTER_USE_CROSS", "1")
         with patch(
             "brrtrouter_tooling.workspace.build.microservices.run_host_aware",
             return_value=0,

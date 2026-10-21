@@ -1,4 +1,4 @@
-"""Port registry and validate/reconcile/fix-duplicates (RERP-style layout)."""
+"""Port registry and validate/reconcile/fix-duplicates."""
 
 import importlib
 import sys

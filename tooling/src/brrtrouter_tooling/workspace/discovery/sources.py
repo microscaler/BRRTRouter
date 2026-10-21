@@ -20,9 +20,11 @@ def _iter_bffs(project_root: Path):
 
 
 def discover_helm(project_root: Path) -> dict[str, int]:
-    """Discover service.port from helm/hauliage-microservice/values/*.yaml."""
+    """Discover service.port from the profile's helm values directory (layout.helm_values)."""
+    from brrtrouter_tooling.workspace.profile import load_profile
+
     out: dict[str, int] = {}
-    d = project_root / "helm" / "hauliage-microservice" / "values"
+    d = load_profile(project_root).helm_values_dir
     if not d.exists():
         return out
     for p in sorted(d.glob("*.yaml")):
@@ -130,7 +132,13 @@ def discover_openapi_bff_localhost(project_root: Path) -> dict[str, tuple[int, s
 def discover_openapi_suite_microservice_localhost(
     project_root: Path,
 ) -> dict[str, tuple[str, int]]:
-    """Extract localhost ports from openapi/{name}/openapi.yaml. Returns {service_name: (hauliage, port)}."""
+    """Extract localhost ports from a flat openapi/{name}/openapi.yaml layout.
+
+    Returns {service_name: (suite, port)}; a flat layout's suite is the profile's layout.flat_suite.
+    """
+    from brrtrouter_tooling.workspace.profile import load_profile
+
+    flat_suite = load_profile(project_root).flat_suite
     out: dict[str, tuple[str, int]] = {}
     d = _openapi_dir(project_root)
     if not d.exists():
@@ -150,7 +158,7 @@ def discover_openapi_suite_microservice_localhost(
                     if "localhost" in u:
                         m = re.search(r":(\d+)(?:/|$)", u)
                         if m:
-                            out[sdir.name] = ("hauliage", int(m.group(1)))
+                            out[sdir.name] = (flat_suite, int(m.group(1)))
                             break
         except Exception as e:  # noqa: BLE001
             import logging

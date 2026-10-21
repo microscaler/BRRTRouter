@@ -18,7 +18,7 @@ def test_discover_helm_missing_dir(tmp_path: Path) -> None:
 
 
 def test_discover_helm_one_values(tmp_path: Path) -> None:
-    d = tmp_path / "helm" / "rerp-microservice" / "values"
+    d = tmp_path / "helm" / "acme-microservice" / "values"
     d.mkdir(parents=True)
     (d / "a.yaml").write_text("service:\n  name: a\n  port: 8001\n")
     got = discover_helm(tmp_path)
@@ -26,7 +26,7 @@ def test_discover_helm_one_values(tmp_path: Path) -> None:
 
 
 def test_discover_helm_name_from_stem(tmp_path: Path) -> None:
-    d = tmp_path / "helm" / "rerp-microservice" / "values"
+    d = tmp_path / "helm" / "acme-microservice" / "values"
     d.mkdir(parents=True)
     (d / "svc.yaml").write_text("service:\n  port: 8002\n")
     got = discover_helm(tmp_path)

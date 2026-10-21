@@ -68,7 +68,9 @@ def list_systems_with_sub_services(openapi_dir: Path) -> list[str]:
             suites.append(child.name)
     # Flat legacy: top-level bff-suite-config.yaml
     if not suites and (openapi_dir / "bff-suite-config.yaml").is_file():
-        return ["hauliage"]
+        from brrtrouter_tooling.workspace.profile import load_profile
+
+        return [load_profile(openapi_dir.parent).flat_suite]
     return suites
 
 

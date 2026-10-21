@@ -6,6 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from brrtrouter_tooling.workspace.profile import cli_name
+
 
 def _run(cmd: list[str], cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
@@ -53,5 +55,5 @@ def run_pre_commit(args: object, project_root: Path) -> None:
     pc_cmd = getattr(args, "pre_commit_cmd", None)
     if pc_cmd == "microservices-fmt":
         sys.exit(run_microservices_fmt(project_root))
-    print("hauliage pre-commit: use subcommand 'microservices-fmt'", file=sys.stderr)
+    print(f"{cli_name()} pre-commit: use subcommand 'microservices-fmt'", file=sys.stderr)
     sys.exit(1)

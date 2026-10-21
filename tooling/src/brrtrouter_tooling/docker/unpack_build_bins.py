@@ -11,9 +11,13 @@ def run(
     input_dir: Path,
     project_root: Path,
     workspace_dir: str = "microservices",
-    zip_prefix: str = "rerp-binaries-",
+    zip_prefix: str | None = None,
 ) -> int:
     """Extract {zip_prefix}{arch}.zip from input_dir into project_root/{workspace_dir}/target. Returns 0 or 1."""
+    if zip_prefix is None:
+        from brrtrouter_tooling.workspace.profile import load_profile
+
+        zip_prefix = load_profile(project_root).zip_prefix
     if not input_dir.is_dir():
         print(f"❌ Input directory not found: {input_dir}", file=sys.stderr)
         return 1

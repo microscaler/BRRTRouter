@@ -1,4 +1,4 @@
-"""Tests for brrtrouter_tooling.workspace.ci.get_latest_tag (hauliage ci get-latest-tag)."""
+"""Tests for brrtrouter_tooling.workspace.ci.get_latest_tag (acme ci get-latest-tag)."""
 
 import json
 import os

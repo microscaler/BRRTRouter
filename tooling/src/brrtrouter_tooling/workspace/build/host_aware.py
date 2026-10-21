@@ -1,4 +1,4 @@
-"""Host-aware build for Hauliage: cargo/cross, zigbuild, multi-arch (amd64, arm64, arm7)."""
+"""Host-aware build for a BRRTRouter workspace: cargo/cross, zigbuild, multi-arch (amd64, arm64, arm7)."""
 
 from __future__ import annotations
 
@@ -32,8 +32,10 @@ def should_use_zigbuild() -> bool:
 
 
 def should_use_cross() -> bool:
-    # Legacy env name (tests/hauliage Tilt); not standard ALL_CAPS — SIM112
-    return os.environ.get("Hauliage_USE_CROSS") == "1"  # noqa: SIM112
+    """True if BRRTROUTER_USE_CROSS=1 (older names read with a deprecation warning)."""
+    from brrtrouter_tooling.workspace.legacy_env import env_flag
+
+    return env_flag("BRRTROUTER_USE_CROSS")
 
 
 def _install_rust_target(rust_target: str) -> bool:
@@ -68,7 +70,7 @@ def _get_cargo_env(rust_target: str) -> dict[str, str]:
     return env
 
 
-# Hauliage workspace: microservices/ (root Cargo.toml has members = ["microservices"])
+# Workspace: microservices/ (layout.workspace_dir)
 WORKSPACE_DIR = "microservices"
 
 # armv7 cross toolchain does not provide __ffsdi2 (used by tikv-jemalloc-sys); disable jemalloc for arm7
@@ -80,7 +82,7 @@ JEMALLOC_FEATURE_ARGS: list[str] = ["--features", "jemalloc"]
 
 def _workspace_packages(manifest: Path, project_root: Path) -> list[str]:
     """Return workspace member package names (for -p ...). Uses cargo metadata.
-    workspace_members are package IDs like 'path+file:///.../gen#hauliage_foo_gen@0.1.0'.
+    workspace_members are package IDs like 'path+file:///.../gen#acme_foo_gen@0.1.0'.
     """
     try:
         r = subprocess.run(
@@ -94,7 +96,7 @@ def _workspace_packages(manifest: Path, project_root: Path) -> list[str]:
         raw = data.get("workspace_members", [])
         out: list[str] = []
         for pid in raw:
-            # pid is like "path+file:///.../gen#hauliage_foo_gen@0.1.0" -> extract "hauliage_foo_gen"
+            # pid is like "path+file:///.../gen#acme_foo_gen@0.1.0" -> extract "acme_foo_gen"
             if "#" in pid and "@" in pid:
                 out.append(pid.split("#")[1].split("@")[0])
             else:
@@ -192,8 +194,8 @@ def _build_service(
     extra_args: list[str],
     release: bool = True,
 ) -> bool:
-    # Hauliage: microservices/<system>/<module>/impl (e.g. microservices/identity/impl)
-    # Package name in impl/Cargo.toml is hauliage_<system>_<module_snake> (no _impl suffix)
+    # microservices/<system>/<module>/impl (e.g. microservices/identity/impl)
+    # Package name in impl/Cargo.toml is <package_prefix>_<system>_<module_snake> (no _impl suffix)
     from brrtrouter_tooling.workspace.discovery.services import package_prefix as _pp
     package_name = f"{_pp(project_root, system)}_{system}_{module.replace('-', '_')}"
     crate = project_root / WORKSPACE_DIR / system / module / "impl"

@@ -5,7 +5,8 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from brrtrouter_tooling.discovery.suites import tilt_service_names
+from brrtrouter_tooling.discovery.suites import service_to_suite, tilt_service_names
+from brrtrouter_tooling.workspace.profile import load_profile
 
 
 def run(
@@ -21,21 +22,21 @@ def run(
         subprocess.run(["docker", "stop", c], capture_output=True)
         subprocess.run(["docker", "rm", c], capture_output=True)
 
+    profile = load_profile(project_root)
     for s in tilt_service_names(project_root):
-        # We try to stop common patterns just in case
-        for prefix in ["rerp", "pricewhisperer"]:
-            subprocess.run(["docker", "stop", f"{prefix}-{s}-dev"], capture_output=True)
-            subprocess.run(["docker", "rm", f"{prefix}-{s}-dev"], capture_output=True)
+        subprocess.run(["docker", "stop", f"{profile.name}-{s}-dev"], capture_output=True)
+        subprocess.run(["docker", "rm", f"{profile.name}-{s}-dev"], capture_output=True)
 
     if remove_images:
         for s in tilt_service_names(project_root):
             # Attempt generic cleanup
             subprocess.run(["docker", "rmi", f"localhost:5001/{s}:latest"], capture_output=True)
             subprocess.run(["docker", "rmi", f"localhost:5001/{s}:tilt"], capture_output=True)
-            for prefix in ["rerp-accounting", "pricewhisperer-trader", "pricewhisperer"]:
-                subprocess.run(["docker", "rmi", f"{prefix}-{s}:latest"], capture_output=True)
+            suite = service_to_suite(project_root, s) or profile.flat_suite
+            for image in (profile.image_name(suite, s), f"{profile.image_prefix}-{s}"):
+                subprocess.run(["docker", "rmi", f"{image}:latest"], capture_output=True)
                 subprocess.run(
-                    ["docker", "rmi", f"localhost:5001/{prefix}-{s}:tilt"], capture_output=True
+                    ["docker", "rmi", f"localhost:5001/{image}:tilt"], capture_output=True
                 )
 
     if remove_volumes:

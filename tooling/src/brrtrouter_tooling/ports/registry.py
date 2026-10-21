@@ -1,4 +1,4 @@
-"""Port registry: assignments, update_config_files (RERP-style layout)."""
+"""Port registry: assignments, update_config_files."""
 
 from __future__ import annotations
 
@@ -81,7 +81,7 @@ def _update_openapi_servers(
 
 
 class PortRegistry:
-    """Manages port assignments (RERP-style layout)."""
+    """Manages port assignments."""
 
     def __init__(
         self,
@@ -170,8 +170,10 @@ class PortRegistry:
         lay = self._layout
         values_file = self.project_root / lay["helm_values_dir"] / f"{service_name}.yaml"
 
-        # Extract system name from helm_values_dir structure, e.g. 'helm/pricewhisperer-microservice/values'
-        system_name = "rerp"  # default
+        # System name from the helm_values_dir structure ('helm/<name>-microservice/values'), else the profile's
+        from brrtrouter_tooling.workspace.profile import load_profile
+
+        system_name = load_profile(self.project_root).name
         parts = Path(lay["helm_values_dir"]).parts
         for part in parts:
             if part.endswith("-microservice"):

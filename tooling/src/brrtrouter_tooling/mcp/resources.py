@@ -277,7 +277,7 @@ CONSUMER_CLI_BUILD_SECTION = """\
 
 ## Consumer CLI: host-aware build (`brrtrouter client build`)
 
-Use this from consumer repos (e.g. PriceWhisperer) to compile a single impl crate with the
+Use this from consumer repos to compile a single impl crate with the
 right `cargo -p` package name.
 
 **Invocation:** `brrtrouter client build <system>_<module> [arch] [--workspace-dir microservices]`
@@ -292,7 +292,7 @@ right `cargo -p` package name.
 - Omit it when the defaults above match your workspace (recommended in Tiltfile loops).
 - Shorthand `foo_impl` expands to `foo_service_api_impl` when `foo` is all lowercase.
 - Full names ending with `_service_api_impl` are used as-is.
-- Names starting with `rerp_` are passed through (legacy RERP workspaces).
+- Names starting with the project's package prefix (`<prefix>_`) are passed through.
 
 **Impl crate `Cargo.toml`:** generated `main.rs` uses `clap` (CLI) and `may` (stack size). Those
 dependencies must appear in the impl manifest (`clap` / `may` with `workspace = true` when using a
@@ -705,7 +705,7 @@ This document outlines the standard loop-based architecture for deploying micros
 efficiently without duplicating `Dockerfile` and Tilt resource definitions.
 
 ## 0. Shared Python environment (`brrtrouter` CLI)
-Use **one** virtualenv on your machine for the `brrtrouter` CLI (and, in Hauliage, the `hauliage` CLI installed into the same env):
+Use **one** virtualenv on your machine for the `brrtrouter` CLI (and each project's own CLI installed into the same env):
 
 - **Default path:** `~/.local/share/brrtrouter/venv`
 - **Override:** set `BRRTROUTER_VENV` to the venv directory (the one that contains `bin/brrtrouter`).
@@ -718,7 +718,7 @@ python3 -m venv ~/.local/share/brrtrouter/venv
 ~/.local/share/brrtrouter/venv/bin/pip install -e ./tooling[dev]   # or tooling[mcp] for MCP
 ```
 
-Consumer Tiltfiles (PriceWhisperer, Hauliage) resolve `brrtrouter_bin` / `hauliage_bin` from `BRRTROUTER_VENV` with this default. Per-repo `tooling/.venv` is **not** required for Tilt.
+Consumer Tiltfiles resolve `brrtrouter_bin` / `<project>_bin` from `BRRTROUTER_VENV` with this default. Per-repo `tooling/.venv` is **not** required for Tilt.
 
 ## 1. Unified Docker templating
 Instead of maintaining individual `Dockerfile.<service>` files, use a unified `Dockerfile.template`

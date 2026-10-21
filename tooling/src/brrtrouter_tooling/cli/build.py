@@ -30,7 +30,7 @@ def run_build_argv(argv: list[str] | None = None) -> None:
             "Cargo package to pass to -p. Default from <system>_<module> is "
             "{module}_service_api_impl (brrtrouter-gen layout). "
             "Shorthand {module}_impl is expanded to that form. "
-            "rerp_* names are passed through for legacy RERP workspaces."
+            "Names with the project's package prefix (<prefix>_*) are passed through."
         ),
     )
     args = ap.parse_args(argv)

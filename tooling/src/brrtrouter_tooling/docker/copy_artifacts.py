@@ -1,6 +1,6 @@
 """Copy microservice binaries from microservices/target/{triple}/release to build_artifacts/{arch}.
 
-Generic for RERP and other projects: caller provides package_names and binary_names.
+Generic: the caller provides package_names and binary_names.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ def run(
 ) -> int:
     """Copy from {workspace_dir}/target/{triple}/release/{pkg} to build_artifacts/{artifact_dir}/{bin}.
 
-    package_names: service name -> binary name in target (e.g. general-ledger -> rerp_accounting_general_ledger_impl).
+    package_names: service name -> binary name in target (e.g. general-ledger -> acme_accounting_general_ledger_impl).
     binary_names: service name -> binary name in build_artifacts (e.g. general-ledger -> general_ledger).
     Returns 0 or 1.
     """

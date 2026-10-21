@@ -1,4 +1,4 @@
-"""`hauliage build` (host-aware cargo/cross; microservices/ workspace)."""
+"""`<cli> build` (host-aware cargo/cross; microservices/ workspace)."""
 
 import sys
 from pathlib import Path
@@ -8,6 +8,7 @@ from brrtrouter_tooling.workspace.build.microservices import (
     build_microservice,
     build_microservices_workspace,
 )
+from brrtrouter_tooling.workspace.profile import cli_name
 
 
 def run_build(args, project_root: Path) -> None:
@@ -21,7 +22,7 @@ def run_build(args, project_root: Path) -> None:
     if target == "microservice":
         if not arch:
             print(
-                "hauliage build microservice: missing service name (e.g. identity)",
+                f"{cli_name()} build microservice: missing service name (e.g. identity)",
                 file=sys.stderr,
             )
             sys.exit(2)

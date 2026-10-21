@@ -1,4 +1,4 @@
-"""Workspace-oriented CLI (e.g. ``hauliage`` entry point): ports, gen, docker, tilt, etc."""
+"""Workspace-oriented CLI (each project's console script delegates here): ports, gen, docker, tilt, etc."""
 
 import os
 import sys
@@ -6,6 +6,8 @@ from pathlib import Path
 
 import brrtrouter_tooling.discovery.suites as b_suites
 import brrtrouter_tooling.workspace.discovery.suites as h_suites
+from brrtrouter_tooling.workspace.legacy_env import env
+from brrtrouter_tooling.workspace.profile import activate, cli_name, load_profile
 
 from . import bff as bff_cli
 from . import bootstrap as bootstrap_cli
@@ -35,19 +37,22 @@ b_suites.tilt_service_names = h_suites.tilt_service_names
 
 
 def _get_project_root() -> Path:
-    root = Path(os.environ.get("HAULIAGE_PROJECT_ROOT", ".")).resolve()
+    root = Path(env("BRRTROUTER_PROJECT_ROOT", ".") or ".").resolve()
     if str(root) == ".":
         root = Path.cwd()
     return root
 
 
 def _get_registry_path(project_root: Path) -> Path:
-    if os.environ.get("HAULIAGE_PORT_REGISTRY"):
-        return Path(os.environ["HAULIAGE_PORT_REGISTRY"]).resolve()
+    reg = env("BRRTROUTER_PORT_REGISTRY")
+    if reg:
+        return Path(reg).resolve()
     return project_root / "port-registry.json"
 
 
 def main() -> None:
+    project_root = _get_project_root()
+    activate(load_profile(project_root))
     parser = __build_parser()
     args = parser.parse_args()
 
@@ -55,64 +60,63 @@ def main() -> None:
         parser.print_help()
         sys.exit(1)
 
-    project_root = _get_project_root()
     registry_path = _get_registry_path(project_root)
 
     if args.command == "ports":
         if not args.ports_cmd:
-            print("hauliage ports: missing subcommand")
+            print(f"{cli_name()} ports: missing subcommand")
             print(
                 "  assign, release, list, query, update-configs, validate, reconcile, fix-duplicates"
             )
-            print("  Use: hauliage ports --help")
+            print(f"  Use: {cli_name()} ports --help")
             sys.exit(1)
         exit_code = ports_cli.run_ports(args, project_root, registry_path)
         sys.exit(exit_code)
 
     elif args.command == "openapi":
         if not getattr(args, "openapi_cmd", None):
-            print("hauliage openapi: missing subcommand")
+            print(f"{cli_name()} openapi: missing subcommand")
             print("  validate, fix-operation-id-casing")
-            print("  Use: hauliage openapi --help")
+            print(f"  Use: {cli_name()} openapi --help")
             sys.exit(1)
         exit_code = openapi_cli.run_openapi(args, project_root)
         sys.exit(exit_code)
 
     elif args.command == "ci":
         if not getattr(args, "ci_cmd", None):
-            print("hauliage ci: missing subcommand")
+            print(f"{cli_name()} ci: missing subcommand")
             print("  patch-brrtrouter, fix-cargo-paths, is-tag, get-latest-tag, validate-version")
-            print("  Use: hauliage ci --help")
+            print(f"  Use: {cli_name()} ci --help")
             sys.exit(1)
         ci_cli.run_ci(args, project_root)
         return
 
     elif args.command == "bff":
         if not getattr(args, "bff_cmd", None):
-            print("hauliage bff: missing subcommand")
+            print(f"{cli_name()} bff: missing subcommand")
             print("  generate-system")
-            print("  Use: hauliage bff --help")
+            print(f"  Use: {cli_name()} bff --help")
             sys.exit(1)
         bff_cli.run_bff(args, project_root)
         return
 
     elif args.command == "docker":
         if not getattr(args, "docker_cmd", None):
-            print("hauliage docker: missing subcommand")
+            print(f"{cli_name()} docker: missing subcommand")
             print(
                 "  generate-dockerfile, copy-artifacts, copy-binary, build-image-simple, prune, copy-multiarch, build-multiarch, build-base"
             )
-            print("  Use: hauliage docker --help")
+            print(f"  Use: {cli_name()} docker --help")
             sys.exit(1)
         docker_cli.run_docker(args, project_root)
         return
 
     elif args.command == "gen":
         if not getattr(args, "gen_cmd", None):
-            print("hauliage gen: missing subcommand")
+            print(f"{cli_name()} gen: missing subcommand")
             print("  suite <suite-name> [--service <name>]")
             print("  stubs <suite-name> [--service <name>] [--force]")
-            print("  Use: hauliage gen --help")
+            print(f"  Use: {cli_name()} gen --help")
             sys.exit(1)
         gen_cli.run_gen(args, project_root)
         return
@@ -123,43 +127,43 @@ def main() -> None:
 
     elif args.command == "bootstrap":
         if not getattr(args, "bootstrap_cmd", None):
-            print("hauliage bootstrap: missing subcommand")
+            print(f"{cli_name()} bootstrap: missing subcommand")
             print("  microservice")
-            print("  Use: hauliage bootstrap --help")
+            print(f"  Use: {cli_name()} bootstrap --help")
             sys.exit(1)
         bootstrap_cli.run_bootstrap(args, project_root)
         return
 
     elif args.command == "tilt":
         if not getattr(args, "tilt_cmd", None):
-            print("hauliage tilt: missing subcommand")
+            print(f"{cli_name()} tilt: missing subcommand")
             print("  setup-kind-registry, setup-persistent-volumes, setup, teardown, logs")
-            print("  Use: hauliage tilt --help")
+            print(f"  Use: {cli_name()} tilt --help")
             sys.exit(1)
         tilt_cli.run_tilt(args, project_root)
         return
 
     elif args.command == "release":
         if not getattr(args, "release_cmd", None):
-            print("hauliage release: missing subcommand")
+            print(f"{cli_name()} release: missing subcommand")
             print("  bump, generate-notes")
-            print("  Use: hauliage release --help")
+            print(f"  Use: {cli_name()} release --help")
             sys.exit(1)
         release_cli.run_release(args, project_root)
         return
 
     elif args.command == "pre-commit":
         if not getattr(args, "pre_commit_cmd", None):
-            print("hauliage pre-commit: missing subcommand")
+            print(f"{cli_name()} pre-commit: missing subcommand")
             print("  microservices-fmt")
-            print("  Use: hauliage pre-commit --help")
+            print(f"  Use: {cli_name()} pre-commit --help")
             sys.exit(1)
         pre_commit_cli.run_pre_commit(args, project_root)
         return
 
     else:
         print(
-            f"hauliage {args.command}: not implemented. Use 'hauliage ports', 'hauliage openapi', 'hauliage ci', 'hauliage gen', 'hauliage bff', 'hauliage docker', 'hauliage build', 'hauliage bootstrap', 'hauliage release', or 'hauliage tilt'."
+            f"{cli_name()} {args.command}: not implemented. Use '{cli_name()} ports', '{cli_name()} openapi', '{cli_name()} ci', '{cli_name()} gen', '{cli_name()} bff', '{cli_name()} docker', '{cli_name()} build', '{cli_name()} bootstrap', '{cli_name()} release', or '{cli_name()} tilt'."
         )
         sys.exit(1)
 
@@ -168,8 +172,8 @@ def __build_parser():
     import argparse
 
     p = argparse.ArgumentParser(
-        prog="hauliage",
-        description="Hauliage development tooling: ports, build, docker, tilt, brrtrouter, bff",
+        prog=cli_name(),
+        description=f"{cli_name()}: BRRTRouter development tooling (ports, build, docker, tilt, bff)",
     )
     sub = p.add_subparsers(dest="command", help="Command")
 
@@ -302,7 +306,7 @@ def __build_parser():
     pbg.add_argument(
         "--system",
         metavar="NAME",
-        help="System name (e.g. hauliage); default: all systems with sub-services",
+        help="System name (e.g. trader); default: all systems with sub-services",
     )
     pbg.add_argument(
         "--output",
@@ -336,26 +340,26 @@ def __build_parser():
     )
     pdr.add_argument("--service", required=True, metavar="NAME", help="Service name (e.g. fleet)")
     pdr.add_argument(
-        "--system", metavar="SUITE", help="Suite/system (e.g. hauliage). Default: from discovery"
+        "--system", metavar="SUITE", help="Suite/system (e.g. trader). Default: from discovery"
     )
     pdr.add_argument(
         "-o", "--output", required=True, metavar="PATH", help="Output path for rendered Dockerfile"
     )
     pdub = pd_sub.add_parser(
         "unpack-build-bins",
-        help="Extract hauliage-binaries-*.zip into microservices/target (from Multi-Arch artifacts in tmp/buildBins)",
+        help="Extract <zip_prefix>*.zip (the profile's naming.zip_prefix) into the workspace target (from Multi-Arch artifacts in tmp/buildBins)",
     )
     pdub.add_argument(
         "--input-dir",
         default="tmp/buildBins",
         metavar="DIR",
-        help="Directory with hauliage-binaries-amd64.zip, hauliage-binaries-arm64.zip, hauliage-binaries-arm7.zip (default: tmp/buildBins)",
+        help="Directory with <zip_prefix>amd64.zip, <zip_prefix>arm64.zip, <zip_prefix>arm7.zip (default: tmp/buildBins)",
     )
     pdg = pd_sub.add_parser(
         "generate-dockerfile",
         help="Generate docker/microservices/Dockerfile.{system}_{module} from template",
     )
-    pdg.add_argument("system", help="System name (e.g. hauliage, auth)")
+    pdg.add_argument("system", help="System name (e.g. trader, auth)")
     pdg.add_argument("module", help="Module name (e.g. identity, idam)")
     pdg.add_argument(
         "--port",
@@ -372,7 +376,7 @@ def __build_parser():
         "--suite",
         metavar="SUITE",
         default=None,
-        help="Limit to one suite (e.g. hauliage). Omit for all suites (matrix later).",
+        help="Limit to one suite (e.g. trader). Omit for all suites (matrix later).",
     )
     pdc = pd_sub.add_parser(
         "copy-artifacts",
@@ -383,16 +387,16 @@ def __build_parser():
         "--suite",
         metavar="SUITE",
         default=None,
-        help="Limit to one suite (e.g. hauliage). Omit for all suites (matrix later).",
+        help="Limit to one suite (e.g. trader). Omit for all suites (matrix later).",
     )
     pdb = pd_sub.add_parser(
         "build-base",
-        help="Build docker/base/Dockerfile as hauliage-base:latest (local; use base-images.yml to publish)",
+        help="Build docker/base/Dockerfile as <base_image>:latest (the profile's naming.base_image; local; use base-images.yml to publish)",
     )
     pdb.add_argument(
         "--push",
         action="store_true",
-        help="Also push to ghcr.io/$GHCR_OWNER/hauliage-base:latest (requires login)",
+        help="Also push to ghcr.io/$GHCR_OWNER/<base_image>:latest (requires login)",
     )
     pdb.add_argument("--dry-run", action="store_true", help="Print commands only, do not build")
     pdcb = pd_sub.add_parser(
@@ -409,9 +413,7 @@ def __build_parser():
         "build-image-simple",
         help="Build image:tilt and push or kind load (replaces build-microservice-docker-simple.sh)",
     )
-    pdbi.add_argument(
-        "image_name", help="Image name (e.g. localhost:5001/hauliage-hauliage-identity)"
-    )
+    pdbi.add_argument("image_name", help="Image name (e.g. localhost:5001/acme-trader-identity)")
     pdbi.add_argument(
         "dockerfile",
         help="Path to Dockerfile or Dockerfile.template (use with --service to render on the fly)",
@@ -467,7 +469,7 @@ def __build_parser():
     )
     pdbm.add_argument("system", help="System name (e.g. auth)")
     pdbm.add_argument("module", help="Module name (e.g. idam)")
-    pdbm.add_argument("image_name", help="Image name (e.g. hauliage/auth-idam)")
+    pdbm.add_argument("image_name", help="Image name (e.g. acme/auth-idam)")
     pdbm.add_argument("--tag", default="latest", help="Image tag (default: latest)")
     pdbm.add_argument("--push", action="store_true", help="Push images to registry")
 
@@ -479,9 +481,9 @@ def __build_parser():
     pgen_sub = pgen.add_subparsers(dest="gen_cmd")
     pgen_suite = pgen_sub.add_parser(
         "suite",
-        help="Regenerate gen crates for one or all services in a suite (e.g. hauliage)",
+        help="Regenerate gen crates for one or all services in a suite (e.g. trader)",
     )
-    pgen_suite.add_argument("suite", help="Suite name (e.g. hauliage)")
+    pgen_suite.add_argument("suite", help="Suite name (e.g. trader)")
     pgen_suite.add_argument(
         "--service",
         metavar="NAME",
@@ -496,7 +498,7 @@ def __build_parser():
         "stubs",
         help="Regenerate impl controller stubs (brrtrouter-gen generate-stubs)",
     )
-    pgen_stubs.add_argument("suite", help="Suite name (e.g. hauliage)")
+    pgen_stubs.add_argument("suite", help="Suite name (e.g. trader)")
     pgen_stubs.add_argument(
         "service_positional",
         nargs="?",
@@ -550,7 +552,7 @@ def __build_parser():
     pbo_sub = pbo.add_subparsers(dest="bootstrap_cmd")
     pbom = pbo_sub.add_parser(
         "microservice",
-        help="Bootstrap hauliage microservice from openapi/<name>/openapi.yaml",
+        help="Bootstrap a microservice from openapi/<name>/openapi.yaml",
     )
     pbom.add_argument("service_name", help="Service name (e.g. identity, fleet)")
     pbom.add_argument(
@@ -621,7 +623,9 @@ def __build_parser():
         "teardown",
         help="Tilt down, stop containers, optional --remove-images/--remove-volumes/--system-prune",
     )
-    ptt.add_argument("--remove-images", action="store_true", help="Remove hauliage-* images")
+    ptt.add_argument(
+        "--remove-images", action="store_true", help="Remove the project's <image_prefix>-* images"
+    )
     ptt.add_argument(
         "--remove-volumes",
         action="store_true",

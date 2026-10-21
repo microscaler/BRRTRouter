@@ -56,3 +56,19 @@ def test_allow_new_creates(project: Path, monkeypatch: pytest.MonkeyPatch) -> No
         calls
         and calls[0]["output_dir"] == project / "microservices" / "trader" / "identity" / "gen"
     )
+
+
+def test_gen_dir_that_is_not_a_workspace_member_is_a_stray(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A workspace manifest lists market only; an identity/gen directory exists but nothing builds it.
+    (project / "microservices" / "trader" / "identity" / "gen").mkdir(parents=True)
+    (project / "microservices" / "Cargo.toml").write_text(
+        '[workspace]\nmembers = ["trader/market/gen"]\n'
+    )
+    have, proxied = rg.existing_gen_services(project, "trader", ["identity", "market"])
+    assert (have, proxied) == (["market"], ["identity"])
+    calls = []
+    monkeypatch.setattr(rg, "call_brrtrouter_generate", lambda **kw: calls.append(kw))
+    assert rg.regenerate_service(project, "trader", "identity") == 1
+    assert calls == []

@@ -7,7 +7,6 @@ Idempotent: safe to run multiple times.
 from __future__ import annotations
 
 import json
-import os
 import re
 from pathlib import Path
 from typing import Any
@@ -15,21 +14,21 @@ from typing import Any
 import yaml
 
 from brrtrouter_tooling.workspace.env_paths import discover_brrtrouter_root
+from brrtrouter_tooling.workspace.legacy_env import env
+from brrtrouter_tooling.workspace.profile import cli_name
 
 
 def _pkg_prefix(project_root, suite):
-    """Suite package prefix (generic): bff-suite-config package_prefix → env → 'hauliage'."""
+    """Suite package prefix: the suite's bff-suite-config package_prefix, else env, else the project profile."""
     from brrtrouter_tooling.workspace.discovery.services import package_prefix
+    from brrtrouter_tooling.workspace.profile import load_profile
 
-    return package_prefix(Path(project_root), suite or "hauliage")
+    return package_prefix(Path(project_root), suite or load_profile(project_root).flat_suite)
 
 
 def _get_registry_path(project_root: Path) -> Path | None:
-    p = (
-        Path(os.environ.get("HAULIAGE_PORT_REGISTRY", "")).resolve()
-        if os.environ.get("HAULIAGE_PORT_REGISTRY")
-        else None
-    )
+    reg = env("BRRTROUTER_PORT_REGISTRY")
+    p = Path(reg).resolve() if reg else None
     if p and p.exists():
         return p
     p = project_root / "port-registry.json"
@@ -288,7 +287,7 @@ def update_tiltfile(
         print("✅ Updated Tiltfile")
 
 
-def _update_gen_cargo_toml(cargo_path: Path, service_name: str, prefix: str = "hauliage") -> None:
+def _update_gen_cargo_toml(cargo_path: Path, service_name: str, prefix: str) -> None:
     """Update gen/Cargo.toml to be a library crate (version, [lib]). [package].name is NOT touched — it is set by brrtrouter-gen via --package-name."""
     content = cargo_path.read_text()
     service_snake = service_name.replace("-", "_")
@@ -311,7 +310,7 @@ def _update_gen_cargo_toml(cargo_path: Path, service_name: str, prefix: str = "h
     cargo_path.write_text(content)
 
 
-def _create_impl_cargo_toml(cargo_path: Path, service_name: str, prefix: str = "hauliage") -> None:
+def _create_impl_cargo_toml(cargo_path: Path, service_name: str, prefix: str) -> None:
     """Create impl/Cargo.toml as a binary crate."""
     service_snake = service_name.replace("-", "_")
     gen_crate_name = f"{prefix}_{service_snake}_gen"
@@ -365,7 +364,7 @@ may_postgres = {{ git = "https://github.com/microscaler/may_postgres.git", branc
 
 
 def _create_impl_main(
-    gen_main_path: Path, impl_main_path: Path, service_name: str, prefix: str = "hauliage"
+    gen_main_path: Path, impl_main_path: Path, service_name: str, prefix: str
 ) -> None:
     """Create impl/src/main.rs from gen/src/main.rs with necessary modifications.
 
@@ -487,7 +486,7 @@ def generate_code_with_brrtrouter(
 def _ensure_impl_scaffold(project_root: Path, suite: str, service_name: str) -> None:
     """Create impl directory structure, Cargo.toml, main.rs, and config if impl is missing.
 
-    Used when impl was deleted and user runs 'hauliage gen stubs'; allows stubs to be
+    Used when impl was deleted and user runs '<cli> gen stubs'; allows stubs to be
     generated without full bootstrap. Requires gen/ to exist (for main.rs and types).
     """
     from brrtrouter_tooling.workspace.discovery.suites import (
@@ -500,7 +499,7 @@ def _ensure_impl_scaffold(project_root: Path, suite: str, service_name: str) -> 
     if impl_dir.exists():
         return
     if not gen_dir.exists():
-        msg = f"gen/ not found at {gen_dir}; run 'hauliage gen hauliage {service_name}' first"
+        msg = f"gen/ not found at {gen_dir}; run '{cli_name()} gen suite {suite} --service {service_name} --new' first"
         raise FileNotFoundError(msg)
     impl_dir.mkdir(parents=True, exist_ok=True)
     (impl_dir / "config").mkdir(parents=True, exist_ok=True)
@@ -639,8 +638,7 @@ def run_bootstrap_microservice(
     if port is None:
         port = _get_port_from_registry(project_root, service_name)
     if port is None:
-        # K8s-native convention (hauliage PRD, adopted by pricewhisperer
-        # 2026-08-17): all cluster services listen on 8080 — a real pod/service
+        # K8s-native convention (adopted 2026-08-17): all cluster services listen on 8080 — a real pod/service
         # IP pool means no NodePort-clash concerns, so per-service ports and
         # the port registry are legacy Kind artifacts. Default rather than fail.
         port = 8080

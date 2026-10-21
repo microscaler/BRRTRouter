@@ -11,6 +11,7 @@ requires-python = ">=3.10"
 dependencies = [
     "PyYAML>=6.0.3",
     "certifi>=2026.1.4",
+    "tomli>=2.0.1; python_version < '3.11'",
 ]
 
 [project.optional-dependencies]

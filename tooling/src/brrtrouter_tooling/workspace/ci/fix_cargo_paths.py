@@ -3,7 +3,7 @@
 For gen crates under microservices/ (workspace members), rewrites brrtrouter and
 brrtrouter_macros to use workspace = true so they resolve via microservices/Cargo.toml.
 Otherwise rewrites path deps to point at the BRRTRouter repo (sibling of project root).
-CI uses hauliage ci patch-brrtrouter to switch to git deps instead.
+CI uses `<cli> ci patch-brrtrouter` to switch to git deps instead.
 """
 
 from __future__ import annotations

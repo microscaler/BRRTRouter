@@ -57,12 +57,12 @@ class TestFixCargoToml:
             fix_cargo_toml(
                 cargo,
                 project_root=tmp_path,
-                gen_crate_config=("rerp_{suite}_{service}_gen", "0.1.3"),
+                gen_crate_config=("acme_{suite}_{service}_gen", "0.1.3"),
             )
             is True
         )
         text = cargo.read_text()
-        assert 'name = "rerp_accounting_general_ledger_gen"' in text
+        assert 'name = "acme_accounting_general_ledger_gen"' in text
         assert 'version = "0.1.3"' in text
         assert "[lib]" in text
         assert 'path = "src/lib.rs"' in text

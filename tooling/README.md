@@ -143,3 +143,37 @@ pytest
 ```bash
 pip install -e .
 ```
+
+## Project profile (`brrtrouter.toml`)
+
+The tooling names no project. A consuming repository describes itself once, in `brrtrouter.toml` at its root or
+`[tool.brrtrouter]` in `tooling/pyproject.toml`. Every field defaults from `project.name`, and `project.name` defaults
+to the repository directory's name, so most projects need no file at all.
+
+```toml
+[project]
+name = "acme"                          # default: the directory name
+cli = "acme"                           # console script name in usage and help
+
+[naming]
+package_prefix = "acme"                # crates <prefix>_<service>; a suite's bff-suite-config package_prefix wins
+binary_pattern = "{prefix}_{system}_{module}_impl"
+image_prefix = "acme"                  # images <image_prefix>-<suite>-<service>
+base_image = "acme-base"
+zip_prefix = "acme-binaries-"
+
+[layout]
+openapi_dir = "openapi"
+workspace_dir = "microservices"
+helm_values = "helm/acme-microservice/values"
+flat_suite = "acme"                    # the suite of a flat openapi/<service>/ layout
+default_suite = "acme"                 # bootstrap's suite when none is given
+
+[dev]
+kind_cluster = "acme"
+tilt_port = 10350
+```
+
+Environment variables are `BRRTROUTER_PROJECT_ROOT`, `BRRTROUTER_PORT_REGISTRY`, `BRRTROUTER_TILT_PORT` and
+`BRRTROUTER_USE_CROSS`. Older project-named variables are still read for one release, with a deprecation warning
+(`workspace/legacy_env.py`).

@@ -1,4 +1,4 @@
-"""CI automation. Re-exports from brrtrouter_tooling.ci when available; Hauliage keeps fix_cargo_paths."""
+"""CI automation. Re-exports from brrtrouter_tooling.ci when available; the workspace keeps fix_cargo_paths."""
 
 from brrtrouter_tooling.workspace.ci.fix_cargo_paths import fix_cargo_toml
 from brrtrouter_tooling.workspace.ci.fix_cargo_paths import run as run_fix_cargo_paths

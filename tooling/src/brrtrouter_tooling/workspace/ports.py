@@ -9,6 +9,8 @@ from pathlib import Path
 
 import yaml
 
+from brrtrouter_tooling.workspace.profile import cli_name, load_profile
+
 from .discovery import (
     bff_service_to_suite,
     bff_suite_config_path,
@@ -87,7 +89,7 @@ def _update_openapi_servers(service_name: str, port: int, project_root: Path) ->
 
 
 class PortRegistry:
-    """Manages port assignments for Hauliage services."""
+    """Manages port assignments for the project's services."""
 
     def __init__(self, registry_file: Path, project_root: Path):
         self.registry_file = registry_file
@@ -102,7 +104,7 @@ class PortRegistry:
                 "reserved_ports": RESERVED_PORTS,
                 "assignments": {},
                 "metadata": {
-                    "description": "Port registry for Hauliage microservices",
+                    "description": f"Port registry for {load_profile(self.project_root).name} microservices",
                     "last_updated": None,
                     "notes": "Ports start at 8001. Port 8080 is reserved due to conflicts.",
                 },
@@ -163,12 +165,11 @@ class PortRegistry:
 
     def update_config_files(self, service_name: str, port: int, port_only: bool = False) -> None:
         node_port = 31000 + (port - 8000)
-        values_file = (
-            self.project_root / "helm" / "hauliage-microservice" / "values" / f"{service_name}.yaml"
-        )
+        profile = load_profile(self.project_root)
+        values_file = profile.helm_values_dir / f"{service_name}.yaml"
         if not values_file.exists():
             print(f"⚠️  Helm values file not found: {values_file}")
-            print("   Create it with: hauliage bootstrap microservice <service>")
+            print(f"   Create it with: {cli_name()} bootstrap microservice <service>")
             return
         with values_file.open() as f:
             values = yaml.safe_load(f) or {}
@@ -181,7 +182,7 @@ class PortRegistry:
         if not port_only:
             if "image" not in values:
                 values["image"] = {}
-            values["image"]["name"] = f"hauliage-{service_name}"
+            values["image"]["name"] = f"{profile.image_prefix}-{service_name}"
             if "app" not in values:
                 values["app"] = {}
             values["app"]["serviceName"] = service_name
@@ -298,7 +299,7 @@ def _validate_bff_suite_configs(
             if not get_bff_service_name_from_config(data):
                 warnings.append(
                     f"openapi/{suite}/bff-suite-config.yaml has no bff_service_name (top-level or metadata). "
-                    "Add it so hauliage ports can discover this suite's BFF."
+                    f"Add it so {cli_name()} ports can discover this suite's BFF."
                 )
         except (OSError, yaml.YAMLError, KeyError, TypeError, ValueError) as e:
             log.debug("Could not read bff_suite_config %s: %s", suite, e)
@@ -316,7 +317,7 @@ def _validate_bff_suite_configs(
                     if m and int(m.group(1)) != reg[bff_svc]:
                         errors.append(
                             f"openapi/{suite}/bff-suite-config.yaml metadata.servers localhost port {m.group(1)} differs from registry {bff_svc}={reg[bff_svc]}. "
-                            f"Run: hauliage ports update-configs {bff_svc}"
+                            f"Run: {cli_name()} ports update-configs {bff_svc}"
                         )
                     break
         except (
@@ -346,7 +347,7 @@ def _validate_openapi_localhost(project_root: Path, reg: dict[str, int], errors:
         if r is not None and r != port:
             errors.append(
                 f"openapi/{svc}/openapi.yaml localhost server port {port} differs from registry {svc}={r}. "
-                f"Run: hauliage ports update-configs {svc}"
+                f"Run: {cli_name()} ports update-configs {svc}"
             )
 
 
@@ -381,7 +382,7 @@ def validate(registry: PortRegistry, project_root: Path, json_out: bool = False)
     for w in warnings:
         print(f"⚠️  {w}")
     if errors:
-        print("\n💡 Run: hauliage ports list   and   hauliage ports validate")
+        print(f"\n💡 Run: {cli_name()} ports list   and   {cli_name()} ports validate")
         return 1
     if warnings:
         print("\n✅ No hard conflicts; see warnings above.")

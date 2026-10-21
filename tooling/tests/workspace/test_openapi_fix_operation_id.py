@@ -1,4 +1,4 @@
-"""TDD: tests for brrtrouter_tooling.workspace.openapi.fix_operation_id (hauliage openapi fix-operation-id-casing)."""
+"""TDD: tests for brrtrouter_tooling.workspace.openapi.fix_operation_id (acme openapi fix-operation-id-casing)."""
 
 from pathlib import Path
 

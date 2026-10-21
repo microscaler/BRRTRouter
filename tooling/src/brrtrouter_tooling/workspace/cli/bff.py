@@ -1,4 +1,4 @@
-"""`hauliage bff` subcommands: generate-system."""
+"""`<cli> bff` subcommands: generate-system."""
 
 from pathlib import Path
 

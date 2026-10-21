@@ -45,7 +45,7 @@ def get_latest_tag(repo: str, token: str, max_retries: int = 20) -> str | None:
     headers = {
         "Accept": "application/vnd.github.v3+json",
         "Authorization": f"token {token}",
-        "User-Agent": "hauliage-tooling",
+        "User-Agent": "brrtrouter-tooling",
     }
 
     backoff_sequence = _fibonacci_backoff_sequence(max_total_seconds=300)

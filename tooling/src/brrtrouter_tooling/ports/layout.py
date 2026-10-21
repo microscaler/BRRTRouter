@@ -1,4 +1,4 @@
-"""Default path layout for ports discovery (RERP-style). All paths relative to project_root."""
+"""Default path layout for ports discovery. All paths relative to project_root."""
 
 from __future__ import annotations
 
@@ -31,7 +31,9 @@ def resolve_layout(
     root = project_root if project_root is not None else Path.cwd()
     if "{system}" in resolved["helm_values_dir"]:
         helm_dir = root / "helm"
-        system_name = "rerp"
+        from brrtrouter_tooling.workspace.profile import load_profile
+
+        system_name = load_profile(root).name
         if helm_dir.exists():
             for d in helm_dir.iterdir():
                 if d.is_dir() and d.name.endswith("-microservice"):

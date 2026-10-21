@@ -1,4 +1,4 @@
-"""TDD: tests for brrtrouter_tooling.workspace.ci.patch_brrtrouter (hauliage ci patch-brrtrouter)."""
+"""TDD: tests for brrtrouter_tooling.workspace.ci.patch_brrtrouter (acme ci patch-brrtrouter)."""
 
 from pathlib import Path
 

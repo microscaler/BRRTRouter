@@ -1,4 +1,4 @@
-"""Tests for hauliage CLI (main, openapi, bff, ci, ports)."""
+"""Tests for acme CLI (main, openapi, bff, ci, ports)."""
 
 import shutil
 import sys
@@ -13,7 +13,7 @@ pytest.importorskip("brrtrouter_tooling")
 def _run_main(argv: list[str]) -> int:
     from brrtrouter_tooling.workspace.cli.main import main
 
-    with patch.object(sys, "argv", ["hauliage", *argv]):
+    with patch.object(sys, "argv", ["acme", *argv]):
         try:
             main()
             return 0
@@ -28,11 +28,11 @@ def test_main_no_args_prints_help_and_exits_1(capsys):
     code = _run_main([])
     out, _ = capsys.readouterr()
     assert code == 1
-    assert "hauliage" in out or "ports" in out or "openapi" in out
+    assert "acme" in out or "ports" in out or "openapi" in out
 
 
 def test_main_unknown_command_exits_nonzero(tmp_path, monkeypatch):
-    monkeypatch.setenv("HAULIAGE_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("BRRTROUTER_PROJECT_ROOT", str(tmp_path))
     code = _run_main(["unknown-cmd"])
     assert code != 0
 
@@ -41,7 +41,7 @@ def test_main_unknown_command_exits_nonzero(tmp_path, monkeypatch):
 
 
 def test_openapi_validate_empty_dir(tmp_path, monkeypatch, capsys):
-    monkeypatch.setenv("HAULIAGE_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("BRRTROUTER_PROJECT_ROOT", str(tmp_path))
     code = _run_main(["openapi", "validate", "--openapi-dir", str(tmp_path)])
     out, _ = capsys.readouterr()
     assert code == 0
@@ -52,7 +52,7 @@ def test_openapi_validate_one_valid(tmp_path, monkeypatch, capsys):
     (tmp_path / "openapi.yaml").write_text(
         "openapi: 3.1.0\ninfo: {title: T, version: '1.0'}\npaths: {}"
     )
-    monkeypatch.setenv("HAULIAGE_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("BRRTROUTER_PROJECT_ROOT", str(tmp_path))
     code = _run_main(["openapi", "validate", "--openapi-dir", str(tmp_path)])
     out, _ = capsys.readouterr()
     assert code == 0
@@ -61,7 +61,7 @@ def test_openapi_validate_one_valid(tmp_path, monkeypatch, capsys):
 
 def test_openapi_validate_one_invalid(tmp_path, monkeypatch, capsys):
     (tmp_path / "openapi.yaml").write_text("{ invalid: ")
-    monkeypatch.setenv("HAULIAGE_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("BRRTROUTER_PROJECT_ROOT", str(tmp_path))
     code = _run_main(["openapi", "validate", "--openapi-dir", str(tmp_path)])
     out, _ = capsys.readouterr()
     assert code == 1
@@ -73,7 +73,7 @@ def test_openapi_fix_operation_id_casing_no_changes(tmp_path, monkeypatch, capsy
     (tmp_path / "openapi" / "svc" / "openapi.yaml").write_text(
         "paths:\n  /x:\n    get:\n      operationId: list_items\n"
     )
-    monkeypatch.setenv("HAULIAGE_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("BRRTROUTER_PROJECT_ROOT", str(tmp_path))
     code = _run_main(
         ["openapi", "fix-operation-id-casing", "--openapi-dir", str(tmp_path / "openapi")]
     )
@@ -86,7 +86,7 @@ def test_openapi_fix_operation_id_casing_dry_run(tmp_path, monkeypatch, capsys):
     (tmp_path / "openapi" / "svc").mkdir(parents=True)
     spec = tmp_path / "openapi" / "svc" / "openapi.yaml"
     spec.write_text("paths:\n  /x:\n    get:\n      operationId: getStuff\n")
-    monkeypatch.setenv("HAULIAGE_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("BRRTROUTER_PROJECT_ROOT", str(tmp_path))
     code = _run_main(
         [
             "openapi",
@@ -106,7 +106,7 @@ def test_openapi_fix_operation_id_casing_writes(tmp_path, monkeypatch, capsys):
     (tmp_path / "openapi" / "svc").mkdir(parents=True)
     spec = tmp_path / "openapi" / "svc" / "openapi.yaml"
     spec.write_text("paths:\n  /x:\n    get:\n      operationId: getStuff\n")
-    monkeypatch.setenv("HAULIAGE_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("BRRTROUTER_PROJECT_ROOT", str(tmp_path))
     code = _run_main(
         ["openapi", "fix-operation-id-casing", "--openapi-dir", str(tmp_path / "openapi")]
     )
@@ -120,7 +120,7 @@ def test_openapi_fix_operation_id_casing_writes(tmp_path, monkeypatch, capsys):
 
 def test_bff_generate_system_no_subs(tmp_path, monkeypatch, capsys):
     (tmp_path / "openapi" / "x").mkdir(parents=True)
-    monkeypatch.setenv("HAULIAGE_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("BRRTROUTER_PROJECT_ROOT", str(tmp_path))
     code = _run_main(
         ["bff", "generate-system", "--system", "x", "--openapi-dir", str(tmp_path / "openapi")]
     )
@@ -134,7 +134,7 @@ def xtest_bff_generate_system_with_subs(tmp_path, monkeypatch, capsys):
     (tmp_path / "openapi" / "s" / "v" / "openapi.yaml").write_text(
         "openapi: 3.1.0\ninfo: {title: T, version: '1.0'}\npaths: {}"
     )
-    monkeypatch.setenv("HAULIAGE_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("BRRTROUTER_PROJECT_ROOT", str(tmp_path))
     code = _run_main(
         ["bff", "generate-system", "--system", "s", "--openapi-dir", str(tmp_path / "openapi")]
     )
@@ -148,7 +148,7 @@ def xtest_bff_generate_system_with_subs(tmp_path, monkeypatch, capsys):
 
 def test_ci_patch_brrtrouter_dry_run_no_matches(tmp_path, monkeypatch, capsys):
     (tmp_path / "Cargo.toml").write_text('[package]\nname = "x"\nversion = "0.1.0"\n')
-    monkeypatch.setenv("HAULIAGE_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("BRRTROUTER_PROJECT_ROOT", str(tmp_path))
     code = _run_main(["ci", "patch-brrtrouter", "--dry-run"])
     out, _ = capsys.readouterr()
     assert code == 0
@@ -158,7 +158,7 @@ def test_ci_patch_brrtrouter_dry_run_no_matches(tmp_path, monkeypatch, capsys):
 
 def test_ci_patch_brrtrouter_audit(tmp_path, monkeypatch, capsys):
     (tmp_path / "Cargo.toml").write_text('[package]\nname = "x"\n')
-    monkeypatch.setenv("HAULIAGE_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("BRRTROUTER_PROJECT_ROOT", str(tmp_path))
     code = _run_main(["ci", "patch-brrtrouter", "--audit"])
     out, _ = capsys.readouterr()
     assert code == 0
@@ -166,10 +166,10 @@ def test_ci_patch_brrtrouter_audit(tmp_path, monkeypatch, capsys):
 
 
 def test_ci_fix_cargo_paths_no_deps(tmp_path, monkeypatch, capsys):
-    (tmp_path / "microservices" / "hauliage" / "svc").mkdir(parents=True)
-    cargo = tmp_path / "microservices" / "hauliage" / "svc" / "Cargo.toml"
+    (tmp_path / "microservices" / "acme" / "svc").mkdir(parents=True)
+    cargo = tmp_path / "microservices" / "acme" / "svc" / "Cargo.toml"
     cargo.write_text('[package]\nname = "svc"\nversion = "0.1.0"\n')
-    monkeypatch.setenv("HAULIAGE_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("BRRTROUTER_PROJECT_ROOT", str(tmp_path))
     code = _run_main(["ci", "fix-cargo-paths", str(cargo)])
     out, _ = capsys.readouterr()
     assert code == 0
@@ -181,18 +181,18 @@ def test_docker_generate_dockerfile(tmp_path, monkeypatch, capsys):
     (tmp_path / "docker" / "microservices" / "Dockerfile.template").write_text(
         "FROM x\nENV BIN={{binary_name}} PORT={{port}}\n"
     )
-    monkeypatch.setenv("HAULIAGE_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("BRRTROUTER_PROJECT_ROOT", str(tmp_path))
     code = _run_main(["docker", "generate-dockerfile", "auth", "idam", "--port", "8000"])
     out, _ = capsys.readouterr()
     assert code == 0
     assert "Generated" in out
     gen = tmp_path / "docker" / "microservices" / "Dockerfile.auth_idam"
     assert gen.exists()
-    assert "hauliage_auth_idam_impl" in gen.read_text()
+    assert "acme_auth_idam_impl" in gen.read_text()
 
 
 def test_docker_validate_build_artifacts_missing_exits_1(tmp_path, monkeypatch, capsys):
-    monkeypatch.setenv("HAULIAGE_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("BRRTROUTER_PROJECT_ROOT", str(tmp_path))
     code = _run_main(["docker", "validate-build-artifacts"])
     out, err = capsys.readouterr()
     assert code == 1
@@ -203,8 +203,8 @@ def test_docker_validate_build_artifacts_success_exits_0(tmp_path, monkeypatch, 
     from brrtrouter_tooling.workspace.build.constants import get_binary_names
 
     # Minimal openapi layout so discovery returns names
-    (tmp_path / "openapi" / "hauliage" / "identity").mkdir(parents=True)
-    (tmp_path / "openapi" / "hauliage" / "identity" / "openapi.yaml").write_text(
+    (tmp_path / "openapi" / "acme" / "identity").mkdir(parents=True)
+    (tmp_path / "openapi" / "acme" / "identity" / "openapi.yaml").write_text(
         "openapi: 3.1.0\ninfo: {}\nservers:\n  - url: http://localhost:8001/api\n"
     )
     binary_names = get_binary_names(tmp_path)
@@ -213,7 +213,7 @@ def test_docker_validate_build_artifacts_success_exits_0(tmp_path, monkeypatch, 
         d.mkdir(parents=True)
         for name in binary_names.values():
             (d / name).write_bytes(b"\x7fELF")
-    monkeypatch.setenv("HAULIAGE_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("BRRTROUTER_PROJECT_ROOT", str(tmp_path))
     code = _run_main(["docker", "validate-build-artifacts"])
     out, _ = capsys.readouterr()
     assert code == 0
@@ -221,7 +221,7 @@ def test_docker_validate_build_artifacts_success_exits_0(tmp_path, monkeypatch, 
 
 
 def test_docker_copy_artifacts_unknown_arch_exits_1(tmp_path, monkeypatch, capsys):
-    monkeypatch.setenv("HAULIAGE_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("BRRTROUTER_PROJECT_ROOT", str(tmp_path))
     code = _run_main(["docker", "copy-artifacts", "x64"])
     out, err = capsys.readouterr()
     assert code == 1
@@ -233,14 +233,14 @@ def __skip_test_docker_copy_artifacts_missing_binary_exits_1(tmp_path, monkeypat
 
 
 def xtest_docker_copy_artifacts_missing_binary_exits_1(tmp_path, monkeypatch, capsys):
-    (tmp_path / "openapi" / "hauliage" / "identity").mkdir(parents=True)
-    (tmp_path / "openapi" / "hauliage" / "identity" / "openapi.yaml").write_text(
+    (tmp_path / "openapi" / "acme" / "identity").mkdir(parents=True)
+    (tmp_path / "openapi" / "acme" / "identity" / "openapi.yaml").write_text(
         "openapi: 3.1.0\ninfo: {}\nservers:\n  - url: http://localhost:8001/api\n"
     )
     (tmp_path / "microservices" / "target" / "x86_64-unknown-linux-musl" / "release").mkdir(
         parents=True
     )
-    monkeypatch.setenv("HAULIAGE_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("BRRTROUTER_PROJECT_ROOT", str(tmp_path))
     code = _run_main(["docker", "copy-artifacts", "amd64"])
     out, err = capsys.readouterr()
     assert code == 1
@@ -250,7 +250,7 @@ def xtest_docker_copy_artifacts_missing_binary_exits_1(tmp_path, monkeypatch, ca
 def test_docker_build_base_dry_run(tmp_path, monkeypatch, capsys):
     (tmp_path / "docker" / "base").mkdir(parents=True)
     (tmp_path / "docker" / "base" / "Dockerfile").write_text("FROM alpine\n")
-    monkeypatch.setenv("HAULIAGE_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("BRRTROUTER_PROJECT_ROOT", str(tmp_path))
     code = _run_main(["docker", "build-base", "--dry-run"])
     out, _ = capsys.readouterr()
     assert code == 0
@@ -258,7 +258,7 @@ def test_docker_build_base_dry_run(tmp_path, monkeypatch, capsys):
 
 
 def test_docker_copy_binary_missing_source_exits_1(tmp_path, monkeypatch, capsys):
-    monkeypatch.setenv("HAULIAGE_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("BRRTROUTER_PROJECT_ROOT", str(tmp_path))
     code = _run_main(["docker", "copy-binary", "missing", "out/b", "b"])
     err = capsys.readouterr().err
     assert code == 1
@@ -268,7 +268,7 @@ def test_docker_copy_binary_missing_source_exits_1(tmp_path, monkeypatch, capsys
 def test_docker_copy_binary_success_exits_0(tmp_path, monkeypatch, capsys):
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "bin").write_bytes(b"x")
-    monkeypatch.setenv("HAULIAGE_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("BRRTROUTER_PROJECT_ROOT", str(tmp_path))
     code = _run_main(["docker", "copy-binary", "src/bin", "out/bin", "bin"])
     _out, _ = capsys.readouterr()
     assert code == 0
@@ -279,7 +279,7 @@ def test_docker_copy_binary_success_exits_0(tmp_path, monkeypatch, capsys):
 def test_docker_build_image_simple_missing_hash_exits_1(tmp_path, monkeypatch, capsys):
     (tmp_path / "art").write_bytes(b"x")
     (tmp_path / "Dockerfile").write_text("FROM alpine\n")
-    monkeypatch.setenv("HAULIAGE_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("BRRTROUTER_PROJECT_ROOT", str(tmp_path))
     code = _run_main(
         [
             "docker",
@@ -296,7 +296,7 @@ def test_docker_build_image_simple_missing_hash_exits_1(tmp_path, monkeypatch, c
 
 
 def test_docker_copy_multiarch_unknown_arch_exits_1(tmp_path, monkeypatch, capsys):
-    monkeypatch.setenv("HAULIAGE_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("BRRTROUTER_PROJECT_ROOT", str(tmp_path))
     code = _run_main(["docker", "copy-multiarch", "auth", "idam", "x64"])
     err = capsys.readouterr().err
     assert code == 1
@@ -317,18 +317,16 @@ def xtest_docker_copy_multiarch_success_exits_0(tmp_path, monkeypatch, capsys):
         / "target"
         / "x86_64-unknown-linux-musl"
         / "release"
-        / "hauliage_auth_idam_impl"
+        / "acme_auth_idam_impl"
     ).write_bytes(b"x")
-    monkeypatch.setenv("HAULIAGE_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("BRRTROUTER_PROJECT_ROOT", str(tmp_path))
     code = _run_main(["docker", "copy-multiarch", "auth", "idam", "amd64"])
     assert code == 0
-    assert (
-        tmp_path / "build_artifacts" / "auth_idam" / "amd64" / "hauliage_auth_idam_impl"
-    ).exists()
+    assert (tmp_path / "build_artifacts" / "auth_idam" / "amd64" / "acme_auth_idam_impl").exists()
 
 
 def test_tilt_setup_mocked_exits_0(tmp_path, monkeypatch, capsys):
-    monkeypatch.setenv("HAULIAGE_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("BRRTROUTER_PROJECT_ROOT", str(tmp_path))
     with (
         patch("shutil.which", return_value="/usr/bin/docker"),
         patch("subprocess.run", return_value=MagicMock(returncode=0)),
@@ -338,28 +336,28 @@ def test_tilt_setup_mocked_exits_0(tmp_path, monkeypatch, capsys):
 
 
 def test_tilt_teardown_mocked_exits_0(tmp_path, monkeypatch, capsys):
-    monkeypatch.setenv("HAULIAGE_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("BRRTROUTER_PROJECT_ROOT", str(tmp_path))
     with patch("subprocess.run", return_value=MagicMock(returncode=0)):
         code = _run_main(["tilt", "teardown"])
     assert code == 0
 
 
 def test_tilt_setup_persistent_volumes_mocked_exits_0(tmp_path, monkeypatch, capsys):
-    monkeypatch.setenv("HAULIAGE_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("BRRTROUTER_PROJECT_ROOT", str(tmp_path))
     with patch("subprocess.run", return_value=MagicMock(returncode=0)):
         code = _run_main(["tilt", "setup-persistent-volumes"])
     assert code == 0
 
 
 def test_tilt_logs_tilt_missing_exits_1(tmp_path, monkeypatch, capsys):
-    monkeypatch.setenv("HAULIAGE_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("BRRTROUTER_PROJECT_ROOT", str(tmp_path))
     with patch("shutil.which", return_value=None):
         code = _run_main(["tilt", "logs", "identity"])
     assert code == 1
 
 
 def test_tilt_setup_kind_registry_mocked_exits_0(tmp_path, monkeypatch, capsys):
-    monkeypatch.setenv("HAULIAGE_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("BRRTROUTER_PROJECT_ROOT", str(tmp_path))
     # shutil.which patched so the docker-presence gate passes without a docker CLI.
     with patch("shutil.which", return_value="/usr/bin/docker"), patch("subprocess.run") as m:
         m.side_effect = [
@@ -378,7 +376,7 @@ def test_tilt_setup_kind_registry_mocked_exits_0(tmp_path, monkeypatch, capsys):
 
 
 def test_build_microservice_unknown_exits_1(tmp_path, monkeypatch, capsys):
-    monkeypatch.setenv("HAULIAGE_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("BRRTROUTER_PROJECT_ROOT", str(tmp_path))
     code = _run_main(["build", "microservice", "nosuch"])
     out, err = capsys.readouterr()
     assert code == 1
@@ -387,7 +385,7 @@ def test_build_microservice_unknown_exits_1(tmp_path, monkeypatch, capsys):
 
 @pytest.mark.skipif(shutil.which("rustup") is None, reason="requires rustup on PATH")
 def test_build_microservices_missing_manifest_exits_1(tmp_path, monkeypatch, capsys):
-    monkeypatch.setenv("HAULIAGE_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("BRRTROUTER_PROJECT_ROOT", str(tmp_path))
     code = _run_main(["build", "microservices", "amd64"])
     out, err = capsys.readouterr()
     assert code == 1
@@ -398,13 +396,13 @@ def test_build_microservices_missing_manifest_exits_1(tmp_path, monkeypatch, cap
 
 
 def test_gen_stubs_positional_service_calls_regenerate_with_service(tmp_path, monkeypatch):
-    """hauliage gen stubs hauliage budget -> regenerate_impl_stubs(project_root, 'hauliage', service='budget')."""
-    monkeypatch.setenv("HAULIAGE_PROJECT_ROOT", str(tmp_path))
-    (tmp_path / "openapi" / "hauliage" / "budget").mkdir(parents=True)
-    (tmp_path / "openapi" / "hauliage" / "budget" / "openapi.yaml").write_text(
+    """acme gen stubs acme budget -> regenerate_impl_stubs(project_root, 'acme', service='budget')."""
+    monkeypatch.setenv("BRRTROUTER_PROJECT_ROOT", str(tmp_path))
+    (tmp_path / "openapi" / "acme" / "budget").mkdir(parents=True)
+    (tmp_path / "openapi" / "acme" / "budget" / "openapi.yaml").write_text(
         "openapi: 3.1.0\ninfo:\n  title: Budget\n"
     )
-    gen_dir = tmp_path / "microservices" / "hauliage" / "budget" / "gen"
+    gen_dir = tmp_path / "microservices" / "acme" / "budget" / "gen"
     gen_dir.mkdir(parents=True)
     (gen_dir / "Cargo.toml").write_text("")
     (gen_dir / "src").mkdir(parents=True, exist_ok=True)
@@ -412,24 +410,24 @@ def test_gen_stubs_positional_service_calls_regenerate_with_service(tmp_path, mo
     (tmp_path / "microservices" / "Cargo.toml").write_text("[workspace]\nmembers = []\n")
 
     with patch("brrtrouter_tooling.workspace.cli.gen.regenerate_impl_stubs", return_value=0) as m:
-        code = _run_main(["gen", "stubs", "hauliage", "budget"])
+        code = _run_main(["gen", "stubs", "acme", "budget"])
 
     assert code == 0
     m.assert_called_once()
     call_args, call_kw = m.call_args
     assert call_args[0] == tmp_path
-    assert call_args[1] == "hauliage"
+    assert call_args[1] == "acme"
     assert call_kw.get("service") == "budget"
 
 
 def test_gen_stubs_flag_service_calls_regenerate_with_service(tmp_path, monkeypatch):
-    """hauliage gen stubs hauliage --service budget -> same as positional."""
-    monkeypatch.setenv("HAULIAGE_PROJECT_ROOT", str(tmp_path))
-    (tmp_path / "openapi" / "hauliage" / "budget").mkdir(parents=True)
-    (tmp_path / "openapi" / "hauliage" / "budget" / "openapi.yaml").write_text(
+    """acme gen stubs acme --service budget -> same as positional."""
+    monkeypatch.setenv("BRRTROUTER_PROJECT_ROOT", str(tmp_path))
+    (tmp_path / "openapi" / "acme" / "budget").mkdir(parents=True)
+    (tmp_path / "openapi" / "acme" / "budget" / "openapi.yaml").write_text(
         "openapi: 3.1.0\ninfo:\n  title: Budget\n"
     )
-    gen_dir = tmp_path / "microservices" / "hauliage" / "budget" / "gen"
+    gen_dir = tmp_path / "microservices" / "acme" / "budget" / "gen"
     gen_dir.mkdir(parents=True)
     (gen_dir / "Cargo.toml").write_text("")
     (gen_dir / "src").mkdir(parents=True, exist_ok=True)
@@ -437,7 +435,7 @@ def test_gen_stubs_flag_service_calls_regenerate_with_service(tmp_path, monkeypa
     (tmp_path / "microservices" / "Cargo.toml").write_text("[workspace]\nmembers = []\n")
 
     with patch("brrtrouter_tooling.workspace.cli.gen.regenerate_impl_stubs", return_value=0) as m:
-        code = _run_main(["gen", "stubs", "hauliage", "--service", "budget"])
+        code = _run_main(["gen", "stubs", "acme", "--service", "budget"])
 
     assert code == 0
     m.assert_called_once()
@@ -445,7 +443,7 @@ def test_gen_stubs_flag_service_calls_regenerate_with_service(tmp_path, monkeypa
 
 
 def test_gen_stubs_missing_suite_exits_nonzero(tmp_path, monkeypatch, capsys):
-    monkeypatch.setenv("HAULIAGE_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("BRRTROUTER_PROJECT_ROOT", str(tmp_path))
     code = _run_main(["gen", "stubs"])
     out, err = capsys.readouterr()
     assert code != 0
@@ -463,7 +461,7 @@ def test_ports_list_empty_registry(tmp_path, monkeypatch, capsys):
     (tmp_path / "port-registry.json").write_text(
         '{"version":"1.0","assignments":{},"next_port":8001,"reserved_ports":[8080],"metadata":{}}'
     )
-    monkeypatch.setenv("HAULIAGE_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("BRRTROUTER_PROJECT_ROOT", str(tmp_path))
     code = _run_main(["ports", "list"])
     out, _ = capsys.readouterr()
     assert code == 0
@@ -474,7 +472,7 @@ def test_ports_query_missing(tmp_path, monkeypatch, capsys):
     (tmp_path / "port-registry.json").write_text(
         '{"version":"1.0","assignments":{},"next_port":8001,"reserved_ports":[8080],"metadata":{}}'
     )
-    monkeypatch.setenv("HAULIAGE_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("BRRTROUTER_PROJECT_ROOT", str(tmp_path))
     code = _run_main(["ports", "query", "nosuch"])
     out, _ = capsys.readouterr()
     assert code == 1
@@ -485,7 +483,7 @@ def test_ports_assign_and_list(tmp_path, monkeypatch, capsys):
     (tmp_path / "port-registry.json").write_text(
         '{"version":"1.0","assignments":{},"next_port":8001,"reserved_ports":[8080],"metadata":{}}'
     )
-    monkeypatch.setenv("HAULIAGE_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("BRRTROUTER_PROJECT_ROOT", str(tmp_path))
     code = _run_main(["ports", "assign", "svc1"])
     out, _ = capsys.readouterr()
     assert code == 0
@@ -507,7 +505,7 @@ def test_run_openapi_validate_missing_dir(tmp_path, monkeypatch):
         openapi_cmd = "validate"
         openapi_dir = tmp_path / "nonexistent"
 
-    monkeypatch.setenv("HAULIAGE_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("BRRTROUTER_PROJECT_ROOT", str(tmp_path))
     # run_openapi expects project_root; we use openapi_dir override so it doesn't matter
     rc = run_openapi(A(), tmp_path)
     assert rc == 0
@@ -559,7 +557,7 @@ def test_release_generate_notes_requires_version(tmp_path, monkeypatch, capsys):
         model = None
         provider = None
 
-    monkeypatch.setenv("HAULIAGE_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("BRRTROUTER_PROJECT_ROOT", str(tmp_path))
     with pytest.raises(SystemExit) as exc:
         run_release(A(), tmp_path)
     assert exc.value.code == 1
@@ -587,7 +585,7 @@ ANTHROPIC_BASIC = {"content": [{"type": "text", "text": "Anthropic basic respons
 
 
 def test_release_generate_notes_provider_openai(tmp_path, monkeypatch, capsys):
-    monkeypatch.setenv("HAULIAGE_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("BRRTROUTER_PROJECT_ROOT", str(tmp_path))
     monkeypatch.setenv("OPENAI_API_KEY", "sk-fake")
     out = tmp_path / "notes.md"
     with (
@@ -616,7 +614,7 @@ def test_release_generate_notes_provider_openai(tmp_path, monkeypatch, capsys):
 
 
 def test_release_generate_notes_provider_anthropic(tmp_path, monkeypatch, capsys):
-    monkeypatch.setenv("HAULIAGE_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("BRRTROUTER_PROJECT_ROOT", str(tmp_path))
     monkeypatch.setenv("ANTHROPIC_API_KEY", "skant-fake")
     out = tmp_path / "notes.md"
     with (
@@ -646,7 +644,7 @@ def test_release_generate_notes_provider_anthropic(tmp_path, monkeypatch, capsys
 
 def test_release_generate_notes_provider_via_env_anthropic(tmp_path, monkeypatch, capsys):
     """RELEASE_NOTES_PROVIDER=anthropic without --provider uses Anthropic path."""
-    monkeypatch.setenv("HAULIAGE_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("BRRTROUTER_PROJECT_ROOT", str(tmp_path))
     monkeypatch.setenv("ANTHROPIC_API_KEY", "skant-fake")
     monkeypatch.setenv("RELEASE_NOTES_PROVIDER", "anthropic")
     out = tmp_path / "notes.md"

@@ -20,7 +20,7 @@ def test_brrtrouter_venv_root_respects_env(monkeypatch, tmp_path: Path) -> None:
 def test_venv_bin_joins_under_bin(monkeypatch, tmp_path: Path) -> None:
     custom = tmp_path / "v"
     monkeypatch.setenv("BRRTROUTER_VENV", str(custom))
-    assert venv_bin("hauliage") == str(custom.resolve() / "bin" / "hauliage")
+    assert venv_bin("acme") == str(custom.resolve() / "bin" / "acme")
 
 
 def test_default_uses_home_when_env_unset(monkeypatch) -> None:
@@ -31,41 +31,41 @@ def test_default_uses_home_when_env_unset(monkeypatch) -> None:
 
 
 def test_discover_brrtrouter_one_level_up(monkeypatch, tmp_path: Path) -> None:
-    """microscaler/hauliage-style: project_root/../BRRTRouter."""
+    """microscaler/acme-style: project_root/../BRRTRouter."""
     monkeypatch.delenv("BRRTROUTER_ROOT", raising=False)
-    root = tmp_path / "microscaler" / "hauliage"
+    root = tmp_path / "microscaler" / "acme"
     root.mkdir(parents=True)
     brr = tmp_path / "microscaler" / "BRRTRouter"
     brr.mkdir()
     assert discover_brrtrouter_root(root) == brr.resolve()
 
 
-def test_discover_brrtrouter_hauliage_microservices_two_levels(monkeypatch, tmp_path: Path) -> None:
-    """microscaler/hauliage/microservices: ../../BRRTRouter (canonical layout)."""
+def test_discover_brrtrouter_acme_microservices_two_levels(monkeypatch, tmp_path: Path) -> None:
+    """microscaler/acme/microservices: ../../BRRTRouter (canonical layout)."""
     monkeypatch.delenv("BRRTROUTER_ROOT", raising=False)
-    root = tmp_path / "microscaler" / "hauliage" / "microservices"
+    root = tmp_path / "microscaler" / "acme" / "microservices"
     root.mkdir(parents=True)
     brr = tmp_path / "microscaler" / "BRRTRouter"
     brr.mkdir()
     assert discover_brrtrouter_root(root) == brr.resolve()
 
 
-def test_discover_brrtrouter_ai_hauliage_two_levels(monkeypatch, tmp_path: Path) -> None:
-    """Legacy microscaler/ai/hauliage: ../../BRRTRouter."""
+def test_discover_brrtrouter_ai_acme_two_levels(monkeypatch, tmp_path: Path) -> None:
+    """Legacy microscaler/ai/acme: ../../BRRTRouter."""
     monkeypatch.delenv("BRRTROUTER_ROOT", raising=False)
-    root = tmp_path / "microscaler" / "ai" / "hauliage"
+    root = tmp_path / "microscaler" / "ai" / "acme"
     root.mkdir(parents=True)
     brr = tmp_path / "microscaler" / "BRRTRouter"
     brr.mkdir()
     assert discover_brrtrouter_root(root) == brr.resolve()
 
 
-def test_discover_brrtrouter_ai_hauliage_microservices_three_levels(
+def test_discover_brrtrouter_ai_acme_microservices_three_levels(
     monkeypatch, tmp_path: Path
 ) -> None:
-    """microscaler/ai/hauliage/microservices: ../../../BRRTRouter."""
+    """microscaler/ai/acme/microservices: ../../../BRRTRouter."""
     monkeypatch.delenv("BRRTROUTER_ROOT", raising=False)
-    root = tmp_path / "microscaler" / "ai" / "hauliage" / "microservices"
+    root = tmp_path / "microscaler" / "ai" / "acme" / "microservices"
     root.mkdir(parents=True)
     brr = tmp_path / "microscaler" / "BRRTRouter"
     brr.mkdir()
@@ -76,4 +76,4 @@ def test_discover_brrtrouter_respects_env(monkeypatch, tmp_path: Path) -> None:
     custom = tmp_path / "custom" / "BRRTRouter"
     custom.mkdir(parents=True)
     monkeypatch.setenv("BRRTROUTER_ROOT", str(custom))
-    assert discover_brrtrouter_root(tmp_path / "hauliage") == custom.resolve()
+    assert discover_brrtrouter_root(tmp_path / "acme") == custom.resolve()

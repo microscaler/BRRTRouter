@@ -1,4 +1,4 @@
-"""Tests for brrtrouter_tooling.workspace.ci.is_tag (hauliage ci is-tag)."""
+"""Tests for brrtrouter_tooling.workspace.ci.is_tag (acme ci is-tag)."""
 
 import os
 from io import StringIO

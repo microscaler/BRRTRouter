@@ -1,4 +1,4 @@
-"""Directory-based discovery of sub-service OpenAPI specs (RERP-style layout).
+"""Directory-based discovery of sub-service OpenAPI specs (openapi/<service>/openapi.yaml layout).
 
 openapi_dir/{system}/{service}/openapi.yaml -> service name, base_path /api/v1/{system}/{service}.
 """

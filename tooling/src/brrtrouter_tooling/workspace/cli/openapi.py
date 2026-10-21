@@ -1,4 +1,4 @@
-"""`hauliage openapi` subcommands: validate, generate, fix-operation-id-casing."""
+"""`<cli> openapi` subcommands: validate, generate, fix-operation-id-casing."""
 
 from pathlib import Path
 

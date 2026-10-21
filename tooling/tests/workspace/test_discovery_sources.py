@@ -10,7 +10,7 @@ def test_discover_helm_missing_dir_returns_empty(tmp_path: Path) -> None:
 def test_discover_helm_finds_ports_with_names(tmp_path: Path) -> None:
     from brrtrouter_tooling.workspace.discovery.sources import discover_helm
 
-    d = tmp_path / "helm" / "hauliage-microservice" / "values"
+    d = tmp_path / "helm" / "acme-microservice" / "values"
     d.mkdir(parents=True)
     (d / "identity.yaml").write_text("service:\n  port: 8001\n")
     (d / "fleet.yaml").write_text("service:\n  name: custom\n  port: 8002\n")
@@ -70,7 +70,7 @@ def test_discover_openapi_bff_localhost(tmp_path: Path) -> None:
         "servers:\n  - url: http://localhost:8010/api/v1\n"
     )
     got = discover_openapi_bff_localhost(tmp_path)
-    assert got["bff"] == (8010, "hauliage")
+    assert got["bff"] == (8010, "acme")
 
 
 def test_discover_openapi_suite_microservice_localhost(tmp_path: Path) -> None:
@@ -82,4 +82,4 @@ def test_discover_openapi_suite_microservice_localhost(tmp_path: Path) -> None:
     d.mkdir(parents=True)
     (d / "openapi.yaml").write_text("servers:\n  - url: http://localhost:8001/api/v1/identity\n")
     got = discover_openapi_suite_microservice_localhost(tmp_path)
-    assert got["identity"] == ("hauliage", 8001)
+    assert got["identity"] == ("acme", 8001)

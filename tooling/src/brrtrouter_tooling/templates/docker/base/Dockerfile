@@ -1,5 +1,5 @@
-# Base runtime image for RERP microservices
-# This image provides the minimal runtime environment for all RERP services
+# Base runtime image for BRRTRouter microservices
+# This image provides the minimal runtime environment for BRRTRouter services
 # Services use this as a base and copy their pre-built binaries
 
 ARG TARGETPLATFORM=linux/amd64
@@ -31,6 +31,6 @@ COPY dev-entrypoint.sh /dev-entrypoint.sh
 RUN chmod +x /dev-entrypoint.sh
 
 # Labels for identification
-LABEL org.opencontainers.image.title="RERP Base Runtime"
-LABEL org.opencontainers.image.description="Base runtime image for RERP microservices"
+LABEL org.opencontainers.image.title="BRRTRouter Base Runtime"
+LABEL org.opencontainers.image.description="Base runtime image for BRRTRouter microservices"
 LABEL org.opencontainers.image.vendor="Microscaler"

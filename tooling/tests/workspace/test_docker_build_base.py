@@ -1,4 +1,4 @@
-"""Tests for hauliage docker build-base (delegates to brrtrouter_tooling.docker.build_base)."""
+"""Tests for acme docker build-base (delegates to brrtrouter_tooling.docker.build_base)."""
 
 import shutil
 from pathlib import Path

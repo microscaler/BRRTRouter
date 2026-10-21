@@ -6,7 +6,14 @@ from pathlib import Path
 
 import yaml
 
+from brrtrouter_tooling.workspace.profile import load_profile
+
 log = logging.getLogger(__name__)
+
+
+def _flat_suite(project_root: Path) -> str:
+    """The suite a flat openapi/<service>/ layout belongs to (the profile's layout.flat_suite)."""
+    return load_profile(project_root).flat_suite
 
 
 def _openapi_dir(project_root: Path) -> Path:
@@ -112,7 +119,7 @@ def service_microservice_dir(project_root: Path, suite: str, service_name: str) 
 def suites_with_bff(project_root: Path) -> list[str]:
     """Suites that have a BFF: openapi/{suite}/bff-suite-config.yaml exists.
 
-    Legacy: top-level openapi/bff-suite-config.yaml is treated as suite ``hauliage``.
+    Flat layout: a top-level openapi/bff-suite-config.yaml is the profile's ``layout.flat_suite``.
     """
     d = _openapi_dir(project_root)
     if not d.exists():
@@ -120,18 +127,19 @@ def suites_with_bff(project_root: Path) -> list[str]:
     suites = sorted(
         x.name for x in d.iterdir() if x.is_dir() and (x / "bff-suite-config.yaml").exists()
     )
-    if (d / "bff-suite-config.yaml").exists() and "hauliage" not in suites:
-        suites.append("hauliage")
+    flat = _flat_suite(project_root)
+    if (d / "bff-suite-config.yaml").exists() and flat not in suites:
+        suites.append(flat)
     return suites
 
 
 def bff_suite_config_path(project_root: Path, suite: str) -> Path:
-    """Path to bff-suite-config.yaml for a suite (nested preferred; flat legacy for hauliage)."""
+    """Path to bff-suite-config.yaml for a suite (nested preferred; the flat file for the profile's flat suite)."""
     nested = _openapi_dir(project_root) / suite / "bff-suite-config.yaml"
     if nested.exists():
         return nested
     flat = _openapi_dir(project_root) / "bff-suite-config.yaml"
-    if flat.exists() and suite == "hauliage":
+    if flat.exists() and suite == _flat_suite(project_root):
         return flat
     return nested
 
@@ -163,7 +171,7 @@ def service_to_suite(project_root: Path, service_name: str) -> str | None:
         if suite_dir.is_dir() and (suite_dir / service_name / "openapi.yaml").exists():
             return suite_dir.name
     if (d / service_name / "openapi.yaml").exists():
-        return "hauliage"
+        return _flat_suite(project_root)
     return None
 
 
@@ -219,7 +227,7 @@ def suite_sub_service_names(project_root: Path, suite: str) -> list[str]:
     """Return sorted sub-service names from supported OpenAPI layouts.
 
     Discovers ``openapi/{suite}/{service}/openapi.yaml`` and, for legacy flat
-    layouts (suite ``hauliage``), ``openapi/{service}/openapi.yaml``.
+    layouts (the profile's ``layout.flat_suite``), ``openapi/{service}/openapi.yaml``.
     """
     d = _openapi_dir(project_root)
     if not d.is_dir():
@@ -230,7 +238,7 @@ def suite_sub_service_names(project_root: Path, suite: str) -> list[str]:
         for child in nested.iterdir():
             if child.is_dir() and (child / "openapi.yaml").is_file():
                 names.add(child.name)
-    if suite == "hauliage":
+    if suite == _flat_suite(project_root):
         for child in d.iterdir():
             if child.is_dir() and (child / "openapi.yaml").is_file():
                 names.add(child.name)
@@ -240,8 +248,9 @@ def suite_sub_service_names(project_root: Path, suite: str) -> list[str]:
 def _suites_for_service_iter(project_root: Path) -> list[str]:
     """Suites to scan for OpenAPI sub-services when iterating all suites."""
     suites = list(suites_with_bff(project_root))
-    if project_uses_flat_openapi_layout(project_root) and "hauliage" not in suites:
-        suites.append("hauliage")
+    flat = _flat_suite(project_root)
+    if project_uses_flat_openapi_layout(project_root) and flat not in suites:
+        suites.append(flat)
     d = _openapi_dir(project_root)
     if d.is_dir():
         for child in d.iterdir():

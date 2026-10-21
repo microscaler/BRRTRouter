@@ -1,4 +1,4 @@
-"""TDD: tests for brrtrouter_tooling.workspace.openapi.validate (hauliage openapi validate)."""
+"""TDD: tests for brrtrouter_tooling.workspace.openapi.validate (acme openapi validate)."""
 
 from pathlib import Path
 

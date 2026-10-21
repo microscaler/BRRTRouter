@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 from typing import Any
 
@@ -12,13 +11,12 @@ from brrtrouter_tooling.helpers import to_snake_case
 
 
 def _get_registry_path(project_root: Path, layout: dict[str, Any] | None = None) -> Path | None:
-    """Path to port registry (env RERP_PORT_REGISTRY or layout port_registry)."""
-    cfg = resolve_bootstrap_layout(layout)
-    p = (
-        Path(os.environ.get("RERP_PORT_REGISTRY", "")).resolve()
-        if os.environ.get("RERP_PORT_REGISTRY")
-        else (project_root / cfg["port_registry"])
-    )
+    """Path to port registry (env BRRTROUTER_PORT_REGISTRY or layout port_registry)."""
+    from brrtrouter_tooling.workspace.legacy_env import env
+
+    cfg = resolve_bootstrap_layout(layout, project_root)
+    reg = env("BRRTROUTER_PORT_REGISTRY")
+    p = Path(reg).resolve() if reg else (project_root / cfg["port_registry"])
     return p if p.exists() else None
 
 

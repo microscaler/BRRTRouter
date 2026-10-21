@@ -1,4 +1,4 @@
-"""`hauliage bootstrap microservice` — Bootstrap a microservice from OpenAPI."""
+"""`<cli> bootstrap microservice` — Bootstrap a microservice from OpenAPI."""
 
 import sys
 from pathlib import Path

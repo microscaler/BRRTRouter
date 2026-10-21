@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 def brrtrouter_venv_root() -> Path:
-    """Return the directory that contains bin/hauliage, bin/brrtrouter, etc.
+    """Return the directory that contains each project CLI, bin/brrtrouter, etc.
 
     Override with env ``BRRTROUTER_VENV``; default ``~/.local/share/brrtrouter/venv``.
     """
@@ -18,7 +18,7 @@ def brrtrouter_venv_root() -> Path:
 
 
 def venv_bin(*parts: str) -> str:
-    """Absolute path under the shared venv's ``bin/`` (e.g. ``venv_bin('hauliage')``)."""
+    """Absolute path under the shared venv's ``bin/`` (e.g. ``venv_bin('acme')``)."""
     return str(brrtrouter_venv_root().joinpath("bin", *parts))
 
 
@@ -28,10 +28,10 @@ def discover_brrtrouter_root(project_root: Path) -> Path:
     Resolution order:
 
     1. ``BRRTROUTER_ROOT`` (absolute path, or relative to ``project_root``).
-    2. ``project_root/../BRRTRouter`` (e.g. ``microscaler/hauliage`` → ``microscaler/BRRTRouter``).
-    3. ``project_root/../../BRRTRouter`` (e.g. ``microscaler/hauliage/microservices`` or legacy
-       ``microscaler/ai/hauliage`` → ``microscaler/BRRTRouter``).
-    4. ``project_root/../../../BRRTRouter`` (e.g. legacy ``microscaler/ai/hauliage/microservices`` →
+    2. ``project_root/../BRRTRouter`` (e.g. ``microscaler/acme`` → ``microscaler/BRRTRouter``).
+    3. ``project_root/../../BRRTRouter`` (e.g. ``microscaler/acme/microservices`` or
+       ``microscaler/ai/acme`` → ``microscaler/BRRTRouter``).
+    4. ``project_root/../../../BRRTRouter`` (e.g. ``microscaler/ai/acme/microservices`` →
        ``microscaler/BRRTRouter``).
 
     If no candidate directory exists, returns the last candidate (three levels up) so callers

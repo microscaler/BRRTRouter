@@ -1,4 +1,4 @@
-"""TDD: tests for brrtrouter_tooling.workspace.ci.fix_cargo_paths (hauliage ci fix-cargo-paths)."""
+"""TDD: tests for brrtrouter_tooling.workspace.ci.fix_cargo_paths (acme ci fix-cargo-paths)."""
 
 from pathlib import Path
 
@@ -15,8 +15,8 @@ class TestFixCargoToml:
     def test_no_brrtrouter_dep_no_change(self, tmp_path: Path, capsys):
         from brrtrouter_tooling.workspace.ci.fix_cargo_paths import fix_cargo_toml
 
-        (tmp_path / "microservices" / "hauliage" / "svc").mkdir(parents=True)
-        cargo = tmp_path / "microservices" / "hauliage" / "svc" / "Cargo.toml"
+        (tmp_path / "microservices" / "acme" / "svc").mkdir(parents=True)
+        cargo = tmp_path / "microservices" / "acme" / "svc" / "Cargo.toml"
         cargo.write_text('[package]\nname = "x"\nversion = "0.1.0"\n')
         assert fix_cargo_toml(cargo, project_root=tmp_path) is False
         assert "[package]" in cargo.read_text()
@@ -27,8 +27,8 @@ class TestFixCargoToml:
         from brrtrouter_tooling.workspace.ci.fix_cargo_paths import fix_cargo_toml
 
         root = tmp_path / "root"
-        (root / "microservices" / "hauliage" / "svc").mkdir(parents=True)
-        cargo = root / "microservices" / "hauliage" / "svc" / "Cargo.toml"
+        (root / "microservices" / "acme" / "svc").mkdir(parents=True)
+        cargo = root / "microservices" / "acme" / "svc" / "Cargo.toml"
         cargo.write_text(
             '[dependencies]\nbrrtrouter = { path = "old/brrtrouter" }\nbrrtrouter_macros = { path = "old/macros" }\n'
         )
@@ -48,7 +48,7 @@ class TestRun:
     def test_run_returns_zero(self, tmp_path: Path):
         from brrtrouter_tooling.workspace.ci.fix_cargo_paths import run
 
-        (tmp_path / "microservices" / "hauliage" / "svc").mkdir(parents=True)
-        cargo = tmp_path / "microservices" / "hauliage" / "svc" / "Cargo.toml"
+        (tmp_path / "microservices" / "acme" / "svc").mkdir(parents=True)
+        cargo = tmp_path / "microservices" / "acme" / "svc" / "Cargo.toml"
         cargo.write_text('[package]\nname = "x"\n')
         assert run(cargo, project_root=tmp_path) == 0

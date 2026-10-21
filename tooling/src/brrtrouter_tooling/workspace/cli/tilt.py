@@ -1,4 +1,4 @@
-"""`hauliage tilt` subcommands: setup-kind-registry, setup-persistent-volumes, setup, teardown, logs."""
+"""`<cli> tilt` subcommands: setup-kind-registry, setup-persistent-volumes, setup, teardown, logs."""
 
 import sys
 from pathlib import Path
