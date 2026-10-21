@@ -15,9 +15,12 @@ and every field not given is derived from ``project.name``, which defaults to th
     cli = "acme"                     # the console script's name in usage and help
 
     [naming]
-    package_prefix = "acme"          # crates: <prefix>_<service>, <prefix>_<service>_gen
+    package_prefix = "acme"
+    crate_pattern = "{prefix}_{service}"     # crates: acme_market, acme_market_gen; "{prefix}_{suite}_{service}"
+                                             # for suite-qualified crates (acme_accounting_ledger)
     binary_pattern = "{prefix}_{system}_{module}_impl"
-    image_prefix = "acme"            # images: <image_prefix>-<suite>-<service>
+    image_prefix = "acme"
+    image_pattern = "{prefix}-{service}"     # images: acme-market; "{prefix}-{suite}-{service}" for suite-qualified
     base_image = "acme-base"
     zip_prefix = "acme-binaries-"
 
@@ -64,8 +67,10 @@ class ProjectProfile:
     name: str
     cli: str
     package_prefix: str
+    crate_pattern: str
     binary_pattern: str
     image_prefix: str
+    image_pattern: str
     base_image: str
     zip_prefix: str
     openapi_dir: str
@@ -89,8 +94,26 @@ class ProjectProfile:
         )
 
     def image_name(self, suite: str, service: str) -> str:
-        """Container image name for a service: ``<image_prefix>-<suite>-<service>``."""
-        return f"{self.image_prefix}-{suite}-{service}"
+        """Container image name for a service, from ``naming.image_pattern`` (default ``{prefix}-{service}``).
+
+        The one image-name contract: Helm values (``ports update-configs``), Tilt teardown and the docker commands all
+        use it, so they cannot disagree.
+        """
+        return self.image_pattern.format(prefix=self.image_prefix, suite=suite, service=service)
+
+    def crate_prefix(self, suite: str) -> str:
+        """The crate-name prefix for a suite's services: ``crate_pattern`` up to ``_{service}``.
+
+        ``{prefix}_{service}`` gives ``acme`` (crates ``acme_market``); ``{prefix}_{suite}_{service}`` gives
+        ``acme_accounting`` (crates ``acme_accounting_ledger``). Bootstrap, discovery and the single-crate build all
+        name crates through this.
+        """
+        head = self.crate_pattern[: -len("_{service}")]
+        return head.format(prefix=self.package_prefix, suite=suite.replace("-", "_"))
+
+    def crate_name(self, suite: str, service: str) -> str:
+        """A service's impl crate name; its gen crate is this plus ``_gen``."""
+        return f"{self.crate_prefix(suite)}_{service.replace('-', '_')}"
 
     @property
     def helm_values_dir(self) -> Path:
@@ -130,13 +153,19 @@ def profile_from_tables(
     snake = name.replace("-", "_")
     prefix = str(naming.get("package_prefix") or snake)
     image_prefix = str(naming.get("image_prefix") or name)
+    crate_pattern = str(naming.get("crate_pattern") or "{prefix}_{service}")
+    if not crate_pattern.endswith("_{service}"):
+        msg = f"naming.crate_pattern must end with '_{{service}}', got {crate_pattern!r}"
+        raise ValueError(msg)
     return ProjectProfile(
         root=root,
         name=name,
         cli=str(project.get("cli") or name),
         package_prefix=prefix,
+        crate_pattern=crate_pattern,
         binary_pattern=str(naming.get("binary_pattern") or "{prefix}_{system}_{module}_impl"),
         image_prefix=image_prefix,
+        image_pattern=str(naming.get("image_pattern") or "{prefix}-{service}"),
         base_image=str(naming.get("base_image") or f"{image_prefix}-base"),
         zip_prefix=str(naming.get("zip_prefix") or f"{name}-binaries-"),
         openapi_dir=str(layout.get("openapi_dir") or "openapi"),

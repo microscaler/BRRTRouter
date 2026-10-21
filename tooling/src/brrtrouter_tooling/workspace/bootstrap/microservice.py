@@ -15,13 +15,12 @@ import yaml
 
 from brrtrouter_tooling.workspace.env_paths import discover_brrtrouter_root
 from brrtrouter_tooling.workspace.legacy_env import env
-from brrtrouter_tooling.workspace.profile import cli_name
+from brrtrouter_tooling.workspace.profile import cli_name, load_profile
 
 
 def _pkg_prefix(project_root, suite):
     """Suite package prefix: the suite's bff-suite-config package_prefix, else env, else the project profile."""
     from brrtrouter_tooling.workspace.discovery.services import package_prefix
-    from brrtrouter_tooling.workspace.profile import load_profile
 
     return package_prefix(Path(project_root), suite or load_profile(project_root).flat_suite)
 
@@ -519,7 +518,7 @@ def _ensure_impl_scaffold(project_root: Path, suite: str, service_name: str) -> 
         _create_impl_main(
             gen_main, impl_main, service_name, prefix=_pkg_prefix(project_root, suite)
         )
-    cargo_toml_path = project_root / "microservices" / "Cargo.toml"
+    cargo_toml_path = load_profile(project_root).workspace_path / "Cargo.toml"
     update_workspace_cargo_toml(service_name, cargo_toml_path, suite=suite)
     print(f"✅ Created impl scaffold for {service_name} (impl/, Cargo.toml, main.rs, config)")
 
@@ -646,7 +645,11 @@ def run_bootstrap_microservice(
             f"No port registry entry for {service_name}; defaulting to cluster-wide 8080 (k8s-native)."
         )
 
-    resolved_suite = suite or service_to_suite(project_root, service_name) or "loadlinker"
+    resolved_suite = (
+        suite
+        or service_to_suite(project_root, service_name)
+        or load_profile(project_root).default_suite
+    )
     spec_file = f"{resolved_suite}/{service_name}/openapi.yaml"
     spec_path = resolve_service_openapi_spec_path(project_root, resolved_suite, service_name)
     crate_dir = resolve_service_microservice_dir(project_root, resolved_suite, service_name)
@@ -654,7 +657,7 @@ def run_bootstrap_microservice(
     impl_dir = crate_dir / "impl"
     dockerfile_path = project_root / "docker" / "microservices" / f"Dockerfile.{service_name}"
     config_path = impl_dir / "config" / "config.yaml"
-    cargo_toml_path = project_root / "microservices" / "Cargo.toml"
+    cargo_toml_path = load_profile(project_root).workspace_path / "Cargo.toml"
     tiltfile_path = project_root / "Tiltfile"
 
     if not spec_path.exists():

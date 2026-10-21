@@ -11,48 +11,53 @@ from brrtrouter_tooling.workspace.build.host_aware import run as run_host_aware
 from brrtrouter_tooling.workspace.discovery import suite_sub_service_names
 from brrtrouter_tooling.workspace.gen.regenerate import regenerate_service
 from brrtrouter_tooling.workspace.legacy_env import deprecated_alias
+from brrtrouter_tooling.workspace.profile import load_profile
 
 
-def gen_if_missing(project_root: Path) -> None:
-    """Generate the gen crates the workspace lists but that are not on disk (e.g. a fresh clone).
+def gen_if_missing(project_root: Path) -> int:
+    """Generate the gen crates the workspace lists but that are not on disk (e.g. a fresh clone). Returns 0, or 1 when a
+    generation failed (the caller must not build on it).
 
-    Only a suite's own services: a gen crate the workspace manifest lists as a member. A spec the BFF only proxies is
-    never given a crate. Without a workspace manifest, every discovered service whose gen crate is missing is
-    generated (the behaviour before members were read).
+    Every suite with services is considered, not only those with a BFF (``all_suites``). Only a suite's own services
+    get a crate: one the workspace manifest's members name (``service_gen_dir``). A spec the BFF only proxies is never
+    given a crate. Without a workspace manifest, every discovered service whose gen crate is missing is generated.
     """
     from brrtrouter_tooling.workspace.discovery.suites import (
+        all_suites,
         resolve_service_microservice_dir,
-        suites_with_bff,
     )
-    from brrtrouter_tooling.workspace.gen.regenerate import workspace_members
-    from brrtrouter_tooling.workspace.profile import load_profile
+    from brrtrouter_tooling.workspace.gen.regenerate import service_gen_dir, workspace_members
 
     profile = load_profile(project_root)
-    suites = suites_with_bff(project_root)
-    if not suites and suite_sub_service_names(project_root, profile.flat_suite):
-        suites = [profile.flat_suite]
-    if not suites:
-        return
-
     members = workspace_members(project_root)
-    missing: list[tuple[str, str]] = []
-    for suite in suites:
+    missing: list[tuple[str, str, Path]] = []
+    for suite in all_suites(project_root):
         for name in suite_sub_service_names(project_root, suite):
-            gen = resolve_service_microservice_dir(project_root, suite, name) / "gen"
+            if members is None:
+                gen = resolve_service_microservice_dir(project_root, suite, name) / "gen"
+            else:
+                gen = service_gen_dir(project_root, suite, name, members=members)
+                if gen is None:
+                    continue  # proxied only: not one of the workspace's crates
             if (gen / "Cargo.toml").exists():
                 continue
-            if members is not None and gen.resolve() not in members:
-                continue  # proxied only: not one of the workspace's crates
-            missing.append((suite, name))
+            missing.append((suite, name, gen))
     if not missing:
-        return
+        return 0
     print(
         f"📦 {len(missing)} gen crate(s) missing in {profile.workspace_dir}/; running brrtrouter-gen natively...",
         file=sys.stderr,
     )
-    for suite, name in missing:
-        regenerate_service(project_root, suite, name, allow_new=True)
+    failed = [
+        f"{suite}/{name}"
+        for suite, name, gen in missing
+        if regenerate_service(project_root, suite, name, allow_new=True, output_dir=gen) != 0
+    ]
+    if failed:
+        print(f"❌ codegen failed for {', '.join(failed)}; not building", file=sys.stderr)
+        return 1
     print("✅ codegen complete")
+    return 0
 
 
 run_hauliage_gen_if_missing = deprecated_alias(gen_if_missing, "run_hauliage_gen_if_missing")  # legacy-name
@@ -60,7 +65,8 @@ run_hauliage_gen_if_missing = deprecated_alias(gen_if_missing, "run_hauliage_gen
 
 def build_microservices_workspace(project_root: Path, arch: str, release: bool) -> int:
     """Build microservices/ workspace. arch: amd64|arm64|arm7. Uses jemalloc for amd64/arm64 (CI opt-in). Returns 0/1."""
-    gen_if_missing(project_root)
+    if gen_if_missing(project_root) != 0:
+        return 1
     return run_host_aware(
         target="workspace",
         arch=arch,
@@ -92,7 +98,7 @@ def build_microservice(project_root: Path, name: str, release: bool) -> int:
 
     return build_package_with_options(
         project_root,
-        workspace_dir="microservices",
+        workspace_dir=load_profile(project_root).workspace_dir,
         package_name=pkg,
         arch=host_arch,
         release=release,

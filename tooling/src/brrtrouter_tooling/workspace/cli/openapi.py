@@ -4,6 +4,7 @@ from pathlib import Path
 
 from brrtrouter_tooling.workspace.openapi import validate_specs
 from brrtrouter_tooling.workspace.openapi.fix_operation_id import run as fix_operation_id_run
+from brrtrouter_tooling.workspace.profile import load_profile
 
 
 def run_openapi(args, project_root: Path) -> int:
@@ -16,7 +17,9 @@ def run_openapi(args, project_root: Path) -> int:
 
 def _run_validate(project_root: Path, openapi_dir_override: Path | None) -> int:
     openapi_dir = (
-        openapi_dir_override if openapi_dir_override is not None else (project_root / "openapi")
+        openapi_dir_override
+        if openapi_dir_override is not None
+        else load_profile(project_root).openapi_path
     )
     errors = validate_specs(openapi_dir)
     # Optional: list valid files (CI does). We only have errors from validate_specs; valid files are not returned.
@@ -38,7 +41,9 @@ def _run_validate(project_root: Path, openapi_dir_override: Path | None) -> int:
 
 
 def _run_fix_operation_id_casing(args, project_root: Path) -> int:
-    openapi_dir = (getattr(args, "openapi_dir", None) or (project_root / "openapi")).resolve()
+    openapi_dir = (
+        getattr(args, "openapi_dir", None) or load_profile(project_root).openapi_path
+    ).resolve()
     dry_run = getattr(args, "dry_run", False)
     verbose = getattr(args, "verbose", False)
     total, touched = fix_operation_id_run(

@@ -70,8 +70,14 @@ def _get_cargo_env(rust_target: str) -> dict[str, str]:
     return env
 
 
-# Workspace: microservices/ (layout.workspace_dir)
+# Workspace: the profile's layout.workspace_dir (default microservices/). WORKSPACE_DIR is the default, kept for callers.
 WORKSPACE_DIR = "microservices"
+
+
+def _workspace_path(project_root: Path) -> Path:
+    from brrtrouter_tooling.workspace.profile import load_profile
+
+    return load_profile(project_root).workspace_path
 
 # armv7 cross toolchain does not provide __ffsdi2 (used by tikv-jemalloc-sys); disable jemalloc for arm7
 ARM7_TARGET = "armv7-unknown-linux-musleabihf"
@@ -115,7 +121,7 @@ def _build_workspace(
     extra_args: list[str],
     release: bool = True,
 ) -> bool:
-    workspace_dir = project_root / WORKSPACE_DIR
+    workspace_dir = _workspace_path(project_root)
     manifest = workspace_dir / "Cargo.toml"
     if not manifest.exists():
         print(f"❌ Error: Cargo.toml not found in {workspace_dir}", file=sys.stderr)
@@ -197,9 +203,9 @@ def _build_service(
     # microservices/<system>/<module>/impl (e.g. microservices/identity/impl)
     # Package name in impl/Cargo.toml is <package_prefix>_<system>_<module_snake> (no _impl suffix)
     from brrtrouter_tooling.workspace.discovery.services import package_prefix as _pp
-    package_name = f"{_pp(project_root, system)}_{system}_{module.replace('-', '_')}"
-    crate = project_root / WORKSPACE_DIR / system / module / "impl"
-    manifest = project_root / WORKSPACE_DIR / "Cargo.toml"
+    package_name = f"{_pp(project_root, system)}_{module.replace('-', '_')}"
+    crate = _workspace_path(project_root) / system / module / "impl"
+    manifest = _workspace_path(project_root) / "Cargo.toml"
     if not crate.exists():
         print(f"❌ Error: Crate not found: {crate}", file=sys.stderr)
         return False
@@ -231,7 +237,7 @@ def _build_service(
         ) + jemalloc + extra_args
     try:
         env = _get_cargo_env(rust_target) if not use_zigbuild else os.environ.copy()
-        subprocess.run(cmd, env=env, check=True, cwd=str(project_root / WORKSPACE_DIR))
+        subprocess.run(cmd, env=env, check=True, cwd=str(_workspace_path(project_root)))
         return True
     except subprocess.CalledProcessError as e:
         print(f"❌ Build failed for {arch_name}: {e}", file=sys.stderr)

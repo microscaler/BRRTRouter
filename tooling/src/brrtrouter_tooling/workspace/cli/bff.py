@@ -7,6 +7,7 @@ from brrtrouter_tooling.workspace.bff import (
     generate_system_bff_spec,
     list_systems_with_sub_services,
 )
+from brrtrouter_tooling.workspace.profile import load_profile
 
 
 def run_bff(args, project_root: Path) -> None:
@@ -20,7 +21,9 @@ def run_bff(args, project_root: Path) -> None:
 def _run_generate_system(project_root: Path, args) -> None:
     raw_dir = getattr(args, "openapi_dir", None)
     openapi_dir = (
-        Path(raw_dir).expanduser().resolve() if raw_dir else (project_root / "openapi").resolve()
+        Path(raw_dir).expanduser().resolve()
+        if raw_dir
+        else load_profile(project_root).openapi_path.resolve()
     )
     system = getattr(args, "system", None)
     output = getattr(args, "output", None)

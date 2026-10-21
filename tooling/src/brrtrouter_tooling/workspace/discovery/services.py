@@ -16,7 +16,9 @@ def package_prefix(project_root: Path, suite: str) -> str:
     """Cargo package-name prefix for a suite.
 
     Order: `package_prefix` in the suite's bff-suite-config.yaml, then the
-    BRRTROUTER_PACKAGE_PREFIX env var, then the project profile's naming.package_prefix.
+    BRRTROUTER_PACKAGE_PREFIX env var, then the project profile (``ProjectProfile.crate_prefix``: naming.package_prefix
+    shaped by naming.crate_pattern). Bootstrap, discovery and the single-crate build all call this, so a scaffolded
+    crate and a discovered one always have the same name.
     """
     import os
 
@@ -31,10 +33,9 @@ def package_prefix(project_root: Path, suite: str) -> str:
         pass
     from brrtrouter_tooling.workspace.profile import load_profile
 
-    return (
-        os.environ.get("BRRTROUTER_PACKAGE_PREFIX", "").strip()
-        or load_profile(project_root).package_prefix
-    )
+    return os.environ.get("BRRTROUTER_PACKAGE_PREFIX", "").strip() or load_profile(
+        project_root
+    ).crate_prefix(suite)
 
 
 def get_package_names(project_root: Path, suite: str | None = None) -> dict[str, str]:

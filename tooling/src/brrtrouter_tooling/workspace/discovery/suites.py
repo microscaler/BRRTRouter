@@ -17,11 +17,13 @@ def _flat_suite(project_root: Path) -> str:
 
 
 def _openapi_dir(project_root: Path) -> Path:
-    return project_root / "openapi"
+    """The specs' root: the profile's layout.openapi_dir."""
+    return load_profile(project_root).openapi_path
 
 
 def _microservices_dir(project_root: Path) -> Path:
-    return project_root / "microservices"
+    """The crates' root: the profile's layout.workspace_dir."""
+    return load_profile(project_root).workspace_path
 
 
 def _nested_service_openapi(project_root: Path, suite: str, service_name: str) -> Path:
@@ -243,6 +245,12 @@ def suite_sub_service_names(project_root: Path, suite: str) -> list[str]:
             if child.is_dir() and (child / "openapi.yaml").is_file():
                 names.add(child.name)
     return sorted(names)
+
+
+def all_suites(project_root: Path) -> list[str]:
+    """Every suite with services: those with a BFF, the flat suite when the layout is flat, and any
+    ``<openapi_dir>/<suite>/<service>/openapi.yaml`` tree without a bff-suite-config."""
+    return _suites_for_service_iter(project_root)
 
 
 def _suites_for_service_iter(project_root: Path) -> list[str]:

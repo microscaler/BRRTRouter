@@ -1,5 +1,6 @@
 """Regenerate services from OpenAPI specs (flat or nested suite layout)."""
 
+import fnmatch
 import sys
 from pathlib import Path
 
@@ -19,11 +20,12 @@ else:  # pragma: no cover - exercised on 3.10 only
     import tomli as tomllib
 
 
-def workspace_members(project_root: Path) -> set[Path] | None:
-    """Crate directories listed in the workspace manifest's ``[workspace] members`` (globs expanded), resolved.
+def workspace_members(project_root: Path) -> list[str] | None:
+    """The ``[workspace] members`` entries of ``<layout.workspace_dir>/Cargo.toml``, as relative path patterns.
 
-    The manifest is ``<layout.workspace_dir>/Cargo.toml``. None when there is no manifest or it lists no members:
-    callers then fall back to "the gen directory exists".
+    Patterns, not expanded paths: ``*/gen`` or ``trader/*/gen`` must match a gen crate on a fresh clone, before the
+    directory exists. None when there is no manifest or it lists no members; callers then fall back to "the gen
+    directory exists" (never "nothing is a member").
     """
     manifest = load_profile(project_root).workspace_path / "Cargo.toml"
     if not manifest.is_file():
@@ -33,33 +35,66 @@ def workspace_members(project_root: Path) -> set[Path] | None:
     except (OSError, tomllib.TOMLDecodeError):
         return None
     members = (data.get("workspace") or {}).get("members") or []
-    if not members:
-        return None
-    base = manifest.parent
-    out: set[Path] = set()
-    for m in members:
-        if any(c in m for c in "*?["):
-            out.update(p.resolve() for p in base.glob(m))
-        else:
-            out.add((base / m).resolve())
-    return out
+    out = [_norm(str(m)) for m in members if str(m).strip()]
+    return out or None
 
 
-def is_service_gen_crate(
-    project_root: Path, suite: str, service_name: str, members: set[Path] | None = None
-) -> bool:
-    """True when the service's gen crate is one of the workspace's own crates.
+def _norm(rel: str) -> str:
+    rel = rel.strip().replace("\\", "/")
+    while rel.startswith("./"):
+        rel = rel[2:]
+    return rel.rstrip("/")
 
-    A spec under ``openapi/{suite}/`` is not always a service of that suite (a BFF merges specs it only proxies),
-    and a gen directory that is not a workspace member is a stray (nothing builds it). With no workspace manifest,
-    an existing gen directory counts.
+
+def _is_member(rel: str, members: list[str], ws: Path) -> bool:
+    """Whether a gen crate path is one of the workspace's crates.
+
+    An explicit member names it, whether or not it exists yet (a fresh clone of a project that does not commit gen
+    crates). A glob member (``trader/*/gen``) only names directories that are there, as Cargo reads it, so a match
+    counts when the crate's directory exists or the service has its hand-written ``impl`` crate beside it: otherwise
+    every proxied spec under the suite would match the glob and get a stray crate.
     """
-    gen = resolve_service_microservice_dir(project_root, suite, service_name) / "gen"
+    if rel in members:
+        return True
+    if not any(fnmatch.fnmatchcase(rel, m) for m in members if any(c in m for c in "*?[")):
+        return False
+    crate = ws / rel
+    return crate.is_dir() or (crate.parent / "impl").is_dir()
+
+
+def _gen_candidates(suite: str, service_name: str) -> list[str]:
+    """Where a service's gen crate can live, relative to the workspace: nested first, then the flat layout."""
+    return [f"{suite}/{service_name}/gen", f"{service_name}/gen"]
+
+
+def service_gen_dir(
+    project_root: Path, suite: str, service_name: str, members: list[str] | None = None
+) -> Path | None:
+    """The service's gen crate directory when it is one of the workspace's own crates, else None.
+
+    With a workspace manifest: the first candidate (``{suite}/{service}/gen``, then ``{service}/gen``) that a member
+    names (``_is_member``: explicit members whether or not they exist yet; glob members when the crate or its
+    ``impl`` sibling is there). A gen directory no member names is a stray (nothing builds it), and
+    a spec under ``openapi/{suite}/`` with no member is one the BFF only proxies. Without a manifest: the gen directory
+    that exists on disk.
+    """
     if members is None:
         members = workspace_members(project_root)
     if members is None:
-        return gen.is_dir()
-    return gen.resolve() in members
+        gen = resolve_service_microservice_dir(project_root, suite, service_name) / "gen"
+        return gen if gen.is_dir() else None
+    ws = load_profile(project_root).workspace_path
+    for rel in _gen_candidates(suite, service_name):
+        if _is_member(rel, members, ws):
+            return ws / rel
+    return None
+
+
+def is_service_gen_crate(
+    project_root: Path, suite: str, service_name: str, members: list[str] | None = None
+) -> bool:
+    """True when the service's gen crate is one of the workspace's own crates (``service_gen_dir``)."""
+    return service_gen_dir(project_root, suite, service_name, members=members) is not None
 
 
 def _fix_cargo_paths_callback(cargo_toml_path: Path, project_root: Path | None) -> None:
@@ -85,15 +120,21 @@ def regenerate_service(
     service_name: str,
     brrtrouter_path: Path | None = None,
     allow_new: bool = False,
+    output_dir: Path | None = None,
 ) -> int:
-    """Regenerate a single service. Returns 0 on success, 1 on error.
+    """Regenerate a single service. Returns 0 on success, 1 on error. ``output_dir`` overrides where the crate is
+    written (``gen_if_missing`` passes the member path it matched).
 
     Only a service that already has a gen crate is regenerated. A spec under ``openapi/{suite}/`` is not always a
     service of that suite: a BFF merges specs it only proxies (another suite's service, an external API), and
     generating those writes a stray crate. Creating a new service's first gen crate is explicit: ``allow_new``.
     """
-    output_dir = resolve_service_microservice_dir(project_root, suite, service_name) / "gen"
-    if not allow_new and not is_service_gen_crate(project_root, suite, service_name):
+    own = service_gen_dir(project_root, suite, service_name)
+    if output_dir is None:
+        output_dir = (
+            own or resolve_service_microservice_dir(project_root, suite, service_name) / "gen"
+        )
+    if not allow_new and own is None:
         why = (
             "it is not a workspace member (a stray crate)"
             if output_dir.is_dir()

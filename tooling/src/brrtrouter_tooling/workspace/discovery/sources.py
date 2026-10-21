@@ -10,7 +10,9 @@ log = logging.getLogger(__name__)
 
 
 def _openapi_dir(project_root: Path) -> Path:
-    return project_root / "openapi"
+    from brrtrouter_tooling.workspace.profile import load_profile
+
+    return load_profile(project_root).openapi_path
 
 
 def _iter_bffs(project_root: Path):

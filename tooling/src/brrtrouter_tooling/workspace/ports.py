@@ -35,7 +35,6 @@ TILT_MANAGED_RANGE = (8001, 8099)
 
 def _update_openapi_servers(service_name: str, port: int, project_root: Path) -> None:
     """Update OpenAPI server URLs for Swagger 'Try it' to use the correct localhost port."""
-    openapi_dir = project_root / "openapi"
     suite = bff_service_to_suite(project_root, service_name)
     if suite is not None:
         path = bff_suite_config_path(project_root, suite)
@@ -63,7 +62,9 @@ def _update_openapi_servers(service_name: str, port: int, project_root: Path) ->
     suite = service_to_suite(project_root, service_name)
     if not suite:
         return
-    spec_path = openapi_dir / service_name / "openapi.yaml"
+    from brrtrouter_tooling.workspace.discovery.suites import resolve_service_openapi_spec_path
+
+    spec_path = resolve_service_openapi_spec_path(project_root, suite, service_name)
     if not spec_path.exists():
         return
     with spec_path.open() as f:
@@ -182,7 +183,14 @@ class PortRegistry:
         if not port_only:
             if "image" not in values:
                 values["image"] = {}
-            values["image"]["name"] = f"{profile.image_prefix}-{service_name}"
+            from brrtrouter_tooling.workspace.discovery.suites import service_to_suite
+
+            suite = (
+                service_to_suite(self.project_root, service_name)
+                or bff_service_to_suite(self.project_root, service_name)
+                or profile.flat_suite
+            )
+            values["image"]["name"] = profile.image_name(suite, service_name)
             if "app" not in values:
                 values["app"] = {}
             values["app"]["serviceName"] = service_name

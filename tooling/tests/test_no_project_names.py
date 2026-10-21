@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 
 SRC = Path(__file__).resolve().parents[1] / "src" / "brrtrouter_tooling"
-NAMES = re.compile(r"hauliage|rerp|pricewhisperer|sesame", re.IGNORECASE)
+NAMES = re.compile(r"hauliage|rerp|pricewhisperer|sesame|loadlinker", re.IGNORECASE)
 ALLOWED_FILES = {"legacy_env.py"}
 
 

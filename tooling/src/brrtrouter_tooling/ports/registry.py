@@ -170,19 +170,17 @@ class PortRegistry:
         lay = self._layout
         values_file = self.project_root / lay["helm_values_dir"] / f"{service_name}.yaml"
 
-        # System name from the helm_values_dir structure ('helm/<name>-microservice/values'), else the profile's
-        from brrtrouter_tooling.workspace.profile import load_profile
+        from brrtrouter_tooling.workspace.discovery.suites import (
+            bff_service_to_suite,
+            service_to_suite,
+        )
+        from brrtrouter_tooling.workspace.profile import cli_name, load_profile
 
-        system_name = load_profile(self.project_root).name
-        parts = Path(lay["helm_values_dir"]).parts
-        for part in parts:
-            if part.endswith("-microservice"):
-                system_name = part.replace("-microservice", "")
-                break
+        profile = load_profile(self.project_root)
 
         if not values_file.exists():
             print(f"Helm values file not found: {values_file}")
-            print(f"   Create it with: {system_name} bootstrap microservice <service>")
+            print(f"   Create it with: {cli_name()} bootstrap microservice <service>")
             return
         with values_file.open() as f:
             values = yaml.safe_load(f) or {}
@@ -195,7 +193,14 @@ class PortRegistry:
         if not port_only:
             if "image" not in values:
                 values["image"] = {}
-            values["image"]["name"] = f"{system_name}-{service_name}"
+            # The image name follows the profile's one contract (naming.image_pattern); the Helm directory name is a
+            # path, not part of it.
+            suite = (
+                service_to_suite(self.project_root, service_name)
+                or bff_service_to_suite(self.project_root, service_name)
+                or profile.flat_suite
+            )
+            values["image"]["name"] = profile.image_name(suite, service_name)
             if "app" not in values:
                 values["app"] = {}
             values["app"]["serviceName"] = service_name
