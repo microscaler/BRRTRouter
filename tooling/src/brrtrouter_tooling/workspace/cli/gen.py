@@ -6,6 +6,7 @@ from pathlib import Path
 from brrtrouter_tooling.workspace.bootstrap.microservice import regenerate_impl_stubs
 from brrtrouter_tooling.workspace.discovery import suite_sub_service_names
 from brrtrouter_tooling.workspace.gen.regenerate import (
+    existing_gen_services,
     regenerate_service,
     regenerate_suite_services,
 )
@@ -37,11 +38,20 @@ def run_gen(args, project_root: Path) -> None:
         # If --service is specified, regenerate only that service
         if hasattr(args, "service") and args.service:
             print(f"🔄 Regenerating {args.service} service in suite '{suite}'...")
-            rc = regenerate_service(project_root, suite, args.service)
+            rc = regenerate_service(
+                project_root, suite, args.service, allow_new=getattr(args, "new", False)
+            )
             sys.exit(rc)
 
         # Otherwise regenerate all services in the suite
-        services = suite_sub_service_names(project_root, suite)
+        # Only the suite's own services (those with a gen crate); a spec the BFF only proxies is skipped.
+        services, proxied = existing_gen_services(
+            project_root, suite, suite_sub_service_names(project_root, suite)
+        )
+        if proxied:
+            print(
+                f"Skipping specs with no gen crate in '{suite}' (proxied only): {', '.join(proxied)}"
+            )
         if not services:
             print(f"⚠️  No services found for suite: {suite}")
             sys.exit(1)

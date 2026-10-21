@@ -34,8 +34,21 @@ def regenerate_service(
     suite: str,
     service_name: str,
     brrtrouter_path: Path | None = None,
+    allow_new: bool = False,
 ) -> int:
-    """Regenerate a single service. Returns 0 on success, 1 on error."""
+    """Regenerate a single service. Returns 0 on success, 1 on error.
+
+    Only a service that already has a gen crate is regenerated. A spec under ``openapi/{suite}/`` is not always a
+    service of that suite: a BFF merges specs it only proxies (another suite's service, an external API), and
+    generating those writes a stray crate. Creating a new service's first gen crate is explicit: ``allow_new``.
+    """
+    output_dir = resolve_service_microservice_dir(project_root, suite, service_name) / "gen"
+    if not output_dir.is_dir() and not allow_new:
+        print(
+            f"❌ No gen crate at {output_dir}: '{service_name}' is not a service of suite '{suite}' "
+            "(its spec may only be proxied by the BFF). Pass --new to create its first gen crate."
+        )
+        return 1
     package_name = _gen_package_name(project_root, service_name, suite=suite)
 
     if brrtrouter_path is None:
@@ -43,7 +56,6 @@ def regenerate_service(
 
     spec_path = resolve_service_openapi_spec_path(project_root, suite, service_name)
     deps_config_path = spec_path.parent / "brrtrouter-dependencies.toml"
-    output_dir = resolve_service_microservice_dir(project_root, suite, service_name) / "gen"
 
     if not spec_path.exists():
         print(f"❌ OpenAPI spec not found: {spec_path}")
@@ -74,6 +86,17 @@ def regenerate_service(
     except FileNotFoundError as e:
         print(f"❌ {e}")
         return 1
+
+
+def existing_gen_services(
+    project_root: Path, suite: str, service_names: list[str]
+) -> tuple[list[str], list[str]]:
+    """Split a suite's spec names into (services with a gen crate, specs without one - proxied only)."""
+    have, proxied = [], []
+    for name in service_names:
+        gen = resolve_service_microservice_dir(project_root, suite, name) / "gen"
+        (have if gen.is_dir() else proxied).append(name)
+    return have, proxied
 
 
 def regenerate_suite_services(

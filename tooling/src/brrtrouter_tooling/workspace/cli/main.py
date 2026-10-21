@@ -487,6 +487,11 @@ def __build_parser():
         metavar="NAME",
         help="Regenerate only this service (e.g. accounts-payable, identity)",
     )
+    pgen_suite.add_argument(
+        "--new",
+        action="store_true",
+        help="Create the service's first gen crate (without it, a spec with no gen crate is refused)",
+    )
     pgen_stubs = pgen_sub.add_parser(
         "stubs",
         help="Regenerate impl controller stubs (brrtrouter-gen generate-stubs)",
