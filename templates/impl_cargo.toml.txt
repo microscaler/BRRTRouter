@@ -31,7 +31,7 @@ brrtrouter = { path = "{{ brrtrouter_path }}" }
 brrtrouter_macros = { path = "{{ brrtrouter_macros_path }}" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-tikv-jemallocator = { version = "0.6", features = ["profiling"], optional = true }
+tikv-jemallocator = { version = "0.7", features = ["profiling"], optional = true }
 clap = { version = "4.6", features = ["derive"] }
 may = "0.3"
 {% endif %}
