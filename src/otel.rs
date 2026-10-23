@@ -55,6 +55,10 @@ use tracing_subscriber::{EnvFilter, Layer};
 static OTEL_SHUTDOWN: OnceCell<Mutex<Option<microscaler_observability::ShutdownGuard>>> =
     OnceCell::new();
 
+/// The Cloud Profiler agent when OTLP is off (held for the life of the process).
+static PROFILER: OnceCell<Mutex<Option<microscaler_observability::ProfilerGuard>>> =
+    OnceCell::new();
+
 /// Merge BRRTRouter [`LogConfig`] into OTEL env (`RUST_LOG`, `may_minihttp`, debug-session).
 fn merge_observability_config(
     log_config: &LogConfig,
@@ -412,6 +416,17 @@ pub fn init_logging_with_config(config: &LogConfig) -> Result<()> {
             .map_err(|e| anyhow::anyhow!("OTEL shutdown mutex poisoned: {e}"))?
             .replace(guard);
         return Ok(());
+    }
+
+    // No OTLP: the Cloud Profiler agent still starts when asked (MICROSCALER_CLOUD_PROFILER=1, ADR 005);
+    // microscaler_observability::init starts it on the OTLP path above.
+    let obs = microscaler_observability::ObservabilityConfig::from_env();
+    let profiler = microscaler_observability::start_profiler(
+        &obs.service_name,
+        obs.service_version.as_deref(),
+    );
+    if let Ok(mut slot) = PROFILER.get_or_init(|| Mutex::new(None)).lock() {
+        slot.replace(profiler);
     }
 
     // Parse log level
