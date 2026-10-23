@@ -1,6 +1,6 @@
 # ADR 004: No in-process continuous profiling; profile with Pyroscope and Grafana in development
 
-**Status:** Accepted  **Date:** 2026-10-14
+**Status:** Accepted  **Date:** 2026-10-14  **Amended by:** [ADR 005](005-cloud-profiler-in-pre-production.md) (Cloud Profiler in pre-production)
 **Context:** [`docs/PRD_OBSERVABILITY_AND_TRACING.md`](../PRD_OBSERVABILITY_AND_TRACING.md) (Phase O.12, Pyroscope),
 [`docs/flamegraph.md`](../flamegraph.md), [`k8s/observability/pyroscope.yaml`](../../k8s/observability/pyroscope.yaml)
 

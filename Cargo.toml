@@ -75,7 +75,8 @@ tracing-appender = "0.2"
 # consumers). For local co-development against a sibling checkout, add a [patch] override in
 # ~/Workspace/remote/microscaler/.cargo/config.toml (ancestor config, never committed) — see
 # docs: OCTOPILOT-DEPENDENCY-RESOLUTION.
-microscaler-observability = { git = "https://github.com/microscaler/microscaler-observability.git", rev = "9a1442815e1b3dc4c4cc117e793423b78a50210d" }
+# Feature cloud-profiler: the Google Cloud Profiler agent, inert unless MICROSCALER_CLOUD_PROFILER=1 (pp only, ADR 005).
+microscaler-observability = { git = "https://github.com/microscaler/microscaler-observability.git", rev = "6b07ca91c9943063d66d2d9fea3fe534a06117a6", features = ["cloud-profiler"] }
 
 # gRPC dependencies for OTLP (compatible with opentelemetry 0.31)
 tonic = "0.14"
