@@ -75,7 +75,7 @@ tracing-appender = "0.2"
 # consumers). For local co-development against a sibling checkout, add a [patch] override in
 # ~/Workspace/remote/microscaler/.cargo/config.toml (ancestor config, never committed) — see
 # docs: OCTOPILOT-DEPENDENCY-RESOLUTION.
-microscaler-observability = { git = "https://github.com/microscaler/microscaler-observability.git", rev = "9b9de6ba2e376b21219f4581262490e600e68c86" }
+microscaler-observability = { git = "https://github.com/microscaler/microscaler-observability.git", rev = "9a1442815e1b3dc4c4cc117e793423b78a50210d" }
 
 # gRPC dependencies for OTLP (compatible with opentelemetry 0.31)
 tonic = "0.14"
