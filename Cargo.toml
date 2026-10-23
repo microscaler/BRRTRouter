@@ -53,8 +53,8 @@ clap = { version = "4.6.0", features = ["cargo", "env", "derive"] }
 askama = { version = "0.15.6", features = ["full"] }
 notify = "8"
 memory-stats = "1.1"  # For cross-platform memory monitoring
-tikv-jemallocator = { version = "0.6", optional = true }
-tikv-jemalloc-ctl = { version = "0.6", optional = true, features = ["stats"] }
+tikv-jemallocator = { version = "0.7", optional = true }
+tikv-jemalloc-ctl = { version = "0.7", optional = true, features = ["stats"] }
 minijinja = "2"
 
 # OpenTelemetry versions are coordinated with microscaler-observability. BRRTRouter delegates
@@ -76,7 +76,7 @@ tracing-appender = "0.2"
 # ~/Workspace/remote/microscaler/.cargo/config.toml (ancestor config, never committed) — see
 # docs: OCTOPILOT-DEPENDENCY-RESOLUTION.
 # Feature cloud-profiler: the Google Cloud Profiler agent, inert unless MICROSCALER_CLOUD_PROFILER=1 (pp only, ADR 005).
-microscaler-observability = { git = "https://github.com/microscaler/microscaler-observability.git", rev = "6b07ca91c9943063d66d2d9fea3fe534a06117a6", features = ["cloud-profiler"] }
+microscaler-observability = { git = "https://github.com/microscaler/microscaler-observability.git", rev = "369b08c5427b9e092709860c10eba15e40e8eaac", features = ["cloud-profiler"] }
 
 # gRPC dependencies for OTLP (compatible with opentelemetry 0.31)
 tonic = "0.14"
