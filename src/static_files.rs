@@ -188,7 +188,9 @@ impl StaticFiles {
                 let mut env = Environment::new();
                 env.add_template("tpl", &source).map_err(io::Error::other)?;
                 let tmpl = env.get_template("tpl").map_err(io::Error::other)?;
-                let rendered = tmpl.render(ctx_val).map_err(io::Error::other)?;
+                let rendered = tmpl
+                    .render(minijinja::value::Serde(ctx_val))
+                    .map_err(io::Error::other)?;
                 return Ok((rendered.into_bytes(), Self::content_type(&path)));
             }
         }
