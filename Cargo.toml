@@ -76,7 +76,7 @@ tracing-appender = "0.2"
 # ~/Workspace/remote/microscaler/.cargo/config.toml (ancestor config, never committed) — see
 # docs: OCTOPILOT-DEPENDENCY-RESOLUTION.
 # Feature cloud-profiler: the Google Cloud Profiler agent, inert unless MICROSCALER_CLOUD_PROFILER=1 (pp only, ADR 005).
-microscaler-observability = { git = "https://github.com/microscaler/microscaler-observability.git", rev = "1e79c71d2f1f0563fae1da92dfec270e836be43e", features = ["cloud-profiler"] }
+microscaler-observability = { git = "https://github.com/microscaler/microscaler-observability.git", rev = "2b7e35c7a64e5a70e035d1b4fc6527bd1ea2751f", features = ["cloud-profiler"] }
 
 # gRPC dependencies for OTLP (compatible with opentelemetry 0.31)
 tonic = "0.14"
