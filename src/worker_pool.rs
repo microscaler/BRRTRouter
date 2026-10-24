@@ -98,16 +98,9 @@ impl WorkerPoolConfig {
             .and_then(|s| s.parse().ok())
             .unwrap_or(50);
 
-        let stack_size = std::env::var("BRRTR_STACK_SIZE")
-            .ok()
-            .and_then(|s| {
-                if let Some(hex) = s.strip_prefix("0x") {
-                    usize::from_str_radix(hex, 16).ok()
-                } else {
-                    s.parse().ok()
-                }
-            })
-            .unwrap_or(0x8000); // 32KB default
+        // The pool's fallback handler stack (bytes); the spec and BRRTR_STACK_SIZE__<HANDLER> override it
+        // (crate::handler_stack). BRRTR_STACK_SIZE sizes may's own coroutines, not handlers.
+        let stack_size = 0x8000;
 
         Self {
             num_workers,
@@ -274,7 +267,7 @@ impl WorkerPool {
             let metrics_clone = metrics.clone();
 
             let spawn_result = may::coroutine::Builder::new()
-                .stack_size(stack_size)
+                .stack_size(crate::handler_stack::words(stack_size))
                 .name(format!("{}-worker-{}", handler_name_clone, worker_id))
                 .spawn(move || {
                     debug!(

@@ -1,13 +1,18 @@
 //! The stack size of each handler coroutine, resolved at runtime from the OpenAPI spec with environment overrides.
 //!
-//! The spec is the place to size handlers; environment variables override it without a rebuild. The most specific
-//! setting wins, and at each level the environment overrides the spec:
+//! The spec is the place to size handlers; a per-handler environment variable overrides it without a rebuild. The
+//! most specific setting wins:
 //!
 //! 1. `BRRTR_STACK_SIZE__<HANDLER>` (env, this handler; name upper-cased)
 //! 2. `x-brrtrouter-stack-size` on the operation (spec, this handler)
-//! 3. `BRRTR_STACK_SIZE` (env, every handler)
-//! 4. `x-brrtrouter-stack-size` at the root of the spec (spec, every handler)
-//! 5. the size the generator computed for the route (passed in by the generated registry)
+//! 3. `x-brrtrouter-stack-size` at the root of the spec (spec, every handler)
+//! 4. [`FALLBACK`] (256 KiB), or the generator's estimate for the route if larger: the estimates were tuned while
+//!    stacks were 8x their setting, and measured handlers peak at 24-48 KiB (pp, 24 Oct 2026)
+//!
+//! `BRRTR_STACK_SIZE` is not a handler setting: it sizes `may`'s own coroutines (the HTTP connection coroutines that
+//! route, validate and dispatch; `RuntimeConfig::stack_size`, in `may`'s words). Those are not measured by the stack
+//! probe and once overflowed on a too-small value (PriceWhisperer's market wedge, 30 Aug 2026), so a blanket setting
+//! for them must not shrink the handlers' or the other way round.
 //!
 //! The result is clamped to `BRRTR_STACK_MIN_BYTES` ..= `BRRTR_STACK_MAX_BYTES` (16 KiB ..= 256 KiB by default).
 //!
@@ -16,8 +21,8 @@
 //! handler's size needs no code generation. Values accept bytes (`65536`, `"0x10000"`), units (`"64KiB"`, `"64K"`,
 //! `"1MiB"`) or `"small"` (16 KiB), `"medium"` (32 KiB), `"large"` (64 KiB).
 //!
-//! Note: `may` takes the size in machine words, so a coroutine maps 8x the resolved value (see
-//! `llmwiki/topics/handler-stack-memory.md`); `brrtrouter_handler_stack_size_bytes` shows what is really mapped.
+//! Sizes are bytes: `may` takes machine words, so the spawns pass [`words`] of the resolved size (until 24 Oct 2026
+//! the bytes were passed as words and every handler stack was 8x its setting).
 
 use std::collections::HashMap;
 use std::sync::{OnceLock, RwLock};
@@ -103,12 +108,19 @@ pub fn resolve(handler: &str, generated: usize) -> usize {
     };
     let size = env_size(&format!("BRRTR_STACK_SIZE__{}", handler.to_uppercase()))
         .or(spec_handler)
-        .or_else(|| env_size("BRRTR_STACK_SIZE"))
         .or(spec_default)
-        .unwrap_or(generated);
+        .unwrap_or(generated.max(FALLBACK));
     let min = env_size("BRRTR_STACK_MIN_BYTES").unwrap_or(16 * 1024);
     let max = env_size("BRRTR_STACK_MAX_BYTES").unwrap_or(256 * 1024);
     size.clamp(min, max.max(min))
+}
+
+/// A handler's stack without an explicit size (bytes).
+pub const FALLBACK: usize = 256 * 1024;
+
+/// A stack size in bytes as `may` takes it: machine words (`Builder::stack_size`, `config().set_stack_size`).
+pub fn words(bytes: usize) -> usize {
+    (bytes / std::mem::size_of::<usize>()).max(1)
 }
 
 /// Serializes tests that set the stack-size environment variables (process-global) across modules.
@@ -170,22 +182,29 @@ paths:
             .expect("route");
         assert_eq!(deep.x_brrtrouter_stack_size, Some(48 * 1024));
 
-        // spec per-operation beats spec default; spec default beats generated
+        // spec per-operation beats spec default; spec default beats the fallback
         assert_eq!(resolve("probe_spec_handler", 20 * 1024), 48 * 1024);
         assert_eq!(resolve("probe_plain_handler", 20 * 1024), 24 * 1024);
 
-        // per-handler env beats the operation's spec value; global env beats the spec default only
+        // per-handler env beats the operation's spec value; BRRTR_STACK_SIZE (may's own coroutines) is ignored
         unsafe { std::env::set_var("BRRTR_STACK_SIZE__PROBE_SPEC_HANDLER", "100K") };
         unsafe { std::env::set_var("BRRTR_STACK_SIZE", "0x10000") };
         assert_eq!(resolve("probe_spec_handler", 20 * 1024), 100 * 1024);
         unsafe { std::env::remove_var("BRRTR_STACK_SIZE__PROBE_SPEC_HANDLER") };
         assert_eq!(resolve("probe_spec_handler", 20 * 1024), 48 * 1024);
-        assert_eq!(resolve("probe_plain_handler", 20 * 1024), 64 * 1024);
+        assert_eq!(resolve("probe_plain_handler", 20 * 1024), 24 * 1024);
         unsafe { std::env::remove_var("BRRTR_STACK_SIZE") };
+        assert_eq!(words(64 * 1024), 64 * 1024 / std::mem::size_of::<usize>());
 
-        // clamped
+        // no explicit size: the fallback (or a larger estimate), clamped
         record_spec(None, &[]);
-        assert_eq!(resolve("probe_plain_handler", 1024), 16 * 1024);
+        assert_eq!(resolve("probe_plain_handler", 1024), FALLBACK);
+        unsafe { std::env::set_var("BRRTR_STACK_MAX_BYTES", "1MiB") };
+        assert_eq!(resolve("probe_plain_handler", 512 * 1024), 512 * 1024);
+        unsafe { std::env::remove_var("BRRTR_STACK_MAX_BYTES") };
         assert_eq!(resolve("probe_plain_handler", 10 << 20), 256 * 1024);
+        unsafe { std::env::set_var("BRRTR_STACK_SIZE__PROBE_PLAIN_HANDLER", "1K") };
+        assert_eq!(resolve("probe_plain_handler", 0), 16 * 1024);
+        unsafe { std::env::remove_var("BRRTR_STACK_SIZE__PROBE_PLAIN_HANDLER") };
     }
 }
