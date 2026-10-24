@@ -1103,7 +1103,7 @@ impl HttpService for AppService {
                 // Note: May coroutines don't expose actual stack usage, only size
                 let stack_used_kb = if may::coroutine::is_coroutine() {
                     let co = may::coroutine::current();
-                    let size = co.stack_size();
+                    let size = co.stack_size() * std::mem::size_of::<usize>(); // may reports words
                     (size / 1024) as u64
                 } else {
                     0

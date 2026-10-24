@@ -19,7 +19,7 @@
 //! - Each handler runs in its own coroutine (lightweight thread)
 //! - Requests are sent to handlers via MPSC channels
 //! - Handlers process requests and send responses back via one-shot channels
-//! - Stack size is configurable via `BRRTR_STACK_SIZE` environment variable
+//! - Handler stack sizes come from the spec and `BRRTR_STACK_SIZE__<HANDLER>` (`crate::handler_stack`)
 //!
 //! ## Handler Registration
 //!

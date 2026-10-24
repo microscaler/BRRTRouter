@@ -94,9 +94,7 @@ impl RunAppBuilder {
         }
 
         let runtime = RuntimeConfig::from_env();
-        may::config().set_stack_size(runtime.stack_size);
-        may::config().set_workers(runtime.may_workers);
-        may::config().set_pool_capacity(runtime.coroutine_pool_capacity);
+        runtime.apply();
 
         let spec_path = resolve_path(&args.manifest_dir, &args.spec);
         if args.hot_reload {
@@ -217,7 +215,7 @@ impl RunAppBuilder {
             &args,
             &spec_path,
             &app_config,
-            runtime.stack_size,
+            runtime.stack_size_bytes(),
             runtime.may_workers,
             routes.len(),
         );
@@ -307,7 +305,7 @@ fn log_startup_context(
     }
     println!("[startup] doc_dir={}", args.doc_dir.display());
     println!(
-        "[startup] stack_size={stack_size} may_workers={may_workers} routes_count={routes_count} hot_reload={}",
+        "[startup] stack_size_bytes={stack_size} may_workers={may_workers} routes_count={routes_count} hot_reload={}",
         args.hot_reload
     );
     match serde_yaml::to_string(app_config) {

@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed (memory; behaviour change for `BRRTR_STACK_SIZE`)
+
+- **`BRRTR_STACK_SIZE` is bytes**, as documented (`262144`, `0x40000`, `256KiB`, `2MiB`). It used to reach
+  `may::config().set_stack_size` unconverted, and `may` takes machine words, so `0x40000` ran 2 MiB stacks.
+  `RuntimeConfig::stack_size` still holds the value `may` takes (now converted to words); `stack_size_bytes()` gives
+  bytes. The unset default is unchanged (256 KiB). Deployments that set the variable should set the byte value they
+  were running: `0x40000` → `2MiB`, `0x200000` → `16MiB`.
+- **Coroutine pool capacity 100 by default, without each service setting it.** `may` allocates its whole pool
+  (1,000 coroutines by default) when its scheduler starts. Services with their own `main` never called
+  `set_pool_capacity`, so they kept 1,000 pooled stacks (1,042 stack mappings per Sesame pod). BRRTRouter now applies
+  `BRRTR_COROUTINE_POOL_CAPACITY` (default 100) before its first coroutine (`RuntimeConfig::from_env`,
+  `Dispatcher::new`, the handler spawners, `HttpServer::start`) unless the service chose a capacity itself.
+  `RuntimeConfig::apply()` sets stack size, workers and pool capacity in one call.
+- `brrtrouter_coroutine_stack_bytes` and the request span's stack size report bytes (they reported `may` words).
+- microscaler-observability 2b7e35c (previous release): the Cloud Profiler agent clears the symbol cache after each
+  profile and pprof's sample table exists only while a CPU profile runs.
+
 ### Changed (breaking: metric names)
 
 - **`/metrics` uses the industry-standard names** (OpenTelemetry HTTP semantic conventions, Prometheus process collector).

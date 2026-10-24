@@ -156,6 +156,7 @@ impl<T: HttpService + Clone + Send + Sync + 'static> HttpServer<T> {
             .to_socket_addrs()?
             .next()
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "invalid address"))?;
+        crate::runtime_config::ensure_coroutine_pool_capacity();
         // Use HttpServerWithHeaders<_, 32> to handle modern API gateway/proxy traffic
         let handle = HttpServerWithHeaders::<_, 32>(self.0).start(addr)?;
         Ok(ServerHandle { addr, handle })

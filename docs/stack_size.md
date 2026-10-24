@@ -104,8 +104,19 @@ Handler names are upper-cased after the double underscore.
 ### 3. `BRRTR_STACK_SIZE` is not a handler setting
 
 `BRRTR_STACK_SIZE` sizes `may`'s own coroutines: the HTTP connection coroutines that parse, route, validate and
-dispatch (`RuntimeConfig::stack_size`, in `may` words). It no longer applies to handlers: a value tuned for those
-coroutines must not resize every handler, nor the reverse. Size handlers with the spec or the per-handler variable.
+dispatch. It is **bytes** like every other size here (`262144`, `0x40000`, `256KiB`, `2MiB`; default 256 KiB);
+`RuntimeConfig::stack_size` holds it converted to `may` words. It no longer applies to handlers: a value tuned for
+those coroutines must not resize every handler, nor the reverse. Size handlers with the spec or the per-handler
+variable.
+
+Until 25 Oct 2026 `BRRTR_STACK_SIZE` reached `may` unconverted and so was read as words (×8 on 64-bit): `0x40000`
+ran 2 MiB stacks. Deployments that set it moved to the byte value they were actually running.
+
+### 3a. Coroutine pool
+
+`may` keeps finished coroutines for reuse and allocates its whole pool when its scheduler starts: 1,000 by default,
+each keeping the stack pages it last touched. BRRTRouter sets it to `BRRTR_COROUTINE_POOL_CAPACITY` (default 100)
+before spawning its first coroutine; a service no longer needs to call `may::config().set_pool_capacity`.
 
 ### 4. Clamping Range (Runtime)
 

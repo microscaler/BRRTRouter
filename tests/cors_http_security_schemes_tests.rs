@@ -68,7 +68,7 @@ struct MinimalCorsFixture {
 
 impl MinimalCorsFixture {
     fn new(spec_rel: &str, register_auth: impl FnOnce(&mut AppService)) -> Self {
-        std::env::set_var("BRRTR_STACK_SIZE", "0x8000");
+        std::env::set_var("BRRTR_STACK_SIZE", "0x40000");
         let config = brrtrouter::runtime_config::RuntimeConfig::from_env();
         may::config().set_stack_size(config.stack_size);
         let tracing = TestTracing::init();
