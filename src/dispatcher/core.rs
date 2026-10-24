@@ -402,7 +402,7 @@ where
     let stack_size = crate::handler_stack::resolve(&effective_name, stack_size_bytes);
 
     let spawn_result = may::coroutine::Builder::new()
-        .stack_size(stack_size)
+        .stack_size(crate::handler_stack::words(stack_size))
         .name(effective_name.to_string())
         .spawn(move || {
             debug!(
@@ -636,7 +636,7 @@ impl Dispatcher {
         // - Error handling is done via the reply channel, not panics
         let spawn_result = unsafe {
             coroutine::Builder::new()
-                .stack_size(stack_size)
+                .stack_size(crate::handler_stack::words(stack_size))
                 // Without a name these coroutines logged as `None` and could not be labelled.
                 .name(name.clone())
                 .spawn(move || {

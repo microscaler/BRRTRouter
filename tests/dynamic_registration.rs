@@ -52,10 +52,12 @@ fn test_dynamic_register_post_item() {
 #[test]
 fn test_dynamic_register_with_per_handler_stack_override() {
     // Set per-handler override for get_pet handler
-    env::set_var("BRRTR_STACK_SIZE__GET_PET", "32768");
+    // Sizes are bytes: 256 KiB, enough for the example handler in a debug build (32768 was a word count once,
+    // and as bytes it overflowed the coroutine and hung the dispatch).
+    env::set_var("BRRTR_STACK_SIZE__GET_PET", "262144");
 
     // Also set a global override - the per-handler should take precedence
-    env::set_var("BRRTR_STACK_SIZE", "49152");
+    env::set_var("BRRTR_STACK_SIZE", "196608");
 
     let (routes, _slug) = load_spec("examples/openapi.yaml").expect("load spec");
     let router = Router::new(routes.clone());
@@ -86,11 +88,12 @@ fn test_dynamic_register_with_per_handler_stack_override() {
 #[test]
 fn test_dynamic_register_with_stack_clamping() {
     // Set min/max bounds
-    env::set_var("BRRTR_STACK_MIN_BYTES", "32768");
-    env::set_var("BRRTR_STACK_MAX_BYTES", "65536");
+    // Bytes: a 128 KiB floor and 256 KiB ceiling (the handler needs more than 64 KiB in a debug build).
+    env::set_var("BRRTR_STACK_MIN_BYTES", "131072");
+    env::set_var("BRRTR_STACK_MAX_BYTES", "262144");
 
     // Try to set a stack size below the minimum
-    env::set_var("BRRTR_STACK_SIZE__LIST_PETS", "16384");
+    env::set_var("BRRTR_STACK_SIZE__LIST_PETS", "65536");
 
     let (routes, _slug) = load_spec("examples/openapi.yaml").expect("load spec");
     let router = Router::new(routes.clone());

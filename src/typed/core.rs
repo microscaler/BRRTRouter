@@ -345,10 +345,12 @@ fn typed_handler_output_to_response(
 
 /// Get the stack size for a handler with environment variable overrides applied
 ///
-/// Checks for environment variables in this order:
+/// Resolved by `crate::handler_stack::resolve`, most specific first:
 /// 1. `BRRTR_STACK_SIZE__<HANDLER_NAME>` (per-handler override, uppercased)
-/// 2. `BRRTR_STACK_SIZE` (global override)
-/// 3. `stack_size_bytes` (computed default)
+/// 2. `x-brrtrouter-stack-size` on the operation, then at the spec root
+/// 3. `crate::handler_stack::FALLBACK`, or `stack_size_bytes` (the generator's estimate) if larger
+///
+/// `BRRTR_STACK_SIZE` is not consulted: it sizes `may`'s connection coroutines.
 ///
 /// The final value is clamped to the range defined by:
 /// - `BRRTR_STACK_MIN_BYTES` (default 16 KiB)
@@ -428,24 +430,13 @@ where
 {
     let (tx, rx) = HandlerSender::channel();
 
-    // Use a larger default stack size to prevent stack overflows
-    // 32KB is more reasonable for complex handlers
-    let stack_size = std::env::var("BRRTR_STACK_SIZE")
-        .ok()
-        .and_then(|s| {
-            if let Some(hex) = s.strip_prefix("0x") {
-                usize::from_str_radix(hex, 16).ok()
-            } else {
-                s.parse().ok()
-            }
-        })
-        .unwrap_or(0x8000); // 32KB default
-
     // Unnamed coroutines showed up as `None` in logs and could not be told apart in stack metrics: name them
     // after the handler type.
     let name = short_type_name::<H>();
+    // Spec and per-handler env, 32 KiB otherwise: see `crate::handler_stack`.
+    let stack_size = crate::handler_stack::resolve(&name, 0x8000);
     let spawn_result = may::coroutine::Builder::new()
-        .stack_size(stack_size)
+        .stack_size(crate::handler_stack::words(stack_size))
         .name(name.clone())
         .spawn(move || {
             let handler = handler;
@@ -562,7 +553,8 @@ where
             // The handler will be unavailable, so panicking during initialization is appropriate.
             panic!(
                 "Failed to spawn typed handler coroutine: {}. Stack size: {} bytes. \
-                Consider increasing BRRTR_STACK_SIZE environment variable.",
+                For handler stacks set x-brrtrouter-stack-size in the spec or BRRTR_STACK_SIZE__<HANDLER>; \
+                BRRTR_STACK_MAX_BYTES caps either.",
                 e, stack_size
             );
         }
@@ -637,7 +629,7 @@ where
 
     let probe_name = effective_name.to_string();
     let spawn_result = may::coroutine::Builder::new()
-        .stack_size(stack_size)
+        .stack_size(crate::handler_stack::words(stack_size))
         .name(effective_name.to_string())
         .spawn(move || {
             let handler = handler;
@@ -761,7 +753,8 @@ where
             // The handler will be unavailable, so panicking during initialization is appropriate.
             panic!(
                 "Failed to spawn typed handler coroutine for '{}': {}. Stack size: {} bytes. \
-                Consider increasing BRRTR_STACK_SIZE environment variable.",
+                For handler stacks set x-brrtrouter-stack-size in the spec or BRRTR_STACK_SIZE__<HANDLER>; \
+                BRRTR_STACK_MAX_BYTES caps either.",
                 effective_name, e, stack_size
             );
         }
@@ -1034,16 +1027,16 @@ mod tests {
     }
 
     #[test]
-    fn test_get_stack_size_with_global_override() {
+    fn test_get_stack_size_ignores_runtime_stack_env() {
         let _guard = ENV_MUTEX.lock().unwrap();
         let handler = "global_override_test";
         clean_stack_env_vars(handler);
 
-        // Set global override
+        // BRRTR_STACK_SIZE sizes may's own coroutines, not handlers (crate::handler_stack)
         std::env::set_var("BRRTR_STACK_SIZE", "49152");
 
         let stack_size = get_stack_size_with_overrides(handler, 16384);
-        assert_eq!(stack_size, 49152);
+        assert_eq!(stack_size, crate::handler_stack::FALLBACK);
 
         clean_stack_env_vars(handler);
     }
@@ -1109,9 +1102,9 @@ mod tests {
         let handler = "no_override_test";
         clean_stack_env_vars(handler);
 
-        // No overrides set, should return default
+        // No explicit size: the fallback (crate::handler_stack::FALLBACK), or a larger estimate
         let stack_size = get_stack_size_with_overrides(handler, 16384);
-        assert_eq!(stack_size, 16384);
+        assert_eq!(stack_size, crate::handler_stack::FALLBACK);
 
         clean_stack_env_vars(handler);
     }

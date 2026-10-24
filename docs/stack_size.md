@@ -64,66 +64,64 @@ Total: 40 KiB
 
 ## Configuration Options
 
-Stack sizes can be configured at multiple levels with this precedence (highest to lowest):
+A handler's stack is resolved at runtime (`src/handler_stack.rs`), most specific first:
 
-### 1. OpenAPI Vendor Extension (Design-Time)
+1. `BRRTR_STACK_SIZE__<HANDLER>` (environment, this handler)
+2. `x-brrtrouter-stack-size` on the operation (spec, this handler)
+3. `x-brrtrouter-stack-size` at the root of the spec (spec, every handler)
+4. 256 KiB (`handler_stack::FALLBACK`), or the heuristic above if larger
 
-Add `x-brrtrouter-stack-size` to any operation in your OpenAPI spec:
+then clamped to `BRRTR_STACK_MIN_BYTES`..`BRRTR_STACK_MAX_BYTES`. Sizes are bytes (since 24 Oct 2026; before, every
+handler stack was 8x its setting because `may` reads words). The spec values are read from the spec the service
+loads, so resizing a handler needs no code generation.
+
+### 1. OpenAPI Vendor Extension
 
 ```yaml
+x-brrtrouter-stack-size: 128KiB      # root: the default for every operation
 paths:
-  /complex-endpoint:
-    post:
-      operationId: complex_handler
-      x-brrtrouter-stack-size: 65536  # 64 KiB
-      requestBody:
-        content:
-          application/json:
-            schema:
-              # ... complex schema
+  /reports/{id}:
+    get:
+      operationId: build_report
+      x-brrtrouter-stack-size: 256KiB  # this operation
 ```
 
-This takes absolute precedence and is baked into the generated code.
+Values: bytes (`65536`), hex (`"0x10000"`), units (`"64KiB"`, `"64K"`, `"1MiB"`) or `small` / `medium` / `large`
+(16 / 32 / 64 KiB).
 
 ### 2. Per-Handler Environment Variable (Runtime)
 
-Override the stack size for a specific handler at runtime:
+Override one handler without a release:
 
 ```bash
-# Set stack size for 'list_pets' handler to 32 KiB
 export BRRTR_STACK_SIZE__LIST_PETS=32768
-
-# Hex format also supported
 export BRRTR_STACK_SIZE__LIST_PETS=0x8000
+export BRRTR_STACK_SIZE__LIST_PETS=32KiB
 ```
 
-Note: Handler names are uppercased and use double underscores as separator.
+Handler names are upper-cased after the double underscore.
 
-### 3. Global Environment Variable (Runtime)
+### 3. `BRRTR_STACK_SIZE` is not a handler setting
 
-Override the default stack size for all handlers:
-
-```bash
-# Set global default to 32 KiB
-export BRRTR_STACK_SIZE=32768
-
-# Hex format also supported
-export BRRTR_STACK_SIZE=0x8000
-```
+`BRRTR_STACK_SIZE` sizes `may`'s own coroutines: the HTTP connection coroutines that parse, route, validate and
+dispatch (`RuntimeConfig::stack_size`, in `may` words). It no longer applies to handlers: a value tuned for those
+coroutines must not resize every handler, nor the reverse. Size handlers with the spec or the per-handler variable.
 
 ### 4. Clamping Range (Runtime)
 
-Adjust the minimum and maximum allowed stack sizes:
-
 ```bash
-# Set minimum to 32 KiB
-export BRRTR_STACK_MIN_BYTES=32768
-
-# Set maximum to 512 KiB
-export BRRTR_STACK_MAX_BYTES=524288
+export BRRTR_STACK_MIN_BYTES=32768    # default 16 KiB
+export BRRTR_STACK_MAX_BYTES=524288   # default 256 KiB
 ```
 
-All computed and overridden stack sizes are clamped to this range.
+Every handler size, from any source, is clamped to this range: a spec or per-handler value above 256 KiB needs
+`BRRTR_STACK_MAX_BYTES` raised too.
+
+### Measuring
+
+With `BRRTR_STACK_PROBE_EVERY` (default 16; `1` measures every request) BRRTRouter records each handler's stack depth
+from page residency: `brrtrouter_handler_stack_used_bytes{handler}` (histogram), `brrtrouter_handler_stack_peak_bytes`
+and `brrtrouter_handler_stack_size_bytes` on `/metrics`. Size a handler at a few times its peak.
 
 ## Generated Code
 
@@ -245,23 +243,17 @@ cargo test --lib typed::core::tests
 
 ## Migration Guide
 
-### From Global Stack Size
+### From a Global `BRRTR_STACK_SIZE`
 
-If you previously used `BRRTR_STACK_SIZE` globally:
+`BRRTR_STACK_SIZE` used to be the fallback for every handler. It now sizes only `may`'s connection coroutines, so
+handlers that relied on it get the spec values or 256 KiB. To keep a large handler stack, set it where it belongs:
 
-1. **No changes needed**: Global override still works as fallback.
-
-2. **For better performance**: Remove global override and let heuristics compute per-handler sizes.
-
-3. **For specific handlers**: Use per-handler overrides:
-   ```bash
-   # Old: Global override
-   export BRRTR_STACK_SIZE=65536
-   
-   # New: Per-handler overrides
-   export BRRTR_STACK_SIZE__COMPLEX_HANDLER=65536
-   # Others use computed defaults
-   ```
+```yaml
+x-brrtrouter-stack-size: 128KiB          # spec root, every handler
+```
+```bash
+export BRRTR_STACK_SIZE__COMPLEX_HANDLER=262144   # one handler
+```
 
 ### Adding to Existing Projects
 
@@ -285,7 +277,7 @@ If you previously used `BRRTR_STACK_SIZE` globally:
 A: Memory efficiency. With many handlers, fixed large stacks waste memory. Per-handler sizing optimizes both safety and memory usage.
 
 **Q: Can stack sizes change between deployments?**  
-A: Yes, if you use environment variables. Vendor extensions in the OpenAPI spec create fixed sizes in generated code.
+A: Yes: the spec values are read at runtime from the spec the service loads, and the per-handler variables override them.
 
 **Q: What happens if I exceed the stack size?**  
 A: The coroutine will panic with a stack overflow error. The panic is caught and converted to a 500 error response.
@@ -294,7 +286,7 @@ A: The coroutine will panic with a stack overflow error. The panic is caught and
 A: Minimal impact. Smaller stacks reduce memory pressure and improve cache locality. Larger stacks enable deeper recursion but use more memory.
 
 **Q: How do I know what stack size my handler needs?**  
-A: Start with computed defaults. If you see stack overflows, increase gradually. Monitor with `stack_usage` feature if needed.
+A: Read `brrtrouter_handler_stack_peak_bytes{handler}` (see Measuring) and give it a few times that.
 
-**Q: Can I disable per-handler stack sizing?**  
-A: Yes, set a global `BRRTR_STACK_SIZE` which overrides all computed sizes (but vendor extensions still take precedence).
+**Q: Can I give every handler the same size?**  
+A: Yes: `x-brrtrouter-stack-size` at the root of the spec. (`BRRTR_STACK_SIZE` does not do this; it sizes `may`'s connection coroutines.)

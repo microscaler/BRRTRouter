@@ -19,18 +19,22 @@ numbers: Cloud Profiler heap profiles and `/proc/<pid>/smaps` of the PriceWhispe
 
 ## Sizing handlers from the spec (`src/handler_stack.rs`)
 
-Resolved at runtime from the spec the service loaded (no code generation needed), most specific first, env over spec
-at each level:
+Resolved at runtime from the spec the service loaded (no code generation needed), most specific first:
 
 1. `BRRTR_STACK_SIZE__<HANDLER>` (env)
 2. `x-brrtrouter-stack-size` on the operation (spec)
-3. `BRRTR_STACK_SIZE` (env)
-4. `x-brrtrouter-stack-size` at the spec root (spec-wide default)
-5. the generator's computed size
+3. `x-brrtrouter-stack-size` at the spec root (spec-wide default)
+4. `FALLBACK` (256 KiB), or the generator's estimate if larger
 
 Clamped to `BRRTR_STACK_MIN_BYTES`..`BRRTR_STACK_MAX_BYTES` (16..256 KiB). Values: bytes, `0x` hex, `48KiB`/`48K`,
-`1MiB`, `small`/`medium`/`large`. The extension existed before but never matched: oas3 strips the `x-` prefix from
-extension keys (same fix for per-route `x-cors`). Applies to typed, untyped, `register_handler` and worker pools.
+`1MiB`, `small`/`medium`/`large`. Sizes are **bytes** since 24 Oct 2026 (`handler_stack::words` converts for `may`);
+before, every handler stack was 8x its setting. Applies to typed, untyped, `register_handler` and worker pools.
+
+`BRRTR_STACK_SIZE` is **not** a handler setting: it is `may`'s own coroutine stack (`RuntimeConfig::stack_size`, still
+in `may` words), i.e. the HTTP connection coroutines that route, validate and dispatch. They are not probed, and
+PriceWhisperer's market wedge (30 Aug 2026) was a connection coroutine overflowing while building `may_queue`'s
+64-slot block of unboxed `HandlerRequest`s on its stack (gone with the boxed channels, but unmeasured), so its value
+is left alone.
 
 ## Coroutine names
 
@@ -38,12 +42,11 @@ Every handler coroutine is named after its handler (`register_handler` and `spaw
 coroutines, logged as `None`; unnamed typed handlers now take their type name, untyped ones `untyped`).
 `register_typed` goes through `spawn_typed_with_stack_size_and_name`, so per-handler stack env vars apply to it.
 
-## Stack sizes are in words (latent, not yet changed)
+## Stack units (fixed for handlers, 24 Oct 2026)
 
-`generator::Stack::new(size)` allocates `size * size_of::<usize>()` bytes; BRRTRouter passes bytes
-(`BRRTR_STACK_SIZE`, `stack_size_bytes`, the 16 KiB..256 KiB clamp), so every stack is 8x the configured value
-(256 KiB configured = 2 MiB mapped). RSS impact is small (only touched pages count). Correct the units only after
-the probe has per-handler peaks, or real stacks shrink 8x blind.
+`generator::Stack::new(size)` allocates `size * size_of::<usize>()` bytes. Handler spawns pass
+`handler_stack::words(bytes)`, so a handler maps what it is configured; the probe's peaks (24-48 KiB in pp) set the
+fallback and the services' root defaults. `may`'s global stack (`BRRTR_STACK_SIZE`) is still interpreted as words.
 
 ## Coroutine pool
 

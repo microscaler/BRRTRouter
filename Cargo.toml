@@ -189,7 +189,8 @@ members = [
 lto = true
 codegen-units = 1
 panic = "abort"
-strip = true
+# Keep the symbol table (ADR 005): Cloud Profiler symbolizes in-process; only debug info is stripped.
+strip = "debuginfo"
 
 # =============================================================================
 # LINT CONFIGURATION - JSF AV Safety Compliance

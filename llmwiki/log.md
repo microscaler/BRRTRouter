@@ -420,3 +420,10 @@ Hauliage Phase 3 unblockers for Vite dev proxy and frontend-aligned BFF routes.
   level (`BRRTR_STACK_SIZE__<HANDLER>` > operation > `BRRTR_STACK_SIZE` > root > generated).
 - Fixed: oas3 strips `x-` from extension keys, so `x-brrtrouter-stack-size` and per-route `x-cors` never matched.
 - Details: [`topics/handler-stack-memory.md`](./topics/handler-stack-memory.md#sizing-handlers-from-the-spec-srchandler_stackrs).
+
+## [2026-10-24] fix | handler stack sizes in bytes; BRRTR_STACK_SIZE no longer sizes handlers
+
+- Handler spawns pass `handler_stack::words(bytes)`: stacks were 8x their setting.
+- No explicit size: 256 KiB (`handler_stack::FALLBACK`) or the generator's estimate if larger.
+- `BRRTR_STACK_SIZE` sizes `may`'s own (connection) coroutines only; handler sizes come from the spec / per-handler env.
+- Details: [`topics/handler-stack-memory.md`](./topics/handler-stack-memory.md).
