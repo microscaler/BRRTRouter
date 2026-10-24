@@ -104,10 +104,16 @@ fn escape_label(v: &str) -> String {
 }
 
 /// Append the per-handler stack metrics in Prometheus text format.
+///
+/// Only handlers with at least one sampled request are rendered: every registered route has a handler coroutine,
+/// most never see traffic outside production, and each rendered handler is 15 series in a scraped (and billed)
+/// Prometheus.
 pub fn render_prometheus(out: &mut String) {
-    let reg = registry()
+    let all = registry()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let reg: BTreeMap<&String, &Arc<HandlerStackStats>> =
+        all.iter().filter(|(_, s)| s.count() > 0).collect();
     if reg.is_empty() {
         return;
     }
@@ -375,6 +381,14 @@ mod tests {
         assert_eq!(at(8 << 10), 1);
         assert_eq!(at(256 << 10), 1);
         assert_eq!(at(512 << 10), 2);
+    }
+
+    #[test]
+    fn unsampled_handlers_are_not_rendered() {
+        let _ = stats_for("never_called_handler");
+        let mut out = String::new();
+        render_prometheus(&mut out);
+        assert!(!out.contains("never_called_handler"));
     }
 
     #[test]

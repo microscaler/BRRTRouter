@@ -11,7 +11,7 @@ numbers: Cloud Profiler heap profiles and `/proc/<pid>/smaps` of the PriceWhispe
 - Every `BRRTR_STACK_PROBE_EVERY`-th request (default 16, `0` = off): before it, record the peak since the last
   sample and `madvise(MADV_DONTNEED)` the pages below the stack pointer; after it, record that request's depth.
   Side effect: a rare deep request no longer pins its stack pages for the life of the pod.
-- `/metrics`: `brrtrouter_handler_stack_used_bytes{handler}` (histogram, 4 KiB .. 4 MiB),
+- `/metrics` (handlers with at least one sample only: 15 series each): `brrtrouter_handler_stack_used_bytes{handler}` (histogram, 4 KiB .. 4 MiB),
   `brrtrouter_handler_stack_peak_bytes{handler}`, `brrtrouter_handler_stack_size_bytes{handler}` (what is
   actually mapped). `brrtrouter_coroutine_stack_used_bytes` is now the maximum peak (it was a stub reading 0).
 - Only the handler's own coroutine: work handed to other coroutines/threads (lifeguard pool workers) is not counted.
