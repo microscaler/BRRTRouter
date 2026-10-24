@@ -14,20 +14,27 @@
 //!
 //! ### `BRRTR_STACK_SIZE`
 //!
-//! Sets the stack of `may`'s own coroutines: the HTTP connection coroutines that parse, route, validate and dispatch
-//! (`may::config().set_stack_size`, in `may` words). Not the handlers' stacks: those come from the spec
-//! (`x-brrtrouter-stack-size`) and `BRRTR_STACK_SIZE__<HANDLER>`, see `crate::handler_stack`. Accepts values in:
-//! - Decimal: `65536` (64 KB)
-//! - Hexadecimal: `0x10000` (64 KB)
+//! The stack of `may`'s own coroutines, **in bytes**: the HTTP connection coroutines that parse, route, validate and
+//! dispatch. Not the handlers' stacks: those come from the spec (`x-brrtrouter-stack-size`) and
+//! `BRRTR_STACK_SIZE__<HANDLER>`, see `crate::handler_stack`. Accepts what `handler_stack::parse_size` does:
+//! `262144`, `0x40000`, `256KiB`, `2MiB`.
 //!
-//! Default: `0x8000` (32 KB) - Optimal for typical handlers with ~4x safety margin
+//! Default: 256 KiB. `may` takes machine words, so [`RuntimeConfig::stack_size`] holds the converted value
+//! (`bytes / size_of::<usize>()`) and [`RuntimeConfig::stack_size_bytes`] the bytes.
 //!
-//! **Why this matters:**
-//! - Larger stacks support deeper call chains and larger local variables
-//! - Smaller stacks reduce memory usage for many concurrent coroutines
-//! - 4,500 concurrent requests × 32 KB stack = 72 MB virtual memory
-//! - Typical handler uses ~3.5 KB; 32 KB provides 4x safety margin
-//! - Tune based on your handler complexity and concurrency needs
+//! Until 25 Oct 2026 the variable was passed to `may` unconverted, so a value was read as **words** (8 bytes each on
+//! 64-bit): `0x40000` gave 2 MiB stacks, not 256 KiB. Deployments that set it were moved to the byte value of what
+//! they actually ran (`0x40000` → `2MiB`, `0x200000` → `16MiB`); the unset default (256 KiB) is unchanged.
+//!
+//! Stacks are mapped lazily: a bigger stack costs address space, and resident memory only for the pages a coroutine
+//! touches.
+//!
+//! ### `BRRTR_COROUTINE_POOL_CAPACITY`
+//!
+//! Finished coroutines `may` keeps for reuse. Default 100. `may`'s own default is 1,000, allocated up front when its
+//! scheduler starts, each keeping the stack pages it last touched. BRRTRouter applies this before it spawns its first
+//! coroutine (see [`ensure_coroutine_pool_capacity`]), so a service gets it without calling
+//! `may::config().set_pool_capacity` itself; a capacity the service already set is left alone.
 //!
 //! ### `BRRTR_MAY_WORKERS`
 //!
@@ -83,17 +90,19 @@
 //! use brrtrouter::runtime_config::RuntimeConfig;
 //!
 //! let config = RuntimeConfig::from_env();
-//! println!("Stack size: {} bytes, may workers: {}", config.stack_size, config.may_workers);
+//! println!("Stack size: {} bytes, may workers: {}", config.stack_size_bytes(), config.may_workers);
+//! config.apply(); // may's stack size, workers and coroutine pool
 //! ```
 //!
 //! ## Example Configuration
 //!
 //! ```bash
-//! # Set stack size to 32 KB
-//! export BRRTR_STACK_SIZE=0x8000
+//! # Connection coroutine stacks of 512 KiB
+//! export BRRTR_STACK_SIZE=512KiB
 //!
-//! # Or in decimal
-//! export BRRTR_STACK_SIZE=32768
+//! # Or in hex / decimal bytes
+//! export BRRTR_STACK_SIZE=0x80000
+//! export BRRTR_STACK_SIZE=524288
 //!
 //! # Start your service
 //! cargo run
@@ -106,11 +115,7 @@
 //! - **Allocation speed**: Larger stacks may take longer to allocate
 //! - **Stack overflows**: Too small causes panics; too large wastes memory
 //!
-//! Recommended values:
-//! - Simple handlers: `0x2000` (8 KB)
-//! - Typical handlers: `0x8000` (32 KB) ← **default, validated at 4,500 concurrent users**
-//! - Complex logic: `0x8000` (32 KB)
-//! - Deep recursion: `0x10000` (64 KB)
+//! The default (256 KiB) has run every Microscaler service; raise it only for a measured overflow.
 
 use std::env;
 
@@ -120,8 +125,9 @@ use std::env;
 /// the coroutine runtime behavior.
 #[derive(Debug, Clone, Copy)]
 pub struct RuntimeConfig {
-    /// Stack size for coroutines in bytes (default: 32 KB / 0x8000)
-    /// Optimal for typical handlers (~3.5 KB used) with 4x safety margin
+    /// `may`'s own coroutine stack **in `may` words** (what `may::config().set_stack_size` takes): `BRRTR_STACK_SIZE`
+    /// bytes divided by the word size, default 256 KiB. Pass it to `set_stack_size` as is, or call [`Self::apply`];
+    /// [`Self::stack_size_bytes`] gives bytes.
     pub stack_size: usize,
     /// Whether to cache JSON Schema validators (default: true)
     /// Eliminates per-request schema compilation overhead
@@ -130,7 +136,8 @@ pub struct RuntimeConfig {
     pub may_workers: usize,
     /// Finished coroutines `may` keeps for reuse (`may::config().set_pool_capacity`), from
     /// `BRRTR_COROUTINE_POOL_CAPACITY` (default 100). A pooled coroutine keeps the stack pages it touched: at may's
-    /// default of 1000, an idle service held ~1000 stacks, ~37 MiB (identity-session, 24 Oct 2026).
+    /// default of 1000, an idle service held ~1000 stacks, ~37 MiB (identity-session, 24 Oct 2026), and 1,042 stack
+    /// mappings per Sesame pod in pp.
     pub coroutine_pool_capacity: usize,
 }
 
@@ -141,16 +148,18 @@ impl RuntimeConfig {
     /// stack usage tracking. This allows us to measure actual stack usage, not just
     /// allocation size.
     pub fn from_env() -> Self {
-        let mut stack_size = match env::var("BRRTR_STACK_SIZE") {
-            Ok(val) => {
-                if let Some(hex) = val.strip_prefix("0x") {
-                    usize::from_str_radix(hex, 16).unwrap_or(0x8000)
-                } else {
-                    val.parse().unwrap_or(0x8000)
-                }
-            }
-            Err(_) => 0x8000, // 32KB default - optimal for typical handlers with 4x safety margin
+        let stack_bytes = match env::var("BRRTR_STACK_SIZE") {
+            Ok(val) => crate::handler_stack::parse_size(&val)
+                .filter(|&b| b > 0)
+                .unwrap_or_else(|| {
+                    eprintln!(
+                        "[runtime][warn] BRRTR_STACK_SIZE={val:?} is not a size in bytes; using {DEFAULT_STACK_BYTES}"
+                    );
+                    DEFAULT_STACK_BYTES
+                }),
+            Err(_) => DEFAULT_STACK_BYTES,
         };
+        let mut stack_size = crate::handler_stack::words(stack_bytes);
 
         // Phase 2.2 hygiene: `may`'s stack-usage tracking is opt-in via an
         // odd stack size, which triggers a raw `println!` **per coroutine**
@@ -172,7 +181,7 @@ impl RuntimeConfig {
         {
             stack_size += 1;
             eprintln!(
-                "[telemetry] Adjusted stack size to {stack_size} (odd) to enable usage tracking"
+                "[telemetry] Adjusted stack size to {stack_size} words (odd) to enable usage tracking"
             );
         }
 
@@ -200,11 +209,9 @@ impl RuntimeConfig {
             Err(_) => default_may_workers.max(2),
         };
 
-        let coroutine_pool_capacity = env::var("BRRTR_COROUTINE_POOL_CAPACITY")
-            .ok()
-            .and_then(|s| s.trim().parse::<usize>().ok())
-            .filter(|&n| n >= 1)
-            .unwrap_or(100);
+        let coroutine_pool_capacity = coroutine_pool_capacity_from_env();
+        // Every service calls this before it spawns anything: take the pool default here too.
+        ensure_coroutine_pool_capacity();
 
         RuntimeConfig {
             stack_size,
@@ -212,5 +219,99 @@ impl RuntimeConfig {
             may_workers,
             coroutine_pool_capacity,
         }
+    }
+
+    /// `may`'s coroutine stack in bytes.
+    pub fn stack_size_bytes(&self) -> usize {
+        self.stack_size.saturating_mul(std::mem::size_of::<usize>())
+    }
+
+    /// Configure `may` from this: coroutine stack size, scheduler workers and coroutine pool capacity. Call it before
+    /// the first coroutine is spawned (`may` reads the workers and pool capacity when its scheduler starts).
+    pub fn apply(&self) {
+        may::config()
+            .set_stack_size(self.stack_size)
+            .set_workers(self.may_workers)
+            .set_pool_capacity(self.coroutine_pool_capacity);
+    }
+}
+
+/// `may`'s coroutine stack when `BRRTR_STACK_SIZE` is unset: 256 KiB.
+pub const DEFAULT_STACK_BYTES: usize = 256 * 1024;
+
+/// BRRTRouter's coroutine pool capacity when `BRRTR_COROUTINE_POOL_CAPACITY` is unset.
+pub const DEFAULT_COROUTINE_POOL_CAPACITY: usize = 100;
+
+/// `may`'s built-in pool capacity (`may::config` `DEFAULT_POOL_CAPACITY`): what `get_pool_capacity` answers when no
+/// one has set it.
+const MAY_DEFAULT_POOL_CAPACITY: usize = 1000;
+
+fn coroutine_pool_capacity_from_env() -> usize {
+    env::var("BRRTR_COROUTINE_POOL_CAPACITY")
+        .ok()
+        .and_then(|s| s.trim().parse::<usize>().ok())
+        .filter(|&n| n >= 1)
+        .unwrap_or(DEFAULT_COROUTINE_POOL_CAPACITY)
+}
+
+/// Give `may` BRRTRouter's coroutine pool capacity (`BRRTR_COROUTINE_POOL_CAPACITY`, default 100) unless the service
+/// already chose one. Idempotent; BRRTRouter calls it from [`RuntimeConfig::from_env`], `Dispatcher::new`, the handler
+/// spawners and `HttpServer::start`, i.e. before its first coroutine, because `may` allocates the whole pool when its
+/// scheduler starts. Unset, that is `may`'s 1,000 coroutines, each keeping the stack pages it last touched.
+///
+/// "Already chose" means `get_pool_capacity()` differs from `may`'s default of 1,000; a service that wants exactly
+/// 1,000 sets `BRRTR_COROUTINE_POOL_CAPACITY=1000`.
+pub fn ensure_coroutine_pool_capacity() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        if may::config().get_pool_capacity() == MAY_DEFAULT_POOL_CAPACITY {
+            may::config().set_pool_capacity(coroutine_pool_capacity_from_env());
+        }
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // One test touches the process-wide env and may config, so the assertions run in sequence.
+    #[test]
+    fn stack_size_is_bytes_and_the_pool_defaults_to_100() {
+        let _guard = crate::handler_stack::STACK_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let word = std::mem::size_of::<usize>();
+        // SAFETY (test): env access serialized by STACK_ENV_LOCK.
+
+        unsafe { std::env::remove_var("BRRTR_STACK_SIZE") };
+        unsafe { std::env::remove_var("BRRTR_TRACK_STACK_USAGE") };
+        unsafe { std::env::remove_var("BRRTR_COROUTINE_POOL_CAPACITY") };
+        let c = RuntimeConfig::from_env();
+        assert_eq!(c.stack_size_bytes(), DEFAULT_STACK_BYTES);
+        assert_eq!(c.stack_size, DEFAULT_STACK_BYTES / word, "may takes words");
+        assert_eq!(c.coroutine_pool_capacity, DEFAULT_COROUTINE_POOL_CAPACITY);
+        assert_ne!(
+            may::config().get_pool_capacity(),
+            MAY_DEFAULT_POOL_CAPACITY,
+            "from_env gives may BRRTRouter's pool capacity"
+        );
+
+        for (val, bytes) in [
+            ("0x40000", 0x40000),
+            ("2MiB", 2 << 20),
+            ("524288", 524_288),
+            ("256KiB", 256 << 10),
+        ] {
+            unsafe { std::env::set_var("BRRTR_STACK_SIZE", val) };
+            let c = RuntimeConfig::from_env();
+            assert_eq!(c.stack_size_bytes(), bytes, "{val}");
+            assert_eq!(c.stack_size, bytes / word, "{val}");
+        }
+        unsafe { std::env::set_var("BRRTR_STACK_SIZE", "lots") };
+        assert_eq!(
+            RuntimeConfig::from_env().stack_size_bytes(),
+            DEFAULT_STACK_BYTES
+        );
+        unsafe { std::env::remove_var("BRRTR_STACK_SIZE") };
     }
 }

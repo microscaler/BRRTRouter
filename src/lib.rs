@@ -284,7 +284,8 @@
 //! BRRTRouter uses the `may` coroutine runtime, not tokio or async-std. This means:
 //!
 //! - All handlers run in coroutines (lightweight threads)
-//! - Stack size is configurable via `BRRTR_STACK_SIZE` environment variable
+//! - Handler stacks come from the spec (`x-brrtrouter-stack-size`); `BRRTR_STACK_SIZE` (bytes) sizes `may`'s own
+//!   connection coroutines
 //! - The runtime is incompatible with tokio-based libraries without bridging
 //! - Blocking operations should use `may`'s blocking facilities
 //!
@@ -582,10 +583,11 @@
 //!
 //! **For higher throughput:**
 //!
-//! 1. **Reduce stack size** for more concurrent coroutines:
+//! 1. **Size stacks to what is used**: connection coroutines with `BRRTR_STACK_SIZE` (bytes, default 256 KiB),
+//!    handlers with `x-brrtrouter-stack-size` in the spec (`docs/stack_size.md`). Stacks are mapped lazily, so the
+//!    cost of a large one is address space, not resident memory:
 //!    ```bash
-//!    BRRTR_STACK_SIZE=0x8000 cargo run  # 32KB (default)
-//!    BRRTR_STACK_SIZE=0x2000 cargo run  # 8KB (less memory)
+//!    BRRTR_STACK_SIZE=128KiB cargo run
 //!    ```
 //!
 //! 2. **Disable validation** in trusted environments:

@@ -50,17 +50,12 @@ use brrtrouter::middleware::TracingMiddleware;
 use tracing_util::TestTracing;
 
 fn set_stack_size() -> TestTracing {
-    let size = std::env::var("BRRTR_STACK_SIZE")
+    // BRRTR_STACK_SIZE is bytes; may takes words (128 KiB unless set).
+    let bytes = std::env::var("BRRTR_STACK_SIZE")
         .ok()
-        .and_then(|v| {
-            if let Some(hex) = v.strip_prefix("0x") {
-                usize::from_str_radix(hex, 16).ok()
-            } else {
-                v.parse().ok()
-            }
-        })
-        .unwrap_or(0x4000);
-    may::config().set_stack_size(size);
+        .and_then(|v| brrtrouter::handler_stack::parse_size(&v))
+        .unwrap_or(128 * 1024);
+    may::config().set_stack_size(brrtrouter::handler_stack::words(bytes));
     TestTracing::init()
 }
 

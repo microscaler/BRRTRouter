@@ -162,7 +162,7 @@ debug-petstore:
 	cd examples/pet_store && \
 	RUST_BACKTRACE=full \
 	RUST_LOG=debug,may=warn,may_minihttp=warn \
-	BRRTR_STACK_SIZE=0x100000 \
+	BRRTR_STACK_SIZE=8MiB \
 	BRRTR_LOG_LEVEL=debug \
 	BRRTR_LOG_FORMAT=json \
 	../../target/release/pet_store \

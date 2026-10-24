@@ -689,13 +689,16 @@ impl Middleware for MetricsMiddleware {
         // record stack metrics for the current coroutine when available
         if may::coroutine::is_coroutine() {
             let co = may::coroutine::current();
-            let size = co.stack_size();
+            // may reports words; the gauge is bytes
+            let size = co.stack_size() * std::mem::size_of::<usize>();
             self.stack_size.store(size, Ordering::Relaxed);
             let used = 0; // Stack usage tracking not available in May coroutines
             self.used_stack.store(used, Ordering::Relaxed);
         } else {
-            self.stack_size
-                .store(may::config().get_stack_size(), Ordering::Relaxed);
+            self.stack_size.store(
+                may::config().get_stack_size() * std::mem::size_of::<usize>(),
+                Ordering::Relaxed,
+            );
             self.used_stack.store(0, Ordering::Relaxed);
         }
     }

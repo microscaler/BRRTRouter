@@ -98,7 +98,7 @@ spec:
             - name: OTEL_SERVICE_NAME
               value: "petstore"
             - name: BRRTR_STACK_SIZE
-              value: "0x20000"
+              value: "1MiB" # bytes; "0x20000" was read as words until 25 Oct 2026
             - name: BRRTR_HANDLER_WORKERS
               value: "1"
           livenessProbe:

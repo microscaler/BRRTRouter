@@ -141,9 +141,9 @@ spec:
               value: "http://otel-collector:4317"
             - name: OTEL_SERVICE_NAME
               value: "petstore"
-            # Stack size for coroutine spawning (128KB - sufficient for handlers)
+            # may's connection coroutines, bytes (was "0x20000", read as words = 1 MiB until 25 Oct 2026)
             - name: BRRTR_STACK_SIZE
-              value: "0x20000"
+              value: "1MiB"
             # Set worker pool size to 1 for performance testing (isolate worker pool overhead)
             - name: BRRTR_HANDLER_WORKERS
               value: "1"

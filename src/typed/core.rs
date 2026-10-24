@@ -428,6 +428,7 @@ pub unsafe fn spawn_typed<H>(handler: H) -> HandlerSender
 where
     H: Handler + Send + 'static,
 {
+    crate::runtime_config::ensure_coroutine_pool_capacity();
     let (tx, rx) = HandlerSender::channel();
 
     // Unnamed coroutines showed up as `None` in logs and could not be told apart in stack metrics: name them
@@ -618,6 +619,7 @@ pub unsafe fn spawn_typed_with_stack_size_and_name<H>(
 where
     H: Handler + Send + 'static,
 {
+    crate::runtime_config::ensure_coroutine_pool_capacity();
     let (tx, rx) = HandlerSender::channel();
 
     // Apply environment variable overrides and clamping

@@ -52,7 +52,7 @@ fn start(answer: HandlerResponse) -> Fixture {
 
 /// The pet store, with `stream_events` answering whatever `answer` builds per request.
 fn start_with(answer: impl Fn() -> HandlerResponse + Send + Clone + 'static) -> Fixture {
-    std::env::set_var("BRRTR_STACK_SIZE", "0x8000");
+    std::env::set_var("BRRTR_STACK_SIZE", "0x40000");
     let config = brrtrouter::runtime_config::RuntimeConfig::from_env();
     may::config().set_stack_size(config.stack_size);
     let tracing = TestTracing::init();
