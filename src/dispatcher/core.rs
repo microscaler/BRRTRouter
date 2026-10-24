@@ -320,8 +320,59 @@ impl HandlerResponse {
     }
 }
 
-/// Type alias for a channel sender that dispatches requests to a handler
-pub type HandlerSender = mpsc::Sender<HandlerRequest>;
+/// Sends requests to a handler coroutine.
+///
+/// BRRTRouter's own handler coroutines use a channel of `Box<HandlerRequest>`: `may`'s queue allocates 64-slot
+/// blocks up front and a `HandlerRequest` is ~3 KiB inline (its header/cookie/param `SmallVec`s), so a channel of
+/// bare requests cost ~200-400 KiB per handler before the first request (38 MB across trader-bff's handlers,
+/// 24 Oct 2026). Boxed, a slot is a pointer and a send moves 8 bytes instead of copying the request.
+///
+/// `send` keeps the `mpsc::Sender<HandlerRequest>` signature, and a plain `mpsc::Sender<HandlerRequest>` converts
+/// with `.into()` (as [`Dispatcher::add_route`] does), so code that wires its own channel keeps working.
+#[derive(Clone)]
+pub struct HandlerSender(SenderInner);
+
+#[derive(Clone)]
+enum SenderInner {
+    Boxed(mpsc::Sender<Box<HandlerRequest>>),
+    Plain(mpsc::Sender<HandlerRequest>),
+}
+
+impl HandlerSender {
+    /// A sender and the receiver its handler coroutine drains (boxed requests).
+    pub fn channel() -> (Self, mpsc::Receiver<Box<HandlerRequest>>) {
+        let (tx, rx) = mpsc::channel::<Box<HandlerRequest>>();
+        (HandlerSender(SenderInner::Boxed(tx)), rx)
+    }
+
+    /// Queue a request for the handler; gives it back if the handler coroutine has gone.
+    ///
+    /// # Errors
+    /// The request, when the receiving coroutine has exited.
+    pub fn send(
+        &self,
+        req: HandlerRequest,
+    ) -> Result<(), std::sync::mpsc::SendError<HandlerRequest>> {
+        match &self.0 {
+            SenderInner::Boxed(tx) => tx
+                .send(Box::new(req))
+                .map_err(|e| std::sync::mpsc::SendError(*e.0)),
+            SenderInner::Plain(tx) => tx.send(req),
+        }
+    }
+}
+
+impl From<mpsc::Sender<HandlerRequest>> for HandlerSender {
+    fn from(tx: mpsc::Sender<HandlerRequest>) -> Self {
+        HandlerSender(SenderInner::Plain(tx))
+    }
+}
+
+impl std::fmt::Debug for HandlerSender {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("HandlerSender")
+    }
+}
 
 /// Parse `usize` from an environment variable, accepting optional `0x` hex prefix.
 fn parse_stack_size_from_env(key: &str) -> Option<usize> {
@@ -350,12 +401,12 @@ pub unsafe fn spawn_untyped_with_stack_size_and_name<F>(
     handler_fn: F,
     stack_size_bytes: usize,
     handler_name: Option<&str>,
-) -> std::io::Result<mpsc::Sender<HandlerRequest>>
+) -> std::io::Result<HandlerSender>
 where
     F: Fn(HandlerRequest) -> HandlerResponse + Send + 'static + Clone,
 {
-    let (tx, rx) = mpsc::channel::<HandlerRequest>();
-    let effective_name = handler_name.unwrap_or("unknown").to_string();
+    let (tx, rx) = HandlerSender::channel();
+    let effective_name = handler_name.unwrap_or("untyped").to_string();
     let handler_name_for_logging = effective_name.clone();
 
     // Apply environment variable overrides
@@ -384,8 +435,14 @@ where
                 stack_size = stack_size,
                 "Untyped handler coroutine start"
             );
+            let mut stack_probe =
+                crate::stack_probe::StackProbe::for_current(&handler_name_for_logging);
 
             for req in rx.iter() {
+                let req = *req;
+                let _stack = stack_probe
+                    .as_mut()
+                    .map(crate::stack_probe::StackProbe::request);
                 let reply_tx = req.reply_tx.clone();
                 let h_name = req.handler_name.clone();
                 let request_id = req.request_id;
@@ -518,7 +575,8 @@ impl Dispatcher {
     /// **IMPORTANT**: If a handler with the same name already exists, it will be
     /// replaced. The old sender will be dropped, which closes its channel and
     /// causes the old handler coroutine to exit when it tries to receive.
-    pub fn add_route(&mut self, route: RouteMeta, sender: HandlerSender) {
+    pub fn add_route(&mut self, route: RouteMeta, sender: impl Into<HandlerSender>) {
+        let sender = sender.into();
         // JSF P0-2: Convert Arc<str> to String for HashMap key
         let handler_name = route.handler_name.to_string();
 
@@ -588,7 +646,7 @@ impl Dispatcher {
     where
         F: Fn(HandlerRequest) + Send + 'static + Clone,
     {
-        let (tx, rx) = mpsc::channel::<HandlerRequest>();
+        let (tx, rx) = HandlerSender::channel();
         let name = name.to_string();
         let handler_name_for_logging = name.clone();
 
@@ -614,6 +672,8 @@ impl Dispatcher {
         let spawn_result = unsafe {
             coroutine::Builder::new()
                 .stack_size(stack_size)
+                // Without a name these coroutines logged as `None` and could not be labelled.
+                .name(name.clone())
                 .spawn(move || {
                     // H1: Handler coroutine start
                     debug!(
@@ -621,8 +681,14 @@ impl Dispatcher {
                         stack_size = stack_size,
                         "Handler coroutine start"
                     );
+                    let mut stack_probe =
+                        crate::stack_probe::StackProbe::for_current(&handler_name_for_logging);
 
                     for req in rx.iter() {
+                        let req = *req;
+                        let _stack = stack_probe
+                            .as_mut()
+                            .map(crate::stack_probe::StackProbe::request);
                         // Extract what we need for error handling
                         let reply_tx = req.reply_tx.clone();
                         let handler_name = req.handler_name.clone();

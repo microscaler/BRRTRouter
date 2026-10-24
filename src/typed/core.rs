@@ -1,10 +1,9 @@
 // typed.rs
 #[allow(unused_imports)]
-use crate::dispatcher::{Dispatcher, HandlerRequest, HandlerResponse, HeaderVec};
+use crate::dispatcher::{Dispatcher, HandlerRequest, HandlerResponse, HandlerSender, HeaderVec};
 use crate::ids::RequestId;
 use anyhow::Result;
 use http::Method;
-use may::sync::mpsc;
 use serde::Serialize;
 use serde_json;
 use std::collections::HashMap;
@@ -438,6 +437,14 @@ pub trait TypedHandlerFor<T>: Sized {
     fn from_handler(req: HandlerRequest) -> anyhow::Result<TypedHandlerRequest<T>>;
 }
 
+/// The last path segment of `H`'s type name (`my_gen::controllers::get_pet::GetPetController` →
+/// `GetPetController`): the coroutine and metric name when no handler name is given.
+fn short_type_name<H>() -> String {
+    let full = std::any::type_name::<H>();
+    let base = full.split('<').next().unwrap_or(full);
+    base.rsplit("::").next().unwrap_or(base).to_string()
+}
+
 /// Spawn a typed handler coroutine and return a sender to communicate with it.
 ///
 /// # Safety
@@ -448,11 +455,11 @@ pub trait TypedHandlerFor<T>: Sized {
 /// - The handler properly handles all requests without panicking
 /// - The handler sends a response for every request to avoid resource leaks
 /// - The May coroutine runtime is properly initialized
-pub unsafe fn spawn_typed<H>(handler: H) -> mpsc::Sender<HandlerRequest>
+pub unsafe fn spawn_typed<H>(handler: H) -> HandlerSender
 where
     H: Handler + Send + 'static,
 {
-    let (tx, rx) = mpsc::channel::<HandlerRequest>();
+    let (tx, rx) = HandlerSender::channel();
 
     // Use a larger default stack size to prevent stack overflows
     // 32KB is more reasonable for complex handlers
@@ -467,12 +474,21 @@ where
         })
         .unwrap_or(0x8000); // 32KB default
 
+    // Unnamed coroutines showed up as `None` in logs and could not be told apart in stack metrics: name them
+    // after the handler type.
+    let name = short_type_name::<H>();
     let spawn_result = may::coroutine::Builder::new()
         .stack_size(stack_size)
+        .name(name.clone())
         .spawn(move || {
             let handler = handler;
+            let mut stack_probe = crate::stack_probe::StackProbe::for_current(&name);
             // Main event loop: process requests until channel closes
             for req in rx.iter() {
+                let req = *req;
+                let _stack = stack_probe
+                    .as_mut()
+                    .map(crate::stack_probe::StackProbe::request);
                 // Extract lightweight fields we need outside the panic-catching closure.
                 // These are cheap clones (sender clones or small strings) and are ok to clone.
                 let reply_tx_outer = req.reply_tx.clone();
@@ -619,10 +635,7 @@ where
 ///
 /// Handler panics are automatically caught and converted to 500 error responses.
 /// The coroutine will continue processing subsequent requests.
-pub unsafe fn spawn_typed_with_stack_size<H>(
-    handler: H,
-    stack_size_bytes: usize,
-) -> mpsc::Sender<HandlerRequest>
+pub unsafe fn spawn_typed_with_stack_size<H>(handler: H, stack_size_bytes: usize) -> HandlerSender
 where
     H: Handler + Send + 'static,
 {
@@ -642,25 +655,32 @@ pub unsafe fn spawn_typed_with_stack_size_and_name<H>(
     handler: H,
     stack_size_bytes: usize,
     handler_name: Option<&str>,
-) -> mpsc::Sender<HandlerRequest>
+) -> HandlerSender
 where
     H: Handler + Send + 'static,
 {
-    let (tx, rx) = mpsc::channel::<HandlerRequest>();
+    let (tx, rx) = HandlerSender::channel();
 
     // Apply environment variable overrides and clamping
     // Always use get_stack_size_with_overrides to ensure consistent clamping behavior
     // When no handler name is provided, use "unknown" as a placeholder (per-handler override won't match)
-    let effective_name = handler_name.unwrap_or("unknown");
+    let type_name = short_type_name::<H>();
+    let effective_name = handler_name.unwrap_or(&type_name);
     let stack_size = get_stack_size_with_overrides(effective_name, stack_size_bytes);
 
+    let probe_name = effective_name.to_string();
     let spawn_result = may::coroutine::Builder::new()
         .stack_size(stack_size)
         .name(effective_name.to_string())
         .spawn(move || {
             let handler = handler;
+            let mut stack_probe = crate::stack_probe::StackProbe::for_current(&probe_name);
             // Main event loop: process requests until channel closes
             for req in rx.iter() {
+                let req = *req;
+                let _stack = stack_probe
+                    .as_mut()
+                    .map(crate::stack_probe::StackProbe::request);
                 // Extract lightweight fields we need outside the panic-catching closure.
                 // These are cheap clones (sender clones or small strings) and are ok to clone.
                 let reply_tx_outer = req.reply_tx.clone();
@@ -875,7 +895,8 @@ impl Dispatcher {
             drop(old_pool);
         }
 
-        let tx = spawn_typed(handler);
+        // Named (logs, per-handler BRRTR_STACK_SIZE__<NAME>, stack metrics), same default size as spawn_typed.
+        let tx = spawn_typed_with_stack_size_and_name(handler, 0x8000, Some(&name));
         self.handlers.insert(name, tx);
     }
 

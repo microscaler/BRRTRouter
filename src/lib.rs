@@ -848,6 +848,7 @@ pub mod security;
 pub mod server;
 pub mod spec;
 pub mod sse;
+pub mod stack_probe;
 pub mod static_files;
 /// In-process HTTP test client (`TestApp` / `RequestBuilder`). Enable with `--features testing`.
 #[cfg(feature = "testing")]

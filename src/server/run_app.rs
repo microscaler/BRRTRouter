@@ -96,6 +96,7 @@ impl RunAppBuilder {
         let runtime = RuntimeConfig::from_env();
         may::config().set_stack_size(runtime.stack_size);
         may::config().set_workers(runtime.may_workers);
+        may::config().set_pool_capacity(runtime.coroutine_pool_capacity);
 
         let spec_path = resolve_path(&args.manifest_dir, &args.spec);
         if args.hot_reload {

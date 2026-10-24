@@ -30,6 +30,7 @@
 ## Topics
 
 - [`topics/http-server-metrics.md`](./topics/http-server-metrics.md) — `/metrics`: OpenTelemetry HTTP server histogram, process collector, recording model.
+- [`topics/handler-stack-memory.md`](./topics/handler-stack-memory.md) — per-handler stack probe (`brrtrouter_handler_stack_used_bytes`), coroutine names, stack units, coroutine pool, boxed handler channels.
 - [Schema validation pipeline](./topics/schema-validation-pipeline.md)
 - [Auto-research perf loop](./topics/auto-research-perf-loop.md) — cron / background perf iterations; charter in `auto-research/docs/`
 - [Runtime stack map](./topics/runtime-stack-map.md) — spec → router → dispatcher → `server/service`
