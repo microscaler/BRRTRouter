@@ -105,6 +105,10 @@ rustls-native-certs = "0.8.4"
 [target.'cfg(unix)'.dependencies]
 signal-hook = { version = "0.4", features = ["iterator"] }
 
+# mincore/madvise for the per-handler stack probe (src/stack_probe.rs).
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 pet_store = { path = "./examples/pet_store" }
 # Story 10.10 — property tests under default `cargo test` (fixed seed in CI).

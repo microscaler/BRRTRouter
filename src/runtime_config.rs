@@ -126,6 +126,10 @@ pub struct RuntimeConfig {
     pub schema_cache_enabled: bool,
     /// May scheduler worker threads (`may::config().set_workers`). Minimum 2 when applied.
     pub may_workers: usize,
+    /// Finished coroutines `may` keeps for reuse (`may::config().set_pool_capacity`), from
+    /// `BRRTR_COROUTINE_POOL_CAPACITY` (default 100). A pooled coroutine keeps the stack pages it touched: at may's
+    /// default of 1000, an idle service held ~1000 stacks, ~37 MiB (identity-session, 24 Oct 2026).
+    pub coroutine_pool_capacity: usize,
 }
 
 impl RuntimeConfig {
@@ -194,10 +198,17 @@ impl RuntimeConfig {
             Err(_) => default_may_workers.max(2),
         };
 
+        let coroutine_pool_capacity = env::var("BRRTR_COROUTINE_POOL_CAPACITY")
+            .ok()
+            .and_then(|s| s.trim().parse::<usize>().ok())
+            .filter(|&n| n >= 1)
+            .unwrap_or(100);
+
         RuntimeConfig {
             stack_size,
             schema_cache_enabled,
             may_workers,
+            coroutine_pool_capacity,
         }
     }
 }

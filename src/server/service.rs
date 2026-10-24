@@ -796,9 +796,18 @@ pub fn metrics_endpoint(
     body.push_str("# TYPE brrtrouter_coroutine_stack_bytes gauge\n");
     let _ = writeln!(body, "brrtrouter_coroutine_stack_bytes {stack_size}");
 
-    body.push_str("# HELP brrtrouter_coroutine_stack_used_bytes Coroutine stack bytes used\n");
+    // Deepest stack use any handler has reached (the per-handler breakdown follows); was a stub reading 0.
+    let _ = used_stack;
+    body.push_str(
+        "# HELP brrtrouter_coroutine_stack_used_bytes Deepest handler stack use observed (bytes, page granularity)\n",
+    );
     body.push_str("# TYPE brrtrouter_coroutine_stack_used_bytes gauge\n");
-    let _ = writeln!(body, "brrtrouter_coroutine_stack_used_bytes {used_stack}",);
+    let _ = writeln!(
+        body,
+        "brrtrouter_coroutine_stack_used_bytes {}",
+        crate::stack_probe::max_peak()
+    );
+    crate::stack_probe::render_prometheus(&mut body);
 
     // Worker pool metrics (NEW - for backpressure monitoring)
     if let Some(disp) = dispatcher {

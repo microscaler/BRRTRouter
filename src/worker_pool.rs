@@ -280,10 +280,16 @@ impl WorkerPool {
                         "Worker coroutine started"
                     );
 
+                    let mut stack_probe =
+                        crate::stack_probe::StackProbe::for_current(&handler_name_clone);
+
                     // Process requests until channel closes
                     // Note: All workers share the same receiver, so they will
                     // automatically load balance across incoming requests
                     while let Ok(req) = rx_clone.recv() {
+                        let _stack = stack_probe
+                            .as_mut()
+                            .map(crate::stack_probe::StackProbe::request);
                         let request_id = req.request_id;
                         let handler_name = req.handler_name.clone();
 

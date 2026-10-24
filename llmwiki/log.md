@@ -403,3 +403,13 @@ Hauliage Phase 3 unblockers for Vite dev proxy and frontend-aligned BFF routes.
   handed to the router through a coroutine-local slot, counted once per refused request and logged in the 401 line.
 - `brrtrouter_jwks_refresh_total{outcome}`, `brrtrouter_jwks_keys`, `brrtrouter_jwks_last_success_timestamp_seconds`.
 - Details: [`topics/http-server-metrics.md`](./topics/http-server-metrics.md#why-credentials-are-refused-2026-10-16).
+
+## [2026-10-24] feat | per-handler stack metrics; dispatch memory
+
+- `src/stack_probe.rs`: stack depth per handler from page residency (`mincore`), sampled every
+  `BRRTR_STACK_PROBE_EVERY` requests: `brrtrouter_handler_stack_used_bytes{handler}` histogram, peak and size gauges.
+- Handler coroutines are all named (some logged as `None`).
+- `BRRTR_COROUTINE_POOL_CAPACITY` (default 100, was may's 1000: ~37 MiB of pooled stacks idle).
+- Handler channels carry `Box<HandlerRequest>` (~300 KiB per idle handler before).
+- Open: stack sizes are passed in bytes but `generator` reads words (stacks are 8x configured); fix after measuring.
+- Details: [`topics/handler-stack-memory.md`](./topics/handler-stack-memory.md).
