@@ -174,7 +174,7 @@ Legend: ✅ ready · 🚧 in progress / partial · ⏸ parked
 | 404 / 500 / panic recovery | ✅ | Typed + untyped handlers use `catch_unwind` → 500 |
 | Hot reload | ✅ | `hot_reload::watch_spec` rebuilds router + dispatcher |
 | Dynamic route registration | ✅ | `Dispatcher::add_route` / `register_from_spec` |
-| Stack sizing | ✅ | `BRRTR_STACK_SIZE`, `x-brrtrouter-stack-size`, heuristics — [stack_size.md](docs/stack_size.md) |
+| Stack sizing | ✅ | `x-brrtrouter-stack-size` (spec), `BRRTR_STACK_SIZE__<HANDLER>`, per-handler stack metrics — [stack_size.md](docs/stack_size.md) |
 | WebSocket | ⏸ | No upgrade API in `may_minihttp`; use SSE or sidecar |
 
 ### Validation & safety
@@ -330,7 +330,7 @@ See [docs/JSF_COMPLIANCE.md](docs/JSF_COMPLIANCE.md).
 
 | Variable | Purpose |
 | -------- | ------- |
-| `BRRTR_STACK_SIZE` | Coroutine stack (decimal or `0x8000`) — [stack_size.md](docs/stack_size.md) |
+| `BRRTR_STACK_SIZE` | `may`'s connection coroutines (decimal or `0x8000`, in `may` words); handler stacks come from the spec — [stack_size.md](docs/stack_size.md) |
 | `BRRTROUTER_MAX_REQUEST_BODY_OCTETS` | Global body ceiling (default 16 MiB) — [request_body_limits.md](docs/request_body_limits.md) |
 | `BRRTROUTER_MAX_REQUEST_TARGET_OCTETS` | Max request-target length (default 8192) |
 | `BRRTR_JWKS_FETCH_TIMEOUT_MS` | JWKS HTTP timeout (fail-closed) |

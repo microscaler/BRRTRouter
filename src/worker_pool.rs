@@ -247,17 +247,20 @@ impl WorkerPool {
         // MPMC receivers ARE designed to be shared across multiple consumers
         let rx = Arc::new(rx);
 
+        // Spec (`x-brrtrouter-stack-size`) and env overrides, most specific first: see `crate::handler_stack`. The
+        // pool's config, its log line and `config()` report the size the workers actually get.
+        let mut config = config;
+        config.stack_size = crate::handler_stack::resolve(&handler_name, config.stack_size);
+        let stack_size = config.stack_size;
+
         info!(
             handler_name = %handler_name,
             num_workers = config.num_workers,
             queue_bound = config.queue_bound,
             backpressure_mode = ?config.backpressure_mode,
-            stack_size = config.stack_size,
+            stack_size_bytes = stack_size,
             "Creating worker pool"
         );
-
-        // Spec (`x-brrtrouter-stack-size`) and env overrides, most specific first: see `crate::handler_stack`.
-        let stack_size = crate::handler_stack::resolve(&handler_name, config.stack_size);
 
         // Spawn worker coroutines
         for worker_id in 0..config.num_workers {
@@ -461,6 +464,27 @@ impl WorkerPool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The pool reports the stack its workers get (the resolved size), not the configured fallback.
+    #[test]
+    fn pool_config_reports_the_resolved_stack_size() {
+        let _env = crate::handler_stack::STACK_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // SAFETY (test): env access serialized by STACK_ENV_LOCK.
+        unsafe { std::env::set_var("BRRTR_STACK_SIZE__POOL_STACK_TEST", "48KiB") };
+        let config = WorkerPoolConfig {
+            num_workers: 1,
+            queue_bound: 8,
+            backpressure_mode: BackpressureMode::Block,
+            backpressure_timeout_ms: 50,
+            stack_size: 0x8000,
+        };
+        // SAFETY (test): may's runtime is initialised lazily by the spawn.
+        let pool = unsafe { WorkerPool::new("pool_stack_test".to_string(), config, |_req| {}) };
+        unsafe { std::env::remove_var("BRRTR_STACK_SIZE__POOL_STACK_TEST") };
+        assert_eq!(pool.config().stack_size, 48 * 1024);
+    }
 
     #[test]
     fn test_backpressure_mode_from_str() {

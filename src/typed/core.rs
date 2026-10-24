@@ -345,10 +345,12 @@ fn typed_handler_output_to_response(
 
 /// Get the stack size for a handler with environment variable overrides applied
 ///
-/// Checks for environment variables in this order:
+/// Resolved by `crate::handler_stack::resolve`, most specific first:
 /// 1. `BRRTR_STACK_SIZE__<HANDLER_NAME>` (per-handler override, uppercased)
-/// 2. `BRRTR_STACK_SIZE` (global override)
-/// 3. `stack_size_bytes` (computed default)
+/// 2. `x-brrtrouter-stack-size` on the operation, then at the spec root
+/// 3. `crate::handler_stack::FALLBACK`, or `stack_size_bytes` (the generator's estimate) if larger
+///
+/// `BRRTR_STACK_SIZE` is not consulted: it sizes `may`'s connection coroutines.
 ///
 /// The final value is clamped to the range defined by:
 /// - `BRRTR_STACK_MIN_BYTES` (default 16 KiB)
@@ -551,7 +553,8 @@ where
             // The handler will be unavailable, so panicking during initialization is appropriate.
             panic!(
                 "Failed to spawn typed handler coroutine: {}. Stack size: {} bytes. \
-                Consider increasing BRRTR_STACK_SIZE environment variable.",
+                For handler stacks set x-brrtrouter-stack-size in the spec or BRRTR_STACK_SIZE__<HANDLER>; \
+                BRRTR_STACK_MAX_BYTES caps either.",
                 e, stack_size
             );
         }
@@ -750,7 +753,8 @@ where
             // The handler will be unavailable, so panicking during initialization is appropriate.
             panic!(
                 "Failed to spawn typed handler coroutine for '{}': {}. Stack size: {} bytes. \
-                Consider increasing BRRTR_STACK_SIZE environment variable.",
+                For handler stacks set x-brrtrouter-stack-size in the spec or BRRTR_STACK_SIZE__<HANDLER>; \
+                BRRTR_STACK_MAX_BYTES caps either.",
                 effective_name, e, stack_size
             );
         }

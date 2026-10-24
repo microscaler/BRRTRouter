@@ -14,7 +14,9 @@
 //!
 //! ### `BRRTR_STACK_SIZE`
 //!
-//! Sets the stack size for coroutine handlers. Accepts values in:
+//! Sets the stack of `may`'s own coroutines: the HTTP connection coroutines that parse, route, validate and dispatch
+//! (`may::config().set_stack_size`, in `may` words). Not the handlers' stacks: those come from the spec
+//! (`x-brrtrouter-stack-size`) and `BRRTR_STACK_SIZE__<HANDLER>`, see `crate::handler_stack`. Accepts values in:
 //! - Decimal: `65536` (64 KB)
 //! - Hexadecimal: `0x10000` (64 KB)
 //!
