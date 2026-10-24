@@ -374,17 +374,6 @@ impl std::fmt::Debug for HandlerSender {
     }
 }
 
-/// Parse `usize` from an environment variable, accepting optional `0x` hex prefix.
-fn parse_stack_size_from_env(key: &str) -> Option<usize> {
-    std::env::var(key).ok().and_then(|s| {
-        if let Some(hex) = s.strip_prefix("0x") {
-            usize::from_str_radix(hex, 16).ok()
-        } else {
-            s.parse().ok()
-        }
-    })
-}
-
 /// Spawn an untyped handler coroutine with a specific stack size and handler name.
 ///
 /// This directly returns a sender channel for dispatcher registration, similarly
@@ -409,22 +398,8 @@ where
     let effective_name = handler_name.unwrap_or("untyped").to_string();
     let handler_name_for_logging = effective_name.clone();
 
-    // Apply environment variable overrides
-    let env_var_name = format!("BRRTR_STACK_SIZE__{}", effective_name.to_uppercase());
-    let mut stack_size = parse_stack_size_from_env(&env_var_name)
-        .or_else(|| parse_stack_size_from_env("BRRTR_STACK_SIZE"))
-        .unwrap_or(stack_size_bytes);
-
-    // Apply clamping
-    let min = std::env::var("BRRTR_STACK_MIN_BYTES")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(16 * 1024);
-    let max = std::env::var("BRRTR_STACK_MAX_BYTES")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(256 * 1024);
-    stack_size = stack_size.clamp(min, max);
+    // Spec (`x-brrtrouter-stack-size`) and env overrides, most specific first: see `crate::handler_stack`.
+    let stack_size = crate::handler_stack::resolve(&effective_name, stack_size_bytes);
 
     let spawn_result = may::coroutine::Builder::new()
         .stack_size(stack_size)
@@ -650,18 +625,8 @@ impl Dispatcher {
         let name = name.to_string();
         let handler_name_for_logging = name.clone();
 
-        // Use a larger default stack size to prevent stack overflows
-        // 64KB is more reasonable for complex handlers
-        let stack_size = std::env::var("BRRTR_STACK_SIZE")
-            .ok()
-            .and_then(|s| {
-                if let Some(hex) = s.strip_prefix("0x") {
-                    usize::from_str_radix(hex, 16).ok()
-                } else {
-                    s.parse().ok()
-                }
-            })
-            .unwrap_or(0x8000); // 32KB default
+        // Spec (`x-brrtrouter-stack-size`) and env overrides, most specific first: see `crate::handler_stack`.
+        let stack_size = crate::handler_stack::resolve(&name, 0x8000);
 
         // SAFETY: may::coroutine::Builder::spawn() is marked unsafe by the may runtime.
         // The unsafety comes from the coroutine runtime's requirements, not from this function's logic.

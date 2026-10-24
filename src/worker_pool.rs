@@ -263,6 +263,9 @@ impl WorkerPool {
             "Creating worker pool"
         );
 
+        // Spec (`x-brrtrouter-stack-size`) and env overrides, most specific first: see `crate::handler_stack`.
+        let stack_size = crate::handler_stack::resolve(&handler_name, config.stack_size);
+
         // Spawn worker coroutines
         for worker_id in 0..config.num_workers {
             let rx_clone = rx.clone();
@@ -271,7 +274,7 @@ impl WorkerPool {
             let metrics_clone = metrics.clone();
 
             let spawn_result = may::coroutine::Builder::new()
-                .stack_size(config.stack_size)
+                .stack_size(stack_size)
                 .name(format!("{}-worker-{}", handler_name_clone, worker_id))
                 .spawn(move || {
                     debug!(
