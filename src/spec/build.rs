@@ -713,25 +713,20 @@ pub fn extract_sse_flag(operation: &oas3::spec::Operation) -> bool {
 ///
 /// The stack size in bytes if specified, otherwise `None`
 pub fn extract_stack_size_override(operation: &oas3::spec::Operation) -> Option<usize> {
-    operation
-        .extensions
-        .get("x-brrtrouter-stack-size")
-        .or_else(|| operation.extensions.get("x-stack-size"))
-        .and_then(|v| {
-            v.as_u64().map(|n| n as usize).or_else(|| {
-                v.as_str().and_then(|s| {
-                    if s == "small" {
-                        Some(16384)
-                    } else if s == "medium" {
-                        Some(32768)
-                    } else if s == "large" {
-                        Some(65536)
-                    } else {
-                        s.parse().ok()
-                    }
-                })
-            })
-        })
+    // oas3 strips the `x-` prefix from extension keys; the prefixed lookup alone never matched.
+    let ext = &operation.extensions;
+    ext.get("brrtrouter-stack-size")
+        .or_else(|| ext.get("stack-size"))
+        .or_else(|| ext.get("x-brrtrouter-stack-size"))
+        .and_then(crate::handler_stack::size_from_value)
+}
+
+/// The spec-wide default handler stack size: `x-brrtrouter-stack-size` at the root of the document.
+pub fn extract_root_stack_size(spec: &OpenApiV3Spec) -> Option<usize> {
+    spec.extensions
+        .get("brrtrouter-stack-size")
+        .or_else(|| spec.extensions.get("x-brrtrouter-stack-size"))
+        .and_then(crate::handler_stack::size_from_value)
 }
 
 /// Extract `x-brrtrouter-deadline-ms` (Epic 13.6) — milliseconds; `0` ignored at resolve time.
@@ -885,6 +880,8 @@ pub fn build_routes_with_security_presence(
             .join("; ");
         anyhow::bail!("OpenAPI spec validation failed: {summary}");
     }
+    // The running service sizes handler stacks from the spec it loaded (`crate::handler_stack`).
+    crate::handler_stack::record_spec(extract_root_stack_size(spec), &routes);
     Ok(routes)
 }
 

@@ -17,6 +17,21 @@ numbers: Cloud Profiler heap profiles and `/proc/<pid>/smaps` of the PriceWhispe
 - Only the handler's own coroutine: work handed to other coroutines/threads (lifeguard pool workers) is not counted.
 - Use: rank handlers by p99/peak, fix the deep paths, then size each with `BRRTR_STACK_SIZE__<HANDLER>`.
 
+## Sizing handlers from the spec (`src/handler_stack.rs`)
+
+Resolved at runtime from the spec the service loaded (no code generation needed), most specific first, env over spec
+at each level:
+
+1. `BRRTR_STACK_SIZE__<HANDLER>` (env)
+2. `x-brrtrouter-stack-size` on the operation (spec)
+3. `BRRTR_STACK_SIZE` (env)
+4. `x-brrtrouter-stack-size` at the spec root (spec-wide default)
+5. the generator's computed size
+
+Clamped to `BRRTR_STACK_MIN_BYTES`..`BRRTR_STACK_MAX_BYTES` (16..256 KiB). Values: bytes, `0x` hex, `48KiB`/`48K`,
+`1MiB`, `small`/`medium`/`large`. The extension existed before but never matched: oas3 strips the `x-` prefix from
+extension keys (same fix for per-route `x-cors`). Applies to typed, untyped, `register_handler` and worker pools.
+
 ## Coroutine names
 
 Every handler coroutine is named after its handler (`register_handler` and `spawn_typed` used to spawn unnamed

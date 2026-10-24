@@ -243,7 +243,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     // These tests are affected by global env vars. Use a mutex to serialize access.
-    static ENV_MUTEX: Mutex<()> = Mutex::new(());
+    use crate::handler_stack::STACK_ENV_LOCK as ENV_MUTEX;
 
     /// Helper to clean stack size env vars to ensure test isolation
     fn clean_stack_env_vars() {

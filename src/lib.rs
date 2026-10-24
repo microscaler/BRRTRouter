@@ -830,6 +830,7 @@ pub mod dispatcher;
 mod dummy_value;
 mod echo;
 pub mod generator;
+pub mod handler_stack;
 pub mod hot_reload;
 pub mod http;
 pub mod ids;

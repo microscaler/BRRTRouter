@@ -363,41 +363,8 @@ fn typed_handler_output_to_response(
 ///
 /// Final stack size in bytes with all overrides and clamping applied
 fn get_stack_size_with_overrides(handler_name: &str, stack_size_bytes: usize) -> usize {
-    // Try per-handler override first
-    let env_var_name = format!("BRRTR_STACK_SIZE__{}", handler_name.to_uppercase());
-    let stack_size = std::env::var(&env_var_name)
-        .ok()
-        .and_then(|s| {
-            if let Some(hex) = s.strip_prefix("0x") {
-                usize::from_str_radix(hex, 16).ok()
-            } else {
-                s.parse().ok()
-            }
-        })
-        .or_else(|| {
-            // Try global override
-            std::env::var("BRRTR_STACK_SIZE").ok().and_then(|s| {
-                if let Some(hex) = s.strip_prefix("0x") {
-                    usize::from_str_radix(hex, 16).ok()
-                } else {
-                    s.parse().ok()
-                }
-            })
-        })
-        .unwrap_or(stack_size_bytes);
-
-    // Apply clamping
-    let min = std::env::var("BRRTR_STACK_MIN_BYTES")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(16 * 1024); // 16 KiB default
-
-    let max = std::env::var("BRRTR_STACK_MAX_BYTES")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(256 * 1024); // 256 KiB default
-
-    stack_size.clamp(min, max)
+    // Spec (`x-brrtrouter-stack-size`) and env overrides, most specific first: see `crate::handler_stack`.
+    crate::handler_stack::resolve(handler_name, stack_size_bytes)
 }
 
 /// Trait implemented by typed coroutine handlers.
@@ -1040,7 +1007,7 @@ mod tests {
 
     // These tests manipulate process-global environment variables, so they must be serialized.
     // Use a mutex to ensure only one env-var-manipulating test runs at a time.
-    static ENV_MUTEX: Mutex<()> = Mutex::new(());
+    use crate::handler_stack::STACK_ENV_LOCK as ENV_MUTEX;
 
     /// Helper to clean all stack size env vars
     fn clean_stack_env_vars(handler_name: &str) {

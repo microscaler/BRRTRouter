@@ -413,3 +413,10 @@ Hauliage Phase 3 unblockers for Vite dev proxy and frontend-aligned BFF routes.
 - Handler channels carry `Box<HandlerRequest>` (~300 KiB per idle handler before).
 - Open: stack sizes are passed in bytes but `generator` reads words (stacks are 8x configured); fix after measuring.
 - Details: [`topics/handler-stack-memory.md`](./topics/handler-stack-memory.md).
+
+## [2026-10-24] feat | handler stack sizes from the OpenAPI spec
+
+- `src/handler_stack.rs`: per-operation and root `x-brrtrouter-stack-size`, read at runtime; env overrides at each
+  level (`BRRTR_STACK_SIZE__<HANDLER>` > operation > `BRRTR_STACK_SIZE` > root > generated).
+- Fixed: oas3 strips `x-` from extension keys, so `x-brrtrouter-stack-size` and per-route `x-cors` never matched.
+- Details: [`topics/handler-stack-memory.md`](./topics/handler-stack-memory.md#sizing-handlers-from-the-spec-srchandler_stackrs).

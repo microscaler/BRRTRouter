@@ -164,7 +164,12 @@ pub fn merge_route_policies_with_global_origins(
 /// * `RouteCorsPolicy::Disabled` - If extension is `false` (disable CORS for this route)
 /// * `RouteCorsPolicy::Custom(config)` - If extension is an object (use route-specific config)
 pub fn extract_route_cors_config(operation: &Operation) -> RouteCorsPolicy {
-    let cors_ext = match operation.extensions.get("x-cors") {
+    // oas3 strips the `x-` prefix from extension keys: a spec's `x-cors` arrives as `cors`.
+    let cors_ext = match operation
+        .extensions
+        .get("cors")
+        .or_else(|| operation.extensions.get("x-cors"))
+    {
         Some(ext) => ext,
         None => return RouteCorsPolicy::Inherit, // No extension = inherit global config
     };
