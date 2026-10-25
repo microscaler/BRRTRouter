@@ -59,12 +59,12 @@ fn start_server(
     unsafe {
         dispatcher.register_handler("search", move |req: HandlerRequest| {
             flag.store(true, Ordering::SeqCst);
-            let _ = req.reply_tx.send(HandlerResponse {
+            let _ = req.reply_tx.send(Box::new(HandlerResponse {
                 status: 200,
                 headers: Default::default(),
                 body: json!({"ok": true}),
                 sse: None,
-            });
+            }));
         });
     }
 

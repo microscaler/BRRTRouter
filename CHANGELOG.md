@@ -12,6 +12,14 @@ All notable changes to this project will be documented in this file.
   host for `BRRTR_PROXY_DNS_TTL_SECS` (default 30; `0` resolves every request) and Service FQDNs are looked up with a
   trailing dot. A connect failure on a cached address re-resolves and retries once.
 
+### Changed (breaking: reply channel type)
+
+- **`HandlerRequest::reply_tx` is `may::sync::mpsc::Sender<Box<HandlerResponse>>`.** The dispatcher opens a
+  reply channel per request and `may`'s queue allocates a 64-slot block up front: with bare `HandlerResponse`
+  slots that was 46 KB per request (~40 % of all bytes the request path allocated), boxed it is 1 KB. Send with
+  `req.reply(response)` (new) or `reply_tx.send(Box::new(response))`; name the channel
+  `mpsc::channel::<Box<HandlerResponse>>()`. `reply_tx: may::sync::mpsc::channel().0` literals compile unchanged.
+
 ### Changed (performance: fewer copies on the request path)
 
 Measured with the new `benches/request_path.rs` (allocations, bytes and µs per request through the whole HTTP

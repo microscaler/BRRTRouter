@@ -203,12 +203,12 @@ paths:
     // SAFETY: Test context - handlers are simple closures for testing
     unsafe {
         dispatcher.register_handler("secret", |req: HandlerRequest| {
-            let _ = req.reply_tx.send(HandlerResponse {
+            let _ = req.reply_tx.send(Box::new(HandlerResponse {
                 status: 200,
                 headers: HeaderVec::new(),
                 body: json!({"ok": true}),
                 sse: None,
-            });
+            }));
         });
     }
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
@@ -275,20 +275,20 @@ paths:
     // SAFETY: Test context - handlers are simple closures for testing
     unsafe {
         dispatcher.register_handler("one", |req: HandlerRequest| {
-            let _ = req.reply_tx.send(HandlerResponse {
+            let _ = req.reply_tx.send(Box::new(HandlerResponse {
                 status: 200,
                 headers: HeaderVec::new(),
                 body: json!({"one": true}),
                 sse: None,
-            });
+            }));
         });
         dispatcher.register_handler("two", |req: HandlerRequest| {
-            let _ = req.reply_tx.send(HandlerResponse {
+            let _ = req.reply_tx.send(Box::new(HandlerResponse {
                 status: 200,
                 headers: HeaderVec::new(),
                 body: json!({"two": true}),
                 sse: None,
-            });
+            }));
         });
     }
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
@@ -352,20 +352,20 @@ paths:
     // SAFETY: Test context - handlers are simple closures for testing
     unsafe {
         dispatcher.register_handler("header", |req: HandlerRequest| {
-            let _ = req.reply_tx.send(HandlerResponse {
+            let _ = req.reply_tx.send(Box::new(HandlerResponse {
                 status: 200,
                 headers: HeaderVec::new(),
                 body: json!({"header": true}),
                 sse: None,
-            });
+            }));
         });
         dispatcher.register_handler("cookie", |req: HandlerRequest| {
-            let _ = req.reply_tx.send(HandlerResponse {
+            let _ = req.reply_tx.send(Box::new(HandlerResponse {
                 status: 200,
                 headers: HeaderVec::new(),
                 body: json!({"cookie": true}),
                 sse: None,
-            });
+            }));
         });
     }
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
@@ -553,12 +553,12 @@ paths:
     // SAFETY: Test context - handlers are simple closures for testing
     unsafe {
         dispatcher.register_handler("secret", |req: HandlerRequest| {
-            let _ = req.reply_tx.send(HandlerResponse {
+            let _ = req.reply_tx.send(Box::new(HandlerResponse {
                 status: 200,
                 headers: HeaderVec::new(),
                 body: json!({"ok": true}),
                 sse: None,
-            });
+            }));
         });
     }
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
@@ -701,12 +701,12 @@ paths:
     // SAFETY: Test context - handlers are simple closures for testing
     unsafe {
         dispatcher.register_handler("header", |req: HandlerRequest| {
-            let _ = req.reply_tx.send(HandlerResponse {
+            let _ = req.reply_tx.send(Box::new(HandlerResponse {
                 status: 200,
                 headers: HeaderVec::new(),
                 body: json!({"header": true}),
                 sse: None,
-            });
+            }));
         });
     }
     dispatcher.add_middleware(Arc::new(TracingMiddleware));
@@ -863,12 +863,12 @@ paths:
     // SAFETY: Test context - handlers are simple closures for testing
     unsafe {
         dispatcher.register_handler("secret", |req: HandlerRequest| {
-            let _ = req.reply_tx.send(HandlerResponse {
+            let _ = req.reply_tx.send(Box::new(HandlerResponse {
                 status: 200,
                 headers: HeaderVec::new(),
                 body: json!({"ok": true}),
                 sse: None,
-            });
+            }));
         });
     }
     dispatcher.add_middleware(Arc::new(TracingMiddleware));

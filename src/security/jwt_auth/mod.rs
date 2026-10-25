@@ -606,7 +606,7 @@ mod tests {
     // ─── Helpers ───────────────────────────────────────────────────
 
     fn make_request(method: Method, path: &str) -> HandlerRequest {
-        let (tx, _rx) = mpsc::channel::<HandlerResponse>();
+        let (tx, _rx) = mpsc::channel::<Box<HandlerResponse>>();
         HandlerRequest {
             request_id: RequestId::new(),
             method,

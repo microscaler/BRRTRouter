@@ -75,7 +75,7 @@ impl MultiResponseTestServer {
         unsafe {
             dispatcher.register_handler("h", |_req: HandlerRequest| {
                 let resp = HandlerResponse::json(201, json!("ok"));
-                let _ = _req.reply_tx.send(resp);
+                let _ = _req.reply_tx.send(Box::new(resp));
             });
         }
 

@@ -62,7 +62,7 @@ fn start_with(answer: impl Fn() -> HandlerResponse + Send + Clone + 'static) -> 
     unsafe {
         registry::register_from_spec(&mut dispatcher, &routes);
         dispatcher.register_handler("stream_events", move |req: HandlerRequest| {
-            let _ = req.reply_tx.send(answer());
+            let _ = req.reply_tx.send(Box::new(answer()));
         });
     }
     let mut service = AppService::new(

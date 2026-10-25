@@ -273,7 +273,7 @@ mod tests {
     use std::sync::Arc;
 
     fn req_ae(ae: Option<&str>) -> HandlerRequest {
-        let (tx, _rx) = mpsc::channel::<HandlerResponse>();
+        let (tx, _rx) = mpsc::channel::<Box<HandlerResponse>>();
         let mut headers = HeaderVec::new();
         if let Some(v) = ae {
             headers.push((Arc::from("accept-encoding"), v.to_string()));

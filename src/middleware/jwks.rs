@@ -144,7 +144,7 @@ mod tests {
 
     /// Helper: create a minimal `HandlerRequest` with a given path.
     fn make_request(path: &str) -> HandlerRequest {
-        let (tx, _rx) = mpsc::channel::<HandlerResponse>();
+        let (tx, _rx) = mpsc::channel::<Box<HandlerResponse>>();
         HandlerRequest {
             request_id: RequestId::new(),
             method: Method::GET,

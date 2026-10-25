@@ -346,7 +346,7 @@ mod tests {
     use may::sync::mpsc;
 
     fn req_with(handler: &str, headers: HeaderVec, claims: Option<Value>) -> HandlerRequest {
-        let (tx, _rx) = mpsc::channel::<HandlerResponse>();
+        let (tx, _rx) = mpsc::channel::<Box<HandlerResponse>>();
         HandlerRequest {
             request_id: crate::ids::RequestId::new(),
             method: http::Method::GET,
@@ -474,7 +474,7 @@ mod tests {
         let mut cfg = RateLimitConfig::enabled(1, Duration::from_secs(60));
         cfg.skip_options = true;
         let mw = RateLimitMiddleware::new(cfg);
-        let (tx, _rx) = mpsc::channel::<HandlerResponse>();
+        let (tx, _rx) = mpsc::channel::<Box<HandlerResponse>>();
         let options = HandlerRequest {
             request_id: crate::ids::RequestId::new(),
             method: http::Method::OPTIONS,

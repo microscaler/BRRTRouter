@@ -170,7 +170,7 @@ fn test_cors_with_jwks_bearer_provider_preflight() {
     let cors = CorsMiddleware::permissive();
 
     // Test: Preflight OPTIONS request should be handled by CORS
-    let (tx, _rx) = mpsc::channel::<HandlerResponse>();
+    let (tx, _rx) = mpsc::channel::<Box<HandlerResponse>>();
     let headers: HeaderVec = smallvec![
         (Arc::from("origin"), "https://example.com".to_string()),
         (
@@ -238,7 +238,7 @@ fn test_cors_with_jwks_bearer_provider_authenticated_request() {
     );
 
     // Test: Authenticated request should have CORS headers added
-    let (tx, _rx) = mpsc::channel::<HandlerResponse>();
+    let (tx, _rx) = mpsc::channel::<Box<HandlerResponse>>();
     let headers: HeaderVec = smallvec![
         (Arc::from("origin"), "https://example.com".to_string()),
         (Arc::from("authorization"), format!("Bearer {}", token)),
@@ -325,7 +325,7 @@ fn test_cors_invalid_origin_before_jwks_validation() {
     );
 
     // Test: Invalid origin should be rejected by CORS before JWKS validation
-    let (tx, _rx) = mpsc::channel::<HandlerResponse>();
+    let (tx, _rx) = mpsc::channel::<Box<HandlerResponse>>();
     let headers: HeaderVec = smallvec![
         (Arc::from("origin"), "https://evil.com".to_string()),
         (Arc::from("authorization"), format!("Bearer {}", token)),
@@ -382,7 +382,7 @@ fn test_cors_with_spiffe_provider_preflight() {
     let cors = CorsMiddleware::permissive();
 
     // Test: Preflight OPTIONS request should be handled by CORS
-    let (tx, _rx) = mpsc::channel::<HandlerResponse>();
+    let (tx, _rx) = mpsc::channel::<Box<HandlerResponse>>();
     let headers: HeaderVec = smallvec![
         (Arc::from("origin"), "https://example.com".to_string()),
         (
@@ -451,7 +451,7 @@ fn test_cors_with_spiffe_provider_authenticated_request() {
     );
 
     // Test: Authenticated request should have CORS headers added
-    let (tx, _rx) = mpsc::channel::<HandlerResponse>();
+    let (tx, _rx) = mpsc::channel::<Box<HandlerResponse>>();
     let headers: HeaderVec = smallvec![
         (Arc::from("origin"), "https://example.com".to_string()),
         (Arc::from("authorization"), format!("Bearer {}", token)),
@@ -538,7 +538,7 @@ fn test_cors_invalid_origin_before_spiffe_validation() {
     );
 
     // Test: Invalid origin should be rejected by CORS before SPIFFE validation
-    let (tx, _rx) = mpsc::channel::<HandlerResponse>();
+    let (tx, _rx) = mpsc::channel::<Box<HandlerResponse>>();
     let headers: HeaderVec = smallvec![
         (Arc::from("origin"), "https://evil.com".to_string()),
         (Arc::from("authorization"), format!("Bearer {}", token)),
@@ -601,7 +601,7 @@ fn test_jwks_independent_usage() {
     );
 
     // Test: JWKS provider should validate non-SPIFFE tokens
-    let (tx, _rx) = mpsc::channel::<HandlerResponse>();
+    let (tx, _rx) = mpsc::channel::<Box<HandlerResponse>>();
     let headers: HeaderVec = smallvec![(Arc::from("authorization"), format!("Bearer {}", token)),];
     let req = HandlerRequest {
         request_id: RequestId::new(),
@@ -674,7 +674,7 @@ fn test_spiffe_requires_jwks_url() {
         .audiences(&["api.example.com"]);
     // Note: No jwks_url() call - this should cause validation to fail
 
-    let (tx, _rx) = mpsc::channel::<HandlerResponse>();
+    let (tx, _rx) = mpsc::channel::<Box<HandlerResponse>>();
     let headers: HeaderVec = smallvec![(
         Arc::from("authorization"),
         "Bearer invalid-token".to_string()
@@ -742,7 +742,7 @@ fn test_spiffe_succeeds_with_jwks_url() {
         3600,
     );
 
-    let (tx, _rx) = mpsc::channel::<HandlerResponse>();
+    let (tx, _rx) = mpsc::channel::<Box<HandlerResponse>>();
     let headers: HeaderVec = smallvec![(Arc::from("authorization"), format!("Bearer {}", token)),];
     let req = HandlerRequest {
         request_id: RequestId::new(),
@@ -831,7 +831,7 @@ fn test_spiffe_algorithm_mismatch_validation() {
     let encoding_key = EncodingKey::from_secret(secret);
     let token = jsonwebtoken::encode(&header, &claims, &encoding_key).unwrap();
 
-    let (tx, _rx) = mpsc::channel::<HandlerResponse>();
+    let (tx, _rx) = mpsc::channel::<Box<HandlerResponse>>();
     let headers: HeaderVec = smallvec![(Arc::from("authorization"), format!("Bearer {}", token)),];
     let req = HandlerRequest {
         request_id: RequestId::new(),
