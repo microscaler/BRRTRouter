@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **BFF client metrics.** Every call the BFF proxy makes to a downstream service (`proxy_untyped`, `proxy_sse`) is
+  recorded as `http_client_request_duration_seconds{server_address,http_request_method,http_response_status_code,error_type}`
+  (OpenTelemetry HTTP client semantic convention, the server histogram's buckets) and rendered on `/metrics`.
+  `server_address` is the downstream Service; a call the downstream never answered has no status code and an
+  `error_type` naming why (`connect`, `timeout`, `dns`, ...). Joins a slow BFF route to the service behind it.
+
 ### Fixed (memory; behaviour change for `BRRTR_STACK_SIZE`)
 
 - **`BRRTR_STACK_SIZE` is bytes**, as documented (`262144`, `0x40000`, `256KiB`, `2MiB`). It used to reach

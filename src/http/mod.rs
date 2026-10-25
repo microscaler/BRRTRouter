@@ -10,6 +10,7 @@
 //! `llmwiki/topics/native-http-client-and-tls.md`.
 
 mod accept_query;
+pub mod client_metrics;
 mod fetch;
 pub mod method_ext;
 pub mod openapi_query;
