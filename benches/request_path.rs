@@ -435,10 +435,20 @@ fn main() {
                 LARGE.load(Ordering::Relaxed),
             );
             let t = Instant::now();
+            // Count (no formatting in the timed loop) and fail after it: an error answer must
+            // not be measured as the scenario.
+            let mut unexpected = 0u64;
             for _ in 0..n {
-                roundtrip(&mut s, &sc.req, &mut buf);
+                if roundtrip(&mut s, &sc.req, &mut buf) != sc.expect {
+                    unexpected += 1;
+                }
             }
             let el = t.elapsed();
+            assert_eq!(
+                unexpected, 0,
+                "{}: {unexpected} of {n} measured requests did not answer {}",
+                sc.name, sc.expect
+            );
             allocs.push((ALLOCS.load(Ordering::Relaxed) - a0) as f64 / n as f64);
             bytes.push((BYTES.load(Ordering::Relaxed) - b0) as f64 / n as f64);
             micros.push(el.as_secs_f64() * 1e6 / n as f64);

@@ -135,8 +135,32 @@ impl Drop for QueueDepthGuard {
 }
 
 impl HandlerRequest {
-    /// Send `response` back to the dispatcher (boxes it for the reply channel). A dispatcher
-    /// that stopped waiting (deadline) has dropped the receiver; the response is then dropped.
+    /// Send `response` back to the dispatcher that is waiting for this request.
+    ///
+    /// The reply channel carries `Box<HandlerResponse>` (see [`HandlerRequest::reply_tx`]); this
+    /// boxes the response for you. Use it from untyped handlers and custom coroutines instead of
+    /// sending on `reply_tx` directly. Typed handlers return their response and never call it.
+    ///
+    /// # Arguments
+    ///
+    /// * `response` - The response to hand back. A request is answered once; a second reply is
+    ///   never read.
+    ///
+    /// # Behaviour
+    ///
+    /// Never blocks and never fails: if the dispatcher has stopped waiting (handler deadline,
+    /// client gone) its receiver is dropped and the response is discarded.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use brrtrouter::dispatcher::{HandlerRequest, HandlerResponse};
+    ///
+    /// fn echo_handler(req: HandlerRequest) {
+    ///     let body = serde_json::json!({ "path": req.path });
+    ///     req.reply(HandlerResponse::json(200, body));
+    /// }
+    /// ```
     pub fn reply(&self, response: HandlerResponse) {
         let _ = self.reply_tx.send(Box::new(response));
     }
