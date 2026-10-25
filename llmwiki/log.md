@@ -427,3 +427,8 @@ Hauliage Phase 3 unblockers for Vite dev proxy and frontend-aligned BFF routes.
 - No explicit size: 256 KiB (`handler_stack::FALLBACK`) or the generator's estimate if larger.
 - `BRRTR_STACK_SIZE` sizes `may`'s own (connection) coroutines only; handler sizes come from the spec / per-handler env.
 - Details: [`topics/handler-stack-memory.md`](./topics/handler-stack-memory.md).
+
+## [2026-10-25] perf | BFF proxy resolves each downstream once (#507)
+
+- Cached downstream addresses (`BRRTR_PROXY_DNS_TTL_SECS`, default 30) and trailing-dot Service FQDNs; every request that used a stale cached address re-resolves and retries once.
+- [`topics/bff-gateway-merge-and-proxy-headers.md`](./topics/bff-gateway-merge-and-proxy-headers.md) § Downstream DNS; numbers in [`docs/perf/copy-and-borrow-audit.md`](../docs/perf/copy-and-borrow-audit.md).
