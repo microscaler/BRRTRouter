@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed (BFF proxy)
+
+- **Downstream addresses are resolved once, not per proxied request.** `proxy_untyped`/`proxy_sse` called
+  `getaddrinfo` (blocking the coroutine's worker thread) for every request, and `<svc>.<ns>.svc.cluster.local` sits
+  under the pod resolver's `ndots:5`, so each lookup first walked the search domains. Addresses are now cached per
+  host for `BRRTR_PROXY_DNS_TTL_SECS` (default 30; `0` resolves every request) and Service FQDNs are looked up with a
+  trailing dot. A connect failure on a cached address re-resolves and retries once.
+
 ### Changed (performance: fewer copies on the request path)
 
 Measured with the new `benches/request_path.rs` (allocations, bytes and µs per request through the whole HTTP

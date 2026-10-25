@@ -5,10 +5,12 @@
 //! and `SERVICE_HTTP_PORT` (default 8080). Each request opens a fresh
 //! `may_minihttp` connection to avoid cross-service client reuse (FR-26).
 
+use std::borrow::Cow;
+use std::collections::HashMap;
 use std::io::Read;
-use std::net::ToSocketAddrs;
-use std::sync::Arc;
-use std::time::Duration;
+use std::net::{SocketAddr, ToSocketAddrs};
+use std::sync::{Arc, OnceLock, RwLock};
+use std::time::{Duration, Instant};
 
 use http_legacy::{Method, Uri};
 use may_minihttp::client::{HttpClient, Response as DownstreamResponse};
@@ -374,6 +376,128 @@ pub fn downstream_http_port() -> u16 {
         .unwrap_or(DEFAULT_DOWNSTREAM_PORT)
 }
 
+/// How long a resolved downstream address is reused before it is looked up again
+/// (`BRRTR_PROXY_DNS_TTL_SECS`, default 30; `0` resolves on every request).
+///
+/// A Service's ClusterIP does not change while the Service exists; a stale address (the Service
+/// was recreated) fails to connect, which drops it and resolves again before giving up.
+fn dns_ttl() -> Duration {
+    static TTL: OnceLock<Duration> = OnceLock::new();
+    *TTL.get_or_init(|| {
+        Duration::from_secs(
+            std::env::var("BRRTR_PROXY_DNS_TTL_SECS")
+                .ok()
+                .and_then(|v| v.trim().parse().ok())
+                .unwrap_or(30),
+        )
+    })
+}
+
+/// Resolved downstream addresses by host: (port, address, resolved at).
+type DnsCache = RwLock<HashMap<String, (u16, SocketAddr, Instant)>>;
+
+fn dns_cache() -> &'static DnsCache {
+    static CACHE: OnceLock<DnsCache> = OnceLock::new();
+    CACHE.get_or_init(|| RwLock::new(HashMap::new()))
+}
+
+/// The name handed to the resolver. A Kubernetes Service FQDN gets a trailing dot: it has four
+/// dots, below the pod resolver's `ndots:5`, so without it every lookup first walks the pod's
+/// search domains (`<name>.<ns>.svc.cluster.local`, `.svc.cluster.local`, ... — an NXDOMAIN
+/// round trip, A and AAAA, for each) before asking for the name itself.
+fn lookup_name(host: &str) -> Cow<'_, str> {
+    if host.ends_with(".cluster.local") {
+        Cow::Owned(format!("{host}."))
+    } else {
+        Cow::Borrowed(host)
+    }
+}
+
+/// A downstream address and whether it came from the cache (and so may be stale).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Resolved {
+    addr: SocketAddr,
+    cached: bool,
+}
+
+/// The system resolver: one address for `host:port` (see [`lookup_name`]).
+fn system_lookup(host: &str, port: u16) -> Result<SocketAddr, ProxyError> {
+    ToSocketAddrs::to_socket_addrs(&(lookup_name(host).as_ref(), port))
+        .map_err(|e| classify_transport_error(ProxyTransportKind::Dns, &e.to_string()))?
+        .next()
+        .ok_or(ProxyError::Dns)
+}
+
+/// The address to connect to for `host:port`: from the cache while fresh, else resolved (a
+/// blocking `getaddrinfo` on the coroutine's worker thread, so not on every request).
+fn resolve_downstream(host: &str, port: u16) -> Result<Resolved, ProxyError> {
+    resolve_downstream_with(host, port, &system_lookup)
+}
+
+fn resolve_downstream_with(
+    host: &str,
+    port: u16,
+    lookup: &dyn Fn(&str, u16) -> Result<SocketAddr, ProxyError>,
+) -> Result<Resolved, ProxyError> {
+    let ttl = dns_ttl();
+    if !ttl.is_zero() {
+        if let Ok(cache) = dns_cache().read() {
+            if let Some((p, addr, at)) = cache.get(host) {
+                if *p == port && at.elapsed() < ttl {
+                    return Ok(Resolved {
+                        addr: *addr,
+                        cached: true,
+                    });
+                }
+            }
+        }
+    }
+    let addr = lookup(host, port)?;
+    if !ttl.is_zero() {
+        if let Ok(mut cache) = dns_cache().write() {
+            cache.insert(host.to_string(), (port, addr, Instant::now()));
+        }
+    }
+    Ok(Resolved {
+        addr,
+        cached: false,
+    })
+}
+
+/// Drop `host`'s cached address if it is still `addr`. A request that already re-resolved may
+/// have stored a fresh address; that one is kept.
+fn forget_downstream(host: &str, addr: SocketAddr) {
+    if let Ok(mut cache) = dns_cache().write() {
+        if cache.get(host).is_some_and(|(_, a, _)| *a == addr) {
+            cache.remove(host);
+        }
+    }
+}
+
+/// Connect to `resolved`. If that fails and the address came from the cache it may be stale
+/// (the Service was recreated): drop it (if still cached), resolve again and connect once more.
+/// Every request that used a stale address retries, not only the first to fail; nothing has
+/// been sent yet, so this is safe for any method.
+fn connect_downstream_with<T>(
+    host: &str,
+    port: u16,
+    resolved: Resolved,
+    lookup: &dyn Fn(&str, u16) -> Result<SocketAddr, ProxyError>,
+    connect: impl Fn(SocketAddr) -> std::io::Result<T>,
+) -> Result<T, ProxyError> {
+    let connect_error =
+        |e: std::io::Error| classify_transport_error(ProxyTransportKind::Connect, &e.to_string());
+    match connect(resolved.addr) {
+        Ok(conn) => Ok(conn),
+        Err(_) if resolved.cached => {
+            forget_downstream(host, resolved.addr);
+            let fresh = resolve_downstream_with(host, port, lookup)?;
+            connect(fresh.addr).map_err(connect_error)
+        }
+        Err(e) => Err(connect_error(e)),
+    }
+}
+
 /// Stable pool key for `(host, port)` — used in tests; runtime connects per request.
 #[must_use]
 pub fn client_pool_key(host: &str, port: u16) -> String {
@@ -461,10 +585,7 @@ fn send_downstream(
     let host = downstream_host(downstream_service);
     let port = downstream_http_port();
 
-    let target_ip = ToSocketAddrs::to_socket_addrs(&(host.as_str(), port))
-        .map_err(|e| classify_transport_error(ProxyTransportKind::Dns, &e.to_string()))?
-        .next()
-        .ok_or(ProxyError::Dns)?;
+    let target = resolve_downstream(&host, port)?;
 
     // Decision B: validate both stacks; convert to legacy Uri only at this edge
     // (no full request-target embedded in error Display).
@@ -475,8 +596,8 @@ fn send_downstream(
     let method = Method::from_bytes(req.method.as_str().as_bytes())
         .map_err(|_e| ProxyError::InvalidMethod)?;
 
-    let mut client = HttpClient::connect(target_ip)
-        .map_err(|e| classify_transport_error(ProxyTransportKind::Connect, &e.to_string()))?;
+    let mut client =
+        connect_downstream_with(&host, port, target, &system_lookup, HttpClient::connect)?;
     client.set_timeout(Some(proxy_timeout()));
 
     let mut proxy_req = client.new_request(method, uri);
@@ -1167,6 +1288,143 @@ mod tests {
         std::env::set_var("SERVICE_HTTP_PORT", "9090");
         assert_eq!(downstream_http_port(), 9090);
         std::env::remove_var("SERVICE_HTTP_PORT");
+    }
+
+    #[test]
+    fn lookup_name_makes_service_fqdns_absolute() {
+        assert_eq!(
+            lookup_name("market.pw.svc.cluster.local"),
+            "market.pw.svc.cluster.local."
+        );
+        assert_eq!(lookup_name("market"), "market");
+        assert_eq!(lookup_name("localhost"), "localhost");
+        assert_eq!(lookup_name("api.example.com"), "api.example.com");
+    }
+
+    #[test]
+    fn resolve_downstream_caches_and_forgets() {
+        let host = "localhost";
+        let a = resolve_downstream(host, 18_081).expect("localhost resolves");
+        assert_eq!(a.addr.port(), 18_081);
+        assert!(!a.cached);
+        // cached for the same port
+        let again = resolve_downstream(host, 18_081).expect("cached");
+        assert_eq!(
+            again,
+            Resolved {
+                addr: a.addr,
+                cached: true
+            }
+        );
+        // another port is a miss, re-resolved and re-cached
+        let b = resolve_downstream(host, 18_082).expect("localhost resolves");
+        assert_eq!(b.addr.port(), 18_082);
+        assert!(!b.cached);
+        // forgetting only drops the address it was asked about
+        forget_downstream(host, a.addr);
+        assert!(dns_cache().read().unwrap().get(host).is_some());
+        forget_downstream(host, b.addr);
+        assert!(dns_cache().read().unwrap().get(host).is_none());
+    }
+
+    /// A Service recreated under N in-flight requests that all read the stale cached address:
+    /// every one of them re-resolves and connects (none fails), the system resolver runs once,
+    /// and the fresh address stays cached.
+    fn stale_address_scenario(host: &'static str, concurrent: bool) {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        const N: usize = 8;
+        let stale: SocketAddr = "10.0.0.1:8080".parse().unwrap();
+        let fresh: SocketAddr = "10.0.0.2:8080".parse().unwrap();
+        dns_cache()
+            .write()
+            .unwrap()
+            .insert(host.to_string(), (8080, stale, Instant::now()));
+        let lookups = Arc::new(AtomicUsize::new(0));
+        let lookup = {
+            let lookups = Arc::clone(&lookups);
+            move |_: &str, _: u16| {
+                lookups.fetch_add(1, Ordering::SeqCst);
+                Ok(fresh)
+            }
+        };
+        let connect = move |addr: SocketAddr| {
+            if addr == fresh {
+                Ok(addr)
+            } else {
+                Err(std::io::Error::from(std::io::ErrorKind::ConnectionRefused))
+            }
+        };
+        // All N read the stale address before any of them tries to connect.
+        let resolved: Vec<Resolved> = (0..N)
+            .map(|_| resolve_downstream_with(host, 8080, &lookup).unwrap())
+            .collect();
+        assert!(resolved.iter().all(|r| *r
+            == Resolved {
+                addr: stale,
+                cached: true
+            }));
+        let results: Vec<Result<SocketAddr, ProxyError>> = if concurrent {
+            let barrier = Arc::new(std::sync::Barrier::new(N));
+            let handles: Vec<_> = resolved
+                .into_iter()
+                .map(|r| {
+                    let barrier = Arc::clone(&barrier);
+                    let lookup = lookup.clone();
+                    std::thread::spawn(move || {
+                        barrier.wait();
+                        connect_downstream_with(host, 8080, r, &lookup, connect)
+                    })
+                })
+                .collect();
+            handles.into_iter().map(|h| h.join().unwrap()).collect()
+        } else {
+            resolved
+                .into_iter()
+                .map(|r| connect_downstream_with(host, 8080, r, &lookup, connect))
+                .collect()
+        };
+        assert!(
+            results.iter().all(|r| matches!(r, Ok(a) if *a == fresh)),
+            "every request that held the stale address retried: {results:?}"
+        );
+        let n = lookups.load(Ordering::SeqCst);
+        assert!(n >= 1 && n <= N, "lookups {n}");
+        if !concurrent {
+            assert_eq!(n, 1, "later requests reuse the re-resolved address");
+        }
+        assert_eq!(
+            dns_cache().read().unwrap().get(host).map(|e| e.1),
+            Some(fresh)
+        );
+    }
+
+    #[test]
+    fn stale_cached_address_every_request_retries() {
+        stale_address_scenario("stale-svc-sequential.test", false);
+    }
+
+    #[test]
+    fn stale_cached_address_every_concurrent_request_retries() {
+        stale_address_scenario("stale-svc-concurrent.test", true);
+    }
+
+    #[test]
+    fn uncached_address_failure_is_not_retried() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let lookups = AtomicUsize::new(0);
+        let lookup = |_: &str, _: u16| {
+            lookups.fetch_add(1, Ordering::SeqCst);
+            Ok("10.0.0.3:8080".parse().unwrap())
+        };
+        let r = Resolved {
+            addr: "10.0.0.3:8080".parse().unwrap(),
+            cached: false,
+        };
+        let res = connect_downstream_with("fresh-svc.test", 8080, r, &lookup, |_| {
+            Err::<(), _>(std::io::Error::from(std::io::ErrorKind::ConnectionRefused))
+        });
+        assert!(res.is_err());
+        assert_eq!(lookups.load(Ordering::SeqCst), 0);
     }
 
     #[test]

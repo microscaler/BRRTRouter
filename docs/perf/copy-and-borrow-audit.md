@@ -64,8 +64,8 @@ findings ranked by measured cost, what changed, before/after, and what is still 
 - **BFF proxy (PW trader-bff/platform-bff)**: `proxy_untyped` parses every downstream JSON body
   into a `Value`, the BFF then validates it against its own spec (105 of 113 trader-bff routes
   declare a 200 schema) and re-serializes it — parse + validate + serialize of a body the
-  downstream service already validated. It also opens a new TCP connection and resolves DNS
-  (`to_socket_addrs`) per proxied request. Raw pass-through (and a pooled client) is the
+  downstream service already validated. It also opens a new TCP connection per proxied request.
+  DNS per request is fixed (pass 1c below). Raw pass-through (and a pooled client) is the
   biggest BFF item; it changes what a BFF validates, so it is a decision for Charles — to be
   measured in the PW pass.
 - `MetricsMiddleware::record_status` allocates a `(String, u16)` key per request for the
@@ -98,6 +98,21 @@ INFO subscriber on (production logs at INFO). µs: median of three interleaved b
 
 Bytes per request barely move: 46 KB of the remaining ~101–115 KB is the reply channel's block
 (open item 1); the rest is still to be attributed (`BRRTR_BENCH_TRACE=8192`).
+
+## BRRTRouter — pass 1c: BFF proxy DNS (25 Oct 2026)
+
+Evidence (pp, v0.1.132 release-profile load test, 18:54–18:59 UTC): trader-bff used 0.0988
+cores against a 0.0759 idle floor for 1,142 proxied requests: **~6 ms of CPU per proxied
+request** for a hop that only forwards. Per request it ran a blocking `getaddrinfo` on the
+coroutine's worker thread for `<svc>.<ns>.svc.cluster.local` — four dots, under the pod
+resolver's `ndots:5`, so each lookup first walked the search domains (an NXDOMAIN round trip
+per domain, A and AAAA) — then connected.
+
+Change: the resolved address is cached per host (`BRRTR_PROXY_DNS_TTL_SECS`, default 30,
+`0` = off) and Service FQDNs are looked up with a trailing dot (one query). A connect failure
+on a cached address drops it, re-resolves and retries once (nothing has been sent yet). To
+verify in pp: trader-bff CPU per proxied request and the BFF-only latency of fast routes
+(`list_plans`, `get_payment_method`, ~6 ms p50 at v0.1.132).
 
 ## For the PriceWhisperer pass
 

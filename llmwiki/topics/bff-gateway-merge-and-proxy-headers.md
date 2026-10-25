@@ -3,7 +3,7 @@
 - **Status**: `active`
 - **Code anchors**: `tooling/src/brrtrouter_tooling/bff/merge.py`, `tooling/src/brrtrouter_tooling/helpers.py`, `tooling/src/brrtrouter_tooling/workspace/bff/generate_system.py`, `src/http/proxy.rs`, `src/server/response.rs`
 - **Sibling**: Hauliage [`docs/llmwiki/topics/k8s-native-bff-routing.md`](../../../../hauliage/docs/llmwiki/topics/k8s-native-bff-routing.md)
-- **Last updated**: 2026-10-16
+- **Last updated**: 2026-10-25
 
 ## Gateway public paths (suite config merge)
 
@@ -69,3 +69,20 @@ The proxy now inserts exactly one `Host` naming the downstream:
 - `http::proxy::tests::proxy_sends_the_downstream_host_when_the_client_sent_none`
 - `http::proxy::tests::downstream_host_header_for_a_namespaced_service`
 - `http::host_header_tests::*`
+
+## Downstream DNS (2026-10-25, #507)
+
+`proxy_untyped` / `proxy_sse` resolved the downstream on **every** proxied request: a blocking
+`getaddrinfo` on the coroutine's worker thread, and `<svc>.<ns>.svc.cluster.local` has four dots,
+under the pod resolver's `ndots:5`, so each lookup first walked the search domains (NXDOMAIN per
+domain, A and AAAA). pp evidence: trader-bff ~6 ms CPU per proxied request (v0.1.132 load test).
+
+- Resolved addresses are cached per host for `BRRTR_PROXY_DNS_TTL_SECS` (default 30, `0` = every
+  request); `*.cluster.local` names are looked up with a trailing dot (one query).
+- **Invariant:** a connect failure on an address that came from the cache (`Resolved::cached`)
+  evicts it *conditionally* (only if it is still the cached one, so a fresh entry another request
+  stored survives), re-resolves and connects once more. Every request that held the stale
+  address retries — not only the first to fail (Codex review on #507). Nothing has been sent at
+  that point, so the retry is safe for any method.
+- Still open: a new TCP connection per proxied request (no keep-alive pool), and parse →
+  validate → re-serialize of downstream JSON in the BFF (`docs/perf/copy-and-borrow-audit.md`).
