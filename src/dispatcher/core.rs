@@ -107,8 +107,13 @@ pub struct HandlerRequest {
     /// }
     /// ```
     pub jwt_claims: Option<Value>,
-    /// Channel for sending the response back to the dispatcher
-    pub reply_tx: mpsc::Sender<HandlerResponse>,
+    /// Channel for sending the response back to the dispatcher.
+    ///
+    /// Boxed: `may`'s queue allocates a 64-slot block per channel, and the dispatcher opens one
+    /// channel per request; with bare ~720-byte `HandlerResponse` slots that block was 46 KB per
+    /// request, boxed it is 1 KB. Send with `reply_tx.send(Box::new(response))` or
+    /// [`HandlerRequest::reply`].
+    pub reply_tx: mpsc::Sender<Box<HandlerResponse>>,
     /// Guard for tracking queue depth and applying backpressure (decrements on Drop)
     pub queue_guard: Option<Arc<QueueDepthGuard>>,
     /// The request span (`http_request`), captured from the dispatching coroutine's context.
@@ -130,6 +135,36 @@ impl Drop for QueueDepthGuard {
 }
 
 impl HandlerRequest {
+    /// Send `response` back to the dispatcher that is waiting for this request.
+    ///
+    /// The reply channel carries `Box<HandlerResponse>` (see [`HandlerRequest::reply_tx`]); this
+    /// boxes the response for you. Use it from untyped handlers and custom coroutines instead of
+    /// sending on `reply_tx` directly. Typed handlers return their response and never call it.
+    ///
+    /// # Arguments
+    ///
+    /// * `response` - The response to hand back. A request is answered once; a second reply is
+    ///   never read.
+    ///
+    /// # Behaviour
+    ///
+    /// Never blocks and never fails: if the dispatcher has stopped waiting (handler deadline,
+    /// client gone) its receiver is dropped and the response is discarded.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use brrtrouter::dispatcher::{HandlerRequest, HandlerResponse};
+    ///
+    /// fn echo_handler(req: HandlerRequest) {
+    ///     let body = serde_json::json!({ "path": req.path });
+    ///     req.reply(HandlerResponse::json(200, body));
+    /// }
+    /// ```
+    pub fn reply(&self, response: HandlerResponse) {
+        let _ = self.reply_tx.send(Box::new(response));
+    }
+
     /// A copy of this request without its body and JWT claims (and without the queue guard).
     ///
     /// The dispatcher moves the request itself to the handler and keeps this copy for the
@@ -462,7 +497,7 @@ where
                 if let Err(panic) = may_tracing::with_span(request_span, || {
                     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                         let response = handler_fn(req);
-                        let _ = reply_tx.send(response);
+                        let _ = reply_tx.send(Box::new(response));
                     }))
                 }) {
                     let panic_message = format!("{panic:?}");
@@ -476,7 +511,7 @@ where
                         500,
                         &format!("Handler panicked: {}", panic_message),
                     );
-                    let _ = reply_tx.send(error_response);
+                    let _ = reply_tx.send(Box::new(error_response));
                 } else {
                     // Per-request — demoted to debug (PRD 2.2).
                     let execution_time_ms = execution_start.elapsed().as_millis() as u64;
@@ -722,7 +757,7 @@ impl Dispatcher {
                                 500,
                                 &format!("Handler panicked: {}", panic_message),
                             );
-                            let _ = reply_tx.send(error_response);
+                            let _ = reply_tx.send(Box::new(error_response));
                         } else {
                             // H4: Handler execution complete — per-request, demoted to debug (PRD 2.2).
                             let execution_time_ms = execution_start.elapsed().as_millis() as u64;
@@ -1120,6 +1155,7 @@ impl Dispatcher {
             let r = match deadline {
                 None => match reply_rx.recv() {
                     Ok(response) => {
+                        let response = *response;
                         let elapsed = start.elapsed();
                         debug!(
                             request_id = %request_id,
@@ -1150,6 +1186,7 @@ impl Dispatcher {
                 },
                 Some(limit) => match reply_rx.recv_timeout(limit) {
                     Ok(response) => {
+                        let response = *response;
                         let elapsed = start.elapsed();
                         debug!(
                             request_id = %request_id,

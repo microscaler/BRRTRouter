@@ -41,7 +41,7 @@ impl TryFrom<HandlerRequest> for Req {
 
 #[test]
 fn test_from_handler_non_string_params() {
-    let (tx, _rx) = mpsc::channel::<HandlerResponse>();
+    let (tx, _rx) = mpsc::channel::<Box<HandlerResponse>>();
     let path_params: ParamVec = smallvec![(Arc::from("id"), "42".to_string())];
     let query_params: ParamVec = smallvec![(Arc::from("active"), "true".to_string())];
 
@@ -91,7 +91,7 @@ impl TryFrom<HandlerRequest> for HeaderCookieReq {
 
 #[test]
 fn test_header_cookie_params() {
-    let (tx, _rx) = mpsc::channel::<HandlerResponse>();
+    let (tx, _rx) = mpsc::channel::<Box<HandlerResponse>>();
     // JSF P2: HeaderVec now uses Arc<str> for keys
     let headers: HeaderVec = smallvec![(Arc::from("x-token"), "secret".to_string())];
     let cookies: HeaderVec = smallvec![(Arc::from("session"), "abc123".to_string())];

@@ -90,12 +90,12 @@ fn p1_get_known_route_returns_200_and_body() {
             // SAFETY: test-only closure handler
             unsafe {
                 d.register_handler("hello", |req: HandlerRequest| {
-                    let _ = req.reply_tx.send(HandlerResponse {
+                    let _ = req.reply_tx.send(Box::new(HandlerResponse {
                         status: 200,
                         headers: HeaderVec::new(),
                         body: json!({"ok": true}),
                         sse: None,
-                    });
+                    }));
                 });
             }
         },
@@ -119,12 +119,12 @@ fn p2_post_json_round_trip() {
         |d| unsafe {
             d.register_handler("echo", |req: HandlerRequest| {
                 let body = req.body.clone().unwrap_or(Value::Null);
-                let _ = req.reply_tx.send(HandlerResponse {
+                let _ = req.reply_tx.send(Box::new(HandlerResponse {
                     status: 200,
                     headers: HeaderVec::new(),
                     body,
                     sse: None,
-                });
+                }));
             });
         },
         |app| {
@@ -152,12 +152,12 @@ fn p3_custom_header_forwarded() {
                     .find(|(k, _)| k.eq_ignore_ascii_case("x-trace"))
                     .map(|(_, v)| v.to_string())
                     .unwrap_or_default();
-                let _ = req.reply_tx.send(HandlerResponse {
+                let _ = req.reply_tx.send(Box::new(HandlerResponse {
                     status: 200,
                     headers: HeaderVec::new(),
                     body: json!({"trace": v}),
                     sse: None,
-                });
+                }));
             });
         },
         |app| {
@@ -175,12 +175,12 @@ fn p4_cookie_set_observed() {
         |d| unsafe {
             d.register_handler("c", |req: HandlerRequest| {
                 let v = req.get_cookie("sid").unwrap_or("").to_string();
-                let _ = req.reply_tx.send(HandlerResponse {
+                let _ = req.reply_tx.send(Box::new(HandlerResponse {
                     status: 200,
                     headers: HeaderVec::new(),
                     body: json!({"sid": v}),
                     sse: None,
-                });
+                }));
             });
         },
         |app| {
@@ -197,12 +197,12 @@ fn n1_unknown_path_is_404() {
         vec![route(Method::GET, "/only", "only", None)],
         |d| unsafe {
             d.register_handler("only", |req: HandlerRequest| {
-                let _ = req.reply_tx.send(HandlerResponse {
+                let _ = req.reply_tx.send(Box::new(HandlerResponse {
                     status: 200,
                     headers: HeaderVec::new(),
                     body: json!({}),
                     sse: None,
-                });
+                }));
             });
         },
         |app| {
@@ -223,12 +223,12 @@ fn n2_invalid_json_body_is_client_error() {
         vec![route(Method::POST, "/echo", "echo", Some(schema))],
         |d| unsafe {
             d.register_handler("echo", |req: HandlerRequest| {
-                let _ = req.reply_tx.send(HandlerResponse {
+                let _ = req.reply_tx.send(Box::new(HandlerResponse {
                     status: 200,
                     headers: HeaderVec::new(),
                     body: json!({}),
                     sse: None,
-                });
+                }));
             });
         },
         |app| {
@@ -254,12 +254,12 @@ fn n3_empty_path_is_err() {
         vec![route(Method::GET, "/x", "x", None)],
         |d| unsafe {
             d.register_handler("x", |req: HandlerRequest| {
-                let _ = req.reply_tx.send(HandlerResponse {
+                let _ = req.reply_tx.send(Box::new(HandlerResponse {
                     status: 200,
                     headers: HeaderVec::new(),
                     body: json!({}),
                     sse: None,
-                });
+                }));
             });
         },
         |app| {

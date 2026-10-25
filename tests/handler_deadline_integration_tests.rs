@@ -69,12 +69,12 @@ fn handler_deadline_p1_fast_under_limit() {
     dispatcher.set_handler_deadline_ms(Some(500));
     unsafe {
         dispatcher.register_handler("fast", |req: HandlerRequest| {
-            let _ = req.reply_tx.send(HandlerResponse {
+            let _ = req.reply_tx.send(Box::new(HandlerResponse {
                 status: 200,
                 headers: Default::default(),
                 body: json!({"ok": true}),
                 sse: None,
-            });
+            }));
         });
     }
     let resp = dispatcher
@@ -98,12 +98,12 @@ fn handler_deadline_p2_slow_returns_504() {
     unsafe {
         dispatcher.register_handler("slow", |req: HandlerRequest| {
             thread::sleep(Duration::from_millis(300));
-            let _ = req.reply_tx.send(HandlerResponse {
+            let _ = req.reply_tx.send(Box::new(HandlerResponse {
                 status: 200,
                 headers: Default::default(),
                 body: json!({"late": true}),
                 sse: None,
-            });
+            }));
         });
     }
     let started = std::time::Instant::now();
@@ -138,12 +138,12 @@ fn handler_deadline_p3_metric_callback() {
     unsafe {
         dispatcher.register_handler("slow_metric", |req: HandlerRequest| {
             thread::sleep(Duration::from_millis(200));
-            let _ = req.reply_tx.send(HandlerResponse {
+            let _ = req.reply_tx.send(Box::new(HandlerResponse {
                 status: 200,
                 headers: Default::default(),
                 body: json!({}),
                 sse: None,
-            });
+            }));
         });
     }
     let resp = dispatcher
@@ -167,12 +167,12 @@ fn handler_deadline_p4_disabled_waits() {
     unsafe {
         dispatcher.register_handler("slow_ok", |req: HandlerRequest| {
             thread::sleep(Duration::from_millis(80));
-            let _ = req.reply_tx.send(HandlerResponse {
+            let _ = req.reply_tx.send(Box::new(HandlerResponse {
                 status: 200,
                 headers: Default::default(),
                 body: json!({"ok": true}),
                 sse: None,
-            });
+            }));
         });
     }
     let resp = dispatcher
@@ -196,12 +196,12 @@ fn handler_deadline_p6_problem_shape() {
     unsafe {
         dispatcher.register_handler("shape", |req: HandlerRequest| {
             thread::sleep(Duration::from_millis(200));
-            let _ = req.reply_tx.send(HandlerResponse {
+            let _ = req.reply_tx.send(Box::new(HandlerResponse {
                 status: 200,
                 headers: Default::default(),
                 body: json!({}),
                 sse: None,
-            });
+            }));
         });
     }
     let resp = dispatcher
@@ -227,12 +227,12 @@ fn handler_deadline_route_override_alone() {
     unsafe {
         dispatcher.register_handler("route_slow", |req: HandlerRequest| {
             thread::sleep(Duration::from_millis(200));
-            let _ = req.reply_tx.send(HandlerResponse {
+            let _ = req.reply_tx.send(Box::new(HandlerResponse {
                 status: 200,
                 headers: Default::default(),
                 body: json!({}),
                 sse: None,
-            });
+            }));
         });
     }
     let resp = dispatcher

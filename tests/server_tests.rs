@@ -463,7 +463,7 @@ fn test_headers_and_cookies() {
             }),
             sse: None,
         };
-        let _ = req.reply_tx.send(response);
+        let _ = req.reply_tx.send(Box::new(response));
     }
 
     let server =
@@ -497,7 +497,7 @@ fn test_status_201_json() {
             body: json!({"created": true}),
             sse: None,
         };
-        let _ = req.reply_tx.send(response);
+        let _ = req.reply_tx.send(Box::new(response));
     }
 
     let server =
@@ -525,7 +525,7 @@ fn test_text_plain_error() {
             body: json!("bad request"),
             sse: None,
         };
-        let _ = req.reply_tx.send(response);
+        let _ = req.reply_tx.send(Box::new(response));
     }
 
     let server = CustomServerTestFixture::with_handler("text", text_handler, "/text", Method::GET);
@@ -553,7 +553,7 @@ fn test_request_body_validation_failure() {
             body: json!({"ok": true}),
             sse: None,
         };
-        let _ = req.reply_tx.send(response);
+        let _ = req.reply_tx.send(Box::new(response));
     }
 
     let request_schema = Some(json!({
@@ -595,7 +595,7 @@ fn test_response_body_validation_failure() {
             body: json!({"name": 123}),
             sse: None,
         };
-        let _ = req.reply_tx.send(response);
+        let _ = req.reply_tx.send(Box::new(response));
     }
 
     let response_schema = Some(json!({
@@ -635,7 +635,7 @@ fn test_no_content_skips_body_validation_and_writes_no_body() {
             body: json!({}),
             sse: None,
         };
-        let _ = req.reply_tx.send(response);
+        let _ = req.reply_tx.send(Box::new(response));
     }
 
     let response_schema = Some(json!({
@@ -693,7 +693,7 @@ fn test_invalid_http_method_rejected() {
             body: json!({"ok": true}),
             sse: None,
         };
-        let _ = req.reply_tx.send(response);
+        let _ = req.reply_tx.send(Box::new(response));
     }
 
     let server = CustomServerTestFixture::with_handler_and_schemas(

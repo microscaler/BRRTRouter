@@ -497,10 +497,10 @@ where
                                 Ok(v) => v,
                                 Err(err) => {
                                     // Validation failed - send 400 Bad Request
-                                    let _ = reply_tx_inner.send(HandlerResponse::error(
+                                    let _ = reply_tx_inner.send(Box::new(HandlerResponse::error(
                                         400,
                                         &format!("Invalid request data: {}", err),
-                                    ));
+                                    )));
                                     return; // Early return from closure
                                 }
                             };
@@ -522,17 +522,17 @@ where
                             // STEP 4: Map typed output to HandlerResponse (supports HttpJson for non-200 REST)
                             let response =
                                 typed_handler_output_to_response(result, Some(&request_id));
-                            let _ = reply_tx_inner.send(response);
+                            let _ = reply_tx_inner.send(Box::new(response));
                         }
                     }))
                 });
 
                 // PANIC RECOVERY: If handler panicked, send 500 error
                 if let Err(panic) = result {
-                    let _ = reply_tx_outer.send(HandlerResponse::error(
+                    let _ = reply_tx_outer.send(Box::new(HandlerResponse::error(
                         500,
                         &format!("Handler panicked: {:?}", panic),
-                    ));
+                    )));
                     eprintln!("Handler '{handler_name_outer}' panicked: {panic:?}");
                 }
             }
@@ -695,10 +695,10 @@ where
                                 Ok(v) => v,
                                 Err(err) => {
                                     // Validation failed - send 400 Bad Request
-                                    let _ = reply_tx_inner.send(HandlerResponse::error(
+                                    let _ = reply_tx_inner.send(Box::new(HandlerResponse::error(
                                         400,
                                         &format!("Invalid request data: {}", err),
-                                    ));
+                                    )));
                                     return; // Early return from closure
                                 }
                             };
@@ -720,14 +720,14 @@ where
                             // STEP 4: Map typed output to HandlerResponse (supports HttpJson for non-200 REST)
                             let response =
                                 typed_handler_output_to_response(result, Some(&request_id));
-                            let _ = reply_tx_inner.send(response);
+                            let _ = reply_tx_inner.send(Box::new(response));
                         }
                     }))
                 });
 
                 // PANIC RECOVERY: If handler panicked, send 500 error
                 if let Err(panic) = result {
-                    let _ = reply_tx_outer.send(HandlerResponse {
+                    let _ = reply_tx_outer.send(Box::new(HandlerResponse {
                         status: 500,
                         headers: HeaderVec::new(),
                         body: serde_json::json!({
@@ -736,7 +736,7 @@ where
                             "request_id": request_id.to_string(),
                         }),
                         sse: None,
-                    });
+                    }));
                     eprintln!("Handler '{handler_name_outer}' panicked: {panic:?}");
                 }
             }
@@ -985,10 +985,10 @@ impl Dispatcher {
             let data = match H::Request::try_from(req) {
                 Ok(v) => v,
                 Err(err) => {
-                    let _ = reply_tx.send(HandlerResponse::error(
+                    let _ = reply_tx.send(Box::new(HandlerResponse::error(
                         400,
                         &format!("Invalid request data: {}", err),
-                    ));
+                    )));
                     return;
                 }
             };
@@ -1007,7 +1007,7 @@ impl Dispatcher {
             let result = handler.handle(typed_req);
 
             let response = typed_handler_output_to_response(result, Some(&request_id));
-            let _ = reply_tx.send(response);
+            let _ = reply_tx.send(Box::new(response));
         };
 
         self.register_handler_with_pool_config(name, handler_fn, config);

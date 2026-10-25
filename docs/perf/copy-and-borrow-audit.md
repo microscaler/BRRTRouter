@@ -42,13 +42,7 @@ findings ranked by measured cost, what changed, before/after, and what is still 
 
 ### Open (measured, not changed in pass 1)
 
-- **Reply channel block: 46 KB allocated per request.** `may::sync::mpsc::channel::<HandlerResponse>()`
-  allocates a 64-slot block (`may_queue::mpsc`, `BLOCK_SIZE = 64`) of ~720-byte
-  `HandlerResponse` slots for every dispatched request — ~40 % of the bytes allocated per
-  request. Fix: `reply_tx: mpsc::Sender<Box<HandlerResponse>>` (as `HandlerSender` already does
-  for requests). Public field type change: consumers that construct `HandlerRequest` with
-  `may::sync::mpsc::channel().0` still compile (inferred); explicit `Sender<HandlerResponse>`
-  types (sesame-idam common `create_reply_tx`) change. Planned as its own PR with consumer bumps.
+- ~~**Reply channel block: 46 KB allocated per request.**~~ Done in pass 1b (below).
 - **Claims copy into every request** (~11 % of allocs on JWT routes): `HandlerRequest.jwt_claims:
   Option<Value>` and `SecurityProvider::extract_claims -> Option<Value>`; `Arc<Value>` would make
   it free. Public API change; same PR as the reply channel if consumers agree.
@@ -113,6 +107,26 @@ Change: the resolved address is cached per host (`BRRTR_PROXY_DNS_TTL_SECS`, def
 on a cached address drops it, re-resolves and retries once (nothing has been sent yet). To
 verify in pp: trader-bff CPU per proxied request and the BFF-only latency of fast routes
 (`list_plans`, `get_payment_method`, ~6 ms p50 at v0.1.132).
+
+## BRRTRouter — pass 1b: boxed reply channel (25 Oct 2026)
+
+`may::sync::mpsc::channel::<HandlerResponse>()` allocates a 64-slot block (`may_queue::mpsc`,
+`BLOCK_SIZE = 64`) of ~720-byte `HandlerResponse` slots, and the dispatcher opens one channel per
+request: **46,144 bytes allocated (and freed) per request**, ~40 % of all bytes the request path
+allocated. `HandlerRequest::reply_tx` is now `mpsc::Sender<Box<HandlerResponse>>` (a 1 KB block),
+as `HandlerSender` already does for requests; `HandlerRequest::reply(response)` sends one.
+
+| scenario (INFO log on) | bytes/req pass 1 | bytes/req 1b | allocs/req |
+|---|---:|---:|---:|
+| get_pet | 114,999 | 25,599 | 273 → 274 |
+| list_pets_query | 115,835 | 26,435 | 299 → 300 |
+| get_post_2_params | 115,782 | 26,382 | 276 → 277 |
+| add_pet_json_body | 114,766 | 25,366 | 263 → 264 |
+| secure_jwt | 117,307 | 27,882 | 284 → 285 |
+
+Bytes per request −78 % (one extra small allocation: the box). Breaking for code that names the
+channel type (`mpsc::channel::<HandlerResponse>()`, `Sender<HandlerResponse>`) or sends on
+`reply_tx` directly; `reply_tx: may::sync::mpsc::channel().0` literals still compile.
 
 ## For the PriceWhisperer pass
 

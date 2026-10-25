@@ -37,12 +37,12 @@ fn test_worker_pool_creation() {
     unsafe {
         dispatcher.register_handler_with_pool("test_handler", move |req: HandlerRequest| {
             // Send response
-            let _ = req.reply_tx.send(HandlerResponse {
+            let _ = req.reply_tx.send(Box::new(HandlerResponse {
                 status: 200,
                 headers: HeaderVec::new(),
                 body: serde_json::json!({"status": "ok"}),
                 sse: None,
-            });
+            }));
         });
     }
 
@@ -87,12 +87,12 @@ fn test_worker_pool_shed_mode() {
                 // Simulate slow processing
                 may::coroutine::sleep(Duration::from_millis(100));
 
-                let _ = req.reply_tx.send(HandlerResponse {
+                let _ = req.reply_tx.send(Box::new(HandlerResponse {
                     status: 200,
                     headers: HeaderVec::new(),
                     body: serde_json::json!({"status": "ok"}),
                     sse: None,
-                });
+                }));
             },
             config,
         );
@@ -184,12 +184,12 @@ fn test_worker_pool_block_mode() {
                 // Simulate fast processing
                 may::coroutine::sleep(Duration::from_millis(5));
 
-                let _ = req.reply_tx.send(HandlerResponse {
+                let _ = req.reply_tx.send(Box::new(HandlerResponse {
                     status: 200,
                     headers: HeaderVec::new(),
                     body: serde_json::json!({"status": "ok"}),
                     sse: None,
-                });
+                }));
             },
             config,
         );
@@ -266,12 +266,12 @@ fn test_worker_pool_metrics() {
         dispatcher.register_handler_with_pool("metrics_handler", move |req: HandlerRequest| {
             may::coroutine::sleep(Duration::from_millis(10));
 
-            let _ = req.reply_tx.send(HandlerResponse {
+            let _ = req.reply_tx.send(Box::new(HandlerResponse {
                 status: 200,
                 headers: HeaderVec::new(),
                 body: serde_json::json!({"status": "ok"}),
                 sse: None,
-            });
+            }));
         });
     }
 

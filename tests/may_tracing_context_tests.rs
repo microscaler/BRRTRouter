@@ -51,7 +51,7 @@ fn install() -> Recorder {
 fn request(
     handler_name: &str,
     span: tracing::Span,
-    reply_tx: mpsc::Sender<HandlerResponse>,
+    reply_tx: mpsc::Sender<Box<HandlerResponse>>,
 ) -> HandlerRequest {
     HandlerRequest {
         request_id: RequestId::new(),
@@ -85,9 +85,7 @@ fn handler_current_span_is_the_request_span() {
                 "child_id": child.id().map(|i| i.into_u64()),
                 "in_coroutine": may_tracing::is_in_coroutine(),
             });
-            let _ = req
-                .reply_tx
-                .send(HandlerResponse::new(200, HeaderVec::new(), body));
+            req.reply(HandlerResponse::new(200, HeaderVec::new(), body));
         });
     }
 
@@ -141,11 +139,11 @@ fn handler_context_does_not_leak_between_requests() {
                 .metadata()
                 .map(|m| m.name())
                 .unwrap_or("none");
-            let _ = req.reply_tx.send(HandlerResponse::new(
+            let _ = req.reply_tx.send(Box::new(HandlerResponse::new(
                 200,
                 HeaderVec::new(),
                 json!({ "seen": name }),
-            ));
+            )));
         });
     }
     let tx_h = dispatcher.handlers.get("leak_probe").unwrap().clone();

@@ -432,3 +432,14 @@ Hauliage Phase 3 unblockers for Vite dev proxy and frontend-aligned BFF routes.
 
 - Cached downstream addresses (`BRRTR_PROXY_DNS_TTL_SECS`, default 30) and trailing-dot Service FQDNs; every request that used a stale cached address re-resolves and retries once.
 - [`topics/bff-gateway-merge-and-proxy-headers.md`](./topics/bff-gateway-merge-and-proxy-headers.md) § Downstream DNS; numbers in [`docs/perf/copy-and-borrow-audit.md`](../docs/perf/copy-and-borrow-audit.md).
+
+## [2026-10-25] perf | fewer copies on the request path (#505)
+
+- Allocations/request −37 to −69 % on the new `benches/request_path.rs`: token-keyed JWKS claims cache (`Arc` claims), per-route validator memo, no request deep copies in the dispatcher, moves in `AppService::call`, one-buffer access-log JSON, generated parameter schemas built once.
+- Behaviour notes: middleware `after` hooks no longer see body/claims; hand-written `TryFrom<HandlerRequest>` no longer sees `jwt_claims`.
+- [`topics/request-path-copies.md`](./topics/request-path-copies.md); log in [`docs/perf/copy-and-borrow-audit.md`](../docs/perf/copy-and-borrow-audit.md).
+
+## [2026-10-25] perf | boxed reply channel (#506)
+
+- `HandlerRequest::reply_tx` is `Sender<Box<HandlerResponse>>`; new `HandlerRequest::reply`. Bytes/request 115 KB → 26 KB.
+- [`topics/handler-stack-memory.md`](./topics/handler-stack-memory.md#boxed-handler-channels), [`topics/request-path-copies.md`](./topics/request-path-copies.md).

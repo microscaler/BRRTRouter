@@ -91,20 +91,20 @@ impl MinimalCorsFixture {
         dispatcher.add_middleware(Arc::new(TracingMiddleware));
         unsafe {
             dispatcher.register_handler("echo_get", |req: HandlerRequest| {
-                let _ = req.reply_tx.send(HandlerResponse {
+                let _ = req.reply_tx.send(Box::new(HandlerResponse {
                     status: 200,
                     headers: HeaderVec::new(),
                     body: json!({"ok": true}),
                     sse: None,
-                });
+                }));
             });
             dispatcher.register_handler("echo_options", |req: HandlerRequest| {
-                let _ = req.reply_tx.send(HandlerResponse {
+                let _ = req.reply_tx.send(Box::new(HandlerResponse {
                     status: 200,
                     headers: HeaderVec::new(),
                     body: json!({"ok": true}),
                     sse: None,
-                });
+                }));
             });
         }
         let mut service = AppService::new(

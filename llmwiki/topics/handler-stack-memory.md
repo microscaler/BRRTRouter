@@ -60,6 +60,11 @@ applied in `run_app` and the generated `main.rs`.
 is ~3 KiB inline, so each handler's channel cost ~200-400 KiB idle (38 MB in trader-bff). `send(HandlerRequest)` is
 unchanged and a plain `mpsc::Sender<HandlerRequest>` converts with `.into()` (`add_route` takes `impl Into`).
 
+The **reply** channel is boxed too (#506): `HandlerRequest::reply_tx` is `Sender<Box<HandlerResponse>>`. The
+dispatcher opens one reply channel per request, and a 64-slot block of ~720-byte `HandlerResponse`s was 46 KB
+allocated and freed on every request. Answer with `req.reply(response)`. See
+[`request-path-copies.md`](./request-path-copies.md).
+
 ## Code anchors
 
 - `src/stack_probe.rs`; probe hooks in `typed/core.rs` (both typed spawns), `dispatcher/core.rs`

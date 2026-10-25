@@ -218,12 +218,12 @@ paths:
     let mut dispatcher = Dispatcher::new();
     unsafe {
         dispatcher.register_handler("secure", |req: HandlerRequest| {
-            let _ = req.reply_tx.send(HandlerResponse {
+            let _ = req.reply_tx.send(Box::new(HandlerResponse {
                 status: 200,
                 headers: HeaderVec::new(),
                 body: json!({"ok": true}),
                 sse: None,
-            });
+            }));
         });
     }
     dispatcher.add_middleware(Arc::new(TracingMiddleware));

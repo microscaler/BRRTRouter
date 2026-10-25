@@ -78,7 +78,7 @@ mod tests {
     }
 
     fn options_req(origin: &str, request_method: &str) -> HandlerRequest {
-        let (tx, _rx) = mpsc::channel::<HandlerResponse>();
+        let (tx, _rx) = mpsc::channel::<Box<HandlerResponse>>();
         let mut headers = HeaderVec::new();
         headers.push((Arc::from("origin"), origin.to_string()));
         headers.push((
