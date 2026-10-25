@@ -30,11 +30,14 @@ impl TryFrom<HandlerRequest> for Request {
         let mut data_map = Map::new();
 
         if let Some(v) = req.get_path_param("color") {
+            // Built once, not per request: decode_param_value reads only its types.
+            static SCHEMA: std::sync::LazyLock<Value> =
+                std::sync::LazyLock::new(|| serde_json::json!({"type":"string"}));
             data_map.insert(
                 "color".to_string(),
                 brrtrouter::server::request::decode_param_value(
                     v,
-                    Some(&serde_json::json!({"type":"string"})),
+                    Some(&*SCHEMA),
                     Some(brrtrouter::spec::ParameterStyle::Label),
                     Some(false),
                 ),

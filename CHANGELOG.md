@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed (performance: fewer copies on the request path)
+
+Measured with the new `benches/request_path.rs` (allocations, bytes and µs per request through the whole HTTP
+path); findings, numbers and what is still open: `docs/perf/copy-and-borrow-audit.md`.
+
+- **JWKS bearer validation**: the claims cache is keyed by the token (a hit parses no header, formats no key and
+  copies no claims: they are held as `Arc<Value>`); the key-rotation check no longer clones the key; the DEBUG
+  span's token-version lookup runs only when that span is enabled; the "allowed" audit line is admitted (INFO
+  enabled, rate limit) before its fields are extracted. Same checks, same log output.
+- **Schema validators** are found per route by address (`ValidatorCache::get_or_compile_for_route`) instead of
+  serializing and hashing the schema on every request and response.
+- **Dispatcher** moves the request to the handler instead of deep-copying it twice; middleware `after` hooks
+  receive `HandlerRequest::without_payload()` (method, path, handler, params, headers, cookies — **no body or
+  JWT claims**). No built-in or known consumer middleware reads those in `after`; read them in `before`.
+- **Typed handlers** move the JWT claims to `TypedHandlerRequest::jwt_claims` before converting the request, so a
+  hand-written `TryFrom<HandlerRequest>` no longer sees `jwt_claims` (the generated one never read it). The worker
+  pool path and `TypedHandlerFor::from_handler` convert by value instead of `try_from(req.clone())`.
+- **Generated handlers** build each parameter's schema once (`static LazyLock<Value>`), not per request.
+  Regenerate services to pick it up.
+- `AppService::call` moves headers, cookies, query parameters, the route match and the response headers instead of
+  cloning them; DEBUG-only values are computed only when DEBUG is on; access-log header JSON is written in one
+  buffer (same output). New `Dispatcher::dispatch_with_id` takes a `RequestId` (no format-then-parse per request).
+- `MemoryMiddleware::before` no longer takes a discarded `/proc` sample.
+
 ### Added
 
 - **BFF client metrics.** Every call the BFF proxy makes to a downstream service (`proxy_untyped`, `proxy_sse`) is

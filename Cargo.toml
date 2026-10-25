@@ -160,6 +160,11 @@ harness = false
 name = "request_guards"
 harness = false
 
+# End-to-end allocations and µs per request (docs/perf/copy-and-borrow-audit.md).
+[[bench]]
+name = "request_path"
+harness = false
+
 [[test]]
 name = "test_app_client_tests"
 required-features = ["testing"]

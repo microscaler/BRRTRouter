@@ -1273,8 +1273,20 @@ impl HttpService for AppService {
 
         let sanitizer = default_sanitizer();
         let request_headers_log = sanitizer.headers_for_log(&headers);
-        let safe_cookies = sanitizer.sanitize_headers(&cookies);
-        let safe_query_params = sanitizer.sanitize_params(&query_params);
+
+        // Log incoming request with redacted headers (TooManyHeaders / triage).
+        // Secrets (Authorization, Cookie, …) are masked before export to OpenSearch.
+        // Field values are evaluated only when DEBUG is enabled for this callsite.
+        debug!(
+            method = %method,
+            path = %path,
+            header_count = headers.len(),
+            headers = %request_headers_log,
+            query_params = ?sanitizer.sanitize_params(&query_params),
+            cookies = %sanitizer.headers_for_log(&cookies),
+            body_size = body.as_ref().map(|v| v.as_object().map(|o| o.len())),
+            "Request received"
+        );
 
         // Create request logger that will log completion on drop (RAII pattern)
         // Note: request_id will be set to None initially, updated when dispatch occurs
@@ -1286,25 +1298,12 @@ impl HttpService for AppService {
             start: request_start,
             total_size_bytes,
             http_status: None,
-            request_headers: request_headers_log.clone(),
+            request_headers: request_headers_log,
             response_headers: None,
             span: span.clone(),
             route: None,
             _active: super::http_metrics::ActiveRequest::start(method.as_str()),
         };
-
-        // Log incoming request with redacted headers (TooManyHeaders / triage).
-        // Secrets (Authorization, Cookie, …) are masked before export to OpenSearch.
-        debug!(
-            method = %method,
-            path = %path,
-            header_count = headers.len(),
-            headers = %request_headers_log,
-            query_params = ?safe_query_params,
-            cookies = %sanitizer.headers_for_log(&safe_cookies),
-            body_size = body.as_ref().map(|v| v.as_object().map(|o| o.len())),
-            "Request received"
-        );
 
         // Apply keep-alive headers early so all responses inherit them.
         // Owned `Box<str>` clone per response — freed with the response, no leak.
@@ -1407,6 +1406,7 @@ impl HttpService for AppService {
         // security, and may answer the request itself.
         let mut headers = headers;
         let mut cookies = cookies;
+        let mut query_params = query_params;
         if let Some(hook) = &self.request_hook {
             let cookie_before = header_value(&headers, "cookie").map(str::to_string);
             let had_authorization = header_value(&headers, "authorization").is_some();
@@ -1540,19 +1540,17 @@ impl HttpService for AppService {
                     .filter(|m| *m != Method::OPTIONS)
                     .and_then(|m| self.router.load().route(m, &path));
                 if let Some(mut target) = target {
-                    target.query_params = query_params.clone();
+                    target.query_params = std::mem::take(&mut query_params);
                     // Recorded under the route being pre-flighted.
                     _request_logger.route = Some(target.route.path_pattern.to_string());
                     let req_id = _request_logger
                         .request_id
                         .unwrap_or(canonical_req_id)
                         .to_string();
-                    let hr = self.dispatcher.load().preflight(
-                        target,
-                        headers.clone(),
-                        cookies.clone(),
-                        req_id,
-                    );
+                    let hr = self
+                        .dispatcher
+                        .load()
+                        .preflight(target, headers, cookies, req_id);
                     write_handler_response(res, hr.status, hr.body, false, &hr.headers);
                     _request_logger.record_http_status(hr.status);
                     return Ok(());
@@ -1560,7 +1558,9 @@ impl HttpService for AppService {
             }
         }
         if let Some(mut route_match) = route_opt {
-            route_match.query_params = query_params.clone();
+            // Moved, not cloned: from here on the route match owns the query parameters.
+            route_match.query_params = std::mem::take(&mut query_params);
+            let query_params = &route_match.query_params;
             {
                 let route = route_match.route.path_pattern.to_string();
                 _request_logger
@@ -1677,7 +1677,7 @@ impl HttpService for AppService {
 
                 let sec_req = SecurityRequest {
                     headers: &headers,
-                    query: &query_params,
+                    query: query_params,
                     cookies: &cookies,
                 };
 
@@ -2041,8 +2041,8 @@ impl HttpService for AppService {
                 );
 
                 // Use cached validator instead of compiling on every request
-                let compiled = match self.validator_cache.get_or_compile(
-                    &route_match.handler_name,
+                let compiled = match self.validator_cache.get_or_compile_for_route(
+                    &route_match.route,
                     "request",
                     None,
                     schema,
@@ -2102,6 +2102,9 @@ impl HttpService for AppService {
                 }
             }
             let is_sse = route_match.route.sse;
+            // The route match (and the request's headers, cookies and body) move to the
+            // dispatcher; the response checks below need only the route.
+            let route = Arc::clone(&route_match.route);
             // Ensure RequestLogger has the request_id for completion logs
             if _request_logger.request_id.is_none() {
                 _request_logger.request_id = Some(canonical_req_id);
@@ -2111,10 +2114,7 @@ impl HttpService for AppService {
                 // Lock-free dispatcher load (PRD Phase 1).
                 let dispatcher = self.dispatcher.load();
                 // Determine or generate request id to pass into dispatcher
-                let req_id = _request_logger
-                    .request_id
-                    .unwrap_or(canonical_req_id)
-                    .to_string();
+                let req_id = _request_logger.request_id.unwrap_or(canonical_req_id);
                 // Extract JWT claims if available (moved here to ensure it's in scope)
                 let jwt_claims = if !route_match.route.security.is_empty() {
                     let sec_req = SecurityRequest {
@@ -2139,19 +2139,19 @@ impl HttpService for AppService {
                     None
                 };
 
-                dispatcher.dispatch_with_request_id(
-                    route_match.clone(),
+                dispatcher.dispatch_with_id(
+                    route_match,
                     body,
-                    headers.clone(),
+                    headers,
                     cookies,
                     req_id,
                     jwt_claims,
-                    raw_query.clone(),
+                    raw_query,
                 )
             };
             match handler_response {
                 Some(hr) => {
-                    let mut headers = hr.headers.clone();
+                    let mut headers = hr.headers;
                     // Always echo X-Request-ID on the response if we have one
                     // JSF P2: Use Arc::from for header names (O(1) clone, no allocation)
                     if let Some(ref rid) = _request_logger.request_id {
@@ -2161,7 +2161,7 @@ impl HttpService for AppService {
                         .iter()
                         .any(|(k, _)| k.eq_ignore_ascii_case("content-type"));
                     if response_status_allows_body(hr.status) && !has_content_type {
-                        if let Some(ct) = route_match.route.content_type_for(hr.status) {
+                        if let Some(ct) = route.content_type_for(hr.status) {
                             // JSF P2: Use Arc::from for header names (O(1) clone, no allocation)
                             headers.push((Arc::from("content-type"), ct));
                         }
@@ -2183,14 +2183,14 @@ impl HttpService for AppService {
                         });
                     if let Some(schema) =
                         if response_status_allows_body(hr.status) && !skip_response_schema {
-                            response_body_schema_for_status(&route_match.route, hr.status)
+                            response_body_schema_for_status(&route, hr.status)
                         } else {
                             None
                         }
                     {
                         // V6: Response validation start
                         debug!(
-                            handler = %route_match.handler_name,
+                            handler = %route.handler_name,
                             status = hr.status,
                             schema_present = true,
                             "Response validation start"
@@ -2198,8 +2198,8 @@ impl HttpService for AppService {
 
                         // Use cached validator instead of compiling on every response
                         // If compilation fails, skip validation but still return response
-                        if let Some(compiled) = self.validator_cache.get_or_compile(
-                            &route_match.handler_name,
+                        if let Some(compiled) = self.validator_cache.get_or_compile_for_route(
+                            &route,
                             "response",
                             Some(hr.status),
                             schema,
@@ -2214,7 +2214,7 @@ impl HttpService for AppService {
                                 let schema_path = "(operation response schema)";
 
                                 error!(
-                                    handler = %route_match.handler_name,
+                                    handler = %route.handler_name,
                                     status = hr.status,
                                     errors = ?error_details,
                                     schema_path = %schema_path,

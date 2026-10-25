@@ -130,6 +130,32 @@ impl Drop for QueueDepthGuard {
 }
 
 impl HandlerRequest {
+    /// A copy of this request without its body and JWT claims (and without the queue guard).
+    ///
+    /// The dispatcher moves the request itself to the handler and keeps this copy for the
+    /// middleware `after` hooks, which see the request's method, path, handler name, parameters,
+    /// headers and cookies, but not the body or claims: those are moved to the handler, not
+    /// deep-copied on every request (`Value` clones allocate per node).
+    #[must_use]
+    pub fn without_payload(&self) -> HandlerRequest {
+        HandlerRequest {
+            request_id: self.request_id,
+            method: self.method.clone(),
+            path: self.path.clone(),
+            handler_name: self.handler_name.clone(),
+            path_params: self.path_params.clone(),
+            query_params: self.query_params.clone(),
+            raw_query: self.raw_query.clone(),
+            headers: self.headers.clone(),
+            cookies: self.cookies.clone(),
+            body: None,
+            jwt_claims: None,
+            reply_tx: self.reply_tx.clone(),
+            queue_guard: None,
+            span: self.span.clone(),
+        }
+    }
+
     /// Get a path parameter by name
     ///
     /// Uses "last write wins" semantics: if duplicate parameter names exist
@@ -913,6 +939,31 @@ impl Dispatcher {
         jwt_claims: Option<Value>,
         raw_query: Option<String>,
     ) -> Option<HandlerResponse> {
+        let request_id = request_id.parse().unwrap_or_else(|_| RequestId::new());
+        self.dispatch_with_id(
+            route_match,
+            body,
+            headers,
+            cookies,
+            request_id,
+            jwt_claims,
+            raw_query,
+        )
+    }
+
+    /// [`Self::dispatch_with_request_id`] with the id already parsed (the server's path: no
+    /// format-then-parse of the id on every request).
+    #[allow(clippy::too_many_arguments)]
+    pub fn dispatch_with_id(
+        &self,
+        route_match: RouteMatch,
+        body: Option<Value>,
+        headers: HeaderVec,
+        cookies: HeaderVec,
+        request_id: RequestId,
+        jwt_claims: Option<Value>,
+        raw_query: Option<String>,
+    ) -> Option<HandlerResponse> {
         let (reply_tx, reply_rx) = mpsc::channel();
         let route_deadline_ms = route_match.route.x_brrtrouter_deadline_ms;
 
@@ -938,7 +989,7 @@ impl Dispatcher {
         };
 
         let mut request = HandlerRequest {
-            request_id: request_id.parse().unwrap_or_else(|_| RequestId::new()),
+            request_id,
             method: route_match.route.method.clone(),
             // JSF P0-2: Convert Arc<str> to String for HandlerRequest
             path: route_match.route.path_pattern.to_string(),
@@ -994,10 +1045,16 @@ impl Dispatcher {
 
             let start = Instant::now();
 
+            // The handler takes the request by value: its body and claims are moved, not
+            // deep-copied. `request` keeps a copy without them for the `after` hooks and the
+            // logs below (see `HandlerRequest::without_payload`).
+            let view = request.without_payload();
+            let mut to_handler = std::mem::replace(&mut request, view);
+
             // Check if this handler has a worker pool with backpressure
             if let Some(pool) = self.worker_pools.get(&request.handler_name) {
                 // Use worker pool dispatch with backpressure handling
-                match pool.dispatch(request.clone()) {
+                match pool.dispatch(to_handler) {
                     Ok(()) => {
                         // Request dispatched successfully, wait for response
                     }
@@ -1031,13 +1088,14 @@ impl Dispatcher {
                         ));
                     }
                     depth.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    // Attach Drop boundary
-                    let mut req = request.clone();
-                    req.queue_guard = Some(std::sync::Arc::new(QueueDepthGuard(depth.clone())));
-                    request = req;
+                    // Attach Drop boundary: shared by the handler's request and the dispatcher's
+                    // copy, so the depth drops once both are done (as when both were full clones).
+                    let guard = std::sync::Arc::new(QueueDepthGuard(depth.clone()));
+                    request.queue_guard = Some(std::sync::Arc::clone(&guard));
+                    to_handler.queue_guard = Some(guard);
                 }
 
-                if let Err(e) = tx.send(request.clone()) {
+                if let Err(e) = tx.send(to_handler) {
                     error!(
                         request_id = %request_id,
                         handler_name = %request.handler_name,

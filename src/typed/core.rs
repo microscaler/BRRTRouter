@@ -486,7 +486,10 @@ where
                                 .iter()
                                 .map(|(k, v)| (k.to_string(), v.clone()))
                                 .collect();
-                            let jwt_claims = req.jwt_claims.clone();
+                            // Moved out, not deep-copied: claims belong on the typed request;
+                            // the generated `TryFrom` reads parameters and body only.
+                            let mut req = req;
+                            let jwt_claims = req.jwt_claims.take();
 
                             // STEP 1: Type conversion - consume the HandlerRequest to produce handler data
                             // This intentionally consumes `req` (no req.clone()) to avoid heavy copies.
@@ -681,7 +684,10 @@ where
                                 .iter()
                                 .map(|(k, v)| (k.to_string(), v.clone()))
                                 .collect();
-                            let jwt_claims = req.jwt_claims.clone();
+                            // Moved out, not deep-copied: claims belong on the typed request;
+                            // the generated `TryFrom` reads parameters and body only.
+                            let mut req = req;
+                            let jwt_claims = req.jwt_claims.take();
 
                             // STEP 1: Type conversion - consume the HandlerRequest to produce handler data
                             // This intentionally consumes `req` (no req.clone()) to avoid heavy copies.
@@ -789,27 +795,34 @@ impl<T> TypedHandlerFor<T> for TypedHandlerRequest<T>
 where
     T: TryFrom<HandlerRequest, Error = anyhow::Error>,
 {
-    fn from_handler(req: HandlerRequest) -> Result<TypedHandlerRequest<T>> {
-        let data = T::try_from(req.clone())?;
+    fn from_handler(mut req: HandlerRequest) -> Result<TypedHandlerRequest<T>> {
+        // Metadata first, then the request itself converts by value (no deep copy).
+        let jwt_claims = req.jwt_claims.take();
+        let method = req.method.clone();
+        let path = req.path.clone();
+        let handler_name = req.handler_name.clone();
+        // Convert SmallVec to HashMap for API compatibility
+        // JSF: Map Arc<str> to String
+        let path_params = req
+            .path_params
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.clone()))
+            .collect();
+        let query_params = req
+            .query_params
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.clone()))
+            .collect();
+        let data = T::try_from(req)?;
 
         Ok(TypedHandlerRequest {
-            method: req.method,
-            path: req.path,
-            handler_name: req.handler_name,
-            // Convert SmallVec to HashMap for API compatibility
-            // JSF: Map Arc<str> to String
-            path_params: req
-                .path_params
-                .iter()
-                .map(|(k, v)| (k.to_string(), v.clone()))
-                .collect(),
-            query_params: req
-                .query_params
-                .iter()
-                .map(|(k, v)| (k.to_string(), v.clone()))
-                .collect(),
+            method,
+            path,
+            handler_name,
+            path_params,
+            query_params,
             data,
-            jwt_claims: req.jwt_claims,
+            jwt_claims,
         })
     }
 }
@@ -951,9 +964,25 @@ impl Dispatcher {
             let reply_tx = req.reply_tx.clone();
             let request_id = req.request_id;
 
-            // Try to convert the request
-            let jwt_claims = req.jwt_claims.clone();
-            let data = match H::Request::try_from(req.clone()) {
+            // Take what the typed request needs, then convert the request itself (by value:
+            // no copy of its body, headers or claims).
+            let mut req = req;
+            let jwt_claims = req.jwt_claims.take();
+            let method = req.method.clone();
+            let path = req.path.clone();
+            let handler_name = req.handler_name.clone();
+            // Build typed request maps (convert SmallVec to HashMap for API compatibility)
+            let path_params: HashMap<String, String> = req
+                .path_params
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.clone()))
+                .collect();
+            let query_params: HashMap<String, String> = req
+                .query_params
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.clone()))
+                .collect();
+            let data = match H::Request::try_from(req) {
                 Ok(v) => v,
                 Err(err) => {
                     let _ = reply_tx.send(HandlerResponse::error(
@@ -964,22 +993,12 @@ impl Dispatcher {
                 }
             };
 
-            // Build typed request (convert SmallVec to HashMap for API compatibility)
-            // JSF: Map Arc<str> to String
             let typed_req = TypedHandlerRequest {
-                method: req.method.clone(),
-                path: req.path.clone(),
-                handler_name: req.handler_name.clone(),
-                path_params: req
-                    .path_params
-                    .iter()
-                    .map(|(k, v)| (k.to_string(), v.clone()))
-                    .collect(),
-                query_params: req
-                    .query_params
-                    .iter()
-                    .map(|(k, v)| (k.to_string(), v.clone()))
-                    .collect(),
+                method,
+                path,
+                handler_name,
+                path_params,
+                query_params,
                 data,
                 jwt_claims,
             };

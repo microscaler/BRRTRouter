@@ -223,9 +223,13 @@ impl JwtLogFields {
         .iter()
         .filter_map(|v| v.as_ref())
         .all(|v| {
-            !pii_patterns
-                .iter()
-                .any(|pattern| v.to_lowercase().contains(pattern))
+            // ASCII case-insensitive containment (the patterns are ASCII): no lowercase copy
+            // of every field for every pattern.
+            !pii_patterns.iter().any(|pattern| {
+                v.as_bytes()
+                    .windows(pattern.len())
+                    .any(|w| w.eq_ignore_ascii_case(pattern.as_bytes()))
+            })
         })
     }
 }
@@ -379,6 +383,27 @@ impl JwtStructuredLogger {
         method: Option<&str>,
         raw_token: &str,
     ) {
+        if self.admit_allowed() {
+            self.emit_allowed(fields, decision_source, route, method, raw_token);
+        }
+    }
+
+    /// Whether an "allowed" entry would be written now: INFO is enabled here and the
+    /// HACK-964 rate limit admits it (this takes the slot). Callers check this before
+    /// extracting [`JwtLogFields`], so a dropped entry costs nothing.
+    pub(crate) fn admit_allowed(&self) -> bool {
+        tracing::enabled!(tracing::Level::INFO) && self.info_rate_limiter.should_emit()
+    }
+
+    /// [`Self::log_allowed`] after [`Self::admit_allowed`] said yes.
+    pub(crate) fn emit_allowed(
+        &self,
+        fields: &JwtLogFields,
+        decision_source: DecisionSource,
+        route: Option<&str>,
+        method: Option<&str>,
+        raw_token: &str,
+    ) {
         // Security: never log raw tokens
         if !fields.validate_no_raw_token(raw_token) {
             error!(
@@ -399,11 +424,69 @@ impl JwtStructuredLogger {
             return;
         }
 
-        // HACK-964: Rate limit INFO-level logs
-        if !self.info_rate_limiter.should_emit() {
-            return; // Drop excess INFO-level logs silently
-        }
+        let log_str = Self::allowed_json(fields, decision_source, route, method);
+        info!(
+            json_fields = %log_str,
+            "JWT validation: allowed"
+        );
+    }
 
+    /// The "allowed" entry's JSON: the object a `serde_json::Map` of these fields serialized
+    /// to (keys sorted, absent fields omitted), from borrowed fields in one buffer.
+    fn allowed_json(
+        fields: &JwtLogFields,
+        decision_source: DecisionSource,
+        route: Option<&str>,
+        method: Option<&str>,
+    ) -> String {
+        #[derive(serde::Serialize)]
+        struct AllowedEntry<'a> {
+            #[serde(skip_serializing_if = "Option::is_none")]
+            actor_subject: Option<&'a str>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            client_id: Option<&'a str>,
+            decision_source: &'a str,
+            event: &'a str,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            issuer: Option<&'a str>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            method: Option<&'a str>,
+            result: &'a str,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            route: Option<&'a str>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            session_id: Option<&'a str>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            subject: Option<&'a str>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            token_id: Option<&'a str>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            token_version: Option<u64>,
+        }
+        serde_json::to_string(&AllowedEntry {
+            actor_subject: fields.actor_subject.as_deref(),
+            client_id: fields.client_id.as_deref(),
+            decision_source: decision_source.as_str(),
+            event: "jwt_validation",
+            issuer: fields.issuer.as_deref(),
+            method,
+            result: "allowed",
+            route,
+            session_id: fields.session_id.as_deref(),
+            subject: fields.subject.as_deref(),
+            token_id: fields.token_id.as_deref(),
+            token_version: fields.token_version,
+        })
+        .unwrap_or_default()
+    }
+
+    #[cfg(test)]
+    fn allowed_json_map(
+        fields: &JwtLogFields,
+        decision_source: DecisionSource,
+        route: Option<&str>,
+        method: Option<&str>,
+    ) -> String {
         let mut log = serde_json::Map::new();
         log.insert("event".to_string(), serde_json::json!("jwt_validation"));
         log.insert("result".to_string(), serde_json::json!("allowed"));
@@ -438,12 +521,7 @@ impl JwtStructuredLogger {
         if let Some(actor) = &fields.actor_subject {
             log.insert("actor_subject".to_string(), serde_json::json!(actor));
         }
-
-        let log_str = serde_json::to_string(&log).unwrap_or_default();
-        info!(
-            json_fields = %log_str,
-            "JWT validation: allowed"
-        );
+        serde_json::to_string(&log).unwrap_or_default()
     }
 
     /// Log a denied JWT validation (WARN level).
@@ -626,6 +704,41 @@ impl Default for JwtStructuredLogger {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn allowed_json_matches_the_map_it_replaced() {
+        let full = JwtLogFields {
+            issuer: Some("https://idam.example.com".into()),
+            subject: Some("user_\"123".into()),
+            client_id: Some("web-portal".into()),
+            session_id: Some("ses_01".into()),
+            token_id: Some("tok_1".into()),
+            token_version: Some(42),
+            actor_subject: Some("agent_9".into()),
+        };
+        let empty = JwtLogFields {
+            issuer: None,
+            subject: None,
+            client_id: None,
+            session_id: None,
+            token_id: None,
+            token_version: None,
+            actor_subject: None,
+        };
+        for f in [&full, &empty] {
+            for (route, method) in [(Some("/v1/x"), Some("GET")), (None, None)] {
+                assert_eq!(
+                    JwtStructuredLogger::allowed_json(f, DecisionSource::JwtClaims, route, method),
+                    JwtStructuredLogger::allowed_json_map(
+                        f,
+                        DecisionSource::JwtClaims,
+                        route,
+                        method
+                    )
+                );
+            }
+        }
+    }
 
     /// Unit: JwtLogFields extracts all standard fields from claims.
     #[test]

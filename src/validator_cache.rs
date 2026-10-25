@@ -88,7 +88,7 @@ use jsonschema::Validator;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, RwLock, Weak};
 use tracing::{debug, info};
 /// Version identifier for an OpenAPI specification
 ///
@@ -231,6 +231,18 @@ pub struct ValidatorCache {
     /// Format: "{handler_name}:{kind}[:{status}]:{digest}"
     /// The spec_version prefix is prepended on the hot path, avoiding re-formatting the stable parts.
     stable_suffixes: Arc<RwLock<HashMap<String, String>>>,
+    /// Hot-path memo for [`Self::get_or_compile_for_route`]: (address of the schema inside its
+    /// route, status or 0 for a request body) → (that route, its validator). See there.
+    route_memo: Arc<RwLock<HashMap<(usize, u16), RouteMemoEntry>>>,
+}
+
+/// One [`ValidatorCache::get_or_compile_for_route`] memo entry.
+#[derive(Clone)]
+struct RouteMemoEntry {
+    /// The route the schema belongs to. Holding a `Weak` keeps its allocation from being
+    /// reused, so a live route at this address is this route.
+    route: Weak<crate::spec::RouteMeta>,
+    validator: Arc<Validator>,
 }
 
 impl ValidatorCache {
@@ -254,7 +266,50 @@ impl ValidatorCache {
             spec_version: Arc::new(RwLock::new(SpecVersion::default())),
             schema_digests: Arc::new(RwLock::new(HashMap::with_capacity(256))),
             stable_suffixes: Arc::new(RwLock::new(HashMap::with_capacity(256))),
+            route_memo: Arc::new(RwLock::new(HashMap::with_capacity(256))),
         }
+    }
+
+    /// [`Self::get_or_compile`] for a schema of `route` (its request body schema, or a response
+    /// schema), as the request path calls it on every request.
+    ///
+    /// A route's schemas never change (routes are immutable behind their `Arc`; a reload makes
+    /// new routes), so the validator is remembered per (route, schema, status) and a hit is a
+    /// map lookup on two integers: no serialization and SHA-256 of the schema, no key strings.
+    /// Misses (first use, a new route after a reload, the cache disabled) go through
+    /// [`Self::get_or_compile`].
+    pub fn get_or_compile_for_route(
+        &self,
+        route: &Arc<crate::spec::RouteMeta>,
+        kind: &str,
+        status: Option<u16>,
+        schema: &Value,
+    ) -> Option<Arc<Validator>> {
+        if !self.enabled {
+            return self.get_or_compile(&route.handler_name, kind, status, schema);
+        }
+        let key = (schema as *const Value as usize, status.unwrap_or(0));
+        if let Ok(memo) = self.route_memo.read() {
+            if let Some(entry) = memo.get(&key) {
+                // Same allocation as the caller's live route ⇒ same route ⇒ same schema.
+                if std::ptr::eq(entry.route.as_ptr(), Arc::as_ptr(route)) {
+                    return Some(Arc::clone(&entry.validator));
+                }
+            }
+        }
+        let validator = self.get_or_compile(&route.handler_name, kind, status, schema)?;
+        if let Ok(mut memo) = self.route_memo.write() {
+            // Drop entries of routes that are gone (reloaded away) before adding.
+            memo.retain(|_, e| e.route.strong_count() > 0);
+            memo.insert(
+                key,
+                RouteMemoEntry {
+                    route: Arc::downgrade(route),
+                    validator: Arc::clone(&validator),
+                },
+            );
+        }
+        Some(validator)
     }
 
     /// Stable digest of a JSON Schema value for cache keys (same schema → same digest).
@@ -497,6 +552,9 @@ impl ValidatorCache {
         let new_version = version.clone();
 
         cache.clear();
+        if let Ok(mut memo) = self.route_memo.write() {
+            memo.clear();
+        }
         self.schema_digests
             .write()
             .expect("digest lock poisoned")
@@ -549,6 +607,9 @@ impl ValidatorCache {
 
         // Clear the cache with both locks held to ensure atomicity
         cache.clear();
+        if let Ok(mut memo) = self.route_memo.write() {
+            memo.clear();
+        }
 
         info!(
             old_version = old_version.version,

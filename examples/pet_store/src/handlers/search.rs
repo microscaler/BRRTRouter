@@ -44,11 +44,15 @@ impl TryFrom<HandlerRequest> for Request {
         let mut data_map = Map::new();
 
         if let Some(v) = req.get_query_param("tags") {
+            // Built once, not per request: decode_param_value reads only its types.
+            static SCHEMA: std::sync::LazyLock<Value> = std::sync::LazyLock::new(
+                || serde_json::json!({"items":{"type":"string"},"type":"array"}),
+            );
             data_map.insert(
                 "tags".to_string(),
                 brrtrouter::server::request::decode_param_value(
                     v,
-                    Some(&serde_json::json!({"items":{"type":"string"},"type":"array"})),
+                    Some(&*SCHEMA),
                     Some(brrtrouter::spec::ParameterStyle::PipeDelimited),
                     Some(false),
                 ),
@@ -59,10 +63,17 @@ impl TryFrom<HandlerRequest> for Request {
         }
 
         if let Some(v) = req.get_query_param("filters") {
+            // Built once, not per request: decode_param_value reads only its types.
+            static SCHEMA: std::sync::LazyLock<Value> = std::sync::LazyLock::new(
+                || serde_json::json!({"additionalProperties":{"type":"string"},"type":"object"}),
+            );
             data_map.insert(
                 "filters".to_string(),
                 brrtrouter::server::request::decode_param_value(
-                    v,Some(&serde_json::json!({"additionalProperties":{"type":"string"},"type":"object"})),Some(brrtrouter::spec::ParameterStyle::DeepObject ),Some(true),
+                    v,
+                    Some(&*SCHEMA),
+                    Some(brrtrouter::spec::ParameterStyle::DeepObject),
+                    Some(true),
                 ),
             );
         } else {
@@ -71,14 +82,12 @@ impl TryFrom<HandlerRequest> for Request {
         }
 
         if let Some(v) = req.get_header("x-trace-id") {
+            // Built once, not per request: decode_param_value reads only its types.
+            static SCHEMA: std::sync::LazyLock<Value> =
+                std::sync::LazyLock::new(|| serde_json::json!({"format":"uuid","type":"string"}));
             data_map.insert(
                 "X-Trace-Id".to_string(),
-                brrtrouter::server::request::decode_param_value(
-                    v,
-                    Some(&serde_json::json!({"format":"uuid","type":"string"})),
-                    None,
-                    None,
-                ),
+                brrtrouter::server::request::decode_param_value(v, Some(&*SCHEMA), None, None),
             );
         } else {
 
@@ -86,14 +95,12 @@ impl TryFrom<HandlerRequest> for Request {
         }
 
         if let Some(v) = req.get_cookie("session") {
+            // Built once, not per request: decode_param_value reads only its types.
+            static SCHEMA: std::sync::LazyLock<Value> =
+                std::sync::LazyLock::new(|| serde_json::json!({"type":"string"}));
             data_map.insert(
                 "session".to_string(),
-                brrtrouter::server::request::decode_param_value(
-                    v,
-                    Some(&serde_json::json!({"type":"string"})),
-                    None,
-                    None,
-                ),
+                brrtrouter::server::request::decode_param_value(v, Some(&*SCHEMA), None, None),
             );
         } else {
 
