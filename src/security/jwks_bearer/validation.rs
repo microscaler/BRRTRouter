@@ -286,13 +286,18 @@ fn extract_and_log_jwt_fields(
     result: &str,
     error_reason: Option<&str>,
 ) {
-    let fields = JwtLogFields::from_claims(claims);
     let logger = &provider.structured_logger;
+    if result == "allowed" {
+        // Every authorized request: extract the fields only for an entry that will be written.
+        if logger.admit_allowed() {
+            let fields = JwtLogFields::from_claims(claims);
+            logger.emit_allowed(&fields, decision_source, None, None, token);
+        }
+        return;
+    }
+    let fields = JwtLogFields::from_claims(claims);
 
     match result {
-        "allowed" => {
-            logger.log_allowed(&fields, decision_source, None, None, token);
-        }
         "denied" => {
             logger.log_denied(
                 &fields,
@@ -349,6 +354,42 @@ fn validate_dynamic_token_status(
     Err(error)
 }
 
+/// The cached claims for `token`, if it is cached, unexpired, and its signing key is still in
+/// the JWKS. An entry that fails either check is removed.
+///
+/// The cache lock is held only for the lookup: checking the key can refresh the JWKS over
+/// HTTP and must not block other requests' cache access.
+fn cached_claims(provider: &super::JwksBearerProvider, token: &str) -> Option<Arc<Value>> {
+    let (exp_with_leeway, claims, kid) = {
+        let mut cache = provider.claims_cache.write().ok()?;
+        let (exp, claims, kid) = cache.get(token)?;
+        (*exp, Arc::clone(claims), Arc::clone(kid))
+    };
+    // SECURITY: the key must still be in the JWKS (rotation / revocation).
+    if !provider.has_key(&kid) {
+        debug!(
+            "JWT cache: key '{}' no longer in JWKS, invalidating cache entry",
+            kid
+        );
+        if let Ok(mut cache) = provider.claims_cache.write() {
+            cache.pop(token);
+        }
+        return None;
+    }
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+    if now >= exp_with_leeway {
+        debug!("JWT cache: token expired, removing from cache");
+        if let Ok(mut cache) = provider.claims_cache.write() {
+            cache.pop(token);
+        }
+        return None;
+    }
+    Some(claims)
+}
+
 /// Internal validation with structured error types
 fn validate_token_internal(
     provider: &super::JwksBearerProvider,
@@ -377,8 +418,56 @@ fn validate_token_internal(
         None => return Err(ValidationError::MissingToken),
     };
 
-    // SECURITY: Parse header FIRST to get kid before cache lookup
-    // This ensures cache key includes kid, so cache invalidates on key rotation
+    // Claims cache, keyed by the token itself. A token's header (kid, typ, alg) is part of the
+    // token, so the token determines the entry; only tokens that passed every header check and
+    // full verification are cached, and the provider's policy (algorithms, iss, aud, leeway)
+    // is fixed once it is built. A hit therefore needs no header parse, no key formatting and
+    // no claims copy (`Arc`); it still requires the signing key to be in the JWKS (rotation),
+    // the token unexpired, and the dynamic status and scopes checked as on a miss.
+    if let Some(cached) = cached_claims(provider, token) {
+        // P2: Track cache hit
+        provider.cache_hits.fetch_add(1, Ordering::Relaxed);
+
+        validate_dynamic_token_status(provider, token, &cached)?;
+
+        // Story 9.6: Log cache-hit validation (decision_source = jwt_claims)
+        let token_scopes = cached.get("scope").and_then(|v| v.as_str()).unwrap_or("");
+        let has_all_scopes = scopes
+            .iter()
+            .all(|s| token_scopes.split_whitespace().any(|ts| ts == s));
+
+        if has_all_scopes {
+            extract_and_log_jwt_fields(
+                provider,
+                token,
+                &cached,
+                DecisionSource::JwtClaims,
+                "allowed",
+                None,
+            );
+            return Ok(true);
+        }
+        let required: Vec<String> = scopes.to_vec();
+        let got: Vec<String> = token_scopes
+            .split_whitespace()
+            .map(|s| s.to_string())
+            .collect();
+        // Story 9.6: Log cache-hit denial (insufficient scopes)
+        extract_and_log_jwt_fields(
+            provider,
+            token,
+            &cached,
+            DecisionSource::JwtClaims,
+            "denied",
+            Some(&format!(
+                "insufficient_scopes: required={:?} got={:?}",
+                required, got
+            )),
+        );
+        return Err(ValidationError::InsufficientScopes { required, got });
+    }
+
+    // SECURITY: Parse the header (kid, typ, alg) before any trust decision.
     let header = match jsonwebtoken::decode_header(token) {
         Ok(h) => h,
         Err(e) => {
@@ -415,115 +504,6 @@ fn validate_token_internal(
         return Err(ValidationError::UnsupportedAlgorithm {
             alg: format!("{:?}", header.alg),
         });
-    }
-
-    // SECURITY: Include kid in cache key so cache invalidates on key rotation
-    // Format: "token|kid" ensures different cache entries for same token with different keys
-    let token_key: Arc<str> = Arc::from(format!("{}|{}", token, kid));
-
-    // Check claims cache AFTER parsing header (we need kid for cache key)
-    // SECURITY: On cache hit, verify key still exists in JWKS before using cached claims
-    // This ensures tokens are invalidated when keys are rotated/revoked
-    {
-        // CRITICAL: Clone all needed values and release lock before calling get_key_for
-        // get_key_for() can trigger HTTP requests (up to 400ms) via refresh_jwks_if_needed(),
-        // which would block all other threads from accessing the claims cache
-        let cached_data = {
-            if let Ok(mut cache_guard) = provider.claims_cache.write() {
-                if let Some((exp_timestamp_with_leeway, cached_claims, cached_kid)) =
-                    cache_guard.get(&token_key)
-                {
-                    // Clone all values while holding the lock
-                    Some((
-                        *exp_timestamp_with_leeway,
-                        cached_claims.clone(),
-                        cached_kid.clone(),
-                    ))
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        };
-
-        if let Some((exp_timestamp_clone, cached_claims_clone, cached_kid_clone)) = cached_data {
-            // Lock is now released - safe to call get_key_for which may trigger HTTP requests
-            // SECURITY: Verify the key still exists in JWKS (key rotation check)
-            // If key was rotated, this will return None and we'll re-validate
-            if provider.get_key_for(&cached_kid_clone).is_none() {
-                // Key no longer exists (rotated/revoked), remove from cache
-                debug!(
-                    "JWT cache: key '{}' no longer in JWKS, invalidating cache entry",
-                    cached_kid_clone
-                );
-                // Re-acquire lock to remove cache entry
-                if let Ok(mut cache_guard) = provider.claims_cache.write() {
-                    cache_guard.pop(&token_key);
-                }
-                // Fall through to full validation below
-            } else {
-                // Key still exists, check expiration
-                let now = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs() as i64;
-
-                if now < exp_timestamp_clone {
-                    // P2: Track cache hit
-                    provider.cache_hits.fetch_add(1, Ordering::Relaxed);
-
-                    validate_dynamic_token_status(provider, token, &cached_claims_clone)?;
-
-                    // Story 9.6: Log cache-hit validation (decision_source = jwt_claims)
-                    let token_scopes = cached_claims_clone
-                        .get("scope")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
-                    let has_all_scopes = scopes
-                        .iter()
-                        .all(|s| token_scopes.split_whitespace().any(|ts| ts == s));
-
-                    if has_all_scopes {
-                        extract_and_log_jwt_fields(
-                            provider,
-                            token,
-                            &cached_claims_clone,
-                            DecisionSource::JwtClaims,
-                            "allowed",
-                            None,
-                        );
-                        return Ok(true);
-                    } else {
-                        let required: Vec<String> = scopes.to_vec();
-                        let got: Vec<String> = token_scopes
-                            .split_whitespace()
-                            .map(|s| s.to_string())
-                            .collect();
-                        // Story 9.6: Log cache-hit denial (insufficient scopes)
-                        extract_and_log_jwt_fields(
-                            provider,
-                            token,
-                            &cached_claims_clone,
-                            DecisionSource::JwtClaims,
-                            "denied",
-                            Some(&format!(
-                                "insufficient_scopes: required={:?} got={:?}",
-                                required, got
-                            )),
-                        );
-                        return Err(ValidationError::InsufficientScopes { required, got });
-                    }
-                } else {
-                    // Token expired, remove from cache
-                    debug!("JWT cache: token expired, removing from cache");
-                    // Re-acquire lock to remove expired entry
-                    if let Ok(mut cache_guard) = provider.claims_cache.write() {
-                        cache_guard.pop(&token_key);
-                    }
-                }
-            }
-        }
     }
 
     // Cache miss or key rotation detected - need to decode token
@@ -606,6 +586,7 @@ fn validate_token_internal(
     };
 
     validate_dynamic_token_status(provider, token, &claims)?;
+    let claims = Arc::new(claims);
 
     // P0: Store decoded claims in cache with leeway applied to expiration
     // Extract exp claim to determine cache validity
@@ -623,12 +604,19 @@ fn validate_token_internal(
                     // P2: Track evictions correctly - LruCache::put() returns Some(old_value) when
                     //     updating an existing key, NOT when evicting. To detect evictions, we must
                     //     check if the key doesn't exist AND the cache is at capacity before inserting.
-                    let key_exists = cache_guard.peek(&token_key).is_some();
+                    let key_exists = cache_guard.peek(token).is_some();
                     let cache_at_capacity = cache_guard.len() >= cache_guard.cap().get();
                     let will_evict = !key_exists && cache_at_capacity;
 
                     // Insert/update the cache entry
-                    cache_guard.put(token_key, (exp_timestamp_with_leeway, claims.clone(), kid));
+                    cache_guard.put(
+                        Arc::from(token),
+                        (
+                            exp_timestamp_with_leeway,
+                            Arc::clone(&claims),
+                            Arc::from(kid),
+                        ),
+                    );
 
                     // Track eviction only if we inserted a new key when cache was at capacity
                     if will_evict {
@@ -696,11 +684,14 @@ pub(super) fn extract_claims_impl(
 
     let token = provider.extract_token(req)?;
 
-    // Parse header to get kid for cache key
-    let header = match jsonwebtoken::decode_header(token) {
-        Ok(h) => h,
-        Err(_) => return None,
-    };
+    // Cache hit (the usual case: `validate` has just cached this token): the claims are copied
+    // once, into the request. See `cached_claims` for what a hit requires.
+    if let Some(cached) = cached_claims(provider, token) {
+        provider.cache_hits.fetch_add(1, Ordering::Relaxed);
+        return Some(Value::clone(&cached));
+    }
+
+    let header = jsonwebtoken::decode_header(token).ok()?;
 
     // SECURITY: Enforce JWT typ claim (RFC 9068) - reject type confusion attacks
     // Same check as validate_token_internal for consistency
@@ -714,71 +705,6 @@ pub(super) fn extract_claims_impl(
     }
 
     let kid = header.kid?;
-
-    // Check cache first
-    // SECURITY: On cache hit, verify key still exists in JWKS before using cached claims
-    // This ensures tokens are invalidated when keys are rotated/revoked
-    let token_key: Arc<str> = Arc::from(format!("{}|{}", token, kid));
-    {
-        // CRITICAL: Clone all needed values and release lock before calling get_key_for
-        // get_key_for() can trigger HTTP requests (up to 400ms) via refresh_jwks_if_needed(),
-        // which would block all other threads from accessing the claims cache
-        let cached_data = {
-            if let Ok(mut cache_guard) = provider.claims_cache.write() {
-                if let Some((exp_timestamp_with_leeway, cached_claims, cached_kid)) =
-                    cache_guard.get(&token_key)
-                {
-                    // Clone all values while holding the lock
-                    Some((
-                        *exp_timestamp_with_leeway,
-                        cached_claims.clone(),
-                        cached_kid.clone(),
-                    ))
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        };
-
-        if let Some((exp_timestamp_clone, cached_claims_clone, cached_kid_clone)) = cached_data {
-            // Lock is now released - safe to call get_key_for which may trigger HTTP requests
-            // SECURITY: Verify the key still exists in JWKS (key rotation check)
-            // If key was rotated, this will return None and we'll re-validate
-            if provider.get_key_for(&cached_kid_clone).is_none() {
-                // Key no longer exists (rotated/revoked), remove from cache
-                debug!(
-                    "JWT cache: key '{}' no longer in JWKS, invalidating cache entry for claims extraction",
-                    cached_kid_clone
-                );
-                // Re-acquire lock to remove cache entry
-                if let Ok(mut cache_guard) = provider.claims_cache.write() {
-                    cache_guard.pop(&token_key);
-                }
-                // Fall through to full validation below
-            } else {
-                // Key still exists, check expiration
-                let now = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs() as i64;
-
-                if now < exp_timestamp_clone {
-                    // P2: Track cache hit
-                    provider.cache_hits.fetch_add(1, Ordering::Relaxed);
-                    return Some(cached_claims_clone);
-                } else {
-                    // Token expired, remove from cache
-                    debug!("JWT cache: token expired for claims extraction, removing from cache");
-                    // Re-acquire lock to remove expired entry
-                    if let Ok(mut cache_guard) = provider.claims_cache.write() {
-                        cache_guard.pop(&token_key);
-                    }
-                }
-            }
-        }
-    }
 
     // Cache miss - validate and decode token
     provider.cache_misses.fetch_add(1, Ordering::Relaxed);
@@ -822,7 +748,14 @@ pub(super) fn extract_claims_impl(
             let exp_timestamp_with_leeway = exp_timestamp + provider.leeway_secs as i64;
             if now < exp_timestamp_with_leeway {
                 if let Ok(mut cache_guard) = provider.claims_cache.write() {
-                    cache_guard.put(token_key, (exp_timestamp_with_leeway, claims.clone(), kid));
+                    cache_guard.put(
+                        Arc::from(token),
+                        (
+                            exp_timestamp_with_leeway,
+                            Arc::new(claims.clone()),
+                            Arc::from(kid),
+                        ),
+                    );
                 }
             }
         }

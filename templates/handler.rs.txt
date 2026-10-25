@@ -84,11 +84,16 @@ impl TryFrom<HandlerRequest> for Request {
         {% else %}
         if let Some(v) = req.get_cookie("{{ p.name }}") {
         {% endif %}
+            {%- if p.schema.is_some() %}
+            // Built once, not per request: decode_param_value reads only its types.
+            static SCHEMA: std::sync::LazyLock<Value> =
+                std::sync::LazyLock::new(|| serde_json::json!({{ p.schema | json }}));
+            {%- endif %}
             data_map.insert(
                 "{{ p.name }}".to_string(),
                 brrtrouter::server::request::decode_param_value(
                     v,
-                    {%- if p.schema.is_some() %}Some(&serde_json::json!({{ p.schema | json }})){%- else %}None{%- endif %},
+                    {%- if p.schema.is_some() %}Some(&*SCHEMA){%- else %}None{%- endif %},
                     {%- if p.style.is_some() %}Some(brrtrouter::spec::ParameterStyle::{{ p.style.as_ref().unwrap() }} ){%- else %}None{%- endif %},
                     {%- if p.explode.is_some() %}Some({{ p.explode.unwrap() }}){%- else %}None{%- endif %},
                 ),

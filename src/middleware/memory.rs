@@ -312,11 +312,9 @@ impl Default for MemoryMiddleware {
 
 impl Middleware for MemoryMiddleware {
     fn before(&self, _req: &HandlerRequest) -> Option<HandlerResponse> {
-        // Record memory before handler execution
-        let _before = MemoryStats::current();
-
-        // Store in request context (would need request context support)
-        // For now, just update general stats
+        // Update general stats. (A sample is a read of /proc/self/smaps on Linux: as a
+        // per-request middleware this costs two reads per request. Generated services hand the
+        // middleware to the service for /metrics and let `start_memory_monitor` sample it.)
         self.update();
 
         None
@@ -328,11 +326,16 @@ impl Middleware for MemoryMiddleware {
 
         // Track handler invocation count (skip if lock poisoned)
         if let Ok(mut handler_stats) = self.handler_memory.write() {
-            let stats = handler_stats
-                .entry(req.handler_name.clone())
-                .or_insert_with(HandlerMemoryStats::default);
-
-            stats.invocations += 1;
+            // Look up by `&str` first: the owned key is only built for a handler's first call.
+            match handler_stats.get_mut(req.handler_name.as_str()) {
+                Some(stats) => stats.invocations += 1,
+                None => {
+                    handler_stats
+                        .entry(req.handler_name.clone())
+                        .or_insert_with(HandlerMemoryStats::default)
+                        .invocations += 1;
+                }
+            }
         }
 
         // NOTE: We cannot accurately attribute memory to specific handlers

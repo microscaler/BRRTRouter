@@ -109,23 +109,19 @@ impl Sanitizer {
             return false;
         }
 
-        let lower = field_name.to_ascii_lowercase();
-
-        for pattern in CREDENTIAL_PATTERNS {
-            if lower.contains(pattern) {
-                return true;
-            }
+        // Case-insensitive substring match without lowercasing into a new String: this runs
+        // for every header of every request (the access log).
+        if CREDENTIAL_PATTERNS
+            .iter()
+            .any(|p| contains_ignore_ascii_case(field_name, p))
+        {
+            return true;
         }
 
-        if self.level == RedactionLevel::Full {
-            for pattern in PII_PATTERNS {
-                if lower.contains(pattern) {
-                    return true;
-                }
-            }
-        }
-
-        false
+        self.level == RedactionLevel::Full
+            && PII_PATTERNS
+                .iter()
+                .any(|p| contains_ignore_ascii_case(field_name, p))
     }
 
     /// Mask a sensitive value.
@@ -215,12 +211,48 @@ impl Sanitizer {
     /// Sensitive values are masked per [`sanitize_headers`](Self::sanitize_headers).
     /// Duplicate header names keep the last value (typical for access triage).
     pub fn headers_for_log(&self, headers: &HeaderVec) -> String {
-        let safe = self.sanitize_headers(headers);
-        let mut map = serde_json::Map::with_capacity(safe.len());
-        for (name, value) in safe.iter() {
-            map.insert(name.to_string(), Value::String(value.clone()));
+        // The same JSON a `serde_json::Map` of the sanitized headers serializes to (keys in
+        // sorted order, the last of duplicate names wins), written straight into one buffer:
+        // no per-header copies of names and values. Runs twice per request (the access log).
+        let mut order: smallvec::SmallVec<[usize; 32]> = (0..headers.len()).collect();
+        order.sort_by(|&a, &b| {
+            headers[a]
+                .0
+                .as_ref()
+                .cmp(headers[b].0.as_ref())
+                .then(a.cmp(&b))
+        });
+        let mut out: Vec<u8> = Vec::with_capacity(
+            2 + headers
+                .iter()
+                .map(|(k, v)| k.len() + v.len() + 6)
+                .sum::<usize>(),
+        );
+        out.push(b'{');
+        let mut first = true;
+        for (i, &idx) in order.iter().enumerate() {
+            let (name, value) = &headers[idx];
+            if order
+                .get(i + 1)
+                .is_some_and(|&next| headers[next].0 == *name)
+            {
+                continue; // a later header of the same name wins
+            }
+            if !first {
+                out.push(b',');
+            }
+            first = false;
+            write_json_str(&mut out, name);
+            out.push(b':');
+            if self.should_redact(name) {
+                write_json_str(&mut out, &self.redact_value(name, value));
+            } else {
+                write_json_str(&mut out, value);
+            }
         }
-        Value::Object(map).to_string()
+        out.push(b'}');
+        // Only JSON-escaped `&str`s and ASCII punctuation were written.
+        String::from_utf8(out).unwrap_or_default()
     }
 
     /// Return a copy of the param vec with sensitive parameter values masked.
@@ -242,6 +274,18 @@ impl Sanitizer {
             })
             .collect()
     }
+}
+
+/// ASCII case-insensitive `haystack.contains(needle)` for an ASCII-lowercase `needle`.
+fn contains_ignore_ascii_case(haystack: &str, needle: &str) -> bool {
+    let (h, n) = (haystack.as_bytes(), needle.as_bytes());
+    n.is_empty() || h.windows(n.len()).any(|w| w.eq_ignore_ascii_case(n))
+}
+
+/// Append `s` as a JSON string literal (serde_json's escaping).
+fn write_json_str(out: &mut Vec<u8>, s: &str) {
+    // Writing a `&str` into a `Vec<u8>` cannot fail.
+    let _ = serde_json::to_writer(&mut *out, s);
 }
 
 /// Global default sanitizer, initialised lazily from environment.
@@ -552,6 +596,55 @@ mod tests {
         assert_eq!(parsed["authorization"], "<REDACTED>");
         assert_eq!(parsed["x-request-id"], "req-1");
         assert!(!logged.contains("sk_live_secret123"));
+    }
+
+    #[test]
+    fn test_headers_for_log_matches_serde_map_serialization() {
+        // Sorted keys, last duplicate wins, escaping, redaction: exactly what building a
+        // serde_json::Map of the sanitized headers produced before.
+        for level in [
+            RedactionLevel::None,
+            RedactionLevel::Credentials,
+            RedactionLevel::Full,
+        ] {
+            let s = Sanitizer::new(level);
+            let headers: HeaderVec = smallvec::smallvec![
+                (Arc::from("x-request-id"), "req-1".to_string()),
+                (
+                    Arc::from("authorization"),
+                    "Bearer sk_live_secret123".to_string()
+                ),
+                (
+                    Arc::from("user-agent"),
+                    "a \"quoted\" \\ agent\twith\u{1}ctl é".to_string()
+                ),
+                (Arc::from("cookie"), "a=b".to_string()),
+                (Arc::from("x-api-key"), "abcdef123".to_string()),
+                (Arc::from("accept"), "first".to_string()),
+                (Arc::from("X-Mixed-Token"), "tok_12345".to_string()),
+                (Arc::from("accept"), "second".to_string()),
+            ];
+            let mut map = serde_json::Map::new();
+            for (name, value) in s.sanitize_headers(&headers).iter() {
+                map.insert(name.to_string(), Value::String(value.clone()));
+            }
+            assert_eq!(s.headers_for_log(&headers), Value::Object(map).to_string());
+        }
+        let empty = HeaderVec::new();
+        assert_eq!(
+            Sanitizer::new(RedactionLevel::Credentials).headers_for_log(&empty),
+            "{}"
+        );
+    }
+
+    #[test]
+    fn test_should_redact_is_ascii_case_insensitive_substring() {
+        let s = Sanitizer::new(RedactionLevel::Credentials);
+        assert!(s.should_redact("X_API_KEY"));
+        assert!(s.should_redact("Set-Cookie"));
+        assert!(s.should_redact("x_Auth_TOKEN_v2"));
+        assert!(!s.should_redact("content-type"));
+        assert!(!s.should_redact(""));
     }
 
     // ========================================================================

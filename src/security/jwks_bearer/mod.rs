@@ -213,10 +213,13 @@ pub struct JwksBearerProvider {
     // JSF P2: Cache decoded JWT claims to avoid repeated decode operations
     // Uses LRU cache with Arc<str> keys to prevent memory leaks and avoid allocations
     // P1: RwLock for explicit read/write separation (LruCache::get() requires &mut for LRU updates)
-    // SECURITY: Cache key includes kid (key ID) so cache invalidates on key rotation
-    // Format: "token|kid" -> (exp_timestamp_with_leeway, decoded_claims, kid)
+    // Keyed by the token (its header, kid included, is part of it):
+    // token -> (exp_timestamp_with_leeway, decoded_claims, kid). A hit is a lookup by `&str`
+    // with no allocation and an `Arc` clone of the claims; SECURITY: the kid is kept so a hit
+    // still requires that key in the JWKS (rotation / revocation).
+    #[allow(clippy::type_complexity)]
     pub(super) claims_cache:
-        std::sync::RwLock<LruCache<Arc<str>, (i64, serde_json::Value, String)>>,
+        std::sync::RwLock<LruCache<Arc<str>, (i64, Arc<serde_json::Value>, Arc<str>)>>,
     claims_cache_size: usize,
     cookie_name: Option<String>,
     // P2: Cache metrics for observability and tuning
@@ -636,10 +639,13 @@ impl JwksBearerProvider {
     /// * `token` - The JWT token string to invalidate
     /// * `kid` - The key ID to invalidate
     pub fn invalidate_token_with_kid(&self, token: &str, kid: &str) {
-        // SECURITY: Cache key format is "token|kid"
-        let token_key: Arc<str> = Arc::from(format!("{}|{}", token, kid));
         if let Ok(mut guard) = self.claims_cache.write() {
-            guard.pop(&token_key);
+            if guard
+                .peek(token)
+                .is_some_and(|(_, _, cached_kid)| &**cached_kid == kid)
+            {
+                guard.pop(token);
+            }
         }
     }
 
@@ -1527,6 +1533,21 @@ impl JwksBearerProvider {
     ///
     /// P1: Non-blocking - uses lock-free reads (RwLock) and triggers refresh in background.
     /// If refresh fails, uses stale cache (graceful degradation).
+    /// Whether the JWKS has a key for `kid` (claims-cache hits): [`Self::get_key_for`]'s
+    /// refresh behaviour, without copying the key or opening a span when it is there.
+    pub(super) fn has_key(&self, kid: &str) -> bool {
+        self.refresh_jwks_if_needed();
+        if self
+            .cache
+            .read()
+            .is_ok_and(|guard| guard.1.contains_key(kid))
+        {
+            return true;
+        }
+        // Unknown or rotated kid: the slow path forces the (rate-limited) refresh.
+        self.get_key_for(kid).is_some()
+    }
+
     pub(super) fn get_key_for(&self, kid: &str) -> Option<jsonwebtoken::DecodingKey> {
         // ADR-0001: created (as a child of the request context), not entered.
         let span = may_tracing::child_span!(Level::DEBUG, "jwks_cache", kid = kid);
@@ -1685,21 +1706,16 @@ impl SecurityProvider for JwksBearerProvider {
         // Record result in span attribute
         span.record("result", if result { "valid" } else { "invalid" });
 
-        // Record token version from claims if available
-        if let Some(t) = &token {
-            if let Ok(header) = jsonwebtoken::decode_header(t) {
-                if let Some(kid) = &header.kid {
-                    // Try to get token version from claims cache
-                    if let Ok(mut cache) = self.claims_cache.write() {
-                        let cache_key: Arc<str> = Arc::from(format!("{}|{}", t, kid));
-                        if let Some((_, claims, _)) = cache.get::<Arc<str>>(&cache_key.into()) {
-                            if let Some(ver) = claims.get("ver") {
-                                if let Some(v) = ver.as_u64() {
-                                    span.record("token_version", v);
-                                }
-                            }
-                        }
-                    }
+        // Record token version from claims if available (only when the DEBUG span is on: it
+        // costs a cache lock per request otherwise).
+        if let Some(t) = token.filter(|_| !span.is_disabled()) {
+            if let Ok(cache) = self.claims_cache.read() {
+                if let Some(v) = cache
+                    .peek(t)
+                    .and_then(|(_, claims, _)| claims.get("ver"))
+                    .and_then(serde_json::Value::as_u64)
+                {
+                    span.record("token_version", v);
                 }
             }
         }

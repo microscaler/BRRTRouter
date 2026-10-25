@@ -356,10 +356,9 @@ pub fn parse_request<'buf, 'header, 'stream>(
         return Err(super::request_target::REQUEST_TARGET_TOO_LONG.to_string());
     }
     let path = super::request_target::path_only(&request_target).to_string();
-    // JSF P1: Use static strings for HTTP version (avoids format! allocation)
-    // Note: may_minihttp version() returns a Debug-able type, but we can't match on it
-    // So we format once (acceptable as it's not in the hot path per-request allocation)
-    let http_version = format!("{:?}", req.version());
+    // Only the DEBUG "HTTP request parsed" event reads the version: format it there (tracing
+    // evaluates field values only for enabled callsites), not on every request.
+    let http_version = req.version();
 
     // R3: Headers extracted — using SmallVec for stack allocation.
     // PRD Phase 2.1: `intern_header_name` returns a shared `Arc<str>` for the
@@ -377,25 +376,20 @@ pub fn parse_request<'buf, 'header, 'stream>(
         })
         .collect();
 
-    // JSF P2: Header names are now Arc<str>, so we get references to the Arc
-    let header_names: Vec<&Arc<str>> = headers.iter().map(|(k, _)| k).take(20).collect();
     let header_count = headers.len();
-    let size_bytes: usize = headers.iter().map(|(k, v)| k.len() + v.len()).sum();
-
+    // Field values below are computed only when DEBUG is enabled for the callsite.
     debug!(
         header_count = header_count,
-        size_bytes = size_bytes,
-        header_names = ?header_names,
+        size_bytes = headers.iter().map(|(k, v)| k.len() + v.len()).sum::<usize>(),
+        header_names = ?headers.iter().map(|(k, _)| k).take(20).collect::<Vec<&Arc<str>>>(),
         "Headers extracted"
     );
 
     // R7: Cookies extracted
     let cookies = parse_cookies(&headers);
-    // JSF P2: Cookie names are now Arc<str>
-    let cookie_names: Vec<&Arc<str>> = cookies.iter().map(|(k, _)| k).collect();
     debug!(
         cookie_count = cookies.len(),
-        cookie_names = ?cookie_names,
+        cookie_names = ?cookies.iter().map(|(k, _)| k).collect::<Vec<&Arc<str>>>(),
         "Cookies extracted"
     );
 
@@ -501,7 +495,7 @@ pub fn parse_request<'buf, 'header, 'stream>(
     debug!(
         method = %method,
         path = %path,
-        http_version = %http_version,
+        http_version = ?http_version,
         headers_count = header_count,
         "HTTP request parsed"
     );

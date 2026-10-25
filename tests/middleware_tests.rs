@@ -90,7 +90,8 @@ fn test_metrics_stack_usage() {
         .unwrap();
     assert_eq!(resp.status, 200);
     let (size, _used) = metrics.stack_usage();
-    assert_eq!(size, 0x801);
+    // may takes words; the metric reports bytes (since BRRTR_STACK_SIZE became bytes).
+    assert_eq!(size, 0x801 * std::mem::size_of::<usize>());
     // used is always >= 0 since it's usize, no need to assert
     // tracing.wait_for_span("get_pet");
 }
