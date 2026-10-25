@@ -5,10 +5,12 @@
 //! and `SERVICE_HTTP_PORT` (default 8080). Each request opens a fresh
 //! `may_minihttp` connection to avoid cross-service client reuse (FR-26).
 
+use std::borrow::Cow;
+use std::collections::HashMap;
 use std::io::Read;
-use std::net::ToSocketAddrs;
-use std::sync::Arc;
-use std::time::Duration;
+use std::net::{SocketAddr, ToSocketAddrs};
+use std::sync::{Arc, OnceLock, RwLock};
+use std::time::{Duration, Instant};
 
 use http_legacy::{Method, Uri};
 use may_minihttp::client::{HttpClient, Response as DownstreamResponse};
@@ -374,6 +376,84 @@ pub fn downstream_http_port() -> u16 {
         .unwrap_or(DEFAULT_DOWNSTREAM_PORT)
 }
 
+/// How long a resolved downstream address is reused before it is looked up again
+/// (`BRRTR_PROXY_DNS_TTL_SECS`, default 30; `0` resolves on every request).
+///
+/// A Service's ClusterIP does not change while the Service exists; a stale address (the Service
+/// was recreated) fails to connect, which drops it and resolves again before giving up.
+fn dns_ttl() -> Duration {
+    static TTL: OnceLock<Duration> = OnceLock::new();
+    *TTL.get_or_init(|| {
+        Duration::from_secs(
+            std::env::var("BRRTR_PROXY_DNS_TTL_SECS")
+                .ok()
+                .and_then(|v| v.trim().parse().ok())
+                .unwrap_or(30),
+        )
+    })
+}
+
+/// Resolved downstream addresses by host: (port, address, resolved at).
+type DnsCache = RwLock<HashMap<String, (u16, SocketAddr, Instant)>>;
+
+fn dns_cache() -> &'static DnsCache {
+    static CACHE: OnceLock<DnsCache> = OnceLock::new();
+    CACHE.get_or_init(|| RwLock::new(HashMap::new()))
+}
+
+/// The name handed to the resolver. A Kubernetes Service FQDN gets a trailing dot: it has four
+/// dots, below the pod resolver's `ndots:5`, so without it every lookup first walks the pod's
+/// search domains (`<name>.<ns>.svc.cluster.local`, `.svc.cluster.local`, ... — an NXDOMAIN
+/// round trip, A and AAAA, for each) before asking for the name itself.
+fn lookup_name(host: &str) -> Cow<'_, str> {
+    if host.ends_with(".cluster.local") {
+        Cow::Owned(format!("{host}."))
+    } else {
+        Cow::Borrowed(host)
+    }
+}
+
+/// The address to connect to for `host:port`: from the cache while fresh, else resolved (a
+/// blocking `getaddrinfo` on the coroutine's worker thread, so not on every request).
+fn resolve_downstream(host: &str, port: u16) -> Result<SocketAddr, ProxyError> {
+    let ttl = dns_ttl();
+    if !ttl.is_zero() {
+        if let Ok(cache) = dns_cache().read() {
+            if let Some((p, addr, at)) = cache.get(host) {
+                if *p == port && at.elapsed() < ttl {
+                    return Ok(*addr);
+                }
+            }
+        }
+    }
+    let addr = ToSocketAddrs::to_socket_addrs(&(lookup_name(host).as_ref(), port))
+        .map_err(|e| classify_transport_error(ProxyTransportKind::Dns, &e.to_string()))?
+        .next()
+        .ok_or(ProxyError::Dns)?;
+    if !ttl.is_zero() {
+        if let Ok(mut cache) = dns_cache().write() {
+            cache.insert(host.to_string(), (port, addr, Instant::now()));
+        }
+    }
+    Ok(addr)
+}
+
+/// Drop `host`'s cached address if it is `addr`; true when it was (the address came from the
+/// cache and may be stale).
+fn forget_downstream(host: &str, addr: SocketAddr) -> bool {
+    dns_cache()
+        .write()
+        .map(|mut cache| {
+            if cache.get(host).is_some_and(|(_, a, _)| *a == addr) {
+                cache.remove(host);
+                true
+            } else {
+                false
+            }
+        })
+        .unwrap_or(false)
+}
+
 /// Stable pool key for `(host, port)` — used in tests; runtime connects per request.
 #[must_use]
 pub fn client_pool_key(host: &str, port: u16) -> String {
@@ -461,10 +541,7 @@ fn send_downstream(
     let host = downstream_host(downstream_service);
     let port = downstream_http_port();
 
-    let target_ip = ToSocketAddrs::to_socket_addrs(&(host.as_str(), port))
-        .map_err(|e| classify_transport_error(ProxyTransportKind::Dns, &e.to_string()))?
-        .next()
-        .ok_or(ProxyError::Dns)?;
+    let target_ip = resolve_downstream(&host, port)?;
 
     // Decision B: validate both stacks; convert to legacy Uri only at this edge
     // (no full request-target embedded in error Display).
@@ -475,8 +552,23 @@ fn send_downstream(
     let method = Method::from_bytes(req.method.as_str().as_bytes())
         .map_err(|_e| ProxyError::InvalidMethod)?;
 
-    let mut client = HttpClient::connect(target_ip)
-        .map_err(|e| classify_transport_error(ProxyTransportKind::Connect, &e.to_string()))?;
+    let mut client = match HttpClient::connect(target_ip) {
+        Ok(client) => client,
+        // A cached address may be stale (the Service was recreated): resolve again and retry
+        // once. Nothing was sent, so this is safe for any method.
+        Err(_) if forget_downstream(&host, target_ip) => {
+            let fresh = resolve_downstream(&host, port)?;
+            HttpClient::connect(fresh).map_err(|e| {
+                classify_transport_error(ProxyTransportKind::Connect, &e.to_string())
+            })?
+        }
+        Err(e) => {
+            return Err(classify_transport_error(
+                ProxyTransportKind::Connect,
+                &e.to_string(),
+            ))
+        }
+    };
     client.set_timeout(Some(proxy_timeout()));
 
     let mut proxy_req = client.new_request(method, uri);
@@ -1167,6 +1259,37 @@ mod tests {
         std::env::set_var("SERVICE_HTTP_PORT", "9090");
         assert_eq!(downstream_http_port(), 9090);
         std::env::remove_var("SERVICE_HTTP_PORT");
+    }
+
+    #[test]
+    fn lookup_name_makes_service_fqdns_absolute() {
+        assert_eq!(
+            lookup_name("market.pw.svc.cluster.local"),
+            "market.pw.svc.cluster.local."
+        );
+        assert_eq!(lookup_name("market"), "market");
+        assert_eq!(lookup_name("localhost"), "localhost");
+        assert_eq!(lookup_name("api.example.com"), "api.example.com");
+    }
+
+    #[test]
+    fn resolve_downstream_caches_and_forgets() {
+        let host = "localhost";
+        let a = resolve_downstream(host, 18_081).expect("localhost resolves");
+        assert_eq!(a.port(), 18_081);
+        // cached for the same port
+        assert!(dns_cache()
+            .read()
+            .unwrap()
+            .get(host)
+            .is_some_and(|(p, x, _)| *p == 18_081 && *x == a));
+        // another port is a miss, re-resolved and re-cached
+        let b = resolve_downstream(host, 18_082).expect("localhost resolves");
+        assert_eq!(b.port(), 18_082);
+        // forgetting only drops the address it was asked about
+        assert!(!forget_downstream(host, a));
+        assert!(forget_downstream(host, b));
+        assert!(dns_cache().read().unwrap().get(host).is_none());
     }
 
     #[test]
