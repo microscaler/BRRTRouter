@@ -562,7 +562,11 @@ pub fn proxy_sse(
     downstream_service: &str,
     path_template: &str,
 ) -> HandlerResponse {
-    match proxy_sse_inner(req, downstream_service, path_template) {
+    let started = std::time::Instant::now();
+    let result = proxy_sse_inner(req, downstream_service, path_template);
+    // for a stream, the time to the downstream's response headers
+    record_call(req, downstream_service, &result, started);
+    match result {
         Ok(res) => res,
         Err(e) => proxy_error_response(&e),
     }
@@ -743,10 +747,40 @@ pub fn proxy_untyped(
     downstream_service: &str,
     path_template: &str,
 ) -> HandlerResponse {
-    match proxy_untyped_inner(req, downstream_service, path_template) {
+    let started = std::time::Instant::now();
+    let result = proxy_untyped_inner(req, downstream_service, path_template);
+    record_call(req, downstream_service, &result, started);
+    match result {
         Ok(res) => res,
         Err(e) => proxy_error_response(&e),
     }
+}
+
+/// One downstream call into `http_client_request_duration_seconds` (see [`super::client_metrics`]). A request that
+/// never left (an invalid path, a target too long) is not a call to the downstream and is not recorded.
+fn record_call(
+    req: &HandlerRequest,
+    downstream_service: &str,
+    result: &Result<HandlerResponse, ProxyError>,
+    started: std::time::Instant,
+) {
+    let (status, error) = match result {
+        Ok(res) => (Some(res.status), None),
+        Err(
+            ProxyError::InvalidMethod
+            | ProxyError::InvalidPath { .. }
+            | ProxyError::RequestTargetTooLong { .. }
+            | ProxyError::BodySerialize,
+        ) => return,
+        Err(e) => (None, Some(proxy_error_reason_code(e))),
+    };
+    super::client_metrics::record(
+        downstream_service,
+        req.method.as_str(),
+        status,
+        error,
+        started.elapsed(),
+    );
 }
 
 fn proxy_untyped_inner(

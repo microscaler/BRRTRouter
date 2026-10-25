@@ -706,6 +706,8 @@ pub fn metrics_endpoint(
     );
     metrics.auth_failure_reasons().render_prometheus(&mut body);
     crate::security::telemetry::render_jwks_prometheus(&mut body);
+    // A BFF's calls to its downstream services (nothing until the first proxied call).
+    crate::http::client_metrics::render_prometheus(&mut body);
 
     body.push_str(
         "# HELP brrtrouter_cors_origin_rejections_total CORS rejections: Origin not allowed (403)\n",
