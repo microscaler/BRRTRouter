@@ -44,7 +44,8 @@ use crate::router::ParamVec;
 use serde_json::Value;
 use std::sync::Arc;
 
-/// Credential field-name patterns (case-insensitive substring match).
+/// Credential field-name patterns (substring match ignoring ASCII case and separators: `-`, `.` and
+/// space match `_`, so `api_key` also matches the `X-API-Key` header and `apiKey` via `apikey`).
 const CREDENTIAL_PATTERNS: &[&str] = &[
     "password",
     "passwd",
@@ -64,6 +65,9 @@ const CREDENTIAL_PATTERNS: &[&str] = &[
     "credit_card",
     "creditcard",
     "ccnumber",
+    "private_key",
+    "session_id",
+    "sessionid",
 ];
 
 /// PII field-name patterns (case-insensitive substring match).
@@ -102,8 +106,8 @@ impl Sanitizer {
 
     /// Check whether a field name matches the sensitive-field policy.
     ///
-    /// Matching is case-insensitive and uses substring containment (e.g.
-    /// `"x_api_key"` matches the `"api_key"` pattern).
+    /// Matching is a substring containment that ignores ASCII case and treats `-`, `.` and space as
+    /// `_` (e.g. `"x_api_key"`, `"X-API-Key"` and `"x.api.key"` all match the `"api_key"` pattern).
     pub fn should_redact(&self, field_name: &str) -> bool {
         if self.level == RedactionLevel::None {
             return false;
@@ -277,9 +281,25 @@ impl Sanitizer {
 }
 
 /// ASCII case-insensitive `haystack.contains(needle)` for an ASCII-lowercase `needle`.
+/// Fold a name byte for matching: ASCII lowercase, and `-`, `.`, space as `_`.
+#[inline]
+fn fold_name_byte(b: u8) -> u8 {
+    match b {
+        b'-' | b'.' | b' ' => b'_',
+        b => b.to_ascii_lowercase(),
+    }
+}
+
+/// Whether `needle` occurs in `haystack` ignoring ASCII case and separators (`fold_name_byte`).
+/// No allocation: it runs for every header of every request (the access log).
 fn contains_ignore_ascii_case(haystack: &str, needle: &str) -> bool {
     let (h, n) = (haystack.as_bytes(), needle.as_bytes());
-    n.is_empty() || h.windows(n.len()).any(|w| w.eq_ignore_ascii_case(n))
+    n.is_empty()
+        || h.windows(n.len()).any(|w| {
+            w.iter()
+                .zip(n)
+                .all(|(a, b)| fold_name_byte(*a) == fold_name_byte(*b))
+        })
 }
 
 /// Append `s` as a JSON string literal (serde_json's escaping).
@@ -635,6 +655,43 @@ mod tests {
             Sanitizer::new(RedactionLevel::Credentials).headers_for_log(&empty),
             "{}"
         );
+    }
+
+    #[test]
+    fn test_should_redact_ignores_case_and_separators() {
+        let s = Sanitizer::new(RedactionLevel::Credentials);
+        // Hyphenated headers were missed before (patterns are written with `_`).
+        for name in [
+            "x-api-key",
+            "X-API-Key",
+            "x.api.key",
+            "X-Auth-Token",
+            "Authorization",
+            "Proxy-Authorization",
+            "Cookie",
+            "set_cookie",
+            "X-Session-Id",
+            "x-csrf-token",
+            "X-Amz-Security-Token",
+            "client-secret",
+            "Private-Key",
+        ] {
+            assert!(s.should_redact(name), "{name}");
+        }
+        for name in [
+            "content-type",
+            "accept-encoding",
+            "x-request-id",
+            "traceparent",
+        ] {
+            assert!(!s.should_redact(name), "{name}");
+        }
+        let line = s.headers_for_log(&smallvec::smallvec![
+            (Arc::from("x-api-key"), "sk_live_abcdef".to_string()),
+            (Arc::from("x-auth-token"), "tok_secret_value".to_string()),
+        ]);
+        assert!(!line.contains("sk_live_abcdef"), "{line}");
+        assert!(!line.contains("tok_secret_value"), "{line}");
     }
 
     #[test]

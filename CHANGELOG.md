@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed (log redaction; response sampling per operation)
+
+- **Hyphenated secret headers were logged in clear.** Redaction patterns are written with `_` (`api_key`), so
+  `X-API-Key` (and `x.api.key`) never matched. Name matching now ignores ASCII case and treats `-`, `.` and space as
+  `_`, with no allocation per header. Also redacted now: `private_key`, `session_id`/`sessionid` (e.g.
+  `X-Session-Id`). `authorization`, `proxy-authorization`, `cookie`/`set-cookie` and any `*-token` header were and
+  stay redacted.
+- **`sample:<rate>` samples each operation.** One process-wide counter could check every response of one route and
+  none of another under a steady interleaving (Codex review on #510); the count is now kept per handler.
+- **Tooling: `metadata.extensions` in a BFF suite config** puts root `x-*` keys (e.g. `x-brrtrouter-stack-size`)
+  into the generated BFF spec, right after `openapi`. Root extensions had no source, so they were hand-added to
+  generated copies and lost on the next generation.
+
 ### Changed (response validation modes; pass-through is opt-in) — ADR 006
 
 - **`BRRTR_RESPONSE_VALIDATION=full|sample:<rate>|off`**, default `full` (unchanged behaviour: a mismatch is a 500).

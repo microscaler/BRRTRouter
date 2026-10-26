@@ -2202,7 +2202,7 @@ impl HttpService for AppService {
                         } else {
                             super::response_validation::ResponseValidation::global()
                         };
-                        if !mode.should_check() {
+                        if !mode.should_check(&route.handler_name) {
                             super::response_validation::record_skipped(&route.handler_name);
                         } else if let Some(compiled) = self
                             .validator_cache
