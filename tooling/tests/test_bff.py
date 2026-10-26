@@ -1055,7 +1055,14 @@ def test_openapi30_nullable_is_rewritten_for_the_31_bff(tmp_path: Path) -> None:
                             "nullable": True,
                         },
                         "count": {"type": "integer", "nullable": False},
+                        "flags": {
+                            "type": "object",
+                            "enum": [{"nullable": True}],
+                            "example": {"nullable": True},
+                            "x-note": {"nullable": True},
+                        },
                         "nullable": {"type": "boolean"},
+                        "default": {"type": "string", "nullable": True},
                     },
                 },
             }
@@ -1069,10 +1076,20 @@ def test_openapi30_nullable_is_rewritten_for_the_31_bff(tmp_path: Path) -> None:
     assert props["state"] == {"type": ["string", "null"], "enum": ["open", "paid", None]}
     assert props["tax"] == {
         "description": "the tax fact",
-        "oneOf": [{"allOf": [{"$ref": "#/components/schemas/InvoiceTax"}]}, {"type": "null"}],
+        "anyOf": [{"allOf": [{"$ref": "#/components/schemas/InvoiceTax"}]}, {"type": "null"}],
     }
     assert props["count"] == {"type": "integer"}
+    # Instance data and extensions keep their `nullable` keys: they are values, not schemas.
+    assert props["flags"] == {
+        "type": "object",
+        "enum": [{"nullable": True}],
+        "example": {"nullable": True},
+        "x-note": {"nullable": True},
+    }
     assert props["nullable"] == {"type": "boolean"}  # a property named `nullable` is not a flag
+    assert props["default"] == {
+        "type": ["string", "null"]
+    }  # a property named `default` is a schema
 
 
 def test_openapi31_specs_are_not_rewritten(tmp_path: Path) -> None:

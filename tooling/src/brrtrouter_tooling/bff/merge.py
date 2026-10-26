@@ -18,16 +18,19 @@ from brrtrouter_tooling.helpers import (
 
 logger = logging.getLogger(__name__)
 
-_COMBINERS = ("allOf", "anyOf", "oneOf")
+_INSTANCE_KEYS = frozenset({"example", "examples", "enum", "default", "const"})
+_NAME_MAPS = frozenset({"properties", "patternProperties", "schemas", "definitions", "$defs"})
 
 
-def _nullable_to_31(node: Any) -> int:
+def _nullable_to_31(node: Any, names: bool = False) -> int:
     """Rewrite OpenAPI 3.0 `nullable` in place for a 3.1 document; return how many were rewritten.
 
     The BFF spec is 3.1 (JSON Schema 2020-12), where `nullable` is not a keyword: a sub-service spec
     still on 3.0 would carry `nullable: true` into it unread, and a null would then fail response
     validation. `type: T` becomes `type: [T, "null"]` (and `null` joins an `enum`); a schema without
-    `type` (`$ref`, `allOf`, ...) becomes `oneOf: [<it>, {type: "null"}]`, keeping its description.
+    `type` (`$ref`, `allOf`, ...) becomes `anyOf: [<it>, {type: "null"}]`, keeping its description
+    (`anyOf`, not `oneOf`: an untyped inner schema may accept null itself). Instance data (`example`,
+    `examples`, `enum`, `default`, `const`) and `x-*` extensions are not walked.
     `nullable: false` is dropped. Only boolean `nullable` values are touched, so a property named
     `nullable` is left alone.
     """
@@ -38,8 +41,17 @@ def _nullable_to_31(node: Any) -> int:
         return count
     if not isinstance(node, dict):
         return 0
-    for value in list(node.values()):
-        count += _nullable_to_31(value)
+    if names:
+        # A map of names to schemas (`properties`, `components.schemas`, ...): every key is a name,
+        # even `default` or `enum`, and the map itself is not a schema.
+        for value in node.values():
+            count += _nullable_to_31(value)
+        return count
+    for key, value in list(node.items()):
+        # Instance data and extensions are not schemas: a `{nullable: true}` there is a value.
+        if key in _INSTANCE_KEYS or (isinstance(key, str) and key.startswith("x-")):
+            continue
+        count += _nullable_to_31(value, names=key in _NAME_MAPS)
     flag = node.get("nullable")
     if not isinstance(flag, bool):
         return count
@@ -59,7 +71,7 @@ def _nullable_to_31(node: Any) -> int:
         inner = dict(node)
         node.clear()
         node.update(keep)
-        node["oneOf"] = [inner, {"type": "null"}]
+        node["anyOf"] = [inner, {"type": "null"}]
     return count + 1
 
 
