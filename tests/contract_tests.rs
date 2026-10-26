@@ -72,3 +72,30 @@ fn unknown_operation_and_missing_schema_are_errors() {
 fn assert_valid_panics_with_the_errors() {
     pet_store().assert_valid("get_pet", 200, &json!({}));
 }
+
+#[test]
+fn undeclared_fields_lists_keys_the_schema_does_not_name() {
+    let c = pet_store();
+    let body = json!({
+        "id": 1, "name": "Max", "breed": "Poodle", "age": 3, "vaccinated": true, "tags": [],
+        "colour": "brown", "owner": {"x": 1}
+    });
+    // Valid by type: the Pet schema does not forbid extra keys.
+    c.assert_valid("get_pet", 200, &body);
+    assert_eq!(
+        c.undeclared_fields("get_pet", 200, &body).unwrap(),
+        vec!["/colour".to_string(), "/owner".to_string()]
+    );
+    let clean = json!({"id": 1, "name": "Max", "breed": "Poodle", "age": 3, "vaccinated": true, "tags": []});
+    c.assert_strict("get_pet", 200, &clean);
+}
+
+#[test]
+#[should_panic(expected = "sends fields its schema does not declare: /colour")]
+fn assert_strict_panics_on_an_undeclared_field() {
+    pet_store().assert_strict(
+        "get_pet",
+        200,
+        &json!({"id": 1, "name": "Max", "breed": "Poodle", "age": 3, "vaccinated": true, "tags": [], "colour": "brown"}),
+    );
+}

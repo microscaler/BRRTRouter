@@ -24,7 +24,8 @@ All notable changes to this project will be documented in this file.
 - **`brrtrouter::contract::ResponseContract`**: load a spec once, then `check(operation, status, &value)` /
   `assert_valid(..)` a value against that operation's response schema, chosen as the server's response validation
   chooses it. For unit tests of controllers that build JSON by hand (`HttpJson<Value>`), which no generated type
-  keeps in line with the spec.
+  keeps in line with the spec. `undeclared_fields(..)` / `assert_strict(..)` also report keys the schema does not
+  declare (a schema without `additionalProperties: false` accepts them, so a renamed field passes `check`).
 - **Generator: `type: [T, "null"]`** (the OpenAPI 3.1 way to say nullable) now maps to `Option<T>` instead of
   `serde_json::Value`. A field that is required and nullable is `Option<T>` written even when `None` (as `null`,
   no `skip_serializing_if`), as is a required `oneOf` with a `null` variant; leaving it out would fail `required`.
