@@ -180,6 +180,40 @@ The cost is parse + validate, not serialise: with `full`, pass-through saves ~20
 nothing measurable in time. The 5–10× saving needs `sample` or `off`, which the ADR keeps for an
 environment Charles approves, with build-time contract checks in place first.
 
+## BRRTRouter — pass 3: idle CPU (26 Oct 2026)
+
+Evidence: every BRRTRouter service in pp idles at ~74–80 mcores, including services that get no traffic
+(feedback, areas, backtests), which is ~1.5 cores across pp. The release images have no shell and their
+profiles carry thread names only, so this was reproduced off-cluster with the new `benches/idle_cpu.rs`. It starts
+the pet_store service as a generated main does, sends nothing, and reads `/proc/self/stat`.
+
+Cause: `may` (default feature `io_timeout`) gives each worker's `epoll_wait` a 10 ms timeout. An idle worker then
+wakes, collects its global queue, tries to steal from three others and waits again. `BRRTR_MAY_WORKERS` defaults
+to `max(32, cpus + DB_POOL_MAX + 16)`, which is 3,200+ wake-ups a second per pod. Idle CPU scales with
+workers × 1/timeout (ms02, 20 s idle):
+
+| workers | 10 ms (may default) | 50 ms | 100 ms | 1 s |
+|---:|---:|---:|---:|---:|
+| 8 | 7.0 | 2.0 | 1.0 | 0.0 |
+| 32 | 18.5 | 5.0 | 3.0 | 1.0 |
+| 50 | 19.0 | 5.0 | — | — |
+
+(mcores; ms02 is bare metal, while GKE nodes pay more per wake-up, which explains the ~75 mcores seen in pp.)
+
+Change: `BRRTR_MAY_POLL_TIMEOUT_MS`, default 50 ms, applied by `RuntimeConfig::from_env` before the scheduler
+starts. Load latency is the same (`idle_cpu` load mode, 50 workers, `GET /pets/12345` answering 200;
+three runs each for saturated, two for paced):
+
+| poll | saturated, 64 conns: rps, p50 / p99 µs | paced, 16 conns × 0.5 ms gap: rps, p50 / p99 / p999 µs |
+|---|---|---|
+| 10 ms | 307–316 k, 172–173 / 922–979 | 23.2–23.6 k, 33–35 / 892–908 / 1,268–1,496 |
+| 50 ms | 303–307 k, 176–179 / 940–1,005 | 23.0–24.0 k, 34–36 / 866–944 / 1,389–1,550 |
+
+(A first version of these numbers measured 401 answers: the bench had no API-key provider. Review on #509.)
+
+I/O deadlines are unaffected: `select` waits until the next I/O timer when one is sooner, and the timer
+thread wakes the worker it schedules onto. To verify in pp, compare idle CPU per pod before and after.
+
 ## For the PriceWhisperer pass
 
 - benzinga-analyst-ingestor startup pass clones the whole JSON response 3–4× per 50-ticker

@@ -165,6 +165,10 @@ harness = false
 name = "request_path"
 harness = false
 
+[[bench]]
+name = "idle_cpu"
+harness = false
+
 [[test]]
 name = "test_app_client_tests"
 required-features = ["testing"]

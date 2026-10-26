@@ -429,6 +429,7 @@ where
     H: Handler + Send + 'static,
 {
     crate::runtime_config::ensure_coroutine_pool_capacity();
+    crate::runtime_config::ensure_may_poll_timeout();
     let (tx, rx) = HandlerSender::channel();
 
     // Unnamed coroutines showed up as `None` in logs and could not be told apart in stack metrics: name them
@@ -623,6 +624,7 @@ where
     H: Handler + Send + 'static,
 {
     crate::runtime_config::ensure_coroutine_pool_capacity();
+    crate::runtime_config::ensure_may_poll_timeout();
     let (tx, rx) = HandlerSender::channel();
 
     // Apply environment variable overrides and clamping

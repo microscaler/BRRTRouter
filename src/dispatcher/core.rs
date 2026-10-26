@@ -456,6 +456,7 @@ where
     F: Fn(HandlerRequest) -> HandlerResponse + Send + 'static + Clone,
 {
     crate::runtime_config::ensure_coroutine_pool_capacity();
+    crate::runtime_config::ensure_may_poll_timeout();
     let (tx, rx) = HandlerSender::channel();
     let effective_name = handler_name.unwrap_or("untyped").to_string();
     let handler_name_for_logging = effective_name.clone();
@@ -579,6 +580,7 @@ impl Dispatcher {
     pub fn new() -> Self {
         // Before any handler coroutine: may allocates its whole coroutine pool when its scheduler starts.
         crate::runtime_config::ensure_coroutine_pool_capacity();
+        crate::runtime_config::ensure_may_poll_timeout();
         let queue_bound = std::env::var("BRRTR_HANDLER_QUEUE_BOUND")
             .ok()
             .and_then(|s| s.parse().ok())

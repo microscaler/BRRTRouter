@@ -36,6 +36,16 @@
 //! coroutine (see [`ensure_coroutine_pool_capacity`]), so a service gets it without calling
 //! `may::config().set_pool_capacity` itself; a capacity the service already set is left alone.
 //!
+//! ### `BRRTR_MAY_POLL_TIMEOUT_MS`
+//!
+//! How long an idle `may` worker waits in `epoll_wait` before it looks for work again (collects its global queue and
+//! tries to steal from other workers). Default **50 ms**; `may`'s own default is 10 ms. An idle service wakes every
+//! worker that often: with the default 32+ workers, 10 ms is 3,200 wake-ups a second doing nothing, ~75 mcores per pod
+//! in pp (25 Oct 2026). I/O deadlines are unaffected (the wait is cut short for the next I/O timer) and work handed to
+//! a worker from outside it wakes that worker; only idle workers' stealing gets less frequent. Applied by
+//! [`RuntimeConfig::from_env`] (see [`ensure_may_poll_timeout`]) and [`RuntimeConfig::apply`]; a service that set
+//! `may::config().set_timeout_ns` itself keeps its value unless this variable is set.
+//!
 //! ### `BRRTR_MAY_WORKERS`
 //!
 //! Sets the **may** scheduler worker thread count. Must be called before the first `go!` /
@@ -139,6 +149,8 @@ pub struct RuntimeConfig {
     /// default of 1000, an idle service held ~1000 stacks, ~37 MiB (identity-session, 24 Oct 2026), and 1,042 stack
     /// mappings per Sesame pod in pp.
     pub coroutine_pool_capacity: usize,
+    /// Idle `may` worker poll timeout in ms (`BRRTR_MAY_POLL_TIMEOUT_MS`, default 50; `may`'s default is 10).
+    pub may_poll_timeout_ms: u64,
 }
 
 impl RuntimeConfig {
@@ -212,12 +224,15 @@ impl RuntimeConfig {
         let coroutine_pool_capacity = coroutine_pool_capacity_from_env();
         // Every service calls this before it spawns anything: take the pool default here too.
         ensure_coroutine_pool_capacity();
+        let may_poll_timeout_ms = may_poll_timeout_ms_from_env();
+        ensure_may_poll_timeout();
 
         RuntimeConfig {
             stack_size,
             schema_cache_enabled,
             may_workers,
             coroutine_pool_capacity,
+            may_poll_timeout_ms,
         }
     }
 
@@ -233,6 +248,13 @@ impl RuntimeConfig {
             .set_stack_size(self.stack_size)
             .set_workers(self.may_workers)
             .set_pool_capacity(self.coroutine_pool_capacity);
+        // The poll timeout follows `ensure_may_poll_timeout`: a value the service set itself stays
+        // unless BRRTR_MAY_POLL_TIMEOUT_MS asks for one explicitly.
+        if env::var_os("BRRTR_MAY_POLL_TIMEOUT_MS").is_some()
+            || may::config().get_timeout_ns() == MAY_DEFAULT_POLL_TIMEOUT_NS
+        {
+            may::config().set_timeout_ns(self.may_poll_timeout_ms.saturating_mul(1_000_000));
+        }
     }
 }
 
@@ -266,6 +288,36 @@ pub fn ensure_coroutine_pool_capacity() {
     ONCE.call_once(|| {
         if may::config().get_pool_capacity() == MAY_DEFAULT_POOL_CAPACITY {
             may::config().set_pool_capacity(coroutine_pool_capacity_from_env());
+        }
+    });
+}
+
+/// BRRTRouter's idle `may` worker poll timeout when `BRRTR_MAY_POLL_TIMEOUT_MS` is unset.
+pub const DEFAULT_MAY_POLL_TIMEOUT_MS: u64 = 50;
+
+/// `may`'s built-in poll timeout (`may::config` `POLL_TIMEOUT_NS`, 10 ms).
+const MAY_DEFAULT_POLL_TIMEOUT_NS: u64 = 10_000_000;
+
+fn may_poll_timeout_ms_from_env() -> u64 {
+    env::var("BRRTR_MAY_POLL_TIMEOUT_MS")
+        .ok()
+        .and_then(|s| s.trim().parse::<u64>().ok())
+        .filter(|&n| n >= 1)
+        .unwrap_or(DEFAULT_MAY_POLL_TIMEOUT_MS)
+}
+
+/// Give `may` BRRTRouter's idle worker poll timeout (`BRRTR_MAY_POLL_TIMEOUT_MS`, default 50 ms). Without the variable,
+/// a value the service already chose (`get_timeout_ns()` differs from `may`'s 10 ms) is kept. Idempotent. Each
+/// worker reads it when its event loop starts, i.e. with the scheduler, so it must run before the first
+/// coroutine: [`RuntimeConfig::from_env`] and `HttpServer::start` call it.
+pub fn ensure_may_poll_timeout() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        // An explicit BRRTR_MAY_POLL_TIMEOUT_MS wins; unset, a value the service chose stays.
+        if env::var_os("BRRTR_MAY_POLL_TIMEOUT_MS").is_some()
+            || may::config().get_timeout_ns() == MAY_DEFAULT_POLL_TIMEOUT_NS
+        {
+            may::config().set_timeout_ns(may_poll_timeout_ms_from_env().saturating_mul(1_000_000));
         }
     });
 }
@@ -313,5 +365,39 @@ mod tests {
             DEFAULT_STACK_BYTES
         );
         unsafe { std::env::remove_var("BRRTR_STACK_SIZE") };
+
+        unsafe { std::env::remove_var("BRRTR_MAY_POLL_TIMEOUT_MS") };
+        assert_eq!(
+            RuntimeConfig::from_env().may_poll_timeout_ms,
+            DEFAULT_MAY_POLL_TIMEOUT_MS
+        );
+        assert_ne!(
+            may::config().get_timeout_ns(),
+            MAY_DEFAULT_POLL_TIMEOUT_NS,
+            "from_env gives may BRRTRouter's poll timeout"
+        );
+        for (val, ms) in [("250", 250), ("0", 50), ("soon", 50)] {
+            unsafe { std::env::set_var("BRRTR_MAY_POLL_TIMEOUT_MS", val) };
+            assert_eq!(RuntimeConfig::from_env().may_poll_timeout_ms, ms, "{val}");
+        }
+        unsafe { std::env::remove_var("BRRTR_MAY_POLL_TIMEOUT_MS") };
+
+        // apply() keeps a timeout the service chose unless the env var asks for one.
+        may::config().set_timeout_ns(7_000_000);
+        RuntimeConfig::from_env().apply();
+        assert_eq!(
+            may::config().get_timeout_ns(),
+            7_000_000,
+            "service's own value kept"
+        );
+        unsafe { std::env::set_var("BRRTR_MAY_POLL_TIMEOUT_MS", "80") };
+        RuntimeConfig::from_env().apply();
+        assert_eq!(
+            may::config().get_timeout_ns(),
+            80_000_000,
+            "explicit env wins"
+        );
+        unsafe { std::env::remove_var("BRRTR_MAY_POLL_TIMEOUT_MS") };
+        may::config().set_timeout_ns(DEFAULT_MAY_POLL_TIMEOUT_MS * 1_000_000);
     }
 }

@@ -54,6 +54,17 @@ fallback and the services' root defaults. `may`'s global stack (`BRRTR_STACK_SIZ
 ~1000 stacks, ~37 MiB. `BRRTR_COROUTINE_POOL_CAPACITY` (default 100) via `RuntimeConfig::coroutine_pool_capacity`,
 applied in `run_app` and the generated `main.rs`.
 
+## Idle worker poll timeout
+
+Every `may` worker runs its own epoll loop; idle, it waits `may::config().get_timeout_ns()` (may default **10 ms**)
+before it collects its global queue and tries to steal work. Services run 32+ workers (`BRRTR_MAY_WORKERS` default
+`max(32, cpus + DB_POOL_MAX + 16)`), so an idle pod woke 3,200+ times a second for nothing: ~75 mcores per pod in pp,
+~1.5 cores across the cluster. `BRRTR_MAY_POLL_TIMEOUT_MS` (default **50**) via `RuntimeConfig::from_env` /
+`ensure_may_poll_timeout` (also called from `HttpServer::start`, `Dispatcher::new` and the typed spawners, like the
+pool capacity). I/O timeouts are unaffected (the wait is cut to the next I/O timer) and work scheduled onto a worker
+from elsewhere wakes it; only idle stealing gets less frequent. `benches/idle_cpu.rs` measures both idle CPU and load
+latency.
+
 ## Boxed handler channels
 
 `HandlerSender` carries `Box<HandlerRequest>`. `may`'s mpsc allocates 64-slot blocks up front and a `HandlerRequest`
