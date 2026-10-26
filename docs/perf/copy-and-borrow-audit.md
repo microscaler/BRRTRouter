@@ -212,7 +212,30 @@ three runs each for saturated, two for paced):
 (A first version of these numbers measured 401 answers: the bench had no API-key provider. Review on #509.)
 
 I/O deadlines are unaffected: `select` waits until the next I/O timer when one is sooner, and the timer
-thread wakes the worker it schedules onto. To verify in pp, compare idle CPU per pod before and after.
+thread wakes the worker it schedules onto.
+
+pp, after the consumer round (BRRTRouter 13d7ec7; median idle mcores per pod, same pods before and after):
+PriceWhisperer 74.5 → 15.5 (all PW pods together 1,307 → 396), Sesame-IDAM 69 → 14.4, rerp 68 → 13; about
+1.85 → 0.51 cores across the three.
+
+## BRRTRouter — pass 5: every 5xx in pp, 19–26 Oct 2026
+
+Source: Managed Prometheus `http_server_request_duration_seconds_count{http_response_status_code=~"5.."}` by job
+and route over 7 days (hourly), the BRRTRouter "Request refused or failed" log events (route, status, reason) and
+the services' own logs around each hour. Load-test runs on v0.1.138 had no 5xx.
+
+| Where | Count | Cause | Fix |
+|---|---:|---|---|
+| trader-bff `POST /billing/test-subscriptions/reset` 502 | 78 (spread) | `proxy_untyped` sent a bodyless POST chunked; billing answered 200 and closed, and the BFF failed reading the answer (`reason: request`) | `Content-Length: 0` for bodyless requests (this PR); 65/400 → 0/400 in `tests/proxy_bodyless_tests.rs` |
+| trader-bff orderbook, orders/risk, orders/stream, alerts/stream, portfolio/summary 502; platform-bff social sessions 502 | 49 | `connect` / `request` errors, all in rollout windows (24 Oct 08:00, 26 Oct 08:00–09:00) | connect retry after 100 ms; GET/HEAD resent once after a cut-off (this PR) |
+| portfolio `/equity-curve` 500 (+ trader-bff 75) | 71 | response validation: `nullable: true` ignored by 3.1 | PriceWhisperer `ab1d7059` (25 Oct); the spec lint (#512) now flags it |
+| trader-bff, every downstream route, 504 | 26 | 22 Oct 18:32–18:34: the node running the only trader-bff pod (and market) lost DNS (`node-local-dns` reload, ClickHouse "Temporary failure in name resolution", lifeguard slots wedged); downstreams logged no errors | none in BRRTRouter; the BFF runs one replica, so one node event fails every route. Recommendation: 2 replicas with a topology spread |
+| platform-bff `/social/sessions*` 504/502 | 80 | 19 Oct 20:00–20:31: social's coroutines overflowed their stacks every 30–60 s until the 20:31 release | stack sizing (BRRTRouter 9bcb2db, `x-brrtrouter-stack-size`); none since |
+| platform-bff `/archive/coverage(/summary)` 504 | 34 | 19 Oct 11:00–15:00: archive's coverage query ran past the BFF's 30 s timeout | fixed in archive that day; p99 now 0.44 s, all 200 |
+| platform-bff `/team/members` 502 | 3 | 19 Oct 13:33: Sesame `/admin/users/query` answered 501 (not yet implemented) | implemented in Sesame; none since |
+| trader-bff `/auth/start`, `/auth/callback` 503 `session_unavailable` | 10 (19, 20, 22, 25 Oct) | "session store: unexpected end of file": the BFF's kept Redis connection had been closed while idle, and the first command after the idle period failed | sesame-idam-client `RedisStore` retries once on a fresh connection when a reused one fails |
+
+Not 5xx but seen while looking: platform-bff → billing 403 (×259, platform users without the operator role).
 
 ## For the PriceWhisperer pass
 

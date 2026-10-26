@@ -86,6 +86,18 @@ domain, A and AAAA). pp evidence: trader-bff ~6 ms CPU per proxied request (v0.1
   that point, so the retry is safe for any method.
 - Still open: a new TCP connection per proxied request (no keep-alive pool).
 
+## Proxy 502s: bodyless requests and rollouts (2026-10-26)
+
+- **Bodyless non-GET/HEAD requests are sent with `Content-Length: 0`.** may_minihttp's client otherwise
+  frames a request with no Content-Length as chunked and writes the terminator only at `finish()`, after
+  the downstream may already have answered and closed; the BFF then fails reading (`502 reason: request`)
+  a call the downstream logged as 200 (pp: all 78 trader-bff 502s on `POST /billing/test-subscriptions/reset`).
+  Test: `tests/proxy_bodyless_tests.rs`.
+- **Connect to a fresh address fails → one retry after `PROXY_CONNECT_RETRY_MS`** (default 100, `0` off),
+  same address, no lookup (the cached-address case above still re-resolves). Rollout `connect` 502s.
+- **GET/HEAD cut off after sending (`ProxyError::Request`) → sent once more** (`send_downstream`). Other
+  methods are never resent; `Timeout` is never retried. Test: `tests/proxy_retry_tests.rs`.
+
 ## Proxied JSON passes through (2026-10-26)
 
 `proxy_untyped` used to parse every downstream body into a `Value`; the service then validated it

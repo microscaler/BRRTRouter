@@ -129,6 +129,7 @@ fn test_rust_literal_for_example() {
         original_name: "count".to_string(),
         ty: "i32".to_string(),
         optional: false,
+        required_nullable: false,
         value: "0".to_string(),
     };
     let lit = rust_literal_for_example(&field, &json!(3));
@@ -147,6 +148,7 @@ fn test_rust_literal_for_example_string() {
         original_name: "name".to_string(),
         ty: "String".to_string(),
         optional: false,
+        required_nullable: false,
         value: "default".to_string(),
     };
 
@@ -162,6 +164,7 @@ fn test_rust_literal_for_example_optional_string() {
         original_name: "nickname".to_string(),
         ty: "String".to_string(),
         optional: true,
+        required_nullable: false,
         value: "default".to_string(),
     };
 
@@ -177,6 +180,7 @@ fn test_rust_literal_for_example_number() {
         original_name: "age".to_string(),
         ty: "i32".to_string(),
         optional: false,
+        required_nullable: false,
         value: "default".to_string(),
     };
 
@@ -192,6 +196,7 @@ fn test_rust_literal_for_example_boolean() {
         original_name: "active".to_string(),
         ty: "bool".to_string(),
         optional: false,
+        required_nullable: false,
         value: "default".to_string(),
     };
 
@@ -207,6 +212,7 @@ fn test_rust_literal_for_example_array() {
         original_name: "tags".to_string(),
         ty: "Vec<String>".to_string(),
         optional: false,
+        required_nullable: false,
         value: "default".to_string(),
     };
 
@@ -225,6 +231,7 @@ fn test_rust_literal_for_example_array_numbers() {
         original_name: "scores".to_string(),
         ty: "Vec<i32>".to_string(),
         optional: false,
+        required_nullable: false,
         value: "default".to_string(),
     };
 
@@ -240,6 +247,7 @@ fn test_rust_literal_for_example_json_value() {
         original_name: "metadata".to_string(),
         ty: "serde_json::Value".to_string(),
         optional: false,
+        required_nullable: false,
         value: "default".to_string(),
     };
 
@@ -259,6 +267,7 @@ fn test_rust_literal_for_example_named_type() {
         original_name: "user".to_string(),
         ty: "User".to_string(),
         optional: false,
+        required_nullable: false,
         value: "default".to_string(),
     };
 
@@ -274,6 +283,7 @@ fn test_field_def_construction() {
         original_name: "test_field".to_string(),
         ty: "String".to_string(),
         optional: true,
+        required_nullable: false,
         value: "default_value".to_string(),
     };
 
@@ -291,6 +301,7 @@ fn test_type_definition_construction() {
             original_name: "id".to_string(),
             ty: "i32".to_string(),
             optional: false,
+            required_nullable: false,
             value: "0".to_string(),
         },
         FieldDef {
@@ -298,6 +309,7 @@ fn test_type_definition_construction() {
             original_name: "name".to_string(),
             ty: "String".to_string(),
             optional: false,
+            required_nullable: false,
             value: "String::new()".to_string(),
         },
     ];

@@ -453,3 +453,10 @@ Hauliage Phase 3 unblockers for Vite dev proxy and frontend-aligned BFF routes.
 
 - `BRRTR_MAY_POLL_TIMEOUT_MS` (default 50; may's 10 ms woke 32+ workers 100×/s each, ~75 mcores per idle pod in pp). ms02 idle, 50 workers: 19 → 5 mcores; load latency unchanged.
 - [`topics/handler-stack-memory.md`](./topics/handler-stack-memory.md#idle-worker-poll-timeout).
+
+## [2026-10-26] fix | proxy 502s; contract checks; nullable type lists
+
+- Bodyless proxied requests carry `Content-Length: 0`; fresh-address connect retried once; GET/HEAD resent once after a cut-off. Every pp 5xx of 19–26 Oct listed with cause in `docs/perf/copy-and-borrow-audit.md` (pass 5).
+- `brrtrouter::contract::ResponseContract` checks a hand-built value against an operation's response schema in tests.
+- Generator: `type: [T, "null"]` → `Option<T>`; required + nullable is written as `null` (`FieldDef::required_nullable`).
+- [`topics/bff-gateway-merge-and-proxy-headers.md`](./topics/bff-gateway-merge-and-proxy-headers.md#proxy-502s-bodyless-requests-and-rollouts-2026-10-26).

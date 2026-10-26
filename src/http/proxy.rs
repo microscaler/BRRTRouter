@@ -478,16 +478,39 @@ fn forget_downstream(host: &str, addr: SocketAddr) {
     }
 }
 
+fn is_timeout(e: &std::io::Error) -> bool {
+    e.kind() == std::io::ErrorKind::TimedOut || looks_like_timeout(&e.to_string())
+}
+
+/// Pause before retrying a connect to a fresh address (`PROXY_CONNECT_RETRY_MS`, default 100;
+/// `0` turns the retry off).
+fn connect_retry_delay() -> Option<Duration> {
+    let ms = std::env::var("PROXY_CONNECT_RETRY_MS")
+        .ok()
+        .and_then(|s| s.trim().parse::<u64>().ok())
+        .unwrap_or(DEFAULT_CONNECT_RETRY_MS);
+    (ms > 0).then(|| Duration::from_millis(ms.min(MAX_CONNECT_RETRY_MS)))
+}
+
+const DEFAULT_CONNECT_RETRY_MS: u64 = 100;
+const MAX_CONNECT_RETRY_MS: u64 = 2_000;
+
 /// Connect to `resolved`. If that fails and the address came from the cache it may be stale
 /// (the Service was recreated): drop it (if still cached), resolve again and connect once more.
 /// Every request that used a stale address retries, not only the first to fail; nothing has
 /// been sent yet, so this is safe for any method.
+///
+/// A fresh address that refuses is retried once after a short pause
+/// ([`connect_retry_delay`]): during a rollout the Service's endpoints change under it and a
+/// connect can land on a pod that is going away (pp, Oct 2026: every `connect` 502 on the BFFs
+/// came in rollout windows). Nothing has been sent, so this too is safe for any method.
 fn connect_downstream_with<T>(
     host: &str,
     port: u16,
     resolved: Resolved,
     lookup: &dyn Fn(&str, u16) -> Result<SocketAddr, ProxyError>,
     connect: impl Fn(SocketAddr) -> std::io::Result<T>,
+    retry_delay: Option<Duration>,
 ) -> Result<T, ProxyError> {
     let connect_error =
         |e: std::io::Error| classify_transport_error(ProxyTransportKind::Connect, &e.to_string());
@@ -498,7 +521,16 @@ fn connect_downstream_with<T>(
             let fresh = resolve_downstream_with(host, port, lookup)?;
             connect(fresh.addr).map_err(connect_error)
         }
-        Err(e) => Err(connect_error(e)),
+        // A connect that timed out is not retried: an unreachable downstream would cost the
+        // connect timeout twice before the 504 (Codex review on #521).
+        Err(e) => match retry_delay.filter(|_| !is_timeout(&e)) {
+            Some(delay) => {
+                // Yields the coroutine; a plain thread sleeps.
+                may::coroutine::sleep(delay);
+                connect(resolved.addr).map_err(connect_error)
+            }
+            None => Err(connect_error(e)),
+        },
     }
 }
 
@@ -617,7 +649,43 @@ fn passthrough_body(
 
 /// Connect to the downstream Service and send the request. The client comes
 /// back with the response because it owns the connection the body is read from.
+/// Send `req` downstream and read the response head. A GET or HEAD whose request failed after
+/// connecting (`ProxyError::Request`: the peer reset or closed before answering, as a pod going
+/// away in a rollout does) is sent once more; those methods are idempotent. A timeout is not
+/// retried: the downstream may still be working on it, and a second wait doubles the latency.
 fn send_downstream(
+    req: &HandlerRequest,
+    downstream_service: &str,
+    path_template: &str,
+    default_accept: &str,
+    identity_encoding: bool,
+) -> Result<(HttpClient, DownstreamResponse), ProxyError> {
+    let first = send_downstream_once(
+        req,
+        downstream_service,
+        path_template,
+        default_accept,
+        identity_encoding,
+    );
+    match first {
+        Err(ProxyError::Request) if is_idempotent_read(req.method.as_str()) => {
+            send_downstream_once(
+                req,
+                downstream_service,
+                path_template,
+                default_accept,
+                identity_encoding,
+            )
+        }
+        other => other,
+    }
+}
+
+fn is_idempotent_read(method: &str) -> bool {
+    method.eq_ignore_ascii_case("GET") || method.eq_ignore_ascii_case("HEAD")
+}
+
+fn send_downstream_once(
     req: &HandlerRequest,
     downstream_service: &str,
     path_template: &str,
@@ -644,8 +712,14 @@ fn send_downstream(
     let method = Method::from_bytes(req.method.as_str().as_bytes())
         .map_err(|_e| ProxyError::InvalidMethod)?;
 
-    let mut client =
-        connect_downstream_with(&host, port, target, &system_lookup, HttpClient::connect)?;
+    let mut client = connect_downstream_with(
+        &host,
+        port,
+        target,
+        &system_lookup,
+        HttpClient::connect,
+        connect_retry_delay(),
+    )?;
     client.set_timeout(Some(proxy_timeout()));
 
     let mut proxy_req = client.new_request(method, uri);
@@ -708,6 +782,15 @@ fn send_downstream(
         let body_bytes = serde_json::to_vec(body_json).map_err(|_e| ProxyError::BodySerialize)?;
         proxy_req
             .send(&body_bytes)
+            .map_err(|e| classify_transport_error(ProxyTransportKind::Request, &e.to_string()))?;
+    } else if proxy_req.method() != Method::GET && proxy_req.method() != Method::HEAD {
+        // No body: say so with `Content-Length: 0`. Left alone, the client opens a chunked body
+        // for a POST and writes its terminating chunk only after the head; a BRRTRouter
+        // downstream answers on the head and may close first, so the terminator's write failed
+        // and the BFF answered 502 `request` to a call the downstream had served (pp, 26 Oct
+        // 2026: ~40 % of `POST /billing/test-subscriptions/reset`).
+        proxy_req
+            .send(&[])
             .map_err(|e| classify_transport_error(ProxyTransportKind::Request, &e.to_string()))?;
     }
 
@@ -1451,7 +1534,7 @@ mod tests {
                     let lookup = lookup.clone();
                     std::thread::spawn(move || {
                         barrier.wait();
-                        connect_downstream_with(host, 8080, r, &lookup, connect)
+                        connect_downstream_with(host, 8080, r, &lookup, connect, TEST_RETRY)
                     })
                 })
                 .collect();
@@ -1459,7 +1542,7 @@ mod tests {
         } else {
             resolved
                 .into_iter()
-                .map(|r| connect_downstream_with(host, 8080, r, &lookup, connect))
+                .map(|r| connect_downstream_with(host, 8080, r, &lookup, connect, TEST_RETRY))
                 .collect()
         };
         assert!(
@@ -1487,8 +1570,12 @@ mod tests {
         stale_address_scenario("stale-svc-concurrent.test", true);
     }
 
+    /// A short retry pause passed explicitly, so the tests do not depend on
+    /// `PROXY_CONNECT_RETRY_MS` in the environment.
+    const TEST_RETRY: Option<Duration> = Some(Duration::from_millis(1));
+
     #[test]
-    fn uncached_address_failure_is_not_retried() {
+    fn uncached_address_failure_is_retried_once_without_lookup() {
         use std::sync::atomic::{AtomicUsize, Ordering};
         let lookups = AtomicUsize::new(0);
         let lookup = |_: &str, _: u16| {
@@ -1499,11 +1586,75 @@ mod tests {
             addr: "10.0.0.3:8080".parse().unwrap(),
             cached: false,
         };
-        let res = connect_downstream_with("fresh-svc.test", 8080, r, &lookup, |_| {
-            Err::<(), _>(std::io::Error::from(std::io::ErrorKind::ConnectionRefused))
-        });
+        let connects = AtomicUsize::new(0);
+        let res = connect_downstream_with(
+            "fresh-svc.test",
+            8080,
+            r,
+            &lookup,
+            |_| {
+                connects.fetch_add(1, Ordering::SeqCst);
+                Err::<(), _>(std::io::Error::from(std::io::ErrorKind::ConnectionRefused))
+            },
+            TEST_RETRY,
+        );
         assert!(res.is_err());
         assert_eq!(lookups.load(Ordering::SeqCst), 0);
+        assert_eq!(
+            connects.load(Ordering::SeqCst),
+            2,
+            "one retry after the pause"
+        );
+    }
+
+    #[test]
+    fn uncached_address_timeout_is_not_retried() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let lookup = |_: &str, _: u16| Ok("10.0.0.5:8080".parse().unwrap());
+        let r = Resolved {
+            addr: "10.0.0.5:8080".parse().unwrap(),
+            cached: false,
+        };
+        let connects = AtomicUsize::new(0);
+        let res = connect_downstream_with(
+            "slow-svc.test",
+            8080,
+            r,
+            &lookup,
+            |_| {
+                connects.fetch_add(1, Ordering::SeqCst);
+                Err::<(), _>(std::io::Error::from(std::io::ErrorKind::TimedOut))
+            },
+            TEST_RETRY,
+        );
+        assert!(matches!(res, Err(ProxyError::Timeout)));
+        assert_eq!(connects.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn uncached_address_second_attempt_succeeds() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let lookup = |_: &str, _: u16| Ok("10.0.0.4:8080".parse().unwrap());
+        let r = Resolved {
+            addr: "10.0.0.4:8080".parse().unwrap(),
+            cached: false,
+        };
+        let connects = AtomicUsize::new(0);
+        let res = connect_downstream_with(
+            "flappy-svc.test",
+            8080,
+            r,
+            &lookup,
+            |_| {
+                if connects.fetch_add(1, Ordering::SeqCst) == 0 {
+                    Err(std::io::Error::from(std::io::ErrorKind::ConnectionRefused))
+                } else {
+                    Ok(7u8)
+                }
+            },
+            TEST_RETRY,
+        );
+        assert_eq!(res.unwrap(), 7);
     }
 
     #[test]
