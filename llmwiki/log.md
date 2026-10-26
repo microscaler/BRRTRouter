@@ -446,5 +446,5 @@ Hauliage Phase 3 unblockers for Vite dev proxy and frontend-aligned BFF routes.
 
 ## [2026-10-26] perf | BFF proxied JSON passes through
 
-- `proxy_untyped` keeps a 2xx JSON body as text and writes it unchanged; validated only with `x-brrtrouter-validate-response: true`. 200 KB body: 22,285 → 265 allocations, 1.83 → 0.23 ms per request (bench).
+- `proxy_untyped` keeps a 2xx JSON body as text and writes it unchanged; validated only with `x-brrtrouter-validate-response: true`. 200 KB body: 22,285 → 252 allocations, 1.83 → 0.19 ms per request (bench).
 - [`topics/bff-gateway-merge-and-proxy-headers.md`](./topics/bff-gateway-merge-and-proxy-headers.md#proxied-json-passes-through-2026-10-26).

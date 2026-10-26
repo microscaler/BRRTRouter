@@ -25,6 +25,10 @@ const DEFAULT_DOWNSTREAM_PORT: u16 = 8080;
 const DEFAULT_PROXY_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_PROXY_BODY_BYTES: usize = 16 * 1024 * 1024;
 
+/// The most a downstream's `Content-Length` reserves before any body arrives; a larger body grows
+/// past it as it is read. Bounds what an exaggerated header can make many responses hold at once.
+const MAX_PROXY_BODY_PREALLOC: usize = 1024 * 1024;
+
 /// Env: how long a proxied event stream may stay silent before the relay ends
 /// it (seconds, default 300). The browser's `EventSource` then reconnects with
 /// `Last-Event-ID`. Downstream keepalive comments reset the clock.
@@ -527,6 +531,9 @@ pub fn skip_forward_response_header(name: &str) -> bool {
         || name.eq_ignore_ascii_case("upgrade")
         || name.eq_ignore_ascii_case("trailer")
         || name.eq_ignore_ascii_case("proxy-authenticate")
+        // BRRTRouter's internal body marker: only this process sets it (a downstream's would make
+        // the writer base64-decode or pass through a body it should not).
+        || name.eq_ignore_ascii_case(crate::server::response::RAW_BODY_ENCODING_HEADER)
 }
 
 fn proxy_timeout() -> Duration {
@@ -543,8 +550,11 @@ fn read_bounded_body(
     size_hint: Option<usize>,
 ) -> Result<Vec<u8>, ProxyError> {
     // Sized from Content-Length when the downstream sends one: no doubling reallocations (a
-    // 200 KB body otherwise grows through ten buffers). Capped, so a lying header costs nothing.
-    let mut buf = Vec::with_capacity(size_hint.map_or(0, |n| n.min(max_body) + 1));
+    // 200 KB body otherwise grows through ten buffers). The reservation is capped
+    // (`MAX_PROXY_BODY_PREALLOC`): a header is not a body, and a larger one still grows as read.
+    let mut buf = Vec::with_capacity(
+        size_hint.map_or(0, |n| n.min(max_body).min(MAX_PROXY_BODY_PREALLOC) + 1),
+    );
     reader
         .by_ref()
         .take(max_body as u64 + 1)
@@ -940,9 +950,11 @@ fn proxy_untyped_inner(
         false,
     )?;
 
+    // A HEAD answer advertises the GET body's length but carries none.
     let size_hint = rsp
         .headers()
         .get(http_legacy::header::CONTENT_LENGTH)
+        .filter(|_| req.method != http::Method::HEAD)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.trim().parse().ok());
     let buf = read_bounded_body(&mut rsp, MAX_PROXY_BODY_BYTES, size_hint)?;
@@ -1487,6 +1499,32 @@ mod tests {
         assert!(skip_forward_response_header("Transfer-Encoding"));
         assert!(skip_forward_response_header("Content-Length"));
         assert!(!skip_forward_response_header("Content-Type"));
+        // A downstream cannot set BRRTRouter's internal body marker.
+        assert!(skip_forward_response_header("X-BRRTRouter-Raw-Encoding"));
+    }
+
+    #[test]
+    fn read_bounded_body_caps_the_size_hint_reservation() {
+        let body = vec![b'x'; 10];
+        let buf =
+            read_bounded_body(&mut &body[..], MAX_PROXY_BODY_BYTES, Some(usize::MAX)).unwrap();
+        assert_eq!(buf, body);
+        assert!(
+            buf.capacity() <= MAX_PROXY_BODY_PREALLOC + 1,
+            "{}",
+            buf.capacity()
+        );
+        let big = vec![b'y'; MAX_PROXY_BODY_PREALLOC + 10];
+        let buf = read_bounded_body(&mut &big[..], MAX_PROXY_BODY_BYTES, Some(big.len())).unwrap();
+        assert_eq!(
+            buf.len(),
+            big.len(),
+            "a body past the reservation still reads whole"
+        );
+        assert!(matches!(
+            read_bounded_body(&mut &body[..], 5, Some(10)),
+            Err(ProxyError::BodyTooLarge)
+        ));
     }
 
     #[test]
