@@ -825,6 +825,7 @@
 static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 pub mod cli;
+pub mod contract;
 
 #[doc(hidden)]
 pub mod agent_debug;

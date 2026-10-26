@@ -40,8 +40,33 @@ pub struct FieldDef {
     pub ty: String,
     /// Whether the field is optional (`Option<T>`)
     pub optional: bool,
+    /// Required by the schema but nullable (`type: [T, "null"]`, or `oneOf` with a `null`
+    /// variant): `Option<T>` that is always written, `None` as `null`, never left out.
+    pub required_nullable: bool,
     /// Example value as a Rust literal
     pub value: String,
+}
+
+/// The schema's `type` as a single name, and whether it also allows `null`.
+///
+/// OpenAPI 3.1 writes a nullable type as a list (`type: [string, "null"]`); a list with one
+/// non-null type maps like that type. A list of several non-null types has no single Rust type
+/// (`None`, so the caller falls back to `serde_json::Value`).
+#[must_use]
+pub fn schema_type_and_nullable(schema: &Value) -> (Option<&str>, bool) {
+    match schema.get("type") {
+        Some(Value::String(t)) => (Some(t.as_str()), t == "null"),
+        Some(Value::Array(list)) => {
+            let names: Vec<&str> = list.iter().filter_map(Value::as_str).collect();
+            let nullable = names.contains(&"null");
+            let mut non_null = names.into_iter().filter(|t| *t != "null");
+            match (non_null.next(), non_null.next()) {
+                (Some(t), None) => (Some(t), nullable),
+                _ => (None, nullable),
+            }
+        }
+        _ => (None, false),
+    }
 }
 
 /// Convert a snake_case string to CamelCase
@@ -710,7 +735,7 @@ pub fn extract_fields(schema: &Value) -> Vec<FieldDef> {
     let mut fields = vec![];
 
     // Special case: if schema is itself an array, return a single "items" field
-    if let Some(schema_type) = schema.get("type").and_then(|t| t.as_str()) {
+    if let (Some(schema_type), _) = schema_type_and_nullable(schema) {
         if schema_type == "array" {
             if let Some(items) = schema.get("items") {
                 let ty = schema_to_type(items);
@@ -719,6 +744,7 @@ pub fn extract_fields(schema: &Value) -> Vec<FieldDef> {
                     original_name: "items".to_string(),
                     ty: format!("Vec<{ty}>"),
                     optional: false,
+                    required_nullable: false,
                     value: "vec![]".to_string(),
                 });
                 return fields;
@@ -783,7 +809,7 @@ pub fn extract_fields(schema: &Value) -> Vec<FieldDef> {
                 }
             } else {
                 // Priority 4: Use inline type definition
-                match prop.get("type").and_then(|t| t.as_str()) {
+                match schema_type_and_nullable(prop).0 {
                     Some("string") => "String".to_string(),
                     Some("integer") => "i32".to_string(),
                     Some("number") => {
@@ -817,7 +843,10 @@ pub fn extract_fields(schema: &Value) -> Vec<FieldDef> {
             // Determine if field is optional:
             // - Not in required array, OR
             // - Has oneOf with null variant
-            let optional = !required.contains(name) || nullable_oneof;
+            let nullable = nullable_oneof || schema_type_and_nullable(prop).1;
+            let is_required = required.contains(name);
+            let optional = !is_required || nullable;
+            let required_nullable = is_required && nullable;
 
             // Generate a dummy value for this field
             // If optional, wrap in Some(...), otherwise use value directly
@@ -834,6 +863,7 @@ pub fn extract_fields(schema: &Value) -> Vec<FieldDef> {
                 original_name: name.clone(), // Original JSON name for #[serde(rename)]
                 ty,
                 optional,
+                required_nullable,
                 value,
             });
         }
@@ -869,7 +899,7 @@ pub fn schema_to_type(schema: &Value) -> String {
         }
         return "serde_json::Value".to_string();
     }
-    match schema.get("type").and_then(|t| t.as_str()) {
+    match schema_type_and_nullable(schema).0 {
         Some("string") => "String".to_string(),
         Some("integer") => "i32".to_string(),
         Some("number") => {
@@ -888,7 +918,7 @@ pub fn schema_to_type(schema: &Value) -> String {
         Some("boolean") => "bool".to_string(),
         Some("array") => {
             if let Some(items) = schema.get("items") {
-                if let Some(item_ty) = items.get("type").and_then(|v| v.as_str()) {
+                if let (Some(item_ty), _) = schema_type_and_nullable(items) {
                     let inner = match item_ty {
                         "string" => "String".to_string(),
                         "integer" => "i32".to_string(),
@@ -946,6 +976,7 @@ pub fn parameter_to_field(param: &ParameterMeta) -> FieldDef {
         original_name: param.name.clone(),
         ty,
         optional,
+        required_nullable: false,
         value,
     }
 }

@@ -4,6 +4,32 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed (proxy 502s: bodyless requests, rollouts)
+
+- **A proxied request without a body went out chunked.** `proxy_untyped` sent a bodyless `POST`/`DELETE` with
+  `Transfer-Encoding: chunked` and wrote the terminating chunk only after the downstream had already answered and
+  closed; the BFF then failed reading the answer (`502 reason: request`) for a call the downstream logged as a 200.
+  In pp (19–26 Oct 2026) that was every one of 78 502s on `POST /billing/test-subscriptions/reset` through
+  trader-bff (~40 % of calls). It is now sent with `Content-Length: 0`. Reproduced in
+  `tests/proxy_bodyless_tests.rs` (65 of 400 calls failed before the fix; none after).
+- **Connect failures during a rollout.** A connect to a freshly resolved address that fails is retried once after
+  `PROXY_CONNECT_RETRY_MS` (default 100 ms; `0` turns it off). Nothing has been sent, so this is safe for any
+  method. pp: the BFF 502s on orderbook, orders, alerts, portfolio, social and team routes (24 and 26 Oct) were
+  `connect` errors in rollout windows.
+- **A GET or HEAD cut off after it was sent** (`502 reason: request`: the peer closed or reset before answering) is
+  sent once more. Other methods are not resent, and timeouts are not retried.
+
+### Added (contract checks for hand-built responses; nullable type lists in the generator)
+
+- **`brrtrouter::contract::ResponseContract`**: load a spec once, then `check(operation, status, &value)` /
+  `assert_valid(..)` a value against that operation's response schema, chosen as the server's response validation
+  chooses it. For unit tests of controllers that build JSON by hand (`HttpJson<Value>`), which no generated type
+  keeps in line with the spec.
+- **Generator: `type: [T, "null"]`** (the OpenAPI 3.1 way to say nullable) now maps to `Option<T>` instead of
+  `serde_json::Value`. A field that is required and nullable is `Option<T>` written even when `None` (as `null`,
+  no `skip_serializing_if`), as is a required `oneOf` with a `null` variant; leaving it out would fail `required`.
+  Consumers regenerating get typed fields where they had `Value`.
+
 ### Fixed (log redaction; response sampling per operation)
 
 - **Hyphenated secret headers were logged in clear.** Redaction patterns are written with `_` (`api_key`), so

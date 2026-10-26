@@ -58,7 +58,7 @@ fn response_schema_is_binary_string(s: &serde_json::Value) -> bool {
 ///
 /// Prefer `application/json` on the status, then any non-binary schema (typically `type: object`),
 /// then the route default `response_schema` for **2xx only** if it is not a binary-only schema.
-fn response_body_schema_for_status(
+pub(crate) fn response_body_schema_for_status(
     route: &crate::spec::RouteMeta,
     status: u16,
 ) -> Option<&serde_json::Value> {

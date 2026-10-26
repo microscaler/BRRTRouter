@@ -346,6 +346,7 @@ fn test_rust_literal_for_example_string() {
         original_name: "name".to_string(),
         ty: "String".to_string(),
         optional: false,
+        required_nullable: false,
         value: "default".to_string(),
     };
 
@@ -361,6 +362,7 @@ fn test_rust_literal_for_example_optional_string() {
         original_name: "nickname".to_string(),
         ty: "String".to_string(),
         optional: true,
+        required_nullable: false,
         value: "default".to_string(),
     };
 
@@ -376,6 +378,7 @@ fn test_rust_literal_for_example_number() {
         original_name: "age".to_string(),
         ty: "i32".to_string(),
         optional: false,
+        required_nullable: false,
         value: "default".to_string(),
     };
 
@@ -391,6 +394,7 @@ fn test_rust_literal_for_example_boolean() {
         original_name: "active".to_string(),
         ty: "bool".to_string(),
         optional: false,
+        required_nullable: false,
         value: "default".to_string(),
     };
 
@@ -406,6 +410,7 @@ fn test_rust_literal_for_example_array() {
         original_name: "tags".to_string(),
         ty: "Vec<String>".to_string(),
         optional: false,
+        required_nullable: false,
         value: "default".to_string(),
     };
 
@@ -424,6 +429,7 @@ fn test_rust_literal_for_example_array_numbers() {
         original_name: "scores".to_string(),
         ty: "Vec<i32>".to_string(),
         optional: false,
+        required_nullable: false,
         value: "default".to_string(),
     };
 
@@ -439,6 +445,7 @@ fn test_rust_literal_for_example_json_value() {
         original_name: "metadata".to_string(),
         ty: "serde_json::Value".to_string(),
         optional: false,
+        required_nullable: false,
         value: "default".to_string(),
     };
 
@@ -458,6 +465,7 @@ fn test_rust_literal_for_example_named_type() {
         original_name: "user".to_string(),
         ty: "User".to_string(),
         optional: false,
+        required_nullable: false,
         value: "default".to_string(),
     };
 
@@ -601,6 +609,7 @@ fn test_field_def_construction() {
         original_name: "test_field".to_string(),
         ty: "String".to_string(),
         optional: true,
+        required_nullable: false,
         value: "default_value".to_string(),
     };
 
@@ -618,6 +627,7 @@ fn test_type_definition_construction() {
             original_name: "id".to_string(),
             ty: "i32".to_string(),
             optional: false,
+            required_nullable: false,
             value: "0".to_string(),
         },
         FieldDef {
@@ -625,6 +635,7 @@ fn test_type_definition_construction() {
             original_name: "name".to_string(),
             ty: "String".to_string(),
             optional: false,
+            required_nullable: false,
             value: "String::new()".to_string(),
         },
     ];
@@ -1310,4 +1321,59 @@ serde = "1.0"
     );
 
     fs::remove_dir_all(&root).unwrap();
+}
+
+/// OpenAPI 3.1 nullable types (`type: [T, "null"]`) map to `T` wrapped in `Option`, not to
+/// `serde_json::Value`; a required one is always written (`null` when `None`).
+#[test]
+fn test_extract_fields_type_list_with_null() {
+    let schema = json!({
+        "type": "object",
+        "required": ["lead", "asOf"],
+        "properties": {
+            "lead": {"type": ["string", "null"]},
+            "asOf": {"type": "integer"},
+            "threshold": {"type": ["number", "null"]},
+            "bracket": {"type": ["object", "null"]},
+            "tags": {"type": ["array", "null"], "items": {"type": "string"}},
+            "mixed": {"type": ["string", "integer"]}
+        }
+    });
+    let fields = extract_fields(&schema);
+    let get = |n: &str| fields.iter().find(|f| f.original_name == n).unwrap();
+
+    let lead = get("lead");
+    assert_eq!(lead.ty, "String");
+    assert!(lead.optional && lead.required_nullable);
+
+    let as_of = get("asOf");
+    assert_eq!(as_of.ty, "i32");
+    assert!(!as_of.optional && !as_of.required_nullable);
+
+    let threshold = get("threshold");
+    assert_eq!(threshold.ty, "f64");
+    assert!(threshold.optional && !threshold.required_nullable);
+
+    assert_eq!(get("bracket").ty, "serde_json::Value");
+    assert_eq!(get("tags").ty, "Vec<String>");
+    assert_eq!(get("mixed").ty, "serde_json::Value");
+
+    assert_eq!(schema_to_type(&json!({"type": ["integer", "null"]})), "i32");
+    assert_eq!(
+        schema_to_type(&json!({"type": ["array", "null"], "items": {"type": ["string", "null"]}})),
+        "Vec<String>"
+    );
+}
+
+/// A required `oneOf` with a `null` variant is required-nullable too.
+#[test]
+fn test_extract_fields_required_oneof_null_is_required_nullable() {
+    let schema = json!({
+        "type": "object",
+        "required": ["owner"],
+        "properties": {"owner": {"oneOf": [{"type": "null"}, {"$ref": "#/components/schemas/User"}]}}
+    });
+    let fields = extract_fields(&schema);
+    assert_eq!(fields[0].ty, "User");
+    assert!(fields[0].optional && fields[0].required_nullable);
 }

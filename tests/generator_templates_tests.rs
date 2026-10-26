@@ -37,6 +37,7 @@ fn test_template_writers() {
         original_name: "id".into(),
         ty: "String".into(),
         optional: false,
+        required_nullable: false,
         value: "\"id\".to_string()".into(),
     }];
     let res_fields = vec![FieldDef {
@@ -44,6 +45,7 @@ fn test_template_writers() {
         original_name: "ok".into(),
         ty: "bool".into(),
         optional: false,
+        required_nullable: false,
         value: "true".into(),
     }];
     let imports = BTreeSet::new();
@@ -135,6 +137,50 @@ fn test_template_writers() {
     fs::remove_dir_all(&dir).unwrap();
 }
 
+/// A required nullable field is `Option<T>` written even when `None` (as `null`): leaving it
+/// out would break `required`. An optional one keeps `skip_serializing_if`.
+#[test]
+fn handler_writes_required_nullable_fields_as_null() {
+    let dir = temp_dir();
+    fs::create_dir_all(&dir).unwrap();
+    let field = |name: &str, required_nullable: bool| FieldDef {
+        name: name.into(),
+        original_name: name.into(),
+        ty: "String".into(),
+        optional: true,
+        required_nullable,
+        value: "None".into(),
+    };
+    let res_fields = vec![field("lead", true), field("note", false)];
+    let path = dir.join("h.rs");
+    write_handler(
+        &path,
+        "h",
+        &[],
+        &res_fields,
+        &BTreeSet::new(),
+        &[],
+        false,
+        true,
+        HandlerReturnShape::default(),
+        true,
+    )
+    .unwrap();
+    let out = fs::read_to_string(&path).unwrap();
+    let compact: String = out.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(
+        compact.contains(r#"#[serde(rename = "lead")] pub lead: Option<String>"#),
+        "lead is written without skip_serializing_if:\n{out}"
+    );
+    assert!(
+        compact.contains(
+            r#"#[serde(skip_serializing_if = "Option::is_none")] #[serde(rename = "note")] pub note: Option<String>"#
+        ),
+        "note keeps skip_serializing_if:\n{out}"
+    );
+    fs::remove_dir_all(&dir).unwrap();
+}
+
 /// Hyphenated Cargo package names must become valid Rust `use` paths (underscores).
 #[test]
 fn impl_main_rs_maps_hyphenated_package_to_rust_crate_ident() {
@@ -173,6 +219,7 @@ fn impl_controller_stub_maps_hyphenated_package_in_use_lines() {
         original_name: "id".into(),
         ty: "String".into(),
         optional: false,
+        required_nullable: false,
         value: "\"x\".to_string()".into(),
     }];
     let res_fields = vec![FieldDef {
@@ -180,6 +227,7 @@ fn impl_controller_stub_maps_hyphenated_package_in_use_lines() {
         original_name: "ok".into(),
         ty: "bool".into(),
         optional: false,
+        required_nullable: false,
         value: "true".into(),
     }];
     let stub_path = controllers_dir.join("get_items.rs");
@@ -239,6 +287,7 @@ fn proxy_controller_template_delegates_to_shared_module() {
         original_name: "ok".into(),
         ty: "bool".into(),
         optional: false,
+        required_nullable: false,
         value: "true".into(),
     }];
 
@@ -367,6 +416,7 @@ fn controller_emits_http_json_when_operation_has_non_2xx_json_schema() {
         original_name: "access_token".into(),
         ty: "String".into(),
         optional: false,
+        required_nullable: false,
         value: "\"token\".to_string()".into(),
     }];
 
@@ -515,6 +565,7 @@ fn handler_emits_api_response_for_200_plus_201() {
         original_name: "id".into(),
         ty: "String".into(),
         optional: true,
+        required_nullable: false,
         value: "None".into(),
     }];
     write_handler(

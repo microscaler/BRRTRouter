@@ -475,6 +475,7 @@ pub fn write_controller(
                 original_name: field.original_name.clone(),
                 ty: field.ty.clone(),
                 optional: field.optional,
+                required_nullable: field.required_nullable,
                 value, // Use enriched value with actual example data
             }
         })
@@ -523,6 +524,7 @@ pub fn write_controller(
                     original_name: "items".to_string(),
                     ty: res[0].ty.clone(), // Vec<T> where T is the element type
                     optional: false,
+                    required_nullable: false,
                     value: String::new(), // Not used for this purpose
                 };
                 // Convert entire JSON array to Rust vec![] literal
@@ -1405,6 +1407,7 @@ pub fn write_impl_controller_stub(params: ImplControllerStubParams) -> anyhow::R
                 original_name: field.original_name.clone(),
                 ty: field.ty.clone(),
                 optional: field.optional,
+                required_nullable: field.required_nullable,
                 value,
             }
         })
@@ -1422,6 +1425,7 @@ pub fn write_impl_controller_stub(params: ImplControllerStubParams) -> anyhow::R
                     original_name: "items".to_string(),
                     ty: params.res_fields[0].ty.clone(),
                     optional: false,
+                    required_nullable: false,
                     value: String::new(),
                 };
                 rust_literal_for_example(&items_field, ex)
@@ -1671,6 +1675,7 @@ pub fn sync_impl_stub_response(
                 original_name: field.original_name.clone(),
                 ty: field.ty.clone(),
                 optional: field.optional,
+                required_nullable: field.required_nullable,
                 value,
             }
         })

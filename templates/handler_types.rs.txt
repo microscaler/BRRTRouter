@@ -12,7 +12,7 @@ pub struct {{ type_name }} {
     {% if field.original_name != field.name %}
     #[serde(rename = "{{ field.original_name }}")]
     {% endif %}
-    {% if field.optional %}
+    {% if field.optional && !field.required_nullable %}
     #[serde(skip_serializing_if = "Option::is_none")]
     {% endif %}
     {% if field.original_name == "type" %}
