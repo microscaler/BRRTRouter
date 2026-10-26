@@ -12,7 +12,8 @@
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, OnceLock, RwLock};
 
 /// How responses are checked against their OpenAPI schema.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -68,22 +69,15 @@ impl ResponseValidation {
 
     /// Whether this response of `handler` is checked. `Sample` keeps a count per handler and checks that handler's
     /// evenly spread responses (each time `ceil(n·rate)` steps, starting with its first): every route gets the rate,
-    /// whatever the interleaving of routes, and there is no RNG on the hot path.
+    /// whatever the interleaving of routes, and there is no RNG on the hot path. The count is an atomic in the
+    /// handler's own counters (no process-wide lock per response).
     #[must_use]
     pub fn should_check(self, handler: &Arc<str>) -> bool {
         match self {
             Self::Full => true,
             Self::Off => false,
             Self::Sample(rate) => {
-                let n = {
-                    let mut m = SAMPLE_COUNTS
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner);
-                    let c = m.entry(Arc::clone(handler)).or_insert(0);
-                    let n = *c;
-                    *c += 1;
-                    n
-                } as f64;
+                let n = counters(handler).seen.fetch_add(1, Ordering::Relaxed) as f64;
                 ((n + 1.0) * rate).ceil() > (n * rate).ceil()
             }
         }
@@ -96,75 +90,92 @@ impl ResponseValidation {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum Outcome {
-    Ok,
-    Mismatch,
-    Skipped,
+/// One handler's counters: responses seen (for `Sample`) and the outcomes.
+#[derive(Default)]
+struct Counters {
+    seen: AtomicU64,
+    ok: AtomicU64,
+    mismatch: AtomicU64,
+    skipped: AtomicU64,
 }
 
-static COUNTS: Mutex<BTreeMap<(Arc<str>, Outcome), u64>> = Mutex::new(BTreeMap::new());
+/// Per-handler counters. The read lock is shared by every response; the write lock is taken once per handler,
+/// the first time it answers.
+static HANDLERS: RwLock<BTreeMap<Arc<str>, Arc<Counters>>> = RwLock::new(BTreeMap::new());
 
-/// Responses seen per handler, for `Sample`.
-static SAMPLE_COUNTS: Mutex<BTreeMap<Arc<str>, u64>> = Mutex::new(BTreeMap::new());
-
-fn bump(handler: &Arc<str>, outcome: Outcome) {
-    let mut m = COUNTS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    *m.entry((Arc::clone(handler), outcome)).or_insert(0) += 1;
+fn counters(handler: &Arc<str>) -> Arc<Counters> {
+    if let Some(c) = HANDLERS
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .get(handler)
+    {
+        return Arc::clone(c);
+    }
+    Arc::clone(
+        HANDLERS
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .entry(Arc::clone(handler))
+            .or_default(),
+    )
 }
 
 /// A checked response matched its schema.
 pub fn record_ok(handler: &Arc<str>) {
-    bump(handler, Outcome::Ok);
+    counters(handler).ok.fetch_add(1, Ordering::Relaxed);
 }
 
 /// A checked response did not match its schema.
 pub fn record_mismatch(handler: &Arc<str>) {
-    bump(handler, Outcome::Mismatch);
+    counters(handler).mismatch.fetch_add(1, Ordering::Relaxed);
 }
 
 /// A response with a schema that the mode did not check.
 pub fn record_skipped(handler: &Arc<str>) {
-    bump(handler, Outcome::Skipped);
+    counters(handler).skipped.fetch_add(1, Ordering::Relaxed);
 }
 
 fn esc(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
-/// Append the counters in Prometheus text format (nothing before the first response with a schema).
+/// Append the counters in Prometheus text format (nothing before the first response with a schema; zero series are
+/// left out).
 pub fn render_prometheus(body: &mut String) {
-    let m = COUNTS
-        .lock()
+    let m = HANDLERS
+        .read()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    if m.is_empty() {
-        return;
+    let any = |f: fn(&Counters) -> u64| m.values().any(|c| f(c) > 0);
+    let ok = |c: &Counters| c.ok.load(Ordering::Relaxed);
+    let mismatch = |c: &Counters| c.mismatch.load(Ordering::Relaxed);
+    let skipped = |c: &Counters| c.skipped.load(Ordering::Relaxed);
+    if any(ok) || any(mismatch) {
+        body.push_str("# HELP brrtrouter_response_validation_total Responses checked against their OpenAPI schema\n");
+        body.push_str("# TYPE brrtrouter_response_validation_total counter\n");
+        for (h, c) in m.iter() {
+            for (result, n) in [("ok", ok(c)), ("mismatch", mismatch(c))] {
+                if n > 0 {
+                    let _ = writeln!(
+                        body,
+                        "brrtrouter_response_validation_total{{handler=\"{}\",result=\"{result}\"}} {n}",
+                        esc(h)
+                    );
+                }
+            }
+        }
     }
-    body.push_str("# HELP brrtrouter_response_validation_total Responses checked against their OpenAPI schema\n");
-    body.push_str("# TYPE brrtrouter_response_validation_total counter\n");
-    for ((h, o), n) in m.iter() {
-        let result = match o {
-            Outcome::Ok => "ok",
-            Outcome::Mismatch => "mismatch",
-            Outcome::Skipped => continue,
-        };
-        let _ = writeln!(
-            body,
-            "brrtrouter_response_validation_total{{handler=\"{}\",result=\"{result}\"}} {n}",
-            esc(h)
-        );
-    }
-    body.push_str("# HELP brrtrouter_response_validation_skipped_total Responses with a schema the validation mode did not check\n");
-    body.push_str("# TYPE brrtrouter_response_validation_skipped_total counter\n");
-    for ((h, o), n) in m.iter() {
-        if *o == Outcome::Skipped {
-            let _ = writeln!(
-                body,
-                "brrtrouter_response_validation_skipped_total{{handler=\"{}\"}} {n}",
-                esc(h)
-            );
+    if any(skipped) {
+        body.push_str("# HELP brrtrouter_response_validation_skipped_total Responses with a schema the validation mode did not check\n");
+        body.push_str("# TYPE brrtrouter_response_validation_skipped_total counter\n");
+        for (h, c) in m.iter() {
+            let n = skipped(c);
+            if n > 0 {
+                let _ = writeln!(
+                    body,
+                    "brrtrouter_response_validation_skipped_total{{handler=\"{}\"}} {n}",
+                    esc(h)
+                );
+            }
         }
     }
 }
