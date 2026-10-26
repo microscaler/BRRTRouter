@@ -43,8 +43,8 @@
 //! worker that often: with the default 32+ workers, 10 ms is 3,200 wake-ups a second doing nothing, ~75 mcores per pod
 //! in pp (25 Oct 2026). I/O deadlines are unaffected (the wait is cut short for the next I/O timer) and work handed to
 //! a worker from outside it wakes that worker; only idle workers' stealing gets less frequent. Applied by
-//! [`RuntimeConfig::from_env`] (see [`ensure_may_poll_timeout`]); a service that set `may::config().set_timeout_ns`
-//! itself keeps its value.
+//! [`RuntimeConfig::from_env`] (see [`ensure_may_poll_timeout`]) and [`RuntimeConfig::apply`]; a service that set
+//! `may::config().set_timeout_ns` itself keeps its value unless this variable is set.
 //!
 //! ### `BRRTR_MAY_WORKERS`
 //!
@@ -248,7 +248,13 @@ impl RuntimeConfig {
             .set_stack_size(self.stack_size)
             .set_workers(self.may_workers)
             .set_pool_capacity(self.coroutine_pool_capacity);
-        may::config().set_timeout_ns(self.may_poll_timeout_ms.saturating_mul(1_000_000));
+        // The poll timeout follows `ensure_may_poll_timeout`: a value the service set itself stays
+        // unless BRRTR_MAY_POLL_TIMEOUT_MS asks for one explicitly.
+        if env::var_os("BRRTR_MAY_POLL_TIMEOUT_MS").is_some()
+            || may::config().get_timeout_ns() == MAY_DEFAULT_POLL_TIMEOUT_NS
+        {
+            may::config().set_timeout_ns(self.may_poll_timeout_ms.saturating_mul(1_000_000));
+        }
     }
 }
 
@@ -372,5 +378,23 @@ mod tests {
             assert_eq!(RuntimeConfig::from_env().may_poll_timeout_ms, ms, "{val}");
         }
         unsafe { std::env::remove_var("BRRTR_MAY_POLL_TIMEOUT_MS") };
+
+        // apply() keeps a timeout the service chose unless the env var asks for one.
+        may::config().set_timeout_ns(7_000_000);
+        RuntimeConfig::from_env().apply();
+        assert_eq!(
+            may::config().get_timeout_ns(),
+            7_000_000,
+            "service's own value kept"
+        );
+        unsafe { std::env::set_var("BRRTR_MAY_POLL_TIMEOUT_MS", "80") };
+        RuntimeConfig::from_env().apply();
+        assert_eq!(
+            may::config().get_timeout_ns(),
+            80_000_000,
+            "explicit env wins"
+        );
+        unsafe { std::env::remove_var("BRRTR_MAY_POLL_TIMEOUT_MS") };
+        may::config().set_timeout_ns(DEFAULT_MAY_POLL_TIMEOUT_MS * 1_000_000);
     }
 }
