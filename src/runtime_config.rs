@@ -317,7 +317,7 @@ pub fn ensure_may_poll_timeout() {
         if env::var_os("BRRTR_MAY_POLL_TIMEOUT_MS").is_some()
             || may::config().get_timeout_ns() == MAY_DEFAULT_POLL_TIMEOUT_NS
         {
-            may::config().set_timeout_ns(may_poll_timeout_ms_from_env() * 1_000_000);
+            may::config().set_timeout_ns(may_poll_timeout_ms_from_env().saturating_mul(1_000_000));
         }
     });
 }
