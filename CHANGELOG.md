@@ -33,7 +33,7 @@ All notable changes to this project will be documented in this file.
 - **Idle `may` workers poll every 50 ms instead of 10 ms.** Each of a service's 32+ workers woke from `epoll_wait`
   every 10 ms to look for work, i.e. 3,200+ wake-ups a second in an idle pod. In pp that came to about 75 mcores per pod
   doing nothing. `BRRTR_MAY_POLL_TIMEOUT_MS` (default 50) sets it. `RuntimeConfig::from_env` applies it (a service that
-  set `may::config().set_timeout_ns` itself keeps its value). Idle CPU on ms02, 50 workers: 19 → 5 mcores.
+  set `may::config().set_timeout_ns` itself keeps its value unless `BRRTR_MAY_POLL_TIMEOUT_MS` is set explicitly). Idle CPU on ms02, 50 workers: 19 → 5 mcores.
   Latency under load is unchanged (`benches/idle_cpu.rs`). I/O timeouts are not affected.
 - `RuntimeConfig` has a new field, `may_poll_timeout_ms`.
 

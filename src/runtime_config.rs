@@ -306,14 +306,17 @@ fn may_poll_timeout_ms_from_env() -> u64 {
         .unwrap_or(DEFAULT_MAY_POLL_TIMEOUT_MS)
 }
 
-/// Give `may` BRRTRouter's idle worker poll timeout (`BRRTR_MAY_POLL_TIMEOUT_MS`, default 50 ms) unless the service
-/// already chose one (`get_timeout_ns()` differs from `may`'s 10 ms). Idempotent. Each worker reads it when its event
-/// loop starts, i.e. with the scheduler, so it must run before the first coroutine: [`RuntimeConfig::from_env`] and
-/// `HttpServer::start` call it.
+/// Give `may` BRRTRouter's idle worker poll timeout (`BRRTR_MAY_POLL_TIMEOUT_MS`, default 50 ms). Without the variable,
+/// a value the service already chose (`get_timeout_ns()` differs from `may`'s 10 ms) is kept. Idempotent. Each
+/// worker reads it when its event loop starts, i.e. with the scheduler, so it must run before the first
+/// coroutine: [`RuntimeConfig::from_env`] and `HttpServer::start` call it.
 pub fn ensure_may_poll_timeout() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
-        if may::config().get_timeout_ns() == MAY_DEFAULT_POLL_TIMEOUT_NS {
+        // An explicit BRRTR_MAY_POLL_TIMEOUT_MS wins; unset, a value the service chose stays.
+        if env::var_os("BRRTR_MAY_POLL_TIMEOUT_MS").is_some()
+            || may::config().get_timeout_ns() == MAY_DEFAULT_POLL_TIMEOUT_NS
+        {
             may::config().set_timeout_ns(may_poll_timeout_ms_from_env() * 1_000_000);
         }
     });

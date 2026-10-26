@@ -14,7 +14,9 @@
 use brrtrouter::dispatcher::Dispatcher;
 use brrtrouter::middleware::{CorsMiddlewareBuilder, MetricsMiddleware};
 use brrtrouter::router::Router;
+use brrtrouter::security::{SecurityProvider, SecurityRequest};
 use brrtrouter::server::{AppService, HttpServer};
+use brrtrouter::spec::SecurityScheme;
 use std::net::TcpListener;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -26,10 +28,28 @@ fn cpu_ticks() -> (u64, u64) {
     (f[11].parse().unwrap(), f[12].parse().unwrap()) // utime, stime (fields 14, 15)
 }
 
+/// API-key check as the generated services' static provider does it (pet_store's routes need one).
+struct StaticApiKey;
+impl SecurityProvider for StaticApiKey {
+    fn validate(&self, scheme: &SecurityScheme, _scopes: &[String], req: &SecurityRequest) -> bool {
+        match scheme {
+            SecurityScheme::ApiKey { name, location, .. } if location == "header" => req
+                .get_header(&name.to_ascii_lowercase())
+                .is_some_and(|v| v == "test123"),
+            _ => false,
+        }
+    }
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     // Test runners list a harness-less target with `--list`: it has no unit tests to list.
     if args.iter().any(|a| a == "--list") {
+        return;
+    }
+    // CPU time comes from /proc (Linux); elsewhere there is nothing to measure.
+    if !std::path::Path::new("/proc/self/stat").exists() {
+        println!("idle_cpu: skipped (needs /proc/self/stat, i.e. Linux)");
         return;
     }
     // Without `--bench` (a test run of all targets): a 1 s smoke run.
@@ -61,6 +81,11 @@ fn main() {
         None,
     );
     service.set_metrics_middleware(metrics);
+    let names: Vec<String> = service.security_schemes.keys().cloned().collect();
+    for name in names {
+        service.register_security_provider(&name, Arc::new(StaticApiKey));
+    }
+    service.resolve_security(&routes);
     let addr = TcpListener::bind("127.0.0.1:0")
         .unwrap()
         .local_addr()
@@ -112,13 +137,16 @@ fn main() {
                     use std::io::{Read, Write};
                     let mut s = std::net::TcpStream::connect(addr).unwrap();
                     s.set_nodelay(true).unwrap();
+                    // A response that never completes fails the run instead of hanging it.
+                    s.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+                    s.set_write_timeout(Some(Duration::from_secs(10))).unwrap();
                     let mut buf = vec![0u8; 65536];
                     let mut lat = Vec::new();
                     while Instant::now() < deadline {
                         let t = Instant::now();
                         s.write_all(&req).unwrap();
                         let mut n = 0;
-                        loop {
+                        let status = loop {
                             let m = s.read(&mut buf[n..]).unwrap();
                             assert!(m > 0);
                             n += m;
@@ -132,10 +160,12 @@ fn main() {
                                     .map(|v| v.trim().parse().unwrap())
                                     .unwrap_or(0);
                                 if n >= end + 4 + cl {
-                                    break;
+                                    break head[9..12].to_string();
                                 }
                             }
-                        }
+                        };
+                        // Only answered requests are measured: an error answer fails the run.
+                        assert_eq!(status, "200", "GET /pets/12345 answered {status}");
                         lat.push(t.elapsed().as_micros() as u64);
                         if gap > 0 {
                             std::thread::sleep(Duration::from_micros(gap));

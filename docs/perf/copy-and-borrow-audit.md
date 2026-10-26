@@ -201,12 +201,15 @@ workers × 1/timeout (ms02, 20 s idle):
 (mcores; ms02 is bare metal, while GKE nodes pay more per wake-up, which explains the ~75 mcores seen in pp.)
 
 Change: `BRRTR_MAY_POLL_TIMEOUT_MS`, default 50 ms, applied by `RuntimeConfig::from_env` before the scheduler
-starts. Load latency is the same (`idle_cpu` load mode, 50 workers, 64 keep-alive connections):
+starts. Load latency is the same (`idle_cpu` load mode, 50 workers, `GET /pets/12345` answering 200;
+three runs each for saturated, two for paced):
 
-| poll | paced 2 ms/conn: rps, p50 / p99 / p999 µs | saturated: rps, p50 / p99 / p999 µs |
+| poll | saturated, 64 conns: rps, p50 / p99 µs | paced, 16 conns × 0.5 ms gap: rps, p50 / p99 / p999 µs |
 |---|---|---|
-| 10 ms | 29,893, 22 / 879 / 1,122 | 1.21 M, 41 / 208 / 834 |
-| 50 ms | 29,710, 24 / 884 / 1,180 | 1.17 M, 39 / 237 / 778 |
+| 10 ms | 307–316 k, 172–173 / 922–979 | 23.2–23.6 k, 33–35 / 892–908 / 1,268–1,496 |
+| 50 ms | 303–307 k, 176–179 / 940–1,005 | 23.0–24.0 k, 34–36 / 866–944 / 1,389–1,550 |
+
+(A first version of these numbers measured 401 answers: the bench had no API-key provider. Review on #509.)
 
 I/O deadlines are unaffected: `select` waits until the next I/O timer when one is sooner, and the timer
 thread wakes the worker it schedules onto. To verify in pp, compare idle CPU per pod before and after.
