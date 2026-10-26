@@ -2,7 +2,7 @@
 
 //! Unit tests for the OpenAPI linter
 
-use crate::linter::{lint_spec, LintSeverity};
+use crate::linter::{lint_openapi31_keywords, lint_spec, LintSeverity};
 use std::io::Write;
 use std::path::Path;
 use tempfile::NamedTempFile;
@@ -442,4 +442,39 @@ components:
         .filter(|i| i.kind == "query_enum_mismatch_item_schema")
         .collect();
     assert!(mismatch.is_empty(), "sorted enums match: {:?}", issues);
+}
+
+#[test]
+fn openapi30_documents_keep_nullable() {
+    let raw = serde_json::json!({
+        "openapi": "3.0.3",
+        "components": {"schemas": {"A": {"type": "number", "nullable": true, "exclusiveMinimum": true}}}
+    });
+    let mut issues = Vec::new();
+    lint_openapi31_keywords(&raw, &mut issues);
+    assert!(issues.is_empty(), "{issues:?}");
+    let raw31 = serde_json::json!({
+        "openapi": "3.1.0",
+        "components": {"schemas": {"A": {"type": "number", "nullable": true}}}
+    });
+    lint_openapi31_keywords(&raw31, &mut issues);
+    assert_eq!(issues.len(), 1);
+    assert_eq!(issues[0].kind, "openapi31_nullable");
+}
+
+#[test]
+fn openapi31_boolean_exclusive_bounds_are_errors() {
+    let raw = serde_json::json!({
+        "openapi": "3.1.0",
+        "components": {"schemas": {"R": {"type": "number", "minimum": 0, "exclusiveMinimum": true,
+            "maximum": 1, "exclusiveMaximum": 1}}}
+    });
+    let mut issues = Vec::new();
+    lint_openapi31_keywords(&raw, &mut issues);
+    assert_eq!(issues.len(), 1, "{issues:?}");
+    assert_eq!(issues[0].kind, "openapi31_exclusive_bound");
+    assert_eq!(
+        issues[0].location,
+        "#/components/schemas/R/exclusiveMinimum"
+    );
 }

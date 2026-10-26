@@ -97,17 +97,29 @@ impl LintIssue {
 ///
 /// A vector of lint issues found in the specification
 pub fn lint_spec(spec_path: &Path) -> anyhow::Result<Vec<LintIssue>> {
-    let spec: OpenApiV3Spec = if spec_path
+    let text = std::fs::read_to_string(spec_path)?;
+    let is_yaml = spec_path
         .extension()
         .map(|s| s == "yaml" || s == "yml")
-        .unwrap_or(false)
-    {
-        serde_yaml::from_str(&std::fs::read_to_string(spec_path)?)?
+        .unwrap_or(false);
+    let spec: OpenApiV3Spec = if is_yaml {
+        serde_yaml::from_str(&text)?
     } else {
-        serde_json::from_str(&std::fs::read_to_string(spec_path)?)?
+        serde_json::from_str(&text)?
     };
 
     let mut issues = Vec::new();
+
+    // 3.0-only keywords in a 3.1 document, read from the document as written (the typed model
+    // drops keywords it does not know, `nullable` among them).
+    let raw: Option<Value> = if is_yaml {
+        serde_yaml::from_str(&text).ok()
+    } else {
+        serde_json::from_str(&text).ok()
+    };
+    if let Some(raw) = raw.as_ref() {
+        lint_openapi31_keywords(raw, &mut issues);
+    }
 
     // Collect all defined schema names
     let mut defined_schemas = HashSet::new();
@@ -137,6 +149,79 @@ pub fn lint_spec(spec_path: &Path) -> anyhow::Result<Vec<LintIssue>> {
     }
 
     Ok(issues)
+}
+
+/// OpenAPI 3.1 schemas are JSON Schema 2020-12: `nullable: true` is not a keyword there (it is ignored, so a
+/// `null` fails validation: PriceWhisperer `ab1d7059`, every `get_equity_curve` call a 500), and
+/// `exclusiveMinimum`/`exclusiveMaximum` are numbers, not booleans. Flags both anywhere in a 3.1 document.
+pub(crate) fn lint_openapi31_keywords(raw: &Value, issues: &mut Vec<LintIssue>) {
+    let is_31 = raw
+        .get("openapi")
+        .and_then(Value::as_str)
+        .is_some_and(|v| v.starts_with("3.1"));
+    if !is_31 {
+        return;
+    }
+    fn walk(v: &Value, pointer: &mut String, issues: &mut Vec<LintIssue>) {
+        match v {
+            Value::Object(map) => {
+                for (k, child) in map {
+                    let len = pointer.len();
+                    pointer.push('/');
+                    pointer.push_str(&k.replace('~', "~0").replace('/', "~1"));
+                    if k == "nullable" && child.is_boolean() {
+                        issues.push(
+                            LintIssue::new(
+                                pointer.clone(),
+                                LintSeverity::Error,
+                                "openapi31_nullable",
+                                "`nullable` is an OpenAPI 3.0 keyword; a 3.1 schema ignores it, so null fails validation",
+                            )
+                            .with_suggestion(
+                                "use a type union: `type: [string, 'null']` (or `oneOf` with `type: 'null'`)",
+                            ),
+                        );
+                    } else if (k == "exclusiveMinimum" || k == "exclusiveMaximum")
+                        && child.is_boolean()
+                    {
+                        issues.push(
+                            LintIssue::new(
+                                pointer.clone(),
+                                LintSeverity::Error,
+                                "openapi31_exclusive_bound",
+                                format!("`{k}` is a number in OpenAPI 3.1 (JSON Schema 2020-12), not a boolean"),
+                            )
+                            .with_suggestion(format!(
+                                "`{k}: <bound>` replaces `{}: <bound>` + `{k}: true`",
+                                if k == "exclusiveMinimum" { "minimum" } else { "maximum" }
+                            )),
+                        );
+                    }
+                    // Instance data (examples, enums, defaults) is not schema: a field named `nullable`
+                    // there is a value.
+                    if !matches!(
+                        k.as_str(),
+                        "example" | "examples" | "enum" | "const" | "default"
+                    ) {
+                        walk(child, pointer, issues);
+                    }
+                    pointer.truncate(len);
+                }
+            }
+            Value::Array(items) => {
+                for (i, child) in items.iter().enumerate() {
+                    let len = pointer.len();
+                    pointer.push('/');
+                    pointer.push_str(&i.to_string());
+                    walk(child, pointer, issues);
+                    pointer.truncate(len);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut pointer = String::from("#");
+    walk(raw, &mut pointer, issues);
 }
 
 /// For operations with a 2xx `application/json` **array** response, ensure each query `parameter`

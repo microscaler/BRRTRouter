@@ -1,0 +1,29 @@
+openapi: 3.1.0
+info:
+  title: 3.1 keywords
+  version: 1.0.0
+paths:
+  /equity:
+    get:
+      operationId: get_equity
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Equity'
+              example:
+                nullable: true
+components:
+  schemas:
+    Equity:
+      type: object
+      properties:
+        start_equity:
+          type: number
+          nullable: true
+        started_at:
+          type: [string, 'null']
+        nullable:
+          type: boolean

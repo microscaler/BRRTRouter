@@ -229,3 +229,19 @@ fn test_all_sample_files_exist() {
         );
     }
 }
+
+#[test]
+fn test_openapi31_rejects_30_keywords() {
+    let issues = lint_spec(&test_file_path("openapi31_keywords.yaml")).unwrap();
+    let nullable: Vec<_> = issues
+        .iter()
+        .filter(|i| i.kind == "openapi31_nullable")
+        .collect();
+    // Only the schema keyword: not the example's data field, not a property named `nullable`.
+    assert_eq!(nullable.len(), 1, "{issues:?}");
+    assert_eq!(nullable[0].severity, LintSeverity::Error);
+    assert_eq!(
+        nullable[0].location,
+        "#/components/schemas/Equity/properties/start_equity/nullable"
+    );
+}

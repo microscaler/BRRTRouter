@@ -17,6 +17,15 @@ All notable changes to this project will be documented in this file.
   into the generated BFF spec, right after `openapi`. Root extensions had no source, so they were hand-added to
   generated copies and lost on the next generation.
 
+### Added (spec lint: OpenAPI 3.0 keywords in 3.1 documents) — ADR 006 §4
+
+- `brrtrouter-gen lint` reports, as errors, `nullable: true` in an OpenAPI 3.1 document (3.1 schemas are JSON
+  Schema 2020-12, which ignores it, so a `null` fails response validation: PriceWhisperer `ab1d7059`) and boolean
+  `exclusiveMinimum`/`exclusiveMaximum`. Read from the document as written (the typed model drops `nullable`);
+  examples, enums, defaults and properties named `nullable` are not flagged. Locations are JSON pointers.
+  First run over the consumers (26 Oct 2026): PriceWhisperer trader `market` (3), `orders` (1, request) and the
+  trader BFF spec (4), and every Sesame-IDAM service spec, still declare nulls this way.
+
 ### Changed (response validation modes; pass-through is opt-in) — ADR 006
 
 - **`BRRTR_RESPONSE_VALIDATION=full|sample:<rate>|off`**, default `full` (unchanged behaviour: a mismatch is a 500).
