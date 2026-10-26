@@ -1336,7 +1336,8 @@ fn test_extract_fields_type_list_with_null() {
             "threshold": {"type": ["number", "null"]},
             "bracket": {"type": ["object", "null"]},
             "tags": {"type": ["array", "null"], "items": {"type": "string"}},
-            "mixed": {"type": ["string", "integer"]}
+            "mixed": {"type": ["string", "integer"]},
+            "maybe": {"type": "array", "items": {"type": ["string", "null"]}}
         }
     });
     let fields = extract_fields(&schema);
@@ -1356,13 +1357,22 @@ fn test_extract_fields_type_list_with_null() {
 
     assert_eq!(get("bracket").ty, "serde_json::Value");
     assert_eq!(get("tags").ty, "Vec<String>");
+    // Nullable elements stay `Value`: `Vec<String>` would reject `["a", null]`.
+    assert_eq!(get("maybe").ty, "Vec<serde_json::Value>");
     assert_eq!(get("mixed").ty, "serde_json::Value");
 
     assert_eq!(schema_to_type(&json!({"type": ["integer", "null"]})), "i32");
     assert_eq!(
-        schema_to_type(&json!({"type": ["array", "null"], "items": {"type": ["string", "null"]}})),
+        schema_to_type(&json!({"type": ["array", "null"], "items": {"type": "string"}})),
         "Vec<String>"
     );
+    assert_eq!(
+        schema_to_type(&json!({"type": "array", "items": {"type": ["string", "null"]}})),
+        "Vec<serde_json::Value>"
+    );
+    // A top-level array response with nullable elements.
+    let top = extract_fields(&json!({"type": "array", "items": {"type": ["integer", "null"]}}));
+    assert_eq!(top[0].ty, "Vec<serde_json::Value>");
 }
 
 /// A required `oneOf` with a `null` variant is required-nullable too.

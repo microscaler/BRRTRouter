@@ -15,6 +15,9 @@ pub struct {{ type_name }} {
     {% if field.optional && !field.required_nullable %}
     #[serde(skip_serializing_if = "Option::is_none")]
     {% endif %}
+    {% if field.required_nullable %}
+    #[serde(deserialize_with = "Option::deserialize")]
+    {% endif %}
     {% if field.original_name == "type" %}
     pub r#type: {% if field.optional %}Option<{{ field.ty }}>{% else %}{{ field.ty }}{% endif %},
     {% else %}

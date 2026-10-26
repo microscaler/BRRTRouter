@@ -17,7 +17,7 @@ use crate::handlers::types::{{ import }};
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Request {
     {% for field in request_fields -%}
-    {% if field.optional && !field.required_nullable %}#[serde(skip_serializing_if = "Option::is_none")] {% endif %}
+    {% if field.optional && !field.required_nullable %}#[serde(skip_serializing_if = "Option::is_none")] {% endif %}{% if field.required_nullable %}#[serde(deserialize_with = "Option::deserialize")] {% endif %}
     #[serde(rename = "{{ field.original_name }}")]
     {% if field.optional %}
     pub {% if field.name == "type" || field.original_name == "type" %}r#type{% else %}{{ field.name }}{% endif %}: Option<{{ field.ty }}>,
@@ -36,7 +36,7 @@ pub struct Response(pub {{ response_array_type }});
 {% else %}
 pub struct Response {
     {% for field in response_fields -%}
-    {% if field.optional && !field.required_nullable %}#[serde(skip_serializing_if = "Option::is_none")] {% endif %}
+    {% if field.optional && !field.required_nullable %}#[serde(skip_serializing_if = "Option::is_none")] {% endif %}{% if field.required_nullable %}#[serde(deserialize_with = "Option::deserialize")] {% endif %}
     #[serde(rename = "{{ field.original_name }}")]
     {% if field.optional %}
     pub {% if field.name == "type" || field.original_name == "type" %}r#type{% else %}{{ field.name }}{% endif %}: Option<{{ field.ty }}>,

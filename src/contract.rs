@@ -26,7 +26,7 @@ const MAX_ERRORS: usize = 20;
 /// Why a value does not meet an operation's response contract.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ContractError {
-    /// No operation with that `operationId` (or `x-handler-*` name) in the spec.
+    /// No operation with that handler name in the spec (see [`ResponseContract::check`]).
     UnknownOperation(String),
     /// The operation declares no JSON schema for this status.
     NoSchema { operation: String, status: u16 },
@@ -47,7 +47,9 @@ pub enum ContractError {
 impl std::fmt::Display for ContractError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::UnknownOperation(op) => write!(f, "no operation `{op}` in the spec"),
+            Self::UnknownOperation(op) => {
+                write!(f, "no operation with handler name `{op}` in the spec")
+            }
             Self::NoSchema { operation, status } => {
                 write!(f, "`{operation}` declares no JSON schema for {status}")
             }
@@ -106,6 +108,10 @@ impl ResponseContract {
     }
 
     /// Check `body` against `operation`'s response schema for `status`.
+    ///
+    /// `operation` is the handler name the server dispatches to: the operation's `x-handler-*`
+    /// extension when it has one, else its `operationId` (as [`crate::spec::RouteMeta`]'s
+    /// `handler_name`, and as the generated handler is named).
     ///
     /// # Errors
     ///

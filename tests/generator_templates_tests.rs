@@ -169,8 +169,10 @@ fn handler_writes_required_nullable_fields_as_null() {
     let out = fs::read_to_string(&path).unwrap();
     let compact: String = out.split_whitespace().collect::<Vec<_>>().join(" ");
     assert!(
-        compact.contains(r#"#[serde(rename = "lead")] pub lead: Option<String>"#),
-        "lead is written without skip_serializing_if:\n{out}"
+        compact.contains(
+            r#"#[serde(deserialize_with = "Option::deserialize")] #[serde(rename = "lead")] pub lead: Option<String>"#
+        ),
+        "lead is written without skip_serializing_if and must be present to deserialize:\n{out}"
     );
     assert!(
         compact.contains(
@@ -179,6 +181,36 @@ fn handler_writes_required_nullable_fields_as_null() {
         "note keeps skip_serializing_if:\n{out}"
     );
     fs::remove_dir_all(&dir).unwrap();
+}
+
+/// The attribute the generator puts on a required nullable field: `null` is accepted, a missing
+/// field is not (without it serde fills a missing `Option` with `None`), and `None` is written.
+#[test]
+fn deserialize_with_option_requires_presence_and_accepts_null() {
+    #[derive(serde::Deserialize, serde::Serialize)]
+    struct R {
+        #[serde(deserialize_with = "Option::deserialize")]
+        lead: Option<String>,
+    }
+    assert!(serde_json::from_str::<R>(r#"{"lead": null}"#)
+        .unwrap()
+        .lead
+        .is_none());
+    assert_eq!(
+        serde_json::from_str::<R>(r#"{"lead": "SPY"}"#)
+            .unwrap()
+            .lead
+            .as_deref(),
+        Some("SPY")
+    );
+    assert!(
+        serde_json::from_str::<R>("{}").is_err(),
+        "missing required field"
+    );
+    assert_eq!(
+        serde_json::to_string(&R { lead: None }).unwrap(),
+        r#"{"lead":null}"#
+    );
 }
 
 /// Hyphenated Cargo package names must become valid Rust `use` paths (underscores).

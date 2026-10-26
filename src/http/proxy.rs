@@ -478,6 +478,10 @@ fn forget_downstream(host: &str, addr: SocketAddr) {
     }
 }
 
+fn is_timeout(e: &std::io::Error) -> bool {
+    e.kind() == std::io::ErrorKind::TimedOut || looks_like_timeout(&e.to_string())
+}
+
 /// Pause before retrying a connect to a fresh address (`PROXY_CONNECT_RETRY_MS`, default 100;
 /// `0` turns the retry off).
 fn connect_retry_delay() -> Option<Duration> {
@@ -516,7 +520,9 @@ fn connect_downstream_with<T>(
             let fresh = resolve_downstream_with(host, port, lookup)?;
             connect(fresh.addr).map_err(connect_error)
         }
-        Err(e) => match connect_retry_delay() {
+        // A connect that timed out is not retried: an unreachable downstream would cost the
+        // connect timeout twice before the 504 (Codex review on #521).
+        Err(e) => match connect_retry_delay().filter(|_| !is_timeout(&e)) {
             Some(delay) => {
                 // Yields the coroutine; a plain thread sleeps.
                 may::coroutine::sleep(delay);
@@ -1581,6 +1587,23 @@ mod tests {
             2,
             "one retry after the pause"
         );
+    }
+
+    #[test]
+    fn uncached_address_timeout_is_not_retried() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let lookup = |_: &str, _: u16| Ok("10.0.0.5:8080".parse().unwrap());
+        let r = Resolved {
+            addr: "10.0.0.5:8080".parse().unwrap(),
+            cached: false,
+        };
+        let connects = AtomicUsize::new(0);
+        let res = connect_downstream_with("slow-svc.test", 8080, r, &lookup, |_| {
+            connects.fetch_add(1, Ordering::SeqCst);
+            Err::<(), _>(std::io::Error::from(std::io::ErrorKind::TimedOut))
+        });
+        assert!(matches!(res, Err(ProxyError::Timeout)));
+        assert_eq!(connects.load(Ordering::SeqCst), 1);
     }
 
     #[test]

@@ -738,11 +738,11 @@ pub fn extract_fields(schema: &Value) -> Vec<FieldDef> {
     if let (Some(schema_type), _) = schema_type_and_nullable(schema) {
         if schema_type == "array" {
             if let Some(items) = schema.get("items") {
-                let ty = schema_to_type(items);
+                let ty = schema_to_type(&serde_json::json!({"type": "array", "items": items}));
                 fields.push(FieldDef {
                     name: "items".to_string(),
                     original_name: "items".to_string(),
-                    ty: format!("Vec<{ty}>"),
+                    ty,
                     optional: false,
                     required_nullable: false,
                     value: "vec![]".to_string(),
@@ -828,8 +828,9 @@ pub fn extract_fields(schema: &Value) -> Vec<FieldDef> {
                     Some("boolean") => "bool".to_string(),
                     Some("array") => {
                         if let Some(items) = prop.get("items") {
-                            // Recursively determine array element type
-                            format!("Vec<{}>", schema_to_type(items))
+                            // Recursively determine array element type (`schema_to_type` of the
+                            // array keeps nullable elements as `Value`)
+                            schema_to_type(&serde_json::json!({"type": "array", "items": items}))
                         } else {
                             // No items schema, use Value
                             "Vec<serde_json::Value>".to_string()
@@ -918,6 +919,11 @@ pub fn schema_to_type(schema: &Value) -> String {
         Some("boolean") => "bool".to_string(),
         Some("array") => {
             if let Some(items) = schema.get("items") {
+                if schema_type_and_nullable(items).1 {
+                    // Nullable elements (`items: {type: [T, "null"]}`): `Vec<T>` would reject a
+                    // `null` element the schema allows, so they stay `Value`.
+                    return "Vec<serde_json::Value>".to_string();
+                }
                 if let (Some(item_ty), _) = schema_type_and_nullable(items) {
                     let inner = match item_ty {
                         "string" => "String".to_string(),
