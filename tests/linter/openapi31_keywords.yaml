@@ -27,3 +27,11 @@ components:
           type: [string, 'null']
         nullable:
           type: boolean
+        default:
+          type: integer
+          nullable: true
+        closed:
+          type: string
+          nullable: false
+      x-generator-options:
+        nullable: true

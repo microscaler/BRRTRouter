@@ -237,11 +237,41 @@ fn test_openapi31_rejects_30_keywords() {
         .iter()
         .filter(|i| i.kind == "openapi31_nullable")
         .collect();
-    // Only the schema keyword: not the example's data field, not a property named `nullable`.
-    assert_eq!(nullable.len(), 1, "{issues:?}");
-    assert_eq!(nullable[0].severity, LintSeverity::Error);
+    // Schema keywords only: not the example's data field, not `nullable: false`, not an extension payload; a
+    // property named like an instance keyword (`default`) is still a schema.
+    let mut locations: Vec<_> = nullable.iter().map(|i| i.location.as_str()).collect();
+    locations.sort_unstable();
     assert_eq!(
-        nullable[0].location,
-        "#/components/schemas/Equity/properties/start_equity/nullable"
+        locations,
+        [
+            "#/components/schemas/Equity/properties/default/nullable",
+            "#/components/schemas/Equity/properties/start_equity/nullable",
+        ],
+        "{issues:?}"
+    );
+    assert!(nullable.iter().all(|i| i.severity == LintSeverity::Error));
+    // The suggestion keeps the schema's own type.
+    let start = nullable
+        .iter()
+        .find(|i| i.location.contains("start_equity"))
+        .unwrap();
+    assert!(
+        start
+            .suggestion
+            .as_deref()
+            .unwrap()
+            .contains("[number, 'null']"),
+        "{:?}",
+        start.suggestion
+    );
+}
+
+#[test]
+fn test_openapi31_boolean_bound_is_reported_even_though_the_spec_does_not_parse() {
+    let issues = lint_spec(&test_file_path("openapi31_exclusive.yaml")).unwrap();
+    assert!(
+        issues.iter().any(|i| i.kind == "openapi31_exclusive_bound"
+            && i.location == "#/components/schemas/Ratio/exclusiveMinimum"),
+        "{issues:?}"
     );
 }

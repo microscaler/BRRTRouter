@@ -102,16 +102,12 @@ pub fn lint_spec(spec_path: &Path) -> anyhow::Result<Vec<LintIssue>> {
         .extension()
         .map(|s| s == "yaml" || s == "yml")
         .unwrap_or(false);
-    let spec: OpenApiV3Spec = if is_yaml {
-        serde_yaml::from_str(&text)?
-    } else {
-        serde_json::from_str(&text)?
-    };
 
     let mut issues = Vec::new();
 
-    // 3.0-only keywords in a 3.1 document, read from the document as written (the typed model
-    // drops keywords it does not know, `nullable` among them).
+    // 3.0-only keywords in a 3.1 document, read from the document as written: the typed model drops
+    // `nullable`, and a boolean `exclusiveMinimum` does not even parse into it. Checked first, so a
+    // document the typed parse rejects still gets these findings.
     let raw: Option<Value> = if is_yaml {
         serde_yaml::from_str(&text).ok()
     } else {
@@ -120,6 +116,25 @@ pub fn lint_spec(spec_path: &Path) -> anyhow::Result<Vec<LintIssue>> {
     if let Some(raw) = raw.as_ref() {
         lint_openapi31_keywords(raw, &mut issues);
     }
+
+    let parsed: anyhow::Result<OpenApiV3Spec> = if is_yaml {
+        serde_yaml::from_str(&text).map_err(Into::into)
+    } else {
+        serde_json::from_str(&text).map_err(Into::into)
+    };
+    let spec = match parsed {
+        Ok(spec) => spec,
+        Err(e) if !issues.is_empty() => {
+            issues.push(LintIssue::new(
+                "#",
+                LintSeverity::Error,
+                "spec_parse",
+                format!("the document does not parse as OpenAPI ({e}); fix the issues above first"),
+            ));
+            return Ok(issues);
+        }
+        Err(e) => return Err(e),
+    };
 
     // Collect all defined schema names
     let mut defined_schemas = HashSet::new();
@@ -162,66 +177,155 @@ pub(crate) fn lint_openapi31_keywords(raw: &Value, issues: &mut Vec<LintIssue>) 
     if !is_31 {
         return;
     }
-    fn walk(v: &Value, pointer: &mut String, issues: &mut Vec<LintIssue>) {
-        match v {
-            Value::Object(map) => {
-                for (k, child) in map {
-                    let len = pointer.len();
-                    pointer.push('/');
-                    pointer.push_str(&k.replace('~', "~0").replace('/', "~1"));
-                    if k == "nullable" && child.is_boolean() {
-                        issues.push(
-                            LintIssue::new(
-                                pointer.clone(),
-                                LintSeverity::Error,
-                                "openapi31_nullable",
-                                "`nullable` is an OpenAPI 3.0 keyword; a 3.1 schema ignores it, so null fails validation",
-                            )
-                            .with_suggestion(
-                                "use a type union: `type: [string, 'null']` (or `oneOf` with `type: 'null'`)",
-                            ),
-                        );
-                    } else if (k == "exclusiveMinimum" || k == "exclusiveMaximum")
-                        && child.is_boolean()
-                    {
-                        issues.push(
-                            LintIssue::new(
-                                pointer.clone(),
-                                LintSeverity::Error,
-                                "openapi31_exclusive_bound",
-                                format!("`{k}` is a number in OpenAPI 3.1 (JSON Schema 2020-12), not a boolean"),
-                            )
-                            .with_suggestion(format!(
-                                "`{k}: <bound>` replaces `{}: <bound>` + `{k}: true`",
-                                if k == "exclusiveMinimum" { "minimum" } else { "maximum" }
-                            )),
-                        );
-                    }
-                    // Instance data (examples, enums, defaults) is not schema: a field named `nullable`
-                    // there is a value.
-                    if !matches!(
-                        k.as_str(),
-                        "example" | "examples" | "enum" | "const" | "default"
-                    ) {
-                        walk(child, pointer, issues);
-                    }
-                    pointer.truncate(len);
+    let mut pointer = String::from("#");
+    find_schemas(raw, &mut pointer, issues);
+}
+
+fn push_key(pointer: &mut String, key: &str) {
+    pointer.push('/');
+    pointer.push_str(&key.replace('~', "~0").replace('/', "~1"));
+}
+
+/// Walk the document's structure (not schemas) to every schema-bearing position: `components.schemas.*`
+/// and any `schema` member (parameters, headers, media types). Extension payloads (`x-*`) are not entered.
+fn find_schemas(v: &Value, pointer: &mut String, issues: &mut Vec<LintIssue>) {
+    match v {
+        Value::Object(map) => {
+            for (k, child) in map {
+                if k.starts_with("x-") {
+                    continue;
                 }
-            }
-            Value::Array(items) => {
-                for (i, child) in items.iter().enumerate() {
-                    let len = pointer.len();
-                    pointer.push('/');
-                    pointer.push_str(&i.to_string());
-                    walk(child, pointer, issues);
-                    pointer.truncate(len);
+                let len = pointer.len();
+                push_key(pointer, k);
+                if k == "schema" {
+                    check_schema(child, pointer, issues);
+                } else if k == "schemas" && pointer.ends_with("#/components/schemas") {
+                    if let Value::Object(schemas) = child {
+                        for (name, schema) in schemas {
+                            let l2 = pointer.len();
+                            push_key(pointer, name);
+                            check_schema(schema, pointer, issues);
+                            pointer.truncate(l2);
+                        }
+                    }
+                } else {
+                    find_schemas(child, pointer, issues);
                 }
+                pointer.truncate(len);
             }
-            _ => {}
+        }
+        Value::Array(items) => {
+            for (i, child) in items.iter().enumerate() {
+                let len = pointer.len();
+                push_key(pointer, &i.to_string());
+                find_schemas(child, pointer, issues);
+                pointer.truncate(len);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// One Schema Object: its own keywords, then the subschemas JSON Schema 2020-12 defines (instance data such as
+/// `default`/`example`/`enum`/`const` and extension members are never entered, whatever a property is named).
+fn check_schema(v: &Value, pointer: &mut String, issues: &mut Vec<LintIssue>) {
+    let Value::Object(map) = v else { return };
+    if map.get("nullable").and_then(Value::as_bool) == Some(true) {
+        let ty = match map.get("type") {
+            Some(Value::String(t)) => t.clone(),
+            _ => "<type>".to_string(),
+        };
+        let len = pointer.len();
+        push_key(pointer, "nullable");
+        issues.push(
+            LintIssue::new(
+                pointer.clone(),
+                LintSeverity::Error,
+                "openapi31_nullable",
+                "`nullable` is an OpenAPI 3.0 keyword; a 3.1 schema ignores it, so null fails validation",
+            )
+            .with_suggestion(format!(
+                "drop `nullable` and use a type union: `type: [{ty}, 'null']` (or `oneOf` with `type: 'null'`)"
+            )),
+        );
+        pointer.truncate(len);
+    }
+    for k in ["exclusiveMinimum", "exclusiveMaximum"] {
+        if map.get(k).is_some_and(Value::is_boolean) {
+            let len = pointer.len();
+            push_key(pointer, k);
+            issues.push(
+                LintIssue::new(
+                    pointer.clone(),
+                    LintSeverity::Error,
+                    "openapi31_exclusive_bound",
+                    format!(
+                        "`{k}` is a number in OpenAPI 3.1 (JSON Schema 2020-12), not a boolean"
+                    ),
+                )
+                .with_suggestion(format!(
+                    "`{k}: <bound>` replaces `{}: <bound>` + `{k}: true`",
+                    if k == "exclusiveMinimum" {
+                        "minimum"
+                    } else {
+                        "maximum"
+                    }
+                )),
+            );
+            pointer.truncate(len);
         }
     }
-    let mut pointer = String::from("#");
-    walk(raw, &mut pointer, issues);
+    // Keywords whose value is one schema.
+    for k in [
+        "items",
+        "additionalProperties",
+        "not",
+        "contains",
+        "if",
+        "then",
+        "else",
+        "propertyNames",
+        "unevaluatedItems",
+        "unevaluatedProperties",
+        "contentSchema",
+    ] {
+        if let Some(child) = map.get(k) {
+            let len = pointer.len();
+            push_key(pointer, k);
+            check_schema(child, pointer, issues);
+            pointer.truncate(len);
+        }
+    }
+    // Keywords whose value is an array of schemas.
+    for k in ["allOf", "anyOf", "oneOf", "prefixItems"] {
+        if let Some(Value::Array(items)) = map.get(k) {
+            for (i, child) in items.iter().enumerate() {
+                let len = pointer.len();
+                push_key(pointer, k);
+                push_key(pointer, &i.to_string());
+                check_schema(child, pointer, issues);
+                pointer.truncate(len);
+            }
+        }
+    }
+    // Keywords whose value maps names to schemas.
+    for k in [
+        "properties",
+        "patternProperties",
+        "$defs",
+        "definitions",
+        "dependentSchemas",
+    ] {
+        if let Some(Value::Object(m)) = map.get(k) {
+            for (name, child) in m {
+                let len = pointer.len();
+                push_key(pointer, k);
+                push_key(pointer, name);
+                check_schema(child, pointer, issues);
+                pointer.truncate(len);
+            }
+        }
+    }
 }
 
 /// For operations with a 2xx `application/json` **array** response, ensure each query `parameter`
