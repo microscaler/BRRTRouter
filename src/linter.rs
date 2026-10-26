@@ -192,11 +192,12 @@ fn find_schemas(v: &Value, pointer: &mut String, issues: &mut Vec<LintIssue>) {
     match v {
         Value::Object(map) => {
             for (k, child) in map {
-                // Extension payloads are not entered, but a `headers` map's keys are header names
-                // (`x-request-id`), not extensions. Examples are instance data, whatever they contain.
-                if (k.starts_with("x-") && !pointer.ends_with("/headers"))
-                    || k == "example"
-                    || k == "examples"
+                // In a map of names (headers, components.*, callbacks, content, responses) every key is a
+                // name, `x-request-id` or `example` included. Elsewhere: extension payloads are not entered,
+                // examples are instance data and Link objects carry runtime values, never schemas.
+                if !in_name_map(pointer)
+                    && (k.starts_with("x-")
+                        || matches!(k.as_str(), "example" | "examples" | "links"))
                 {
                     continue;
                 }
@@ -231,6 +232,16 @@ fn find_schemas(v: &Value, pointer: &mut String, issues: &mut Vec<LintIssue>) {
     }
 }
 
+/// Whether the object at `pointer` is a map whose keys are names rather than fixed fields.
+fn in_name_map(pointer: &str) -> bool {
+    let parent = pointer.rsplit('/').next().unwrap_or("");
+    let grand = pointer.rsplit('/').nth(1).unwrap_or("");
+    matches!(
+        parent,
+        "headers" | "callbacks" | "content" | "responses" | "encoding" | "paths"
+    ) || grand == "components"
+}
+
 /// One Schema Object: its own keywords, then the subschemas JSON Schema 2020-12 defines (instance data such as
 /// `default`/`example`/`enum`/`const` and extension members are never entered, whatever a property is named).
 fn check_schema(v: &Value, pointer: &mut String, issues: &mut Vec<LintIssue>) {
@@ -256,7 +267,17 @@ fn check_schema(v: &Value, pointer: &mut String, issues: &mut Vec<LintIssue>) {
         pointer.truncate(len);
     }
     for k in ["exclusiveMinimum", "exclusiveMaximum"] {
-        if map.get(k).is_some_and(Value::is_boolean) {
+        if let Some(exclusive) = map.get(k).and_then(Value::as_bool) {
+            let bound = if k == "exclusiveMinimum" {
+                "minimum"
+            } else {
+                "maximum"
+            };
+            let suggestion = if exclusive {
+                format!("`{k}: <bound>` replaces `{bound}: <bound>` + `{k}: true`")
+            } else {
+                format!("drop `{k}: false`; `{bound}` alone is the inclusive bound")
+            };
             let len = pointer.len();
             push_key(pointer, k);
             issues.push(
@@ -268,14 +289,7 @@ fn check_schema(v: &Value, pointer: &mut String, issues: &mut Vec<LintIssue>) {
                         "`{k}` is a number in OpenAPI 3.1 (JSON Schema 2020-12), not a boolean"
                     ),
                 )
-                .with_suggestion(format!(
-                    "`{k}: <bound>` replaces `{}: <bound>` + `{k}: true`",
-                    if k == "exclusiveMinimum" {
-                        "minimum"
-                    } else {
-                        "maximum"
-                    }
-                )),
+                .with_suggestion(suggestion),
             );
             pointer.truncate(len);
         }

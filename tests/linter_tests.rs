@@ -247,6 +247,7 @@ fn test_openapi31_rejects_30_keywords() {
         [
             "#/components/schemas/Equity/properties/default/nullable",
             "#/components/schemas/Equity/properties/start_equity/nullable",
+            "#/paths/~1equity/get/responses/200/headers/example/schema/nullable",
             "#/paths/~1equity/get/responses/200/headers/x-request-id/schema/nullable",
         ],
         "{issues:?}"

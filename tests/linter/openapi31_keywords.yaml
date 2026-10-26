@@ -26,6 +26,16 @@ paths:
               schema:
                 type: string
                 nullable: true
+            example:
+              schema:
+                type: string
+                nullable: true
+          links:
+            self:
+              operationId: get_equity
+              requestBody:
+                schema:
+                  nullable: true
 components:
   schemas:
     Equity:

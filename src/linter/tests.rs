@@ -478,3 +478,16 @@ fn openapi31_boolean_exclusive_bounds_are_errors() {
         "#/components/schemas/R/exclusiveMinimum"
     );
 }
+
+#[test]
+fn openapi31_false_exclusive_bound_suggests_dropping_it() {
+    let raw = serde_json::json!({
+        "openapi": "3.1.0",
+        "components": {"schemas": {"R": {"type": "number", "minimum": 0, "exclusiveMinimum": false}}}
+    });
+    let mut issues = Vec::new();
+    lint_openapi31_keywords(&raw, &mut issues);
+    assert_eq!(issues.len(), 1, "{issues:?}");
+    let s = issues[0].suggestion.as_deref().unwrap();
+    assert!(s.contains("drop `exclusiveMinimum: false`"), "{s}");
+}
