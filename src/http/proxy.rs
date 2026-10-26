@@ -537,8 +537,14 @@ fn proxy_timeout() -> Duration {
         .unwrap_or(DEFAULT_PROXY_TIMEOUT)
 }
 
-fn read_bounded_body(reader: &mut impl Read, max_body: usize) -> Result<Vec<u8>, ProxyError> {
-    let mut buf = Vec::new();
+fn read_bounded_body(
+    reader: &mut impl Read,
+    max_body: usize,
+    size_hint: Option<usize>,
+) -> Result<Vec<u8>, ProxyError> {
+    // Sized from Content-Length when the downstream sends one: no doubling reallocations (a
+    // 200 KB body otherwise grows through ten buffers). Capped, so a lying header costs nothing.
+    let mut buf = Vec::with_capacity(size_hint.map_or(0, |n| n.min(max_body) + 1));
     reader
         .by_ref()
         .take(max_body as u64 + 1)
@@ -565,6 +571,23 @@ fn response_body_value(buf: &[u8], content_type: Option<&str>) -> Value {
         return Value::Null;
     }
     Value::String(String::from_utf8_lossy(buf).into_owned())
+}
+
+/// The downstream body as JSON text to pass through untouched, or the bytes back when it is not
+/// one: a non-2xx status, a Content-Type that is not JSON, an empty body or invalid UTF-8.
+fn passthrough_body(
+    buf: Vec<u8>,
+    status: u16,
+    content_type: Option<&str>,
+) -> Result<String, Vec<u8>> {
+    let json = content_type.is_some_and(|ct| {
+        let ct = ct.to_ascii_lowercase();
+        ct.contains("application/json") || ct.contains("+json")
+    });
+    if !(200..300).contains(&status) || !json || buf.is_empty() {
+        return Err(buf);
+    }
+    String::from_utf8(buf).map_err(std::string::FromUtf8Error::into_bytes)
 }
 
 /// Connect to the downstream Service and send the request. The client comes
@@ -753,7 +776,7 @@ fn proxy_sse_inner(
     }
 
     if !is_stream {
-        let buf = read_bounded_body(&mut rsp, MAX_PROXY_BODY_BYTES)?;
+        let buf = read_bounded_body(&mut rsp, MAX_PROXY_BODY_BYTES, None)?;
         let body = response_body_value(&buf, content_type.as_deref());
         if !headers
             .iter()
@@ -917,13 +940,24 @@ fn proxy_untyped_inner(
         false,
     )?;
 
-    let buf = read_bounded_body(&mut rsp, MAX_PROXY_BODY_BYTES)?;
+    let size_hint = rsp
+        .headers()
+        .get(http_legacy::header::CONTENT_LENGTH)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.trim().parse().ok());
+    let buf = read_bounded_body(&mut rsp, MAX_PROXY_BODY_BYTES, size_hint)?;
     let content_type = rsp
         .headers()
         .get(http_legacy::header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok());
-    let body_json = response_body_value(&buf, content_type);
     let status = rsp.status().as_u16();
+    // A 2xx JSON body passes through as the downstream wrote it: no parse into a Value here and no
+    // serialisation again on the way out (2x a 200 KB body's cost, BRRTRouter audit pass 2). Errors
+    // keep the parsed path: their reason is read for logs and metrics.
+    let (body_json, raw_json) = match passthrough_body(buf, status, content_type) {
+        Ok(text) => (Value::String(text), true),
+        Err(buf) => (response_body_value(&buf, content_type), false),
+    };
 
     let mut out_headers = HeaderVec::new();
     for (name, value) in rsp.headers().iter() {
@@ -941,6 +975,12 @@ fn proxy_untyped_inner(
         out_headers.push((
             Arc::from("content-type"),
             content_type.unwrap_or("application/json").to_string(),
+        ));
+    }
+    if raw_json {
+        out_headers.push((
+            Arc::from(crate::server::response::RAW_BODY_ENCODING_HEADER),
+            crate::server::response::RAW_BODY_ENCODING_JSON.to_string(),
         ));
     }
 
@@ -2397,6 +2437,54 @@ mod tests {
         assert!(!sent.contains("gzip"), "{sent}");
         assert!(res.sse.is_none());
         assert_eq!(res.status, proxy_error_http_status(&ProxyError::Response));
+    }
+
+    #[test]
+    fn passthrough_body_keeps_only_2xx_json_text() {
+        let json = Some("application/json; charset=utf-8");
+        assert_eq!(
+            passthrough_body(b"[1, 2]".to_vec(), 200, json),
+            Ok("[1, 2]".to_string())
+        );
+        assert_eq!(
+            passthrough_body(b"{}".to_vec(), 201, Some("application/problem+json")),
+            Ok("{}".to_string())
+        );
+        // Errors, other media types, empty bodies and invalid UTF-8 come back as bytes.
+        assert_eq!(
+            passthrough_body(b"{}".to_vec(), 404, json),
+            Err(b"{}".to_vec())
+        );
+        assert_eq!(
+            passthrough_body(b"hi".to_vec(), 200, Some("text/plain")),
+            Err(b"hi".to_vec())
+        );
+        assert_eq!(
+            passthrough_body(b"{}".to_vec(), 200, None),
+            Err(b"{}".to_vec())
+        );
+        assert_eq!(passthrough_body(Vec::new(), 200, json), Err(Vec::new()));
+        assert_eq!(
+            passthrough_body(vec![0xff, 0xfe], 200, json),
+            Err(vec![0xff, 0xfe])
+        );
+    }
+
+    #[test]
+    fn proxy_untyped_passes_a_2xx_json_body_through_as_text() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        std::env::remove_var("POD_NAMESPACE");
+        let (port, _captured) = spawn_capture_downstream();
+        std::env::set_var("SERVICE_HTTP_PORT", port.to_string());
+        let res = proxy_untyped(&empty_request(Method::GET), "127.0.0.1", "/search");
+        std::env::remove_var("SERVICE_HTTP_PORT");
+
+        assert_eq!(res.status, 200);
+        assert_eq!(res.body, Value::String("{\"ok\":true}".to_string()));
+        assert_eq!(
+            res.get_header(crate::server::response::RAW_BODY_ENCODING_HEADER),
+            Some(crate::server::response::RAW_BODY_ENCODING_JSON)
+        );
     }
 
     #[test]

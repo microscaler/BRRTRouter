@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed (BFF proxy: JSON passes through)
+
+- **A proxied 2xx JSON body is passed through as the downstream wrote it.** `proxy_untyped` parsed every
+  downstream body into a `serde_json::Value`, the BFF validated it against the response schema and serialised it
+  again: on `benches/request_path.rs` a 200 KB body cost 22,285 allocations and 1.83 ms per request. It is now
+  written as received (252 allocations, 0.19 ms). The downstream validated it against the same schema. An
+  operation that wants the BFF to check it sets `x-brrtrouter-validate-response: true` (the text is then parsed
+  for the check and still written unchanged). Non-2xx bodies, non-JSON content types and invalid UTF-8 keep the
+  parsed path. The proxied body buffer is sized from `Content-Length`.
+- `RouteMeta` has a new field, `validate_proxied_response` (struct literals need it).
+
 ### Changed (BFF proxy)
 
 - **Downstream addresses are resolved once, not per proxied request.** `proxy_untyped`/`proxy_sse` called

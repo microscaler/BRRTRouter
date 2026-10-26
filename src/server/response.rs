@@ -10,6 +10,19 @@ pub const RAW_BODY_ENCODING_HEADER: &str = "x-brrtrouter-raw-encoding";
 /// Value for [`RAW_BODY_ENCODING_HEADER`].
 pub const RAW_BODY_ENCODING_BASE64: &str = "base64";
 
+/// Value for [`RAW_BODY_ENCODING_HEADER`]: the body is a `Value::String` holding JSON text, written
+/// as it is (a proxied downstream body: [`crate::http::proxy_untyped`]). Response validation skips
+/// it unless the route sets `x-brrtrouter-validate-response`; then the text is parsed to check it.
+pub const RAW_BODY_ENCODING_JSON: &str = "json";
+
+/// Whether `headers` carry the internal raw-encoding marker with this value.
+#[must_use]
+pub fn has_raw_body_encoding(headers: &HeaderVec, value: &str) -> bool {
+    headers
+        .iter()
+        .any(|(k, v)| k.eq_ignore_ascii_case(RAW_BODY_ENCODING_HEADER) && v == value)
+}
+
 /// Whether an HTTP status permits a response body.
 ///
 /// RFC 9110 forbids content on informational responses, 204, and 304; 205 also
@@ -82,15 +95,15 @@ pub fn write_handler_response_with_body_policy(
     // duplicate header and can return 502 to the browser.
     let mut has_content_type = false;
     let mut raw_base64 = false;
+    let mut raw_json = false;
     for (k, v) in headers {
         if k.eq_ignore_ascii_case("content-length") {
             continue;
         }
         // Internal marker for HttpFile — never emit on the wire.
         if k.eq_ignore_ascii_case(RAW_BODY_ENCODING_HEADER) {
-            if v == RAW_BODY_ENCODING_BASE64 {
-                raw_base64 = true;
-            }
+            raw_base64 |= v == RAW_BODY_ENCODING_BASE64;
+            raw_json |= v == RAW_BODY_ENCODING_JSON;
             continue;
         }
         if k.eq_ignore_ascii_case("content-type") {
@@ -136,7 +149,11 @@ pub fn write_handler_response_with_body_policy(
     match body {
         Value::String(s) => {
             if !has_content_type {
-                res.header("Content-Type: text/plain");
+                res.header(if raw_json {
+                    "Content-Type: application/json"
+                } else {
+                    "Content-Type: text/plain"
+                });
             }
             res.body_vec(s.into_bytes());
         }

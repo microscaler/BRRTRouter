@@ -443,3 +443,8 @@ Hauliage Phase 3 unblockers for Vite dev proxy and frontend-aligned BFF routes.
 
 - `HandlerRequest::reply_tx` is `Sender<Box<HandlerResponse>>`; new `HandlerRequest::reply`. Bytes/request 115 KB → 26 KB.
 - [`topics/handler-stack-memory.md`](./topics/handler-stack-memory.md#boxed-handler-channels), [`topics/request-path-copies.md`](./topics/request-path-copies.md).
+
+## [2026-10-26] perf | BFF proxied JSON passes through
+
+- `proxy_untyped` keeps a 2xx JSON body as text and writes it unchanged; validated only with `x-brrtrouter-validate-response: true`. 200 KB body: 22,285 → 265 allocations, 1.83 → 0.23 ms per request (bench).
+- [`topics/bff-gateway-merge-and-proxy-headers.md`](./topics/bff-gateway-merge-and-proxy-headers.md#proxied-json-passes-through-2026-10-26).

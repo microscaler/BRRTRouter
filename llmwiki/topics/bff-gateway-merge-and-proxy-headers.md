@@ -84,5 +84,22 @@ domain, A and AAAA). pp evidence: trader-bff ~6 ms CPU per proxied request (v0.1
   stored survives), re-resolves and connects once more. Every request that held the stale
   address retries — not only the first to fail (Codex review on #507). Nothing has been sent at
   that point, so the retry is safe for any method.
-- Still open: a new TCP connection per proxied request (no keep-alive pool), and parse →
-  validate → re-serialize of downstream JSON in the BFF (`docs/perf/copy-and-borrow-audit.md`).
+- Still open: a new TCP connection per proxied request (no keep-alive pool).
+
+## Proxied JSON passes through (2026-10-26)
+
+`proxy_untyped` used to parse every downstream body into a `Value`; the service then validated it
+against the BFF's response schema and serialised it again (a 200 KB body: 22k allocations, 1.8 ms).
+
+- A **2xx** body with a JSON Content-Type is now kept as text: `HandlerResponse.body` is
+  `Value::String(<the downstream's bytes>)` and the internal header
+  `x-brrtrouter-raw-encoding: json` (`server::response::RAW_BODY_ENCODING_JSON`) marks it. The writer
+  emits it verbatim (default Content-Type `application/json`) and strips the marker.
+- Response validation **skips** marked bodies unless the operation sets
+  `x-brrtrouter-validate-response: true` (`RouteMeta::validate_proxied_response`); then the text is
+  parsed for the check and still written unchanged. Use it when the downstream is not a BRRTRouter
+  service that validates its own responses.
+- Non-2xx, non-JSON, empty and non-UTF-8 bodies keep the parsed path (error reasons are read for
+  logs/metrics). Middleware `after()` hooks that read `res.body` as JSON see a string for proxied 2xx
+  responses; compression handles it (it gzips the string's bytes).
+- Tests: `tests/proxy_passthrough_tests.rs`; bench: `bff_proxy_*` in `benches/request_path.rs`.

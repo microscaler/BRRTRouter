@@ -256,6 +256,7 @@ mod tests {
             x_service: None,
             x_brrtrouter_downstream_path: None,
             x_brrtrouter_impl: None,
+            validate_proxied_response: false,
             method: Method::GET,
             path_pattern: Arc::from("/test"),
             handler_name: Arc::from("test_handler"),

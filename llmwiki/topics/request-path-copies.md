@@ -44,5 +44,6 @@ bench to rank functions.
 
 > **Open:** claims copy into every `HandlerRequest` (`Option<Value>` in a public API used ~350 times
 > by consumers), CORS `after` string joins, `format!` per response header (needs a name/value API in
-> the may_minihttp fork), BFF parse → validate → re-serialize of proxied JSON and a connection per
-> proxied request. Details and evidence in the audit log.
+> the may_minihttp fork) and a connection per proxied request. Details and evidence in the audit
+> log. (BFF parse → validate → re-serialise of proxied JSON is gone: the body passes through, see
+> [bff-gateway-merge-and-proxy-headers](./bff-gateway-merge-and-proxy-headers.md#proxied-json-passes-through-2026-10-26).)

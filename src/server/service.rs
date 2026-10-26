@@ -2168,12 +2168,19 @@ impl HttpService for AppService {
                     }
                     // Epic 13.4: HttpFile / format:binary — do not JSON-schema-validate raw bodies.
                     // Epic 13.7: live SSE carries events on `hr.sse`, not JSON `hr.body`.
+                    // A proxied downstream JSON body (`proxy_untyped`) is text written as it came;
+                    // it is checked only when the route asks (`x-brrtrouter-validate-response`).
+                    let raw_json = super::response::has_raw_body_encoding(
+                        &headers,
+                        super::response::RAW_BODY_ENCODING_JSON,
+                    );
                     let skip_response_schema = hr.sse.is_some()
                         || is_sse
-                        || headers.iter().any(|(k, v)| {
-                            k.eq_ignore_ascii_case(super::response::RAW_BODY_ENCODING_HEADER)
-                                && v == super::response::RAW_BODY_ENCODING_BASE64
-                        })
+                        || (raw_json && !route.validate_proxied_response)
+                        || super::response::has_raw_body_encoding(
+                            &headers,
+                            super::response::RAW_BODY_ENCODING_BASE64,
+                        )
                         || headers.iter().any(|(k, v)| {
                             k.eq_ignore_ascii_case("content-type")
                                 && !v.to_ascii_lowercase().contains("json")
@@ -2204,10 +2211,34 @@ impl HttpService for AppService {
                             Some(hr.status),
                             schema,
                         ) {
-                            if !compiled.is_valid(&hr.body) {
+                            let parsed;
+                            let checked: &serde_json::Value = if raw_json {
+                                match hr.body.as_str().map(serde_json::from_str) {
+                                    Some(Ok(v)) => {
+                                        parsed = v;
+                                        &parsed
+                                    }
+                                    _ => {
+                                        error!(
+                                            handler = %route.handler_name,
+                                            status = hr.status,
+                                            "Response validation failed: the downstream body is not JSON"
+                                        );
+                                        _request_logger.respond_json_error(
+                                            res,
+                                            500,
+                                            json!({"error": "Response validation failed", "details": ["the downstream body is not JSON"]}),
+                                        );
+                                        return Ok(());
+                                    }
+                                }
+                            } else {
+                                &hr.body
+                            };
+                            if !compiled.is_valid(checked) {
                                 // V7: Response validation failed
                                 let error_details: Vec<String> = compiled
-                                    .iter_errors(&hr.body)
+                                    .iter_errors(checked)
                                     .take(MAX_JSON_SCHEMA_ERRORS)
                                     .map(|e| e.to_string())
                                     .collect();

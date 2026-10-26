@@ -32,6 +32,7 @@ fn start_server(
         x_service: None,
         x_brrtrouter_downstream_path: None,
         x_brrtrouter_impl: None,
+        validate_proxied_response: false,
         method: Method::GET,
         path_pattern: Arc::from("/search"),
         handler_name: Arc::from("search"),

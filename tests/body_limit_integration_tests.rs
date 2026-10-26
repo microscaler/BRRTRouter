@@ -39,6 +39,7 @@ fn start_echo_server(
         x_service: None,
         x_brrtrouter_downstream_path: None,
         x_brrtrouter_impl: None,
+        validate_proxied_response: false,
         method: Method::POST,
         path_pattern: Arc::from("/echo"),
         handler_name: Arc::from("echo"),

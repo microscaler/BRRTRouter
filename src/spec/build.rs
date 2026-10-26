@@ -741,6 +741,20 @@ pub fn extract_deadline_ms_override(operation: &oas3::spec::Operation) -> Option
         })
 }
 
+/// Extract `x-brrtrouter-validate-response` (a boolean, or the string `"true"`): whether a proxied
+/// operation's downstream 2xx body is validated against this spec. Omitted means no.
+pub fn extract_validate_response(operation: &oas3::spec::Operation) -> bool {
+    // oas3 strips the `x-` prefix from extension keys; accept both spellings as the others do.
+    operation
+        .extensions
+        .get("brrtrouter-validate-response")
+        .or_else(|| operation.extensions.get("x-brrtrouter-validate-response"))
+        .is_some_and(|v| {
+            v.as_bool()
+                .unwrap_or_else(|| v.as_str().is_some_and(|s| s.eq_ignore_ascii_case("true")))
+        })
+}
+
 /// Extract the `x-brrtrouter-impl` tri-state marker from an OpenAPI operation.
 ///
 /// Returns `Some(true)` when real impl is required, `Some(false)` for gen-stub-only,
@@ -1003,6 +1017,7 @@ fn push_route_from_operation(
         .map(|s| s.to_string());
 
     let x_brrtrouter_impl = extract_brrtrouter_impl(operation);
+    let validate_proxied_response = extract_validate_response(operation);
 
     routes.push(RouteMeta {
         method,
@@ -1028,6 +1043,7 @@ fn push_route_from_operation(
         x_service,
         x_brrtrouter_downstream_path,
         x_brrtrouter_impl,
+        validate_proxied_response,
     });
 }
 

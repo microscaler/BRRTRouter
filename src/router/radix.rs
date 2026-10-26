@@ -481,6 +481,7 @@ mod tests {
             x_service: None,
             x_brrtrouter_downstream_path: None,
             x_brrtrouter_impl: None,
+            validate_proxied_response: false,
             method,
             path_pattern: Arc::from(path),
             handler_name: Arc::from(handler),
