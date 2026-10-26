@@ -237,6 +237,31 @@ the services' own logs around each hour. Load-test runs on v0.1.138 had no 5xx.
 
 Not 5xx but seen while looking: platform-bff → billing 403 (×259, platform users without the operator role).
 
+## BRRTRouter — pass 6: spec lint fixed in the consumers, and contract tests (26 Oct 2026)
+
+**Lint.** Every `nullable: true` in a 3.1 spec is now a type list: PriceWhisperer market ×3 and orders ×1 (plus the
+regenerated trader BFF), Sesame-IDAM ×111 across nine specs, and rerp in every 3.1 spec. The 3.0.3 specs (rerp invoice,
+general-ledger) keep `nullable`; the BFF merge rewrites it (this PR). `brrtrouter-gen lint --fail-on-error` is now a
+failing CI job in PriceWhisperer and Sesame-IDAM (`scripts/check-spec-lint.sh`). rerp's draft suites still have 1,596
+`missing_schema_ref` and 225 `money_type_without_decimal_format` errors; its live specs (crm pipeline and accounts,
+documents render) lint clean.
+
+**Generator.** `type: [T, "null"]` now maps to `Option<T>` (#521), where it used to map to `serde_json::Value`. The
+regenerated crates changed handler types in PriceWhisperer (billing, market, orders) and Sesame (api-keys, authz-core).
+Each change was followed through the handlers, and the wire output is unchanged.
+
+**Contract tests** (`brrtrouter::contract`, #521) on controllers that build JSON by hand:
+
+| Where | Checked | Found |
+|---|---|---|
+| Sesame identity-session `/identity/me` | `profile_json` in four shapes; the 401 and 500 bodies | Types match. The body sends `phone`, `is_active` and `created_at`, none of which `UserProfile` declares (the spec has `phone_number`). The schema has no `required` and allows extra keys, so validation could not see this. Only `undeclared_fields` reports it. |
+| PriceWhisperer billing | `list_plans`, `get_entitlements` (every plan, and none), checked strictly; `ApiError` against every declared error schema | **Bug:** `POST /plan-changes` 409 was declared as a fresh `Quote`, but `apply()` answers `{error, message}` (`quote_expired`, `subscription_changed`, `not_applicable`), which is what the UI reads. Under `full` validation every such 409 would have been a 500. The spec now declares the error. Only 1 of billing's error statuses has a schema at all. |
+| rerp crm pipeline | `list_stages` checked strictly; the auth gate's 401/403 against 10 declared schemas | Nothing. |
+
+What `check` alone misses: a hand-built body passes it whenever the schema leaves keys open and nothing is `required`,
+which is the case in all three consumers. `assert_strict` (`check` plus no undeclared keys) is the test that pins field
+names.
+
 ## For the PriceWhisperer pass
 
 - benzinga-analyst-ingestor startup pass clones the whole JSON response 3–4× per 50-ticker
