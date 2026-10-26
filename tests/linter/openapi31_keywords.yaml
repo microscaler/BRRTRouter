@@ -15,6 +15,17 @@ paths:
                 $ref: '#/components/schemas/Equity'
               example:
                 nullable: true
+              examples:
+                wrapped:
+                  value:
+                    schema:
+                      type: string
+                      nullable: true
+          headers:
+            x-request-id:
+              schema:
+                type: string
+                nullable: true
 components:
   schemas:
     Equity:

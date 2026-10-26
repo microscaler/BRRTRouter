@@ -192,7 +192,12 @@ fn find_schemas(v: &Value, pointer: &mut String, issues: &mut Vec<LintIssue>) {
     match v {
         Value::Object(map) => {
             for (k, child) in map {
-                if k.starts_with("x-") {
+                // Extension payloads are not entered, but a `headers` map's keys are header names
+                // (`x-request-id`), not extensions. Examples are instance data, whatever they contain.
+                if (k.starts_with("x-") && !pointer.ends_with("/headers"))
+                    || k == "example"
+                    || k == "examples"
+                {
                     continue;
                 }
                 let len = pointer.len();

@@ -237,8 +237,9 @@ fn test_openapi31_rejects_30_keywords() {
         .iter()
         .filter(|i| i.kind == "openapi31_nullable")
         .collect();
-    // Schema keywords only: not the example's data field, not `nullable: false`, not an extension payload; a
-    // property named like an instance keyword (`default`) is still a schema.
+    // Schema keywords only: not the example's data (even one shaped like a schema), not `nullable: false`, not an
+    // extension payload; a property named like an instance keyword (`default`) is still a schema, and a header
+    // named `x-request-id` is a header, not an extension.
     let mut locations: Vec<_> = nullable.iter().map(|i| i.location.as_str()).collect();
     locations.sort_unstable();
     assert_eq!(
@@ -246,6 +247,7 @@ fn test_openapi31_rejects_30_keywords() {
         [
             "#/components/schemas/Equity/properties/default/nullable",
             "#/components/schemas/Equity/properties/start_equity/nullable",
+            "#/paths/~1equity/get/responses/200/headers/x-request-id/schema/nullable",
         ],
         "{issues:?}"
     );
