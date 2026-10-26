@@ -94,6 +94,7 @@ fn test_template_writers() {
         x_service: None,
         x_brrtrouter_downstream_path: None,
         x_brrtrouter_impl: None,
+        validate_proxied_response: false,
         method: Method::GET,
         path_pattern: "/test".into(),
         handler_name: "test".into(),
@@ -309,6 +310,7 @@ fn impl_registry_renders_arms_for_discovered_controllers() {
             x_service: None,
             x_brrtrouter_downstream_path: None,
             x_brrtrouter_impl: Some(true),
+            validate_proxied_response: false,
         },
         RouteMeta {
             method: Method::POST,
@@ -334,6 +336,7 @@ fn impl_registry_renders_arms_for_discovered_controllers() {
             x_service: None,
             x_brrtrouter_downstream_path: None,
             x_brrtrouter_impl: Some(true),
+            validate_proxied_response: false,
         },
     ];
 
@@ -415,6 +418,7 @@ fn controller_emits_http_json_when_operation_has_non_2xx_json_schema() {
         x_service: None,
         x_brrtrouter_downstream_path: None,
         x_brrtrouter_impl: Some(true),
+        validate_proxied_response: false,
     };
     assert!(route.needs_http_json_return_type());
 
@@ -502,6 +506,7 @@ fn handler_emits_api_response_for_200_plus_201() {
         x_service: None,
         x_brrtrouter_downstream_path: None,
         x_brrtrouter_impl: None,
+        validate_proxied_response: false,
     };
     assert!(route.needs_multi_status_success_enum());
 
@@ -588,6 +593,7 @@ fn controller_emits_http_no_content_for_204_primary() {
         x_service: None,
         x_brrtrouter_downstream_path: None,
         x_brrtrouter_impl: None,
+        validate_proxied_response: false,
     };
     assert!(route.is_no_content_primary());
 

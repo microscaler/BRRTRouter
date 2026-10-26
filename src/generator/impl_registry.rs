@@ -407,6 +407,7 @@ mod tests {
             x_service: None,
             x_brrtrouter_downstream_path: None,
             x_brrtrouter_impl: impl_flag,
+            validate_proxied_response: false,
         }
     }
 

@@ -17,10 +17,13 @@
 //! BRRTR_BENCH_LOG=off cargo bench --bench request_path   # without the INFO access log
 //! ```
 //!
+//! `bff_proxy_*` run a second, BFF-shaped service whose routes proxy (`x-service`) to an in-process
+//! downstream answering a 20 KB / 200 KB JSON array: the cost a BFF adds to a proxied call.
+//!
 //! Results are printed as a table and as one JSON line per scenario (prefix `JSON `) so two
 //! runs (before/after a change) can be compared. See docs/perf/copy-and-borrow-audit.md.
 
-use brrtrouter::dispatcher::Dispatcher;
+use brrtrouter::dispatcher::{Dispatcher, HandlerRequest};
 use brrtrouter::middleware::{CorsMiddlewareBuilder, MemoryMiddleware, MetricsMiddleware};
 use brrtrouter::router::Router;
 use brrtrouter::security::{JwksBearerProvider, SecurityProvider, SecurityRequest};
@@ -250,6 +253,121 @@ fn start() -> (ServerHandle, SocketAddr) {
     (handle, addr)
 }
 
+/// A proxied JSON array of `n` quote-like rows (≈100 bytes each), as a PW BFF route returns.
+fn rows_json(n: usize) -> String {
+    let rows: Vec<serde_json::Value> = (0..n)
+        .map(|i| {
+            serde_json::json!({
+                "symbol": format!("SYM{i:05}"), "price": 100.0 + i as f64 / 7.0,
+                "size": i * 3, "ts": "2026-10-26T13:45:00.123Z", "tags": ["opt", "spx"]
+            })
+        })
+        .collect();
+    serde_json::to_string(&rows).unwrap()
+}
+
+/// The downstream Service a BFF proxies to: answers `/data/<rows>` with a prebuilt JSON array
+/// and closes, as one request per connection (no allocation per request on this side).
+fn downstream() -> u16 {
+    let bodies: Vec<(String, Vec<u8>)> = [200usize, 2000]
+        .iter()
+        .map(|&n| {
+            let body = rows_json(n);
+            let head = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            (format!("/data/{n} "), [head.into_bytes(), body.into_bytes()].concat())
+        })
+        .collect();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        for mut s in listener.incoming().flatten() {
+            let mut buf = [0u8; 8192];
+            let mut n = 0;
+            while !buf[..n].windows(4).any(|w| w == b"\r\n\r\n") {
+                match s.read(&mut buf[n..]) {
+                    Ok(0) | Err(_) => break,
+                    Ok(m) => n += m,
+                }
+            }
+            let line = &buf[..n];
+            if let Some((_, rsp)) = bodies
+                .iter()
+                .find(|(p, _)| line.windows(p.len()).any(|w| w == p.as_bytes()))
+            {
+                let _ = s.write_all(rsp);
+            }
+        }
+    });
+    port
+}
+
+/// A BFF: two proxied routes (`x-service`) whose 200 response schema is the rows array, with the
+/// same middleware as `start`. Its handlers are what the generated untyped proxy controller is.
+fn start_bff(downstream_port: u16) -> (ServerHandle, SocketAddr) {
+    std::env::set_var("SERVICE_HTTP_PORT", downstream_port.to_string());
+    std::env::remove_var("POD_NAMESPACE");
+    let rows = r#"{"type":"array","items":{"type":"object","required":["symbol","price","size","ts"],"properties":{"symbol":{"type":"string"},"price":{"type":"number"},"size":{"type":"integer"},"ts":{"type":"string","format":"date-time"},"tags":{"type":"array","items":{"type":"string"}}}}}"#;
+    let op = |n: usize| {
+        format!(
+            r#""/bff/rows{n}":{{"get":{{"operationId":"rows{n}","x-service":"127.0.0.1","x-brrtrouter-downstream-path":"/data/{n}","responses":{{"200":{{"description":"rows","content":{{"application/json":{{"schema":{rows}}}}}}}}}}}}}"#
+        )
+    };
+    let spec = format!(
+        r#"{{"openapi":"3.1.0","info":{{"title":"bench bff","version":"1"}},"paths":{{{},{}}}}}"#,
+        op(200),
+        op(2000)
+    );
+    let dir = std::env::temp_dir().join(format!("brrtr-bench-bff-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("openapi.json");
+    std::fs::write(&path, spec).unwrap();
+    let path = path.to_str().unwrap().to_string();
+    let (routes, schemes, _slug) = brrtrouter::load_spec_full(&path).expect("bff spec");
+    let metrics = Arc::new(MetricsMiddleware::new());
+    let mut dispatcher = Dispatcher::new();
+    dispatcher.add_middleware(metrics.clone());
+    let cors = CorsMiddlewareBuilder::new()
+        .allowed_origins(&["https://app.example"])
+        .build()
+        .expect("cors");
+    dispatcher.add_middleware(Arc::new(cors));
+    for r in &routes {
+        let target = r.x_brrtrouter_downstream_path.clone().unwrap();
+        unsafe {
+            dispatcher.register_handler(&r.handler_name, move |req: HandlerRequest| {
+                let rsp = brrtrouter::http::proxy_untyped(&req, "127.0.0.1", &target);
+                req.reply(rsp);
+            });
+        }
+    }
+    let router = Arc::new(arc_swap::ArcSwap::from_pointee(Router::new(routes.clone())));
+    let mut service = AppService::new(
+        router,
+        Arc::new(arc_swap::ArcSwap::from_pointee(dispatcher)),
+        schemes,
+        path.into(),
+        None,
+        None,
+    );
+    service.set_metrics_middleware(metrics);
+    service.resolve_security(&routes);
+    let addr = {
+        let l = TcpListener::bind("127.0.0.1:0").unwrap();
+        l.local_addr().unwrap()
+    };
+    let handle = HttpServer(service).start(addr).expect("bff server");
+    for _ in 0..200 {
+        if TcpStream::connect(addr).is_ok() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    (handle, addr)
+}
+
 /// Browser-like header set (what a BFF or the portal sends), plus scenario headers.
 fn request(method: &str, target: &str, extra: &[(&str, &str)], body: Option<&str>) -> Vec<u8> {
     let mut r = format!("{method} {target} HTTP/1.1\r\n");
@@ -327,6 +445,8 @@ struct Scenario {
     name: &'static str,
     req: Vec<u8>,
     expect: u16,
+    /// Sent to the BFF (proxied routes) instead of the pet store.
+    bff: bool,
 }
 
 fn main() {
@@ -363,21 +483,25 @@ fn main() {
             name: "get_pet",
             req: request("GET", "/pets/12345", &key, None),
             expect: 200,
+            bff: false,
         },
         Scenario {
             name: "list_pets_query",
             req: request("GET", "/pets?limit=10&offset=0", &key, None),
             expect: 200,
+            bff: false,
         },
         Scenario {
             name: "get_post_2_params",
             req: request("GET", "/users/abc-123/posts/post1", &key, None),
             expect: 200,
+            bff: false,
         },
         Scenario {
             name: "add_pet_json_body",
             req: request("POST", "/pets", &key, Some(r#"{"name":"Bella"}"#)),
             expect: 200,
+            bff: false,
         },
         Scenario {
             name: "secure_jwt",
@@ -388,8 +512,22 @@ fn main() {
                 None,
             ),
             expect: 200,
+            bff: false,
+        },
+        Scenario {
+            name: "bff_proxy_20k",
+            req: request("GET", "/bff/rows200", &[], None),
+            expect: 200,
+            bff: true,
+        },
+        Scenario {
+            name: "bff_proxy_200k",
+            req: request("GET", "/bff/rows2000", &[], None),
+            expect: 200,
+            bff: true,
         },
     ];
+    let (bff_app, bff_addr) = start_bff(downstream());
     // JWKS fetch happens in the background at provider start: give it a moment.
     std::thread::sleep(Duration::from_millis(500));
     println!(
@@ -401,10 +539,10 @@ fn main() {
             continue;
         }
         eprintln!("scenario {} ...", sc.name);
-        let mut s = TcpStream::connect(addr).unwrap();
+        let mut s = TcpStream::connect(if sc.bff { bff_addr } else { addr }).unwrap();
         s.set_nodelay(true).unwrap();
         s.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
-        let mut buf = vec![0u8; 1 << 16];
+        let mut buf = vec![0u8; 1 << 20];
         let warmup = if bench { 2_000 } else { 20 };
         for _ in 0..warmup {
             let st = roundtrip(&mut s, &sc.req, &mut buf);
@@ -484,4 +622,5 @@ fn main() {
         );
     }
     drop(app);
+    drop(bff_app);
 }

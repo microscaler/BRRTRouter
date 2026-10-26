@@ -29,6 +29,7 @@ pub fn scalability_routes(n: usize) -> Vec<RouteMeta> {
             x_service: None,
             x_brrtrouter_downstream_path: None,
             x_brrtrouter_impl: None,
+            validate_proxied_response: false,
             method: Method::GET,
             path_pattern: Arc::from(format!("/api/v1/resource{i}/{{id}}").as_str()),
             handler_name: Arc::from(format!("handler_{i}").as_str()),

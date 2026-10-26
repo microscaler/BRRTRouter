@@ -271,6 +271,11 @@ pub struct RouteMeta {
     /// `Some(true)` ⇒ real impl controller required; `Some(false)` ⇒ gen stub only;
     /// `None` ⇒ legacy (warn if impl file exists on disk).
     pub x_brrtrouter_impl: Option<bool>,
+    /// `x-brrtrouter-validate-response: true` on a proxied (`x-service`) operation: check the
+    /// downstream's 2xx JSON body against this spec's response schema. Without it the body passes
+    /// through as the downstream wrote it (the downstream validates its own responses), and the
+    /// BFF never parses or re-serialises it.
+    pub validate_proxied_response: bool,
 }
 
 impl RouteMeta {
@@ -361,6 +366,7 @@ mod multi_status_codegen_tests {
             x_service: None,
             x_brrtrouter_downstream_path: None,
             x_brrtrouter_impl: None,
+            validate_proxied_response: false,
             method: Method::GET,
             path_pattern: Arc::from("/x"),
             handler_name: Arc::from("x"),

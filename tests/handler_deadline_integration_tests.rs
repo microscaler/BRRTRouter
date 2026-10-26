@@ -21,6 +21,7 @@ fn route_meta(handler: &str, deadline_ms: Option<u64>) -> RouteMeta {
         x_service: None,
         x_brrtrouter_downstream_path: None,
         x_brrtrouter_impl: None,
+        validate_proxied_response: false,
         method: Method::GET,
         path_pattern: Arc::from("/ping"),
         handler_name: Arc::from(handler),

@@ -48,6 +48,7 @@ impl MultiResponseTestServer {
             x_service: None,
             x_brrtrouter_downstream_path: None,
             x_brrtrouter_impl: None,
+            validate_proxied_response: false,
             method: Method::POST,
             path_pattern: Arc::from("/resp"),
             handler_name: Arc::from("h"),

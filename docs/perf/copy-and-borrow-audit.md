@@ -128,6 +128,37 @@ Bytes per request −78 % (one extra small allocation: the box). Breaking for co
 channel type (`mpsc::channel::<HandlerResponse>()`, `Sender<HandlerResponse>`) or sends on
 `reply_tx` directly; `reply_tx: may::sync::mpsc::channel().0` literals still compile.
 
+## BRRTRouter — pass 2: BFF proxied JSON passes through (26 Oct 2026)
+
+Evidence: the performance agent found every BFF parses, validates and re-serialises each proxied
+response (scratch measurements on ms02, per body: 20 KB 94 / 24 / 24 µs, 200 KB 953 / 233 / 257 µs
+for parse / validate / serialise). `proxy_untyped` read the body, parsed it into a `Value`
+(`response_body_value`), the service validated that `Value` against the operation's response schema
+and `write_handler_response` serialised it again. The downstream is a BRRTRouter service that already
+validated the same body against the same schema (the BFF spec is merged from the service specs).
+
+Change: a 2xx body with a JSON Content-Type is kept as text (`Value::String` plus the internal
+`x-brrtrouter-raw-encoding: json` marker) and written as received. Response validation skips it unless
+the operation sets `x-brrtrouter-validate-response: true` (then the text is parsed for the check only).
+Errors (non-2xx) still parse, because their reason is read for logs and metrics. The read buffer is sized
+from Content-Length (no doubling reallocations).
+
+`benches/request_path.rs` gained `bff_proxy_20k` / `bff_proxy_200k`: a BFF-shaped service (metrics +
+CORS, untyped proxy handlers) in front of an in-process downstream answering a 200- / 2,000-row JSON
+array (one TCP connection per proxied call, as in production). INFO log on, ms02, n = 3,000 × 5:
+
+| scenario | allocs/req | bytes/req | µs/req |
+|---|---:|---:|---:|
+| bff_proxy_20k before | 2,476 | 351,143 | 290 |
+| bff_proxy_20k after | 252 | 62,449 | 95 |
+| bff_proxy_200k before | 22,285 | 2,857,571 | 1,830 |
+| bff_proxy_200k after | 252 | 263,750 | 189 |
+
+Allocations per proxied call no longer depend on the body size (−90 % at 20 KB, −99 % at 200 KB);
+latency −67 % / −90 %. Of the remaining 264 KB at 200 KB, the body is held once (the read buffer
+becomes the response body) plus may_minihttp's write buffer. Still open: a
+new TCP connection per proxied call (no keep-alive pool to the downstream).
+
 ## For the PriceWhisperer pass
 
 - benzinga-analyst-ingestor startup pass clones the whole JSON response 3–4× per 50-ticker
