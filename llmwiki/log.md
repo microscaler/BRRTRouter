@@ -448,3 +448,8 @@ Hauliage Phase 3 unblockers for Vite dev proxy and frontend-aligned BFF routes.
 
 - `proxy_untyped` keeps a 2xx JSON body as text and writes it unchanged; validated only with `x-brrtrouter-validate-response: true`. 200 KB body: 22,285 → 252 allocations, 1.83 → 0.19 ms per request (bench).
 - [`topics/bff-gateway-merge-and-proxy-headers.md`](./topics/bff-gateway-merge-and-proxy-headers.md#proxied-json-passes-through-2026-10-26).
+
+## [2026-10-26] perf | idle may workers poll every 50 ms
+
+- `BRRTR_MAY_POLL_TIMEOUT_MS` (default 50; may's 10 ms woke 32+ workers 100×/s each, ~75 mcores per idle pod in pp). ms02 idle, 50 workers: 19 → 5 mcores; load latency unchanged.
+- [`topics/handler-stack-memory.md`](./topics/handler-stack-memory.md#idle-worker-poll-timeout).
