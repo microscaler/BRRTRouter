@@ -243,8 +243,9 @@ def _add_error_schema_and_preferred_ref(
                     "description": "Human-readable error message",
                 },
                 "details": {
-                    "type": "object",
-                    "nullable": True,
+                    # OpenAPI 3.1 / JSON Schema 2020-12: `nullable` is not a keyword (a null would fail
+                    # validation); a type union allows it.
+                    "type": ["object", "null"],
                     "description": "Additional details",
                     "additionalProperties": True,
                 },

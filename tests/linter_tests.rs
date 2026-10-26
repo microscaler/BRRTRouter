@@ -229,3 +229,52 @@ fn test_all_sample_files_exist() {
         );
     }
 }
+
+#[test]
+fn test_openapi31_rejects_30_keywords() {
+    let issues = lint_spec(&test_file_path("openapi31_keywords.yaml")).unwrap();
+    let nullable: Vec<_> = issues
+        .iter()
+        .filter(|i| i.kind == "openapi31_nullable")
+        .collect();
+    // Schema keywords only: not the example's data (even one shaped like a schema), not `nullable: false`, not an
+    // extension payload; a property named like an instance keyword (`default`) is still a schema, and a header
+    // named `x-request-id` is a header, not an extension.
+    let mut locations: Vec<_> = nullable.iter().map(|i| i.location.as_str()).collect();
+    locations.sort_unstable();
+    assert_eq!(
+        locations,
+        [
+            "#/components/schemas/Equity/properties/default/nullable",
+            "#/components/schemas/Equity/properties/start_equity/nullable",
+            "#/paths/~1equity/get/responses/200/headers/example/schema/nullable",
+            "#/paths/~1equity/get/responses/200/headers/x-request-id/schema/nullable",
+        ],
+        "{issues:?}"
+    );
+    assert!(nullable.iter().all(|i| i.severity == LintSeverity::Error));
+    // The suggestion keeps the schema's own type.
+    let start = nullable
+        .iter()
+        .find(|i| i.location.contains("start_equity"))
+        .unwrap();
+    assert!(
+        start
+            .suggestion
+            .as_deref()
+            .unwrap()
+            .contains("[number, 'null']"),
+        "{:?}",
+        start.suggestion
+    );
+}
+
+#[test]
+fn test_openapi31_boolean_bound_is_reported_even_though_the_spec_does_not_parse() {
+    let issues = lint_spec(&test_file_path("openapi31_exclusive.yaml")).unwrap();
+    assert!(
+        issues.iter().any(|i| i.kind == "openapi31_exclusive_bound"
+            && i.location == "#/components/schemas/Ratio/exclusiveMinimum"),
+        "{issues:?}"
+    );
+}

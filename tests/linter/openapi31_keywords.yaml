@@ -1,0 +1,58 @@
+openapi: 3.1.0
+info:
+  title: 3.1 keywords
+  version: 1.0.0
+paths:
+  /equity:
+    get:
+      operationId: get_equity
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Equity'
+              example:
+                nullable: true
+              examples:
+                wrapped:
+                  value:
+                    schema:
+                      type: string
+                      nullable: true
+          headers:
+            x-request-id:
+              schema:
+                type: string
+                nullable: true
+            example:
+              schema:
+                type: string
+                nullable: true
+          links:
+            self:
+              operationId: get_equity
+              requestBody:
+                schema:
+                  nullable: true
+components:
+  schemas:
+    Equity:
+      type: object
+      properties:
+        start_equity:
+          type: number
+          nullable: true
+        started_at:
+          type: [string, 'null']
+        nullable:
+          type: boolean
+        default:
+          type: integer
+          nullable: true
+        closed:
+          type: string
+          nullable: false
+      x-generator-options:
+        nullable: true
