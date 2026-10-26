@@ -90,7 +90,7 @@ http_legacy = { package = "http", version = "0.2" }
 # only uses public-key verification and does not expose RSA private-key operations.
 jsonwebtoken = { version = "11.1.0", features = ["rust_crypto"] }
 urlencoding = "2.1"
-ulid = "1.1"
+ulid = "3.0"
 sha2 = "0.11"
 hmac = "0.13" # Outbound webhook HMAC-SHA256 (Story 12.5)
 flate2 = "1" # Response gzip (Epic 13.8)
