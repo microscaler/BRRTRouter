@@ -19,7 +19,23 @@ from brrtrouter_tooling.helpers import (
 logger = logging.getLogger(__name__)
 
 _INSTANCE_KEYS = frozenset({"example", "examples", "enum", "default", "const"})
-_NAME_MAPS = frozenset({"properties", "patternProperties", "schemas", "definitions", "$defs"})
+_NAME_MAPS = frozenset(
+    {
+        "properties",
+        "patternProperties",
+        "schemas",
+        "definitions",
+        "$defs",
+        # OpenAPI maps keyed by name or status: `responses.default` is a response, not a value.
+        "responses",
+        "headers",
+        "parameters",
+        "requestBodies",
+        "content",
+        "paths",
+        "callbacks",
+    }
+)
 
 
 def _nullable_to_31(node: Any, names: bool = False) -> int:

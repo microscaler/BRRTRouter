@@ -1036,7 +1036,20 @@ def test_openapi30_nullable_is_rewritten_for_the_31_bff(tmp_path: Path) -> None:
                                     "schema": {"$ref": "#/components/schemas/Invoice"}
                                 }
                             },
-                        }
+                        },
+                        "default": {
+                            "description": "error",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "detail": {"type": "string", "nullable": True}
+                                        },
+                                    }
+                                }
+                            },
+                        },
                     },
                 }
             }
@@ -1071,6 +1084,9 @@ def test_openapi30_nullable_is_rewritten_for_the_31_bff(tmp_path: Path) -> None:
     p = tmp_path / "inv.yaml"
     p.write_text(yaml.safe_dump(spec))
     bff = merge_sub_service_specs({"invoice": {"base_path": "/api/v1/invoice", "spec_path": p}})
+    default = bff["paths"]["/invoices/{id}"]["get"]["responses"]["default"]
+    detail = default["content"]["application/json"]["schema"]["properties"]["detail"]
+    assert detail == {"type": ["string", "null"]}  # `responses.default` is a response
     props = bff["components"]["schemas"]["InvoiceInvoice"]["properties"]
     assert props["memo"] == {"type": ["string", "null"]}
     assert props["state"] == {"type": ["string", "null"], "enum": ["open", "paid", None]}
