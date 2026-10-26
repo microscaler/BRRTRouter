@@ -1016,3 +1016,111 @@ def test_load_suite_config_reads_operation_filters(tmp_path: Path) -> None:
     )
     with pytest.raises(ValueError, match="list of operationIds"):
         load_suite_config(cfg)
+
+
+def test_openapi30_nullable_is_rewritten_for_the_31_bff(tmp_path: Path) -> None:
+    """A sub-service still on OpenAPI 3.0 brings `nullable: true` into the 3.1 BFF, where it is not a
+    keyword (rerp invoice `tax`, 26 Oct 2026); the merge rewrites it."""
+    spec = {
+        "openapi": "3.0.3",
+        "info": {"title": "inv", "version": "1"},
+        "paths": {
+            "/invoices/{id}": {
+                "get": {
+                    "operationId": "get_invoice",
+                    "responses": {
+                        "200": {
+                            "description": "ok",
+                            "content": {
+                                "application/json": {
+                                    "schema": {"$ref": "#/components/schemas/Invoice"}
+                                }
+                            },
+                        },
+                        "default": {
+                            "description": "error",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "detail": {"type": "string", "nullable": True}
+                                        },
+                                    }
+                                }
+                            },
+                        },
+                    },
+                }
+            }
+        },
+        "components": {
+            "schemas": {
+                "Tax": {"type": "object", "properties": {"rate": {"type": "string"}}},
+                "Invoice": {
+                    "type": "object",
+                    "properties": {
+                        "memo": {"type": "string", "nullable": True},
+                        "state": {"type": "string", "enum": ["open", "paid"], "nullable": True},
+                        "tax": {
+                            "description": "the tax fact",
+                            "allOf": [{"$ref": "#/components/schemas/Tax"}],
+                            "nullable": True,
+                        },
+                        "count": {"type": "integer", "nullable": False},
+                        "flags": {
+                            "type": "object",
+                            "enum": [{"nullable": True}],
+                            "example": {"nullable": True},
+                            "x-note": {"nullable": True},
+                        },
+                        "nullable": {"type": "boolean"},
+                        "default": {"type": "string", "nullable": True},
+                    },
+                },
+            }
+        },
+    }
+    p = tmp_path / "inv.yaml"
+    p.write_text(yaml.safe_dump(spec))
+    bff = merge_sub_service_specs({"invoice": {"base_path": "/api/v1/invoice", "spec_path": p}})
+    default = bff["paths"]["/invoices/{id}"]["get"]["responses"]["default"]
+    detail = default["content"]["application/json"]["schema"]["properties"]["detail"]
+    assert detail == {"type": ["string", "null"]}  # `responses.default` is a response
+    props = bff["components"]["schemas"]["InvoiceInvoice"]["properties"]
+    assert props["memo"] == {"type": ["string", "null"]}
+    assert props["state"] == {"type": ["string", "null"], "enum": ["open", "paid", None]}
+    assert props["tax"] == {
+        "description": "the tax fact",
+        "anyOf": [{"allOf": [{"$ref": "#/components/schemas/InvoiceTax"}]}, {"type": "null"}],
+    }
+    assert props["count"] == {"type": "integer"}
+    # Instance data and extensions keep their `nullable` keys: they are values, not schemas.
+    assert props["flags"] == {
+        "type": "object",
+        "enum": [{"nullable": True}],
+        "example": {"nullable": True},
+        "x-note": {"nullable": True},
+    }
+    assert props["nullable"] == {"type": "boolean"}  # a property named `nullable` is not a flag
+    assert props["default"] == {
+        "type": ["string", "null"]
+    }  # a property named `default` is a schema
+
+
+def test_openapi31_specs_are_not_rewritten(tmp_path: Path) -> None:
+    ok = {
+        "description": "ok",
+        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/A"}}},
+    }
+    spec = {
+        "openapi": "3.1.0",
+        "info": {"title": "x", "version": "1"},
+        "paths": {"/a": {"get": {"operationId": "get_a", "responses": {"200": ok}}}},
+        "components": {"schemas": {"A": {"type": "string", "nullable": True}}},
+    }
+    p = tmp_path / "x.yaml"
+    p.write_text(yaml.safe_dump(spec))
+    bff = merge_sub_service_specs({"x": {"base_path": "/api/v1/x", "spec_path": p}})
+    # A 3.1 spec is the lint's business (brrtrouter-gen lint flags it), not rewritten silently.
+    assert bff["components"]["schemas"]["XA"] == {"type": "string", "nullable": True}

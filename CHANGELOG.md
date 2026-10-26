@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed (tooling: OpenAPI 3.0 sub-service specs in a 3.1 BFF)
+
+- **`nullable` from a 3.0 sub-service spec is rewritten when merged into the 3.1 BFF spec.** 3.1 (JSON Schema
+  2020-12) ignores `nullable`, so a null from such a service failed the BFF's response validation, and
+  `brrtrouter-gen lint` flags the generated BFF. `type: T` becomes `type: [T, "null"]` (with `null` added to an
+  `enum`); a schema without `type` (`$ref`, `allOf`) becomes `anyOf: [<it>, {type: "null"}]`; `nullable: false` is
+  dropped. Instance data (`example`, `examples`, `enum`, `default`, `const`) and `x-*` extensions are left alone. 3.1 sub-service specs are left as written (the lint reports them). Found in rerp: the 3.0.3 `invoice`
+  spec's `tax` in the accounting BFF.
+
 ### Fixed (proxy 502s: bodyless requests, rollouts)
 
 - **A proxied request without a body went out chunked.** `proxy_untyped` sent a bodyless `POST`/`DELETE` with

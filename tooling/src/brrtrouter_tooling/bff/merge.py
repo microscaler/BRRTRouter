@@ -18,6 +18,78 @@ from brrtrouter_tooling.helpers import (
 
 logger = logging.getLogger(__name__)
 
+_INSTANCE_KEYS = frozenset({"example", "examples", "enum", "default", "const"})
+_NAME_MAPS = frozenset(
+    {
+        "properties",
+        "patternProperties",
+        "schemas",
+        "definitions",
+        "$defs",
+        # OpenAPI maps keyed by name or status: `responses.default` is a response, not a value.
+        "responses",
+        "headers",
+        "parameters",
+        "requestBodies",
+        "content",
+        "paths",
+        "callbacks",
+    }
+)
+
+
+def _nullable_to_31(node: Any, names: bool = False) -> int:
+    """Rewrite OpenAPI 3.0 `nullable` in place for a 3.1 document; return how many were rewritten.
+
+    The BFF spec is 3.1 (JSON Schema 2020-12), where `nullable` is not a keyword: a sub-service spec
+    still on 3.0 would carry `nullable: true` into it unread, and a null would then fail response
+    validation. `type: T` becomes `type: [T, "null"]` (and `null` joins an `enum`); a schema without
+    `type` (`$ref`, `allOf`, ...) becomes `anyOf: [<it>, {type: "null"}]`, keeping its description
+    (`anyOf`, not `oneOf`: an untyped inner schema may accept null itself). Instance data (`example`,
+    `examples`, `enum`, `default`, `const`) and `x-*` extensions are not walked.
+    `nullable: false` is dropped. Only boolean `nullable` values are touched, so a property named
+    `nullable` is left alone.
+    """
+    count = 0
+    if isinstance(node, list):
+        for item in node:
+            count += _nullable_to_31(item)
+        return count
+    if not isinstance(node, dict):
+        return 0
+    if names:
+        # A map of names to schemas (`properties`, `components.schemas`, ...): every key is a name,
+        # even `default` or `enum`, and the map itself is not a schema.
+        for value in node.values():
+            count += _nullable_to_31(value)
+        return count
+    for key, value in list(node.items()):
+        # Instance data and extensions are not schemas: a `{nullable: true}` there is a value.
+        if key in _INSTANCE_KEYS or (isinstance(key, str) and key.startswith("x-")):
+            continue
+        count += _nullable_to_31(value, names=key in _NAME_MAPS)
+    flag = node.get("nullable")
+    if not isinstance(flag, bool):
+        return count
+    del node["nullable"]
+    if not flag:
+        return count
+    t = node.get("type")
+    if isinstance(t, str):
+        node["type"] = [t, "null"]
+        if isinstance(node.get("enum"), list) and None not in node["enum"]:
+            node["enum"].append(None)
+    elif isinstance(t, list):
+        if "null" not in t:
+            t.append("null")
+    else:
+        keep = {k: node.pop(k) for k in ("description", "title", "example", "default") if k in node}
+        inner = dict(node)
+        node.clear()
+        node.update(keep)
+        node["anyOf"] = [inner, {"type": "null"}]
+    return count + 1
+
 
 def _update_refs_in_value(val: Any, old_name: str, new_name: str) -> None:
     if isinstance(val, dict):
@@ -319,6 +391,10 @@ def _merge_one_sub_service(
         logger.warning("Spec file not found for service %r: %s", sname, spec_path)
         return
     spec = load_yaml_spec(spec_path)
+    if str(spec.get("openapi", "")).startswith("3.0"):
+        n = _nullable_to_31(spec)
+        if n:
+            logger.info("%s: %d OpenAPI 3.0 nullable schema(s) rewritten for the 3.1 BFF", sname, n)
     filtered = include_operations is not None or exclude_operations is not None
     kept = _select_operations(sname, spec, spec_path, include_operations, exclude_operations)
     _merge_tags(spec, kept, filtered, all_tags)
