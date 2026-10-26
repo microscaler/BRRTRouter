@@ -42,7 +42,7 @@ to `full` and makes pass-through a configured choice.
 | mode | what is checked | on a mismatch | guarantee |
 |---|---|---|---|
 | `full` (**default**) | every response with a schema | 500 `Response validation failed` (today's behaviour), logged, counted | no response leaves that contradicts the spec |
-| `sample:<rate>` (0 < rate ≤ 1) | that fraction of responses, evenly spread (every `1/rate`-th, the first included) | response goes out unchanged; logged (first per route per minute) and counted | drift is **detected** within minutes at any real traffic; users are not failed by it |
+| `sample:<rate>` (0 < rate ≤ 1) | that fraction of responses, evenly spread per operation (every `1/rate`-th of each operation's responses, its first included) | response goes out unchanged; logged (first per route per minute) and counted | drift is **detected** within minutes at any real traffic; users are not failed by it |
 | `off` | nothing | — | none at runtime; relies on build-time checks (§4) |
 
 - Metrics: `brrtrouter_response_validation_total{handler, result="ok"|"mismatch"}` for every response checked, and

@@ -13,6 +13,29 @@ from brrtrouter_tooling.bff.merge import merge_sub_service_specs
 from brrtrouter_tooling.helpers import validate_openapi_spec
 
 
+def _with_root_extensions(bff: dict, extensions: dict, suite_config_path: Path) -> dict:
+    """Put ``metadata.extensions`` (``x-*`` keys) at the BFF document root, right after ``openapi``.
+
+    Root-level vendor extensions such as ``x-brrtrouter-stack-size`` (the spec-wide handler stack) belong to the
+    BFF itself, not to any merged service, so they come from the suite config; the generated spec is never
+    hand-edited.
+    """
+    if not extensions:
+        return bff
+    bad = [k for k in extensions if not str(k).startswith("x-")]
+    if bad:
+        msg = f"{suite_config_path}: metadata.extensions keys must start with 'x-': {bad}"
+        raise ValueError(msg)
+    out: dict = {}
+    for k, v in bff.items():
+        out[k] = v
+        if k == "openapi":
+            out.update(extensions)
+    for k, v in extensions.items():
+        out.setdefault(k, v)
+    return out
+
+
 def generate_bff_spec(
     suite_config_path: Path,
     output_path: Path | None = None,
@@ -60,6 +83,7 @@ def generate_bff_spec(
 
     if "metadata" in config and "servers" in config["metadata"]:
         bff["servers"] = config["metadata"]["servers"]
+    bff = _with_root_extensions(bff, metadata.get("extensions") or {}, suite_config_path)
     require_defined_security_schemes(bff, str(suite_config_path))
 
     out = (

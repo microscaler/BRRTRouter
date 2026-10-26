@@ -12,7 +12,6 @@
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 /// How responses are checked against their OpenAPI schema.
@@ -67,16 +66,24 @@ impl ResponseValidation {
         })
     }
 
-    /// Whether this response is checked. `Sample` checks evenly spread responses (each time `ceil(n·rate)` steps,
-    /// starting with the first), not a random draw: the same rate at any traffic, no RNG on the hot path.
+    /// Whether this response of `handler` is checked. `Sample` keeps a count per handler and checks that handler's
+    /// evenly spread responses (each time `ceil(n·rate)` steps, starting with its first): every route gets the rate,
+    /// whatever the interleaving of routes, and there is no RNG on the hot path.
     #[must_use]
-    pub fn should_check(self) -> bool {
+    pub fn should_check(self, handler: &Arc<str>) -> bool {
         match self {
             Self::Full => true,
             Self::Off => false,
             Self::Sample(rate) => {
-                static N: AtomicU64 = AtomicU64::new(0);
-                let n = N.fetch_add(1, Ordering::Relaxed) as f64;
+                let n = {
+                    let mut m = SAMPLE_COUNTS
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    let c = m.entry(Arc::clone(handler)).or_insert(0);
+                    let n = *c;
+                    *c += 1;
+                    n
+                } as f64;
                 ((n + 1.0) * rate).ceil() > (n * rate).ceil()
             }
         }
@@ -97,6 +104,9 @@ enum Outcome {
 }
 
 static COUNTS: Mutex<BTreeMap<(Arc<str>, Outcome), u64>> = Mutex::new(BTreeMap::new());
+
+/// Responses seen per handler, for `Sample`.
+static SAMPLE_COUNTS: Mutex<BTreeMap<Arc<str>, u64>> = Mutex::new(BTreeMap::new());
 
 fn bump(handler: &Arc<str>, outcome: Outcome) {
     let mut m = COUNTS
@@ -191,12 +201,23 @@ mod tests {
     }
 
     #[test]
-    fn sample_checks_its_rate() {
-        let m = ResponseValidation::Sample(0.25);
-        let checked = (0..10_000).filter(|_| m.should_check()).count();
-        assert!((2_400..=2_600).contains(&checked), "{checked}");
-        assert!(m.enforces() == false && ResponseValidation::Full.enforces());
-        assert!(!ResponseValidation::Off.should_check());
+    fn sample_checks_its_rate_for_every_handler() {
+        let m = ResponseValidation::Sample(0.5);
+        let (a, b): (Arc<str>, Arc<str>) = (Arc::from("sample_a"), Arc::from("sample_b"));
+        // Strictly alternating routes: a single shared counter would check only one of them.
+        let (mut ca, mut cb) = (0, 0);
+        for _ in 0..1_000 {
+            ca += usize::from(m.should_check(&a));
+            cb += usize::from(m.should_check(&b));
+        }
+        assert_eq!((ca, cb), (500, 500));
+        let q: Arc<str> = Arc::from("sample_q");
+        let checked = (0..10_000)
+            .filter(|_| ResponseValidation::Sample(0.25).should_check(&q))
+            .count();
+        assert_eq!(checked, 2_500);
+        assert!(!m.enforces() && ResponseValidation::Full.enforces());
+        assert!(!ResponseValidation::Off.should_check(&a));
     }
 
     #[test]

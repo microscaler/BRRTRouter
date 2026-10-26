@@ -198,6 +198,29 @@ def test_generate_bff_spec(tmp_path: Path) -> None:
     assert get_op.get("x-brrtrouter-downstream-path") == "/api/invoice/invoices"
 
 
+def test_generate_puts_metadata_extensions_at_the_root(tmp_path: Path) -> None:
+    """metadata.extensions become root x-* keys right after openapi; other keys are refused."""
+    (tmp_path / "s" / "invoice").mkdir(parents=True)
+    (tmp_path / "s" / "invoice" / "openapi.yaml").write_text(
+        "openapi: 3.1.0\ninfo: { title: I, version: 1.0 }\npaths: {}\n"
+    )
+    config_file = tmp_path / "config.yaml"
+    base = (
+        "openapi_base_dir: s\noutput_path: out.yaml\n"
+        "services:\n  invoice:\n    base_path: /api/invoice\n    spec_path: invoice/openapi.yaml\n"
+    )
+    config_file.write_text(base + "metadata:\n  extensions:\n    x-brrtrouter-stack-size: 128KiB\n")
+    out = generate_bff_spec(config_file, base_dir=tmp_path)
+    with out.open() as f:
+        spec = yaml.safe_load(f)
+    assert spec["x-brrtrouter-stack-size"] == "128KiB"
+    assert list(spec)[:2] == ["openapi", "x-brrtrouter-stack-size"]
+
+    config_file.write_text(base + "metadata:\n  extensions:\n    stack-size: 1KiB\n")
+    with pytest.raises(ValueError, match="must start with 'x-'"):
+        generate_bff_spec(config_file, base_dir=tmp_path)
+
+
 def test_generate_with_security(tmp_path: Path) -> None:
     """generate_bff_spec merges metadata.security_schemes and metadata.security."""
     (tmp_path / "s" / "invoice").mkdir(parents=True)
