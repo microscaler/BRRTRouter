@@ -11,8 +11,8 @@ pub const RAW_BODY_ENCODING_HEADER: &str = "x-brrtrouter-raw-encoding";
 pub const RAW_BODY_ENCODING_BASE64: &str = "base64";
 
 /// Value for [`RAW_BODY_ENCODING_HEADER`]: the body is a `Value::String` holding JSON text, written
-/// as it is (a proxied downstream body: [`crate::http::proxy_untyped`]). Response validation skips
-/// it unless the route sets `x-brrtrouter-validate-response`; then the text is parsed to check it.
+/// as it is (a proxied downstream body: [`crate::http::proxy_untyped`] with `BRRTR_PROXY_PASSTHROUGH`
+/// on). When the response validation mode checks it, the text is parsed for the check only.
 pub const RAW_BODY_ENCODING_JSON: &str = "json";
 
 /// Whether `headers` carry the internal raw-encoding marker with this value.

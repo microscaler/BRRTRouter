@@ -708,6 +708,8 @@ pub fn metrics_endpoint(
     crate::security::telemetry::render_jwks_prometheus(&mut body);
     // A BFF's calls to its downstream services (nothing until the first proxied call).
     crate::http::client_metrics::render_prometheus(&mut body);
+    // Responses checked against their schema, by result, and those the validation mode skipped.
+    super::response_validation::render_prometheus(&mut body);
 
     body.push_str(
         "# HELP brrtrouter_cors_origin_rejections_total CORS rejections: Origin not allowed (403)\n",
@@ -2168,15 +2170,14 @@ impl HttpService for AppService {
                     }
                     // Epic 13.4: HttpFile / format:binary — do not JSON-schema-validate raw bodies.
                     // Epic 13.7: live SSE carries events on `hr.sse`, not JSON `hr.body`.
-                    // A proxied downstream JSON body (`proxy_untyped`) is text written as it came;
-                    // it is checked only when the route asks (`x-brrtrouter-validate-response`).
+                    // A proxied downstream JSON body (`proxy_untyped` with pass-through on) is text written
+                    // as it came; when it is checked, it is parsed for the check only.
                     let raw_json = super::response::has_raw_body_encoding(
                         &headers,
                         super::response::RAW_BODY_ENCODING_JSON,
                     );
                     let skip_response_schema = hr.sse.is_some()
                         || is_sse
-                        || (raw_json && !route.validate_proxied_response)
                         || super::response::has_raw_body_encoding(
                             &headers,
                             super::response::RAW_BODY_ENCODING_BASE64,
@@ -2195,72 +2196,89 @@ impl HttpService for AppService {
                             None
                         }
                     {
-                        // V6: Response validation start
-                        debug!(
-                            handler = %route.handler_name,
-                            status = hr.status,
-                            schema_present = true,
-                            "Response validation start"
-                        );
-
-                        // Use cached validator instead of compiling on every response
-                        // If compilation fails, skip validation but still return response
-                        if let Some(compiled) = self.validator_cache.get_or_compile_for_route(
-                            &route,
-                            "response",
-                            Some(hr.status),
-                            schema,
-                        ) {
+                        // ADR 006: full (default), sample:<rate> or off; an operation can force full.
+                        let mode = if route.validate_proxied_response {
+                            super::response_validation::ResponseValidation::Full
+                        } else {
+                            super::response_validation::ResponseValidation::global()
+                        };
+                        if !mode.should_check() {
+                            super::response_validation::record_skipped(&route.handler_name);
+                        } else if let Some(compiled) = self
+                            .validator_cache
+                            .get_or_compile_for_route(&route, "response", Some(hr.status), schema)
+                        {
+                            // V6: Response validation start
+                            debug!(
+                                handler = %route.handler_name,
+                                status = hr.status,
+                                schema_present = true,
+                                "Response validation start"
+                            );
                             let parsed;
-                            let checked: &serde_json::Value = if raw_json {
+                            let checked: Result<&serde_json::Value, ()> = if raw_json {
                                 match hr.body.as_str().map(serde_json::from_str) {
                                     Some(Ok(v)) => {
                                         parsed = v;
-                                        &parsed
+                                        Ok(&parsed)
                                     }
-                                    _ => {
+                                    _ => Err(()),
+                                }
+                            } else {
+                                Ok(&hr.body)
+                            };
+                            let error_details: Option<Vec<String>> = match checked {
+                                Err(()) => {
+                                    Some(vec!["the downstream body is not JSON".to_string()])
+                                }
+                                Ok(v) if compiled.is_valid(v) => None,
+                                Ok(v) => Some(
+                                    compiled
+                                        .iter_errors(v)
+                                        .take(MAX_JSON_SCHEMA_ERRORS)
+                                        .map(|e| e.to_string())
+                                        .collect(),
+                                ),
+                            };
+                            match error_details {
+                                None => super::response_validation::record_ok(&route.handler_name),
+                                Some(error_details) => {
+                                    // V7: Response validation failed
+                                    super::response_validation::record_mismatch(
+                                        &route.handler_name,
+                                    );
+                                    if mode.enforces() {
                                         error!(
                                             handler = %route.handler_name,
                                             status = hr.status,
-                                            "Response validation failed: the downstream body is not JSON"
+                                            errors = ?error_details,
+                                            schema_path = "(operation response schema)",
+                                            "Response validation failed"
                                         );
                                         _request_logger.respond_json_error(
                                             res,
                                             500,
-                                            json!({"error": "Response validation failed", "details": ["the downstream body is not JSON"]}),
+                                            json!({"error": "Response validation failed", "details": error_details}),
                                         );
                                         return Ok(());
                                     }
+                                    // Sampled: the response goes out; the mismatch is counted, and logged once
+                                    // per route and status per window.
+                                    if super::observability::first_in_window(&format!(
+                                        "response-validation {} {}",
+                                        route.handler_name, hr.status
+                                    )) {
+                                        warn!(
+                                            handler = %route.handler_name,
+                                            status = hr.status,
+                                            errors = ?error_details,
+                                            "Response validation mismatch (sampled; response sent)"
+                                        );
+                                    }
                                 }
-                            } else {
-                                &hr.body
-                            };
-                            if !compiled.is_valid(checked) {
-                                // V7: Response validation failed
-                                let error_details: Vec<String> = compiled
-                                    .iter_errors(checked)
-                                    .take(MAX_JSON_SCHEMA_ERRORS)
-                                    .map(|e| e.to_string())
-                                    .collect();
-                                let schema_path = "(operation response schema)";
-
-                                error!(
-                                    handler = %route.handler_name,
-                                    status = hr.status,
-                                    errors = ?error_details,
-                                    schema_path = %schema_path,
-                                    "Response validation failed"
-                                );
-
-                                _request_logger.respond_json_error(
-                                    res,
-                                    500, // Changed from 400 to 500 since this is a server error
-                                    json!({"error": "Response validation failed", "details": error_details}),
-                                );
-                                return Ok(());
                             }
-                        } // End if let Some(compiled)
-                    } // End if let Some(schema)
+                        }
+                    }
                     let omit_body = method == Method::HEAD;
                     // HEAD gets headers only: a live stream's receiver is dropped unread.
                     if let Some(sse_rx) = hr.sse.filter(|_| !omit_body) {

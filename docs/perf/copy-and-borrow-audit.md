@@ -138,8 +138,9 @@ and `write_handler_response` serialised it again. The downstream is a BRRTRouter
 validated the same body against the same schema (the BFF spec is merged from the service specs).
 
 Change: a 2xx body with a JSON Content-Type is kept as text (`Value::String` plus the internal
-`x-brrtrouter-raw-encoding: json` marker) and written as received. Response validation skips it unless
-the operation sets `x-brrtrouter-validate-response: true` (then the text is parsed for the check only).
+`x-brrtrouter-raw-encoding: json` marker) and written as received. ~~Response validation skips it unless
+the operation sets `x-brrtrouter-validate-response: true`.~~ **Superseded by ADR 006:** pass-through is
+`BRRTR_PROXY_PASSTHROUGH` (default off) and response validation is a mode (`full` default); see pass 4.
 Errors (non-2xx) still parse, because their reason is read for logs and metrics. The read buffer is sized
 from Content-Length (no doubling reallocations).
 
@@ -158,6 +159,26 @@ Allocations per proxied call no longer depend on the body size (−90 % at 20 KB
 latency −67 % / −90 %. Of the remaining 264 KB at 200 KB, the body is held once (the read buffer
 becomes the response body) plus may_minihttp's write buffer. Still open: a
 new TCP connection per proxied call (no keep-alive pool to the downstream).
+
+## BRRTRouter — pass 4: validation modes and pass-through as configuration (26 Oct 2026)
+
+ADR 006 (`docs/ADRS/006-…`) restores today's guarantee as the default. #508 skipped response
+validation for proxied bodies by default; now `BRRTR_RESPONSE_VALIDATION=full|sample:<rate>|off`
+(default `full`) decides, with `brrtrouter_response_validation_total{handler,result}` and
+`…_skipped_total{handler}` counters, and pass-through is `BRRTR_PROXY_PASSTHROUGH` (default off).
+
+`bff_proxy_*` (ms02, INFO log, n = 3,000 × 5), allocs / bytes / µs per request:
+
+| configuration | 20 KB | 200 KB |
+|---|---|---|
+| defaults (pass-through off, `full`) | 2,466 / 308 KB / 279 | 22,272 / 2.56 MB / 1,656 |
+| pass-through on, `full` | 2,460 / 243 KB / 246 | 22,263 / 2.03 MB / 1,799 |
+| pass-through on, `sample:0.1` | 474 / 80 KB / 102 | 2,456 / 441 KB / 304 |
+| pass-through on, `off` | 253 / 62 KB / 93 | 254 / 264 KB / 154 |
+
+The cost is parse + validate, not serialise: with `full`, pass-through saves ~20 % of bytes and
+nothing measurable in time. The 5–10× saving needs `sample` or `off`, which the ADR keeps for an
+environment Charles approves, with build-time contract checks in place first.
 
 ## For the PriceWhisperer pass
 

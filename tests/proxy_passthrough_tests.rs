@@ -1,7 +1,6 @@
-//! A BFF passes a proxied downstream's 2xx JSON body through as it came (no parse, no
-//! re-serialisation, no response validation), unless the operation sets
-//! `x-brrtrouter-validate-response: true`; then the text is parsed and checked against the
-//! operation's response schema. Errors keep the parsed path.
+//! ADR 006: proxied JSON pass-through (`BRRTR_PROXY_PASSTHROUGH`, default off) and the response
+//! validation mode (`BRRTR_RESPONSE_VALIDATION`, default full). Both are read once per process, so
+//! each scenario runs this test binary again as a child with its environment.
 
 use brrtrouter::dispatcher::{Dispatcher, HandlerRequest};
 use brrtrouter::router::Router;
@@ -98,6 +97,7 @@ fn start() -> (ServerHandle, SocketAddr) {
         None,
         None,
     );
+    service.set_metrics_middleware(Arc::new(brrtrouter::middleware::MetricsMiddleware::new()));
     service.resolve_security(&routes);
     let addr = TcpListener::bind("127.0.0.1:0")
         .unwrap()
@@ -149,33 +149,135 @@ fn get(addr: SocketAddr, path: &str) -> (u16, String, String) {
     }
 }
 
-#[test]
-fn proxied_json_passes_through_and_validates_only_when_asked() {
+/// (status, body) of every route, then the `/metrics` text.
+fn run_scenario() -> String {
     let (app, addr) = start();
+    let mut out = String::new();
+    for path in ["/pass_bad", "/check_bad", "/check_good", "/missing"] {
+        let (status, head, body) = get(addr, path);
+        assert!(!head.contains("x-brrtrouter-raw-encoding"), "{head}");
+        out.push_str(&format!("{path} {status} {body}\n"));
+    }
+    let (_, _, metrics) = get(addr, "/metrics");
+    out.push_str(&metrics);
+    drop(app);
+    out
+}
 
-    // Without the flag: the downstream's bytes, exactly (spacing kept, off-schema not refused).
-    let (status, head, body) = get(addr, "/pass_bad");
-    assert_eq!(status, 200, "{body}");
-    assert_eq!(body, BAD);
-    assert!(head.contains("content-type: application/json"), "{head}");
-    assert!(!head.contains("x-brrtrouter-raw-encoding"), "{head}");
+/// Run `child_scenario` in a fresh process with `env`; returns its report.
+fn scenario(env: &[(&str, &str)]) -> String {
+    let exe = std::env::current_exe().unwrap();
+    let mut cmd = std::process::Command::new(exe);
+    cmd.args([
+        "--exact",
+        "child_scenario",
+        "--nocapture",
+        "--test-threads=1",
+    ])
+    .env("BRRTR_PT_CHILD", "1")
+    .env_remove("BRRTR_PROXY_PASSTHROUGH")
+    .env_remove("BRRTR_RESPONSE_VALIDATION");
+    for (k, v) in env {
+        cmd.env(k, v);
+    }
+    let out = cmd.output().unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+    assert!(
+        out.status.success(),
+        "{stdout}\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let start = stdout.find("<<REPORT").expect("report") + "<<REPORT\n".len();
+    let end = stdout.find("REPORT>>").expect("report end");
+    stdout[start..end].to_string()
+}
 
-    // With the flag: an off-schema body is refused as before ...
-    let (status, _, body) = get(addr, "/check_bad");
-    assert_eq!(status, 500, "{body}");
-    assert!(body.contains("Response validation failed"), "{body}");
+#[test]
+fn child_scenario() {
+    if std::env::var_os("BRRTR_PT_CHILD").is_none() {
+        return;
+    }
+    println!("<<REPORT\n{}REPORT>>", run_scenario());
+}
 
-    // ... and a valid one still goes out as the downstream wrote it.
-    let (status, _, body) = get(addr, "/check_good");
-    assert_eq!(status, 200, "{body}");
-    assert_eq!(body, GOOD);
+fn line<'a>(report: &'a str, path: &str) -> (u16, &'a str) {
+    let l = report
+        .lines()
+        .find(|l| l.starts_with(&format!("{path} ")))
+        .unwrap();
+    let rest = &l[path.len() + 1..];
+    (rest[..3].parse().unwrap(), &rest[4..])
+}
 
-    // A downstream error keeps the parsed path.
-    let (status, _, body) = get(addr, "/missing");
-    assert_eq!(status, 404, "{body}");
+#[test]
+fn default_is_parsed_and_fully_validated() {
+    let r = scenario(&[]);
+    // Off-schema downstream bodies are refused, as always.
+    assert_eq!(line(&r, "/pass_bad").0, 500, "{r}");
+    assert_eq!(line(&r, "/check_bad").0, 500, "{r}");
+    // A valid one is re-serialised (same JSON, not the same bytes).
+    let (status, body) = line(&r, "/check_good");
+    assert_eq!(status, 200, "{r}");
+    assert_ne!(body, GOOD);
     assert_eq!(
-        serde_json::from_str::<serde_json::Value>(&body).unwrap(),
+        serde_json::from_str::<serde_json::Value>(body).unwrap(),
+        serde_json::from_str::<serde_json::Value>(GOOD).unwrap()
+    );
+    assert_eq!(line(&r, "/missing").0, 404, "{r}");
+    assert!(
+        r.contains(
+            "brrtrouter_response_validation_total{handler=\"pass_bad\",result=\"mismatch\"} 1"
+        ),
+        "{r}"
+    );
+}
+
+#[test]
+fn pass_through_with_full_validation_sends_the_downstream_bytes() {
+    let r = scenario(&[("BRRTR_PROXY_PASSTHROUGH", "on")]);
+    assert_eq!(line(&r, "/pass_bad").0, 500, "{r}");
+    assert_eq!(line(&r, "/check_bad").0, 500, "{r}");
+    assert_eq!(line(&r, "/check_good"), (200, GOOD), "{r}");
+    let (status, body) = line(&r, "/missing");
+    assert_eq!(status, 404, "{r}");
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(body).unwrap(),
         serde_json::json!({"error": "nope"})
     );
-    drop(app);
+    assert!(
+        r.contains("brrtrouter_response_validation_total{handler=\"check_good\",result=\"ok\"} 1"),
+        "{r}"
+    );
+}
+
+#[test]
+fn validation_off_passes_bytes_unless_the_operation_forces_it() {
+    let r = scenario(&[
+        ("BRRTR_PROXY_PASSTHROUGH", "on"),
+        ("BRRTR_RESPONSE_VALIDATION", "off"),
+    ]);
+    assert_eq!(line(&r, "/pass_bad"), (200, BAD), "{r}");
+    // x-brrtrouter-validate-response: true is always checked.
+    assert_eq!(line(&r, "/check_bad").0, 500, "{r}");
+    assert_eq!(line(&r, "/check_good"), (200, GOOD), "{r}");
+    assert!(
+        r.contains("brrtrouter_response_validation_skipped_total{handler=\"pass_bad\"} 1"),
+        "{r}"
+    );
+}
+
+#[test]
+fn sampled_mismatches_are_counted_not_failed() {
+    let r = scenario(&[
+        ("BRRTR_PROXY_PASSTHROUGH", "on"),
+        ("BRRTR_RESPONSE_VALIDATION", "sample:0.99"),
+    ]);
+    // sample:0.99 checks the first response: a mismatch is counted and the bytes still go out.
+    assert_eq!(line(&r, "/pass_bad"), (200, BAD), "{r}");
+    assert!(
+        r.contains(
+            "brrtrouter_response_validation_total{handler=\"pass_bad\",result=\"mismatch\"} 1"
+        ),
+        "{r}"
+    );
 }

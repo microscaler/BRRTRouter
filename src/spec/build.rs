@@ -741,8 +741,8 @@ pub fn extract_deadline_ms_override(operation: &oas3::spec::Operation) -> Option
         })
 }
 
-/// Extract `x-brrtrouter-validate-response` (a boolean, or the string `"true"`): whether a proxied
-/// operation's downstream 2xx body is validated against this spec. Omitted means no.
+/// Extract `x-brrtrouter-validate-response` (a boolean, or the string `"true"`): this operation's
+/// responses are always checked, whatever the response validation mode (ADR 006). Omitted means no.
 pub fn extract_validate_response(operation: &oas3::spec::Operation) -> bool {
     // oas3 strips the `x-` prefix from extension keys; accept both spellings as the others do.
     operation

@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed (response validation modes; pass-through is opt-in) — ADR 006
+
+- **`BRRTR_RESPONSE_VALIDATION=full|sample:<rate>|off`**, default `full` (unchanged behaviour: a mismatch is a 500).
+  `sample:<rate>` checks every `1/rate`-th response and logs + counts a mismatch without failing the request; `off`
+  checks nothing. New counters on `/metrics`: `brrtrouter_response_validation_total{handler,result="ok"|"mismatch"}`
+  and `brrtrouter_response_validation_skipped_total{handler}`. `x-brrtrouter-validate-response: true` forces `full`
+  for an operation.
+- **Proxied JSON pass-through is now opt-in** (`BRRTR_PROXY_PASSTHROUGH=on`, default off). The previous entry made it
+  the default and skipped validation of proxied bodies; with the defaults, proxied responses are parsed, validated and
+  re-serialised as before. With it on, bodies are validated per the mode (parsed for the check only).
+- `docs/ADRS/006-validation-modes-proxy-passthrough-trusted-hop.md`: trust model, the modes' guarantees, how drift is
+  caught per build; streaming, raw request bytes and trusted-hop validation are later phases.
+
 ### Changed (BFF proxy: JSON passes through)
 
 - **A proxied 2xx JSON body is passed through as the downstream wrote it.** `proxy_untyped` parsed every

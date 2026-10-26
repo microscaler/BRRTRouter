@@ -97,6 +97,8 @@ pub mod request;
 pub mod request_target;
 /// Response building and serialization
 pub mod response;
+/// Response validation mode (ADR 006): full, sampled or off, with counters
+pub mod response_validation;
 /// Fix B: shared service bootstrap
 pub mod run_app;
 /// Security provider registration from config.yaml
