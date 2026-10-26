@@ -200,6 +200,9 @@ def test_generate_bff_spec(tmp_path: Path) -> None:
 
 def test_generate_puts_metadata_extensions_at_the_root(tmp_path: Path) -> None:
     """metadata.extensions become root x-* keys right after openapi; other keys are refused."""
+
+def test_generated_error_schema_allows_null_details_without_nullable(tmp_path: Path) -> None:
+    """The fallback Error schema is 3.1: details is a type union, not the 3.0 `nullable` keyword."""
     (tmp_path / "s" / "invoice").mkdir(parents=True)
     (tmp_path / "s" / "invoice" / "openapi.yaml").write_text(
         "openapi: 3.1.0\ninfo: { title: I, version: 1.0 }\npaths: {}\n"
@@ -219,6 +222,16 @@ def test_generate_puts_metadata_extensions_at_the_root(tmp_path: Path) -> None:
     config_file.write_text(base + "metadata:\n  extensions:\n    stack-size: 1KiB\n")
     with pytest.raises(ValueError, match="must start with 'x-'"):
         generate_bff_spec(config_file, base_dir=tmp_path)
+
+    config_file.write_text(
+        "openapi_base_dir: s\noutput_path: out.yaml\n"
+        "services:\n  invoice:\n    base_path: /api/invoice\n    spec_path: invoice/openapi.yaml\n"
+    )
+    out = generate_bff_spec(config_file, base_dir=tmp_path)
+    text = out.read_text()
+    assert "nullable" not in text
+    spec = yaml.safe_load(text)
+    assert spec["components"]["schemas"]["Error"]["properties"]["details"]["type"] == ["object", "null"]
 
 
 def test_generate_with_security(tmp_path: Path) -> None:

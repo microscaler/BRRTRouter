@@ -25,6 +25,8 @@ All notable changes to this project will be documented in this file.
   examples, enums, defaults and properties named `nullable` are not flagged. Locations are JSON pointers.
   First run over the consumers (26 Oct 2026): PriceWhisperer trader `market` (3), `orders` (1, request) and the
   trader BFF spec (4), and every Sesame-IDAM service spec, still declare nulls this way.
+- Tooling: the BFF generator's fallback `Error` schema declared `details` with `nullable: true`; it is now
+  `type: [object, 'null']`, so a regenerated 3.1 BFF spec passes this lint.
 
 ### Changed (response validation modes; pass-through is opt-in) — ADR 006
 
