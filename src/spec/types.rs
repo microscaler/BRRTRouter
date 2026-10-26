@@ -271,10 +271,9 @@ pub struct RouteMeta {
     /// `Some(true)` ⇒ real impl controller required; `Some(false)` ⇒ gen stub only;
     /// `None` ⇒ legacy (warn if impl file exists on disk).
     pub x_brrtrouter_impl: Option<bool>,
-    /// `x-brrtrouter-validate-response: true` on a proxied (`x-service`) operation: check the
-    /// downstream's 2xx JSON body against this spec's response schema. Without it the body passes
-    /// through as the downstream wrote it (the downstream validates its own responses), and the
-    /// BFF never parses or re-serialises it.
+    /// `x-brrtrouter-validate-response: true`: this operation's responses are always checked against
+    /// their schema, whatever `BRRTR_RESPONSE_VALIDATION` says (ADR 006 §1). For contract-critical
+    /// routes in an environment that samples.
     pub validate_proxied_response: bool,
 }
 

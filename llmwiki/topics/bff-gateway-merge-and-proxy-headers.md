@@ -91,14 +91,15 @@ domain, A and AAAA). pp evidence: trader-bff ~6 ms CPU per proxied request (v0.1
 `proxy_untyped` used to parse every downstream body into a `Value`; the service then validated it
 against the BFF's response schema and serialised it again (a 200 KB body: 22k allocations, 1.8 ms).
 
-- A **2xx** body with a JSON Content-Type is now kept as text: `HandlerResponse.body` is
+- **Behind `BRRTR_PROXY_PASSTHROUGH=on` (default off, ADR 006).** A **2xx** body with a JSON Content-Type is kept as text: `HandlerResponse.body` is
   `Value::String(<the downstream's bytes>)` and the internal header
   `x-brrtrouter-raw-encoding: json` (`server::response::RAW_BODY_ENCODING_JSON`) marks it. The writer
   emits it verbatim (default Content-Type `application/json`) and strips the marker.
-- Response validation **skips** marked bodies unless the operation sets
-  `x-brrtrouter-validate-response: true` (`RouteMeta::validate_proxied_response`); then the text is
-  parsed for the check and still written unchanged. Use it when the downstream is not a BRRTRouter
-  service that validates its own responses.
+- Response validation follows `BRRTR_RESPONSE_VALIDATION` (`full` default, `sample:<rate>`, `off`;
+  ADR 006): when a marked body is checked, the text is parsed for the check and still written unchanged.
+  `x-brrtrouter-validate-response: true` (`RouteMeta::validate_proxied_response`) forces `full` for
+  an operation. With `full`, pass-through saves only the re-serialisation (bench: ~20 % of bytes, no
+  latency change at 200 KB); the parse + validate cost goes only with `sample`/`off`.
 - Non-2xx, non-JSON, empty and non-UTF-8 bodies keep the parsed path (error reasons are read for
   logs/metrics). Middleware `after()` hooks that read `res.body` as JSON see a string for proxied 2xx
   responses; compression handles it (it gzips the string's bytes).

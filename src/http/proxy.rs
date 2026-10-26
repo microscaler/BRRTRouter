@@ -583,6 +583,21 @@ fn response_body_value(buf: &[u8], content_type: Option<&str>) -> Value {
     Value::String(String::from_utf8_lossy(buf).into_owned())
 }
 
+/// Whether proxied 2xx JSON bodies pass through as bytes (`BRRTR_PROXY_PASSTHROUGH=on|true|1`, read once;
+/// default off: parse, validate, re-serialise, as before). ADR 006 §2.
+#[must_use]
+pub fn passthrough_enabled() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| {
+        std::env::var("BRRTR_PROXY_PASSTHROUGH").is_ok_and(|v| {
+            matches!(
+                v.trim().to_ascii_lowercase().as_str(),
+                "on" | "true" | "1" | "yes"
+            )
+        })
+    })
+}
+
 /// The downstream body as JSON text to pass through untouched, or the bytes back when it is not
 /// one: a non-2xx status, a Content-Type that is not JSON, an empty body or invalid UTF-8.
 fn passthrough_body(
@@ -902,7 +917,12 @@ pub fn proxy_untyped(
     path_template: &str,
 ) -> HandlerResponse {
     let started = std::time::Instant::now();
-    let result = proxy_untyped_inner(req, downstream_service, path_template);
+    let result = proxy_untyped_inner(
+        req,
+        downstream_service,
+        path_template,
+        passthrough_enabled(),
+    );
     record_call(req, downstream_service, &result, started);
     match result {
         Ok(res) => res,
@@ -941,6 +961,7 @@ fn proxy_untyped_inner(
     req: &HandlerRequest,
     downstream_service: &str,
     path_template: &str,
+    passthrough_on: bool,
 ) -> Result<HandlerResponse, ProxyError> {
     let (_connection, mut rsp) = send_downstream(
         req,
@@ -963,10 +984,16 @@ fn proxy_untyped_inner(
         .get(http_legacy::header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok());
     let status = rsp.status().as_u16();
-    // A 2xx JSON body passes through as the downstream wrote it: no parse into a Value here and no
-    // serialisation again on the way out (2x a 200 KB body's cost, BRRTRouter audit pass 2). Errors
-    // keep the parsed path: their reason is read for logs and metrics.
-    let (body_json, raw_json) = match passthrough_body(buf, status, content_type) {
+    // With pass-through on (ADR 006 §2), a 2xx JSON body goes back as the downstream wrote it: no
+    // parse into a Value here and no serialisation again on the way out; response validation then
+    // parses it only when the mode checks it. Errors keep the parsed path: their reason is read for
+    // logs and metrics. Off (the default), the body is parsed as it always was.
+    let passthrough = if passthrough_on {
+        passthrough_body(buf, status, content_type)
+    } else {
+        Err(buf)
+    };
+    let (body_json, raw_json) = match passthrough {
         Ok(text) => (Value::String(text), true),
         Err(buf) => (response_body_value(&buf, content_type), false),
     };
@@ -2509,12 +2536,30 @@ mod tests {
     }
 
     #[test]
+    fn proxy_untyped_parses_a_2xx_json_body_when_pass_through_is_off() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        std::env::remove_var("POD_NAMESPACE");
+        let (port, _captured) = spawn_capture_downstream();
+        std::env::set_var("SERVICE_HTTP_PORT", port.to_string());
+        let res = proxy_untyped_inner(&empty_request(Method::GET), "127.0.0.1", "/search", false)
+            .expect("proxied");
+        std::env::remove_var("SERVICE_HTTP_PORT");
+
+        assert_eq!(res.body, serde_json::json!({"ok": true}));
+        assert_eq!(
+            res.get_header(crate::server::response::RAW_BODY_ENCODING_HEADER),
+            None
+        );
+    }
+
+    #[test]
     fn proxy_untyped_passes_a_2xx_json_body_through_as_text() {
         let _lock = ENV_LOCK.lock().unwrap();
         std::env::remove_var("POD_NAMESPACE");
         let (port, _captured) = spawn_capture_downstream();
         std::env::set_var("SERVICE_HTTP_PORT", port.to_string());
-        let res = proxy_untyped(&empty_request(Method::GET), "127.0.0.1", "/search");
+        let res = proxy_untyped_inner(&empty_request(Method::GET), "127.0.0.1", "/search", true)
+            .expect("proxied");
         std::env::remove_var("SERVICE_HTTP_PORT");
 
         assert_eq!(res.status, 200);
