@@ -50,7 +50,7 @@ regex = "1.12.3"
 smallvec = { version = "1.13", features = ["serde"] }  # Stack-allocated vectors for hot path (JSF: no heap in dispatch)
 url = "2.5.8"
 clap = { version = "4.6.0", features = ["cargo", "env", "derive"] }
-askama = { version = "0.15.6", features = ["full"] }
+askama = { version = "0.16.1", features = ["full"] }
 notify = "8"
 memory-stats = "1.1"  # For cross-platform memory monitoring
 tikv-jemallocator = { version = "0.7", optional = true }
