@@ -510,6 +510,7 @@ fn connect_downstream_with<T>(
     resolved: Resolved,
     lookup: &dyn Fn(&str, u16) -> Result<SocketAddr, ProxyError>,
     connect: impl Fn(SocketAddr) -> std::io::Result<T>,
+    retry_delay: Option<Duration>,
 ) -> Result<T, ProxyError> {
     let connect_error =
         |e: std::io::Error| classify_transport_error(ProxyTransportKind::Connect, &e.to_string());
@@ -522,7 +523,7 @@ fn connect_downstream_with<T>(
         }
         // A connect that timed out is not retried: an unreachable downstream would cost the
         // connect timeout twice before the 504 (Codex review on #521).
-        Err(e) => match connect_retry_delay().filter(|_| !is_timeout(&e)) {
+        Err(e) => match retry_delay.filter(|_| !is_timeout(&e)) {
             Some(delay) => {
                 // Yields the coroutine; a plain thread sleeps.
                 may::coroutine::sleep(delay);
@@ -711,8 +712,14 @@ fn send_downstream_once(
     let method = Method::from_bytes(req.method.as_str().as_bytes())
         .map_err(|_e| ProxyError::InvalidMethod)?;
 
-    let mut client =
-        connect_downstream_with(&host, port, target, &system_lookup, HttpClient::connect)?;
+    let mut client = connect_downstream_with(
+        &host,
+        port,
+        target,
+        &system_lookup,
+        HttpClient::connect,
+        connect_retry_delay(),
+    )?;
     client.set_timeout(Some(proxy_timeout()));
 
     let mut proxy_req = client.new_request(method, uri);
@@ -1527,7 +1534,7 @@ mod tests {
                     let lookup = lookup.clone();
                     std::thread::spawn(move || {
                         barrier.wait();
-                        connect_downstream_with(host, 8080, r, &lookup, connect)
+                        connect_downstream_with(host, 8080, r, &lookup, connect, TEST_RETRY)
                     })
                 })
                 .collect();
@@ -1535,7 +1542,7 @@ mod tests {
         } else {
             resolved
                 .into_iter()
-                .map(|r| connect_downstream_with(host, 8080, r, &lookup, connect))
+                .map(|r| connect_downstream_with(host, 8080, r, &lookup, connect, TEST_RETRY))
                 .collect()
         };
         assert!(
@@ -1563,6 +1570,10 @@ mod tests {
         stale_address_scenario("stale-svc-concurrent.test", true);
     }
 
+    /// A short retry pause passed explicitly, so the tests do not depend on
+    /// `PROXY_CONNECT_RETRY_MS` in the environment.
+    const TEST_RETRY: Option<Duration> = Some(Duration::from_millis(1));
+
     #[test]
     fn uncached_address_failure_is_retried_once_without_lookup() {
         use std::sync::atomic::{AtomicUsize, Ordering};
@@ -1576,10 +1587,17 @@ mod tests {
             cached: false,
         };
         let connects = AtomicUsize::new(0);
-        let res = connect_downstream_with("fresh-svc.test", 8080, r, &lookup, |_| {
-            connects.fetch_add(1, Ordering::SeqCst);
-            Err::<(), _>(std::io::Error::from(std::io::ErrorKind::ConnectionRefused))
-        });
+        let res = connect_downstream_with(
+            "fresh-svc.test",
+            8080,
+            r,
+            &lookup,
+            |_| {
+                connects.fetch_add(1, Ordering::SeqCst);
+                Err::<(), _>(std::io::Error::from(std::io::ErrorKind::ConnectionRefused))
+            },
+            TEST_RETRY,
+        );
         assert!(res.is_err());
         assert_eq!(lookups.load(Ordering::SeqCst), 0);
         assert_eq!(
@@ -1598,10 +1616,17 @@ mod tests {
             cached: false,
         };
         let connects = AtomicUsize::new(0);
-        let res = connect_downstream_with("slow-svc.test", 8080, r, &lookup, |_| {
-            connects.fetch_add(1, Ordering::SeqCst);
-            Err::<(), _>(std::io::Error::from(std::io::ErrorKind::TimedOut))
-        });
+        let res = connect_downstream_with(
+            "slow-svc.test",
+            8080,
+            r,
+            &lookup,
+            |_| {
+                connects.fetch_add(1, Ordering::SeqCst);
+                Err::<(), _>(std::io::Error::from(std::io::ErrorKind::TimedOut))
+            },
+            TEST_RETRY,
+        );
         assert!(matches!(res, Err(ProxyError::Timeout)));
         assert_eq!(connects.load(Ordering::SeqCst), 1);
     }
@@ -1615,13 +1640,20 @@ mod tests {
             cached: false,
         };
         let connects = AtomicUsize::new(0);
-        let res = connect_downstream_with("flappy-svc.test", 8080, r, &lookup, |_| {
-            if connects.fetch_add(1, Ordering::SeqCst) == 0 {
-                Err(std::io::Error::from(std::io::ErrorKind::ConnectionRefused))
-            } else {
-                Ok(7u8)
-            }
-        });
+        let res = connect_downstream_with(
+            "flappy-svc.test",
+            8080,
+            r,
+            &lookup,
+            |_| {
+                if connects.fetch_add(1, Ordering::SeqCst) == 0 {
+                    Err(std::io::Error::from(std::io::ErrorKind::ConnectionRefused))
+                } else {
+                    Ok(7u8)
+                }
+            },
+            TEST_RETRY,
+        );
         assert_eq!(res.unwrap(), 7);
     }
 

@@ -56,7 +56,10 @@ fn unknown_operation_and_missing_schema_are_errors() {
         Err(ContractError::UnknownOperation("no_such_op".into()))
     );
     // get_pet's 404 is `application/problem+json`: a JSON-ish schema the server checks too.
-    assert!(c.check("get_pet", 404, &json!({"title": 1})).is_err());
+    assert!(matches!(
+        c.check("get_pet", 404, &json!({"title": 1})),
+        Err(ContractError::Mismatch { status: 404, .. })
+    ));
     assert!(matches!(
         c.check("get_pet", 418, &json!({})),
         Err(ContractError::NoSchema { status: 418, .. })
