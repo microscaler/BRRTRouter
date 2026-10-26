@@ -236,7 +236,10 @@ def test_generated_error_schema_allows_null_details_without_nullable(tmp_path: P
     text = out.read_text()
     assert "nullable" not in text
     spec = yaml.safe_load(text)
-    assert spec["components"]["schemas"]["Error"]["properties"]["details"]["type"] == ["object", "null"]
+    assert spec["components"]["schemas"]["Error"]["properties"]["details"]["type"] == [
+        "object",
+        "null",
+    ]
 
 
 def test_generate_with_security(tmp_path: Path) -> None:
