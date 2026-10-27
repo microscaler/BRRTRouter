@@ -558,7 +558,7 @@ mod tests {
         let addr = listener.local_addr().unwrap();
         drop(listener);
         let handle = HttpServer(ForbiddenJsonService).start(addr).unwrap();
-        let resp = send_request(&addr, "POST /form HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: 11\r\n\r\nfoo=bar&baz=1");
+        let resp = send_request(&addr, "POST /form HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: 13\r\n\r\nfoo=bar&baz=1");
         unsafe { handle.coroutine().cancel() };
         let first = resp.lines().next().unwrap_or("");
         assert!(
