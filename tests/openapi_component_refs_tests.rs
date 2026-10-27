@@ -129,3 +129,44 @@ paths: {}
         "{err}"
     );
 }
+
+/// N2 — dangling response `$ref` → the error names the ref, the operation and the spec file.
+#[test]
+fn refs_negative_n2_dangling_response_names_ref_and_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("dangling_response.yaml");
+    std::fs::write(
+        &path,
+        r##"openapi: 3.1.0
+info: { title: dangling, version: "1" }
+paths:
+  /widgets:
+    get:
+      operationId: list_widgets
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { type: object }
+        "404":
+          $ref: "#/components/responses/NotFound"
+components:
+  responses: {}
+"##,
+    )
+    .unwrap();
+    let file = path.to_str().unwrap();
+    let err = load_spec(file).expect_err("N2 must fail");
+    let msg = format!("{err:#}");
+    assert!(msg.contains(file), "N2 names the file: {msg}");
+    assert!(
+        msg.contains("#/components/responses/NotFound"),
+        "N2 names the ref: {msg}"
+    );
+    assert!(
+        msg.contains("components.responses.NotFound"),
+        "N2 says what is missing: {msg}"
+    );
+    assert!(msg.contains("/widgets"), "N2 names the path: {msg}");
+}

@@ -369,7 +369,7 @@ pub fn extract_request_body_details(
             issues.push(ValidationIssue::new(
                 "requestBody".to_string(),
                 "UnresolvableRequestBodyRef",
-                format!("failed to resolve requestBody $ref: {e}"),
+                unresolved_ref_message("requestBody", "requestBodies", rb_ref, &e),
             ));
             return (None, false, content_types, issues);
         }
@@ -409,6 +409,29 @@ pub fn extract_request_body_details(
         expand_schema_refs(spec, val);
     }
     (schema, required, content_types, issues)
+}
+
+/// Message for a `$ref` that does not resolve: names the ref and, when it points into
+/// `#/components/{section}/`, says the spec does not define it there.
+fn unresolved_ref_message<T>(
+    what: &str,
+    section: &str,
+    reference: &ObjectOrReference<T>,
+    err: &impl std::fmt::Display,
+) -> String {
+    match reference {
+        ObjectOrReference::Ref { ref_path, .. } => {
+            let prefix = format!("#/components/{section}/");
+            match ref_path.strip_prefix(&prefix) {
+                Some(name) => format!(
+                    "{what} $ref {ref_path} does not resolve: the spec defines no \
+                     components.{section}.{name} ({err})"
+                ),
+                None => format!("{what} $ref {ref_path} does not resolve ({err})"),
+            }
+        }
+        ObjectOrReference::Object(_) => format!("failed to resolve {what}: {err}"),
+    }
 }
 
 /// Extract response schemas and examples from an OpenAPI operation
@@ -475,7 +498,7 @@ pub fn extract_response_schema_and_example_with_issues(
                     issues.push(ValidationIssue::new(
                         format!("responses.{status_str}"),
                         "UnresolvableResponseRef",
-                        format!("failed to resolve response $ref: {e}"),
+                        unresolved_ref_message("response", "responses", resp_ref, &e),
                     ));
                     continue;
                 }

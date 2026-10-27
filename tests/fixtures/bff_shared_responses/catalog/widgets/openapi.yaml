@@ -1,0 +1,148 @@
+openapi: 3.1.0
+info:
+  title: Widgets
+  version: '1.0'
+security:
+  - bearerAuth: []
+paths:
+  /widgets:
+    get:
+      operationId: list_widgets
+      tags: [widgets]
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: A page of widgets
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WidgetList'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    post:
+      operationId: create_widgets
+      tags: [widgets]
+      requestBody:
+        $ref: '#/components/requestBodies/WidgetInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Widget'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /widgets/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/WidgetId'
+    get:
+      operationId: get_widgets
+      tags: [widgets]
+      responses:
+        '200':
+          description: One widgets item
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Widget'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      operationId: delete_widgets
+      tags: [widgets]
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+  headers:
+    RequestId:
+      description: Correlation id for the failed request
+      schema:
+        type: string
+  examples:
+    SampleWidget:
+      value:
+        name: sample
+  requestBodies:
+    WidgetInput:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Widget'
+          examples:
+            sample:
+              $ref: '#/components/examples/SampleWidget'
+  responses:
+    NotFound:
+      description: No such item
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    BadRequest:
+      description: The request was invalid
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    RateLimited:
+      description: Too many requests
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    WidgetId:
+      type: string
+    Widget:
+      type: object
+      required: [name]
+      properties:
+        id:
+          $ref: '#/components/schemas/WidgetId'
+        name:
+          type: string
+    WidgetList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Widget'
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
