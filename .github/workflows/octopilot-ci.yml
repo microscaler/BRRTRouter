@@ -34,7 +34,9 @@ jobs:
       packages: write
       id-token: write
       pull-requests: write
-      actions: read     # acceptance-promote downloads this run's build results (octopilot/actions#16)
+      # write: trim-artifacts deletes old run artifacts before uploading (read only, 915 refused deletes ran Detect past
+      # its limit); acceptance-promote downloads this run's build results (octopilot/actions#16).
+      actions: write
     uses: octopilot/actions/.github/workflows/pipeline.yml@main
     with:
       # v1.2.2: a tagged op that takes --artifact-key and forwards the shared sccache (OP_SCCACHE).
@@ -44,6 +46,9 @@ jobs:
       # setting). Push runs upload the pet_store image to ttl.sh over ms02's 12 Mbit/s uplink.
       runner: ${{ github.event_name == 'pull_request' && 'ubuntu-24.04' || '["self-hosted", "linux", "x64", "microscaler"]' }}
       sccache: ${{ github.event_name != 'pull_request' }}
+      # Image build and push on GitHub-hosted runners: pushes from ms02 share its ~15 Mbit/s uplink with
+      # PriceWhisperer's releases.
+      artifacts_runner: ubuntu-24.04
       integration: false
     # Pass explicitly (not `inherit`): inherit does not reliably cross the
     # org boundary to octopilot/actions.
