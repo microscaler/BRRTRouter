@@ -442,7 +442,8 @@ where
         .name(name.clone())
         .spawn(move || {
             let handler = handler;
-            let mut stack_probe = crate::stack_probe::StackProbe::for_current(&name);
+            let mut stack_probe =
+                crate::stack_probe::StackProbe::for_current_sized(&name, Some(stack_size));
             // Main event loop: process requests until channel closes
             for req in rx.iter() {
                 let req = *req;
@@ -640,7 +641,8 @@ where
         .name(effective_name.to_string())
         .spawn(move || {
             let handler = handler;
-            let mut stack_probe = crate::stack_probe::StackProbe::for_current(&probe_name);
+            let mut stack_probe =
+                crate::stack_probe::StackProbe::for_current_sized(&probe_name, Some(stack_size));
             // Main event loop: process requests until channel closes
             for req in rx.iter() {
                 let req = *req;
