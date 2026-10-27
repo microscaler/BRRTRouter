@@ -32,6 +32,8 @@ use std::time::{Duration, Instant};
 
 use http_legacy::{Method, Uri};
 use may_minihttp::client::{Client, ClientErrorKind, ClientStats, HttpClient, RedirectPolicy};
+
+use super::traced_client::TracedClient;
 use rustls::{ClientConfig, RootCertStore};
 use rustls_platform_verifier::BuilderVerifierExt;
 use tracing::{error, warn};
@@ -545,9 +547,9 @@ impl PoolSettings {
 
 /// The process-wide fetch pool, built on first use. `None` (cached) when pooling is off or the pool
 /// could not be built; fetches then open a connection each.
-static FETCH_POOL: OnceLock<Option<Client>> = OnceLock::new();
+static FETCH_POOL: OnceLock<Option<TracedClient>> = OnceLock::new();
 
-fn fetch_pool() -> Option<&'static Client> {
+fn fetch_pool() -> Option<&'static TracedClient> {
     FETCH_POOL
         .get_or_init(|| {
             let settings = PoolSettings::from_lookup(|name| std::env::var(name).ok());
@@ -570,7 +572,7 @@ fn fetch_pool() -> Option<&'static Client> {
                 .redirect_policy(RedirectPolicy::None)
                 .build();
             match built {
-                Ok(client) => Some(client),
+                Ok(client) => Some(TracedClient::new(client, true)),
                 Err(error) => {
                     error!(error = %error, "HTTP fetch pool could not be built; fetches open a connection each");
                     None
@@ -581,14 +583,14 @@ fn fetch_pool() -> Option<&'static Client> {
 }
 
 /// The fetch pool if it has been started (does not start it).
-pub(super) fn fetch_pool_if_started() -> Option<&'static Client> {
+pub(super) fn fetch_pool_if_started() -> Option<&'static TracedClient> {
     FETCH_POOL.get().and_then(Option::as_ref)
 }
 
 /// Connection reuse statistics of the fetch pool (`None` when pooling is off or failed to start).
 #[must_use]
 pub fn fetch_pool_stats() -> Option<ClientStats> {
-    fetch_pool().map(Client::stats)
+    fetch_pool().map(TracedClient::stats)
 }
 
 pub(super) fn empty_roots_tls_config() -> Option<Arc<ClientConfig>> {
@@ -609,7 +611,7 @@ pub(super) fn empty_roots_tls_config() -> Option<Arc<ClientConfig>> {
 fn pool_for(
     url: &Url,
     options: &HttpFetchOptions,
-) -> Result<Option<&'static Client>, HttpFetchError> {
+) -> Result<Option<&'static TracedClient>, HttpFetchError> {
     if options
         .extra_headers
         .iter()
@@ -627,7 +629,7 @@ fn pool_for(
 }
 
 fn fetch_pooled(
-    pool: &Client,
+    pool: &TracedClient,
     url: &Url,
     method: Method,
     body: Option<&[u8]>,
@@ -637,25 +639,16 @@ fn fetch_pooled(
         .request(method, url.as_str())
         .map_err(|e| HttpFetchError::InvalidUrl(e.to_string()))?
         .timeout(options.timeout);
-    let mut caller_traceparent = false;
     for (name, value) in &options.extra_headers {
         if let (Ok(name), Ok(value)) = (
             http_legacy::HeaderName::try_from(name.as_str()),
             http_legacy::HeaderValue::from_str(value),
         ) {
-            caller_traceparent |= name.as_str() == "traceparent";
             request = request.header(name, value);
         }
     }
-    // W3C trace context: the call joins the current request's trace, unless the caller set its own.
-    if !caller_traceparent {
-        if let Some(traceparent) = may_tracing::traceparent_of_current() {
-            if let Ok(value) = http_legacy::HeaderValue::from_str(&traceparent) {
-                request =
-                    request.header(http_legacy::HeaderName::from_static("traceparent"), value);
-            }
-        }
-    }
+    // W3C trace context: the traced client adds this call's span as `traceparent`, unless the
+    // caller set its own (see `traced_client`).
     if let Some(bytes) = body {
         request = request.body(bytes.to_vec());
     }
