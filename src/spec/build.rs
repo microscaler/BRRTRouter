@@ -369,7 +369,7 @@ pub fn extract_request_body_details(
             issues.push(ValidationIssue::new(
                 "requestBody".to_string(),
                 "UnresolvableRequestBodyRef",
-                format!("failed to resolve requestBody $ref: {e}"),
+                unresolved_ref_message("requestBody", "requestBodies", rb_ref, &e),
             ));
             return (None, false, content_types, issues);
         }
@@ -409,6 +409,29 @@ pub fn extract_request_body_details(
         expand_schema_refs(spec, val);
     }
     (schema, required, content_types, issues)
+}
+
+/// Message for a `$ref` that does not resolve: names the ref and, when it points into
+/// `#/components/{section}/`, says the spec does not define it there.
+fn unresolved_ref_message<T>(
+    what: &str,
+    section: &str,
+    reference: &ObjectOrReference<T>,
+    err: &impl std::fmt::Display,
+) -> String {
+    match reference {
+        ObjectOrReference::Ref { ref_path, .. } => {
+            let prefix = format!("#/components/{section}/");
+            match ref_path.strip_prefix(&prefix) {
+                Some(name) => format!(
+                    "{what} $ref {ref_path} does not resolve: the spec defines no \
+                     components.{section}.{name} ({err})"
+                ),
+                None => format!("{what} $ref {ref_path} does not resolve ({err})"),
+            }
+        }
+        ObjectOrReference::Object(_) => format!("failed to resolve {what}: {err}"),
+    }
 }
 
 /// Extract response schemas and examples from an OpenAPI operation
@@ -475,7 +498,7 @@ pub fn extract_response_schema_and_example_with_issues(
                     issues.push(ValidationIssue::new(
                         format!("responses.{status_str}"),
                         "UnresolvableResponseRef",
-                        format!("failed to resolve response $ref: {e}"),
+                        unresolved_ref_message("response", "responses", resp_ref, &e),
                     ));
                     continue;
                 }
@@ -655,14 +678,40 @@ pub fn extract_parameters(
     spec: &OpenApiV3Spec,
     params: &Vec<ObjectOrReference<Parameter>>,
 ) -> Vec<ParameterMeta> {
+    extract_parameters_with_issues(spec, params).0
+}
+
+/// Like [`extract_parameters`], and also reports each parameter `$ref` that does not resolve
+/// (e.g. `#/components/parameters/X` the spec does not define) instead of dropping it silently.
+pub fn extract_parameters_with_issues(
+    spec: &OpenApiV3Spec,
+    params: &Vec<ObjectOrReference<Parameter>>,
+) -> (Vec<ParameterMeta>, Vec<ValidationIssue>) {
     let mut out = Vec::new();
+    let mut issues = Vec::new();
     for p in params {
-        let param = match p {
-            ObjectOrReference::Object(obj) => Some(obj),
-            ObjectOrReference::Ref { ref_path, .. } => resolve_parameter_ref(spec, ref_path),
+        let resolved: Option<std::borrow::Cow<'_, Parameter>> = match p {
+            ObjectOrReference::Object(obj) => Some(std::borrow::Cow::Borrowed(obj)),
+            ObjectOrReference::Ref { ref_path, .. } => {
+                match resolve_parameter_ref(spec, ref_path) {
+                    Some(param) => Some(std::borrow::Cow::Borrowed(param)),
+                    // Not a plain component: let oas3 follow a chained ref, or report it.
+                    None => match p.resolve(spec) {
+                        Ok(param) => Some(std::borrow::Cow::Owned(param)),
+                        Err(e) => {
+                            issues.push(ValidationIssue::new(
+                                "parameters".to_string(),
+                                "UnresolvableParameterRef",
+                                unresolved_ref_message("parameter", "parameters", p, &e),
+                            ));
+                            None
+                        }
+                    },
+                }
+            }
         };
 
-        if let Some(param) = param {
+        if let Some(param) = resolved {
             let schema = param.schema.as_ref().and_then(|s| match s {
                 ObjectOrReference::Object(obj) => serde_json::to_value(obj).ok(),
                 ObjectOrReference::Ref { ref_path, .. } => resolve_schema_ref(spec, ref_path)
@@ -679,7 +728,7 @@ pub fn extract_parameters(
             });
         }
     }
-    out
+    (out, issues)
 }
 
 /// Extract the SSE flag from an OpenAPI operation
@@ -999,8 +1048,14 @@ fn push_route_from_operation(
         resolve_operation_security(path, method.as_str(), operation, spec, security_presence);
 
     let mut parameters = Vec::new();
-    parameters.extend(extract_parameters(spec, &item.parameters));
-    parameters.extend(extract_parameters(spec, &operation.parameters));
+    for params in [&item.parameters, &operation.parameters] {
+        let (extracted, param_issues) = extract_parameters_with_issues(spec, params);
+        parameters.extend(extracted);
+        for mut issue in param_issues {
+            issue.location = format!("{location} → {}", issue.location);
+            issues.push(issue);
+        }
+    }
 
     let estimated_request_body_bytes = estimate_body_size(request_schema.as_ref());
     let x_brrtrouter_stack_size = extract_stack_size_override(operation);

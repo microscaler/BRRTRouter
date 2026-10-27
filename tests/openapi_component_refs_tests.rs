@@ -129,3 +129,135 @@ paths: {}
         "{err}"
     );
 }
+
+/// N2 — dangling response `$ref` → the error names the ref, the operation and the spec file.
+#[test]
+fn refs_negative_n2_dangling_response_names_ref_and_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("dangling_response.yaml");
+    std::fs::write(
+        &path,
+        r##"openapi: 3.1.0
+info: { title: dangling, version: "1" }
+paths:
+  /widgets:
+    get:
+      operationId: list_widgets
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { type: object }
+        "404":
+          $ref: "#/components/responses/NotFound"
+components:
+  responses: {}
+"##,
+    )
+    .unwrap();
+    let file = path.to_str().unwrap();
+    let err = load_spec(file).expect_err("N2 must fail");
+    let msg = format!("{err:#}");
+    assert!(msg.contains(file), "N2 names the file: {msg}");
+    assert!(
+        msg.contains("#/components/responses/NotFound"),
+        "N2 names the ref: {msg}"
+    );
+    assert!(
+        msg.contains("components.responses.NotFound"),
+        "N2 says what is missing: {msg}"
+    );
+    assert!(msg.contains("/widgets"), "N2 names the path: {msg}");
+}
+
+/// N3 — dangling parameter `$ref` (operation- or path-level) → the error names the ref, the
+/// operation and the spec file instead of the parameter silently vanishing.
+#[test]
+fn refs_negative_n3_dangling_parameter_names_ref_and_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("dangling_parameter.yaml");
+    std::fs::write(
+        &path,
+        r##"openapi: 3.1.0
+info: { title: dangling, version: "1" }
+paths:
+  /widgets:
+    get:
+      operationId: list_widgets
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { type: object }
+components:
+  parameters: {}
+"##,
+    )
+    .unwrap();
+    let file = path.to_str().unwrap();
+    let err = load_spec(file).expect_err("N3 must fail");
+    let msg = format!("{err:#}");
+    assert!(msg.contains(file), "N3 names the file: {msg}");
+    assert!(msg.contains("UnresolvableParameterRef"), "N3 kind: {msg}");
+    assert!(
+        msg.contains("#/components/parameters/Limit"),
+        "N3 names the ref: {msg}"
+    );
+    assert!(
+        msg.contains("components.parameters.Limit"),
+        "N3 says what is missing: {msg}"
+    );
+    assert!(
+        msg.contains("/widgets → GET"),
+        "N3 names the operation: {msg}"
+    );
+}
+
+/// P7 — a parameter `$ref` to a defined component still resolves.
+#[test]
+fn refs_positive_p7_parameter_ref() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("parameter_ref.yaml");
+    std::fs::write(
+        &path,
+        r##"openapi: 3.1.0
+info: { title: params, version: "1" }
+paths:
+  /widgets:
+    parameters:
+      - $ref: "#/components/parameters/Tenant"
+    get:
+      operationId: list_widgets
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { type: object }
+components:
+  parameters:
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer }
+    Tenant:
+      name: X-Tenant
+      in: header
+      schema: { type: string }
+"##,
+    )
+    .unwrap();
+    let (routes, _) = load_spec(path.to_str().unwrap()).expect("P7 loads");
+    let names: Vec<&str> = routes[0]
+        .parameters
+        .iter()
+        .map(|p| p.name.as_str())
+        .collect();
+    assert_eq!(names, ["X-Tenant", "limit"]);
+}

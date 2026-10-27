@@ -141,7 +141,8 @@ fn prepare_spec_value(val: &mut serde_json::Value) -> anyhow::Result<()> {
 /// - The spec doesn't conform to OpenAPI 3.x
 /// - Route extraction fails
 pub fn load_spec(file_path: &str) -> anyhow::Result<(Vec<RouteMeta>, String)> {
-    let content = std::fs::read_to_string(file_path)?;
+    let content =
+        std::fs::read_to_string(file_path).map_err(|e| anyhow::anyhow!("{file_path}: {e}"))?;
     let mut value: serde_json::Value =
         if file_path.ends_with(".yaml") || file_path.ends_with(".yml") {
             serde_yaml::from_str(&content)?
@@ -161,7 +162,10 @@ pub fn load_spec(file_path: &str) -> anyhow::Result<(Vec<RouteMeta>, String)> {
         .trim_matches('_')
         .to_string();
 
-    let routes = build_routes_with_security_presence(&spec, &title, Some(&security_presence))?;
+    // Name the file: a merged or generated spec's dangling `$ref` is otherwise reported with no
+    // hint of which spec holds it.
+    let routes = build_routes_with_security_presence(&spec, &title, Some(&security_presence))
+        .map_err(|e| anyhow::anyhow!("{file_path}: {e}"))?;
     Ok((routes, title))
 }
 
@@ -190,7 +194,8 @@ pub fn load_spec_full(
     std::collections::HashMap<String, SecurityScheme>,
     String,
 )> {
-    let content = std::fs::read_to_string(file_path)?;
+    let content =
+        std::fs::read_to_string(file_path).map_err(|e| anyhow::anyhow!("{file_path}: {e}"))?;
     let mut value: serde_json::Value =
         if file_path.ends_with(".yaml") || file_path.ends_with(".yml") {
             serde_yaml::from_str(&content)?
@@ -210,7 +215,10 @@ pub fn load_spec_full(
         .trim_matches('_')
         .to_string();
 
-    let routes = build_routes_with_security_presence(&spec, &title, Some(&security_presence))?;
+    // Name the file: a merged or generated spec's dangling `$ref` is otherwise reported with no
+    // hint of which spec holds it.
+    let routes = build_routes_with_security_presence(&spec, &title, Some(&security_presence))
+        .map_err(|e| anyhow::anyhow!("{file_path}: {e}"))?;
     let schemes = extract_security_schemes(&spec);
     Ok((routes, schemes, title))
 }

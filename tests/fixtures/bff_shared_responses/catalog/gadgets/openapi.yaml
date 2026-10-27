@@ -1,0 +1,148 @@
+openapi: 3.1.0
+info:
+  title: Gadgets
+  version: '1.0'
+security:
+  - bearerAuth: []
+paths:
+  /gadgets:
+    get:
+      operationId: list_gadgets
+      tags: [gadgets]
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: A page of gadgets
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GadgetList'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    post:
+      operationId: create_gadgets
+      tags: [gadgets]
+      requestBody:
+        $ref: '#/components/requestBodies/GadgetInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Gadget'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /gadgets/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/GadgetId'
+    get:
+      operationId: get_gadgets
+      tags: [gadgets]
+      responses:
+        '200':
+          description: One gadgets item
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Gadget'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      operationId: delete_gadgets
+      tags: [gadgets]
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+  headers:
+    RequestId:
+      description: Correlation id for the failed request
+      schema:
+        type: string
+  examples:
+    SampleGadget:
+      value:
+        name: sample
+  requestBodies:
+    GadgetInput:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Gadget'
+          examples:
+            sample:
+              $ref: '#/components/examples/SampleGadget'
+  responses:
+    NotFound:
+      description: No such item
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    BadRequest:
+      description: The request was invalid
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    RateLimited:
+      description: Too many requests
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    GadgetId:
+      type: string
+    Gadget:
+      type: object
+      required: [name]
+      properties:
+        id:
+          $ref: '#/components/schemas/GadgetId'
+        name:
+          type: string
+    GadgetList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Gadget'
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
