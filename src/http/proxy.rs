@@ -33,10 +33,11 @@ use std::time::{Duration, Instant};
 use http_legacy::{HeaderMap, HeaderName, HeaderValue, Method, Uri};
 use may_minihttp::client::{
     Client, ClientError, ClientErrorKind, HttpClient, RedirectPolicy, Resolver,
-    Response as DownstreamResponse, StreamingResponse,
+    Response as DownstreamResponse,
 };
 use serde_json::Value;
 
+use super::traced_client::{TracedClient, TracedResponse};
 use crate::dispatcher::{HandlerRequest, HandlerResponse, HeaderVec};
 use crate::router::ParamVec;
 use crate::server::request::parse_query_params;
@@ -912,15 +913,15 @@ impl Resolver for ProxyResolver {
     }
 }
 
-static PROXY_POOL: OnceLock<Option<Client>> = OnceLock::new();
+static PROXY_POOL: OnceLock<Option<TracedClient>> = OnceLock::new();
 
 /// The proxy pool if it has been started (does not start it).
-pub(super) fn proxy_pool_if_started() -> Option<&'static Client> {
+pub(super) fn proxy_pool_if_started() -> Option<&'static TracedClient> {
     PROXY_POOL.get().and_then(Option::as_ref)
 }
 
 /// The proxy's connection pool; `None` when it is off or could not be built.
-fn proxy_pool() -> Option<&'static Client> {
+fn proxy_pool() -> Option<&'static TracedClient> {
     PROXY_POOL.get_or_init(|| {
         let settings = ProxyPoolSettings::from_lookup(|name| std::env::var(name).ok());
         if !settings.enabled {
@@ -941,7 +942,8 @@ fn proxy_pool() -> Option<&'static Client> {
             .max_request_header_bytes(64 * 1024)
             .build();
         match built {
-            Ok(pool) => Some(pool),
+            // The proxy records its calls' durations itself (`record_call`, with its reasons).
+            Ok(pool) => Some(TracedClient::new(pool, false)),
             Err(error) => {
                 tracing::error!(error = %error, "proxy connection pool could not be built; proxied calls open a connection each");
                 None
@@ -954,11 +956,17 @@ fn proxy_pool() -> Option<&'static Client> {
 /// Connection reuse statistics of the proxy pool (`None` when pooling is off).
 #[must_use]
 pub fn proxy_pool_stats() -> Option<may_minihttp::client::ClientStats> {
-    proxy_pool().map(Client::stats)
+    proxy_pool().map(TracedClient::stats)
 }
 
-/// One pooled attempt. Headers and body are moved into the request, not copied.
-fn send_pooled_once(pool: &Client, prepared: Prepared) -> Result<StreamingResponse, ProxyError> {
+/// One pooled attempt, traced as a client span under the handler request's span (see
+/// `traced_client`). Headers and body are moved into the request, not copied.
+fn send_pooled_once(
+    pool: &TracedClient,
+    req: &HandlerRequest,
+    route: &str,
+    prepared: Prepared,
+) -> Result<TracedResponse, ProxyError> {
     let url = format!(
         "http://{}{}",
         crate::http::host_header_value(&prepared.host, prepared.port, 80),
@@ -967,7 +975,10 @@ fn send_pooled_once(pool: &Client, prepared: Prepared) -> Result<StreamingRespon
     let mut request = pool
         .request(prepared.method, &url)
         .map_err(|_e| ProxyError::invalid_path(ProxyPathReason::InvalidUri))?
-        .timeout(proxy_timeout());
+        .timeout(proxy_timeout())
+        .route(route)
+        .parent(&req.span)
+        .forwarded_trace_context();
     // `HeaderMap::into_iter` names a header once, then yields its further values with `None`.
     let mut last: Option<HeaderName> = None;
     for (name, value) in prepared.headers {
@@ -1005,12 +1016,12 @@ fn pooled_error(error: std::io::Error) -> ProxyError {
 /// retried. (The pool itself also replaces an idle connection the downstream closed, and retries
 /// a GET/HEAD once when a reused connection fails.)
 fn send_downstream_pooled(
-    pool: &Client,
+    pool: &TracedClient,
     req: &HandlerRequest,
     downstream_service: &str,
     path_template: &str,
     default_accept: &str,
-) -> Result<StreamingResponse, ProxyError> {
+) -> Result<TracedResponse, ProxyError> {
     // Built per attempt (a retry is rare), so the first attempt can move it into the request.
     let attempt = || {
         let prepared = prepare_downstream(
@@ -1020,7 +1031,7 @@ fn send_downstream_pooled(
             default_accept,
             false,
         )?;
-        send_pooled_once(pool, prepared)
+        send_pooled_once(pool, req, route_of(path_template), prepared)
     };
     match attempt() {
         Err(ProxyError::Connect) => {
@@ -1053,7 +1064,7 @@ pub fn proxy_sse(
     let started = std::time::Instant::now();
     let result = proxy_sse_inner(req, downstream_service, path_template);
     // for a stream, the time to the downstream's response headers
-    record_call(req, downstream_service, &result, started);
+    record_call(req, downstream_service, path_template, &result, started);
     match result {
         Ok(res) => res,
         Err(e) => proxy_error_response(&e),
@@ -1242,7 +1253,7 @@ pub fn proxy_untyped(
         path_template,
         passthrough_enabled(),
     );
-    record_call(req, downstream_service, &result, started);
+    record_call(req, downstream_service, path_template, &result, started);
     match result {
         Ok(res) => res,
         Err(e) => proxy_error_response(&e),
@@ -1254,6 +1265,7 @@ pub fn proxy_untyped(
 fn record_call(
     req: &HandlerRequest,
     downstream_service: &str,
+    path_template: &str,
     result: &Result<HandlerResponse, ProxyError>,
     started: std::time::Instant,
 ) {
@@ -1270,10 +1282,19 @@ fn record_call(
     super::client_metrics::record(
         downstream_service,
         req.method.as_str(),
+        Some(route_of(path_template)),
         status,
         error,
         started.elapsed(),
     );
+}
+
+/// The low-cardinality route of a downstream path template: the template itself, without any query
+/// part (`{param}` placeholders stay placeholders; no ids).
+fn route_of(path_template: &str) -> &str {
+    path_template
+        .split_once('?')
+        .map_or(path_template, |(path, _)| path)
 }
 
 fn proxy_untyped_inner(

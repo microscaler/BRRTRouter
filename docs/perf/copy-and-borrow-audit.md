@@ -319,6 +319,23 @@ upstream idle timeout, Sesame's server keep-alive), or a pooled connection can b
 peer just as it is reused. The liveness check catches a close that has already arrived; the
 GET/HEAD retry covers the race. Per-host caps bound how many sockets one slow downstream can hold.
 
+## BRRTRouter — pass 8: client spans (27 Oct 2026)
+
+Outbound calls through the pools are OpenTelemetry client spans (`http::traced_client`), with may_minihttp's
+`tracing` feature adding connect/write/wait/body spans under them. The cost, on `bff_proxy_20k`
+(`BRRTR_BENCH_LOG=off`, medians of seven interleaved runs, ms02):
+
+| configuration | allocs/call | µs/call | CPU s/run |
+|---|---:|---:|---:|
+| pass 7, no subscriber | 2362.3 | 253.9 | 4.55 |
+| pass 8, no subscriber | 2360.3 | 260.7 | 4.58 |
+| pass 7, OpenTelemetry layer | 2401.3 | 258.3 | 4.80 |
+| pass 8, OpenTelemetry layer | 2422.3 | 261.7 | 4.85 |
+
+With tracing disabled, no allocation is added, and the metrics lookup saves two. With the OpenTelemetry layer,
+the client span costs 1–2% CPU on this loopback call and 21 allocations: `tracing-opentelemetry` stores each
+attribute as an owned `String`.
+
 ## For the PriceWhisperer pass
 
 - benzinga-analyst-ingestor startup pass clones the whole JSON response 3–4× per 50-ticker
