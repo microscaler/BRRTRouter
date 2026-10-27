@@ -23,8 +23,8 @@ pub use accept_query::{format_accept_query, parse_accept_query, ACCEPT_QUERY_HEA
 pub use method_ext::{is_query_method, method_allows_automatic_retry, method_query};
 
 pub use fetch::{
-    fetch_delete, fetch_get, fetch_get_full, fetch_get_text_with_retry, fetch_patch, fetch_post,
-    fetch_query, HttpFetchError, HttpFetchOptions, HttpGetResponse,
+    fetch_delete, fetch_get, fetch_get_full, fetch_get_text_with_retry, fetch_patch,
+    fetch_pool_stats, fetch_post, fetch_query, HttpFetchError, HttpFetchOptions, HttpGetResponse,
 };
 pub use openapi_query::{
     encode_query_form_explode, encode_query_form_no_explode, encode_query_styled,
@@ -39,8 +39,8 @@ pub use problem::{
 pub use proxy::{
     classify_transport_error, client_pool_key, downstream_host, downstream_http_port,
     encode_query_string, proxy_error_http_status, proxy_error_reason_code, proxy_error_response,
-    proxy_error_title, proxy_sse, proxy_untyped, query_params_match_raw, raw_query_is_wire_safe,
-    resolve_downstream_target, resolve_path_only, resolve_path_template,
+    proxy_error_title, proxy_pool_stats, proxy_sse, proxy_untyped, query_params_match_raw,
+    raw_query_is_wire_safe, resolve_downstream_target, resolve_path_only, resolve_path_template,
     skip_forward_request_header, skip_forward_response_header, ProxyError, ProxyPathReason,
     ProxyTransportKind, PROXY_SSE_IDLE_ENV,
 };

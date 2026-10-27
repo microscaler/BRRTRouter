@@ -14,6 +14,19 @@
 //! For an event stream the duration is the time to the downstream's response headers, not the stream's life.
 //!
 //! Nothing is rendered until the first proxied call, so services that proxy nothing export nothing new.
+//!
+//! The keep-alive pools behind `fetch_*` and the proxy are rendered too, once each pool has started
+//! (`pool` is `fetch` or `proxy`), all counters since process start:
+//!
+//! - `brrtrouter_http_client_pool_hits_total{pool}`: requests sent on a reused connection
+//! - `brrtrouter_http_client_pool_misses_total{pool}`: connections opened
+//! - `brrtrouter_http_client_pool_evictions_total{pool,reason}`: connections closed instead of
+//!   reused. `reason="expired"`: idle past the idle timeout or past the lifetime;
+//!   `reason="discarded"`: found closed by the server, left unusable by its response, or failed.
+//! - `brrtrouter_http_client_pool_waits_total{pool}`: requests that waited for a connection
+//!   because the per-host or total limit was reached
+//! - `brrtrouter_http_client_pool_stale_retries_total{pool}`: idempotent requests retried once on
+//!   a new connection after a reused one failed
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -82,8 +95,75 @@ fn esc(s: &str) -> String {
         .replace('\n', " ")
 }
 
-/// Append the client histogram in Prometheus text format (nothing before the first call).
+/// Append the client histogram and the pool counters in Prometheus text format (nothing before
+/// the first call / before a pool starts).
 pub fn render_prometheus(body: &mut String) {
+    render_calls(body);
+    let pools: Vec<(&str, may_minihttp::client::ClientStats)> = [
+        ("fetch", super::fetch::fetch_pool_if_started()),
+        ("proxy", super::proxy::proxy_pool_if_started()),
+    ]
+    .into_iter()
+    .filter_map(|(name, pool)| pool.map(|p| (name, p.stats())))
+    .collect();
+    render_pools(body, &pools);
+}
+
+fn render_pools(body: &mut String, pools: &[(&str, may_minihttp::client::ClientStats)]) {
+    if pools.is_empty() {
+        return;
+    }
+    type Counter = (
+        &'static str,
+        &'static str,
+        fn(&may_minihttp::client::ClientStats) -> u64,
+    );
+    const COUNTERS: [Counter; 4] = [
+        (
+            "brrtrouter_http_client_pool_hits_total",
+            "Outbound requests sent on a reused keep-alive connection",
+            |s| s.connections_reused,
+        ),
+        (
+            "brrtrouter_http_client_pool_misses_total",
+            "Outbound connections opened (no idle connection to reuse)",
+            |s| s.connections_created,
+        ),
+        (
+            "brrtrouter_http_client_pool_waits_total",
+            "Outbound requests that waited for a connection at the pool limit",
+            |s| s.pool_waits,
+        ),
+        (
+            "brrtrouter_http_client_pool_stale_retries_total",
+            "Idempotent outbound requests retried once after a reused connection failed",
+            |s| s.stale_retries,
+        ),
+    ];
+    for (name, help, value) in COUNTERS {
+        let _ = writeln!(body, "# HELP {name} {help}");
+        let _ = writeln!(body, "# TYPE {name} counter");
+        for (pool, stats) in pools {
+            let _ = writeln!(body, "{name}{{pool=\"{pool}\"}} {}", value(stats));
+        }
+    }
+    body.push_str("# HELP brrtrouter_http_client_pool_evictions_total Outbound connections closed instead of reused\n");
+    body.push_str("# TYPE brrtrouter_http_client_pool_evictions_total counter\n");
+    for (pool, stats) in pools {
+        let _ = writeln!(
+            body,
+            "brrtrouter_http_client_pool_evictions_total{{pool=\"{pool}\",reason=\"expired\"}} {}",
+            stats.connections_expired
+        );
+        let _ = writeln!(
+            body,
+            "brrtrouter_http_client_pool_evictions_total{{pool=\"{pool}\",reason=\"discarded\"}} {}",
+            stats.connections_discarded
+        );
+    }
+}
+
+fn render_calls(body: &mut String) {
     let calls = CALLS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -132,6 +212,41 @@ pub fn render_prometheus(body: &mut String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn renders_pool_counters_per_pool() {
+        let stats = may_minihttp::client::ClientStats {
+            connections_created: 3,
+            connections_reused: 40,
+            connections_discarded: 2,
+            connections_expired: 1,
+            pool_waits: 5,
+            stale_retries: 1,
+            redirects_followed: 0,
+        };
+        let mut out = String::new();
+        render_pools(&mut out, &[]);
+        assert!(out.is_empty(), "nothing before a pool starts");
+        render_pools(
+            &mut out,
+            &[
+                ("fetch", stats),
+                ("proxy", may_minihttp::client::ClientStats::default()),
+            ],
+        );
+        assert!(out.contains("# TYPE brrtrouter_http_client_pool_hits_total counter"));
+        assert!(out.contains("brrtrouter_http_client_pool_hits_total{pool=\"fetch\"} 40"));
+        assert!(out.contains("brrtrouter_http_client_pool_misses_total{pool=\"fetch\"} 3"));
+        assert!(out.contains("brrtrouter_http_client_pool_waits_total{pool=\"fetch\"} 5"));
+        assert!(out.contains("brrtrouter_http_client_pool_stale_retries_total{pool=\"fetch\"} 1"));
+        assert!(out.contains(
+            "brrtrouter_http_client_pool_evictions_total{pool=\"fetch\",reason=\"expired\"} 1"
+        ));
+        assert!(out.contains(
+            "brrtrouter_http_client_pool_evictions_total{pool=\"fetch\",reason=\"discarded\"} 2"
+        ));
+        assert!(out.contains("brrtrouter_http_client_pool_hits_total{pool=\"proxy\"} 0"));
+    }
 
     #[test]
     fn records_status_errors_and_buckets() {
