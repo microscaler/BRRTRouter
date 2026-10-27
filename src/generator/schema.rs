@@ -692,6 +692,49 @@ fn collect_referenced_types(
     }
 }
 
+/// Flatten an `allOf` schema into one object schema: the properties and `required` names of every member
+/// (members' own `allOf`s included, after `$ref` expansion) plus the schema's own. On a name defined twice the
+/// first definition wins; `required` keeps first-seen order without duplicates. Returns `None` when the schema has
+/// no non-empty `allOf`.
+fn merge_all_of(schema: &Value) -> Option<Value> {
+    let members = schema.get("allOf")?.as_array()?;
+    if members.is_empty() {
+        return None;
+    }
+    let mut properties = serde_json::Map::new();
+    let mut required: Vec<Value> = Vec::new();
+    let mut absorb = |part: &Value| {
+        if let Some(props) = part.get("properties").and_then(|p| p.as_object()) {
+            for (name, prop) in props {
+                properties
+                    .entry(name.clone())
+                    .or_insert_with(|| prop.clone());
+            }
+        }
+        if let Some(req) = part.get("required").and_then(|v| v.as_array()) {
+            for name in req {
+                if !required.contains(name) {
+                    required.push(name.clone());
+                }
+            }
+        }
+    };
+    for member in members {
+        match merge_all_of(member) {
+            Some(flat) => absorb(&flat),
+            None => absorb(member),
+        }
+    }
+    absorb(schema);
+    let mut merged = serde_json::Map::new();
+    merged.insert("type".to_string(), Value::String("object".to_string()));
+    merged.insert("properties".to_string(), Value::Object(properties));
+    if !required.is_empty() {
+        merged.insert("required".to_string(), Value::Array(required));
+    }
+    Some(Value::Object(merged))
+}
+
 /// Extract field definitions from an OpenAPI/JSON Schema
 ///
 /// Parses the schema's `properties` and generates Rust field definitions with
@@ -732,6 +775,13 @@ fn collect_referenced_types(
 ///
 /// A vector of field definitions that can be used to generate a Rust struct
 pub fn extract_fields(schema: &Value) -> Vec<FieldDef> {
+    // `allOf` composes one object from several schemas (e.g. a shared pagination envelope plus a list's `items`):
+    // merge every member's properties and required names into one schema and extract fields from that. Without this
+    // the composite has no top-level `properties` and generates an empty struct.
+    if let Some(merged) = merge_all_of(schema) {
+        return extract_fields(&merged);
+    }
+
     let mut fields = vec![];
 
     // Special case: if schema is itself an array, return a single "items" field
