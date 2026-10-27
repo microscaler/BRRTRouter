@@ -570,8 +570,11 @@ pub fn extract_response_schema_and_example_with_issues(
         }
     }
 
-    if default_schema.is_none() {
-        // Finally, any status preferring application/json
+    // Finally, any status preferring application/json, but only for an operation that declares no 2xx at all. A
+    // body-less success (204, or a 200/201 without content) must not borrow an error response's schema: that made
+    // the generated success Response the error body.
+    let declares_success = all.keys().any(|s| (200..300).contains(s));
+    if default_schema.is_none() && !declares_success {
         let mut statuses: Vec<u16> = all.keys().cloned().collect();
         statuses.sort_unstable();
         if let Some((schema, example)) = statuses
