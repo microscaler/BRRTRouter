@@ -2,8 +2,26 @@
 //!
 //! Replaces generated inline proxy logic in `templates/controller.rs.txt`.
 //! Downstream targets are resolved by OpenAPI `x-service` (Kubernetes Service name)
-//! and `SERVICE_HTTP_PORT` (default 8080). Each request opens a fresh
-//! `may_minihttp` connection to avoid cross-service client reuse (FR-26).
+//! and `SERVICE_HTTP_PORT` (default 8080).
+//!
+//! # Connections
+//!
+//! Proxied request/response calls ([`proxy_untyped`]) reuse kept-alive connections from a pool
+//! keyed by downstream origin (Service host and port), so one Service's connections are never
+//! used for another (FR-26 still holds: no connection crosses services). Before, every proxied
+//! call opened a new TCP connection. Event streams ([`proxy_sse`]) hold their connection for the
+//! life of the stream and still open one each. Tuning, all optional:
+//!
+//! | variable | default | meaning |
+//! |---|---|---|
+//! | `BRRTR_PROXY_POOL` | `on` | `off`: a new connection per proxied call (the old behaviour) |
+//! | `BRRTR_PROXY_POOL_MAX` | 1024 | connections, all downstreams |
+//! | `BRRTR_PROXY_POOL_MAX_PER_HOST` | 256 | connections per downstream; a call waits past it |
+//! | `BRRTR_PROXY_POOL_IDLE_SECS` | 30 | an idle connection is closed after this |
+//! | `BRRTR_PROXY_POOL_LIFETIME_SECS` | 60 | no connection is reused past this age |
+//!
+//! kube-proxy balances a ClusterIP Service per *connection*: the lifetime bound is what spreads a
+//! busy BFF's calls over the downstream's pods again, and what moves them off pods that left.
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -12,8 +30,11 @@ use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::{Arc, OnceLock, RwLock};
 use std::time::{Duration, Instant};
 
-use http_legacy::{Method, Uri};
-use may_minihttp::client::{HttpClient, Response as DownstreamResponse};
+use http_legacy::{HeaderMap, HeaderName, HeaderValue, Method, Uri};
+use may_minihttp::client::{
+    Client, ClientError, ClientErrorKind, HttpClient, RedirectPolicy, Resolver,
+    Response as DownstreamResponse, StreamingResponse,
+};
 use serde_json::Value;
 
 use crate::dispatcher::{HandlerRequest, HandlerResponse, HeaderVec};
@@ -478,6 +499,14 @@ fn forget_downstream(host: &str, addr: SocketAddr) {
     }
 }
 
+/// Drop `host`'s cached address, whatever it is (the pooled path does not see which address a
+/// refused connect used).
+fn forget_downstream_host(host: &str) {
+    if let Ok(mut cache) = dns_cache().write() {
+        cache.remove(host);
+    }
+}
+
 fn is_timeout(e: &std::io::Error) -> bool {
     e.kind() == std::io::ErrorKind::TimedOut || looks_like_timeout(&e.to_string())
 }
@@ -534,7 +563,7 @@ fn connect_downstream_with<T>(
     }
 }
 
-/// Stable pool key for `(host, port)` — used in tests; runtime connects per request.
+/// Stable key for a downstream origin `(host, port)`: the unit the proxy pools connections by.
 #[must_use]
 pub fn client_pool_key(host: &str, port: u16) -> String {
     format!("{host}:{port}")
@@ -685,13 +714,25 @@ fn is_idempotent_read(method: &str) -> bool {
     method.eq_ignore_ascii_case("GET") || method.eq_ignore_ascii_case("HEAD")
 }
 
-fn send_downstream_once(
+/// A downstream request, built once from the handler request and sent on either transport.
+struct Prepared {
+    host: String,
+    port: u16,
+    method: Method,
+    uri: Uri,
+    /// Forwarded and added headers, `Host` excluded (each transport sets it).
+    headers: HeaderMap,
+    /// `Some(empty)` for a bodyless method other than GET/HEAD: sent as `Content-Length: 0`.
+    body: Option<Vec<u8>>,
+}
+
+fn prepare_downstream(
     req: &HandlerRequest,
     downstream_service: &str,
     path_template: &str,
     default_accept: &str,
     identity_encoding: bool,
-) -> Result<(HttpClient, DownstreamResponse), ProxyError> {
+) -> Result<Prepared, ProxyError> {
     let resolved_path = resolve_downstream_target(
         path_template,
         &req.path_params,
@@ -700,8 +741,6 @@ fn send_downstream_once(
     )?;
     let host = downstream_host(downstream_service);
     let port = downstream_http_port();
-
-    let target = resolve_downstream(&host, port)?;
 
     // Decision B: validate both stacks; convert to legacy Uri only at this edge
     // (no full request-target embedded in error Display).
@@ -712,6 +751,87 @@ fn send_downstream_once(
     let method = Method::from_bytes(req.method.as_str().as_bytes())
         .map_err(|_e| ProxyError::InvalidMethod)?;
 
+    let mut headers = HeaderMap::with_capacity(req.headers.len() + 3);
+    for (hk, hv) in &req.headers {
+        let name = hk.as_ref();
+        if skip_forward_request_header(name)
+            || (identity_encoding && name.eq_ignore_ascii_case("accept-encoding"))
+        {
+            continue;
+        }
+        if let (Ok(hname), Ok(hval)) = (
+            HeaderName::from_bytes(name.as_bytes()),
+            HeaderValue::from_str(hv.as_str()),
+        ) {
+            headers.insert(hname, hval);
+        }
+    }
+
+    if identity_encoding {
+        headers.insert(
+            http_legacy::header::ACCEPT_ENCODING,
+            HeaderValue::from_static("identity"),
+        );
+    }
+    // W3C trace context: this hop is the downstream request's parent (replacing the client's).
+    if let Some(traceparent) = may_tracing::traceparent_of_current() {
+        if let Ok(value) = HeaderValue::from_str(&traceparent) {
+            headers.insert(HeaderName::from_static("traceparent"), value);
+        }
+    }
+    if !headers.contains_key(http_legacy::header::ACCEPT) {
+        if let Ok(safe_accept) = HeaderValue::from_str(default_accept) {
+            headers.insert(http_legacy::header::ACCEPT, safe_accept);
+        }
+    }
+
+    let body = match &req.body {
+        Some(body_json) => {
+            Some(serde_json::to_vec(body_json).map_err(|_e| ProxyError::BodySerialize)?)
+        }
+        // No body: say so with `Content-Length: 0`. Left alone, the client opens a chunked body
+        // for a POST and writes its terminating chunk only after the head; a BRRTRouter
+        // downstream answers on the head and may close first, so the terminator's write failed
+        // and the BFF answered 502 `request` to a call the downstream had served (pp, 26 Oct
+        // 2026: ~40 % of `POST /billing/test-subscriptions/reset`).
+        None if method != Method::GET && method != Method::HEAD => Some(Vec::new()),
+        None => None,
+    };
+
+    Ok(Prepared {
+        host,
+        port,
+        method,
+        uri,
+        headers,
+        body,
+    })
+}
+
+fn send_downstream_once(
+    req: &HandlerRequest,
+    downstream_service: &str,
+    path_template: &str,
+    default_accept: &str,
+    identity_encoding: bool,
+) -> Result<(HttpClient, DownstreamResponse), ProxyError> {
+    let prepared = prepare_downstream(
+        req,
+        downstream_service,
+        path_template,
+        default_accept,
+        identity_encoding,
+    )?;
+    let Prepared {
+        host,
+        port,
+        method,
+        uri,
+        headers,
+        body,
+    } = prepared;
+
+    let target = resolve_downstream(&host, port)?;
     let mut client = connect_downstream_with(
         &host,
         port,
@@ -723,74 +843,20 @@ fn send_downstream_once(
     client.set_timeout(Some(proxy_timeout()));
 
     let mut proxy_req = client.new_request(method, uri);
-
-    for (hk, hv) in &req.headers {
-        let name = hk.as_ref();
-        if skip_forward_request_header(name)
-            || (identity_encoding && name.eq_ignore_ascii_case("accept-encoding"))
-        {
-            continue;
-        }
-        if let (Ok(hname), Ok(hval)) = (
-            http_legacy::header::HeaderName::from_bytes(name.as_bytes()),
-            http_legacy::header::HeaderValue::from_str(hv.as_str()),
-        ) {
-            proxy_req.headers_mut().insert(hname, hval);
-        }
-    }
-
-    if identity_encoding {
-        proxy_req.headers_mut().insert(
-            http_legacy::header::ACCEPT_ENCODING,
-            http_legacy::header::HeaderValue::from_static("identity"),
-        );
-    }
-    // W3C trace context: this hop is the downstream request's parent (replacing the client's).
-    if let Some(traceparent) = may_tracing::traceparent_of_current() {
-        if let Ok(value) = http_legacy::header::HeaderValue::from_str(&traceparent) {
-            proxy_req.headers_mut().insert(
-                http_legacy::header::HeaderName::from_static("traceparent"),
-                value,
-            );
-        }
-    }
+    proxy_req.headers_mut().extend(headers);
 
     // The client's Host named this service and is dropped by `skip_forward_request_header`.
     // `HttpClient::connect` has no URL to take a Host from and the target is origin-form, so
     // without this the downstream gets no Host at all (strict HTTP/1.1 servers answer 400).
-    if let Ok(host_value) =
-        http_legacy::header::HeaderValue::try_from(crate::http::host_header_value(&host, port, 80))
-    {
+    if let Ok(host_value) = HeaderValue::try_from(crate::http::host_header_value(&host, port, 80)) {
         proxy_req
             .headers_mut()
             .insert(http_legacy::header::HOST, host_value);
     }
 
-    if proxy_req
-        .headers()
-        .get(http_legacy::header::ACCEPT)
-        .is_none()
-    {
-        if let Ok(safe_accept) = http_legacy::header::HeaderValue::from_str(default_accept) {
-            proxy_req
-                .headers_mut()
-                .insert(http_legacy::header::ACCEPT, safe_accept);
-        }
-    }
-
-    if let Some(body_json) = &req.body {
-        let body_bytes = serde_json::to_vec(body_json).map_err(|_e| ProxyError::BodySerialize)?;
+    if let Some(body_bytes) = &body {
         proxy_req
-            .send(&body_bytes)
-            .map_err(|e| classify_transport_error(ProxyTransportKind::Request, &e.to_string()))?;
-    } else if proxy_req.method() != Method::GET && proxy_req.method() != Method::HEAD {
-        // No body: say so with `Content-Length: 0`. Left alone, the client opens a chunked body
-        // for a POST and writes its terminating chunk only after the head; a BRRTRouter
-        // downstream answers on the head and may close first, so the terminator's write failed
-        // and the BFF answered 502 `request` to a call the downstream had served (pp, 26 Oct
-        // 2026: ~40 % of `POST /billing/test-subscriptions/reset`).
-        proxy_req
-            .send(&[])
+            .send(body_bytes)
             .map_err(|e| classify_transport_error(ProxyTransportKind::Request, &e.to_string()))?;
     }
 
@@ -798,6 +864,176 @@ fn send_downstream_once(
         .send_request(proxy_req)
         .map_err(|e| classify_transport_error(ProxyTransportKind::Request, &e.to_string()))?;
     Ok((client, rsp))
+}
+
+/// Pool settings for proxied calls, read once from the environment (see the module docs).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ProxyPoolSettings {
+    enabled: bool,
+    max: usize,
+    max_per_host: usize,
+    idle: Duration,
+    lifetime: Duration,
+}
+
+impl ProxyPoolSettings {
+    fn from_lookup(lookup: impl Fn(&str) -> Option<String>) -> Self {
+        let number = |name: &str, default: u64| -> u64 {
+            lookup(name)
+                .and_then(|v| v.trim().parse::<u64>().ok())
+                .filter(|v| *v > 0)
+                .unwrap_or(default)
+        };
+        let enabled = !lookup("BRRTR_PROXY_POOL").is_some_and(|v| {
+            matches!(
+                v.trim().to_ascii_lowercase().as_str(),
+                "off" | "0" | "false" | "no"
+            )
+        });
+        let max = number("BRRTR_PROXY_POOL_MAX", 1024) as usize;
+        Self {
+            enabled,
+            max,
+            max_per_host: (number("BRRTR_PROXY_POOL_MAX_PER_HOST", 256) as usize).min(max),
+            idle: Duration::from_secs(number("BRRTR_PROXY_POOL_IDLE_SECS", 30)),
+            lifetime: Duration::from_secs(number("BRRTR_PROXY_POOL_LIFETIME_SECS", 60)),
+        }
+    }
+}
+
+/// Resolves downstream hosts through the proxy's DNS cache ([`resolve_downstream`]).
+struct ProxyResolver;
+
+impl Resolver for ProxyResolver {
+    fn resolve(&self, host: &str, port: u16) -> std::io::Result<Vec<SocketAddr>> {
+        resolve_downstream(host, port)
+            .map(|resolved| vec![resolved.addr])
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::AddrNotAvailable, e.to_string()))
+    }
+}
+
+static PROXY_POOL: OnceLock<Option<Client>> = OnceLock::new();
+
+/// The proxy pool if it has been started (does not start it).
+pub(super) fn proxy_pool_if_started() -> Option<&'static Client> {
+    PROXY_POOL.get().and_then(Option::as_ref)
+}
+
+/// The proxy's connection pool; `None` when it is off or could not be built.
+fn proxy_pool() -> Option<&'static Client> {
+    PROXY_POOL.get_or_init(|| {
+        let settings = ProxyPoolSettings::from_lookup(|name| std::env::var(name).ok());
+        if !settings.enabled {
+            return None;
+        }
+        // Downstreams are plain HTTP; the client still wants a TLS configuration.
+        let tls = super::fetch::empty_roots_tls_config()?;
+        let built = Client::builder()
+            .tls_config(tls)
+            .resolver(Arc::new(ProxyResolver))
+            .max_connections(settings.max)
+            .max_connections_per_origin(settings.max_per_host)
+            .idle_timeout(settings.idle)
+            .max_connection_lifetime(settings.lifetime)
+            .redirect_policy(RedirectPolicy::None)
+            // A forwarded request carries the client's headers: allow what the server accepts.
+            .max_request_headers(256)
+            .max_request_header_bytes(64 * 1024)
+            .build();
+        match built {
+            Ok(pool) => Some(pool),
+            Err(error) => {
+                tracing::error!(error = %error, "proxy connection pool could not be built; proxied calls open a connection each");
+                None
+            }
+        }
+    })
+    .as_ref()
+}
+
+/// Connection reuse statistics of the proxy pool (`None` when pooling is off).
+#[must_use]
+pub fn proxy_pool_stats() -> Option<may_minihttp::client::ClientStats> {
+    proxy_pool().map(Client::stats)
+}
+
+/// One pooled attempt. Headers and body are moved into the request, not copied.
+fn send_pooled_once(pool: &Client, prepared: Prepared) -> Result<StreamingResponse, ProxyError> {
+    let url = format!(
+        "http://{}{}",
+        crate::http::host_header_value(&prepared.host, prepared.port, 80),
+        prepared.uri
+    );
+    let mut request = pool
+        .request(prepared.method, &url)
+        .map_err(|_e| ProxyError::invalid_path(ProxyPathReason::InvalidUri))?
+        .timeout(proxy_timeout());
+    // `HeaderMap::into_iter` names a header once, then yields its further values with `None`.
+    let mut last: Option<HeaderName> = None;
+    for (name, value) in prepared.headers {
+        if let Some(name) = name {
+            last = Some(name);
+        }
+        if let Some(name) = &last {
+            request = request.header(name.clone(), value);
+        }
+    }
+    if let Some(body) = prepared.body {
+        request = request.body(body);
+    }
+    request.send_streaming().map_err(pooled_error)
+}
+
+fn pooled_error(error: std::io::Error) -> ProxyError {
+    let error = ClientError::from(error);
+    let message = error.to_string();
+    match error.kind() {
+        ClientErrorKind::Dns => ProxyError::Dns,
+        ClientErrorKind::Timeout => ProxyError::Timeout,
+        ClientErrorKind::Connection if message.to_ascii_lowercase().contains("refused") => {
+            ProxyError::Connect
+        }
+        _ => classify_transport_error(ProxyTransportKind::Request, &message),
+    }
+}
+
+/// Send `req` downstream on a pooled connection and return the response with its body unread.
+///
+/// Retries mirror the per-call path: a refused connect (a stale cached address, or a pod leaving
+/// in a rollout) drops the cached address and tries once more after `PROXY_CONNECT_RETRY_MS`;
+/// nothing was sent. A GET/HEAD cut off after sending is sent once more. A timeout is not
+/// retried. (The pool itself also replaces an idle connection the downstream closed, and retries
+/// a GET/HEAD once when a reused connection fails.)
+fn send_downstream_pooled(
+    pool: &Client,
+    req: &HandlerRequest,
+    downstream_service: &str,
+    path_template: &str,
+    default_accept: &str,
+) -> Result<StreamingResponse, ProxyError> {
+    // Built per attempt (a retry is rare), so the first attempt can move it into the request.
+    let attempt = || {
+        let prepared = prepare_downstream(
+            req,
+            downstream_service,
+            path_template,
+            default_accept,
+            false,
+        )?;
+        send_pooled_once(pool, prepared)
+    };
+    match attempt() {
+        Err(ProxyError::Connect) => {
+            forget_downstream_host(&downstream_host(downstream_service));
+            if let Some(delay) = connect_retry_delay() {
+                // Yields the coroutine; a plain thread sleeps.
+                may::coroutine::sleep(delay);
+            }
+            attempt()
+        }
+        Err(ProxyError::Request) if is_idempotent_read(req.method.as_str()) => attempt(),
+        other => other,
+    }
 }
 
 /// Proxy an `x-sse` BFF route to a downstream event stream, relaying each event
@@ -1046,6 +1282,18 @@ fn proxy_untyped_inner(
     path_template: &str,
     passthrough_on: bool,
 ) -> Result<HandlerResponse, ProxyError> {
+    if let Some(pool) = proxy_pool() {
+        let mut rsp = send_downstream_pooled(
+            pool,
+            req,
+            downstream_service,
+            path_template,
+            "application/json",
+        )?;
+        let status = rsp.status().as_u16();
+        let headers = std::mem::take(rsp.headers_mut());
+        return untyped_response(req, status, &headers, &mut rsp, passthrough_on);
+    }
     let (_connection, mut rsp) = send_downstream(
         req,
         downstream_service,
@@ -1053,20 +1301,29 @@ fn proxy_untyped_inner(
         "application/json",
         false,
     )?;
+    let status = rsp.status().as_u16();
+    let headers = std::mem::take(rsp.headers_mut());
+    untyped_response(req, status, &headers, &mut rsp, passthrough_on)
+}
 
+/// Read the downstream body and build the handler response (either transport).
+fn untyped_response(
+    req: &HandlerRequest,
+    status: u16,
+    headers: &HeaderMap,
+    body: &mut impl Read,
+    passthrough_on: bool,
+) -> Result<HandlerResponse, ProxyError> {
     // A HEAD answer advertises the GET body's length but carries none.
-    let size_hint = rsp
-        .headers()
+    let size_hint = headers
         .get(http_legacy::header::CONTENT_LENGTH)
         .filter(|_| req.method != http::Method::HEAD)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.trim().parse().ok());
-    let buf = read_bounded_body(&mut rsp, MAX_PROXY_BODY_BYTES, size_hint)?;
-    let content_type = rsp
-        .headers()
+    let buf = read_bounded_body(body, MAX_PROXY_BODY_BYTES, size_hint)?;
+    let content_type = headers
         .get(http_legacy::header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok());
-    let status = rsp.status().as_u16();
     // With pass-through on (ADR 006 §2), a 2xx JSON body goes back as the downstream wrote it: no
     // parse into a Value here and no serialisation again on the way out; response validation then
     // parses it only when the mode checks it. Errors keep the parsed path: their reason is read for
@@ -1082,7 +1339,7 @@ fn proxy_untyped_inner(
     };
 
     let mut out_headers = HeaderVec::new();
-    for (name, value) in rsp.headers().iter() {
+    for (name, value) in headers.iter() {
         if skip_forward_response_header(name.as_str()) {
             continue;
         }
@@ -1655,6 +1912,38 @@ mod tests {
             TEST_RETRY,
         );
         assert_eq!(res.unwrap(), 7);
+    }
+
+    #[test]
+    fn proxy_pool_settings_default_and_from_environment() {
+        let defaults = ProxyPoolSettings::from_lookup(|_| None);
+        assert_eq!(
+            defaults,
+            ProxyPoolSettings {
+                enabled: true,
+                max: 1024,
+                max_per_host: 256,
+                idle: Duration::from_secs(30),
+                lifetime: Duration::from_secs(60),
+            }
+        );
+        let custom = ProxyPoolSettings::from_lookup(|name| {
+            match name {
+                "BRRTR_PROXY_POOL_MAX" => Some("16"),
+                "BRRTR_PROXY_POOL_MAX_PER_HOST" => Some("32"), // capped at max
+                "BRRTR_PROXY_POOL_LIFETIME_SECS" => Some("5"),
+                "BRRTR_PROXY_POOL_IDLE_SECS" => Some("x"), // invalid: default
+                _ => None,
+            }
+            .map(str::to_string)
+        });
+        assert_eq!(custom.max_per_host, 16);
+        assert_eq!(custom.lifetime, Duration::from_secs(5));
+        assert_eq!(custom.idle, Duration::from_secs(30));
+        assert!(
+            !ProxyPoolSettings::from_lookup(|n| (n == "BRRTR_PROXY_POOL").then(|| "off".into()))
+                .enabled
+        );
     }
 
     #[test]

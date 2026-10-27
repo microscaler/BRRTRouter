@@ -18,7 +18,9 @@
 //! ```
 //!
 //! `bff_proxy_*` run a second, BFF-shaped service whose routes proxy (`x-service`) to an in-process
-//! downstream answering a 20 KB / 200 KB JSON array: the cost a BFF adds to a proxied call.
+//! downstream answering a 20 KB / 200 KB JSON array: the cost a BFF adds to a proxied call. The
+//! downstream keeps connections alive, as a BRRTRouter service does, so the proxy pool's reuse is
+//! part of what is measured (`BRRTR_PROXY_POOL=off` measures a connection per call).
 //!
 //! Results are printed as a table and as one JSON line per scenario (prefix `JSON `) so two
 //! runs (before/after a change) can be compared. See docs/perf/copy-and-borrow-audit.md.
@@ -273,32 +275,48 @@ fn downstream() -> u16 {
         .iter()
         .map(|&n| {
             let body = rows_json(n);
+            // Kept alive, as a BRRTRouter downstream is: the BFF's pool reuses the connection.
             let head = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
                 body.len()
             );
-            (format!("/data/{n} "), [head.into_bytes(), body.into_bytes()].concat())
+            (
+                format!("/data/{n} "),
+                [head.into_bytes(), body.into_bytes()].concat(),
+            )
         })
         .collect();
+    let bodies = std::sync::Arc::new(bodies);
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     std::thread::spawn(move || {
         for mut s in listener.incoming().flatten() {
-            let mut buf = [0u8; 8192];
-            let mut n = 0;
-            while !buf[..n].windows(4).any(|w| w == b"\r\n\r\n") {
-                match s.read(&mut buf[n..]) {
-                    Ok(0) | Err(_) => break,
-                    Ok(m) => n += m,
+            let bodies = std::sync::Arc::clone(&bodies);
+            std::thread::spawn(move || {
+                let mut buf = [0u8; 8192];
+                loop {
+                    // bodyless GETs: one head per request
+                    let mut n = 0;
+                    while !buf[..n].windows(4).any(|w| w == b"\r\n\r\n") {
+                        match s.read(&mut buf[n..]) {
+                            Ok(0) | Err(_) => return,
+                            Ok(m) => n += m,
+                        }
+                    }
+                    let line = &buf[..n];
+                    match bodies
+                        .iter()
+                        .find(|(p, _)| line.windows(p.len()).any(|w| w == p.as_bytes()))
+                    {
+                        Some((_, rsp)) => {
+                            if s.write_all(rsp).is_err() {
+                                return;
+                            }
+                        }
+                        None => return,
+                    }
                 }
-            }
-            let line = &buf[..n];
-            if let Some((_, rsp)) = bodies
-                .iter()
-                .find(|(p, _)| line.windows(p.len()).any(|w| w == p.as_bytes()))
-            {
-                let _ = s.write_all(rsp);
-            }
+            });
         }
     });
     port

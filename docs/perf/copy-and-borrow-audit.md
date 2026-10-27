@@ -53,12 +53,13 @@ findings ranked by measured cost, what changed, before/after, and what is still 
 - **CORS `after`** (~4 % of allocs on cross-origin requests): joins the allowed
   methods/headers/expose lists into new `String`s per request from immutable config;
   `set_header` allocates `Arc<str>` names. Precompute the joined values per policy.
-- **Response header writing**: `format!("{k}: {v}")` per header (may_minihttp takes a whole
-  line). Needs a name/value API in the may_minihttp fork.
+- ~~**Response header writing**~~: `format!("{k}: {v}")` per header. Done in pass 7:
+  `Response::header_kv` in the may_minihttp fork, used by `write_handler_response`.
 - **BFF proxy (PW trader-bff/platform-bff)**: `proxy_untyped` parses every downstream JSON body
   into a `Value`, the BFF then validates it against its own spec (105 of 113 trader-bff routes
   declare a 200 schema) and re-serializes it — parse + validate + serialize of a body the
-  downstream service already validated. It also opens a new TCP connection per proxied request.
+  downstream service already validated. It also opened a new TCP connection per proxied request
+  (pooled since pass 7).
   DNS per request is fixed (pass 1c below). Raw pass-through (and a pooled client) is the
   biggest BFF item; it changes what a BFF validates, so it is a decision for Charles — to be
   measured in the PW pass.
@@ -157,8 +158,8 @@ array (one TCP connection per proxied call, as in production). INFO log on, ms02
 
 Allocations per proxied call no longer depend on the body size (−90 % at 20 KB, −99 % at 200 KB);
 latency −67 % / −90 %. Of the remaining 264 KB at 200 KB, the body is held once (the read buffer
-becomes the response body) plus may_minihttp's write buffer. Still open: a
-new TCP connection per proxied call (no keep-alive pool to the downstream).
+becomes the response body) plus may_minihttp's write buffer. The new TCP connection per proxied
+call is gone in pass 7 (keep-alive pool to the downstream).
 
 ## BRRTRouter — pass 4: validation modes and pass-through as configuration (26 Oct 2026)
 
@@ -261,6 +262,62 @@ Each change was followed through the handlers, and the wire output is unchanged.
 What `check` alone misses: a hand-built body passes it whenever the schema leaves keys open and nothing is `required`,
 which is the case in all three consumers. `assert_strict` (`check` plus no undeclared keys) is the test that pins field
 names.
+
+## BRRTRouter — pass 7: keep-alive pools and response header pairs (27 Oct 2026)
+
+**Fork changes it builds on** (may_minihttp `integration/microscaler-fork`): request smuggling and
+header-limit hardening, a liveness check on idle pooled connections before reuse, fewer client
+allocations (header maps moved instead of cloned, buffered bodies read into one `Vec`, no
+redundant `setsockopt` per request), and `Response::header_kv(name, value)`, which writes a
+header pair into a reused buffer instead of a `format!`ed line.
+
+**What changed here.**
+
+- `fetch_*` and `proxy_untyped` send through process-wide pooled `Client`s (per origin: LIFO idle
+  list, per-host cap, idle timeout, lifetime bound so kube-proxy can rebalance). SSE relays keep
+  the one-connection path. Escape hatches: `BRRTR_HTTP_POOL=off` and `BRRTR_PROXY_POOL=off`
+  restore the old path; the limits are `BRRTR_{HTTP,PROXY}_POOL_{MAX,MAX_PER_HOST,IDLE_SECS,LIFETIME_SECS}`
+  (fetch 256 / 32 / 30 s / 120 s, proxy 1024 / 256 / 30 s / 60 s).
+- A pooled connection the peer has already closed is dropped at checkout (a non-blocking peek),
+  so the request, POST included, goes out on a fresh connection. A request cut off mid-flight on
+  a reused connection is retried once only for GET/HEAD; a POST is answered 502 and not resent.
+- `/metrics`: `brrtrouter_http_client_pool_{hits,misses,waits,stale_retries}_total{pool}` and
+  `brrtrouter_http_client_pool_evictions_total{pool,reason="expired"|"discarded"}`.
+- Response headers go through `header_kv`.
+- The bench's downstream now keeps connections alive (it used to answer `Connection: close`,
+  which made pool reuse impossible to measure).
+
+**Numbers** (request_path bench, ms02, `BRRTR_BENCH_LOG=off`; allocations are deterministic,
+µs/req is the median of three rounds on a shared host, load 18–57):
+
+| scenario | allocs/req before | after |
+|---|---:|---:|
+| get_pet | 276.2 | 254.2 |
+| list_pets_query | 302.2 | 280.2 |
+| get_post_2_params | 279.2 | 257.2 |
+| add_pet_json_body | 266.2 | 244.2 |
+| secure_jwt | 287.1 | 268.1 |
+
+Both columns use the same fork revision, so the −22 per request is this change: `header_kv`
+(no `String` per response header).
+
+| scenario | main | pool on | pool off |
+|---|---:|---:|---:|
+| bff_proxy_20k allocs/req | 2,469.3 | 2,461.3 | 2,449.3 |
+| bff_proxy_20k µs/req (median) | 529 | 379 | 353 |
+| bff_proxy_200k allocs/req | 22,276.8 | 22,267.4 | 22,256.0 |
+| bff_proxy_200k µs/req (median) | 2,927 | 3,170 | 2,489 |
+
+(These rows use the default validated proxy mode, not pass-through, hence the larger counts than
+pass 2.) On loopback a TCP connect costs little, so the pool's latency gain here is within the
+noise of a loaded host. What the pool saves in a cluster is the connect and kube-proxy/conntrack
+work per call, and TIME_WAIT churn. In the fork's own client bench (16 coroutines, loopback),
+fresh-connection vs pooled is 29.6k vs 151k req/s, p99 4.19 vs 0.30 ms.
+
+**Rollout notes.** Idle timeouts must stay below the server side's keep-alive (Envoy/Contour
+upstream idle timeout, Sesame's server keep-alive), or a pooled connection can be closed by the
+peer just as it is reused. The liveness check catches a close that has already arrived; the
+GET/HEAD retry covers the race. Per-host caps bound how many sockets one slow downstream can hold.
 
 ## For the PriceWhisperer pass
 

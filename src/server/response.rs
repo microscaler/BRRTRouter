@@ -116,7 +116,9 @@ pub fn write_handler_response_with_body_policy(
             }
             has_content_type = true;
         }
-        res.header(format!("{k}: {v}"));
+        // Encoded straight into the connection's header buffer: no `format!` per header, and a
+        // name or value that would split the response is dropped by may_minihttp.
+        res.header_kv(k, v);
     }
     if is_sse {
         res.header("Content-Type: text/event-stream");

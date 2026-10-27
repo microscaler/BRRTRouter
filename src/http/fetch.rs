@@ -1,4 +1,28 @@
 //! Bounded HTTP fetches through `may_minihttp::client` for both HTTP and rustls-backed HTTPS.
+//!
+//! # Connection reuse
+//!
+//! Fetches go through one process-wide pooled [`Client`]: connections are kept alive per origin
+//! (scheme, host, port) and reused by later fetches to the same origin. Before this, every fetch
+//! opened a new TCP connection (and, for HTTPS, a new TLS handshake): a JWKS refresh, a remote
+//! API-key check or a BFF's call to the identity service paid a connect on every request, and a
+//! burst of them left sockets in `TIME_WAIT`. Tuning, all optional:
+//!
+//! | variable | default | meaning |
+//! |---|---|---|
+//! | `BRRTR_HTTP_POOL` | `on` | `off` opens a new connection per fetch (the old behaviour) |
+//! | `BRRTR_HTTP_POOL_MAX` | 256 | connections, all origins |
+//! | `BRRTR_HTTP_POOL_MAX_PER_HOST` | 32 | connections per origin; a fetch waits for one past this |
+//! | `BRRTR_HTTP_POOL_IDLE_SECS` | 30 | an idle connection is closed after this |
+//! | `BRRTR_HTTP_POOL_LIFETIME_SECS` | 120 | no connection is reused past this age |
+//!
+//! The lifetime matters for Kubernetes Services: kube-proxy picks a backend pod per *connection*,
+//! so a connection kept forever pins its traffic to one pod. A bounded lifetime spreads a
+//! long-running caller across the pods again (and drops connections to pods that went away).
+//!
+//! An idle connection the server has closed is detected before reuse and replaced; a GET/HEAD that
+//! fails on a reused connection is retried once on a new one. A fetch with a caller-supplied
+//! `Host` header (virtual-host routing through an ingress) is not pooled.
 
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read};
@@ -7,7 +31,7 @@ use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use http_legacy::{Method, Uri};
-use may_minihttp::client::HttpClient;
+use may_minihttp::client::{Client, ClientErrorKind, ClientStats, HttpClient, RedirectPolicy};
 use rustls::{ClientConfig, RootCertStore};
 use rustls_platform_verifier::BuilderVerifierExt;
 use tracing::{error, warn};
@@ -16,7 +40,8 @@ use url::Url;
 /// Options for outbound GET requests from security providers.
 #[derive(Debug, Clone)]
 pub struct HttpFetchOptions {
-    /// Total read/write timeout per request.
+    /// Deadline for the whole request: connect (or waiting for a pooled connection), send, and
+    /// reading the response body.
     pub timeout: Duration,
     /// Maximum response body bytes to read.
     pub max_body_bytes: usize,
@@ -436,6 +461,9 @@ fn fetch_method_via_client(
     body: Option<&[u8]>,
     options: &HttpFetchOptions,
 ) -> Result<(u16, Vec<u8>), HttpFetchError> {
+    if let Some(pool) = pool_for(url, options)? {
+        return fetch_pooled(pool, url, method, body, options).map(|r| (r.status, r.body));
+    }
     let mut client = connect_client(url, options)?;
     let uri: Uri = request_uri_for_may_minihttp(url)?;
     let mut req = client.new_request(method, uri);
@@ -455,6 +483,9 @@ fn fetch_get_full_via_client(
     url: &Url,
     options: &HttpFetchOptions,
 ) -> Result<HttpGetResponse, HttpFetchError> {
+    if let Some(pool) = pool_for(url, options)? {
+        return fetch_pooled(pool, url, Method::GET, None, options);
+    }
     let mut client = connect_client(url, options)?;
     let uri: Uri = request_uri_for_may_minihttp(url)?;
     let mut req = client.new_request(Method::GET, uri);
@@ -476,6 +507,192 @@ fn fetch_get_full_via_client(
     })
 }
 
+/// Pool settings, read once from the environment (see the module docs).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PoolSettings {
+    enabled: bool,
+    max: usize,
+    max_per_host: usize,
+    idle: Duration,
+    lifetime: Duration,
+}
+
+impl PoolSettings {
+    fn from_lookup(lookup: impl Fn(&str) -> Option<String>) -> Self {
+        let number = |name: &str, default: u64| -> u64 {
+            lookup(name)
+                .and_then(|v| v.trim().parse::<u64>().ok())
+                .filter(|v| *v > 0)
+                .unwrap_or(default)
+        };
+        let enabled = !lookup("BRRTR_HTTP_POOL").is_some_and(|v| {
+            matches!(
+                v.trim().to_ascii_lowercase().as_str(),
+                "off" | "0" | "false" | "no"
+            )
+        });
+        let max = number("BRRTR_HTTP_POOL_MAX", 256) as usize;
+        let max_per_host = (number("BRRTR_HTTP_POOL_MAX_PER_HOST", 32) as usize).min(max);
+        Self {
+            enabled,
+            max,
+            max_per_host,
+            idle: Duration::from_secs(number("BRRTR_HTTP_POOL_IDLE_SECS", 30)),
+            lifetime: Duration::from_secs(number("BRRTR_HTTP_POOL_LIFETIME_SECS", 120)),
+        }
+    }
+}
+
+/// The process-wide fetch pool, built on first use. `None` (cached) when pooling is off or the pool
+/// could not be built; fetches then open a connection each.
+static FETCH_POOL: OnceLock<Option<Client>> = OnceLock::new();
+
+fn fetch_pool() -> Option<&'static Client> {
+    FETCH_POOL
+        .get_or_init(|| {
+            let settings = PoolSettings::from_lookup(|name| std::env::var(name).ok());
+            if !settings.enabled {
+                return None;
+            }
+            // The pool needs a TLS configuration even for plain HTTP. If the trust store is
+            // unreadable, plain HTTP still pools (an empty root store verifies nothing), and an
+            // HTTPS fetch fails in `pool_for` with the trust-store error, as before.
+            let tls = match platform_tls_config() {
+                Ok(tls) => tls,
+                Err(_) => empty_roots_tls_config()?,
+            };
+            let built = Client::builder()
+                .tls_config(tls)
+                .max_connections(settings.max)
+                .max_connections_per_origin(settings.max_per_host)
+                .idle_timeout(settings.idle)
+                .max_connection_lifetime(settings.lifetime)
+                .redirect_policy(RedirectPolicy::None)
+                .build();
+            match built {
+                Ok(client) => Some(client),
+                Err(error) => {
+                    error!(error = %error, "HTTP fetch pool could not be built; fetches open a connection each");
+                    None
+                }
+            }
+        })
+        .as_ref()
+}
+
+/// The fetch pool if it has been started (does not start it).
+pub(super) fn fetch_pool_if_started() -> Option<&'static Client> {
+    FETCH_POOL.get().and_then(Option::as_ref)
+}
+
+/// Connection reuse statistics of the fetch pool (`None` when pooling is off or failed to start).
+#[must_use]
+pub fn fetch_pool_stats() -> Option<ClientStats> {
+    fetch_pool().map(Client::stats)
+}
+
+pub(super) fn empty_roots_tls_config() -> Option<Arc<ClientConfig>> {
+    let provider = Arc::new(rustls::crypto::ring::default_provider());
+    let builder = ClientConfig::builder_with_provider(provider)
+        .with_safe_default_protocol_versions()
+        .ok()?;
+    Some(Arc::new(
+        builder
+            .with_root_certificates(RootCertStore::empty())
+            .with_no_client_auth(),
+    ))
+}
+
+/// The pool to use for this fetch, or `None` for a connection of its own: pooling is off, or the
+/// caller sets `Host` (the pooled client derives `Host` from the URL and does not let a request
+/// override it).
+fn pool_for(
+    url: &Url,
+    options: &HttpFetchOptions,
+) -> Result<Option<&'static Client>, HttpFetchError> {
+    if options
+        .extra_headers
+        .iter()
+        .any(|(name, _)| name.eq_ignore_ascii_case("host"))
+    {
+        return Ok(None);
+    }
+    let Some(pool) = fetch_pool() else {
+        return Ok(None);
+    };
+    if url.scheme().eq_ignore_ascii_case("https") {
+        platform_tls_config()?;
+    }
+    Ok(Some(pool))
+}
+
+fn fetch_pooled(
+    pool: &Client,
+    url: &Url,
+    method: Method,
+    body: Option<&[u8]>,
+    options: &HttpFetchOptions,
+) -> Result<HttpGetResponse, HttpFetchError> {
+    let mut request = pool
+        .request(method, url.as_str())
+        .map_err(|e| HttpFetchError::InvalidUrl(e.to_string()))?
+        .timeout(options.timeout);
+    let mut caller_traceparent = false;
+    for (name, value) in &options.extra_headers {
+        if let (Ok(name), Ok(value)) = (
+            http_legacy::HeaderName::try_from(name.as_str()),
+            http_legacy::HeaderValue::from_str(value),
+        ) {
+            caller_traceparent |= name.as_str() == "traceparent";
+            request = request.header(name, value);
+        }
+    }
+    // W3C trace context: the call joins the current request's trace, unless the caller set its own.
+    if !caller_traceparent {
+        if let Some(traceparent) = may_tracing::traceparent_of_current() {
+            if let Ok(value) = http_legacy::HeaderValue::from_str(&traceparent) {
+                request =
+                    request.header(http_legacy::HeaderName::from_static("traceparent"), value);
+            }
+        }
+    }
+    if let Some(bytes) = body {
+        request = request.body(bytes.to_vec());
+    }
+    // Streaming, so the caller's body limit applies while reading: a body over it is not
+    // buffered, and its connection is closed rather than returned to the pool.
+    let mut response = request.send_streaming().map_err(pool_error)?;
+    let status = response.status().as_u16();
+    let location = response
+        .headers()
+        .get(http_legacy::header::LOCATION)
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string);
+    let body = read_bounded_body(&mut response, options.max_body_bytes)?;
+    Ok(HttpGetResponse {
+        status,
+        location,
+        body,
+    })
+}
+
+/// Map a pooled-client failure onto the fetch error kinds callers already log and match.
+fn pool_error(error: std::io::Error) -> HttpFetchError {
+    let error = may_minihttp::client::ClientError::from(error);
+    let message = error.to_string();
+    match error.kind() {
+        ClientErrorKind::InvalidRequest => HttpFetchError::Request(message),
+        ClientErrorKind::Dns => HttpFetchError::Connect(message),
+        ClientErrorKind::Connection if message.to_ascii_lowercase().contains("refused") => {
+            HttpFetchError::Connect(message)
+        }
+        ClientErrorKind::Tls => HttpFetchError::Tls(message),
+        ClientErrorKind::BodyTooLarge => HttpFetchError::BodyTooLarge,
+        ClientErrorKind::Connection | ClientErrorKind::Io => HttpFetchError::Request(message),
+        _ => HttpFetchError::Response(message),
+    }
+}
+
 fn read_bounded_body(reader: &mut impl Read, max_body: usize) -> Result<Vec<u8>, HttpFetchError> {
     let mut buf = Vec::new();
     reader
@@ -492,6 +709,41 @@ fn read_bounded_body(reader: &mut impl Read, max_body: usize) -> Result<Vec<u8>,
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pool_settings_default_and_from_environment() {
+        let defaults = PoolSettings::from_lookup(|_| None);
+        assert_eq!(
+            defaults,
+            PoolSettings {
+                enabled: true,
+                max: 256,
+                max_per_host: 32,
+                idle: Duration::from_secs(30),
+                lifetime: Duration::from_secs(120),
+            }
+        );
+        let custom = PoolSettings::from_lookup(|name| {
+            match name {
+                "BRRTR_HTTP_POOL_MAX" => Some("8"),
+                "BRRTR_HTTP_POOL_MAX_PER_HOST" => Some("64"), // capped at max
+                "BRRTR_HTTP_POOL_IDLE_SECS" => Some("0"),     // invalid: default
+                "BRRTR_HTTP_POOL_LIFETIME_SECS" => Some("15"),
+                _ => None,
+            }
+            .map(str::to_string)
+        });
+        assert_eq!(custom.max, 8);
+        assert_eq!(custom.max_per_host, 8);
+        assert_eq!(custom.idle, Duration::from_secs(30));
+        assert_eq!(custom.lifetime, Duration::from_secs(15));
+        for off in ["off", "OFF", "0", "false", "no"] {
+            assert!(
+                !PoolSettings::from_lookup(|n| (n == "BRRTR_HTTP_POOL").then(|| off.to_string()))
+                    .enabled
+            );
+        }
+    }
 
     #[test]
     fn read_bounded_body_respects_limit() {
