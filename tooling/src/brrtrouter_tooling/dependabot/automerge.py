@@ -177,7 +177,8 @@ def extract_metadata_from_title(pr_number: int) -> tuple[str, str]:
         old_major, old_minor = int(version_match.group(1)), int(version_match.group(2))
         new_major, new_minor = int(version_match.group(4)), int(version_match.group(5))
 
-        if old_major != new_major:
+        # A 0.x minor bump (0.5 -> 0.6) is breaking under Cargo semver: treat it as major (held for review).
+        if old_major != new_major or (old_major == 0 and old_minor != new_minor):
             update_type = "version-update:semver-major"
         elif old_minor != new_minor:
             update_type = "version-update:semver-minor"
@@ -286,6 +287,12 @@ def process_dependabot_pr() -> None:
         # This tool is called after that action runs
         dependency_names = os.getenv("DEPENDENCY_NAMES", "").strip()
         update_type = os.getenv("UPDATE_TYPE", "").strip()
+        # fetch-metadata calls 0.5 -> 0.6 "minor", but under Cargo semver a 0.x minor bump is breaking: hold it like a
+        # major (27 Oct 2026: argon2 0.6 and rand 0.10 auto-merged into sesame-idam and broke its build).
+        if update_type == "version-update:semver-minor" and os.getenv(
+            "PREVIOUS_VERSION", ""
+        ).strip().startswith("0."):
+            update_type = "version-update:semver-major"
         # If metadata not provided, extract from PR title as fallback
         if not dependency_names or not update_type:
             dependency_names, update_type = extract_metadata_from_title(pr_number)
