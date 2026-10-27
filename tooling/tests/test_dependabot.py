@@ -573,3 +573,17 @@ def test_process_dependabot_pr_no_pr_associated() -> None:
             assert exc_info.value.code == 0
     finally:
         Path(event_path).unlink()
+
+
+def test_extract_metadata_zero_x_minor_is_major() -> None:
+    """A 0.x minor bump is breaking under Cargo semver: held like a major."""
+    with patch("brrtrouter_tooling.dependabot.automerge.run_gh_command") as mock_gh:
+        mock_gh.return_value = json.dumps({"title": "Bump argon2 from 0.5.3 to 0.6.0"})
+        with patch.dict(os.environ, {"GITHUB_TOKEN": "test-token"}):
+            deps, update_type = extract_metadata_from_title(123)
+            assert deps == "argon2"
+            assert update_type == "version-update:semver-major"
+        mock_gh.return_value = json.dumps({"title": "Bump argon2 from 0.5.3 to 0.5.4"})
+        with patch.dict(os.environ, {"GITHUB_TOKEN": "test-token"}):
+            _, update_type = extract_metadata_from_title(123)
+            assert update_type == "version-update:semver-patch"
