@@ -288,7 +288,7 @@ def process_dependabot_pr() -> None:
         dependency_names = os.getenv("DEPENDENCY_NAMES", "").strip()
         update_type = os.getenv("UPDATE_TYPE", "").strip()
         # fetch-metadata calls 0.5 -> 0.6 "minor", but under Cargo semver a 0.x minor bump is breaking: hold it like a
-        # major (27 Oct 2026: argon2 0.6 and rand 0.10 auto-merged into sesame-idam and broke its build).
+        # major (27 Oct 2026: argon2 0.6 and rand 0.10 auto-merged into another Microscaler repo and broke its build).
         if update_type == "version-update:semver-minor" and os.getenv(
             "PREVIOUS_VERSION", ""
         ).strip().startswith("0."):
