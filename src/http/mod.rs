@@ -16,6 +16,7 @@ pub mod method_ext;
 pub mod openapi_query;
 pub mod problem;
 mod proxy;
+pub mod traced_client;
 pub mod uri_encode;
 mod webhook_delivery;
 
