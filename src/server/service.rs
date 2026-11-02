@@ -613,7 +613,7 @@ fn stream_sse(
         {
             continue;
         }
-        res.header(format!("{k}: {v}"));
+        res.header_kv(k, v);
     }
     let mut writer = res.begin_chunked_stream(conn_stream)?;
     while let Some(frame) = sse_rx.recv_frame() {

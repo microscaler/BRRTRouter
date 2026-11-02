@@ -102,6 +102,95 @@ def _update_refs_in_value(val: Any, old_name: str, new_name: str) -> None:
             _update_refs_in_value(it, old_name, new_name)
 
 
+# Component kinds merged like schemas: each service's names get its PascalCase prefix and every
+# `$ref` to them is rewritten. `parameters` and `securitySchemes` are merged by name instead
+# (operations name security schemes by key, and parameters keep their established first-wins rule).
+PREFIXED_COMPONENT_KINDS = (
+    "responses",
+    "headers",
+    "requestBodies",
+    "examples",
+    "links",
+    "callbacks",
+    "pathItems",
+)
+
+
+def _rewrite_component_refs(val: Any, kind: str, renames: dict[str, str]) -> None:
+    """Rewrite ``#/components/{kind}/<old>`` (and pointers below it) to the renamed component."""
+    prefix = f"#/components/{kind}/"
+    stack = [val]
+    while stack:
+        cur = stack.pop()
+        if isinstance(cur, dict):
+            ref = cur.get("$ref")
+            if isinstance(ref, str) and ref.startswith(prefix):
+                name, sep, rest = ref[len(prefix) :].partition("/")
+                if name in renames:
+                    cur["$ref"] = f"{prefix}{renames[name]}{sep}{rest}"
+            stack.extend(cur.values())
+        elif isinstance(cur, list):
+            stack.extend(cur)
+
+
+def prefix_named_components(spec: dict[str, Any], service_name: str) -> None:
+    """Prefix this service's ``PREFIXED_COMPONENT_KINDS`` with its PascalCase name, in place.
+
+    Every `$ref` to them anywhere in the spec (paths, operations, other components) is rewritten,
+    so two services can each define e.g. ``components.responses.NotFound`` without one replacing
+    the other in the merged spec.
+    """
+    components = spec.get("components")
+    if not isinstance(components, dict):
+        return
+    prefix = to_pascal_case(service_name)
+    for kind in PREFIXED_COMPONENT_KINDS:
+        defs = components.get(kind)
+        if not isinstance(defs, dict) or not defs:
+            continue
+        renames = {name: f"{prefix}{name}" for name in defs}
+        _rewrite_component_refs(spec, kind, renames)
+        components[kind] = {renames[name]: d for name, d in defs.items()}
+
+
+def merge_named_components(
+    all_components: dict[str, dict[str, Any]],
+    origin: dict[tuple[str, str], str],
+    service_name: str,
+    spec: dict[str, Any],
+    schema_names: list[str] | None = None,
+    keep: set[tuple[str, str]] | None = None,
+) -> None:
+    """Merge ``PREFIXED_COMPONENT_KINDS`` from an already prefixed service spec.
+
+    ``schema_names``: this service's schema names, whose refs inside the merged components are
+    rewritten to the prefixed schema (as for its paths). ``keep``: only these (kind, name) pairs
+    (an operation-filtered service). The same prefixed name with a different definition from
+    another service is an error.
+    """
+    components = spec.get("components") or {}
+    prefix = to_pascal_case(service_name)
+    for kind in PREFIXED_COMPONENT_KINDS:
+        defs = components.get(kind)
+        if not isinstance(defs, dict):
+            continue
+        for name, definition in defs.items():
+            if keep is not None and (kind, name) not in keep:
+                continue
+            for schema_name in schema_names or ():
+                _update_refs_in_value(definition, schema_name, f"{prefix}{schema_name}")
+            merged = all_components.setdefault(kind, {})
+            if name in merged and merged[name] != definition:
+                msg = (
+                    f"components.{kind} conflict for {name!r}: already defined by service "
+                    f"{origin.get((kind, name), '?')!r}, conflicting definition from "
+                    f"{service_name!r}"
+                )
+                raise ValueError(msg)
+            merged.setdefault(name, definition)
+            origin.setdefault((kind, name), service_name)
+
+
 def _merge_schemas(
     all_schemas: dict[str, Any],
     service_name: str,
@@ -133,19 +222,21 @@ _HTTP_OPERATION_KEYS = frozenset(
 )
 
 
-def _update_refs_in_paths(paths: dict[str, Any], old_name: str, new_name: str) -> None:
+def _update_refs_in_paths(
+    paths: dict[str, Any], old_name: str, new_name: str, service: str | None = None
+) -> None:
+    """Rewrite schema refs in operations (parameters, bodies, responses, headers, callbacks) and in
+    path-level parameters. With ``service``, only that service's operations are touched."""
     for path_def in paths.values():
         if not isinstance(path_def, dict):
             continue
-        for method, op in path_def.items():
-            if method not in _HTTP_OPERATION_KEYS or not isinstance(op, dict):
-                continue
-            if "requestBody" in op:
-                _update_refs_in_value(op["requestBody"], old_name, new_name)
-            if "responses" in op:
-                for r in op["responses"].values():
-                    if isinstance(r, dict) and "content" in r:
-                        _update_refs_in_value(r["content"], old_name, new_name)
+        for key, value in path_def.items():
+            if key in _HTTP_OPERATION_KEYS:
+                if not isinstance(value, dict):
+                    continue
+                if service is not None and value.get("x-service") != service:
+                    continue
+            _update_refs_in_value(value, old_name, new_name)
 
 
 def _register_operation_id(
@@ -198,6 +289,34 @@ def _schema_closure(roots: set[str], schemas: dict[str, Any]) -> set[str]:
         keep.add(name)
         todo.extend(r for r in _component_refs(schemas[name], "schemas") if r in schemas)
     return keep
+
+
+def _reachable_components(tree: Any, components: dict[str, Any]) -> set[tuple[str, str]]:
+    """(kind, name) of every non-schema component ``tree`` reaches, transitively (a response's
+    headers and examples, a request body's examples, ...). Schemas are closed over separately."""
+    prefix = "#/components/"
+    seen: set[tuple[str, str]] = set()
+    stack = [tree]
+    while stack:
+        cur = stack.pop()
+        if isinstance(cur, dict):
+            ref = cur.get("$ref")
+            if isinstance(ref, str) and ref.startswith(prefix):
+                kind, _, rest = ref[len(prefix) :].partition("/")
+                name = rest.split("/", 1)[0]
+                defs = components.get(kind)
+                if (
+                    kind != "schemas"
+                    and isinstance(defs, dict)
+                    and name in defs
+                    and (kind, name) not in seen
+                ):
+                    seen.add((kind, name))
+                    stack.append(defs[name])
+            stack.extend(cur.values())
+        elif isinstance(cur, list):
+            stack.extend(cur)
+    return seen
 
 
 def _kept(oid: str, include_ops: set[str] | None, exclude_ops: set[str] | None) -> bool:
@@ -333,28 +452,43 @@ def _merge_components(
     all_paths: dict[str, Any],
     merged_params: dict[str, Any],
     param_origin: dict[str, str],
+    all_components: dict[str, dict[str, Any]],
+    component_origin: dict[tuple[str, str], str],
 ) -> None:
-    """Schemas and parameters; a filtered service contributes only what its kept operations reach."""
+    """Schemas, parameters and the ``PREFIXED_COMPONENT_KINDS``; a filtered service contributes only
+    what its kept operations reach."""
     components = spec.get("components") or {}
     params = components.get("parameters") or {}
     kept_tree = {
         path: {k: v for k, v in spec["paths"][path].items() if k not in _HTTP_OPERATION_KEYS} | ops
         for path, ops in kept.items()
     }
-    used_params = _component_refs(kept_tree, "parameters")
+    reached = _reachable_components(kept_tree, components)
+    used_params = {name for kind, name in reached if kind == "parameters"}
 
+    schema_names: list[str] = []
     if "schemas" in components:
         schemas = components["schemas"]
         if filtered:
             roots = _component_refs(kept_tree, "schemas")
-            for pn in used_params:
-                roots |= _component_refs(params.get(pn), "schemas")
+            for kind, name in reached:
+                roots |= _component_refs((components.get(kind) or {}).get(name), "schemas")
             keep = _schema_closure(roots, schemas)
             schemas = {k: v for k, v in schemas.items() if k in keep}
         _merge_schemas(all_schemas, sname, schemas)
+        schema_names = list(schemas)
         for schema_name in schemas:
             prefixed = f"{to_pascal_case(sname)}{schema_name}"
-            _update_refs_in_paths(all_paths, schema_name, prefixed)
+            _update_refs_in_paths(all_paths, schema_name, prefixed, service=sname)
+
+    merge_named_components(
+        all_components,
+        component_origin,
+        sname,
+        spec,
+        schema_names=schema_names,
+        keep=reached if filtered else None,
+    )
 
     if "parameters" in components:
         if filtered:
@@ -381,6 +515,8 @@ def _merge_one_sub_service(
     merged_params: dict[str, Any],
     param_origin: dict[str, str],
     operation_origin: dict[str, tuple[str, str, str]],
+    all_components: dict[str, dict[str, Any]] | None = None,
+    component_origin: dict[tuple[str, str], str] | None = None,
     gateway_path_style: str = "as_spec",
     bff_impl_operations: set[str] | None = None,
     downstream_base_path: str | None = None,
@@ -395,6 +531,7 @@ def _merge_one_sub_service(
         n = _nullable_to_31(spec)
         if n:
             logger.info("%s: %d OpenAPI 3.0 nullable schema(s) rewritten for the 3.1 BFF", sname, n)
+    prefix_named_components(spec, sname)
     filtered = include_operations is not None or exclude_operations is not None
     kept = _select_operations(sname, spec, spec_path, include_operations, exclude_operations)
     _merge_tags(spec, kept, filtered, all_tags)
@@ -410,7 +547,16 @@ def _merge_one_sub_service(
         downstream_base_path,
     )
     _merge_components(
-        sname, spec, kept, filtered, all_schemas, all_paths, merged_params, param_origin
+        sname,
+        spec,
+        kept,
+        filtered,
+        all_schemas,
+        all_paths,
+        merged_params,
+        param_origin,
+        all_components if all_components is not None else {},
+        component_origin if component_origin is not None else {},
     )
 
 
@@ -480,6 +626,7 @@ def _add_error_schema(
     all_schemas: dict[str, Any],
     all_paths: dict[str, Any],
     sub_services: dict[str, Any],
+    all_components: dict[str, dict[str, Any]] | None = None,
 ) -> None:
     if "Error" not in all_schemas:
         all_schemas["Error"] = {
@@ -505,6 +652,7 @@ def _add_error_schema(
     if len(matches) == 1:
         pe = matches[0]
         _update_refs_in_paths(all_paths, "Error", pe)
+        _update_refs_in_value(all_components or {}, "Error", pe)
         all_schemas["Error"] = {"$ref": f"#/components/schemas/{pe}"}
     else:
         # Just use the generic Error schema we inserted above.
@@ -542,6 +690,8 @@ def merge_sub_service_specs(
     merged_params = dict(bff["components"]["parameters"])
     param_origin: dict[str, str] = {}
     operation_origin: dict[str, tuple[str, str, str]] = {}
+    all_components: dict[str, dict[str, Any]] = {}
+    component_origin: dict[tuple[str, str], str] = {}
 
     from brrtrouter_tooling.bff.components import collect_security_schemes
 
@@ -566,6 +716,8 @@ def merge_sub_service_specs(
             merged_params,
             param_origin,
             operation_origin,
+            all_components,
+            component_origin,
             gateway_path_style=cfg.get("gateway_path_style", "as_spec"),
             bff_impl_operations=bff_impl_operations,
             downstream_base_path=cfg.get("downstream_base_path"),
@@ -584,7 +736,14 @@ def merge_sub_service_specs(
         if isinstance(schema_def, dict):
             prefix = _service_prefix_for_schema(prefixed_key, sub_services)
             _update_all_refs_in_value(schema_def, mapping, all_schemas, prefix)
-    _add_error_schema(all_schemas, all_paths, sub_services)
+    for (kind, name), origin in component_origin.items():
+        _update_all_refs_in_value(
+            all_components[kind][name], mapping, all_schemas, to_pascal_case(origin)
+        )
+    _add_error_schema(all_schemas, all_paths, sub_services, all_components)
+    for kind in PREFIXED_COMPONENT_KINDS:
+        if all_components.get(kind):
+            bff["components"][kind] = dict(sorted(all_components[kind].items()))
 
     bff["tags"] = sorted([{"name": t} for t in all_tags], key=lambda x: x["name"])
     bff["paths"] = dict(sorted(all_paths.items()))

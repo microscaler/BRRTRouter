@@ -76,6 +76,7 @@ jobs:
           GITHUB_SHA: ${{ github.sha }}
           DEPENDENCY_NAMES: ${{ steps.metadata-pr.outputs.dependency-names }}
           UPDATE_TYPE: ${{ steps.metadata-pr.outputs.update-type }}
+          PREVIOUS_VERSION: ${{ steps.metadata-pr.outputs.previous-version }}
         run: |
           tooling/.venv/bin/brrtrouter local dependabot automerge
 

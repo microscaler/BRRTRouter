@@ -473,8 +473,10 @@ where
                 stack_size = stack_size,
                 "Untyped handler coroutine start"
             );
-            let mut stack_probe =
-                crate::stack_probe::StackProbe::for_current(&handler_name_for_logging);
+            let mut stack_probe = crate::stack_probe::StackProbe::for_current_sized(
+                &handler_name_for_logging,
+                Some(stack_size),
+            );
 
             for req in rx.iter() {
                 let req = *req;
@@ -712,8 +714,10 @@ impl Dispatcher {
                         stack_size = stack_size,
                         "Handler coroutine start"
                     );
-                    let mut stack_probe =
-                        crate::stack_probe::StackProbe::for_current(&handler_name_for_logging);
+                    let mut stack_probe = crate::stack_probe::StackProbe::for_current_sized(
+                        &handler_name_for_logging,
+                        Some(stack_size),
+                    );
 
                     for req in rx.iter() {
                         let req = *req;

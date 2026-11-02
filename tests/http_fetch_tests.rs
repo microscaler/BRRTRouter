@@ -430,3 +430,228 @@ fn fetch_get_http_extra_host_header_replaces_the_default() {
         "request: {req}"
     );
 }
+
+// ---------------------------------------------------------------------------------------------
+// Connection reuse (the process-wide fetch pool)
+// ---------------------------------------------------------------------------------------------
+
+/// Read one request (head and Content-Length body) from a kept-alive connection; `None` at EOF.
+fn read_keepalive_request(stream: &mut TcpStream, pending: &mut Vec<u8>) -> Option<String> {
+    let mut chunk = [0u8; 4096];
+    let head_end = loop {
+        if let Some(i) = pending.windows(4).position(|w| w == b"\r\n\r\n") {
+            break i + 4;
+        }
+        match stream.read(&mut chunk) {
+            Ok(0) | Err(_) => return None,
+            Ok(n) => pending.extend_from_slice(&chunk[..n]),
+        }
+    };
+    let head = String::from_utf8_lossy(&pending[..head_end]).into_owned();
+    let length: usize = head
+        .lines()
+        .find_map(|l| {
+            l.to_ascii_lowercase()
+                .strip_prefix("content-length:")
+                .map(|v| v.trim().parse().unwrap_or(0))
+        })
+        .unwrap_or(0);
+    while pending.len() < head_end + length {
+        match stream.read(&mut chunk) {
+            Ok(0) | Err(_) => return None,
+            Ok(n) => pending.extend_from_slice(&chunk[..n]),
+        }
+    }
+    pending.drain(..head_end + length);
+    Some(head)
+}
+
+/// HTTP/1.1 server that keeps connections alive. Each connection answers up to
+/// `per_connection` requests with `body`, then closes without saying so (as a server whose idle
+/// timeout fired would). Returns the base URL and the count of accepted connections.
+fn start_keepalive_server(
+    body: &'static str,
+    per_connection: usize,
+) -> (String, Arc<std::sync::atomic::AtomicUsize>) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let accepted = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counter = Arc::clone(&accepted);
+    thread::spawn(move || {
+        for incoming in listener.incoming() {
+            let Ok(mut stream) = incoming else { break };
+            counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            thread::spawn(move || {
+                let mut pending = Vec::new();
+                for _ in 0..per_connection {
+                    if read_keepalive_request(&mut stream, &mut pending).is_none() {
+                        return;
+                    }
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{body}",
+                        body.len()
+                    );
+                    if stream.write_all(response.as_bytes()).is_err() {
+                        return;
+                    }
+                }
+            });
+        }
+    });
+    (format!("http://{}:{}", addr.ip(), addr.port()), accepted)
+}
+
+#[test]
+fn fetches_to_one_origin_reuse_one_connection() {
+    let (base, accepted) = start_keepalive_server("pooled", usize::MAX);
+    for i in 0..5 {
+        let (status, body) =
+            fetch_get(&format!("{base}/item/{i}"), &plain_options(vec![])).unwrap();
+        assert_eq!(status, 200);
+        assert_eq!(body, b"pooled");
+    }
+    assert_eq!(
+        accepted.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "five sequential fetches to one origin must share one kept-alive connection"
+    );
+}
+
+#[test]
+fn an_oversize_body_is_not_returned_to_the_pool() {
+    // 2 KiB body against a 1 KiB limit: the fetch fails and that connection is closed, not reused
+    // with half a response still unread on it.
+    let big: &'static str = Box::leak("x".repeat(2048).into_boxed_str());
+    let (base, accepted) = start_keepalive_server(big, usize::MAX);
+    assert!(matches!(
+        fetch_get(&format!("{base}/big"), &plain_options(vec![])),
+        Err(brrtrouter::http::HttpFetchError::BodyTooLarge)
+    ));
+    let options = HttpFetchOptions {
+        max_body_bytes: 4096,
+        ..plain_options(vec![])
+    };
+    let (status, body) = fetch_get(&format!("{base}/big"), &options).unwrap();
+    assert_eq!(status, 200);
+    assert_eq!(body.len(), 2048);
+    assert_eq!(accepted.load(std::sync::atomic::Ordering::SeqCst), 2);
+}
+
+#[test]
+fn a_post_after_the_server_closed_the_idle_connection_succeeds() {
+    // One request per connection, then a silent close: the pooled connection is dead by the
+    // second POST. A POST is never retried, so this passes only because the dead connection is
+    // detected before the request is written.
+    let (base, accepted) = start_keepalive_server("done", 1);
+    let url = format!("{base}/hook");
+    let (status, _) =
+        brrtrouter::http::fetch_post(&url, b"{\"n\":1}", &plain_options(vec![])).unwrap();
+    assert_eq!(status, 200);
+    thread::sleep(Duration::from_millis(50));
+    let (status, _) =
+        brrtrouter::http::fetch_post(&url, b"{\"n\":2}", &plain_options(vec![])).unwrap();
+    assert_eq!(status, 200);
+    assert_eq!(accepted.load(std::sync::atomic::Ordering::SeqCst), 2);
+}
+
+#[test]
+fn a_caller_host_header_bypasses_the_pool_and_still_wins() {
+    let (base, accepted) = start_keepalive_server("vhost", usize::MAX);
+    let options = plain_options(vec![("Host".to_string(), "api.example.com".to_string())]);
+    for _ in 0..2 {
+        let (status, _) = fetch_get(&format!("{base}/v"), &options).unwrap();
+        assert_eq!(status, 200);
+    }
+    // not pooled: one connection per fetch
+    assert_eq!(accepted.load(std::sync::atomic::Ordering::SeqCst), 2);
+}
+
+/// Kept-alive server that answers `answer` requests on each connection, then reads the next
+/// request and closes without answering it (a server dying, or closing an idle connection just
+/// as the request arrives). Returns the base URL, accepted connections and requests received.
+fn start_midflight_close_server(
+    answer: usize,
+) -> (
+    String,
+    Arc<std::sync::atomic::AtomicUsize>,
+    Arc<std::sync::atomic::AtomicUsize>,
+) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let accepted = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let received = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let (a, r) = (Arc::clone(&accepted), Arc::clone(&received));
+    thread::spawn(move || {
+        for incoming in listener.incoming() {
+            let Ok(mut stream) = incoming else { break };
+            a.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let r = Arc::clone(&r);
+            thread::spawn(move || {
+                let mut pending = Vec::new();
+                for _ in 0..answer {
+                    if read_keepalive_request(&mut stream, &mut pending).is_none() {
+                        return;
+                    }
+                    r.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    if stream
+                        .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
+                        .is_err()
+                    {
+                        return;
+                    }
+                }
+                if read_keepalive_request(&mut stream, &mut pending).is_some() {
+                    r.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                }
+                // close without answering
+            });
+        }
+    });
+    (
+        format!("http://{}:{}", addr.ip(), addr.port()),
+        accepted,
+        received,
+    )
+}
+
+#[test]
+fn a_get_cut_off_mid_flight_on_a_reused_connection_is_retried_once() {
+    // Every connection answers one request, then takes the next and closes on it. The second
+    // GET goes out on the reused connection, is cut off, and is sent once more on a new one.
+    let (base, accepted, received) = start_midflight_close_server(1);
+    let url = format!("{base}/thing");
+    assert_eq!(fetch_get(&url, &plain_options(vec![])).unwrap().0, 200);
+    assert_eq!(fetch_get(&url, &plain_options(vec![])).unwrap().0, 200);
+    assert_eq!(accepted.load(std::sync::atomic::Ordering::SeqCst), 2);
+    assert_eq!(received.load(std::sync::atomic::Ordering::SeqCst), 3);
+    let stats = brrtrouter::http::fetch_pool_stats().expect("pool on by default");
+    assert!(stats.stale_retries >= 1, "{stats:?}");
+}
+
+#[test]
+fn a_post_cut_off_mid_flight_is_not_resent() {
+    // The POST reached the server before the connection died: it may have had its effect, so
+    // it fails instead of being sent twice.
+    let (base, accepted, received) = start_midflight_close_server(1);
+    let url = format!("{base}/hook");
+    let (status, _) =
+        brrtrouter::http::fetch_post(&url, b"{\"n\":1}", &plain_options(vec![])).unwrap();
+    assert_eq!(status, 200);
+    let err = brrtrouter::http::fetch_post(&url, b"{\"n\":2}", &plain_options(vec![]))
+        .expect_err("a POST cut off after sending is not retried");
+    assert!(
+        matches!(
+            err,
+            brrtrouter::http::HttpFetchError::Request(_)
+                | brrtrouter::http::HttpFetchError::Response(_)
+        ),
+        "{err:?}"
+    );
+    thread::sleep(Duration::from_millis(50));
+    assert_eq!(
+        received.load(std::sync::atomic::Ordering::SeqCst),
+        2,
+        "the second POST was sent exactly once"
+    );
+    assert_eq!(accepted.load(std::sync::atomic::Ordering::SeqCst), 1);
+}

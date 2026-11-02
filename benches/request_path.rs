@@ -15,10 +15,13 @@
 //! cargo bench --bench request_path              # all scenarios
 //! BRRTR_BENCH_N=50000 cargo bench --bench request_path -- secure
 //! BRRTR_BENCH_LOG=off cargo bench --bench request_path   # without the INFO access log
+//! BRRTR_BENCH_OTEL=1 cargo bench --bench request_path     # with the OpenTelemetry layer
 //! ```
 //!
 //! `bff_proxy_*` run a second, BFF-shaped service whose routes proxy (`x-service`) to an in-process
-//! downstream answering a 20 KB / 200 KB JSON array: the cost a BFF adds to a proxied call.
+//! downstream answering a 20 KB / 200 KB JSON array: the cost a BFF adds to a proxied call. The
+//! downstream keeps connections alive, as a BRRTRouter service does, so the proxy pool's reuse is
+//! part of what is measured (`BRRTR_PROXY_POOL=off` measures a connection per call).
 //!
 //! Results are printed as a table and as one JSON line per scenario (prefix `JSON `) so two
 //! runs (before/after a change) can be compared. See docs/perf/copy-and-borrow-audit.md.
@@ -273,32 +276,48 @@ fn downstream() -> u16 {
         .iter()
         .map(|&n| {
             let body = rows_json(n);
+            // Kept alive, as a BRRTRouter downstream is: the BFF's pool reuses the connection.
             let head = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
                 body.len()
             );
-            (format!("/data/{n} "), [head.into_bytes(), body.into_bytes()].concat())
+            (
+                format!("/data/{n} "),
+                [head.into_bytes(), body.into_bytes()].concat(),
+            )
         })
         .collect();
+    let bodies = std::sync::Arc::new(bodies);
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     std::thread::spawn(move || {
         for mut s in listener.incoming().flatten() {
-            let mut buf = [0u8; 8192];
-            let mut n = 0;
-            while !buf[..n].windows(4).any(|w| w == b"\r\n\r\n") {
-                match s.read(&mut buf[n..]) {
-                    Ok(0) | Err(_) => break,
-                    Ok(m) => n += m,
+            let bodies = std::sync::Arc::clone(&bodies);
+            std::thread::spawn(move || {
+                let mut buf = [0u8; 8192];
+                loop {
+                    // bodyless GETs: one head per request
+                    let mut n = 0;
+                    while !buf[..n].windows(4).any(|w| w == b"\r\n\r\n") {
+                        match s.read(&mut buf[n..]) {
+                            Ok(0) | Err(_) => return,
+                            Ok(m) => n += m,
+                        }
+                    }
+                    let line = &buf[..n];
+                    match bodies
+                        .iter()
+                        .find(|(p, _)| line.windows(p.len()).any(|w| w == p.as_bytes()))
+                    {
+                        Some((_, rsp)) => {
+                            if s.write_all(rsp).is_err() {
+                                return;
+                            }
+                        }
+                        None => return,
+                    }
                 }
-            }
-            let line = &buf[..n];
-            if let Some((_, rsp)) = bodies
-                .iter()
-                .find(|(p, _)| line.windows(p.len()).any(|w| w == p.as_bytes()))
-            {
-                let _ = s.write_all(rsp);
-            }
+            });
         }
     });
     port
@@ -449,6 +468,26 @@ struct Scenario {
     bff: bool,
 }
 
+/// Ends spans into nothing (the in-process cost of tracing without an exporter's).
+#[derive(Debug)]
+struct DropSpans;
+
+impl opentelemetry_sdk::trace::SpanProcessor for DropSpans {
+    fn on_start(&self, _span: &mut opentelemetry_sdk::trace::Span, _cx: &opentelemetry::Context) {}
+    fn on_end(&self, span: opentelemetry_sdk::trace::SpanData) {
+        drop(span);
+    }
+    fn force_flush(&self) -> Result<(), opentelemetry_sdk::error::OTelSdkError> {
+        Ok(())
+    }
+    fn shutdown_with_timeout(
+        &self,
+        _timeout: Duration,
+    ) -> Result<(), opentelemetry_sdk::error::OTelSdkError> {
+        Ok(())
+    }
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     // Test runners list a harness-less target with `--list` (nextest, `cargo test --all-targets`):
@@ -468,11 +507,32 @@ fn main() {
     // Production services log at INFO (the access log, auth decisions). Format those events
     // as JSON into a sink so their cost is counted; BRRTR_BENCH_LOG=off measures without.
     let log = std::env::var("BRRTR_BENCH_LOG").unwrap_or_else(|_| "info".into());
-    if log != "off" {
-        tracing_subscriber::fmt()
-            .json()
-            .with_env_filter(tracing_subscriber::EnvFilter::new(log))
-            .with_writer(std::io::sink)
+    // BRRTR_BENCH_OTEL=1 adds the OpenTelemetry layer, as a service with OTLP configured has it:
+    // every span (server, client, may_minihttp's) is built and ended into a processor that drops
+    // it, so the cost counted is the in-process cost, not the exporter's.
+    let otel = std::env::var("BRRTR_BENCH_OTEL").is_ok_and(|v| v != "0" && v != "off");
+    if log != "off" || otel {
+        use tracing_subscriber::layer::SubscriberExt;
+        use tracing_subscriber::util::SubscriberInitExt;
+        let filter = tracing_subscriber::EnvFilter::new(if log == "off" { "info" } else { &log });
+        let fmt = (log != "off").then(|| {
+            tracing_subscriber::fmt::layer()
+                .json()
+                .with_writer(std::io::sink)
+        });
+        let otel = otel.then(|| {
+            use opentelemetry::trace::TracerProvider as _;
+            let provider = opentelemetry_sdk::trace::SdkTracerProvider::builder()
+                .with_span_processor(DropSpans)
+                .build();
+            let layer = tracing_opentelemetry::layer().with_tracer(provider.tracer("bench"));
+            std::mem::forget(provider);
+            layer
+        });
+        tracing_subscriber::registry()
+            .with(filter)
+            .with(fmt)
+            .with(otel)
             .init();
     }
     let (app, addr) = start();

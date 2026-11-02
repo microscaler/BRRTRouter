@@ -191,13 +191,19 @@ impl StackProbe {
     /// The probe of the calling coroutine, recorded under `handler`. `None` when the probe is off
     /// (`BRRTR_STACK_PROBE_EVERY=0`), on non-Linux targets, or when the stack mapping cannot be found.
     pub fn for_current(handler: &str) -> Option<Self> {
+        Self::for_current_sized(handler, None)
+    }
+
+    /// As [`StackProbe::for_current`], for a coroutine spawned with a stack of `stack_bytes`: the stack's top is
+    /// then known exactly, instead of estimated from the stack pointer (see [`linux::Stack::current`]).
+    pub fn for_current_sized(handler: &str, stack_bytes: Option<usize>) -> Option<Self> {
         let every = sample_every();
         if every == 0 {
             return None;
         }
         #[cfg(target_os = "linux")]
         {
-            let stack = linux::Stack::current()?;
+            let stack = linux::Stack::current(stack_bytes)?;
             let stats = stats_for(handler);
             stats.size.fetch_max(stack.len(), Ordering::Relaxed);
             Some(StackProbe {
@@ -209,7 +215,7 @@ impl StackProbe {
         }
         #[cfg(not(target_os = "linux"))]
         {
-            let _ = handler;
+            let _ = (handler, stack_bytes);
             None
         }
     }
@@ -291,9 +297,19 @@ mod linux {
     }
 
     impl Stack {
-        /// Find the mapping that holds the current stack pointer in `/proc/self/maps` (once per coroutine).
-        pub fn current() -> Option<Self> {
+        /// The calling coroutine's stack (once per coroutine).
+        ///
+        /// The bottom comes from `/proc/self/maps`: the mapping that holds the stack pointer starts right above the
+        /// stack's guard page (a `PROT_NONE` mapping of its own, so nothing merges below it). The top does **not**
+        /// come from the mapping: the kernel merges adjacent anonymous mappings with the same flags into one, and a
+        /// coroutine stack is routinely merged with whatever mapping sits directly above it (ms02: a 2 MiB stack
+        /// in a 4 MiB mapping). Measuring "used" from that mapping's top counted the neighbour as stack: every
+        /// sample read about 2 MiB. The top is `bottom + stack_bytes` when the spawner says how large the stack
+        /// is, else the page above the current stack pointer (the probe is created at the top of the coroutine,
+        /// so only the coroutine's entry frames above it go uncounted).
+        pub fn current(stack_bytes: Option<usize>) -> Option<Self> {
             let sp = stack_pointer();
+            let page = page_size();
             let f = std::fs::File::open("/proc/self/maps").ok()?;
             for line in BufReader::new(f).lines() {
                 let line = line.ok()?;
@@ -302,10 +318,18 @@ mod linux {
                 let lo = usize::from_str_radix(a, 16).ok()?;
                 let hi = usize::from_str_radix(b, 16).ok()?;
                 if (lo..hi).contains(&sp) {
+                    let above_sp = (sp | (page - 1)) + 1 + page;
+                    let sized_top =
+                        stack_bytes.map(|b| lo.saturating_add(b.next_multiple_of(page)));
+                    let top = match sized_top {
+                        Some(top) if top > sp => top,
+                        // no size, or one the stack pointer already contradicts
+                        _ => above_sp,
+                    };
                     return Some(Stack {
                         lo,
-                        hi,
-                        page: page_size(),
+                        hi: top.min(hi),
+                        page,
                     });
                 }
             }
@@ -405,6 +429,36 @@ mod tests {
         ));
     }
 
+    /// The kernel merges a coroutine stack with an adjacent anonymous mapping of the same flags: the stack's
+    /// mapping in `/proc/self/maps` is then larger than the stack. Without a size the probe bounds the stack at the
+    /// page above the stack pointer, so a shallow request still reads shallow whatever sits above.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn unsized_probe_ignores_whatever_is_mapped_above_the_stack() {
+        let h = unsafe {
+            may::coroutine::Builder::new()
+                .stack_size(0x8000) // words: 256 KiB
+                .spawn(|| {
+                    let mut probe =
+                        StackProbe::for_current("unsized_probe_test").expect("stack mapping");
+                    probe.every = 1;
+                    let _g = probe.request();
+                })
+                .expect("spawn")
+        };
+        h.join().expect("join");
+        let s = stats_for("unsized_probe_test");
+        assert_eq!(s.count(), 1);
+        assert!(
+            s.peak.load(Ordering::Relaxed) <= 32 << 10,
+            "peak {} size {}",
+            s.peak.load(Ordering::Relaxed),
+            s.size.load(Ordering::Relaxed)
+        );
+        // unsized: bounded at the page above the stack pointer, plus one page of margin
+        assert!(s.size.load(Ordering::Relaxed) <= (256 << 10) + 2 * 4096);
+    }
+
     /// In a real `may` coroutine: the probe finds the stack mapping and sees a deep frame.
     #[cfg(target_os = "linux")]
     #[test]
@@ -419,8 +473,8 @@ mod tests {
             may::coroutine::Builder::new()
                 .stack_size(0x40000) // words: 2 MiB
                 .spawn(|| {
-                    let mut probe =
-                        StackProbe::for_current("deep_frame_test").expect("stack mapping");
+                    let mut probe = StackProbe::for_current_sized("deep_frame_test", Some(2 << 20))
+                        .expect("stack mapping");
                     // sample every request regardless of the env default
                     probe.every = 1;
                     {
@@ -441,7 +495,11 @@ mod tests {
             "peak {}",
             s.peak.load(Ordering::Relaxed)
         );
-        assert!(s.size.load(Ordering::Relaxed) >= 1 << 20);
+        assert_eq!(
+            s.size.load(Ordering::Relaxed),
+            2 << 20,
+            "the stack, not its mapping"
+        );
         // the second, shallow request starts from a released stack and stays small
         assert!(
             s.buckets.get(3).map_or(0, |b| b.load(Ordering::Relaxed)) >= 1,

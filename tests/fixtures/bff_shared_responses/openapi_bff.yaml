@@ -1,0 +1,365 @@
+openapi: 3.1.0
+info:
+  title: Catalog API Gateway
+  description: 'System-level API gateway for all Catalog services. This aggregates and proxies requests to Catalog microservices.
+    Single entry point for the Catalog system.
+
+
+    All requests proxied to sub-services:
+
+    - `/api/v1/catalog/gadgets/*` → Gadgets Service
+
+    - `/api/v1/catalog/widgets/*` → Widgets Service
+
+
+    **Note**: Auto-generated. Do not edit manually.
+
+
+    **Discovery**: openapi/catalog/'
+  version: 1.0.0
+servers:
+- url: /api/v1/catalog
+  description: Catalog API Gateway
+tags: []
+paths:
+  /gadgets:
+    get:
+      operationId: list_gadgets
+      tags:
+      - gadgets
+      parameters:
+      - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: A page of gadgets
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GadgetsGadgetList'
+        '429':
+          $ref: '#/components/responses/GadgetsRateLimited'
+      x-service: gadgets
+      x-service-base-path: /api/v1/catalog/gadgets
+      x-brrtrouter-downstream-path: /api/v1/catalog/gadgets/gadgets
+      x-brrtrouter-impl: false
+    post:
+      operationId: create_gadgets
+      tags:
+      - gadgets
+      requestBody:
+        $ref: '#/components/requestBodies/GadgetsGadgetInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GadgetsGadget'
+        '400':
+          $ref: '#/components/responses/GadgetsBadRequest'
+      x-service: gadgets
+      x-service-base-path: /api/v1/catalog/gadgets
+      x-brrtrouter-downstream-path: /api/v1/catalog/gadgets/gadgets
+      x-brrtrouter-impl: false
+  /gadgets/{id}:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/GadgetsGadgetId'
+    get:
+      operationId: get_gadgets
+      tags:
+      - gadgets
+      responses:
+        '200':
+          description: One gadgets item
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GadgetsGadget'
+        '404':
+          $ref: '#/components/responses/GadgetsNotFound'
+      x-service: gadgets
+      x-service-base-path: /api/v1/catalog/gadgets
+      x-brrtrouter-downstream-path: /api/v1/catalog/gadgets/gadgets/{id}
+      x-brrtrouter-impl: false
+    delete:
+      operationId: delete_gadgets
+      tags:
+      - gadgets
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          $ref: '#/components/responses/GadgetsNotFound'
+      x-service: gadgets
+      x-service-base-path: /api/v1/catalog/gadgets
+      x-brrtrouter-downstream-path: /api/v1/catalog/gadgets/gadgets/{id}
+      x-brrtrouter-impl: false
+  /widgets:
+    get:
+      operationId: list_widgets
+      tags:
+      - widgets
+      parameters:
+      - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: A page of widgets
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WidgetsWidgetList'
+        '429':
+          $ref: '#/components/responses/WidgetsRateLimited'
+      x-service: widgets
+      x-service-base-path: /api/v1/catalog/widgets
+      x-brrtrouter-downstream-path: /api/v1/catalog/widgets/widgets
+      x-brrtrouter-impl: false
+    post:
+      operationId: create_widgets
+      tags:
+      - widgets
+      requestBody:
+        $ref: '#/components/requestBodies/WidgetsWidgetInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WidgetsWidget'
+        '400':
+          $ref: '#/components/responses/WidgetsBadRequest'
+      x-service: widgets
+      x-service-base-path: /api/v1/catalog/widgets
+      x-brrtrouter-downstream-path: /api/v1/catalog/widgets/widgets
+      x-brrtrouter-impl: false
+  /widgets/{id}:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/WidgetsWidgetId'
+    get:
+      operationId: get_widgets
+      tags:
+      - widgets
+      responses:
+        '200':
+          description: One widgets item
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WidgetsWidget'
+        '404':
+          $ref: '#/components/responses/WidgetsNotFound'
+      x-service: widgets
+      x-service-base-path: /api/v1/catalog/widgets
+      x-brrtrouter-downstream-path: /api/v1/catalog/widgets/widgets/{id}
+      x-brrtrouter-impl: false
+    delete:
+      operationId: delete_widgets
+      tags:
+      - widgets
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          $ref: '#/components/responses/WidgetsNotFound'
+      x-service: widgets
+      x-service-base-path: /api/v1/catalog/widgets
+      x-brrtrouter-downstream-path: /api/v1/catalog/widgets/widgets/{id}
+      x-brrtrouter-impl: false
+components:
+  parameters:
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+    Page:
+      name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    Search:
+      name: search
+      in: query
+      schema:
+        type: string
+  schemas:
+    Error:
+      type: object
+      required:
+      - error
+      - message
+      properties:
+        error:
+          type: string
+          description: Error code
+        message:
+          type: string
+          description: Human-readable error message
+        details:
+          type:
+          - object
+          - 'null'
+          description: Additional details
+          additionalProperties: true
+    GadgetsError:
+      type: object
+      required:
+      - code
+      - message
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+    GadgetsGadget:
+      type: object
+      required:
+      - name
+      properties:
+        id:
+          $ref: '#/components/schemas/GadgetsGadgetId'
+        name:
+          type: string
+    GadgetsGadgetId:
+      type: string
+    GadgetsGadgetList:
+      type: object
+      required:
+      - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/GadgetsGadget'
+    WidgetsError:
+      type: object
+      required:
+      - code
+      - message
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+    WidgetsWidget:
+      type: object
+      required:
+      - name
+      properties:
+        id:
+          $ref: '#/components/schemas/WidgetsWidgetId'
+        name:
+          type: string
+    WidgetsWidgetId:
+      type: string
+    WidgetsWidgetList:
+      type: object
+      required:
+      - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/WidgetsWidget'
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  responses:
+    GadgetsBadRequest:
+      description: The request was invalid
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/GadgetsError'
+    GadgetsNotFound:
+      description: No such item
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/GadgetsRequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/GadgetsError'
+    GadgetsRateLimited:
+      description: Too many requests
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/GadgetsRequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/GadgetsError'
+    WidgetsBadRequest:
+      description: The request was invalid
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/WidgetsError'
+    WidgetsNotFound:
+      description: No such item
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/WidgetsRequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/WidgetsError'
+    WidgetsRateLimited:
+      description: Too many requests
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/WidgetsRequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/WidgetsError'
+  headers:
+    GadgetsRequestId:
+      description: Correlation id for the failed request
+      schema:
+        type: string
+    WidgetsRequestId:
+      description: Correlation id for the failed request
+      schema:
+        type: string
+  requestBodies:
+    GadgetsGadgetInput:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/GadgetsGadget'
+          examples:
+            sample:
+              $ref: '#/components/examples/GadgetsSampleGadget'
+    WidgetsWidgetInput:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/WidgetsWidget'
+          examples:
+            sample:
+              $ref: '#/components/examples/WidgetsSampleWidget'
+  examples:
+    GadgetsSampleGadget:
+      value:
+        name: sample
+    WidgetsSampleWidget:
+      value:
+        name: sample
