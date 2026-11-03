@@ -1,6 +1,7 @@
 use may::coroutine::JoinHandle;
 use may_minihttp::{HttpServerWithHeaders, HttpService};
 use std::io;
+#[allow(clippy::disallowed_types)] // only `wait_ready`, a test helper, connects with it
 use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
 use std::thread;
 use std::time::Duration;
@@ -57,6 +58,7 @@ impl ServerHandle {
     /// # Errors
     ///
     /// Returns `TimedOut` error if the server doesn't become ready within ~250ms (50 attempts × 5ms).
+    #[allow(clippy::disallowed_methods, clippy::disallowed_types)] // test helper on the caller's OS thread
     pub fn wait_ready(&self) -> io::Result<()> {
         for _ in 0..50 {
             if TcpStream::connect(self.addr).is_ok() {
@@ -151,6 +153,14 @@ impl<T: HttpService + Clone + Send + Sync + 'static> HttpServer<T> {
     /// # Errors
     ///
     /// Returns an error if the address is invalid or the port cannot be bound.
+    ///
+    /// # Calling thread
+    ///
+    /// Call this from an OS thread (normally `main`), not from a `may` coroutine. A bind address
+    /// given as a name is resolved here with the system resolver, which blocks the calling thread;
+    /// that is harmless before serving on `main`, but would park a worker thread on the runtime.
+    /// Socket-address literals (`"0.0.0.0:8080"`) involve no lookup.
+    #[allow(clippy::disallowed_methods)] // runs on the caller's OS thread before serving; see above
     pub fn start<A: ToSocketAddrs>(self, addr: A) -> io::Result<ServerHandle> {
         super::queue_metrics::start_scheduler_probe();
         let addr = addr

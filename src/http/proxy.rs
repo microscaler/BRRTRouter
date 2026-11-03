@@ -26,7 +26,7 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io::Read;
-use std::net::{SocketAddr, ToSocketAddrs};
+use std::net::SocketAddr;
 use std::sync::{Arc, OnceLock, RwLock};
 use std::time::{Duration, Instant};
 
@@ -446,16 +446,31 @@ struct Resolved {
     cached: bool,
 }
 
-/// The system resolver: one address for `host:port` (see [`lookup_name`]).
+/// One address for `host:port` (see [`lookup_name`]), resolved by [`crate::net`] on its lookup
+/// threads, never with a blocking `getaddrinfo` on this coroutine's worker thread.
+///
+/// Uncached on purpose: the proxy keeps its own cache with its own TTL, and calls this on a miss
+/// or after a cached address refused a connection (a recreated Service). Answering from a
+/// second cache would hand that retry the same dead address, or give a stale answer a fresh TTL.
+/// A lookup that runs out of time is a timeout (504), not a DNS failure.
 fn system_lookup(host: &str, port: u16) -> Result<SocketAddr, ProxyError> {
-    ToSocketAddrs::to_socket_addrs(&(lookup_name(host).as_ref(), port))
-        .map_err(|e| classify_transport_error(ProxyTransportKind::Dns, &e.to_string()))?
-        .next()
-        .ok_or(ProxyError::Dns)
+    let addresses =
+        crate::net::resolve_uncached(lookup_name(host).as_ref(), port, DNS_LOOKUP_BUDGET).map_err(
+            |e| {
+                if e.kind() == std::io::ErrorKind::TimedOut {
+                    ProxyError::Timeout
+                } else {
+                    classify_transport_error(ProxyTransportKind::Dns, &e.to_string())
+                }
+            },
+        )?;
+    addresses.into_iter().next().ok_or(ProxyError::Dns)
 }
 
-/// The address to connect to for `host:port`: from the cache while fresh, else resolved (a
-/// blocking `getaddrinfo` on the coroutine's worker thread, so not on every request).
+/// How long a proxied request waits for a name it has no cached address for.
+const DNS_LOOKUP_BUDGET: Duration = Duration::from_secs(2);
+
+/// The address to connect to for `host:port`: from the cache while fresh, else resolved.
 fn resolve_downstream(host: &str, port: u16) -> Result<Resolved, ProxyError> {
     resolve_downstream_with(host, port, &system_lookup)
 }

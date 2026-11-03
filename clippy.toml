@@ -32,3 +32,26 @@ too-many-lines-threshold = 200
 # Single char binding names allowed in closures
 single-char-binding-names-threshold = 4
 
+
+# ---------------------------------------------------------------------------
+# No OS-blocking calls on the may runtime.
+#
+# Handlers run as coroutines on may's worker threads. Each call below blocks the worker thread in
+# the kernel instead of parking the coroutine, so every coroutine queued on that worker stalls
+# behind it (see src/runtime_watchdog.rs and src/net.rs). Use may::net, may::sync,
+# may::coroutine::sleep, brrtrouter::net::{resolve, connect} and brrtrouter::http::fetch_* instead.
+# Code that genuinely runs on its own OS thread (never on a may worker) may opt out with
+# `#[allow(clippy::disallowed_methods, clippy::disallowed_types)]` and a comment saying which
+# thread it runs on. CI denies these two lints.
+# ---------------------------------------------------------------------------
+disallowed-types = [
+    { path = "std::net::TcpStream", reason = "blocks the may worker thread; use may::net::TcpStream or brrtrouter::net::connect" },
+    { path = "std::sync::Condvar", reason = "parks the may worker thread; use may::sync::Condvar" },
+    { path = "std::sync::mpsc::Receiver", reason = "recv parks the may worker thread; use may::sync::mpsc" },
+]
+disallowed-methods = [
+    { path = "std::net::ToSocketAddrs::to_socket_addrs", reason = "getaddrinfo blocks the may worker thread; use brrtrouter::net::resolve" },
+    { path = "std::net::TcpStream::connect", reason = "blocks the may worker thread; use brrtrouter::net::connect" },
+    { path = "std::net::TcpStream::connect_timeout", reason = "blocks the may worker thread; use brrtrouter::net::connect" },
+    { path = "std::thread::sleep", reason = "parks the may worker thread; use may::coroutine::sleep" },
+]

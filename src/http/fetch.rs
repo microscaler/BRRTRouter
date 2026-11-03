@@ -421,13 +421,25 @@ fn connect_client(url: &Url, options: &HttpFetchOptions) -> Result<HttpClient, H
     // Plaintext HTTP needs no TLS material at all, so the trust store is never touched for
     // in-cluster `http://...svc.cluster.local` JWKS URLs; HTTPS reuses the cached config above
     // instead of letting `from_url` rebuild one per connect.
-    let mut client = if url.scheme().eq_ignore_ascii_case("https") {
-        HttpClient::from_url_with_tls_config(url.as_str(), platform_tls_config()?)
-            .map_err(|error| HttpFetchError::Connect(error.to_string()))?
+    //
+    // The host is resolved by `crate::net` (off the worker threads, cached) and the addresses are
+    // handed to the client, so connecting never calls the system resolver on a worker thread.
+    let host = url
+        .host_str()
+        .ok_or_else(|| HttpFetchError::InvalidUrl("URL has no host".to_string()))?;
+    let port = url
+        .port_or_known_default()
+        .ok_or_else(|| HttpFetchError::InvalidUrl("URL has no port".to_string()))?;
+    let addresses = crate::net::resolve(host, port, options.timeout)
+        .map_err(|error| HttpFetchError::Connect(error.to_string()))?;
+    let tls = if url.scheme().eq_ignore_ascii_case("https") {
+        Some(platform_tls_config()?)
     } else {
-        HttpClient::from_url(url.as_str())
-            .map_err(|error| HttpFetchError::Connect(error.to_string()))?
+        None
     };
+    let mut client =
+        HttpClient::from_url_with_addresses(url.as_str(), tls, options.timeout, &addresses)
+            .map_err(|error| HttpFetchError::Connect(error.to_string()))?;
     client.set_timeout(Some(options.timeout));
     Ok(client)
 }
@@ -565,6 +577,9 @@ fn fetch_pool() -> Option<&'static TracedClient> {
             };
             let built = Client::builder()
                 .tls_config(tls)
+                // The default resolver calls getaddrinfo on the worker thread; this one resolves on
+                // dedicated threads and caches (see `crate::net`).
+                .resolver(crate::net::resolver() as Arc<dyn may_minihttp::client::Resolver>)
                 .max_connections(settings.max)
                 .max_connections_per_origin(settings.max_per_host)
                 .idle_timeout(settings.idle)

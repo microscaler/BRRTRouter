@@ -10,7 +10,38 @@ use lru::LruCache;
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Condvar, Mutex, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
+
+use may::sync::{Condvar as MayCondvar, Mutex as MayMutex};
+
+/// Signals the end of a JWKS refresh. `may`'s primitives, not `std`'s: request coroutines wait on
+/// it, and a `std::sync::Condvar` wait would park their whole worker thread (`crate::net`).
+pub(crate) type RefreshSignal = (MayMutex<()>, MayCondvar);
+
+/// Wait (parking only the calling coroutine) until `in_progress` clears or `timeout` passes.
+/// Returns `true` on timeout.
+pub(crate) fn wait_for_refresh(
+    signal: &RefreshSignal,
+    in_progress: &AtomicBool,
+    timeout: Duration,
+) -> bool {
+    let (lock, cvar) = signal;
+    let deadline = Instant::now() + timeout;
+    let Ok(mut guard) = lock.lock() else {
+        return false;
+    };
+    while in_progress.load(Ordering::Acquire) {
+        let left = deadline.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return true;
+        }
+        match cvar.wait_timeout(guard, left) {
+            Ok((g, _)) => guard = g,
+            Err(_) => return false,
+        }
+    }
+    false
+}
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 use tracing::{debug, error, info, warn, Level};
@@ -201,7 +232,7 @@ pub struct JwksBearerProvider {
     refresh_in_progress: Arc<AtomicBool>,
     // P1: Condition variable to notify waiting threads when refresh completes
     // Waiting threads use wait_timeout to be woken immediately when refresh finishes
-    refresh_complete: Arc<(Mutex<()>, Condvar)>,
+    refresh_complete: Arc<RefreshSignal>,
     // Unknown-kid refreshes bypass the normal JWKS TTL so newly rotated keys can be used
     // immediately. A cooldown prevents attacker-controlled kids from causing a fetch storm.
     unknown_kid_refresh_cooldown: Duration,
@@ -297,7 +328,7 @@ impl JwksBearerProvider {
         )));
         let background_handle = Arc::new(RwLock::new(None::<JoinHandle<()>>));
         let refresh_in_progress = Arc::new(AtomicBool::new(false));
-        let refresh_complete = Arc::new((Mutex::new(()), Condvar::new()));
+        let refresh_complete = Arc::new((MayMutex::new(()), MayCondvar::new()));
         let shutdown = Arc::new(AtomicBool::new(false));
         let cache_ttl_millis = Arc::new(std::sync::atomic::AtomicU64::new(300_000));
         // Timeout default comes from configuration, not a literal in the refresh path — see
@@ -692,12 +723,12 @@ impl JwksBearerProvider {
     ///
     /// The background task refreshes JWKS every (cache_ttl - 10s) to stay ahead of expiration.
     /// This ensures validation threads never block on HTTP requests.
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, clippy::disallowed_methods)] // runs on its own OS thread
     fn start_background_refresh_internal(
         &self,
         cache: Arc<RwLock<(Instant, HashMap<String, jsonwebtoken::DecodingKey>)>>,
         refresh_in_progress: Arc<AtomicBool>,
-        refresh_complete: Arc<(Mutex<()>, Condvar)>,
+        refresh_complete: Arc<RefreshSignal>,
         shutdown: Arc<AtomicBool>,
         handle_lock: Arc<RwLock<Option<JoinHandle<()>>>>,
         cache_ttl_millis: Arc<std::sync::atomic::AtomicU64>,
@@ -846,7 +877,7 @@ impl JwksBearerProvider {
         cache: &Arc<RwLock<(Instant, HashMap<String, jsonwebtoken::DecodingKey>)>>,
         jwks_url: &str,
         refresh_in_progress: &Arc<AtomicBool>,
-        refresh_complete: &Arc<(Mutex<()>, Condvar)>,
+        refresh_complete: &Arc<RefreshSignal>,
         already_claimed: bool,
         fetch_state: &Arc<JwksFetchState>,
     ) {
@@ -1303,30 +1334,12 @@ impl JwksBearerProvider {
                 // the fetch timeout was hard-coded at 200ms. With a TLS-sized timeout a fixed 2s
                 // wait expires before the refresh being waited on can possibly have finished.
                 let timeout = self.refresh_wait_timeout();
-                let (lock, cvar) = &*self.refresh_complete;
-                let guard = lock.lock().unwrap();
-
-                // Wait for refresh to complete, with timeout
-                // The condvar will wake us immediately when refresh_in_progress becomes false
-                let wait_result = cvar.wait_timeout_while(guard, timeout, |_| {
-                    // Continue waiting while refresh is in progress
-                    self.refresh_in_progress.load(Ordering::Acquire)
-                });
-
-                let (wait_guard, wait_timeout_result) = match wait_result {
-                    Ok(result) => result,
-                    Err(_) => {
-                        // Lock poisoned, give up
-                        return;
-                    }
-                };
-
-                drop(wait_guard);
+                // Wake as soon as the refresh finishes; parks this coroutine, not its worker.
+                let timed_out =
+                    wait_for_refresh(&self.refresh_complete, &self.refresh_in_progress, timeout);
 
                 // Check if we timed out or if refresh completed
-                if wait_timeout_result.timed_out()
-                    && self.refresh_in_progress.load(Ordering::Acquire)
-                {
+                if timed_out && self.refresh_in_progress.load(Ordering::Acquire) {
                     // Timeout - refresh may have failed, check if cache timestamp was updated
                     // If timestamp unchanged, refresh failed and we should retry
                     let cache_timestamp_after = {
@@ -1518,14 +1531,9 @@ impl JwksBearerProvider {
         }
 
         if self.refresh_in_progress.load(Ordering::Acquire) {
-            let (lock, cvar) = &*self.refresh_complete;
-            if let Ok(guard) = lock.lock() {
-                // Scaled to the configured fetch timeout for the same reason as above.
-                let timeout = self.refresh_wait_timeout();
-                let _ = cvar.wait_timeout_while(guard, timeout, |_| {
-                    self.refresh_in_progress.load(Ordering::Acquire)
-                });
-            }
+            // Scaled to the configured fetch timeout for the same reason as above.
+            let timeout = self.refresh_wait_timeout();
+            let _ = wait_for_refresh(&self.refresh_complete, &self.refresh_in_progress, timeout);
         }
     }
 
