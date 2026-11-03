@@ -91,9 +91,10 @@ pub mod multipart_stream;
 pub mod observability;
 /// Pre-handler OpenAPI parameter validation (Story 12.4)
 pub mod param_validation;
+/// Request-target boundary helpers (may_minihttp / httparse → app)
+pub mod queue_metrics;
 /// Request parsing and parameter extraction
 pub mod request;
-/// Request-target boundary helpers (may_minihttp / httparse → app)
 pub mod request_target;
 /// Response building and serialization
 pub mod response;

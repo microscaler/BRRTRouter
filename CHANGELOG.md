@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added (observability: queueing)
+
+- **`brrtrouter_request_queue_seconds{handler}`** (histogram): how long a request waited between the dispatcher
+  queueing it and its handler coroutine (or worker pool) taking it. Rises when a handler's coroutine is busy or its
+  workers are all occupied. `QueueDepthGuard` now records when the request was queued (`QueueDepthGuard::new`,
+  `QueueDepthGuard::timing_only` for worker pools, `queued_for()`); it is re-exported from `brrtrouter::dispatcher`.
+- **`brrtrouter_scheduler_lag_seconds`** (histogram): a probe coroutine sleeps `BRRTR_SCHEDULER_PROBE_MS` (default
+  100 ms; `0` turns it off) and records how much later than asked it woke. Lateness is time every coroutine waited,
+  including connection coroutines that have not yet handed a request to the router (where the queue histogram cannot
+  see it): workers held by blocking code, CPU throttling, or more ready coroutines than workers. The probe starts with
+  the server.
+
 ### Fixed (tooling: OpenAPI 3.0 sub-service specs in a 3.1 BFF)
 
 - **`nullable` from a 3.0 sub-service spec is rewritten when merged into the 3.1 BFF spec.** 3.1 (JSON Schema

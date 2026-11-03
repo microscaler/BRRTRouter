@@ -124,13 +124,45 @@ pub struct HandlerRequest {
     pub span: tracing::Span,
 }
 
-/// Guard that decreases queue depth counter when request processing completes and it drops
+/// Carried by a queued request: decreases the handler's queue-depth counter when the request is done
+/// and it drops, and notes when the request was queued (`brrtrouter_request_queue_seconds`).
 #[derive(Debug)]
-pub struct QueueDepthGuard(pub std::sync::Arc<std::sync::atomic::AtomicUsize>);
+pub struct QueueDepthGuard {
+    depth: Option<std::sync::Arc<std::sync::atomic::AtomicUsize>>,
+    enqueued_at: Instant,
+}
+
+impl QueueDepthGuard {
+    /// Count the request in `depth` (already incremented by the caller) until the guard drops.
+    #[must_use]
+    pub fn new(depth: std::sync::Arc<std::sync::atomic::AtomicUsize>) -> Self {
+        Self {
+            depth: Some(depth),
+            enqueued_at: Instant::now(),
+        }
+    }
+
+    /// Only note when the request was queued, for a queue that keeps its own count (worker pools).
+    #[must_use]
+    pub fn timing_only() -> Self {
+        Self {
+            depth: None,
+            enqueued_at: Instant::now(),
+        }
+    }
+
+    /// How long since the request was queued.
+    #[must_use]
+    pub fn queued_for(&self) -> Duration {
+        self.enqueued_at.elapsed()
+    }
+}
 
 impl Drop for QueueDepthGuard {
     fn drop(&mut self) {
-        self.0.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+        if let Some(depth) = &self.depth {
+            depth.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+        }
     }
 }
 
@@ -480,6 +512,7 @@ where
 
             for req in rx.iter() {
                 let req = *req;
+                crate::server::queue_metrics::dequeued(&req);
                 let _stack = stack_probe
                     .as_mut()
                     .map(crate::stack_probe::StackProbe::request);
@@ -721,6 +754,7 @@ impl Dispatcher {
 
                     for req in rx.iter() {
                         let req = *req;
+                        crate::server::queue_metrics::dequeued(&req);
                         let _stack = stack_probe
                             .as_mut()
                             .map(crate::stack_probe::StackProbe::request);
@@ -1131,7 +1165,7 @@ impl Dispatcher {
                     depth.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     // Attach Drop boundary: shared by the handler's request and the dispatcher's
                     // copy, so the depth drops once both are done (as when both were full clones).
-                    let guard = std::sync::Arc::new(QueueDepthGuard(depth.clone()));
+                    let guard = std::sync::Arc::new(QueueDepthGuard::new(depth.clone()));
                     request.queue_guard = Some(std::sync::Arc::clone(&guard));
                     to_handler.queue_guard = Some(guard);
                 }

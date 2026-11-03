@@ -447,6 +447,7 @@ where
             // Main event loop: process requests until channel closes
             for req in rx.iter() {
                 let req = *req;
+                crate::server::queue_metrics::dequeued(&req);
                 let _stack = stack_probe
                     .as_mut()
                     .map(crate::stack_probe::StackProbe::request);
@@ -646,6 +647,7 @@ where
             // Main event loop: process requests until channel closes
             for req in rx.iter() {
                 let req = *req;
+                crate::server::queue_metrics::dequeued(&req);
                 let _stack = stack_probe
                     .as_mut()
                     .map(crate::stack_probe::StackProbe::request);

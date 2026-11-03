@@ -67,7 +67,7 @@ pub mod deadline;
 
 pub use core::{
     generate_request_id, spawn_untyped_with_stack_size_and_name, Dispatcher, HandlerRequest,
-    HandlerResponse, HandlerSender, HeaderVec, MAX_INLINE_HEADERS,
+    HandlerResponse, HandlerSender, HeaderVec, QueueDepthGuard, MAX_INLINE_HEADERS,
 };
 pub use deadline::{
     deadline_exceeded_response, handler_deadline_from_env, resolve_deadline,
