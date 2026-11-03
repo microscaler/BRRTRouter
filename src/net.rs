@@ -26,6 +26,17 @@
 //! [`DnsResolver`] also implements `may_minihttp`'s client `Resolver`, so the HTTP fetch pool
 //! resolves through it ([`crate::http`]).
 //!
+//! # Off-coroutine calls
+//!
+//! A `may` socket used from a plain OS thread is driven by a worker's selector, and so is its
+//! timeout. If that worker is blocked (for example in `std::thread::scope`'s `join` under a
+//! handler), the call never wakes and never times out. So:
+//! - [`resolve`] off a coroutine resolves right there with the system resolver, which is safe
+//!   on an OS thread.
+//! - [`connect`] and the `crate::http` fetches still work off a coroutine, but every such call
+//!   is counted in `brrtrouter_off_coroutine_io_total{call}`, and the first one per call site
+//!   kind is logged with its thread name. Prefer a coroutine, or a blocking client on OS threads.
+//!
 //! # Example
 //!
 //! ```no_run
@@ -128,7 +139,81 @@ pub fn resolver() -> Arc<DnsResolver> {
 /// # Errors
 /// The lookup failed, or did not finish within `timeout` (`ErrorKind::TimedOut`).
 pub fn resolve(host: &str, port: u16, timeout: Duration) -> io::Result<Vec<SocketAddr>> {
+    if !may::coroutine::is_coroutine() {
+        note_off_coroutine(OffCoroutine::Resolve);
+        return resolve_on_thread(host, port);
+    }
     resolver().lookup(host, port, timeout)
+}
+
+/// [`resolve`] on a plain OS thread: the system resolver, here (blocking an OS thread is fine).
+#[allow(clippy::disallowed_methods)] // only called off a coroutine
+fn resolve_on_thread(host: &str, port: u16) -> io::Result<Vec<SocketAddr>> {
+    match key_or_literal(host, port) {
+        Err(addr) => Ok(vec![addr]),
+        Ok((name, port)) => {
+            let v: Vec<SocketAddr> = (name.as_str(), port).to_socket_addrs()?.collect();
+            if v.is_empty() {
+                Err(io::Error::other(format!("resolve {host}: no address")))
+            } else {
+                Ok(v)
+            }
+        }
+    }
+}
+
+/// The kinds of may I/O call that are counted when made off a coroutine.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum OffCoroutine {
+    /// [`resolve`] (and [`connect`]'s lookup).
+    Resolve,
+    /// [`connect`].
+    Connect,
+    /// A `crate::http` fetch.
+    HttpFetch,
+}
+
+impl OffCoroutine {
+    const ALL: [Self; 3] = [Self::Resolve, Self::Connect, Self::HttpFetch];
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Resolve => "net_resolve",
+            Self::Connect => "net_connect",
+            Self::HttpFetch => "http_fetch",
+        }
+    }
+}
+
+static OFF_COROUTINE: [AtomicU64; 3] = [AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0)];
+
+/// Count a may I/O call made off a coroutine; log the first of each kind.
+pub(crate) fn note_off_coroutine(kind: OffCoroutine) {
+    if OFF_COROUTINE[kind as usize].fetch_add(1, Ordering::Relaxed) == 0 {
+        tracing::error!(
+            call = kind.label(),
+            thread = std::thread::current().name().unwrap_or("<unnamed>"),
+            "may I/O called off a coroutine: it depends on a may worker's selector and can hang if that worker is blocked; \
+             call it from a coroutine, or use a blocking client on this OS thread (counted in brrtrouter_off_coroutine_io_total)"
+        );
+    }
+}
+
+/// `brrtrouter_off_coroutine_io_total{call}` in Prometheus text.
+pub fn render_prometheus(out: &mut String) {
+    use std::fmt::Write as _;
+    let _ = writeln!(
+        out,
+        "# HELP brrtrouter_off_coroutine_io_total may I/O calls made from a plain OS thread rather than a coroutine"
+    );
+    let _ = writeln!(out, "# TYPE brrtrouter_off_coroutine_io_total counter");
+    for k in OffCoroutine::ALL {
+        let _ = writeln!(
+            out,
+            "brrtrouter_off_coroutine_io_total{{call=\"{}\"}} {}",
+            k.label(),
+            OFF_COROUTINE[k as usize].load(Ordering::Relaxed)
+        );
+    }
 }
 
 /// Like [`resolve`], but never answers from the cache: for a caller whose cached address just
@@ -147,6 +232,9 @@ pub fn resolve_uncached(host: &str, port: u16, timeout: Duration) -> io::Result<
 /// # Errors
 /// Resolution failed, or no address accepted a connection in time.
 pub fn connect(host: &str, port: u16, timeout: Duration) -> io::Result<may::net::TcpStream> {
+    if !may::coroutine::is_coroutine() {
+        note_off_coroutine(OffCoroutine::Connect);
+    }
     let deadline = Instant::now() + timeout;
     let addrs = resolve(host, port, timeout)?;
     let mut last = None;
@@ -504,6 +592,17 @@ mod tests {
 
     fn fresh() -> Arc<DnsResolver> {
         DnsResolver::start(2, Duration::from_secs(30), Duration::from_millis(50))
+    }
+
+    #[test]
+    fn off_coroutine_resolve_uses_the_system_resolver_and_is_counted() {
+        let before = OFF_COROUTINE[OffCoroutine::Resolve as usize].load(Ordering::Relaxed);
+        let v = resolve("localhost", 5, Duration::from_millis(1)).unwrap();
+        assert!(v.iter().all(|a| a.port() == 5 && a.ip().is_loopback()));
+        assert!(OFF_COROUTINE[OffCoroutine::Resolve as usize].load(Ordering::Relaxed) > before);
+        let mut out = String::new();
+        render_prometheus(&mut out);
+        assert!(out.contains("brrtrouter_off_coroutine_io_total{call=\"net_resolve\"}"));
     }
 
     #[test]

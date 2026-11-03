@@ -121,6 +121,9 @@ pub fn fetch_get_full(
     url: &str,
     options: &HttpFetchOptions,
 ) -> Result<HttpGetResponse, HttpFetchError> {
+    if !may::coroutine::is_coroutine() {
+        crate::net::note_off_coroutine(crate::net::OffCoroutine::HttpFetch);
+    }
     let parsed = Url::parse(url).map_err(|e| HttpFetchError::InvalidUrl(e.to_string()))?;
     match parsed.scheme() {
         "http" | "https" => fetch_get_full_via_client(&parsed, options),
@@ -224,6 +227,9 @@ pub fn fetch_post(
     body: &[u8],
     options: &HttpFetchOptions,
 ) -> Result<(u16, Vec<u8>), HttpFetchError> {
+    if !may::coroutine::is_coroutine() {
+        crate::net::note_off_coroutine(crate::net::OffCoroutine::HttpFetch);
+    }
     let parsed = Url::parse(url).map_err(|e| HttpFetchError::InvalidUrl(e.to_string()))?;
     match parsed.scheme() {
         "http" | "https" => fetch_method_via_client(&parsed, Method::POST, Some(body), options),
@@ -246,6 +252,9 @@ pub fn fetch_query(
     body: &[u8],
     options: &HttpFetchOptions,
 ) -> Result<(u16, Vec<u8>), HttpFetchError> {
+    if !may::coroutine::is_coroutine() {
+        crate::net::note_off_coroutine(crate::net::OffCoroutine::HttpFetch);
+    }
     let parsed = Url::parse(url).map_err(|e| HttpFetchError::InvalidUrl(e.to_string()))?;
     let method = Method::from_bytes(b"QUERY").map_err(|e| {
         HttpFetchError::InvalidUrl(format!("QUERY method unsupported by http client: {e}"))
