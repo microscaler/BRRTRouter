@@ -445,9 +445,12 @@ where
             let mut stack_probe =
                 crate::stack_probe::StackProbe::for_current_sized(&name, Some(stack_size));
             // Main event loop: process requests until channel closes
+            let mut handler_timing_slot = crate::timing::HandlerTimingSlot::default();
             for req in rx.iter() {
                 let req = *req;
                 crate::server::queue_metrics::dequeued(&req);
+                let handler_timing = handler_timing_slot.for_request(&req);
+                handler_timing.dequeued(&req);
                 let _stack = stack_probe
                     .as_mut()
                     .map(crate::stack_probe::StackProbe::request);
@@ -463,6 +466,7 @@ where
                 // KEY OPTIMIZATION: Move the owned `req` into the closure to avoid cloning it.
                 // Using a move closure ensures `req` is consumed instead of cloned for each request.
                 let request_span = req.span.clone();
+                let handler_timer = handler_timing.start();
                 let result = may_tracing::with_span(request_span, || {
                     std::panic::catch_unwind(std::panic::AssertUnwindSafe({
                         // Capture the outer clones into the closure scope so the closure can be moved
@@ -531,6 +535,7 @@ where
                 });
 
                 // PANIC RECOVERY: If handler panicked, send 500 error
+                crate::timing::HandlerTiming::finish(handler_timer, result.is_err());
                 if let Err(panic) = result {
                     let _ = reply_tx_outer.send(Box::new(HandlerResponse::error(
                         500,
@@ -645,9 +650,12 @@ where
             let mut stack_probe =
                 crate::stack_probe::StackProbe::for_current_sized(&probe_name, Some(stack_size));
             // Main event loop: process requests until channel closes
+            let mut handler_timing_slot = crate::timing::HandlerTimingSlot::default();
             for req in rx.iter() {
                 let req = *req;
                 crate::server::queue_metrics::dequeued(&req);
+                let handler_timing = handler_timing_slot.for_request(&req);
+                handler_timing.dequeued(&req);
                 let _stack = stack_probe
                     .as_mut()
                     .map(crate::stack_probe::StackProbe::request);
@@ -664,6 +672,7 @@ where
                 // KEY OPTIMIZATION: Move the owned `req` into the closure to avoid cloning it.
                 // Using a move closure ensures `req` is consumed instead of cloned for each request.
                 let request_span = req.span.clone();
+                let handler_timer = handler_timing.start();
                 let result = may_tracing::with_span(request_span, || {
                     std::panic::catch_unwind(std::panic::AssertUnwindSafe({
                         // Capture the outer clones into the closure scope so the closure can be moved
@@ -732,6 +741,7 @@ where
                 });
 
                 // PANIC RECOVERY: If handler panicked, send 500 error
+                crate::timing::HandlerTiming::finish(handler_timer, result.is_err());
                 if let Err(panic) = result {
                     let _ = reply_tx_outer.send(Box::new(HandlerResponse {
                         status: 500,

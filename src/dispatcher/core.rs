@@ -510,9 +510,13 @@ where
                 Some(stack_size),
             );
 
+            let mut handler_timing_slot = crate::timing::HandlerTimingSlot::default();
+
             for req in rx.iter() {
                 let req = *req;
                 crate::server::queue_metrics::dequeued(&req);
+                let handler_timing = handler_timing_slot.for_request(&req);
+                handler_timing.dequeued(&req);
                 let _stack = stack_probe
                     .as_mut()
                     .map(crate::stack_probe::StackProbe::request);
@@ -530,12 +534,15 @@ where
                 let execution_start = std::time::Instant::now();
 
                 let request_span = req.span.clone();
-                if let Err(panic) = may_tracing::with_span(request_span, || {
+                let handler_timer = handler_timing.start();
+                let ran = may_tracing::with_span(request_span, || {
                     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                         let response = handler_fn(req);
                         let _ = reply_tx.send(Box::new(response));
                     }))
-                }) {
+                });
+                crate::timing::HandlerTiming::finish(handler_timer, ran.is_err());
+                if let Err(panic) = ran {
                     let panic_message = format!("{panic:?}");
                     error!(
                         request_id = %request_id,
@@ -752,9 +759,13 @@ impl Dispatcher {
                         Some(stack_size),
                     );
 
+                    let mut handler_timing_slot = crate::timing::HandlerTimingSlot::default();
+
                     for req in rx.iter() {
                         let req = *req;
                         crate::server::queue_metrics::dequeued(&req);
+                        let handler_timing = handler_timing_slot.for_request(&req);
+                        handler_timing.dequeued(&req);
                         let _stack = stack_probe
                             .as_mut()
                             .map(crate::stack_probe::StackProbe::request);
@@ -775,11 +786,14 @@ impl Dispatcher {
                         let execution_start = Instant::now();
 
                         let request_span = req.span.clone();
-                        if let Err(panic) = may_tracing::with_span(request_span, || {
+                        let handler_timer = handler_timing.start();
+                        let ran = may_tracing::with_span(request_span, || {
                             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                                 handler_fn(req);
                             }))
-                        }) {
+                        });
+                        crate::timing::HandlerTiming::finish(handler_timer, ran.is_err());
+                        if let Err(panic) = ran {
                             // H3: Handler panic caught - CRITICAL ERROR
                             let panic_message = format!("{panic:?}");
                             let backtrace = std::backtrace::Backtrace::capture();

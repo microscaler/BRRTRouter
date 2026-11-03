@@ -858,6 +858,8 @@ pub mod static_files;
 /// In-process HTTP test client (`TestApp` / `RequestBuilder`). Enable with `--features testing`.
 #[cfg(feature = "testing")]
 pub mod test_support;
+/// `op_duration_seconds` for queue wait, handlers, outbound calls and DNS (`microscaler-timing`).
+pub mod timing;
 pub mod typed;
 pub mod validator;
 pub mod validator_cache;

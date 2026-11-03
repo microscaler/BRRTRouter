@@ -260,7 +260,17 @@ pub(super) fn validate_token_impl(
     scopes: &[String],
     req: &SecurityRequest,
 ) -> bool {
-    match validate_token_internal(provider, scheme, scopes, req) {
+    let started = std::time::Instant::now();
+    let validated = validate_token_internal(provider, scheme, scopes, req);
+    crate::timing::JWT_VERIFY.record(
+        if matches!(validated, Ok(true)) {
+            microscaler_timing::Outcome::Ok
+        } else {
+            microscaler_timing::Outcome::Err
+        },
+        started.elapsed(),
+    );
+    match validated {
         Ok(valid) => valid,
         Err(e) => {
             e.log();

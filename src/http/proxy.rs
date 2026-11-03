@@ -472,7 +472,22 @@ const DNS_LOOKUP_BUDGET: Duration = Duration::from_secs(2);
 
 /// The address to connect to for `host:port`: from the cache while fresh, else resolved.
 fn resolve_downstream(host: &str, port: u16) -> Result<Resolved, ProxyError> {
-    resolve_downstream_with(host, port, &system_lookup)
+    let started = Instant::now();
+    let resolved = resolve_downstream_with(host, port, &system_lookup);
+    let site = if resolved.as_ref().is_ok_and(|r| r.cached) {
+        &crate::timing::PROXY_DNS_CACHED
+    } else {
+        &crate::timing::PROXY_DNS_RESOLVE
+    };
+    site.record(
+        if resolved.is_ok() {
+            microscaler_timing::Outcome::Ok
+        } else {
+            microscaler_timing::Outcome::Err
+        },
+        started.elapsed(),
+    );
+    resolved
 }
 
 fn resolve_downstream_with(
@@ -621,7 +636,19 @@ fn proxy_timeout() -> Duration {
         .unwrap_or(DEFAULT_PROXY_TIMEOUT)
 }
 
+/// Read a downstream body (bounded), timed as `brrtrouter.proxy/response_body`.
 fn read_bounded_body(
+    reader: &mut impl Read,
+    max_body: usize,
+    size_hint: Option<usize>,
+) -> Result<Vec<u8>, ProxyError> {
+    let timer = crate::timing::PROXY.response_body().start();
+    let body = read_bounded_body_untimed(reader, max_body, size_hint);
+    timer.finish_result(&body);
+    body
+}
+
+fn read_bounded_body_untimed(
     reader: &mut impl Read,
     max_body: usize,
     size_hint: Option<usize>,
@@ -947,6 +974,8 @@ fn proxy_pool() -> Option<&'static TracedClient> {
         let built = Client::builder()
             .tls_config(tls)
             .resolver(Arc::new(ProxyResolver))
+            // op_duration_seconds{component="brrtrouter.proxy"}: checkout, connect, write, wait, call.
+            .observer(crate::timing::PhaseObserver::for_pool(&crate::timing::PROXY))
             .max_connections(settings.max)
             .max_connections_per_origin(settings.max_per_host)
             .idle_timeout(settings.idle)

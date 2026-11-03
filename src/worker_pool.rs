@@ -285,8 +285,11 @@ impl WorkerPool {
                     // Process requests until channel closes
                     // Note: All workers share the same receiver, so they will
                     // automatically load balance across incoming requests
+                    let mut handler_timing_slot = crate::timing::HandlerTimingSlot::default();
                     while let Ok(req) = rx_clone.recv() {
                         crate::server::queue_metrics::dequeued(&req);
+                        let handler_timing = handler_timing_slot.for_request(&req);
+                        handler_timing.dequeued(&req);
                         let _stack = stack_probe
                             .as_mut()
                             .map(crate::stack_probe::StackProbe::request);
@@ -301,11 +304,12 @@ impl WorkerPool {
                         );
 
                         // Call the handler function with panic recovery
-                        if let Err(panic) =
-                            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                                handler_fn(req);
-                            }))
-                        {
+                        let handler_timer = handler_timing.start();
+                        let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            handler_fn(req);
+                        }));
+                        crate::timing::HandlerTiming::finish(handler_timer, ran.is_err());
+                        if let Err(panic) = ran {
                             // Handler panicked - send 500 error response
                             error!(
                                 request_id = %request_id,

@@ -813,6 +813,8 @@ pub fn metrics_endpoint(
     );
     crate::stack_probe::render_prometheus(&mut body);
     super::queue_metrics::render_prometheus(&mut body);
+    // op_duration_seconds: every timed operation in the process (crate::timing and the service's own).
+    microscaler_timing::render_prometheus(&mut body);
     crate::net::render_prometheus(&mut body);
 
     // Worker pool metrics (NEW - for backpressure monitoring)
