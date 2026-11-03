@@ -153,7 +153,14 @@ impl<T: HttpService + Clone + Send + Sync + 'static> HttpServer<T> {
     /// # Errors
     ///
     /// Returns an error if the address is invalid or the port cannot be bound.
-    #[allow(clippy::disallowed_methods)] // resolves the bind address once, before serving
+    ///
+    /// # Calling thread
+    ///
+    /// Call this from an OS thread (normally `main`), not from a `may` coroutine. A bind address
+    /// given as a name is resolved here with the system resolver, which blocks the calling thread;
+    /// that is harmless before serving on `main`, but would park a worker thread on the runtime.
+    /// Socket-address literals (`"0.0.0.0:8080"`) involve no lookup.
+    #[allow(clippy::disallowed_methods)] // runs on the caller's OS thread before serving; see above
     pub fn start<A: ToSocketAddrs>(self, addr: A) -> io::Result<ServerHandle> {
         super::queue_metrics::start_scheduler_probe();
         let addr = addr

@@ -446,14 +446,25 @@ struct Resolved {
     cached: bool,
 }
 
-/// One address for `host:port` (see [`lookup_name`]), resolved by [`crate::net`]: on its lookup
+/// One address for `host:port` (see [`lookup_name`]), resolved by [`crate::net`] on its lookup
 /// threads, never with a blocking `getaddrinfo` on this coroutine's worker thread.
+///
+/// Uncached on purpose: the proxy keeps its own cache with its own TTL, and calls this on a miss
+/// or after a cached address refused a connection (a recreated Service). Answering from a
+/// second cache would hand that retry the same dead address, or give a stale answer a fresh TTL.
+/// A lookup that runs out of time is a timeout (504), not a DNS failure.
 fn system_lookup(host: &str, port: u16) -> Result<SocketAddr, ProxyError> {
-    crate::net::resolve(lookup_name(host).as_ref(), port, DNS_LOOKUP_BUDGET)
-        .map_err(|e| classify_transport_error(ProxyTransportKind::Dns, &e.to_string()))?
-        .into_iter()
-        .next()
-        .ok_or(ProxyError::Dns)
+    let addresses =
+        crate::net::resolve_uncached(lookup_name(host).as_ref(), port, DNS_LOOKUP_BUDGET).map_err(
+            |e| {
+                if e.kind() == std::io::ErrorKind::TimedOut {
+                    ProxyError::Timeout
+                } else {
+                    classify_transport_error(ProxyTransportKind::Dns, &e.to_string())
+                }
+            },
+        )?;
+    addresses.into_iter().next().ok_or(ProxyError::Dns)
 }
 
 /// How long a proxied request waits for a name it has no cached address for.

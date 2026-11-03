@@ -409,11 +409,17 @@ impl SpiffeProvider {
         // Trigger refresh if needed
         self.refresh_jwks_if_needed();
 
-        // If cache was empty, wait for refresh to complete
+        // If the cache was empty, wait only while a refresh is still running. A refresh this call
+        // ran itself has already finished (and notified before we could wait), so waiting on the
+        // signal unconditionally would sit out the whole timeout.
         if is_empty {
-            let (lock, cvar) = &**refresh_complete;
-            let guard = lock.lock().unwrap();
-            let _ = cvar.wait_timeout(guard, self.jwks_refresh_wait_timeout());
+            if let Some(in_progress) = &self.jwks_refresh_in_progress {
+                let _ = crate::security::jwks_bearer::wait_for_refresh(
+                    refresh_complete,
+                    in_progress,
+                    self.jwks_refresh_wait_timeout(),
+                );
+            }
         }
 
         // Read from cache
@@ -480,10 +486,13 @@ impl SpiffeProvider {
                 );
                 return;
             } else {
-                // Another thread is refreshing - wait for it
-                let (lock, cvar) = &**refresh_complete;
-                let guard = lock.lock().unwrap();
-                let _ = cvar.wait_timeout(guard, self.jwks_refresh_wait_timeout());
+                // Another thread is refreshing - wait for it, but only while it still is (it may
+                // already have finished and notified).
+                let _ = crate::security::jwks_bearer::wait_for_refresh(
+                    refresh_complete,
+                    refresh_in_progress,
+                    self.jwks_refresh_wait_timeout(),
+                );
                 return;
             }
         }
