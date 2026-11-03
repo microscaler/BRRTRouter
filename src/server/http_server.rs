@@ -152,6 +152,7 @@ impl<T: HttpService + Clone + Send + Sync + 'static> HttpServer<T> {
     ///
     /// Returns an error if the address is invalid or the port cannot be bound.
     pub fn start<A: ToSocketAddrs>(self, addr: A) -> io::Result<ServerHandle> {
+        super::queue_metrics::start_scheduler_probe();
         let addr = addr
             .to_socket_addrs()?
             .next()

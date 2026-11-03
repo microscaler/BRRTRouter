@@ -812,6 +812,7 @@ pub fn metrics_endpoint(
         crate::stack_probe::max_peak()
     );
     crate::stack_probe::render_prometheus(&mut body);
+    super::queue_metrics::render_prometheus(&mut body);
 
     // Worker pool metrics (NEW - for backpressure monitoring)
     if let Some(disp) = dispatcher {

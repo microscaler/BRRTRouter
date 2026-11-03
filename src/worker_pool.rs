@@ -286,6 +286,7 @@ impl WorkerPool {
                     // Note: All workers share the same receiver, so they will
                     // automatically load balance across incoming requests
                     while let Ok(req) = rx_clone.recv() {
+                        crate::server::queue_metrics::dequeued(&req);
                         let _stack = stack_probe
                             .as_mut()
                             .map(crate::stack_probe::StackProbe::request);
@@ -421,8 +422,14 @@ impl WorkerPool {
 
     /// Push to the MPMC channel and update metrics. Returns 503 if the channel
     /// is disconnected (workers have gone), which is distinct from a 429 shed.
-    fn send_to_pool(&self, req: HandlerRequest) -> Result<(), HandlerResponse> {
+    fn send_to_pool(&self, mut req: HandlerRequest) -> Result<(), HandlerResponse> {
         let request_id = req.request_id;
+        // The pool keeps its own depth count; the guard only notes when the request was queued.
+        if req.queue_guard.is_none() {
+            req.queue_guard = Some(std::sync::Arc::new(
+                crate::dispatcher::QueueDepthGuard::timing_only(),
+            ));
+        }
         // Bump the depth counter *before* sending so concurrent dispatchers
         // observing the gate see the increment; workers' `record_completion`
         // on the far side balances this out.
