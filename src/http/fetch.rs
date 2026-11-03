@@ -597,6 +597,8 @@ fn fetch_pool() -> Option<&'static TracedClient> {
                 // The default resolver calls getaddrinfo on the worker thread; this one resolves on
                 // dedicated threads and caches (see `crate::net`).
                 .resolver(crate::net::resolver() as Arc<dyn may_minihttp::client::Resolver>)
+                // op_duration_seconds{component="brrtrouter.client"}: checkout, connect, write, wait, call.
+                .observer(crate::timing::PhaseObserver::for_pool(&crate::timing::FETCH))
                 .max_connections(settings.max)
                 .max_connections_per_origin(settings.max_per_host)
                 .idle_timeout(settings.idle)
@@ -718,7 +720,18 @@ fn pool_error(error: std::io::Error) -> HttpFetchError {
     }
 }
 
+/// Read the response body (bounded), timed as `brrtrouter.client/response_body`.
 fn read_bounded_body(reader: &mut impl Read, max_body: usize) -> Result<Vec<u8>, HttpFetchError> {
+    let timer = crate::timing::FETCH.response_body().start();
+    let body = read_bounded_body_untimed(reader, max_body);
+    timer.finish_result(&body);
+    body
+}
+
+fn read_bounded_body_untimed(
+    reader: &mut impl Read,
+    max_body: usize,
+) -> Result<Vec<u8>, HttpFetchError> {
     let mut buf = Vec::new();
     reader
         .by_ref()

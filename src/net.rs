@@ -541,6 +541,21 @@ impl DnsResolver {
     /// # Errors
     /// The lookup failed, or did not finish in time (`ErrorKind::TimedOut`).
     pub fn lookup(&self, host: &str, port: u16, timeout: Duration) -> io::Result<Vec<SocketAddr>> {
+        let started = Instant::now();
+        let mut cached = true;
+        let result = self.lookup_noting_cache(host, port, timeout, &mut cached);
+        crate::timing::record_resolve(cached, &result, started.elapsed());
+        result
+    }
+
+    /// [`Self::lookup`]; clears `cached` when the answer was not served from the cache.
+    fn lookup_noting_cache(
+        &self,
+        host: &str,
+        port: u16,
+        timeout: Duration,
+        cached: &mut bool,
+    ) -> io::Result<Vec<SocketAddr>> {
         let key = match key_or_literal(host, port) {
             Ok(key) => key,
             Err(addr) => return Ok(vec![addr]),
@@ -592,6 +607,7 @@ impl DnsResolver {
         if submit && !self.submit(key.clone(), deadline) {
             self.finish(key.clone(), Err("dns resolver stopped".into()));
         }
+        *cached = false;
         self.wait(&key, id, &rx, host, timeout)
     }
 
