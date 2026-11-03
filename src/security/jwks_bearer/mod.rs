@@ -841,6 +841,7 @@ impl JwksBearerProvider {
     /// Stop the background refresh task
     ///
     /// This should be called during cleanup/shutdown to gracefully stop the background thread.
+    #[allow(clippy::disallowed_methods)] // shutdown only: joins the refresh OS thread, which exits within 1 s
     pub fn stop_background_refresh(&self) {
         // Signal shutdown
         self.shutdown.store(true, Ordering::Release);

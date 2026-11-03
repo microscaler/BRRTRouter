@@ -460,3 +460,9 @@ Hauliage Phase 3 unblockers for Vite dev proxy and frontend-aligned BFF routes.
 - `brrtrouter::contract::ResponseContract` checks a hand-built value against an operation's response schema in tests.
 - Generator: `type: [T, "null"]` → `Option<T>`; required + nullable is written as `null` (`FieldDef::required_nullable`).
 - [`topics/bff-gateway-merge-and-proxy-headers.md`](./topics/bff-gateway-merge-and-proxy-headers.md#proxy-502s-bodyless-requests-and-rollouts-2026-10-26).
+
+## [2026-11-03] fix | off-coroutine may I/O counted; resolve safe off-coroutine; no scope/join in handlers
+
+- `brrtrouter_off_coroutine_io_total{call}`; off-coroutine `net::resolve` uses cache + helper-thread lookup within its timeout (last good answer on failure); fetches counted only for valid http(s) URLs.
+- `clippy.toml` disallows `std::thread::scope` / `JoinHandle::join` (allows with reasons where genuinely on an OS thread).
+- [`topics/off-coroutine-io.md`](./topics/off-coroutine-io.md).

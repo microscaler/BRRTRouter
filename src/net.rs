@@ -31,8 +31,10 @@
 //! A `may` socket used from a plain OS thread is driven by a worker's selector, and so is its
 //! timeout. If that worker is blocked (for example in `std::thread::scope`'s `join` under a
 //! handler), the call never wakes and never times out. So:
-//! - [`resolve`] off a coroutine resolves right there with the system resolver, which is safe
-//!   on an OS thread.
+//! - [`resolve`] off a coroutine waits on nothing may-driven: it answers from the cache when the
+//!   answer is fresh, otherwise runs the system resolver on a helper thread and waits for it on a
+//!   std channel within the caller's timeout, falling back to the last good answer if the lookup
+//!   fails or is late.
 //! - [`connect`] and the `crate::http` fetches still work off a coroutine, but every such call
 //!   is counted in `brrtrouter_off_coroutine_io_total{call}`, and the first one per call site
 //!   kind is logged with its thread name. Prefer a coroutine, or a blocking client on OS threads.
@@ -141,24 +143,55 @@ pub fn resolver() -> Arc<DnsResolver> {
 pub fn resolve(host: &str, port: u16, timeout: Duration) -> io::Result<Vec<SocketAddr>> {
     if !may::coroutine::is_coroutine() {
         note_off_coroutine(OffCoroutine::Resolve);
-        return resolve_on_thread(host, port);
+        return resolve_on_thread(host, port, timeout);
     }
     resolver().lookup(host, port, timeout)
 }
 
-/// [`resolve`] on a plain OS thread: the system resolver, here (blocking an OS thread is fine).
-#[allow(clippy::disallowed_methods)] // only called off a coroutine
-fn resolve_on_thread(host: &str, port: u16) -> io::Result<Vec<SocketAddr>> {
-    match key_or_literal(host, port) {
-        Err(addr) => Ok(vec![addr]),
-        Ok((name, port)) => {
-            let v: Vec<SocketAddr> = (name.as_str(), port).to_socket_addrs()?.collect();
-            if v.is_empty() {
-                Err(io::Error::other(format!("resolve {host}: no address")))
-            } else {
-                Ok(v)
-            }
+/// [`resolve`] on a plain OS thread. Nothing here waits on a may primitive: a fresh cached answer
+/// is returned as is; otherwise the system resolver runs on a helper thread and this thread waits
+/// for it on a std channel, at most `timeout`. A failed or late lookup falls back to the last good
+/// (expired) answer when there is one, and a successful one refreshes the cache.
+#[allow(clippy::disallowed_methods, clippy::disallowed_types)] // only called off a coroutine
+fn resolve_on_thread(host: &str, port: u16, timeout: Duration) -> io::Result<Vec<SocketAddr>> {
+    let key = match key_or_literal(host, port) {
+        Err(addr) => return Ok(vec![addr]),
+        Ok(key) => key,
+    };
+    let r = resolver();
+    let cached = r.cached(&key);
+    if let Some((addrs, true)) = &cached {
+        return Ok(addrs.clone());
+    }
+    let (tx, rx) = std::sync::mpsc::channel();
+    let job = key.clone();
+    let spawned = std::thread::Builder::new()
+        .name("brrtr-dns-direct".into())
+        .spawn(move || {
+            let result = (job.0.as_str(), job.1)
+                .to_socket_addrs()
+                .map(Iterator::collect::<Vec<_>>);
+            let _ = tx.send(result);
+        });
+    let outcome = match spawned {
+        Ok(_) => match rx.recv_timeout(timeout) {
+            Ok(Ok(v)) if !v.is_empty() => Ok(v),
+            Ok(Ok(_)) => Err(io::Error::other(format!("resolve {host}: no address"))),
+            Ok(Err(e)) => Err(io::Error::other(format!("resolve {host}: {e}"))),
+            Err(_) => Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                format!("resolve {host}: no answer within {timeout:?}"),
+            )),
+        },
+        Err(e) => Err(e),
+    };
+    match (outcome, cached) {
+        (Ok(v), _) => {
+            r.store(&key, &v);
+            Ok(v)
         }
+        (Err(_), Some((stale, _))) => Ok(stale),
+        (Err(e), None) => Err(e),
     }
 }
 
@@ -188,7 +221,14 @@ static OFF_COROUTINE: [AtomicU64; 3] = [AtomicU64::new(0), AtomicU64::new(0), At
 
 /// Count a may I/O call made off a coroutine; log the first of each kind.
 pub(crate) fn note_off_coroutine(kind: OffCoroutine) {
-    if OFF_COROUTINE[kind as usize].fetch_add(1, Ordering::Relaxed) == 0 {
+    let first = OFF_COROUTINE[kind as usize].fetch_add(1, Ordering::Relaxed) == 0;
+    if first && matches!(kind, OffCoroutine::Resolve) {
+        // Resolved on the calling thread (see `resolve_on_thread`): safe, counted for visibility.
+        tracing::debug!(
+            thread = std::thread::current().name().unwrap_or("<unnamed>"),
+            "net::resolve called off a coroutine; resolved on this thread"
+        );
+    } else if first {
         tracing::error!(
             call = kind.label(),
             thread = std::thread::current().name().unwrap_or("<unnamed>"),
@@ -406,6 +446,37 @@ impl DnsResolver {
         }
     }
 
+    /// A cached good answer for `key` and whether it is still fresh (for off-coroutine callers).
+    fn cached(&self, key: &Key) -> Option<(Vec<SocketAddr>, bool)> {
+        let cache = self.cache.lock().ok()?;
+        match cache.get(key)? {
+            Entry::Ready {
+                result: Ok(addrs),
+                at,
+            } => Some((addrs.clone(), at.elapsed() < self.ttl)),
+            Entry::Pending {
+                stale: Some((addrs, _)),
+                ..
+            } => Some((addrs.clone(), false)),
+            _ => None,
+        }
+    }
+
+    /// Store an answer resolved outside the lookup threads, unless a lookup for it is running.
+    fn store(&self, key: &Key, addrs: &[SocketAddr]) {
+        if let Ok(mut cache) = self.cache.lock() {
+            if !matches!(cache.get(key), Some(Entry::Pending { .. })) {
+                cache.insert(
+                    key.clone(),
+                    Entry::Ready {
+                        result: Ok(addrs.to_vec()),
+                        at: Instant::now(),
+                    },
+                );
+            }
+        }
+    }
+
     /// Queue a lookup; `false` when the lookup threads are gone.
     fn submit(&self, key: Key, deadline: Instant) -> bool {
         self.jobs
@@ -603,6 +674,43 @@ mod tests {
         let mut out = String::new();
         render_prometheus(&mut out);
         assert!(out.contains("brrtrouter_off_coroutine_io_total{call=\"net_resolve\"}"));
+    }
+
+    #[test]
+    fn off_coroutine_resolve_answers_from_the_cache_and_keeps_the_last_good_answer() {
+        let r = resolver();
+        let fresh_key: Key = ("cached-fresh.invalid".into(), 21);
+        let stale_key: Key = ("cached-stale.invalid".into(), 22);
+        let fresh: Vec<SocketAddr> = vec!["10.1.2.3:21".parse().unwrap()];
+        let stale: Vec<SocketAddr> = vec!["10.1.2.4:22".parse().unwrap()];
+        {
+            let mut cache = r.cache.lock().unwrap();
+            cache.insert(
+                fresh_key,
+                Entry::Ready {
+                    result: Ok(fresh.clone()),
+                    at: Instant::now(),
+                },
+            );
+            cache.insert(
+                stale_key,
+                Entry::Ready {
+                    result: Ok(stale.clone()),
+                    at: Instant::now() - Duration::from_secs(3600),
+                },
+            );
+        }
+        // Neither name resolves (.invalid): the fresh one is served from the cache, the expired
+        // one falls back to its last good answer when the lookup fails.
+        assert_eq!(
+            resolve("cached-fresh.invalid", 21, Duration::from_secs(5)).unwrap(),
+            fresh
+        );
+        assert_eq!(
+            resolve("cached-stale.invalid", 22, Duration::from_secs(5)).unwrap(),
+            stale
+        );
+        assert!(resolve("uncached.invalid", 23, Duration::from_secs(5)).is_err());
     }
 
     #[test]
