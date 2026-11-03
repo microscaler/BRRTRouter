@@ -29,6 +29,7 @@
 
 ## Topics
 
+- [`topics/off-coroutine-io.md`](./topics/off-coroutine-io.md) — may I/O from plain OS threads: why it can hang, `brrtrouter_off_coroutine_io_total`, off-coroutine `net::resolve`, no `join` in handlers.
 - [`topics/http-server-metrics.md`](./topics/http-server-metrics.md) — `/metrics`: OpenTelemetry HTTP server histogram, process collector, recording model.
 - [`topics/request-path-copies.md`](./topics/request-path-copies.md) — copies/allocations per request: how to measure (`benches/request_path.rs`), invariants (no request deep copy, token-keyed claims cache, per-route validators, boxed reply channel), open items.
 - [`topics/handler-stack-memory.md`](./topics/handler-stack-memory.md) — per-handler stack probe (`brrtrouter_handler_stack_used_bytes`), coroutine names, stack units, coroutine pool, boxed handler channels.

@@ -50,6 +50,9 @@ disallowed-types = [
     { path = "std::sync::mpsc::Receiver", reason = "recv parks the may worker thread; use may::sync::mpsc" },
 ]
 disallowed-methods = [
+    { path = "std::thread::scope", reason = "joining parks the may worker until every scoped thread ends; receive results on a may channel or run the work on coroutines" },
+    { path = "std::thread::JoinHandle::join", reason = "parks the may worker thread; wait on a may channel or join a coroutine" },
+    { path = "std::thread::ScopedJoinHandle::join", reason = "parks the may worker thread; wait on a may channel or join a coroutine" },
     { path = "std::net::ToSocketAddrs::to_socket_addrs", reason = "getaddrinfo blocks the may worker thread; use brrtrouter::net::resolve" },
     { path = "std::net::TcpStream::connect", reason = "blocks the may worker thread; use brrtrouter::net::connect" },
     { path = "std::net::TcpStream::connect_timeout", reason = "blocks the may worker thread; use brrtrouter::net::connect" },

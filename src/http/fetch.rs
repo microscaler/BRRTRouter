@@ -123,7 +123,10 @@ pub fn fetch_get_full(
 ) -> Result<HttpGetResponse, HttpFetchError> {
     let parsed = Url::parse(url).map_err(|e| HttpFetchError::InvalidUrl(e.to_string()))?;
     match parsed.scheme() {
-        "http" | "https" => fetch_get_full_via_client(&parsed, options),
+        "http" | "https" => {
+            note_off_coroutine_fetch();
+            fetch_get_full_via_client(&parsed, options)
+        }
         other => Err(HttpFetchError::InvalidUrl(format!(
             "unsupported scheme: {other}"
         ))),
@@ -212,6 +215,14 @@ pub fn fetch_get_text_with_retry(
     None
 }
 
+/// Count a fetch made off a coroutine (`brrtrouter_off_coroutine_io_total{call="http_fetch"}`);
+/// called only once the URL is a valid http(s) URL, so a rejected URL is never counted as I/O.
+fn note_off_coroutine_fetch() {
+    if !may::coroutine::is_coroutine() {
+        crate::net::note_off_coroutine(crate::net::OffCoroutine::HttpFetch);
+    }
+}
+
 /// Perform a bounded HTTP POST and return `(status_code, body)`.
 ///
 /// Supports `http://` and rustls-backed `https://` through `may_minihttp::client`.
@@ -226,7 +237,10 @@ pub fn fetch_post(
 ) -> Result<(u16, Vec<u8>), HttpFetchError> {
     let parsed = Url::parse(url).map_err(|e| HttpFetchError::InvalidUrl(e.to_string()))?;
     match parsed.scheme() {
-        "http" | "https" => fetch_method_via_client(&parsed, Method::POST, Some(body), options),
+        "http" | "https" => {
+            note_off_coroutine_fetch();
+            fetch_method_via_client(&parsed, Method::POST, Some(body), options)
+        }
         other => Err(HttpFetchError::InvalidUrl(format!(
             "unsupported scheme: {other}"
         ))),
@@ -251,7 +265,10 @@ pub fn fetch_query(
         HttpFetchError::InvalidUrl(format!("QUERY method unsupported by http client: {e}"))
     })?;
     match parsed.scheme() {
-        "http" | "https" => fetch_method_via_client(&parsed, method, Some(body), options),
+        "http" | "https" => {
+            note_off_coroutine_fetch();
+            fetch_method_via_client(&parsed, method, Some(body), options)
+        }
         other => Err(HttpFetchError::InvalidUrl(format!(
             "unsupported scheme: {other}"
         ))),
