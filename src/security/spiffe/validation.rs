@@ -13,7 +13,7 @@ use regex::Regex;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Condvar, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 use tracing::{debug, warn};
 
@@ -352,7 +352,7 @@ pub(super) fn refresh_jwks_internal(
     >,
     jwks_url: &str,
     refresh_in_progress: &Arc<AtomicBool>,
-    refresh_complete: &Arc<(Mutex<()>, Condvar)>,
+    refresh_complete: &Arc<crate::security::jwks_bearer::RefreshSignal>,
     already_claimed: bool,
     fetch_timeout: Duration,
 ) {

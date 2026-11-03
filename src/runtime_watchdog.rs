@@ -138,6 +138,7 @@ impl Watchdog {
     }
 
     /// Start the probing thread.
+    #[allow(clippy::disallowed_methods)] // the watchdog is its own OS thread by design
     pub fn spawn(self: &Arc<Self>) -> std::io::Result<()> {
         let me = Arc::clone(self);
         std::thread::Builder::new()

@@ -355,6 +355,7 @@ impl Middleware for MemoryMiddleware {
 }
 
 /// Background task to periodically update memory metrics
+#[allow(clippy::disallowed_methods)] // its own OS thread, never a may worker
 pub fn start_memory_monitor(middleware: Arc<MemoryMiddleware>) {
     std::thread::spawn(move || {
         loop {

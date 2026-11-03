@@ -842,6 +842,7 @@ pub mod linter;
 #[path = "linter/tests.rs"]
 mod linter_tests;
 pub mod middleware;
+pub mod net;
 pub mod otel;
 pub mod perf_harness;
 pub mod router;

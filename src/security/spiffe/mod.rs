@@ -54,7 +54,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::sync::{Condvar, Mutex, RwLock};
+use std::sync::RwLock;
 use std::time::{Duration, Instant};
 use tracing::debug;
 use url::Url;
@@ -183,7 +183,7 @@ pub struct SpiffeProvider {
     /// Debounce flag for JWKS refresh
     jwks_refresh_in_progress: Option<Arc<AtomicBool>>,
     /// Condition variable for JWKS refresh completion
-    jwks_refresh_complete: Option<Arc<(Mutex<()>, Condvar)>>,
+    jwks_refresh_complete: Option<Arc<crate::security::jwks_bearer::RefreshSignal>>,
     /// Optional revocation checker for token revocation
     revocation_checker: Option<Arc<dyn RevocationChecker>>,
 }
@@ -337,7 +337,7 @@ impl SpiffeProvider {
             HashMap::new(),
         )));
         let refresh_in_progress = Arc::new(AtomicBool::new(false));
-        let refresh_complete = Arc::new((Mutex::new(()), Condvar::new()));
+        let refresh_complete = Arc::new((may::sync::Mutex::new(()), may::sync::Condvar::new()));
 
         self.jwks_url = Some(url_str);
         self.jwks_cache = Some(cache);

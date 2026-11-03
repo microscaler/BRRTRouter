@@ -26,7 +26,7 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io::Read;
-use std::net::{SocketAddr, ToSocketAddrs};
+use std::net::SocketAddr;
 use std::sync::{Arc, OnceLock, RwLock};
 use std::time::{Duration, Instant};
 
@@ -446,16 +446,20 @@ struct Resolved {
     cached: bool,
 }
 
-/// The system resolver: one address for `host:port` (see [`lookup_name`]).
+/// One address for `host:port` (see [`lookup_name`]), resolved by [`crate::net`]: on its lookup
+/// threads, never with a blocking `getaddrinfo` on this coroutine's worker thread.
 fn system_lookup(host: &str, port: u16) -> Result<SocketAddr, ProxyError> {
-    ToSocketAddrs::to_socket_addrs(&(lookup_name(host).as_ref(), port))
+    crate::net::resolve(lookup_name(host).as_ref(), port, DNS_LOOKUP_BUDGET)
         .map_err(|e| classify_transport_error(ProxyTransportKind::Dns, &e.to_string()))?
+        .into_iter()
         .next()
         .ok_or(ProxyError::Dns)
 }
 
-/// The address to connect to for `host:port`: from the cache while fresh, else resolved (a
-/// blocking `getaddrinfo` on the coroutine's worker thread, so not on every request).
+/// How long a proxied request waits for a name it has no cached address for.
+const DNS_LOOKUP_BUDGET: Duration = Duration::from_secs(2);
+
+/// The address to connect to for `host:port`: from the cache while fresh, else resolved.
 fn resolve_downstream(host: &str, port: u16) -> Result<Resolved, ProxyError> {
     resolve_downstream_with(host, port, &system_lookup)
 }
