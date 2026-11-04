@@ -336,6 +336,50 @@ With tracing disabled, no allocation is added, and the metrics lookup saves two.
 the client span costs 1–2% CPU on this loopback call and 21 allocations: `tracing-opentelemetry` stores each
 attribute as an owned `String`.
 
+## BRRTRouter — pass 9: where request time goes; handler concurrency (4–5 Nov 2026)
+
+**Per-stage CPU** (`perf record -e cpu-clock -g`, frame pointers, `request_path` get_pet, no subscriber,
+202,000 requests; the process includes the bench client): 27 CPU-µs per request in all, of which:
+
+| stage | CPU µs/req |
+|---|---:|
+| `AppService::call` (connection coroutine), all of it | 11.1 |
+| — access-log header JSON (`headers_for_log`, mostly `should_redact`) | 3.8 |
+| — `dispatch_with_id` (channels, middleware `before`/`after` 1.4) | 3.2 |
+| — `parse_request` (httparse 0.6) | 0.9 |
+| — `write_handler_response` | 0.6 |
+| — validators 0.3, security 0.1, metrics 0.1, request id 0.1, `op_duration` 0.03 | ~0.6 |
+| — `Router::route` (radix match) | < 0.1 (not visible) |
+| typed handler coroutine (`TryFrom`, controller, `to_value`) | 2.1 |
+| kernel send/recv, both ends, incl. loopback netfilter | ~11 |
+| bench client | 5.4 |
+
+The OpenTelemetry span layer adds ~2.8 CPU-µs. The router is not where the time goes: a lookup costs
+100–170 ns (`benches/throughput.rs`).
+
+**Changes and interleaved before/after** (quiet ms02, n = 5,000 × 5, two rounds, µs per request):
+
+| change | effect |
+|---|---|
+| #545 `should_redact` folds the name once | log off: get_pet 22.2 → 21.5, secure_jwt 22.3 → 21.4; INFO: 38.9 → 38.1 (0.4–0.9 µs) |
+| #547 / #549 router reads the clock only with DEBUG on | `route_match` −5–6 % (~10 ns per lookup) |
+| #548 `BRRTR_BENCH_OTEL=prod` | measures what a service with OTLP pays: get_pet 119 → 170 allocs, 11.0 → 17.8 KB, 21.8 → 28.0 µs |
+| #546 `BRRTR_HANDLER_CONCURRENCY[__<HANDLER>]` | opt-in coroutines per untyped handler; see below |
+
+**Queue wait** (`op_duration_seconds{component="brrtrouter.queue"}`) is time a request waits for its
+handler's single coroutine. In a production BFF (1 h, 4 Nov): forwarded metrics queries waited 0.73 s
+(p50) and over 2.5 s (p95) behind ~0.4 s handlers, because a dashboard refresh sends ~60 queries at once.
+Proxied routes waited up to 425 ms (p95) behind ~60–90 ms calls. Scheduler lag stayed under 1 ms, so the
+workers were not blocked: one coroutine per handler served the requests in turn. Setting
+`BRRTR_HANDLER_CONCURRENCY__<HANDLER>=n` for those untyped handlers lets n requests run at once.
+Typed handlers are still one coroutine each; the generated controllers are `Copy`, so they could take the
+same setting (open).
+
+**Dashboards:** `op_duration_seconds` starts at 1 ms (`microscaler-timing` `BUCKET_BOUNDS_NANOS`), so
+framework stages (read/parse, write, JWT, queue) all show the floor. `may_minihttp.server`
+`request_total`/`service` and `http_server_request_duration_seconds` include SSE streams for their whole
+lifetime: every request over 2.5 s in the BFF over that hour was a stream.
+
 ## For the PriceWhisperer pass
 
 - benzinga-analyst-ingestor startup pass clones the whole JSON response 3–4× per 50-ticker

@@ -7,7 +7,7 @@
   (`get_or_compile_for_route`), `src/sanitize.rs` (`headers_for_log`), `templates/handler.rs.txt`,
   `benches/request_path.rs`
 - **Log / numbers**: [`docs/perf/copy-and-borrow-audit.md`](../../docs/perf/copy-and-borrow-audit.md)
-- **Last updated**: 2026-10-25
+- **Last updated**: 2026-11-04
 
 ## Measuring
 
@@ -16,6 +16,10 @@
 A counting allocator reports **allocations, bytes and µs per request**; `BRRTR_BENCH_LOG=off` drops
 the INFO subscriber, `BRRTR_BENCH_SITES=<n>` samples allocation call sites, `BRRTR_BENCH_TRACE=<bytes>`
 prints backtraces of large allocations. Allocation counts are deterministic; compare those first.
+`BRRTR_BENCH_OTEL=prod` installs what a service with `OTEL_EXPORTER_OTLP_ENDPOINT` installs (span layer +
+log bridge, no stdout); it refuses `BRRTR_BENCH_LOG`, and allocations on OpenTelemetry's export threads
+are not counted. For a CPU split use `perf record -e cpu-clock` (ms02 is hybrid: the default `cycles`
+event is split per core type and inferno keeps only one) on a frame-pointer build; see pass 9 of the audit.
 
 Release images carry no stacks for Cloud Profiler (thread names only); use `-debug` images or this
 bench to rank functions.
@@ -37,6 +41,10 @@ bench to rank functions.
 - **DEBUG-only values are computed inside the `debug!`** (tracing evaluates fields only when the
   callsite is enabled), never in a `let` before it.
 - **Reply channel is boxed** (`Sender<Box<HandlerResponse>>`): `may_queue` blocks are 64 slots.
+- `Sanitizer::should_redact` folds the name once into a stack buffer and compares pre-folded
+  patterns (tested against the plain per-pattern scan); it runs for every request and response header.
+- `Router::route` reads the clock only when `level_enabled!(DEBUG)`; never use `enabled!` for such a
+  guard, because the sampling layer counts it as a sampling decision.
 - The access-log header JSON is written in one buffer, byte-identical to a sorted `serde_json::Map`
   (tested); keep it that way if the redaction rules change.
 
