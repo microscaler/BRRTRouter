@@ -113,19 +113,36 @@ impl Sanitizer {
             return false;
         }
 
-        // Case-insensitive substring match without lowercasing into a new String: this runs
-        // for every header of every request (the access log).
-        if CREDENTIAL_PATTERNS
-            .iter()
-            .any(|p| contains_ignore_ascii_case(field_name, p))
-        {
+        // This runs for every header of every request, twice (the access log's request and
+        // response headers). The name is folded once (`fold_name_byte`) into a stack buffer and
+        // each position is tried only against the patterns that start with its byte, instead of
+        // rescanning the name once per pattern with both sides folded per comparison.
+        let name = field_name.as_bytes();
+        let mut buf = [0u8; FOLD_BUF];
+        let folded: &[u8] = match buf.get_mut(..name.len()) {
+            Some(dst) => {
+                for (d, b) in dst.iter_mut().zip(name) {
+                    *d = fold_name_byte(*b);
+                }
+                dst
+            }
+            // A name longer than the buffer (never a real header): the unbuffered scan.
+            None => {
+                return CREDENTIAL_PATTERNS
+                    .iter()
+                    .any(|p| contains_ignore_ascii_case(field_name, p))
+                    || (self.level == RedactionLevel::Full
+                        && PII_PATTERNS
+                            .iter()
+                            .any(|p| contains_ignore_ascii_case(field_name, p)));
+            }
+        };
+
+        if contains_any_folded(folded, &FOLDED_CREDENTIAL_PATTERNS) {
             return true;
         }
 
-        self.level == RedactionLevel::Full
-            && PII_PATTERNS
-                .iter()
-                .any(|p| contains_ignore_ascii_case(field_name, p))
+        self.level == RedactionLevel::Full && contains_any_folded(folded, &FOLDED_PII_PATTERNS)
     }
 
     /// Mask a sensitive value.
@@ -288,6 +305,76 @@ fn fold_name_byte(b: u8) -> u8 {
         b'-' | b'.' | b' ' => b'_',
         b => b.to_ascii_lowercase(),
     }
+}
+
+/// Field names up to this many bytes are folded on the stack by [`Sanitizer::should_redact`].
+const FOLD_BUF: usize = 128;
+
+/// A pattern list folded at compile time (`fold_name_byte`): `set-cookie` is matched as
+/// `set_cookie`, as the per-comparison fold did. `N` is `patterns.len()`.
+const fn fold_patterns<const N: usize>(patterns: &[&str]) -> [Folded; N] {
+    assert!(patterns.len() == N, "pattern count");
+    let mut out = [Folded::EMPTY; N];
+    let mut i = 0;
+    while i < N {
+        out[i] = Folded::new(patterns[i]);
+        i += 1;
+    }
+    out
+}
+
+/// One folded pattern (patterns are short ASCII; 32 bytes is ample).
+#[derive(Clone, Copy)]
+struct Folded {
+    bytes: [u8; 32],
+    len: usize,
+}
+
+impl Folded {
+    const EMPTY: Self = Self {
+        bytes: [0; 32],
+        len: 0,
+    };
+
+    const fn new(p: &str) -> Self {
+        let src = p.as_bytes();
+        assert!(src.len() <= 32, "pattern too long");
+        let mut bytes = [0u8; 32];
+        let mut i = 0;
+        while i < src.len() {
+            bytes[i] = match src[i] {
+                b'-' | b'.' | b' ' => b'_',
+                b => b.to_ascii_lowercase(),
+            };
+            i += 1;
+        }
+        Self {
+            bytes,
+            len: src.len(),
+        }
+    }
+
+    #[inline]
+    fn as_bytes(&self) -> &[u8] {
+        self.bytes.get(..self.len).unwrap_or_default()
+    }
+}
+
+const FOLDED_CREDENTIAL_PATTERNS: [Folded; CREDENTIAL_PATTERNS.len()] =
+    fold_patterns(CREDENTIAL_PATTERNS);
+
+const FOLDED_PII_PATTERNS: [Folded; PII_PATTERNS.len()] = fold_patterns(PII_PATTERNS);
+
+/// Whether any of `patterns` occurs in the already-folded `haystack`.
+#[inline]
+fn contains_any_folded(haystack: &[u8], patterns: &[Folded]) -> bool {
+    (0..haystack.len()).any(|i| {
+        let rest = haystack.get(i..).unwrap_or_default();
+        patterns.iter().any(|p| {
+            let p = p.as_bytes();
+            p.first() == rest.first() && rest.starts_with(p)
+        })
+    })
 }
 
 /// Whether `needle` occurs in `haystack` ignoring ASCII case and separators (`fold_name_byte`).
@@ -692,6 +779,88 @@ mod tests {
         ]);
         assert!(!line.contains("sk_live_abcdef"), "{line}");
         assert!(!line.contains("tok_secret_value"), "{line}");
+    }
+
+    /// The folded matcher agrees with the plain per-pattern scan on every name tried.
+    #[test]
+    fn test_should_redact_matches_reference_scan() {
+        let reference = |level: RedactionLevel, name: &str| {
+            level != RedactionLevel::None
+                && (CREDENTIAL_PATTERNS
+                    .iter()
+                    .any(|p| contains_ignore_ascii_case(name, p))
+                    || (level == RedactionLevel::Full
+                        && PII_PATTERNS
+                            .iter()
+                            .any(|p| contains_ignore_ascii_case(name, p))))
+        };
+        let long = "x-".repeat(100) + "token";
+        let names = [
+            "",
+            "a",
+            "Authorization",
+            "authorizatio",
+            "content-type",
+            "Content-Length",
+            "accept",
+            "accept-encoding",
+            "user-agent",
+            "X-Request-Id",
+            "traceparent",
+            "tracestate",
+            "x-api-key",
+            "X-API-KEY",
+            "x.api.key",
+            "apikey",
+            "Set-Cookie",
+            "cookie",
+            "COOKIE",
+            "x-csrf-token",
+            "tok",
+            "tokens",
+            "ssn",
+            "xssn",
+            "pwd",
+            "Password",
+            "passwd",
+            "secret",
+            "client-secret",
+            "credit card",
+            "credit-card",
+            "ccnumber",
+            "private.key",
+            "session-id",
+            "SessionID",
+            "sec-ch-ua",
+            "origin",
+            "referer",
+            "host",
+            "email",
+            "x-user-id",
+            "phone",
+            "x-forwarded-for",
+            "ip",
+            "hostname",
+            "X-Real-IP",
+            "x-tenant-id",
+            long.as_str(),
+            "ünicode-token",
+            "naïve",
+        ];
+        for level in [
+            RedactionLevel::None,
+            RedactionLevel::Credentials,
+            RedactionLevel::Full,
+        ] {
+            let s = Sanitizer::new(level);
+            for name in names {
+                assert_eq!(
+                    s.should_redact(name),
+                    reference(level, name),
+                    "{level:?} {name}"
+                );
+            }
+        }
     }
 
     #[test]
