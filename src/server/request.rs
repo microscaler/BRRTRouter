@@ -182,9 +182,11 @@ pub fn decode_param_value(
     fn convert_primitive(val: &str, schema: Option<&Value>) -> Value {
         if let Some(ty) = schema.and_then(|s| s.get("type").and_then(|v| v.as_str())) {
             match ty {
+                // `uint64` values above `i64::MAX` still decode as numbers.
                 "integer" => val
                     .parse::<i64>()
                     .map(Value::from)
+                    .or_else(|_| val.parse::<u64>().map(Value::from))
                     .unwrap_or_else(|_| Value::String(val.to_string())),
                 "number" => val
                     .parse::<f64>()
