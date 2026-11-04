@@ -491,3 +491,84 @@ fn openapi31_false_exclusive_bound_suggests_dropping_it() {
     let s = issues[0].suggestion.as_deref().unwrap();
     assert!(s.contains("drop `exclusiveMinimum: false`"), "{s}");
 }
+
+const EXAMPLE_SPEC: &str = r#"
+openapi: 3.1.0
+info:
+  title: Test API
+  version: 1.0.0
+paths:
+  /keys/validate:
+    post:
+      operationId: validate_key
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ValidateRequest'
+            example:
+              key: 42
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Validation'
+              examples:
+                default:
+                  value:
+                    valid: true
+                    expires_at: '2025-01-15T10:30:00Z'
+                    scopes: [read, 7]
+                    extra: ignored
+                good:
+                  value:
+                    valid: false
+                    expires_at: null
+components:
+  schemas:
+    ValidateRequest:
+      type: object
+      properties:
+        key:
+          type: string
+    Base:
+      type: object
+      properties:
+        expires_at:
+          type: [integer, 'null']
+    Validation:
+      type: object
+      allOf:
+      - $ref: '#/components/schemas/Base'
+      properties:
+        valid:
+          type: boolean
+        scopes:
+          type: array
+          items:
+            type: string
+"#;
+
+#[test]
+fn test_lint_example_type_mismatch() {
+    let issues = lint_yaml(EXAMPLE_SPEC);
+    let mut found: Vec<String> = issues
+        .iter()
+        .filter(|i| i.kind == "example_type_mismatch")
+        .map(|i| {
+            assert_eq!(i.severity, LintSeverity::Warning);
+            format!("{} | {}", i.location, i.message)
+        })
+        .collect();
+    found.sort();
+    assert_eq!(
+        found,
+        vec![
+            "/keys/validate POST (requestBody) | application/json example at /key: the value is an integer but the schema says string",
+            "/keys/validate POST (response 200) | application/json examples.default at /expires_at: the value is a string but the schema says integer or null",
+            "/keys/validate POST (response 200) | application/json examples.default at /scopes/1: the value is an integer but the schema says string",
+        ]
+    );
+}

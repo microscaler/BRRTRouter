@@ -484,6 +484,94 @@ pub fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
     }
 }
 
+/// Whether `example` can become a Rust literal of `field`'s type in generated code.
+///
+/// [`rust_literal_for_example`] writes the example as given; a value of the wrong JSON type (a
+/// string for an `i32`, a number for a `String`, an object for a `Vec`) would produce a literal that
+/// does not compile. `null` always fits (it becomes a placeholder), as does anything for
+/// `serde_json::Value`; a named type takes an object, which is deserialized with a fallback.
+pub fn example_fits_field(field: &FieldDef, example: &Value) -> bool {
+    example_fits_type(&field.ty, example)
+}
+
+fn is_integer_type(ty: &str) -> bool {
+    matches!(
+        ty,
+        "i8" | "i16"
+            | "i32"
+            | "i64"
+            | "i128"
+            | "isize"
+            | "u8"
+            | "u16"
+            | "u32"
+            | "u64"
+            | "u128"
+            | "usize"
+    )
+}
+
+fn example_fits_type(ty: &str, example: &Value) -> bool {
+    let ty = ty
+        .strip_prefix("Option<")
+        .and_then(|t| t.strip_suffix('>'))
+        .unwrap_or(ty);
+    if example.is_null() || ty == "serde_json::Value" || ty == "Value" {
+        return true;
+    }
+    if let Some(inner) = ty.strip_prefix("Vec<").and_then(|t| t.strip_suffix('>')) {
+        return example
+            .as_array()
+            .is_some_and(|items| items.iter().all(|item| array_item_fits(inner, item)));
+    }
+    match ty {
+        "String" => example.is_string(),
+        "bool" => example.is_boolean(),
+        "f32" | "f64" => example.is_number(),
+        t if is_integer_type(t) => example.is_i64() || example.is_u64(),
+        t if t.contains("Decimal") => example.is_number(),
+        // Named types: an object is deserialized with a fallback; a string is written as a String.
+        t if is_named_type(t) => example.is_object() || example.is_string(),
+        _ => true,
+    }
+}
+
+/// Mirrors how [`rust_literal_for_example`] writes one item of a `Vec<inner>`: strings are parsed
+/// (`parse().unwrap_or_default()`), objects and nested arrays fall back, numbers and booleans are
+/// written as they are.
+fn array_item_fits(inner: &str, item: &Value) -> bool {
+    match item {
+        Value::Number(n) => {
+            if is_integer_type(inner) {
+                n.is_i64() || n.is_u64()
+            } else {
+                matches!(inner, "f32" | "f64" | "serde_json::Value" | "Value")
+                    || inner.contains("Decimal")
+            }
+        }
+        Value::Bool(_) => matches!(inner, "bool" | "serde_json::Value" | "Value"),
+        _ => true,
+    }
+}
+
+/// [`rust_literal_for_example`] for an example that fits the field ([`example_fits_field`]); otherwise
+/// `None` and a warning, so the caller keeps its placeholder instead of writing code that does not
+/// compile. `brrtrouter-gen lint` reports the same values as `example_type_mismatch`.
+pub fn example_literal_checked(field: &FieldDef, example: &Value) -> Option<String> {
+    if example_fits_field(field, example) {
+        return Some(rust_literal_for_example(field, example));
+    }
+    let mut shown = example.to_string();
+    if shown.len() > 80 {
+        shown = format!("{}...", shown.chars().take(77).collect::<String>());
+    }
+    eprintln!(
+        "⚠️  Example for `{}` ({}) does not match its type: {shown}; using a placeholder (see `brrtrouter-gen lint`, example_type_mismatch)",
+        field.original_name, field.ty
+    );
+    None
+}
+
 /// Convert OpenAPI string-enum values into deterministic Rust variants.
 fn extract_string_enum_variants(schema: &Value) -> Vec<EnumVariant> {
     let Some(values) = schema.get("enum").and_then(Value::as_array) else {

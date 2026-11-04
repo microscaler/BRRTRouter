@@ -6,7 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use super::schema::{
-    is_named_type, rust_literal_for_example, to_camel_case, FieldDef, TypeDefinition,
+    example_literal_checked, is_named_type, to_camel_case, FieldDef, TypeDefinition,
 };
 use crate::spec::{ParameterMeta, RouteMeta};
 
@@ -466,7 +466,7 @@ pub fn write_controller(
             // Use original_name for lookup (JSON key) but name for code generation (Rust identifier)
             let value = example_map
                 .get(&field.original_name) // Look up by original JSON name (e.g., "type" not "r#type")
-                .map(|val| rust_literal_for_example(field, val)) // Convert JSON → Rust literal
+                .and_then(|val| example_literal_checked(field, val)) // JSON → Rust literal, if it fits the type
                 .unwrap_or_else(|| field.value.clone()); // Fallback to dummy value
 
             // Clone field with enriched value
@@ -528,7 +528,8 @@ pub fn write_controller(
                     value: String::new(), // Not used for this purpose
                 };
                 // Convert entire JSON array to Rust vec![] literal
-                super::schema::rust_literal_for_example(&items_field, ex)
+                super::schema::example_literal_checked(&items_field, ex)
+                    .unwrap_or_else(|| "vec![]".to_string())
             } else {
                 // Example is an object but response is array - use enriched field
                 // (This can happen with inconsistent OpenAPI specs)
@@ -1399,7 +1400,7 @@ pub fn write_impl_controller_stub(params: ImplControllerStubParams) -> anyhow::R
             // Use original_name for lookup (JSON key) but name for code generation (Rust identifier)
             let value = example_map
                 .get(&field.original_name) // Look up by original JSON name (e.g., "type" not "r#type")
-                .map(|val| rust_literal_for_example(field, val))
+                .and_then(|val| example_literal_checked(field, val))
                 .unwrap_or_else(|| field.value.clone());
 
             FieldDef {
@@ -1428,7 +1429,7 @@ pub fn write_impl_controller_stub(params: ImplControllerStubParams) -> anyhow::R
                     required_nullable: false,
                     value: String::new(),
                 };
-                rust_literal_for_example(&items_field, ex)
+                example_literal_checked(&items_field, ex).unwrap_or_else(|| "vec![]".to_string())
             } else {
                 "vec![]".to_string()
             }
@@ -1668,7 +1669,7 @@ pub fn sync_impl_stub_response(
         .map(|field| {
             let value = example_map
                 .get(&field.original_name)
-                .map(|val| super::schema::rust_literal_for_example(field, val))
+                .and_then(|val| super::schema::example_literal_checked(field, val))
                 .unwrap_or_else(|| field.value.clone());
             FieldDef {
                 name: field.name.clone(),

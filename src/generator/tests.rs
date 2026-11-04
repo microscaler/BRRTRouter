@@ -1387,3 +1387,81 @@ fn test_extract_fields_required_oneof_null_is_required_nullable() {
     assert_eq!(fields[0].ty, "User");
     assert!(fields[0].optional && fields[0].required_nullable);
 }
+
+fn example_field(ty: &str, optional: bool) -> FieldDef {
+    FieldDef {
+        name: "expires_at".to_string(),
+        original_name: "expires_at".to_string(),
+        ty: ty.to_string(),
+        optional,
+        required_nullable: false,
+        value: "42".to_string(),
+    }
+}
+
+#[test]
+fn test_example_fits_field_by_json_type() {
+    assert!(example_fits_field(
+        &example_field("i32", true),
+        &json!(1_736_934_600)
+    ));
+    assert!(!example_fits_field(
+        &example_field("i32", true),
+        &json!("2025-01-15T10:30:00Z")
+    ));
+    assert!(!example_fits_field(
+        &example_field("i64", false),
+        &json!(1.5)
+    ));
+    assert!(example_fits_field(&example_field("f64", false), &json!(1)));
+    assert!(!example_fits_field(
+        &example_field("String", false),
+        &json!(42)
+    ));
+    assert!(!example_fits_field(
+        &example_field("bool", false),
+        &json!("true")
+    ));
+    assert!(example_fits_field(
+        &example_field("String", true),
+        &json!(null)
+    ));
+    assert!(example_fits_field(
+        &example_field("serde_json::Value", false),
+        &json!([1, "a"])
+    ));
+    assert!(example_fits_field(
+        &example_field("Vec<String>", false),
+        &json!(["read"])
+    ));
+    assert!(!example_fits_field(
+        &example_field("Vec<String>", false),
+        &json!([1])
+    ));
+    assert!(!example_fits_field(
+        &example_field("Vec<String>", false),
+        &json!("read")
+    ));
+    assert!(example_fits_field(
+        &example_field("Vec<i32>", false),
+        &json!(["1"])
+    ));
+    assert!(example_fits_field(
+        &example_field("Pet", false),
+        &json!({"id": 1})
+    ));
+    assert!(!example_fits_field(&example_field("Pet", false), &json!(7)));
+}
+
+#[test]
+fn test_example_literal_checked_drops_a_mismatched_value() {
+    let field = example_field("i32", true);
+    assert_eq!(
+        example_literal_checked(&field, &json!(1_736_934_600)).as_deref(),
+        Some("Some(1736934600)")
+    );
+    assert_eq!(
+        example_literal_checked(&field, &json!("2025-01-15T10:30:00Z")),
+        None
+    );
+}
