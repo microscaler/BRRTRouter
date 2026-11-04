@@ -285,13 +285,14 @@ impl Router {
             "Route match attempt"
         );
 
-        // Track route matching performance
-        let match_start = std::time::Instant::now();
+        // Track route matching performance (only for the DEBUG events below: no clock reads
+        // when DEBUG is off for this callsite).
+        let match_start = tracing::enabled!(tracing::Level::DEBUG).then(std::time::Instant::now);
 
         // Use radix tree for O(k) lookup
         let result = self.radix_router.route(method.clone(), path);
 
-        let match_duration = match_start.elapsed();
+        let match_duration = match_start.map(|t| t.elapsed()).unwrap_or_default();
 
         if let Some((route, params)) = result {
             // RT3: Route matched
