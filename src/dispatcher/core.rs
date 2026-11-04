@@ -429,6 +429,9 @@ pub struct HandlerSender(SenderInner);
 enum SenderInner {
     Boxed(mpsc::Sender<Box<HandlerRequest>>),
     Plain(mpsc::Sender<HandlerRequest>),
+    /// Several coroutines serve the handler and take requests from one queue
+    /// ([`handler_concurrency`]).
+    Shared(may::sync::mpmc::Sender<Box<HandlerRequest>>),
 }
 
 impl HandlerSender {
@@ -451,6 +454,9 @@ impl HandlerSender {
                 .send(Box::new(req))
                 .map_err(|e| std::sync::mpsc::SendError(*e.0)),
             SenderInner::Plain(tx) => tx.send(req),
+            SenderInner::Shared(tx) => tx
+                .send(Box::new(req))
+                .map_err(|e| std::sync::mpsc::SendError(*e.0)),
         }
     }
 }
@@ -467,11 +473,112 @@ impl std::fmt::Debug for HandlerSender {
     }
 }
 
+/// Environment variable naming how many coroutines serve every untyped handler (default 1).
+pub const HANDLER_CONCURRENCY_ENV: &str = "BRRTR_HANDLER_CONCURRENCY";
+
+/// Most coroutines one untyped handler may get.
+pub const MAX_HANDLER_CONCURRENCY: usize = 256;
+
+/// How many coroutines serve the untyped handler `handler`, most specific setting first:
+///
+/// 1. `BRRTR_HANDLER_CONCURRENCY__<HANDLER>` (this handler; name upper-cased)
+/// 2. `BRRTR_HANDLER_CONCURRENCY` (every untyped handler)
+/// 3. 1: one coroutine takes the handler's requests in turn, as before this setting existed.
+///
+/// With one coroutine a request waits while the handler serves the ones before it
+/// (`op_duration_seconds{component="brrtrouter.queue"}`): a handler that waits on another
+/// service (a BFF's proxied routes, a query forwarded to a backend) is then as slow as the sum of
+/// the calls queued ahead of it. With `n`, up to `n` of its requests run at once. The value is
+/// clamped to 1 ..= [`MAX_HANDLER_CONCURRENCY`]; a value that does not parse is ignored.
+///
+/// Only untyped handlers ([`spawn_untyped_with_stack_size_and_name`], which the generator uses for
+/// proxied routes) read it: their handler is `Clone`, so each coroutine gets its own copy. A
+/// handler must not rely on its requests being served one at a time to use this.
+#[must_use]
+pub fn handler_concurrency(handler: &str) -> usize {
+    let parse = |key: &str| {
+        std::env::var(key)
+            .ok()
+            .and_then(|v| v.trim().parse::<usize>().ok())
+    };
+    parse(&format!(
+        "{HANDLER_CONCURRENCY_ENV}__{}",
+        handler.to_ascii_uppercase()
+    ))
+    .or_else(|| parse(HANDLER_CONCURRENCY_ENV))
+    .unwrap_or(1)
+    .clamp(1, MAX_HANDLER_CONCURRENCY)
+}
+
+/// Serve one request on an untyped handler's coroutine: queue and handler timings, the stack
+/// probe, the reply, and a 500 when the handler panics.
+fn serve_untyped<F>(
+    req: HandlerRequest,
+    handler_fn: &F,
+    handler_timing_slot: &mut crate::timing::HandlerTimingSlot,
+    stack_probe: &mut Option<crate::stack_probe::StackProbe>,
+) where
+    F: Fn(HandlerRequest) -> HandlerResponse,
+{
+    crate::server::queue_metrics::dequeued(&req);
+    let handler_timing = handler_timing_slot.for_request(&req);
+    handler_timing.dequeued(&req);
+    let _stack = stack_probe
+        .as_mut()
+        .map(crate::stack_probe::StackProbe::request);
+    let reply_tx = req.reply_tx.clone();
+    let h_name = req.handler_name.clone();
+    let request_id = req.request_id;
+
+    // Per-request — demoted to debug (PRD 2.2).
+    debug!(
+        request_id = %request_id,
+        handler_name = %h_name,
+        "Untyped handler execution start"
+    );
+
+    let execution_start = std::time::Instant::now();
+
+    let request_span = req.span.clone();
+    let handler_timer = handler_timing.start();
+    let ran = may_tracing::with_span(request_span, || {
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let response = handler_fn(req);
+            let _ = reply_tx.send(Box::new(response));
+        }))
+    });
+    crate::timing::HandlerTiming::finish(handler_timer, ran.is_err());
+    if let Err(panic) = ran {
+        let panic_message = format!("{panic:?}");
+        error!(
+            request_id = %request_id,
+            handler_name = %h_name,
+            panic_message = %panic_message,
+            "Untyped handler panicked - CRITICAL"
+        );
+        let error_response =
+            HandlerResponse::error(500, &format!("Handler panicked: {}", panic_message));
+        let _ = reply_tx.send(Box::new(error_response));
+    } else {
+        // Per-request — demoted to debug (PRD 2.2).
+        let execution_time_ms = execution_start.elapsed().as_millis() as u64;
+        debug!(
+            request_id = %request_id,
+            handler_name = %h_name,
+            execution_time_ms = execution_time_ms,
+            "Untyped handler execution complete"
+        );
+    }
+}
+
 /// Spawn an untyped handler coroutine with a specific stack size and handler name.
 ///
 /// This directly returns a sender channel for dispatcher registration, similarly
 /// to `brrtrouter::typed::spawn_typed_with_stack_size_and_name`, but avoids any
 /// JSON strongly-typed request/response validation overhead.
+///
+/// One coroutine serves the handler unless [`handler_concurrency`] asks for more: then that many
+/// coroutines, each with a clone of `handler_fn`, take requests from one shared queue.
 ///
 /// Returns [`std::io::Error`] if the underlying coroutine runtime cannot spawn the handler
 /// (for example invalid stack configuration).
@@ -489,97 +596,66 @@ where
 {
     crate::runtime_config::ensure_coroutine_pool_capacity();
     crate::runtime_config::ensure_may_poll_timeout();
-    let (tx, rx) = HandlerSender::channel();
     let effective_name = handler_name.unwrap_or("untyped").to_string();
-    let handler_name_for_logging = effective_name.clone();
 
     // Spec (`x-brrtrouter-stack-size`) and env overrides, most specific first: see `crate::handler_stack`.
     let stack_size = crate::handler_stack::resolve(&effective_name, stack_size_bytes);
+    let concurrency = handler_concurrency(&effective_name);
 
-    let spawn_result = may::coroutine::Builder::new()
-        .stack_size(crate::handler_stack::words(stack_size))
-        .name(effective_name.to_string())
-        .spawn(move || {
-            debug!(
-                handler_name = %handler_name_for_logging,
-                stack_size = stack_size,
-                "Untyped handler coroutine start"
-            );
-            let mut stack_probe = crate::stack_probe::StackProbe::for_current_sized(
-                &handler_name_for_logging,
-                Some(stack_size),
-            );
-
-            let mut handler_timing_slot = crate::timing::HandlerTimingSlot::default();
-
-            for req in rx.iter() {
-                let req = *req;
-                crate::server::queue_metrics::dequeued(&req);
-                let handler_timing = handler_timing_slot.for_request(&req);
-                handler_timing.dequeued(&req);
-                let _stack = stack_probe
-                    .as_mut()
-                    .map(crate::stack_probe::StackProbe::request);
-                let reply_tx = req.reply_tx.clone();
-                let h_name = req.handler_name.clone();
-                let request_id = req.request_id;
-
-                // Per-request — demoted to debug (PRD 2.2).
+    let spawn_one = |next: Box<dyn FnMut() -> Option<Box<HandlerRequest>> + Send>,
+                     handler_fn: F| {
+        let name = effective_name.clone();
+        let mut next = next;
+        may::coroutine::Builder::new()
+            .stack_size(crate::handler_stack::words(stack_size))
+            .name(effective_name.clone())
+            .spawn(move || {
                 debug!(
-                    request_id = %request_id,
-                    handler_name = %h_name,
-                    "Untyped handler execution start"
+                    handler_name = %name,
+                    stack_size = stack_size,
+                    concurrency = concurrency,
+                    "Untyped handler coroutine start"
                 );
-
-                let execution_start = std::time::Instant::now();
-
-                let request_span = req.span.clone();
-                let handler_timer = handler_timing.start();
-                let ran = may_tracing::with_span(request_span, || {
-                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        let response = handler_fn(req);
-                        let _ = reply_tx.send(Box::new(response));
-                    }))
-                });
-                crate::timing::HandlerTiming::finish(handler_timer, ran.is_err());
-                if let Err(panic) = ran {
-                    let panic_message = format!("{panic:?}");
-                    error!(
-                        request_id = %request_id,
-                        handler_name = %h_name,
-                        panic_message = %panic_message,
-                        "Untyped handler panicked - CRITICAL"
-                    );
-                    let error_response = HandlerResponse::error(
-                        500,
-                        &format!("Handler panicked: {}", panic_message),
-                    );
-                    let _ = reply_tx.send(Box::new(error_response));
-                } else {
-                    // Per-request — demoted to debug (PRD 2.2).
-                    let execution_time_ms = execution_start.elapsed().as_millis() as u64;
-                    debug!(
-                        request_id = %request_id,
-                        handler_name = %h_name,
-                        execution_time_ms = execution_time_ms,
-                        "Untyped handler execution complete"
+                let mut stack_probe =
+                    crate::stack_probe::StackProbe::for_current_sized(&name, Some(stack_size));
+                let mut handler_timing_slot = crate::timing::HandlerTimingSlot::default();
+                while let Some(req) = next() {
+                    serve_untyped(
+                        *req,
+                        &handler_fn,
+                        &mut handler_timing_slot,
+                        &mut stack_probe,
                     );
                 }
-            }
-        });
+            })
+            .map(drop)
+    };
 
-    match spawn_result {
-        Ok(_) => Ok(tx),
-        Err(e) => {
-            error!(
-                handler = %effective_name,
-                stack_size_bytes = stack_size,
-                error = %e,
-                "Critical: Failed to spawn untyped handler coroutine"
-            );
-            Err(e)
-        }
-    }
+    let spawned = if concurrency <= 1 {
+        let (tx, rx) = HandlerSender::channel();
+        spawn_one(Box::new(move || rx.recv().ok()), handler_fn).map(|()| tx)
+    } else {
+        let (tx, rx) = may::sync::mpmc::channel::<Box<HandlerRequest>>();
+        let rx = Arc::new(rx);
+        // A failed spawn drops `tx` on return: the coroutines already started see the queue close and exit.
+        (0..concurrency)
+            .try_for_each(|_| {
+                let rx = Arc::clone(&rx);
+                spawn_one(Box::new(move || rx.recv().ok()), handler_fn.clone())
+            })
+            .map(|()| HandlerSender(SenderInner::Shared(tx)))
+    };
+
+    spawned.map_err(|e| {
+        error!(
+            handler = %effective_name,
+            stack_size_bytes = stack_size,
+            concurrency = concurrency,
+            error = %e,
+            "Critical: Failed to spawn untyped handler coroutine"
+        );
+        e
+    })
 }
 
 /// Dispatcher that routes requests to registered handler coroutines
