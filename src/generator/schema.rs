@@ -101,6 +101,8 @@ pub fn is_named_type(ty: &str) -> bool {
         "String",
         "i32",
         "i64",
+        "u32",
+        "u64",
         "f32",
         "f64",
         "bool",
@@ -949,7 +951,7 @@ pub fn extract_fields(schema: &Value) -> Vec<FieldDef> {
                 // Priority 4: Use inline type definition
                 match schema_type_and_nullable(prop).0 {
                     Some("string") => "String".to_string(),
-                    Some("integer") => "i32".to_string(),
+                    Some("integer") => integer_type(prop).to_string(),
                     Some("number") => {
                         // Format-based type differentiation for number types
                         // number (no format) → f64 (mathematical numbers)
@@ -1010,11 +1012,37 @@ pub fn extract_fields(schema: &Value) -> Vec<FieldDef> {
     fields
 }
 
+/// Rust integer type for an OpenAPI `integer` schema, chosen by its `format`
+///
+/// - `int64` → `i64`
+/// - `uint32` → `u32`
+/// - `uint64` → `u64`
+/// - `int32`, any narrower format, unknown formats, or no `format` → `i32`
+///
+/// `minimum: 0` alone does not select an unsigned type: only an explicit
+/// `uint32` / `uint64` format does.
+///
+/// # Arguments
+///
+/// * `schema` - JSON Schema definition of an `integer` property or parameter
+///
+/// # Returns
+///
+/// A Rust integer type name: `i64`, `u32`, `u64`, or `i32`
+pub fn integer_type(schema: &Value) -> &'static str {
+    match schema.get("format").and_then(|f| f.as_str()) {
+        Some("int64") => "i64",
+        Some("uint32") => "u32",
+        Some("uint64") => "u64",
+        _ => "i32",
+    }
+}
+
 /// Convert a JSON Schema to a Rust type string
 ///
 /// Maps OpenAPI/JSON Schema types to their Rust equivalents:
 /// - `string` → `String`
-/// - `integer` → `i32`
+/// - `integer` → `i32`, or by `format` (see [`integer_type`])
 /// - `number` → `f64`
 /// - `boolean` → `bool`
 /// - `array` → `Vec<T>`
@@ -1040,7 +1068,7 @@ pub fn schema_to_type(schema: &Value) -> String {
     }
     match schema_type_and_nullable(schema).0 {
         Some("string") => "String".to_string(),
-        Some("integer") => "i32".to_string(),
+        Some("integer") => integer_type(schema).to_string(),
         Some("number") => {
             // Format-based type differentiation for number types
             // number (no format) → f64 (mathematical numbers)
@@ -1065,7 +1093,7 @@ pub fn schema_to_type(schema: &Value) -> String {
                 if let (Some(item_ty), _) = schema_type_and_nullable(items) {
                     let inner = match item_ty {
                         "string" => "String".to_string(),
-                        "integer" => "i32".to_string(),
+                        "integer" => integer_type(items).to_string(),
                         "number" => {
                             // Check format for array items too
                             match items.get("format").and_then(|f| f.as_str()) {

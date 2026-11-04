@@ -15,7 +15,7 @@ pub fn dummy_value(ty: &str) -> askama::Result<String> {
 
     let value = match inner_ty {
         "String" => "\"example\".to_string()".to_string(),
-        "i32" => "42".to_string(),
+        "i32" | "i64" | "u32" | "u64" => "42".to_string(),
         // NOT 3.14: clippy::approx_constant (≈ PI) is DENY-by-default since
         // rust 1.97, so 3.14 makes every consumer's generated stubs fail
         // `cargo clippy`. 1.5 is exact in binary floating point and near no
@@ -71,6 +71,13 @@ mod tests {
     #[test]
     fn test_i32() {
         assert_eq!(dummy_value("i32").unwrap(), "42");
+    }
+
+    #[test]
+    fn test_wide_and_unsigned_integers() {
+        for ty in ["i64", "u32", "u64", "Option<i64>"] {
+            assert_eq!(dummy_value(ty).unwrap(), "42", "{ty}");
+        }
     }
 
     #[test]
