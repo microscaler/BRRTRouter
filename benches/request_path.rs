@@ -51,6 +51,29 @@ static TRACE_MIN: AtomicU64 = AtomicU64::new(u64::MAX);
 static TRACE_LEFT: AtomicU64 = AtomicU64::new(0);
 thread_local! {
     static IN_TRACE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// 0: not classified yet, 1: counted, 2: an OpenTelemetry export thread (not counted).
+    static THREAD_KIND: std::cell::Cell<u8> = const { std::cell::Cell::new(0) };
+}
+
+/// Whether this thread's allocations are counted. Counts are the request path's: every thread
+/// except OpenTelemetry's export side (the SDK's batch processor threads and the `obs-otlp`
+/// runtime of `BRRTR_BENCH_OTEL=prod`), which batch and export (or fail to export) whatever
+/// earlier requests queued, on their own schedule. What a request costs to build and queue its
+/// spans and log records is counted on the thread that serves it.
+fn counted_thread() -> bool {
+    THREAD_KIND
+        .try_with(|k| {
+            if k.get() == 0 {
+                // Counted while classifying: `thread::current()` may allocate (reentrant here).
+                k.set(1);
+                let export = std::thread::current()
+                    .name()
+                    .is_some_and(|n| n.starts_with("OpenTelemetry.") || n.starts_with("obs-otlp"));
+                k.set(if export { 2 } else { 1 });
+            }
+            k.get() != 2
+        })
+        .unwrap_or(true)
 }
 
 /// Diagnostics: `BRRTR_BENCH_SITES=<every>` samples every `every`-th allocation of the measured
@@ -91,6 +114,9 @@ fn sample_site() {
 }
 
 fn note(size: usize) {
+    if !counted_thread() {
+        return;
+    }
     let n = ALLOCS.fetch_add(1, Ordering::Relaxed);
     let every = SITE_EVERY.load(Ordering::Relaxed);
     if every > 0 && n % every == 0 {
@@ -515,11 +541,20 @@ fn main() {
     // is set (PriceWhisperer pp): `otel::init_logging_with_config` → microscaler-observability's
     // OpenTelemetry span layer plus the log bridge (INFO events become log records), batch-exported,
     // no stdout formatter. The endpoint defaults to a closed local port: exports fail in the
-    // background, and the request path pays what it pays in production.
+    // background, and the request path pays what it pays in production. Allocations on the
+    // export threads are not counted (see `counted_thread`); their CPU is not in µs/req either,
+    // since requests are timed one at a time on the client. BRRTR_BENCH_LOG does not apply: the
+    // service's own filter (RUST_LOG, default info) gates spans and log records alike.
     let prod = std::env::var("BRRTR_BENCH_OTEL").is_ok_and(|v| v == "prod");
     let otel = !prod && std::env::var("BRRTR_BENCH_OTEL").is_ok_and(|v| v != "0" && v != "off");
     if prod {
-        if std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").is_err() {
+        assert!(
+            std::env::var_os("BRRTR_BENCH_LOG").is_none(),
+            "BRRTR_BENCH_OTEL=prod installs the service's own telemetry; unset BRRTR_BENCH_LOG \
+             (RUST_LOG filters spans and log records together)"
+        );
+        // `init_logging_with_config` treats an empty or blank endpoint as "no OTLP" (stdout).
+        if std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").map_or(true, |v| v.trim().is_empty()) {
             // SAFETY: single-threaded here, before any server or client thread starts.
             unsafe { std::env::set_var("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:9") };
         }
