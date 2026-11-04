@@ -26,3 +26,20 @@
 
 ## Practical constraint
 - `examples/pet_store/` is generated output; edit generator/templates then regenerate.
+
+## Integer types: OpenAPI `format` → Rust (2026-11-04)
+
+`schema::integer_type` picks the Rust type of every `type: integer` the generator maps: struct fields, nullable fields, array items, and through `schema_to_type` path/query/header/cookie parameters and `oneOf` variants.
+
+| `format` | Rust |
+|---|---|
+| `int64` | `i64` |
+| `uint32` | `u32` |
+| `uint64` | `u64` |
+| `int32`, narrower or unknown formats, none | `i32` |
+
+- Before this, every integer was `i32`, so an `int64` field rejected values above `i32::MAX` (epoch ms, byte counts, volumes; epoch seconds from 2038).
+- `minimum: 0` alone stays signed; only `uint32`/`uint64` select unsigned types. Give unsigned fields `minimum: 0` too, so body validation rejects negatives before the typed conversion does.
+- Parameters: `request::decode_param_value` parses integers as `i64`, falling back to `u64` only for `uint64`. `param_validation` rejects a value outside its format's range (`request::integer_fits_format`) with `expected_integer`; a parameter without a format accepts any JSON integer.
+- Specs should state a format on every integer: "no format" means `i32` in the generated code.
+- Tests: `tests/integer_format_tests.rs`.

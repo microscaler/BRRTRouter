@@ -1021,6 +1021,14 @@ pub fn extract_fields(schema: &Value) -> Vec<FieldDef> {
 ///
 /// `minimum: 0` alone does not select an unsigned type: only an explicit
 /// `uint32` / `uint64` format does.
+///
+/// # Arguments
+///
+/// * `schema` - JSON Schema definition of an `integer` property or parameter
+///
+/// # Returns
+///
+/// A Rust integer type name: `i64`, `u32`, `u64`, or `i32`
 pub fn integer_type(schema: &Value) -> &'static str {
     match schema.get("format").and_then(|f| f.as_str()) {
         Some("int64") => "i64",

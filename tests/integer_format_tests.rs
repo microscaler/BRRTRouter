@@ -11,6 +11,7 @@ use brrtrouter::generator::{
     collect_component_schemas, extract_fields, integer_type, parameter_to_field, schema_to_type,
 };
 use brrtrouter::router::ParamVec;
+use brrtrouter::server::param_validation::validate_route_parameters;
 use brrtrouter::server::request::decode_param_value;
 use brrtrouter::spec::{ParameterLocation, ParameterMeta};
 use brrtrouter::typed::{TypedHandlerFor, TypedHandlerRequest};
@@ -178,6 +179,44 @@ components:
 }
 
 #[test]
+fn param_validation_rejects_values_outside_the_format() {
+    let check = |format: Option<&str>, value: &str| {
+        let mut schema = json!({"type": "integer"});
+        if let Some(f) = format {
+            schema["format"] = json!(f);
+        }
+        let params = [ParameterMeta {
+            name: "n".to_string(),
+            location: ParameterLocation::Query,
+            required: true,
+            schema: Some(schema),
+            style: None,
+            explode: None,
+        }];
+        let query: ParamVec = smallvec![(Arc::from("n"), value.to_string())];
+        validate_route_parameters(
+            &params,
+            &ParamVec::new(),
+            &query,
+            &HeaderVec::new(),
+            &HeaderVec::new(),
+        )
+        .is_ok()
+    };
+    assert!(check(Some("int64"), "4102444800000"));
+    assert!(!check(Some("int64"), "18446744073709551615"));
+    assert!(check(Some("int32"), "2147483647"));
+    assert!(!check(Some("int32"), "2147483648"));
+    assert!(check(Some("uint32"), "4294967295"));
+    assert!(!check(Some("uint32"), "-1"));
+    assert!(check(Some("uint64"), "18446744073709551615"));
+    assert!(!check(Some("uint64"), "-1"));
+    // No format: any JSON integer passes, as before.
+    assert!(check(None, "4102444800000"));
+    assert!(!check(None, "18446744073709551615"));
+}
+
+#[test]
 fn decode_param_value_keeps_wide_integers_numeric() {
     let int64 = json!({"type": "integer", "format": "int64"});
     assert_eq!(
@@ -188,6 +227,11 @@ fn decode_param_value_keeps_wide_integers_numeric() {
     assert_eq!(
         decode_param_value("18446744073709551615", Some(&uint64), None, None),
         json!(u64::MAX)
+    );
+    // Only `uint64` falls back to u64; an int64 parameter that large stays a string (rejected).
+    assert_eq!(
+        decode_param_value("18446744073709551615", Some(&int64), None, None),
+        json!("18446744073709551615")
     );
     let list = json!({"type": "array", "items": {"type": "integer", "format": "int64"}});
     assert_eq!(
@@ -250,13 +294,16 @@ fn int64_request_round_trip_above_i32_max() {
         "required": ["ts"],
         "properties": {
             "ts": {"type": "integer", "format": "int64"},
-            "sizes": {"type": "array", "items": {"type": "integer", "format": "uint64"}}
+            "sizes": {"type": "array", "items": {"type": "integer", "format": "uint64", "minimum": 0}}
         }
     });
     let validator = ValidatorCache::new(false)
         .get_or_compile("int64_round_trip", "request", None, &body_schema)
         .expect("schema compiles");
     assert!(validator.is_valid(&body));
+    // Unsigned formats state `minimum: 0` so the validator rejects negatives before the typed
+    // conversion would.
+    assert!(!validator.is_valid(&json!({"ts": EPOCH_MS, "sizes": [-1]})));
 
     let (tx, _rx) = mpsc::channel::<Box<HandlerResponse>>();
     let epoch = EPOCH_MS.to_string();

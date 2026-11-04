@@ -466,3 +466,10 @@ Hauliage Phase 3 unblockers for Vite dev proxy and frontend-aligned BFF routes.
 - `brrtrouter_off_coroutine_io_total{call}`; off-coroutine `net::resolve` uses cache + helper-thread lookup within its timeout (last good answer on failure); fetches counted only for valid http(s) URLs.
 - `clippy.toml` disallows `std::thread::scope` / `JoinHandle::join` (allows with reasons where genuinely on an OS thread).
 - [`topics/off-coroutine-io.md`](./topics/off-coroutine-io.md).
+
+## [2026-11-04] fix | integer `format` selects the Rust type
+
+- Generator: `int64` → `i64`, `uint32` → `u32`, `uint64` → `u64`; `int32` / none → `i32` (`schema::integer_type`), at every integer mapping site.
+- Runtime: the `u64` parameter fallback applies only to `uint64`; parameter validation range-checks integers against their format (`request::integer_fits_format`).
+- [`flows/code-generation-flow.md`](./flows/code-generation-flow.md#integer-types-openapi-format--rust-2026-11-04).
+

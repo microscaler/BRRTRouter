@@ -5,7 +5,7 @@
 
 use crate::dispatcher::HeaderVec;
 use crate::router::ParamVec;
-use crate::server::request::decode_param_value;
+use crate::server::request::{decode_param_value, integer_fits_format};
 use crate::spec::{ParameterLocation, ParameterMeta};
 use serde_json::{json, Value};
 
@@ -152,10 +152,13 @@ fn type_mismatch(p: &ParameterMeta, value: &str) -> Option<String> {
     match ty {
         "integer" | "number" | "boolean" => {
             let decoded = decode_param_value(value, Some(schema), p.style, p.explode);
-            if matches!(decoded, Value::String(_)) {
-                Some(format!("expected_{ty}"))
-            } else {
-                None
+            match decoded {
+                Value::String(_) => Some(format!("expected_{ty}")),
+                // Out of range for the generated field (e.g. -1 for `uint32`, 2^31 for `int32`).
+                Value::Number(n) if ty == "integer" && !integer_fits_format(&n, schema) => {
+                    Some(format!("expected_{ty}"))
+                }
+                _ => None,
             }
         }
         _ => None,

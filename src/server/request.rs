@@ -171,6 +171,29 @@ pub fn parse_query_params(path: &str) -> ParamVec {
 /// # Returns
 ///
 /// The decoded JSON value with appropriate type
+/// Whether a decoded integer fits the Rust type the generator picks for the schema's `format`
+///
+/// `int32` → `i32`, `int64` → `i64`, `uint32` → `u32`, `uint64` → `u64`. A schema without one of
+/// those formats accepts any JSON integer, as before formats were honoured.
+///
+/// # Arguments
+///
+/// * `n` - The decoded integer
+/// * `schema` - The parameter's JSON Schema
+///
+/// # Returns
+///
+/// `true` when the generated handler can hold the value
+pub fn integer_fits_format(n: &serde_json::Number, schema: &serde_json::Value) -> bool {
+    match schema.get("format").and_then(serde_json::Value::as_str) {
+        Some("int32") => n.as_i64().is_some_and(|v| i32::try_from(v).is_ok()),
+        Some("int64") => n.as_i64().is_some(),
+        Some("uint32") => n.as_u64().is_some_and(|v| u32::try_from(v).is_ok()),
+        Some("uint64") => n.as_u64().is_some(),
+        _ => n.as_i64().is_some() || n.as_u64().is_some(),
+    }
+}
+
 pub fn decode_param_value(
     value: &str,
     schema: Option<&serde_json::Value>,
@@ -182,11 +205,16 @@ pub fn decode_param_value(
     fn convert_primitive(val: &str, schema: Option<&Value>) -> Value {
         if let Some(ty) = schema.and_then(|s| s.get("type").and_then(|v| v.as_str())) {
             match ty {
-                // `uint64` values above `i64::MAX` still decode as numbers.
                 "integer" => val
                     .parse::<i64>()
                     .map(Value::from)
-                    .or_else(|_| val.parse::<u64>().map(Value::from))
+                    // Only a `uint64` value may exceed `i64::MAX`.
+                    .or_else(|e| {
+                        match schema.and_then(|s| s.get("format")).and_then(Value::as_str) {
+                            Some("uint64") => val.parse::<u64>().map(Value::from).map_err(|_| e),
+                            _ => Err(e),
+                        }
+                    })
                     .unwrap_or_else(|_| Value::String(val.to_string())),
                 "number" => val
                     .parse::<f64>()
