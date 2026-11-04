@@ -285,9 +285,13 @@ impl Router {
             "Route match attempt"
         );
 
-        // Track route matching performance (only for the DEBUG events below: no clock reads
-        // when DEBUG is off for this callsite).
-        let match_start = tracing::enabled!(tracing::Level::DEBUG).then(std::time::Instant::now);
+        // Track route matching performance, only for the DEBUG events below. `level_enabled!`
+        // checks the static and global maximum level without asking the subscriber: `enabled!`
+        // would run the layers' `enabled`, and the sampling layer counts every such call as a
+        // sampling decision, so the timer and the event that reports it would be sampled
+        // separately (route events with `duration_us = 0`, slow matches never reported).
+        let match_start =
+            tracing::level_enabled!(tracing::Level::DEBUG).then(std::time::Instant::now);
 
         // Use radix tree for O(k) lookup
         let result = self.radix_router.route(method.clone(), path);
