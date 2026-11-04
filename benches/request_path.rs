@@ -16,6 +16,7 @@
 //! BRRTR_BENCH_N=50000 cargo bench --bench request_path -- secure
 //! BRRTR_BENCH_LOG=off cargo bench --bench request_path   # without the INFO access log
 //! BRRTR_BENCH_OTEL=1 cargo bench --bench request_path     # with the OpenTelemetry layer
+//! BRRTR_BENCH_OTEL=prod cargo bench --bench request_path  # the telemetry a service with OTLP installs
 //! ```
 //!
 //! `bff_proxy_*` run a second, BFF-shaped service whose routes proxy (`x-service`) to an in-process
@@ -510,8 +511,21 @@ fn main() {
     // BRRTR_BENCH_OTEL=1 adds the OpenTelemetry layer, as a service with OTLP configured has it:
     // every span (server, client, may_minihttp's) is built and ended into a processor that drops
     // it, so the cost counted is the in-process cost, not the exporter's.
-    let otel = std::env::var("BRRTR_BENCH_OTEL").is_ok_and(|v| v != "0" && v != "off");
-    if log != "off" || otel {
+    // BRRTR_BENCH_OTEL=prod installs what a generated main installs when OTEL_EXPORTER_OTLP_ENDPOINT
+    // is set (PriceWhisperer pp): `otel::init_logging_with_config` → microscaler-observability's
+    // OpenTelemetry span layer plus the log bridge (INFO events become log records), batch-exported,
+    // no stdout formatter. The endpoint defaults to a closed local port: exports fail in the
+    // background, and the request path pays what it pays in production.
+    let prod = std::env::var("BRRTR_BENCH_OTEL").is_ok_and(|v| v == "prod");
+    let otel = !prod && std::env::var("BRRTR_BENCH_OTEL").is_ok_and(|v| v != "0" && v != "off");
+    if prod {
+        if std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").is_err() {
+            // SAFETY: single-threaded here, before any server or client thread starts.
+            unsafe { std::env::set_var("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:9") };
+        }
+        brrtrouter::otel::init_logging_with_config(&brrtrouter::otel::LogConfig::from_env())
+            .expect("production telemetry");
+    } else if log != "off" || otel {
         use tracing_subscriber::layer::SubscriberExt;
         use tracing_subscriber::util::SubscriberInitExt;
         let filter = tracing_subscriber::EnvFilter::new(if log == "off" { "info" } else { &log });
