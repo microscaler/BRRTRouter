@@ -34,6 +34,7 @@ use serde_json::Value;
 use std::collections::HashSet;
 use std::path::Path;
 
+mod examples;
 #[cfg(test)]
 mod tests;
 
@@ -115,6 +116,7 @@ pub fn lint_spec(spec_path: &Path) -> anyhow::Result<Vec<LintIssue>> {
     };
     if let Some(raw) = raw.as_ref() {
         lint_openapi31_keywords(raw, &mut issues);
+        examples::lint_examples(raw, &mut issues);
     }
 
     let parsed: anyhow::Result<OpenApiV3Spec> = if is_yaml {
