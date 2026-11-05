@@ -1,15 +1,15 @@
 //! `BRRTR_HANDLER_CONCURRENCY`: how many coroutines serve an untyped handler.
 //!
-//! One coroutine (the default) serves a handler's requests in turn, so a handler that waits on
-//! another service makes every request queued behind it wait too. With `n`, `n` of them run at
-//! once. Each test uses its own handler name and the per-handler variable, so they do not race on
+//! With one coroutine a handler's requests are served in turn, so a handler that waits on another
+//! service makes every request queued behind it wait too. With `n`, `n` of them run at once. The
+//! default is two; `1` opts out. Each test uses its own handler name and the per-handler variable, so they do not race on
 //! the process environment.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, unsafe_code)]
 
 use brrtrouter::dispatcher::{
     handler_concurrency, spawn_untyped_with_stack_size_and_name, HandlerRequest, HandlerResponse,
-    HandlerSender, HeaderVec,
+    HandlerSender, HeaderVec, DEFAULT_HANDLER_CONCURRENCY,
 };
 use brrtrouter::ids::RequestId;
 use brrtrouter::router::ParamVec;
@@ -68,8 +68,25 @@ fn burst(tx: &HandlerSender, handler: &str, n: usize) -> (Duration, HashSet<Stri
 }
 
 #[test]
-fn one_coroutine_by_default_serves_requests_in_turn() {
+fn two_coroutines_by_default() {
     let name = "concurrency_default_probe";
+    assert_eq!(handler_concurrency(name), DEFAULT_HANDLER_CONCURRENCY);
+    assert_eq!(DEFAULT_HANDLER_CONCURRENCY, 2);
+    let tx =
+        unsafe { spawn_untyped_with_stack_size_and_name(waiting_handler, 64 * 1024, Some(name)) }
+            .unwrap();
+    // Four requests on two coroutines: both serve, so at least two waits (no upper bound: a slow
+    // scheduler must not fail correct code; served_by already shows the requests were shared).
+    let (took, served_by) = burst(&tx, name, 4);
+    assert_eq!(served_by.len(), 2);
+    assert!(took >= WAIT * 2, "took {took:?}");
+}
+
+#[test]
+fn one_opts_a_handler_out() {
+    let name = "concurrency_one_probe";
+    // SAFETY (test): only this test reads this handler's variable.
+    unsafe { std::env::set_var("BRRTR_HANDLER_CONCURRENCY__CONCURRENCY_ONE_PROBE", "1") };
     assert_eq!(handler_concurrency(name), 1);
     let tx =
         unsafe { spawn_untyped_with_stack_size_and_name(waiting_handler, 64 * 1024, Some(name)) }
@@ -120,7 +137,10 @@ fn concurrency_is_clamped_and_bad_values_ignored() {
         handler_concurrency("concurrency_huge_probe"),
         brrtrouter::dispatcher::MAX_HANDLER_CONCURRENCY
     );
-    assert_eq!(handler_concurrency("concurrency_bad_probe"), 1);
+    assert_eq!(
+        handler_concurrency("concurrency_bad_probe"),
+        DEFAULT_HANDLER_CONCURRENCY
+    );
 }
 
 #[test]

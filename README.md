@@ -332,6 +332,7 @@ See [docs/JSF_COMPLIANCE.md](docs/JSF_COMPLIANCE.md).
 | -------- | ------- |
 | `BRRTR_STACK_SIZE` | `may`'s connection coroutines, in bytes (`262144`, `0x40000`, `256KiB`; default 256 KiB); handler stacks come from the spec — [stack_size.md](docs/stack_size.md) |
 | `BRRTR_COROUTINE_POOL_CAPACITY` | Finished coroutines `may` keeps for reuse (default 100; `may`'s own default is 1,000) |
+| `BRRTR_HANDLER_CONCURRENCY` | Coroutines serving each untyped handler (proxied routes); default 2, `1` serves requests one at a time; `BRRTR_HANDLER_CONCURRENCY__<HANDLER>` overrides one handler |
 | `BRRTROUTER_MAX_REQUEST_BODY_OCTETS` | Global body ceiling (default 16 MiB) — [request_body_limits.md](docs/request_body_limits.md) |
 | `BRRTROUTER_MAX_REQUEST_TARGET_OCTETS` | Max request-target length (default 8192) |
 | `BRRTR_JWKS_FETCH_TIMEOUT_MS` | JWKS HTTP timeout (fail-closed) |

@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed (handler concurrency default)
+
+- **Untyped handlers get two coroutines by default** (`DEFAULT_HANDLER_CONCURRENCY`, was 1). The generator's proxied
+  routes are untyped, so one slow backend call no longer queues the next request for the same route behind it. Set
+  `BRRTR_HANDLER_CONCURRENCY=1` (every handler) or `BRRTR_HANDLER_CONCURRENCY__<HANDLER>=1` (one handler) to serve
+  requests one at a time again, e.g. for a handler that relies on that. Each extra coroutine maps one more handler stack
+  (lazily: only touched pages are resident). Typed handlers are unchanged.
+
 ### Added (observability: queueing)
 
 - **`brrtrouter_request_queue_seconds{handler}`** (histogram): how long a request waited between the dispatcher

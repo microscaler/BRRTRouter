@@ -473,8 +473,14 @@ impl std::fmt::Debug for HandlerSender {
     }
 }
 
-/// Environment variable naming how many coroutines serve every untyped handler (default 1).
+/// Environment variable naming how many coroutines serve every untyped handler
+/// (default [`DEFAULT_HANDLER_CONCURRENCY`]).
 pub const HANDLER_CONCURRENCY_ENV: &str = "BRRTR_HANDLER_CONCURRENCY";
+
+/// Coroutines per untyped handler when neither variable is set. Two, so one slow call (a proxied
+/// route waiting on its backend) no longer holds up the next request for the same handler; set
+/// `BRRTR_HANDLER_CONCURRENCY=1` (or `__<HANDLER>=1`) to serve requests one at a time again.
+pub const DEFAULT_HANDLER_CONCURRENCY: usize = 2;
 
 /// Most coroutines one untyped handler may get.
 pub const MAX_HANDLER_CONCURRENCY: usize = 256;
@@ -483,7 +489,8 @@ pub const MAX_HANDLER_CONCURRENCY: usize = 256;
 ///
 /// 1. `BRRTR_HANDLER_CONCURRENCY__<HANDLER>` (this handler; name upper-cased)
 /// 2. `BRRTR_HANDLER_CONCURRENCY` (every untyped handler)
-/// 3. 1: one coroutine takes the handler's requests in turn, as before this setting existed.
+/// 3. [`DEFAULT_HANDLER_CONCURRENCY`] (2). `1` (either variable) opts out: one coroutine takes the
+///    handler's requests in turn, as before this setting existed.
 ///
 /// With one coroutine a request waits while the handler serves the ones before it
 /// (`op_duration_seconds{component="brrtrouter.queue"}`): a handler that waits on another
@@ -506,7 +513,7 @@ pub fn handler_concurrency(handler: &str) -> usize {
         handler.to_ascii_uppercase()
     ))
     .or_else(|| parse(HANDLER_CONCURRENCY_ENV))
-    .unwrap_or(1)
+    .unwrap_or(DEFAULT_HANDLER_CONCURRENCY)
     .clamp(1, MAX_HANDLER_CONCURRENCY)
 }
 
