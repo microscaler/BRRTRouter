@@ -473,3 +473,15 @@ Hauliage Phase 3 unblockers for Vite dev proxy and frontend-aligned BFF routes.
 - Runtime: the `u64` parameter fallback applies only to `uint64`; parameter validation range-checks integers against their format (`request::integer_fits_format`).
 - [`flows/code-generation-flow.md`](./flows/code-generation-flow.md#integer-types-openapi-format--rust-2026-11-04).
 
+
+## [2026-11-04] perf | where request time goes; opt-in handler concurrency
+
+- perf split of one request (get_pet, no subscriber): connection coroutine 11 CPU-µs (access-log header
+  redaction 3.8, dispatch 3.2, parse 0.9), handler 2.1, kernel ~11; the router is < 0.1. OTLP telemetry
+  adds ~6 µs and ~51 allocs (`BRRTR_BENCH_OTEL=prod`, #548).
+- #545 `should_redact` folds once (−0.4–0.9 µs/req); #547/#549 router clock only with DEBUG
+  (`level_enabled!`, not `enabled!`: the sampling layer counts the latter).
+- #546 `BRRTR_HANDLER_CONCURRENCY[__<HANDLER>]`: n coroutines per untyped handler (default 1). Fixes
+  queue waits behind a single coroutine (0.7–2.5 s on forwarded metrics queries in production).
+- [`flows/runtime-request-flow.md`](./flows/runtime-request-flow.md#handler-concurrency-2026-11-04),
+  [`topics/request-path-copies.md`](./topics/request-path-copies.md), audit pass 9.
