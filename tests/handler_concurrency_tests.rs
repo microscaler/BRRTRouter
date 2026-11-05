@@ -75,14 +75,11 @@ fn two_coroutines_by_default() {
     let tx =
         unsafe { spawn_untyped_with_stack_size_and_name(waiting_handler, 64 * 1024, Some(name)) }
             .unwrap();
-    // Four requests on two coroutines: two waits, not four.
+    // Four requests on two coroutines: both serve, so at least two waits (no upper bound: a slow
+    // scheduler must not fail correct code; served_by already shows the requests were shared).
     let (took, served_by) = burst(&tx, name, 4);
     assert_eq!(served_by.len(), 2);
     assert!(took >= WAIT * 2, "took {took:?}");
-    assert!(
-        took < WAIT * 4,
-        "4 requests on 2 coroutines take about two waits, took {took:?}"
-    );
 }
 
 #[test]

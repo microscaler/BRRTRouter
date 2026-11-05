@@ -23,8 +23,9 @@
 - Service owns optional metrics/memory middleware and security providers.
 
 ## Handler concurrency (2026-11-04)
-- Each handler is served by one coroutine draining one channel (`spawn_typed_with_stack_size_and_name`,
-  `spawn_untyped_with_stack_size_and_name` in `src/typed/core.rs`, `src/dispatcher/core.rs`). A request
+- Each typed handler is served by one coroutine draining one channel (`spawn_typed_with_stack_size_and_name`
+  in `src/typed/core.rs`); an untyped handler by `DEFAULT_HANDLER_CONCURRENCY` coroutines sharing one queue
+  (`spawn_untyped_with_stack_size_and_name` in `src/dispatcher/core.rs`; see below). A request
   for a busy handler waits; `op_duration_seconds{component="brrtrouter.queue",op}` measures that wait
   (`src/timing.rs`, `QueueDepthGuard::queued_for`).
 - `BRRTR_HANDLER_CONCURRENCY__<HANDLER>` (or `BRRTR_HANDLER_CONCURRENCY` for all) starts n coroutines
