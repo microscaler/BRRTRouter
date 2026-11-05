@@ -16,6 +16,11 @@ signals, Grafana HTTP and process dashboards, and alert packs.
 - `http_server_active_requests{http_request_method}`.
 - `process_*`: the Prometheus client-library process collector names (Linux `/proc/self`).
 - `brrtrouter_*`: BRRTRouter-only operational detail (auth failures, CORS, worker pools, stacks, memory views).
+- `microscaler_profiler_archive_total{outcome="ok"|"failed"}` (counter): profiles the Cloud Profiler agent
+  (microscaler-observability, `cloud-profiler` feature) also wrote to the `PROFILER_ARCHIVE_BUCKET` Cloud Storage
+  bucket, and writes that failed. Absent until the agent has tried a write, so a service without the bucket set (or
+  without the profiler) exports no series. A rising `failed` means profiles are reaching Cloud Profiler but not the
+  archive (bucket IAM, network, or the 10 s timeout); the agent logs each failure at WARN.
 
 ## Recording model
 
@@ -37,8 +42,9 @@ signals, Grafana HTTP and process dashboards, and alert packs.
 - `src/server/service.rs`: `RequestLogger` (`_active`, `route`, the `Drop` impl calling `observe`), the parse-error
   branch, built-in route assignment, CORS preflight route
 - `src/server/service.rs`: `metrics_endpoint` (standard names first, then `brrtrouter_*`)
+- `src/server/service.rs`: `render_profiler_archive` (from `microscaler_observability::profiler_archive_counts`)
 - `src/middleware/memory.rs`: `export_metrics` (`brrtrouter_memory_*`)
-- Tests: `server::http_metrics::tests`, `tests/metrics_endpoint_tests.rs`, `tests/cors_http_conformance_tests.rs`
+- Tests: `server::http_metrics::tests`, `server::service::profiler_archive_tests`, `tests/metrics_endpoint_tests.rs`, `tests/cors_http_conformance_tests.rs`
 
 ## Gaps / drift
 

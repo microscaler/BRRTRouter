@@ -78,7 +78,7 @@ tracing-appender = "0.2"
 # ~/Workspace/remote/microscaler/.cargo/config.toml (ancestor config, never committed) — see
 # docs: OCTOPILOT-DEPENDENCY-RESOLUTION.
 # Feature cloud-profiler: the Google Cloud Profiler agent, inert unless MICROSCALER_CLOUD_PROFILER=1 (pp only, ADR 005).
-microscaler-observability = { git = "https://github.com/microscaler/microscaler-observability.git", rev = "2b7e35c7a64e5a70e035d1b4fc6527bd1ea2751f", features = ["cloud-profiler"] }
+microscaler-observability = { git = "https://github.com/microscaler/microscaler-observability.git", rev = "65991efe24c94001e71ec8cad7a1a7304ececfbd", features = ["cloud-profiler"] }
 # op_duration_seconds{component,op,outcome} (src/timing.rs): queue wait, handler time, the outbound client's phases and
 # DNS, rendered on /metrics with whatever the service times itself. Zero dependencies, lock-free. Same spec in every crate
 # of a binary (one copy = one registry): branch main, not a rev.

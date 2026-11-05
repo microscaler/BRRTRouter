@@ -3187,7 +3187,7 @@ checksum = "c2a86d3146ed3995b5913c414f6664344b9617457320782e64f0bb44afd49d74"
 [[package]]
 name = "microscaler-observability"
 version = "0.1.0"
-source = "git+https://github.com/microscaler/microscaler-observability.git?rev=2b7e35c7a64e5a70e035d1b4fc6527bd1ea2751f#2b7e35c7a64e5a70e035d1b4fc6527bd1ea2751f"
+source = "git+https://github.com/microscaler/microscaler-observability.git?rev=65991efe24c94001e71ec8cad7a1a7304ececfbd#65991efe24c94001e71ec8cad7a1a7304ececfbd"
 dependencies = [
  "backtrace",
  "base64 0.22.1",
