@@ -36,7 +36,7 @@ These repos exist in `microscaler/` as forks with custom changes:
 - `generator` → patched via `[patch.crates-io]` to `git = "https://github.com/microscaler/generator-rs.git"`
 - `may_http` → `git = "https://github.com/rust-may/may_http.git"` (upstream fork, not microscaler-owned)
 - `lifeguard` → local path (sibling repo) — **see below**
-- `microscaler-observability` → local path (sibling repo)
+- `microscaler-observability` → `git` pinned by `rev` in `Cargo.toml` (so a clean clone builds); for local co-development an ancestor `.cargo/config.toml` `[patch]` points it at the sibling checkout. Do not replace the git source with a path dependency.
 
 **Never guess. If you see `may`, `may_minihttp`, `may_postgres`, `generator`, or any microscaler-related crate, verify the source by checking the Cargo.toml — never assume crates.io.**
 

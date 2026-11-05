@@ -677,6 +677,27 @@ fn escape_prometheus_label(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
+/// `microscaler_profiler_archive_total{outcome}`: profiles the Cloud Profiler agent wrote to its archive bucket
+/// (`outcome="ok"`) and writes that failed (`outcome="failed"`). Rendered only once the agent has tried a write, so a
+/// process that does not archive (no `PROFILER_ARCHIVE_BUCKET`) adds no series.
+fn render_profiler_archive(body: &mut String, archived: u64, archive_failed: u64) {
+    if archived == 0 && archive_failed == 0 {
+        return;
+    }
+    body.push_str(
+        "# HELP microscaler_profiler_archive_total Cloud Profiler agent profiles written to the archive bucket, by outcome\n",
+    );
+    body.push_str("# TYPE microscaler_profiler_archive_total counter\n");
+    let _ = writeln!(
+        body,
+        "microscaler_profiler_archive_total{{outcome=\"ok\"}} {archived}"
+    );
+    let _ = writeln!(
+        body,
+        "microscaler_profiler_archive_total{{outcome=\"failed\"}} {archive_failed}"
+    );
+}
+
 /// - Legacy per-path metrics (backward compatible)
 pub fn metrics_endpoint(
     res: &mut Response,
@@ -816,24 +837,9 @@ pub fn metrics_endpoint(
     // op_duration_seconds: every timed operation in the process (crate::timing and the service's own).
     microscaler_timing::render_prometheus(&mut body);
     crate::net::render_prometheus(&mut body);
-    // The Cloud Profiler agent's archive copies (microscaler-observability, PROFILER_ARCHIVE_BUCKET): profiles
-    // written to the bucket and writes that failed. Rendered once the agent has tried one, so a process that does not
-    // archive adds no series.
+    // The Cloud Profiler agent's archive copies (microscaler-observability, PROFILER_ARCHIVE_BUCKET).
     let (archived, archive_failed) = microscaler_observability::profiler_archive_counts();
-    if archived > 0 || archive_failed > 0 {
-        body.push_str(
-            "# HELP microscaler_profiler_archive_total Cloud Profiler agent profiles written to the archive bucket, by outcome\n",
-        );
-        body.push_str("# TYPE microscaler_profiler_archive_total counter\n");
-        let _ = writeln!(
-            body,
-            "microscaler_profiler_archive_total{{outcome=\"ok\"}} {archived}"
-        );
-        let _ = writeln!(
-            body,
-            "microscaler_profiler_archive_total{{outcome=\"failed\"}} {archive_failed}"
-        );
-    }
+    render_profiler_archive(&mut body, archived, archive_failed);
 
     // Worker pool metrics (NEW - for backpressure monitoring)
     if let Some(disp) = dispatcher {
@@ -2346,5 +2352,34 @@ impl HttpService for AppService {
             );
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod profiler_archive_tests {
+    use super::render_profiler_archive;
+
+    #[test]
+    fn omitted_before_any_attempt() {
+        let mut body = String::new();
+        render_profiler_archive(&mut body, 0, 0);
+        assert!(body.is_empty());
+    }
+
+    #[test]
+    fn renders_both_outcomes_once_attempted() {
+        let mut body = String::new();
+        render_profiler_archive(&mut body, 0, 3);
+        assert_eq!(
+            body,
+            "# HELP microscaler_profiler_archive_total Cloud Profiler agent profiles written to the archive bucket, by outcome\n\
+             # TYPE microscaler_profiler_archive_total counter\n\
+             microscaler_profiler_archive_total{outcome=\"ok\"} 0\n\
+             microscaler_profiler_archive_total{outcome=\"failed\"} 3\n"
+        );
+        let mut body = String::new();
+        render_profiler_archive(&mut body, 7, 0);
+        assert!(body.contains("microscaler_profiler_archive_total{outcome=\"ok\"} 7\n"));
+        assert!(body.contains("microscaler_profiler_archive_total{outcome=\"failed\"} 0\n"));
     }
 }
