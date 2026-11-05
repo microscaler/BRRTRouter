@@ -364,7 +364,7 @@ The OpenTelemetry span layer adds ~2.8 CPU-µs. The router is not where the time
 | #545 `should_redact` folds the name once | log off: get_pet 22.2 → 21.5, secure_jwt 22.3 → 21.4; INFO: 38.9 → 38.1 (0.4–0.9 µs) |
 | #547 / #549 router reads the clock only with DEBUG on | `route_match` −5–6 % (~10 ns per lookup) |
 | #548 `BRRTR_BENCH_OTEL=prod` | measures what a service with OTLP pays: get_pet 119 → 170 allocs, 11.0 → 17.8 KB, 21.8 → 28.0 µs |
-| #546 `BRRTR_HANDLER_CONCURRENCY[__<HANDLER>]` | opt-in coroutines per untyped handler; see below |
+| #546 `BRRTR_HANDLER_CONCURRENCY[__<HANDLER>]` | coroutines per untyped handler (default 2 since the follow-up; `1` opts out); see below |
 
 **Queue wait** (`op_duration_seconds{component="brrtrouter.queue"}`) is time a request waits for its
 handler's single coroutine. In a production BFF (1 h, 4 Nov): forwarded metrics queries waited 0.73 s

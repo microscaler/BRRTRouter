@@ -68,7 +68,8 @@ pub mod deadline;
 pub use core::{
     generate_request_id, handler_concurrency, spawn_untyped_with_stack_size_and_name, Dispatcher,
     HandlerRequest, HandlerResponse, HandlerSender, HeaderVec, QueueDepthGuard,
-    HANDLER_CONCURRENCY_ENV, MAX_HANDLER_CONCURRENCY, MAX_INLINE_HEADERS,
+    DEFAULT_HANDLER_CONCURRENCY, HANDLER_CONCURRENCY_ENV, MAX_HANDLER_CONCURRENCY,
+    MAX_INLINE_HEADERS,
 };
 pub use deadline::{
     deadline_exceeded_response, handler_deadline_from_env, resolve_deadline,
