@@ -816,6 +816,24 @@ pub fn metrics_endpoint(
     // op_duration_seconds: every timed operation in the process (crate::timing and the service's own).
     microscaler_timing::render_prometheus(&mut body);
     crate::net::render_prometheus(&mut body);
+    // The Cloud Profiler agent's archive copies (microscaler-observability, PROFILER_ARCHIVE_BUCKET): profiles
+    // written to the bucket and writes that failed. Rendered once the agent has tried one, so a process that does not
+    // archive adds no series.
+    let (archived, archive_failed) = microscaler_observability::profiler_archive_counts();
+    if archived > 0 || archive_failed > 0 {
+        body.push_str(
+            "# HELP microscaler_profiler_archive_total Cloud Profiler agent profiles written to the archive bucket, by outcome\n",
+        );
+        body.push_str("# TYPE microscaler_profiler_archive_total counter\n");
+        let _ = writeln!(
+            body,
+            "microscaler_profiler_archive_total{{outcome=\"ok\"}} {archived}"
+        );
+        let _ = writeln!(
+            body,
+            "microscaler_profiler_archive_total{{outcome=\"failed\"}} {archive_failed}"
+        );
+    }
 
     // Worker pool metrics (NEW - for backpressure monitoring)
     if let Some(disp) = dispatcher {
