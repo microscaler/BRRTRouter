@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added (observability: access log and span toggles)
+
+- **`BRRTR_ACCESS_LOG=full|sample:<rate>|off`** (default `full`, unchanged behaviour): which requests the INFO
+  `"Request completed"` access log records in full, with redacted headers. `sample:<rate>` takes evenly spread
+  requests at the rate, decided when the request arrives; the others skip both header redaction/formatting passes.
+  5xx, 429 and requests slower than **`BRRTR_ACCESS_LOG_SLOW_MS`** (default 100) are always logged, without headers
+  when they were not sampled (`sampled = false`). On the request-path bench, `off` or `sample:0.1` saves about 10
+  allocations, 0.9 KB and 5.5 µs per request (about 14% of a simple route's server time).
+- **`BRRTR_REQUEST_SPAN=full|lean`** (default `full`): `lean` drops the `http_request` span fields another field or the
+  access log already carries (`method`, `path`, `header_count`, `stack_used_kb`) and keeps the OpenTelemetry HTTP
+  fields, `tenant_id`, `status`, `duration_ms` and the `brrtrouter.*` reasons. Span sampling stays the trace
+  exporter's sampler's job. Under the bench's `fmt` subscriber `lean` saves about 40 allocations and 5 KB per
+  request; `off` and `lean` together cut a simple route's allocations by 20% and its server time by about 29%.
+  See `llmwiki/topics/access-log-and-span-toggles.md`.
+
 ### Changed (handler concurrency default)
 
 - **Untyped handlers get two coroutines by default** (`DEFAULT_HANDLER_CONCURRENCY`, was 1). The generator's proxied

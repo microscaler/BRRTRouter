@@ -1,5 +1,9 @@
 # LLM Wiki Log
 
+## [2026-11-06] feature | Access log sampling and lean request span
+
+- New [`topics/access-log-and-span-toggles.md`](./topics/access-log-and-span-toggles.md): `BRRTR_ACCESS_LOG`, `BRRTR_ACCESS_LOG_SLOW_MS`, `BRRTR_REQUEST_SPAN`; defaults unchanged; bench cost per mode.
+
 ## [2026-08-08] docs | Sesame-IDAM as public BRRTRouter reference
 
 - Added [`docs/BUILDING_WITH_BRRTROUTER.md`](../docs/BUILDING_WITH_BRRTROUTER.md); README / CONTRIBUTING / OPENAPI_VERSION_SUPPORT / FRAMEWORK_MATURITY / AGENTS point at [sesame-idam](https://github.com/microscaler/sesame-idam).
