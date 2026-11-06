@@ -1,8 +1,12 @@
 # Access log and request span toggles
 
 **Status:** verified (code + tests + bench, 2026-11-06)
-**Code:** [`src/server/access_log.rs`](../../src/server/access_log.rs), `RequestLogger` and the `http_request` span in
-[`src/server/service.rs`](../../src/server/service.rs)
+**Source docs:** [`docs/PRD_OBSERVABILITY_AND_TRACING.md`](../../docs/PRD_OBSERVABILITY_AND_TRACING.md) (the request span
+and its events), [`docs/ADRS/006-validation-modes-proxy-passthrough-trusted-hop.md`](../../docs/ADRS/006-validation-modes-proxy-passthrough-trusted-hop.md)
+(the `full|sample:<rate>|off` grammar this reuses)
+**Code anchors:** `src/server/access_log.rs` (`AccessLog`, `AccessLog::sample_next`, `must_log`, `slow_ms`,
+`RequestSpan`); `src/server/service.rs` (`RequestLogger`, its `Drop`, the `http_request` span, `health_endpoint_status`);
+`tests/access_log_forced_tests.rs`, `tests/access_log_sampled_tests.rs`, `tests/access_log_util/mod.rs`
 
 ## What and why
 
@@ -19,8 +23,9 @@ service with a high request rate can trade that record for throughput; the defau
 | `BRRTR_ACCESS_LOG_SLOW_MS` | milliseconds | `100` |
 | `BRRTR_REQUEST_SPAN` | `full`, `lean` | `full` |
 
-- **`sample:<rate>`** decides when the request arrives: evenly spread requests at the rate (a process-wide count, no
-  RNG), so `sample:0.1` is exactly one request in ten. The others never redact or format their headers.
+- **`sample:<rate>`** decides when the request arrives: evenly spread requests at the rate, counted per path in one
+  of 64 fixed buckets (no RNG), so `sample:0.1` is one request in ten for each path and a steady interleaving of
+  routes cannot leave one out. The others never redact or format their headers.
 - **Always logged**, whatever the mode: a 5xx, a 429 (the service's own back-pressure), and any request that took at
   least `BRRTR_ACCESS_LOG_SLOW_MS`. Failures and slow requests never disappear from the log. When such a request was
   not sampled its headers were never captured, so the event has `sampled = false` and no header fields. Other 4xx are
@@ -28,7 +33,8 @@ service with a high request rate can trade that record for throughput; the defau
 - **`lean` span** drops the fields another field or the access log already carries: `method` and `path`
   (`http.request.method`, `http.route`), `header_count`, `stack_used_kb`. It keeps the OpenTelemetry HTTP fields,
   `tenant_id` (with a sampled access log the span is the only per-request record left, and traces are filtered by
-  tenant first), `status`, `duration_ms` and the `brrtrouter.*` failure reasons.
+  tenant first), `status`, `duration_ms` and the `brrtrouter.*` failure reasons. Built-in endpoints record their
+  `http.route`; a request that matched no route (static files, hook answers, 404s) records `url.path` instead.
 - **Span sampling is not a router setting.** The router always creates the span; whether it is exported is the trace
   exporter's sampler's decision (the OpenTelemetry SDK's `Sampler`, configured where the exporter is installed).
 - The DEBUG `"Request received"` event is unchanged: it formats the headers itself, and only when DEBUG is enabled for
@@ -56,6 +62,14 @@ read them as roughly ±10%.
   20 KB call the same absolute saving is a few percent: the body dominates.
 - The other scenarios (`list_pets_query`, `get_post_2_params`, `add_pet_json_body`, `secure_jwt`) move by the same
   amounts.
+
+## Gaps / drift
+
+- `docs/PRD_OBSERVABILITY_AND_TRACING.md` describes the request span's fields as fixed; with `lean` they depend on
+  `BRRTR_REQUEST_SPAN`. The PRD is not updated by this change.
+- The bench measures the `fmt` subscriber only; the saving under an OTLP exporter is not measured.
+- Before this change `/health` recorded 200 in the access log and metrics even when it answered 503; it now records the
+  status it wrote.
 
 ## Tests
 

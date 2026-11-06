@@ -72,17 +72,30 @@ impl AccessLog {
         })
     }
 
-    /// Whether the request now arriving is recorded in full. `Sample` takes evenly spread requests from a
-    /// process-wide count (each time `ceil(n·rate)` steps, starting with the first).
+    /// Whether the request now arriving for `key` (its path) is recorded in full. `Sample` takes evenly spread
+    /// requests (each time `ceil(n·rate)` steps, starting with the first) from one of [`BUCKETS`] counts, chosen by
+    /// the key's hash: one process-wide count would let a steady interleaving of routes leave a route out entirely
+    /// (A, B, A, B at `sample:0.5` logs every A and no B). The counts are fixed, so memory does not grow with paths.
     #[must_use]
-    pub fn sample_next(self) -> bool {
-        static SEEN: AtomicU64 = AtomicU64::new(0);
+    pub fn sample_next(self, key: &str) -> bool {
+        static SEEN: [AtomicU64; BUCKETS] = [const { AtomicU64::new(0) }; BUCKETS];
         match self {
             Self::Full => true,
             Self::Off => false,
-            Self::Sample(rate) => takes(SEEN.fetch_add(1, Ordering::Relaxed), rate),
+            Self::Sample(rate) => takes(SEEN[bucket(key)].fetch_add(1, Ordering::Relaxed), rate),
         }
     }
+}
+
+/// How many independent sampling counts [`AccessLog::sample_next`] keeps.
+pub const BUCKETS: usize = 64;
+
+/// The count a key samples from: FNV-1a of its bytes (no allocation, stable across runs).
+fn bucket(key: &str) -> usize {
+    let h = key.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
+        (h ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3)
+    });
+    (h % BUCKETS as u64) as usize
 }
 
 /// Whether the `n`th request (from 0) is one of the evenly spread `rate` share.
@@ -104,7 +117,7 @@ pub fn slow_ms() -> u64 {
 }
 
 /// Whether a request that was not sampled must still be logged: it answered 5xx or 429, or took at least `slow_ms`.
-/// A request that never got a status (the connection closed first) is not forced.
+/// A request that never got a status (the connection closed first) is forced only by its duration.
 #[must_use]
 pub fn must_log(status: Option<u16>, duration_ms: u64, slow_ms: u64) -> bool {
     matches!(status, Some(s) if s >= 500 || s == 429) || duration_ms >= slow_ms
@@ -190,8 +203,23 @@ mod tests {
         assert!((0..100)
             .step_by(10)
             .all(|s| (s..s + 10).filter(|&i| takes(i, 0.1)).count() == 1));
-        assert!(AccessLog::Full.sample_next());
-        assert!(!AccessLog::Off.sample_next());
+        assert!(AccessLog::Full.sample_next("/a"));
+        assert!(!AccessLog::Off.sample_next("/a"));
+    }
+
+    #[test]
+    fn interleaved_routes_are_each_sampled_at_the_rate() {
+        // Two paths in different buckets, alternating: one process-wide count at 0.5 would take every request
+        // of one and none of the other.
+        let (a, b) = ("/interleave-a", "/interleave-b");
+        assert_ne!(bucket(a), bucket(b));
+        let mode = AccessLog::Sample(0.5);
+        let (mut got_a, mut got_b) = (0, 0);
+        for _ in 0..20 {
+            got_a += usize::from(mode.sample_next(a));
+            got_b += usize::from(mode.sample_next(b));
+        }
+        assert_eq!((got_a, got_b), (10, 10));
     }
 
     #[test]

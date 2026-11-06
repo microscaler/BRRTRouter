@@ -545,6 +545,13 @@ impl AppService {
 /// (database I/O included) has stopped, so it must be restarted rather than reported alive.
 /// The first call starts the watchdog.
 pub fn health_endpoint(res: &mut Response) -> io::Result<()> {
+    health_endpoint_status(res);
+    Ok(())
+}
+
+/// [`health_endpoint`], returning the status it wrote: 200, or 503 while the runtime watchdog finds may
+/// workers starved (the access log records the real status).
+pub fn health_endpoint_status(res: &mut Response) -> u16 {
     use crate::dispatcher::HeaderVec;
     if let Some(w) = crate::runtime_watchdog::global() {
         let v = w.verdict();
@@ -563,7 +570,7 @@ pub fn health_endpoint(res: &mut Response) -> io::Result<()> {
                 false,
                 &HeaderVec::new(),
             );
-            return Ok(());
+            return 503;
         }
     }
     write_handler_response(
@@ -573,7 +580,7 @@ pub fn health_endpoint(res: &mut Response) -> io::Result<()> {
         false,
         &HeaderVec::new(),
     );
-    Ok(())
+    200
 }
 
 fn header_value<'a>(headers: &'a crate::dispatcher::HeaderVec, name: &str) -> Option<&'a str> {
@@ -1031,6 +1038,8 @@ impl HttpService for AppService {
             /// Whether this request is logged in full, headers included (`BRRTR_ACCESS_LOG`);
             /// otherwise its headers are never formatted and it is logged only when forced.
             sampled: bool,
+            /// `BRRTR_REQUEST_SPAN=lean`: the span has no raw `path`, so the endpoint is recorded on drop.
+            lean: bool,
             span: Span,
             /// Matched route template (`/orders/{id}`), once routed.
             route: Option<String>,
@@ -1150,6 +1159,14 @@ impl HttpService for AppService {
                 self.span.record("duration_ms", duration_ms);
                 self.span.record("stack_used_kb", stack_used_kb);
 
+                if self.lean {
+                    // A lean span has no raw `path`: name the endpoint that answered. Built-in endpoints have their
+                    // own route; static files, hook answers and unmatched requests have none, so they get `url.path`.
+                    match &self.route {
+                        Some(route) => self.span.record("http.route", route.as_str()),
+                        None => self.span.record("url.path", self.path.as_str()),
+                    };
+                }
                 if !self.sampled {
                     // Not sampled (`BRRTR_ACCESS_LOG`): logged only when it failed (5xx), was pushed
                     // back (429) or was slow, and without headers, which were never captured.
@@ -1283,50 +1300,51 @@ impl HttpService for AppService {
         // request was refused or failed (see `super::observability`).
         // `BRRTR_REQUEST_SPAN=lean` drops the fields another field or the access log already
         // carries (see `super::access_log`); recording a field the span lacks is a no-op.
-        let span =
-            if super::access_log::RequestSpan::global() == super::access_log::RequestSpan::Lean {
-                info_span!(
-                    "http_request",
-                    otel.name = %method,
-                    tenant_id = %tenant_id,
-                    status = tracing::field::Empty,
-                    duration_ms = tracing::field::Empty,
-                    "http.request.method" = %method,
-                    "http.route" = tracing::field::Empty,
-                    "http.response.status_code" = tracing::field::Empty,
-                    "error.type" = tracing::field::Empty,
-                    otel.status_description = tracing::field::Empty,
-                    "brrtrouter.error.reason" = tracing::field::Empty,
-                    "brrtrouter.auth.result" = tracing::field::Empty,
-                    "brrtrouter.auth.schemes" = tracing::field::Empty,
-                    "brrtrouter.auth.reason" = tracing::field::Empty,
-                    "brrtrouter.validation.error" = tracing::field::Empty,
-                    "brrtrouter.hook" = tracing::field::Empty,
-                )
-            } else {
-                info_span!(
-                    "http_request",
-                    otel.name = %method,
-                    method = %method,
-                    path = %path,
-                    tenant_id = %tenant_id,
-                    header_count = headers.len(),
-                    status = tracing::field::Empty,
-                    duration_ms = tracing::field::Empty,
-                    stack_used_kb = tracing::field::Empty,
-                    "http.request.method" = %method,
-                    "http.route" = tracing::field::Empty,
-                    "http.response.status_code" = tracing::field::Empty,
-                    "error.type" = tracing::field::Empty,
-                    otel.status_description = tracing::field::Empty,
-                    "brrtrouter.error.reason" = tracing::field::Empty,
-                    "brrtrouter.auth.result" = tracing::field::Empty,
-                    "brrtrouter.auth.schemes" = tracing::field::Empty,
-                    "brrtrouter.auth.reason" = tracing::field::Empty,
-                    "brrtrouter.validation.error" = tracing::field::Empty,
-                    "brrtrouter.hook" = tracing::field::Empty,
-                )
-            };
+        let lean = super::access_log::RequestSpan::global() == super::access_log::RequestSpan::Lean;
+        let span = if lean {
+            info_span!(
+                "http_request",
+                otel.name = %method,
+                tenant_id = %tenant_id,
+                status = tracing::field::Empty,
+                duration_ms = tracing::field::Empty,
+                "http.request.method" = %method,
+                "http.route" = tracing::field::Empty,
+                "url.path" = tracing::field::Empty,
+                "http.response.status_code" = tracing::field::Empty,
+                "error.type" = tracing::field::Empty,
+                otel.status_description = tracing::field::Empty,
+                "brrtrouter.error.reason" = tracing::field::Empty,
+                "brrtrouter.auth.result" = tracing::field::Empty,
+                "brrtrouter.auth.schemes" = tracing::field::Empty,
+                "brrtrouter.auth.reason" = tracing::field::Empty,
+                "brrtrouter.validation.error" = tracing::field::Empty,
+                "brrtrouter.hook" = tracing::field::Empty,
+            )
+        } else {
+            info_span!(
+                "http_request",
+                otel.name = %method,
+                method = %method,
+                path = %path,
+                tenant_id = %tenant_id,
+                header_count = headers.len(),
+                status = tracing::field::Empty,
+                duration_ms = tracing::field::Empty,
+                stack_used_kb = tracing::field::Empty,
+                "http.request.method" = %method,
+                "http.route" = tracing::field::Empty,
+                "http.response.status_code" = tracing::field::Empty,
+                "error.type" = tracing::field::Empty,
+                otel.status_description = tracing::field::Empty,
+                "brrtrouter.error.reason" = tracing::field::Empty,
+                "brrtrouter.auth.result" = tracing::field::Empty,
+                "brrtrouter.auth.schemes" = tracing::field::Empty,
+                "brrtrouter.auth.reason" = tracing::field::Empty,
+                "brrtrouter.validation.error" = tracing::field::Empty,
+                "brrtrouter.hook" = tracing::field::Empty,
+            )
+        };
         // ADR-0001: never entered. The span is the coroutine's context (may_tracing) for the
         // rest of this connection turn; the dispatcher hands it to the handler coroutine on
         // the HandlerRequest, and RequestLogger records status/duration on drop.
@@ -1356,7 +1374,7 @@ impl HttpService for AppService {
         let sanitizer = default_sanitizer();
         // `BRRTR_ACCESS_LOG`: decided as the request arrives, so an unsampled request never
         // redacts or formats its headers for the log.
-        let sampled = super::access_log::AccessLog::global().sample_next();
+        let sampled = super::access_log::AccessLog::global().sample_next(path.as_str());
         let request_headers_log = if sampled {
             sanitizer.headers_for_log(&headers)
         } else {
@@ -1394,6 +1412,7 @@ impl HttpService for AppService {
             request_headers: request_headers_log,
             response_headers: None,
             sampled,
+            lean,
             span: span.clone(),
             route: None,
             _active: super::http_metrics::ActiveRequest::start(method.as_str()),
@@ -1420,8 +1439,9 @@ impl HttpService for AppService {
             _request_logger.route = Some(path.to_string());
         }
         if method == Method::GET && path == "/health" {
-            _request_logger.record_http_status(200);
-            return health_endpoint(res);
+            let status = health_endpoint_status(res);
+            _request_logger.record_http_status(status);
+            return Ok(());
         }
         if method == Method::GET && path == "/ready" {
             use crate::dispatcher::HeaderVec;

@@ -43,6 +43,7 @@ fn forced_requests_are_logged_without_headers_and_the_lean_span_keeps_the_tenant
             "tenant_id",
             "http.request.method",
             "http.route",
+            "url.path",
             "status",
             "duration_ms",
         ] {
