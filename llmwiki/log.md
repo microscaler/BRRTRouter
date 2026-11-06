@@ -485,3 +485,7 @@ Hauliage Phase 3 unblockers for Vite dev proxy and frontend-aligned BFF routes.
   queue waits behind a single coroutine (0.7–2.5 s on forwarded metrics queries in production).
 - [`flows/runtime-request-flow.md`](./flows/runtime-request-flow.md#handler-concurrency-2026-11-04),
   [`topics/request-path-copies.md`](./topics/request-path-copies.md), audit pass 9.
+
+## [2026-11-06] feature | Access log sampling and lean request span
+
+- New [`topics/access-log-and-span-toggles.md`](./topics/access-log-and-span-toggles.md): `BRRTR_ACCESS_LOG`, `BRRTR_ACCESS_LOG_SLOW_MS`, `BRRTR_REQUEST_SPAN`; defaults unchanged; bench cost per mode.

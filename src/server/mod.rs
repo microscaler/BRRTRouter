@@ -76,6 +76,8 @@
 //! # }
 //! ```
 
+/// Access-log and request-span toggles (`BRRTR_ACCESS_LOG`, `BRRTR_REQUEST_SPAN`).
+pub mod access_log;
 pub mod app_config;
 /// Inbound request-body size limits (Story 12.2)
 pub mod body_limit;
