@@ -14,4 +14,9 @@ rustdocflags = ["--html-in-header", "doc/head.html"]
 #   [target.x86_64-unknown-linux-musl]
 #   linker = "musl-gcc"
 
+# Baseline x86-64 for x86_64 targets only. rustc already defaults to x86-64 on x86_64 Linux (gnu and musl), so this
+# changes nothing there; on Intel Macs it keeps the portable baseline. It must not apply to other architectures:
+# under [build] it reached aarch64 hosts too, where rustc ignores the unknown CPU or crashes (SIGSEGV on Apple
+# silicon). A cfg() target table applies to whatever is being compiled for x86_64, host or --target, and nothing else.
+[target.'cfg(target_arch = "x86_64")']
 rustflags = ["-C", "target-cpu=x86-64"]
