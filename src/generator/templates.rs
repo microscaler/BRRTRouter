@@ -6,7 +6,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use super::schema::{
-    example_literal_checked, is_named_type, to_camel_case, FieldDef, TypeDefinition,
+    example_literal_checked, is_named_type, raw_string_literal, to_camel_case, FieldDef,
+    TypeDefinition,
 };
 use crate::spec::{ParameterMeta, RouteMeta};
 
@@ -325,6 +326,8 @@ pub struct ControllerTemplateData {
     pub has_example: bool,
     /// Example response as JSON string
     pub example_json: String,
+    /// The example as a Rust string literal that nothing inside it can end early
+    pub example_literal: String,
     /// Whether the response is an array
     pub response_is_array: bool,
     /// Array literal for response (if array)
@@ -556,6 +559,7 @@ pub fn write_controller(
         handler_name: handler.to_string(),
         struct_name: struct_name.to_string(),
         response_fields: enriched_fields, // Last usage - move instead of clone
+        example_literal: raw_string_literal(&example_pretty),
         example: example_pretty,
         has_example: example.is_some(),
         example_json,
