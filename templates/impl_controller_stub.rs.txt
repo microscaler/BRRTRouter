@@ -19,7 +19,7 @@ use brrtrouter::typed::TypedHandlerRequest;
 {% if sse %}use brrtrouter::sse;{% endif %}
 {% if imports.len() > 0 %}
 {% for import in imports -%}
-#[allow(unused_imports)]
+#[allow(unused_imports, reason = "generated stub: imports every schema type the handler may use")]
 use {{ rust_crate_ident }}::handlers::types::{{ import }};
 {% endfor %}
 {% endif %}
@@ -37,8 +37,8 @@ pub fn handle(req: TypedHandlerRequest<Request>) -> {% if uses_http_no_content %
     // let result = your_service.process(&req.inner)?;
     //
     // Example: Return response
+    let _ = req; // remove once the handler reads the request
     {% if uses_http_no_content %}
-    let _ = req;
     HttpNoContent
     {% elif sse %}
     // TODO: Implement Server-Sent Events logic

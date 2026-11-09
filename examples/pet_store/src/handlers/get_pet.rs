@@ -23,7 +23,7 @@ pub struct Response {
     pub breed: String,
 
     #[serde(rename = "id")]
-    pub id: i32,
+    pub id: i64,
 
     #[serde(rename = "name")]
     pub name: String,
@@ -72,7 +72,7 @@ impl TryFrom<HandlerRequest> for Request {
     }
 }
 
-#[allow(dead_code)]
+#[allow(dead_code, reason = "called through the dispatcher registry")]
 pub fn handler(req: TypedHandlerRequest<Request>) -> Response {
     crate::controllers::get_pet::handle(req)
 }

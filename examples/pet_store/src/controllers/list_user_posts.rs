@@ -4,7 +4,10 @@ use crate::handlers::list_user_posts::{Request, Response};
 use brrtrouter::typed::TypedHandlerRequest;
 use brrtrouter_macros::handler;
 
-#[allow(unused_imports)]
+#[allow(
+    unused_imports,
+    reason = "generated: imports every schema type the handler may use"
+)]
 use crate::handlers::types::Post;
 
 #[handler(ListUserPostsController)]
@@ -25,7 +28,7 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     //   }
     // ]
     match serde_json::from_str::<Response>(
-        r###"[
+        r#"[
   {
     "author_id": "abc-123",
     "body": "Welcome to the blog",
@@ -38,7 +41,7 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     "id": "post2",
     "title": "Follow-up"
   }
-]"###,
+]"#,
     ) {
         Ok(parsed) => return parsed,
         Err(e) => {

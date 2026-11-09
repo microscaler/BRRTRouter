@@ -11,9 +11,9 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     //   "location": "https://cdn.example.com/files/abc.png"
     // }
     match serde_json::from_str::<Response>(
-        r###"{
+        r#"{
   "location": "https://cdn.example.com/files/abc.png"
-}"###,
+}"#,
     ) {
         Ok(parsed) => return parsed,
         Err(e) => {

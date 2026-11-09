@@ -19,6 +19,7 @@ use brrtrouter::typed::spawn_typed_with_stack_size_and_name;
 ///
 /// # Safety
 /// Spawns handler coroutines. Callers must ensure the coroutine runtime is initialized.
+#[allow(clippy::too_many_lines, reason = "generated: one match arm per operation")]
 pub unsafe fn register_impl(dispatcher: &mut Dispatcher, routes: &[RouteMeta]) {
     for route in routes {
         match route.handler_name.as_ref() {

@@ -4,7 +4,10 @@ use crate::handlers::search::{Request, Response};
 use brrtrouter::typed::TypedHandlerRequest;
 use brrtrouter_macros::handler;
 
-#[allow(unused_imports)]
+#[allow(
+    unused_imports,
+    reason = "generated: imports every schema type the handler may use"
+)]
 use crate::handlers::types::Item;
 
 #[handler(SearchController)]
@@ -23,7 +26,7 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     //   ]
     // }
     match serde_json::from_str::<Response>(
-        r###"{
+        r#"{
   "results": [
     {
       "id": "item-001",
@@ -34,7 +37,7 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
       "name": "Another Item"
     }
   ]
-}"###,
+}"#,
     ) {
         Ok(parsed) => return parsed,
         Err(e) => {

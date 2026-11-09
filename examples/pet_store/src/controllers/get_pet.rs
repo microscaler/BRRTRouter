@@ -19,7 +19,7 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     //   "vaccinated": true
     // }
     match serde_json::from_str::<Response>(
-        r###"{
+        r#"{
   "age": 3,
   "breed": "Golden Retriever",
   "id": 12345,
@@ -29,7 +29,7 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     "trained"
   ],
   "vaccinated": true
-}"###,
+}"#,
     ) {
         Ok(parsed) => return parsed,
         Err(e) => {
@@ -41,7 +41,7 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     Response {
         age: 3,
         breed: "Golden Retriever".to_string(),
-        id: 12345,
+        id: 12_345,
         name: "Max".to_string(),
         tags: vec!["friendly".to_string(), "trained".to_string()],
         vaccinated: true,

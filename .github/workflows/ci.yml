@@ -150,6 +150,11 @@ jobs:
         # run: cargo clippy --all-targets --all-features -- -D warnings || true - runs clippy on all targets and features, but fails the build on warnings
         run: cargo clippy -- -D warnings || true
 
+      - name: Generated code passes a strict consumer's lints
+        # Templates reach every consumer (PriceWhisperer, sesame-idam, hauliage, RERP): generate pet_store's gen
+        # crate and impl stubs into a workspace with RERP's strict [workspace.lints] and fail on any warning.
+        run: scripts/check-generated-lints.sh
+
       - name: No OS-blocking calls on the may runtime
         # clippy.toml lists the calls that park a may worker thread (std sockets, getaddrinfo,
         # std::thread::sleep, std Condvar/mpsc waits). Unlike the step above, this one fails.

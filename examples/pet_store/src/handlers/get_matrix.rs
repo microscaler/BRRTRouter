@@ -64,7 +64,7 @@ impl TryFrom<HandlerRequest> for Request {
     }
 }
 
-#[allow(dead_code)]
+#[allow(dead_code, reason = "called through the dispatcher registry")]
 pub fn handler(req: TypedHandlerRequest<Request>) -> Response {
     crate::controllers::get_matrix::handle(req)
 }
