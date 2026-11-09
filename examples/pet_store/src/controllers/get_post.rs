@@ -14,12 +14,12 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     //   "title": "Intro"
     // }
     match serde_json::from_str::<Response>(
-        r###"{
+        r#"{
   "author_id": "abc-123",
   "body": "Welcome to the blog",
   "id": "post1",
   "title": "Intro"
-}"###,
+}"#,
     ) {
         Ok(parsed) => return parsed,
         Err(e) => {

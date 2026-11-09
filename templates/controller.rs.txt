@@ -21,7 +21,7 @@ use crate::handlers::{{ handler_name }}::{ Request, Response };
 {% if sse %}use brrtrouter::sse;{% endif %}
 {% if imports.len() > 0 %}
 {% for import in imports -%}
-#[allow(unused_imports)]
+#[allow(unused_imports, reason = "generated: imports every schema type the handler may use")]
 use crate::handlers::types::{{ import }};
 {% endfor %}
 {% endif %}

@@ -4,7 +4,10 @@ use crate::handlers::list_users::{Request, Response};
 use brrtrouter::typed::TypedHandlerRequest;
 use brrtrouter_macros::handler;
 
-#[allow(unused_imports)]
+#[allow(
+    unused_imports,
+    reason = "generated: imports every schema type the handler may use"
+)]
 use crate::handlers::types::User;
 
 #[handler(ListUsersController)]
@@ -25,7 +28,7 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     //   ]
     // }
     match serde_json::from_str::<Response>(
-        r###"{
+        r#"{
   "users": [
     {
       "email": "john@example.com",
@@ -38,7 +41,7 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
       "name": "Jane"
     }
   ]
-}"###,
+}"#,
     ) {
         Ok(parsed) => return parsed,
         Err(e) => {
