@@ -302,6 +302,16 @@ pub fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
             if field.ty == "serde_json::Value" || field.ty == "Value" {
                 // Target is serde_json::Value, wrap as Value::String
                 format!("serde_json::Value::String({s:?}.to_string())")
+            } else if field.ty.contains("Decimal") {
+                // Money as a decimal string ("38400.00"): parse it, as rust_decimal serialises it back
+                format!("{s:?}.parse::<rust_decimal::Decimal>().unwrap_or_default()")
+            } else if is_named_type(&field.ty) {
+                // A string enum (or another named type written as a string): deserialize it, so the
+                // variant comes from its serde rename; generated enums derive Default
+                format!(
+                    "serde_json::from_value::<{}>(serde_json::Value::String({s:?}.to_string())).unwrap_or_default()",
+                    field.ty
+                )
             } else {
                 // Target is Rust String, use .to_string()
                 format!("{s:?}.to_string()")
@@ -372,6 +382,13 @@ pub fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
                         } else if is_vec_json_value {
                             // Vec<Value>: wrap in serde_json::Value::String
                             format!("serde_json::Value::String({s:?}.to_string())")
+                        } else if let Some(inner_ty) = inner_ty_opt.filter(|t| t.contains("Decimal")) {
+                            format!("{s:?}.parse::<{inner_ty}>().unwrap_or_default()")
+                        } else if let Some(inner_ty) = inner_ty_opt.filter(|t| is_named_type(t)) {
+                            // Vec<Enum>: deserialize each string (enums implement no FromStr)
+                            format!(
+                                "serde_json::from_value::<{inner_ty}>(serde_json::Value::String({s:?}.to_string())).unwrap_or_default()"
+                            )
                         } else {
                             // Other types: try parsing from string (e.g., Vec<i32>)
                             // Use unwrap_or_default to avoid panics if parsing fails
@@ -420,7 +437,7 @@ pub fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
                             if inner_ty == "serde_json::Value" || inner_ty == "Value" {
                                 // Target is Vec<Value>, use json! macro
                                 let json = serde_json::to_string(item).unwrap_or_else(|_| "null".to_string());
-                                format!(r##"serde_json::from_str::<serde_json::Value>(r#"{json}"#).unwrap_or(serde_json::Value::Null)"##)
+                                format!("serde_json::from_str::<serde_json::Value>({}).unwrap_or(serde_json::Value::Null)", raw_string_literal(&json))
                             } else if is_named_type(inner_ty) {
                                 // Target is Vec<CustomType>, deserialize with fallback
                                 let json = serde_json::to_string(item).unwrap_or_else(|_| "null".to_string());
@@ -434,7 +451,7 @@ pub fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
                         } else {
                             // No type info, fallback to json!
                             let json = serde_json::to_string(item).unwrap_or_else(|_| "null".to_string());
-                            format!(r##"serde_json::from_str::<serde_json::Value>(r#"{json}"#).unwrap_or(serde_json::Value::Null)"##)
+                            format!("serde_json::from_str::<serde_json::Value>({}).unwrap_or(serde_json::Value::Null)", raw_string_literal(&json))
                         }
                     }
                     // Other types (null, etc.) - use dummy or Default
@@ -457,7 +474,8 @@ pub fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
             let json = serde_json::to_string(example).unwrap_or_else(|_| "null".to_string());
             if field.ty == "serde_json::Value" || field.ty == "Value" {
                 format!(
-                    r##"serde_json::from_str::<serde_json::Value>(r#"{json}"#).unwrap_or(serde_json::Value::Null)"##
+                    "serde_json::from_str::<serde_json::Value>({}).unwrap_or(serde_json::Value::Null)",
+                    raw_string_literal(&json)
                 )
             } else if is_named_type(&field.ty) {
                 format!(
@@ -466,7 +484,8 @@ pub fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
                 )
             } else {
                 format!(
-                    r##"serde_json::from_str::<serde_json::Value>(r#"{json}"#).unwrap_or(serde_json::Value::Null)"##
+                    "serde_json::from_str::<serde_json::Value>({}).unwrap_or(serde_json::Value::Null)",
+                    raw_string_literal(&json)
                 )
             }
         }
@@ -484,6 +503,17 @@ pub fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
     } else {
         literal
     }
+}
+
+/// A Rust raw string literal for `text`, with enough `#`s that nothing inside ends it early
+/// (JSON such as `{"accent":"#1F5AF6"}` holds `"#`, which ends a plain `r#"..."#`).
+pub fn raw_string_literal(text: &str) -> String {
+    let mut hashes = 1;
+    while text.contains(&format!("\"{}", "#".repeat(hashes))) {
+        hashes += 1;
+    }
+    let h = "#".repeat(hashes);
+    format!("r{h}\"{text}\"{h}")
 }
 
 /// Whether `example` can become a Rust literal of `field`'s type in generated code.
@@ -531,8 +561,8 @@ fn example_fits_type(ty: &str, example: &Value) -> bool {
         "bool" => example.is_boolean(),
         "f32" | "f64" => example.is_number(),
         t if is_integer_type(t) => example.is_i64() || example.is_u64(),
-        t if t.contains("Decimal") => example.is_number(),
-        // Named types: an object is deserialized with a fallback; a string is written as a String.
+        t if t.contains("Decimal") => example.is_number() || example.is_string(),
+        // Named types: an object is deserialized with a fallback; a string (an enum) is deserialized too.
         t if is_named_type(t) => example.is_object() || example.is_string(),
         _ => true,
     }

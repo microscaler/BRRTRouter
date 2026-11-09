@@ -1465,3 +1465,57 @@ fn test_example_literal_checked_drops_a_mismatched_value() {
         None
     );
 }
+
+#[test]
+fn test_rust_literal_for_example_string_enum() {
+    // A string example for a named (enum) type is deserialized, so the serde rename picks the variant
+    let result = rust_literal_for_example(&example_field("DealStatus", false), &json!("WON"));
+    assert_eq!(
+        result,
+        "serde_json::from_value::<DealStatus>(serde_json::Value::String(\"WON\".to_string())).unwrap_or_default()"
+    );
+    let optional = rust_literal_for_example(&example_field("DealStatus", true), &json!("WON"));
+    assert!(optional.starts_with("Some(serde_json::from_value::<DealStatus>("));
+}
+
+#[test]
+fn test_rust_literal_for_example_vec_of_enums() {
+    let result = rust_literal_for_example(
+        &example_field("Vec<Channel>", false),
+        &json!(["EMAIL", "SMS"]),
+    );
+    assert!(result.starts_with("vec![serde_json::from_value::<Channel>("));
+    assert!(!result.contains(".parse()"));
+}
+
+#[test]
+fn test_rust_literal_for_example_decimal_string() {
+    // Money as a decimal string, as rust_decimal serialises it
+    let result = rust_literal_for_example(
+        &example_field("rust_decimal::Decimal", false),
+        &json!("38400.00"),
+    );
+    assert_eq!(
+        result,
+        "\"38400.00\".parse::<rust_decimal::Decimal>().unwrap_or_default()"
+    );
+    assert!(example_fits_field(
+        &example_field("rust_decimal::Decimal", false),
+        &json!("38400.00")
+    ));
+}
+
+#[test]
+fn test_rust_literal_for_example_json_with_hash_after_quote() {
+    // `"#` inside the JSON would end a plain r#"..."# literal
+    let result = rust_literal_for_example(
+        &example_field("serde_json::Value", false),
+        &json!({"accent": "#1F5AF6"}),
+    );
+    assert!(
+        result.contains(r###"r##"{"accent":"#1F5AF6"}"##"###),
+        "{result}"
+    );
+    assert_eq!(raw_string_literal("plain"), "r#\"plain\"#");
+    assert_eq!(raw_string_literal("a\"#b\"##c"), "r###\"a\"#b\"##c\"###");
+}
