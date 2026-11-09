@@ -23,7 +23,8 @@ rustdocflags = ["--html-in-header", "doc/head.html"]
 # machines, and the shared sccache keys on these flags. Every value below equals rustc's own default for the matching
 # Linux/macOS targets (same target_feature set), except on Intel Macs, where it keeps x86-64 instead of rustc's
 # `penryn`. Pinning them stops one family's CPU name reaching another (an x86 name crashes rustc on Apple silicon).
-# Note: this file only applies to builds run inside this repository; dependants set their own.
+# Same block in BRRTRouter, RERP, PriceWhisperer, sesame-idam and hauliage. Target rustflags replace [build]
+# rustflags rather than adding to them: a flag every build needs goes on each line below.
 
 # x86_64: Linux (CI, images, ms02, GKE nodes) and Intel Macs.
 [target.'cfg(target_arch = "x86_64")']
