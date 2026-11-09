@@ -342,9 +342,17 @@ fn main() {
     fn a_mention_of_run_app_builder_is_not_a_migration() {
         let cargo = "[package]\nname = \"acme_customs\"\n";
         let mentioned = format!("// TODO: replace with RunAppBuilder\n{LEGACY_MAIN}");
-        assert!(!analyze_main_rs(&mentioned, cargo, "").unwrap().already_migrated);
+        assert!(
+            !analyze_main_rs(&mentioned, cargo, "")
+                .unwrap()
+                .already_migrated
+        );
         let migrated = "fn main() { RunAppBuilder::new().run() }";
-        assert!(analyze_main_rs(migrated, cargo, "").unwrap().already_migrated);
+        assert!(
+            analyze_main_rs(migrated, cargo, "")
+                .unwrap()
+                .already_migrated
+        );
     }
 
     #[test]
