@@ -1519,3 +1519,32 @@ fn test_rust_literal_for_example_json_with_hash_after_quote() {
     assert_eq!(raw_string_literal("plain"), "r#\"plain\"#");
     assert_eq!(raw_string_literal("a\"#b\"##c"), "r###\"a\"#b\"##c\"###");
 }
+
+#[test]
+fn test_rust_literal_for_example_decimal_named_type_is_not_decimal() {
+    // A named type that merely contains "Decimal" is an enum, not rust_decimal
+    let result = rust_literal_for_example(&example_field("DecimalMode", false), &json!("EXACT"));
+    assert!(
+        result.starts_with("serde_json::from_value::<DecimalMode>("),
+        "{result}"
+    );
+}
+
+#[test]
+fn test_rust_literal_for_example_required_nullable_keeps_option() {
+    let result = rust_literal_for_example(
+        &example_field("Option<rust_decimal::Decimal>", false),
+        &json!("12.50"),
+    );
+    assert_eq!(
+        result,
+        "Some(\"12.50\".parse::<rust_decimal::Decimal>().unwrap_or_default())"
+    );
+}
+
+#[test]
+fn test_raw_string_literal_falls_back_past_255_hashes() {
+    let text = format!("\"{}", "#".repeat(255));
+    let literal = raw_string_literal(&text);
+    assert!(literal.starts_with('"'), "{literal}");
+}

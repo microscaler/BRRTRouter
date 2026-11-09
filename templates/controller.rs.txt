@@ -39,7 +39,7 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> {% if uses_http_no_content 
     {% if has_example -%}
     // Example response:
 {{ example_json }}
-    match serde_json::from_str::<Response>(r###"{{ example|safe }}"###) {
+    match serde_json::from_str::<Response>({{ example_literal|safe }}) {
         Ok(parsed) => return {% if uses_multi_status %}ApiResponse::{{ default_variant }}(parsed){% else if uses_http_json %}HttpJson::ok(parsed){% else %}parsed{% endif %},
         Err(e) => {
             eprintln!("Failed to parse mock example JSON into Response: {}", e);
