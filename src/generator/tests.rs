@@ -1586,6 +1586,37 @@ fn test_json_macro_tokens_matches_compact_json_except_numbers() {
 }
 
 #[test]
+fn test_json_macro_tokens_suffixes_integers_outside_i32() {
+    // json! infers an unsuffixed integer as i32, so these would not compile without a suffix.
+    assert_eq!(json_macro_tokens(&json!(2_147_483_647)), "2_147_483_647");
+    assert_eq!(
+        json_macro_tokens(&json!(-2_147_483_648_i64)),
+        "-2_147_483_648"
+    );
+    assert_eq!(
+        json_macro_tokens(&json!(3_000_000_000_u64)),
+        "3_000_000_000_i64"
+    );
+    assert_eq!(
+        json_macro_tokens(&json!(-3_000_000_000_i64)),
+        "-3_000_000_000_i64"
+    );
+    assert_eq!(
+        json_macro_tokens(&json!(u64::MAX)),
+        "18_446_744_073_709_551_615_u64"
+    );
+    assert_eq!(
+        json_macro_tokens(&json!(3_000_000_000.5)),
+        "3_000_000_000.5"
+    );
+    // The suffixed tokens are what the generated code compiles: they must round-trip to the same value.
+    assert_eq!(
+        serde_json::json!(3_000_000_000_i64),
+        json!(3_000_000_000_u64)
+    );
+}
+
+#[test]
 fn test_detect_workspace_lints() {
     use super::templates::detect_workspace_lints;
 
@@ -1608,6 +1639,17 @@ fn test_detect_workspace_lints() {
     let sub = without.join("impl");
     fs::create_dir_all(&sub).unwrap();
     assert!(!detect_workspace_lints(&sub));
+
+    // A trailing comment or a dotted key is still a workspace root that declares lints.
+    let commented = temp_dir();
+    fs::write(
+        commented.join("Cargo.toml"),
+        "[workspace] # the services\nmembers = []\nlints.clippy.pedantic = \"warn\"\n",
+    )
+    .unwrap();
+    fs::create_dir_all(commented.join("impl")).unwrap();
+    assert!(detect_workspace_lints(&commented.join("impl")));
+    fs::remove_dir_all(&commented).unwrap();
 
     // A nested workspace is its own boundary: an outer [workspace.lints] does not leak into it.
     let inner = with.join("nested");

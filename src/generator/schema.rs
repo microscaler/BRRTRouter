@@ -596,7 +596,17 @@ pub(crate) fn json_macro_tokens(value: &Value) -> String {
     match value {
         Value::Null => "null".to_string(),
         Value::Bool(b) => b.to_string(),
-        Value::Number(n) => rust_number_literal(&n.to_string()),
+        Value::Number(n) => {
+            // `json!` hands an unsuffixed integer to `to_value`, which infers i32: anything outside i32 needs a
+            // suffix or it does not compile (overflowing literal). Floats infer f64 and need none.
+            let literal = rust_number_literal(&n.to_string());
+            match (n.as_i64(), n.as_u64()) {
+                (Some(i), _) if i32::try_from(i).is_ok() => literal,
+                (Some(_), _) => format!("{literal}_i64"),
+                (None, Some(_)) => format!("{literal}_u64"),
+                _ => literal,
+            }
+        }
         Value::String(s) => format!("{s:?}"),
         Value::Array(items) => {
             let inner: Vec<String> = items.iter().map(json_macro_tokens).collect();
