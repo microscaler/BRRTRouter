@@ -2225,6 +2225,7 @@ impl HttpService for AppService {
                 _request_logger.request_id = Some(canonical_req_id);
             }
 
+            let dispatch_started = std::time::Instant::now();
             let handler_response = {
                 // Lock-free dispatcher load (PRD Phase 1).
                 let dispatcher = self.dispatcher.load();
@@ -2267,6 +2268,8 @@ impl HttpService for AppService {
             match handler_response {
                 Some(hr) => {
                     let mut headers = hr.headers;
+                    // Server-Timing `app`: the handler's own time (see server_timing).
+                    super::server_timing::record(&mut headers, "app", dispatch_started.elapsed());
                     // Always echo X-Request-ID on the response if we have one
                     // JSF P2: Use Arc::from for header names (O(1) clone, no allocation)
                     if let Some(ref rid) = _request_logger.request_id {

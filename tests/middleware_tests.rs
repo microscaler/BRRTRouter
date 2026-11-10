@@ -1103,7 +1103,8 @@ fn test_cors_builder_expose_headers() {
     cors.after(&req, &mut resp, Duration::from_millis(0));
     assert_eq!(
         resp.get_header("access-control-expose-headers"),
-        Some("X-Total-Count, X-Page-Number")
+        // Server-Timing is exposed too while it is on (the default; brrtrouter::server::server_timing)
+        Some("X-Total-Count, X-Page-Number, server-timing")
     );
 }
 
@@ -1318,7 +1319,13 @@ fn test_cors_exposed_headers() {
     mw.after(&req, &mut resp, Duration::from_millis(0));
     assert_eq!(
         resp.get_header("access-control-expose-headers"),
-        Some("X-Total-Count, X-Page-Number")
+        // Server-Timing is exposed too while it is on (the default; brrtrouter::server::server_timing)
+        Some("X-Total-Count, X-Page-Number, server-timing")
+    );
+    // and Resource Timing may read the timing phases of this origin's responses
+    assert_eq!(
+        resp.get_header("timing-allow-origin"),
+        Some("https://example.com")
     );
 }
 

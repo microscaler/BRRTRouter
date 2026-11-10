@@ -1109,10 +1109,13 @@ pub fn proxy_sse(
     let result = proxy_sse_inner(req, downstream_service, path_template);
     // for a stream, the time to the downstream's response headers
     record_call(req, downstream_service, path_template, &result, started);
-    match result {
-        Ok(res) => res,
-        Err(e) => proxy_error_response(&e),
-    }
+    with_upstream_timing(
+        match result {
+            Ok(res) => res,
+            Err(e) => proxy_error_response(&e),
+        },
+        started,
+    )
 }
 
 fn proxy_sse_idle() -> Duration {
@@ -1371,10 +1374,19 @@ pub fn proxy_untyped(
         passthrough_enabled(),
     );
     record_call(req, downstream_service, path_template, &result, started);
-    match result {
-        Ok(res) => res,
-        Err(e) => proxy_error_response(&e),
-    }
+    with_upstream_timing(
+        match result {
+            Ok(res) => res,
+            Err(e) => proxy_error_response(&e),
+        },
+        started,
+    )
+}
+
+/// `Server-Timing: upstream;dur=` on a proxied response: the time since `started` (the downstream call).
+fn with_upstream_timing(mut res: HandlerResponse, started: std::time::Instant) -> HandlerResponse {
+    crate::server::server_timing::record(&mut res.headers, "upstream", started.elapsed());
+    res
 }
 
 /// One downstream call into `http_client_request_duration_seconds` (see [`super::client_metrics`]). A request that
