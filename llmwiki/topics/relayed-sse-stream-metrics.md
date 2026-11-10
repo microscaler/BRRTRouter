@@ -50,9 +50,10 @@ next frame failed to queue: up to the idle timeout later, reported as `idle_time
 wake-up a second per open stream.
 
 The receiver itself is dropped promptly too. Between frames the server peeks at the client's socket once a second
-(`stream_sse`, `sse_client_gone`: a non-blocking peek on a clone of the connection). On end of stream it stops
-writing and drops the receiver, so a client that leaves a stream on which nothing is being sent is noticed within a
-second or two. Before this change it was noticed only when the next write failed.
+(`stream_sse`, `sse_client_probe`: a non-blocking peek on a clone of the connection). A reset ends the stream. End
+of input alone does not: TCP lets a client close its sending side and keep reading, so the server then writes an SSE
+comment (`:`), which clients ignore and which fails once the peer has really gone. A client that leaves a stream on
+which nothing is being sent is noticed within about two seconds; a half-closed reader keeps its stream. Before this change it was noticed only when the next write failed.
 
 > **Open:** both checks are polls (one timer wake-up a second per open stream on each side). An event-driven wake-up
 > would cost nothing while the stream is open; it needs a waitable close signal in `sse.rs` and readiness on the

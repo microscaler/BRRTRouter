@@ -4,6 +4,8 @@
 //! Coverage and strategy:
 //! - An in-process stream whose producer is silent: the server notices the client's closed socket between frames and
 //!   drops the receiver, so the producer's sender reports the client gone (`SseSender::is_closed`).
+//! - A client that half-closes (shuts its sending side and keeps reading) keeps its stream and still receives events;
+//!   its full close afterwards is noticed (a comment written into the stream fails).
 //! - A relayed stream (`proxy_sse`) to a downstream that sends one frame and then nothing: the client drops its
 //!   connection mid-stream and the registered `StreamObserver`'s lease closes once, as `client_closed`, within a few
 //!   seconds rather than at the 300 s idle timeout. The observer also sees the request headers the stream was opened
@@ -127,6 +129,53 @@ fn the_server_drops_a_quiet_stream_whose_client_left() {
     let tx = senders.lock().unwrap().pop().unwrap();
     // nothing is sent after the hello: only the probe can notice
     let took = wait_for("the receiver to be dropped", || tx.is_closed());
+    assert!(took < Duration::from_secs(5), "{took:?}");
+}
+
+#[test]
+fn a_client_that_half_closes_keeps_its_stream() {
+    // TCP lets a client close its sending side and keep reading: that is not a disconnect.
+    let senders: Arc<Mutex<Vec<SseSender>>> = Arc::default();
+    let held = Arc::clone(&senders);
+    let f = start(Arc::new(move |ctx| {
+        (ctx.path == "/half").then(|| {
+            let (tx, rx) = brrtrouter::sse::channel();
+            tx.send("hello");
+            held.lock().unwrap().push(tx);
+            HandlerResponse::sse_live(rx)
+        })
+    }));
+    let mut s = TcpStream::connect(f.addr).unwrap();
+    s.set_read_timeout(Some(Duration::from_secs(8))).unwrap();
+    write!(
+        s,
+        "GET /half HTTP/1.1\r\nHost: {}\r\nAccept: text/event-stream\r\n\r\n",
+        f.addr
+    )
+    .unwrap();
+    let mut got = Vec::new();
+    let mut buf = [0u8; 1024];
+    while !String::from_utf8_lossy(&got).contains("data: hello") {
+        let n = s.read(&mut buf).unwrap();
+        assert!(n > 0);
+        got.extend_from_slice(&buf[..n]);
+    }
+    s.shutdown(std::net::Shutdown::Write).unwrap();
+    // several probe intervals later the stream is still open, and a new event still arrives
+    std::thread::sleep(Duration::from_millis(3500));
+    let tx = senders.lock().unwrap().pop().unwrap();
+    assert!(!tx.is_closed(), "a half-closed client was treated as gone");
+    tx.send("later");
+    got.clear();
+    while !String::from_utf8_lossy(&got).contains("data: later") {
+        let n = s.read(&mut buf).unwrap();
+        assert!(n > 0, "stream ended: {}", String::from_utf8_lossy(&got));
+        got.extend_from_slice(&buf[..n]);
+    }
+    drop(s);
+    let took = wait_for("the receiver to be dropped after the full close", || {
+        tx.is_closed()
+    });
     assert!(took < Duration::from_secs(5), "{took:?}");
 }
 

@@ -623,7 +623,9 @@ fn stream_sse(
         res.header_kv(k, v);
     }
     // A client that leaves while nothing is being sent is noticed by probing its socket between frames, not only by
-    // the next write failing: the receiver is dropped at once, so its producer (a proxy relay) stops too.
+    // the next write failing: the receiver is dropped at once, so its producer (a proxy relay) stops too. End of input
+    // alone is not a disconnect: TCP lets a client close its sending side and keep reading. Then the write direction
+    // is tested with an SSE comment (ignored by clients), which fails once the peer has really gone.
     let probe = conn_stream.try_clone().ok();
     let mut writer = res.begin_chunked_stream(conn_stream)?;
     loop {
@@ -634,11 +636,15 @@ fn stream_sse(
                     break;
                 }
             }
-            crate::sse::RecvFrame::Idle => {
-                if probe.as_ref().is_some_and(sse_client_gone) {
-                    break;
+            crate::sse::RecvFrame::Idle => match probe.as_ref().map(sse_client_probe) {
+                Some(ClientProbe::Gone) => break,
+                Some(ClientProbe::InputClosed) => {
+                    if writer.write_chunk(b":\n\n").is_err() {
+                        break;
+                    }
                 }
-            }
+                Some(ClientProbe::Open) | None => {}
+            },
             crate::sse::RecvFrame::Closed => break,
         }
     }
@@ -650,18 +656,33 @@ fn stream_sse(
 /// How often a quiet event stream checks that its client is still connected.
 const SSE_CLIENT_PROBE: std::time::Duration = std::time::Duration::from_secs(1);
 
-/// True when the client of an event stream has closed its connection: a non-blocking peek reads end of stream or
-/// fails. An event-stream client sends nothing after its request, so anything else means it is still there (bytes
-/// it sent are left unread). The socket is non-blocking (may), so this never waits.
-fn sse_client_gone(conn: &may::net::TcpStream) -> bool {
+/// What a non-blocking peek at an event-stream client's socket says.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ClientProbe {
+    /// Nothing to read, or bytes the client sent (left unread): still there.
+    Open,
+    /// End of input: the client closed its sending side. It may have gone, or it may have half-closed and still be
+    /// reading; only a write tells the two apart.
+    InputClosed,
+    /// The connection failed (reset): gone.
+    Gone,
+}
+
+/// Peek at the client's socket without consuming anything. The socket is non-blocking (may), so this never waits.
+fn sse_client_probe(conn: &may::net::TcpStream) -> ClientProbe {
     let mut byte = [0u8; 1];
     match conn.inner().peek(&mut byte) {
-        Ok(0) => true,
-        Ok(_) => false,
-        Err(e) => !matches!(
-            e.kind(),
-            io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
-        ),
+        Ok(0) => ClientProbe::InputClosed,
+        Ok(_) => ClientProbe::Open,
+        Err(e)
+            if matches!(
+                e.kind(),
+                io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
+            ) =>
+        {
+            ClientProbe::Open
+        }
+        Err(_) => ClientProbe::Gone,
     }
 }
 

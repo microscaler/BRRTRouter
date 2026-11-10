@@ -14,8 +14,9 @@ All notable changes to this project will be documented in this file.
   downstream), downstream ended, idle timeout, slow client, or `error` (including a relay that panicked or never
   started). Panics in `opened` and `alive` are caught. With no observer registered a stream pays one atomic load.
 - **The server notices a client that leaves a quiet event stream.** Between frames it peeks at the client socket
-  every second; on end of stream it drops the receiver, so the producer (a proxy relay, an in-process stream) stops
-  at once instead of at its next frame. `SseReceiver::recv_frame_timeout` and `RecvFrame`.
+  every second. A reset, or end of input followed by a failed write of an SSE comment (a half-closed client that
+  still reads keeps its stream), drops the receiver, so the producer (a proxy relay, an in-process stream) stops
+  within about two seconds instead of at its next frame. `SseReceiver::recv_frame_timeout` and `RecvFrame`.
 
 ### Added (observability: relayed event streams)
 
