@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added (stream observer)
+
+- **`brrtrouter::http::stream_observer`**: an application registers one `StreamObserver`
+  (`set_stream_observer`) and hears about every stream `proxy_sse` relays. `opened` receives a `StreamOpen` (the
+  handler name, the claims the router verified, read-only request headers and query parameters) and may return a
+  `StreamLease`. The lease's `alive()` runs every `BRRTR_SSE_OBSERVER_ALIVE_SECS` (default 30) while the stream is
+  open, and `closed(reason)` exactly once when it ends, on every path: client gone (also mid-stream on a silent
+  downstream), downstream ended, idle timeout, slow client, or `error` (including a relay that panicked or never
+  started). Panics in `opened` and `alive` are caught. With no observer registered a stream pays one atomic load.
+- **The server notices a client that leaves a quiet event stream.** Between frames it peeks at the client socket
+  every second. A reset, or end of input followed by a failed write of an SSE comment (a half-closed client that
+  still reads keeps its stream), drops the receiver, so the producer (a proxy relay, an in-process stream) stops
+  within about two seconds instead of at its next frame. `SseReceiver::recv_frame_timeout` and `RecvFrame`.
+
 ### Added (observability: relayed event streams)
 
 - **Relayed event-stream metrics** (`src/http/sse_metrics.rs`), recorded by `proxy_sse` at open and close only (relaying

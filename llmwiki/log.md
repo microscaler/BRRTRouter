@@ -497,3 +497,11 @@ Hauliage Phase 3 unblockers for Vite dev proxy and frontend-aligned BFF routes.
 - A client that leaves a silent stream is closed within a second (`supervise_relay`, `SseSender::is_closed`) instead
   of at the idle timeout.
 - [`topics/relayed-sse-stream-metrics.md`](./topics/relayed-sse-stream-metrics.md).
+
+## [2026-11-10] feature | Stream observer; the server notices a client leaving a quiet stream
+
+- `http::stream_observer`: `set_stream_observer`, `StreamOpen` (handler, verified claims, headers, query),
+  `StreamLease::{alive, closed}`; closed exactly once on every exit path; one atomic load with no observer.
+- `stream_sse` peeks at the client socket between frames and drops the receiver on end of stream;
+  `SseReceiver::recv_frame_timeout`.
+- [`topics/relayed-sse-stream-metrics.md`](./topics/relayed-sse-stream-metrics.md#stream-observer-stream_observer).

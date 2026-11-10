@@ -197,6 +197,17 @@ impl SseSender {
     }
 }
 
+/// What [`SseReceiver::recv_frame_timeout`] received.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RecvFrame {
+    /// The next frame, as it goes on the wire.
+    Frame(String),
+    /// Nothing arrived within the timeout.
+    Idle,
+    /// Every sender has gone: the stream is over.
+    Closed,
+}
+
 /// Receiver side that converts queued events into `text/event-stream` frames.
 pub struct SseReceiver {
     rx: mpsc::Receiver<Event>,
@@ -237,6 +248,23 @@ impl SseReceiver {
         let event = self.rx.recv().ok()?;
         self.backlog.release(event.len());
         Some(event)
+    }
+
+    /// [`Self::recv_frame`], waiting at most `timeout`: a frame, [`RecvFrame::Idle`] when nothing came, or
+    /// [`RecvFrame::Closed`] when every sender has gone. Lets a writer do something else while the producer is quiet
+    /// (the server checks whether its client is still connected).
+    pub fn recv_frame_timeout(&self, timeout: std::time::Duration) -> RecvFrame {
+        match self.rx.recv_timeout(timeout) {
+            Ok(event) => {
+                self.backlog.release(event.len());
+                RecvFrame::Frame(match event {
+                    Event::Data(s) => format_data_event(&s),
+                    Event::Frame(s) => s,
+                })
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => RecvFrame::Idle,
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => RecvFrame::Closed,
+        }
     }
 
     /// Receive the next event as it goes on the wire, or `None` when closed.
@@ -323,6 +351,25 @@ mod tests {
             Some("data: b\nevent: alert\nid: 7\n\n")
         );
         assert_eq!(rx.recv_frame(), None);
+    }
+
+    #[test]
+    fn recv_frame_timeout_tells_frames_idle_and_closed_apart() {
+        let (tx, rx) = channel();
+        tx.send("a");
+        assert_eq!(
+            rx.recv_frame_timeout(std::time::Duration::from_millis(5)),
+            RecvFrame::Frame("data: a\n\n".into())
+        );
+        assert_eq!(
+            rx.recv_frame_timeout(std::time::Duration::from_millis(5)),
+            RecvFrame::Idle
+        );
+        drop(tx);
+        assert_eq!(
+            rx.recv_frame_timeout(std::time::Duration::from_millis(5)),
+            RecvFrame::Closed
+        );
     }
 
     #[test]
