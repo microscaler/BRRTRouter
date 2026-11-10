@@ -1215,7 +1215,7 @@ impl Middleware for CorsMiddleware {
         };
 
         // Set CORS headers (only one origin per response - CORS spec requirement)
-        res.set_header("access-control-allow-origin", validated_origin);
+        res.set_header("access-control-allow-origin", validated_origin.clone());
 
         // Set allowed methods
         let methods = allowed_methods
@@ -1234,10 +1234,20 @@ impl Middleware for CorsMiddleware {
             res.set_header("access-control-allow-credentials", "true".to_string());
         }
 
-        // Add exposed headers if configured
-        if !expose_headers.is_empty() {
-            let exposed = expose_headers.join(", ");
+        // Add exposed headers if configured; Server-Timing is always exposed while it is on
+        let already = res
+            .get_header("access-control-expose-headers")
+            .map(str::to_owned);
+        if let Some(exposed) = exposed_header_list(
+            already.as_deref(),
+            expose_headers,
+            crate::server::server_timing::enabled(),
+        ) {
             res.set_header("access-control-expose-headers", exposed);
+        }
+        // Resource Timing exposes a cross-origin response's timing phases only with Timing-Allow-Origin
+        if crate::server::server_timing::enabled() {
+            res.set_header("timing-allow-origin", validated_origin);
         }
 
         if self.allow_private_network_access {
@@ -1249,6 +1259,78 @@ impl Middleware for CorsMiddleware {
             cors_vary_tokens(self.allow_private_network_access),
         );
         res.set_header("vary", merged);
+    }
+}
+
+/// `Access-Control-Expose-Headers` value: what the response already exposes (a handler's or a proxied backend's
+/// value), then the configured list, then `server-timing` when that header is on; each name once, whatever its
+/// case. `None` when there is nothing to expose.
+fn exposed_header_list(
+    existing: Option<&str>,
+    configured: &[String],
+    server_timing: bool,
+) -> Option<String> {
+    let mut list: Vec<&str> = Vec::new();
+    let candidates = existing
+        .into_iter()
+        .flat_map(|v| v.split(','))
+        .chain(configured.iter().map(String::as_str))
+        .chain(server_timing.then_some(crate::server::server_timing::HEADER));
+    for name in candidates.map(str::trim).filter(|n| !n.is_empty()) {
+        if !list.iter().any(|h| h.eq_ignore_ascii_case(name)) {
+            list.push(name);
+        }
+    }
+    (!list.is_empty()).then(|| list.join(", "))
+}
+
+#[cfg(test)]
+mod exposed_header_tests {
+    use super::exposed_header_list;
+
+    #[test]
+    fn existing_exposed_headers_are_kept() {
+        assert_eq!(
+            exposed_header_list(Some("X-Request-Id, x-total-count"), &[], true).as_deref(),
+            Some("X-Request-Id, x-total-count, server-timing")
+        );
+        assert_eq!(
+            exposed_header_list(
+                Some("x-request-id"),
+                &["X-Request-Id".to_string(), "etag".to_string()],
+                false
+            )
+            .as_deref(),
+            Some("x-request-id, etag")
+        );
+        assert_eq!(
+            exposed_header_list(Some("Server-Timing"), &[], true).as_deref(),
+            Some("Server-Timing")
+        );
+        assert_eq!(exposed_header_list(Some(" , "), &[], false), None);
+    }
+
+    #[test]
+    fn server_timing_is_exposed_once_when_on() {
+        assert_eq!(
+            exposed_header_list(None, &[], true).as_deref(),
+            Some("server-timing")
+        );
+        assert_eq!(exposed_header_list(None, &[], false), None);
+        let configured = vec!["X-Total-Count".to_string()];
+        assert_eq!(
+            exposed_header_list(None, &configured, true).as_deref(),
+            Some("X-Total-Count, server-timing")
+        );
+        assert_eq!(
+            exposed_header_list(None, &configured, false).as_deref(),
+            Some("X-Total-Count")
+        );
+        let already = vec!["Server-Timing".to_string()];
+        assert_eq!(
+            exposed_header_list(None, &already, true).as_deref(),
+            Some("Server-Timing")
+        );
     }
 }
 

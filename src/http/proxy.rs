@@ -1109,10 +1109,7 @@ pub fn proxy_sse(
     let result = proxy_sse_inner(req, downstream_service, path_template);
     // for a stream, the time to the downstream's response headers
     record_call(req, downstream_service, path_template, &result, started);
-    match result {
-        Ok(res) => res,
-        Err(e) => proxy_error_response(&e),
-    }
+    upstream_timed(result, started)
 }
 
 fn proxy_sse_idle() -> Duration {
@@ -1392,10 +1389,43 @@ pub fn proxy_untyped(
         passthrough_enabled(),
     );
     record_call(req, downstream_service, path_template, &result, started);
-    match result {
+    upstream_timed(result, started)
+}
+
+/// The proxied response (or the error's response), with `Server-Timing: upstream;dur=` when a request went to the
+/// downstream: a request that never left (see [`reached_downstream`]) has no upstream time to report.
+fn upstream_timed(
+    result: Result<HandlerResponse, ProxyError>,
+    started: std::time::Instant,
+) -> HandlerResponse {
+    let sent = reached_downstream(&result);
+    let res = match result {
         Ok(res) => res,
         Err(e) => proxy_error_response(&e),
+    };
+    if sent {
+        with_upstream_timing(res, started)
+    } else {
+        res
     }
+}
+
+/// Whether a proxy attempt reached the downstream: false for the errors raised while composing the request (an
+/// invalid method or path, a target too long, a body that does not serialize), which never leave this service.
+const fn reached_downstream(result: &Result<HandlerResponse, ProxyError>) -> bool {
+    !matches!(
+        result,
+        Err(ProxyError::InvalidMethod
+            | ProxyError::InvalidPath { .. }
+            | ProxyError::RequestTargetTooLong { .. }
+            | ProxyError::BodySerialize)
+    )
+}
+
+/// `Server-Timing: upstream;dur=` on a proxied response: the time since `started` (the downstream call).
+fn with_upstream_timing(mut res: HandlerResponse, started: std::time::Instant) -> HandlerResponse {
+    crate::server::server_timing::record(&mut res.headers, "upstream", started.elapsed());
+    res
 }
 
 /// One downstream call into `http_client_request_duration_seconds` (see [`super::client_metrics`]). A request that
@@ -1407,14 +1437,11 @@ fn record_call(
     result: &Result<HandlerResponse, ProxyError>,
     started: std::time::Instant,
 ) {
+    if !reached_downstream(result) {
+        return;
+    }
     let (status, error) = match result {
         Ok(res) => (Some(res.status), None),
-        Err(
-            ProxyError::InvalidMethod
-            | ProxyError::InvalidPath { .. }
-            | ProxyError::RequestTargetTooLong { .. }
-            | ProxyError::BodySerialize,
-        ) => return,
         Err(e) => (None, Some(proxy_error_reason_code(e))),
     };
     super::client_metrics::record(
@@ -3453,5 +3480,36 @@ mod tests {
         assert_eq!(res.status, 401);
         assert!(res.sse.is_none());
         assert_eq!(res.body["error"], "unauthorized");
+    }
+}
+
+#[cfg(test)]
+mod upstream_timing_tests {
+    use super::{upstream_timed, HandlerResponse, ProxyError};
+
+    fn timing(res: &HandlerResponse) -> Option<String> {
+        res.headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case(crate::server::server_timing::HEADER))
+            .map(|(_, v)| v.to_string())
+    }
+
+    #[test]
+    fn no_upstream_time_when_the_request_never_left() {
+        let started = std::time::Instant::now();
+        for e in [ProxyError::InvalidMethod, ProxyError::BodySerialize] {
+            let res = upstream_timed(Err(e), started);
+            assert!(timing(&res).is_none(), "{:?}", res.headers);
+        }
+    }
+
+    #[test]
+    fn upstream_time_on_a_downstream_failure() {
+        if !crate::server::server_timing::enabled() {
+            return;
+        }
+        let res = upstream_timed(Err(ProxyError::Timeout), std::time::Instant::now());
+        let v = timing(&res).expect("server-timing");
+        assert!(v.starts_with("upstream;dur="), "{v}");
     }
 }

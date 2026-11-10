@@ -107,6 +107,7 @@ pub mod run_app;
 /// Security provider registration from config.yaml
 pub mod security_setup;
 /// Core application service that handles requests
+pub mod server_timing;
 pub mod service;
 
 pub use body_limit::{

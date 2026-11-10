@@ -391,6 +391,55 @@ fn test_dispatch_success() {
 }
 
 #[test]
+fn test_response_carries_server_timing() {
+    // A handler response reports its own time as `Server-Timing: app;dur=<ms>` (on by default).
+    let server = PetStoreTestServer::new();
+    let resp = send_request(
+        &server.addr(),
+        "GET /pets HTTP/1.1\r\nHost: localhost\r\nX-API-Key: test123\r\n\r\n",
+    );
+    let head = resp
+        .split("\r\n\r\n")
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let line = head
+        .lines()
+        .find(|l| l.starts_with("server-timing:"))
+        .unwrap_or_else(|| panic!("no server-timing header in: {head}"));
+    let dur: f64 = line
+        .split("app;dur=")
+        .nth(1)
+        .and_then(|v| v.split(|c: char| c == ',' || c.is_whitespace()).next())
+        .and_then(|v| v.parse().ok())
+        .unwrap_or_else(|| panic!("no app;dur in: {line}"));
+    assert!((0.0..10_000.0).contains(&dur), "{line}");
+}
+
+#[test]
+fn test_unhandled_responses_carry_total_timing() {
+    // A routing 404 and an auth refusal never reach a handler; they still report the service's time as
+    // `Server-Timing: total;dur=<ms>`.
+    let server = PetStoreTestServer::new();
+    for raw in [
+        "GET /nope HTTP/1.1\r\nHost: localhost\r\n\r\n",
+        "GET /pets HTTP/1.1\r\nHost: localhost\r\n\r\n",
+    ] {
+        let resp = send_request(&server.addr(), raw);
+        let head = resp
+            .split("\r\n\r\n")
+            .next()
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        assert!(
+            head.lines()
+                .any(|l| l.starts_with("server-timing:") && l.contains("total;dur=")),
+            "no total timing in: {head}"
+        );
+    }
+}
+
+#[test]
 fn test_route_404() {
     // Setup happens automatically
     let server = PetStoreTestServer::new();
