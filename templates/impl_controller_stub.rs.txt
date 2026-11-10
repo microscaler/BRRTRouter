@@ -41,12 +41,14 @@ pub fn handle(req: TypedHandlerRequest<Request>) -> {% if uses_http_no_content %
     {% if uses_http_no_content %}
     HttpNoContent
     {% elif sse %}
-    // TODO: Implement Server-Sent Events logic
-    let (tx, rx) = sse::channel();
-    // Your SSE implementation here
-    // Example: tx.send("data".to_string());
-    drop(tx);
-    Response(rx.collect())
+    // TODO: Implement Server-Sent Events logic. Send frames from a coroutine: the service flushes each frame as
+    // it is sent and closes the stream when `tx` is dropped (Epic 13.7).
+    let (tx, rx) = sse::channel_bounded(sse::queue_bound_from_env());
+    may::go!(move || {
+        // Example: tx.send("data".to_string());
+        drop(tx);
+    });
+    Response::new(rx)
     {% elif response_is_array %}
     // TODO: Return array of items from your business logic
     {% if uses_multi_status %}ApiResponse::{{ default_variant }}({% else if uses_http_json %}HttpJson::ok({% endif %}Response({{ response_array_literal }}){% if uses_multi_status || uses_http_json %}){% endif %}

@@ -14,7 +14,6 @@ pub struct Request {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-
 pub struct Response {
     #[serde(rename = "age")]
     pub age: i32,
