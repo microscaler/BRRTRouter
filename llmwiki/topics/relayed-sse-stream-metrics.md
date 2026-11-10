@@ -2,7 +2,7 @@
 
 **Status:** verified (code + tests, 2026-11-10)
 
-**Code anchors:** `src/http/sse_metrics.rs` (`opened`, `StreamGuard`, `CloseReason`, `principal_key`,
+**Code anchors:** `src/http/stream_observer.rs`; `src/http/sse_metrics.rs` (`opened`, `StreamGuard`, `CloseReason`, `principal_key`,
 `render_prometheus`); `src/http/proxy.rs` (`proxy_sse_inner`, `supervise_relay`, `supervise`, `relay_frames`);
 `src/sse.rs` (`SseSender::send_frame_checked`, `SseSender::is_closed`, `SendError`); `src/server/service.rs` (`/metrics`)
 
@@ -49,8 +49,33 @@ next frame failed to queue: up to the idle timeout later, reported as `idle_time
 (may unwinds it at its blocking read, closing the downstream connection) and records `client_closed`. Cost: one timer
 wake-up a second per open stream.
 
-> **Open:** the check is a poll. An event-driven wake-up (the receiver's `Drop` signalling the supervisor) would close
-> the stream immediately and cost nothing while it is open; it needs a waitable signal in `sse.rs`.
+The receiver itself is dropped promptly too. Between frames the server peeks at the client's socket once a second
+(`stream_sse`, `sse_client_gone`: a non-blocking peek on a clone of the connection). On end of stream it stops
+writing and drops the receiver, so a client that leaves a stream on which nothing is being sent is noticed within a
+second or two. Before this change it was noticed only when the next write failed.
+
+> **Open:** both checks are polls (one timer wake-up a second per open stream on each side). An event-driven wake-up
+> would cost nothing while the stream is open; it needs a waitable close signal in `sse.rs` and readiness on the
+> client socket.
+
+## Stream observer (`stream_observer`)
+
+An application that needs to know who holds a stream registers one `StreamObserver` with `set_stream_observer`; a
+BFF counting live clients per user in a shared store is the case it was built for. BRRTRouter itself knows nothing
+about users, tabs or devices.
+
+- `opened(&StreamOpen)` is called once the downstream has answered with an event stream. It receives the handler
+  name, the verified claims (`subject()` is `sub`), and read-only request headers and query parameters. It may return
+  a `StreamLease`.
+- `alive()` runs every `BRRTR_SSE_OBSERVER_ALIVE_SECS` (default 30, at least 1), from the relay's supervisor.
+- `closed(reason)` runs exactly once with the same reason as `brrtrouter_sse_closed_total`. A lease dropped unclosed
+  (the relay panicked or never started) closes as `error`.
+- **Cost.** With no observer: one atomic load per stream. With one: these calls, nothing per frame.
+- **Failures.** Panics in `opened` and `alive` are caught and the stream goes on. `closed` may run during unwinding
+  and must not panic.
+- **Tests.** `stream_observer.rs` covers the lease contract. `proxy.rs`
+  `the_lease_closes_once_on_every_exit_path` covers each reason. `tests/sse_stream_observer_tests.rs` covers the
+  real-socket cases through may_minihttp: a quiet in-process stream, and a relayed stream left mid-stream.
 
 ## Related
 

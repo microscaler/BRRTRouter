@@ -622,15 +622,47 @@ fn stream_sse(
         }
         res.header_kv(k, v);
     }
+    // A client that leaves while nothing is being sent is noticed by probing its socket between frames, not only by
+    // the next write failing: the receiver is dropped at once, so its producer (a proxy relay) stops too.
+    let probe = conn_stream.try_clone().ok();
     let mut writer = res.begin_chunked_stream(conn_stream)?;
-    while let Some(frame) = sse_rx.recv_frame() {
-        if writer.write_chunk(frame.as_bytes()).is_err() {
-            // N1: client disconnect — stop cleanly, no panic.
-            break;
+    loop {
+        match sse_rx.recv_frame_timeout(SSE_CLIENT_PROBE) {
+            crate::sse::RecvFrame::Frame(frame) => {
+                if writer.write_chunk(frame.as_bytes()).is_err() {
+                    // N1: client disconnect — stop cleanly, no panic.
+                    break;
+                }
+            }
+            crate::sse::RecvFrame::Idle => {
+                if probe.as_ref().is_some_and(sse_client_gone) {
+                    break;
+                }
+            }
+            crate::sse::RecvFrame::Closed => break,
         }
     }
+    drop(sse_rx);
     let _ = writer.finish();
     Ok(())
+}
+
+/// How often a quiet event stream checks that its client is still connected.
+const SSE_CLIENT_PROBE: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// True when the client of an event stream has closed its connection: a non-blocking peek reads end of stream or
+/// fails. An event-stream client sends nothing after its request, so anything else means it is still there (bytes
+/// it sent are left unread). The socket is non-blocking (may), so this never waits.
+fn sse_client_gone(conn: &may::net::TcpStream) -> bool {
+    let mut byte = [0u8; 1];
+    match conn.inner().peek(&mut byte) {
+        Ok(0) => true,
+        Ok(_) => false,
+        Err(e) => !matches!(
+            e.kind(),
+            io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
+        ),
+    }
 }
 
 /// Dependency-aware readiness for Kubernetes probes (`GET /ready`).

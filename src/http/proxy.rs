@@ -1198,13 +1198,28 @@ fn proxy_sse_inner(
         &req.handler_name,
         super::sse_metrics::principal_key(req.jwt_claims.as_ref()),
     );
-    // SAFETY: the coroutine owns the connection, the response and the sender,
-    // touches no thread-local state, and ends when either side closes.
+    // The application's observer, if one is registered (super::stream_observer): its lease is ticked while the stream
+    // is open and closed exactly once with the same reason. Without an observer this is one atomic load.
+    let lease = super::stream_observer::open(
+        &req.handler_name,
+        req.jwt_claims.as_ref(),
+        &req.headers,
+        &req.query_params,
+    );
+    // SAFETY: the coroutine owns the connection, the response, the sender and the lease, touches no thread-local
+    // state, and ends when either side closes. If it never starts, the guard and the lease close as `error` on drop.
     let spawned = unsafe {
         may::coroutine::Builder::new()
             .name("brrtr-proxy-sse".to_owned())
             .stack_size(0x10000)
-            .spawn(move || stream.close(supervise_relay(client, rsp, tx)))
+            .spawn(move || {
+                let mut lease = lease;
+                let reason = supervise_relay(client, rsp, tx, &mut lease);
+                stream.close(reason);
+                if let Some(lease) = lease {
+                    lease.close(reason);
+                }
+            })
     };
     if spawned.is_err() {
         return Err(classify_transport_error(
@@ -1232,6 +1247,7 @@ fn supervise_relay(
     client: HttpClient,
     rsp: DownstreamResponse,
     tx: crate::sse::SseSender,
+    lease: &mut Option<super::stream_observer::Lease>,
 ) -> super::sse_metrics::CloseReason {
     let watch = tx.clone();
     // SAFETY: the reading coroutine owns the connection, the response and its sender clone, touches no
@@ -1243,19 +1259,24 @@ fn supervise_relay(
             .spawn(move || relay_sse(client, rsp, &tx))
     };
     match reader {
-        Ok(reader) => supervise(reader, &watch, RELAY_CLIENT_CHECK),
+        Ok(reader) => supervise(reader, &watch, RELAY_CLIENT_CHECK, lease),
         Err(_) => super::sse_metrics::CloseReason::Error,
     }
 }
 
-/// Wait for `reader` to finish, cancelling it when the client behind `tx` goes away first.
+/// Wait for `reader` to finish, cancelling it when the client behind `tx` goes away first, and ticking the observer's
+/// lease meanwhile.
 fn supervise(
     reader: may::coroutine::JoinHandle<super::sse_metrics::CloseReason>,
     tx: &crate::sse::SseSender,
     check: Duration,
+    lease: &mut Option<super::stream_observer::Lease>,
 ) -> super::sse_metrics::CloseReason {
     use super::sse_metrics::CloseReason;
     while !reader.is_done() {
+        if let Some(lease) = lease.as_mut() {
+            lease.tick(Instant::now());
+        }
         if tx.is_closed() {
             // SAFETY: `reader` is joined right after; cancelling unwinds it at its next blocking point and runs
             // every destructor (the downstream connection is closed, not returned to a pool).
@@ -3034,12 +3055,14 @@ mod tests {
         let relay_tx = tx.clone();
         let reader = spawn_reader(move || relay_frames(&mut Silent, &relay_tx));
         let started = Instant::now();
-        let dropper = std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_millis(100));
+        // the client goes away 100 ms in, while the downstream says nothing
+        let dropper = spawn_reader(move || {
+            may::coroutine::sleep(Duration::from_millis(100));
             drop(rx);
+            super::super::sse_metrics::CloseReason::ClientClosed
         });
-        let reason = supervise(reader, &tx, Duration::from_millis(20));
-        dropper.join().unwrap();
+        let reason = supervise(reader, &tx, Duration::from_millis(20), &mut None);
+        let _ = dropper.join();
         assert_eq!(reason, CloseReason::ClientClosed);
         assert!(
             started.elapsed() < Duration::from_secs(2),
@@ -3056,7 +3079,7 @@ mod tests {
         let reader =
             spawn_reader(move || relay_frames(&mut Chunks(vec![b"data: a\n\n"]), &relay_tx));
         assert_eq!(
-            supervise(reader, &tx, Duration::from_millis(5)),
+            supervise(reader, &tx, Duration::from_millis(5), &mut None),
             CloseReason::DownstreamEnded
         );
     }
@@ -3067,9 +3090,140 @@ mod tests {
         let (tx, _rx) = crate::sse::channel_limited(16, usize::MAX);
         let reader = spawn_reader(|| panic!("relay failed"));
         assert_eq!(
-            supervise(reader, &tx, Duration::from_millis(5)),
+            supervise(reader, &tx, Duration::from_millis(5), &mut None),
             CloseReason::Error
         );
+    }
+
+    /// An observer that records every close, for the relay tests below.
+    #[derive(Default)]
+    struct Closes(
+        std::sync::Mutex<Vec<super::super::sse_metrics::CloseReason>>,
+        std::sync::atomic::AtomicUsize,
+    );
+    struct CloseObserver(Arc<Closes>);
+    struct CloseLease(Arc<Closes>);
+    impl super::super::stream_observer::StreamObserver for CloseObserver {
+        fn opened(
+            &self,
+            _: &super::super::stream_observer::StreamOpen<'_>,
+        ) -> Option<Box<dyn super::super::stream_observer::StreamLease>> {
+            Some(Box::new(CloseLease(Arc::clone(&self.0))))
+        }
+    }
+    impl super::super::stream_observer::StreamLease for CloseLease {
+        fn alive(&mut self) {
+            self.0 .1.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
+        fn closed(self: Box<Self>, reason: super::super::sse_metrics::CloseReason) {
+            self.0 .0.lock().unwrap().push(reason);
+        }
+    }
+
+    /// Run a relay the way `proxy_sse_inner`'s coroutine does (supervise, then close the lease) and return what the
+    /// observer heard. `client_leaves` drops the receiver 50 ms in.
+    fn observed_relay(
+        tx: crate::sse::SseSender,
+        rx: crate::sse::SseReceiver,
+        client_leaves: bool,
+        read: impl FnOnce(&crate::sse::SseSender) -> super::super::sse_metrics::CloseReason
+            + Send
+            + 'static,
+    ) -> (Vec<super::super::sse_metrics::CloseReason>, usize) {
+        let closes = Arc::new(Closes::default());
+        let mut lease = super::super::stream_observer::open_with(
+            &CloseObserver(Arc::clone(&closes)),
+            "__test_observed",
+            None,
+            &HeaderVec::new(),
+            &ParamVec::new(),
+            Duration::ZERO,
+        );
+        let relay_tx = tx.clone();
+        let reader = spawn_reader(move || read(&relay_tx));
+        // the receiver stays open for the whole relay unless the client leaves
+        let mut kept = None;
+        let leaver = if client_leaves {
+            Some(spawn_reader(move || {
+                may::coroutine::sleep(Duration::from_millis(50));
+                drop(rx);
+                super::super::sse_metrics::CloseReason::ClientClosed
+            }))
+        } else {
+            kept = Some(rx);
+            None
+        };
+        let reason = supervise(reader, &tx, Duration::from_millis(10), &mut lease);
+        if let Some(lease) = lease {
+            lease.close(reason);
+        }
+        if let Some(l) = leaver {
+            let _ = l.join();
+        }
+        drop(kept);
+        let got = closes.0.lock().unwrap().clone();
+        (got, closes.1.load(std::sync::atomic::Ordering::SeqCst))
+    }
+
+    /// A downstream whose reads time out (the relay's idle limit).
+    struct TimesOut;
+    impl std::io::Read for TimesOut {
+        fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+            Err(std::io::ErrorKind::TimedOut.into())
+        }
+    }
+
+    #[test]
+    fn the_lease_closes_once_on_every_exit_path() {
+        use super::super::sse_metrics::CloseReason;
+        let (tx, rx) = crate::sse::channel_limited(16, usize::MAX);
+        let (got, alive) = observed_relay(tx, rx, true, |tx| relay_frames(&mut Silent, tx));
+        assert_eq!(
+            got,
+            vec![CloseReason::ClientClosed],
+            "client left a silent stream"
+        );
+        assert!(alive >= 1, "alive ticks while open: {alive}");
+
+        let (tx, rx) = crate::sse::channel_limited(16, usize::MAX);
+        let (got, _) = observed_relay(tx, rx, false, |tx| {
+            relay_frames(&mut Chunks(vec![b"data: a\n\n"]), tx)
+        });
+        assert_eq!(got, vec![CloseReason::DownstreamEnded]);
+
+        let (tx, rx) = crate::sse::channel_limited(16, usize::MAX);
+        let (got, _) = observed_relay(tx, rx, false, |tx| relay_frames(&mut TimesOut, tx));
+        assert_eq!(got, vec![CloseReason::IdleTimeout]);
+
+        let (tx, rx) = crate::sse::channel_limited(1, usize::MAX);
+        let (got, _) = observed_relay(tx, rx, false, |tx| {
+            relay_frames(&mut Chunks(vec![b"data: 1\n\ndata: 2\n\ndata: 3\n\n"]), tx)
+        });
+        assert_eq!(got, vec![CloseReason::SlowClient]);
+
+        let (tx, rx) = crate::sse::channel_limited(16, usize::MAX);
+        let (got, _) = observed_relay(tx, rx, false, |_| panic!("relay failed"));
+        assert_eq!(got, vec![CloseReason::Error], "the relay panicked");
+    }
+
+    #[test]
+    fn a_lease_whose_relay_coroutine_unwinds_closes_as_error() {
+        use super::super::sse_metrics::CloseReason;
+        let closes = Arc::new(Closes::default());
+        let lease = super::super::stream_observer::open_with(
+            &CloseObserver(Arc::clone(&closes)),
+            "__test_unwind",
+            None,
+            &HeaderVec::new(),
+            &ParamVec::new(),
+            Duration::from_secs(30),
+        );
+        let outer = spawn_reader(move || {
+            let _lease = lease;
+            panic!("the supervising coroutine failed");
+        });
+        assert!(outer.join().is_err());
+        assert_eq!(*closes.0.lock().unwrap(), vec![CloseReason::Error]);
     }
 
     #[test]
