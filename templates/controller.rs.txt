@@ -31,10 +31,15 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> {% if uses_http_no_content 
     {% if uses_http_no_content %}
     HttpNoContent
     {% else if sse %}
-    let (tx, rx) = sse::channel();
-    for i in 0..3 { tx.send(format!("tick {i}")); }
-    drop(tx);
-    Response(rx.collect())
+    // Produce frames on a coroutine so the service flushes each one as it is sent (Epic 13.7).
+    let (tx, rx) = sse::channel_bounded(sse::queue_bound_from_env());
+    may::go!(move || {
+        for i in 0..3 {
+            tx.send(format!("tick {i}"));
+            may::coroutine::sleep(std::time::Duration::from_millis(20));
+        }
+    });
+    Response::new(rx)
     {% else %}
     {% if has_example -%}
     // Example response:

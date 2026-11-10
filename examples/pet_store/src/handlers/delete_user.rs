@@ -15,7 +15,6 @@ pub struct Request {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-
 pub struct Response {}
 
 impl TryFrom<HandlerRequest> for Request {
