@@ -1,15 +1,17 @@
 //! Relayed event streams at the proxy ([`super::proxy_sse`]): how many are open, how many opened and closed (and
 //! why), how long they lived, and how many distinct principals hold one.
 //!
-//! At a BFF every browser `EventSource` on a proxied stream route is one relayed stream, so these are the live
-//! clients as the edge sees them. Series, labelled `operation` (the route's spec `operationId`, so bounded by the
-//! spec; past [`MAX_OPERATIONS`] distinct values they fold into `_other`, and an empty one is `_unmatched`):
+//! At a BFF every browser stream on a proxied stream route is one relayed stream, so these are the live clients as
+//! the edge sees them. Series are labelled `handler`: the route's handler name as the router resolved it from the spec
+//! (its `operationId`, or an `x-handler` extension where one is set), the same label as
+//! `brrtrouter_worker_pool_*{handler}`. Bounded by the spec; past [`MAX_OPERATIONS`] distinct values they fold into
+//! `_other`, and an empty one is `_unmatched`:
 //!
-//! - `brrtrouter_sse_streams{operation}` gauge: relayed streams open now;
-//! - `brrtrouter_sse_opened_total{operation}` counter;
-//! - `brrtrouter_sse_closed_total{operation,reason}` counter, `reason` one of [`CloseReason`];
-//! - `brrtrouter_sse_duration_seconds{operation}` histogram: how long a stream lived;
-//! - `brrtrouter_sse_principals{operation}` gauge: distinct principals with a stream open now.
+//! - `brrtrouter_sse_streams{handler}` gauge: relayed streams open now;
+//! - `brrtrouter_sse_opened_total{handler}` counter;
+//! - `brrtrouter_sse_closed_total{handler,reason}` counter, `reason` one of [`CloseReason`];
+//! - `brrtrouter_sse_duration_seconds{handler}` histogram: how long a stream lived;
+//! - `brrtrouter_sse_principals{handler}` gauge: distinct principals with a stream open now.
 //!
 //! Principals come only from `HandlerRequest::jwt_claims`, which the router fills after the route's security check
 //! has passed; nothing here decodes a token. A stream without a verified subject is counted as a stream, not as a
@@ -26,7 +28,7 @@ use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-/// Distinct `operation` label values kept; the rest fold into `_other`.
+/// Distinct `handler` label values kept; the rest fold into `_other`.
 pub const MAX_OPERATIONS: usize = 128;
 
 /// Stream lifetimes, seconds: a reconnect loop (seconds) to a tab left open all day (hours).
@@ -150,10 +152,10 @@ pub struct StreamGuard {
     closed: bool,
 }
 
-/// A relayed stream opened for `operation` (the route's `operationId`), held by `principal` ([`principal_key`]).
+/// A relayed stream opened for `handler` (the route's handler name), held by `principal` ([`principal_key`]).
 #[must_use]
-pub fn opened(operation_id: &str, principal: Option<u64>) -> StreamGuard {
-    let op = operation(operation_id);
+pub fn opened(handler: &str, principal: Option<u64>) -> StreamGuard {
+    let op = operation(handler);
     op.opened.fetch_add(1, Ordering::Relaxed);
     op.open.fetch_add(1, Ordering::Relaxed);
     if let Some(p) = principal {
@@ -237,7 +239,7 @@ pub fn render_prometheus(body: &mut String) {
     for (n, op) in &ops {
         let _ = writeln!(
             body,
-            "brrtrouter_sse_streams{{operation=\"{}\"}} {}",
+            "brrtrouter_sse_streams{{handler=\"{}\"}} {}",
             escape(n),
             op.open.load(Ordering::Relaxed)
         );
@@ -247,7 +249,7 @@ pub fn render_prometheus(body: &mut String) {
     for (n, op) in &ops {
         let _ = writeln!(
             body,
-            "brrtrouter_sse_principals{{operation=\"{}\"}} {}",
+            "brrtrouter_sse_principals{{handler=\"{}\"}} {}",
             escape(n),
             op.principals()
         );
@@ -260,7 +262,7 @@ pub fn render_prometheus(body: &mut String) {
     for (n, op) in &ops {
         let _ = writeln!(
             body,
-            "brrtrouter_sse_opened_total{{operation=\"{}\"}} {}",
+            "brrtrouter_sse_opened_total{{handler=\"{}\"}} {}",
             escape(n),
             op.opened.load(Ordering::Relaxed)
         );
@@ -274,7 +276,7 @@ pub fn render_prometheus(body: &mut String) {
         for r in CloseReason::ALL {
             let _ = writeln!(
                 body,
-                "brrtrouter_sse_closed_total{{operation=\"{}\",reason=\"{}\"}} {}",
+                "brrtrouter_sse_closed_total{{handler=\"{}\",reason=\"{}\"}} {}",
                 escape(n),
                 r.as_str(),
                 op.closed[r as usize].load(Ordering::Relaxed)
@@ -291,30 +293,39 @@ pub fn render_prometheus(body: &mut String) {
         for (i, b) in BUCKETS.iter().enumerate() {
             let _ = writeln!(
                 body,
-                "brrtrouter_sse_duration_seconds_bucket{{operation=\"{n}\",le=\"{b}\"}} {}",
+                "brrtrouter_sse_duration_seconds_bucket{{handler=\"{n}\",le=\"{b}\"}} {}",
                 op.buckets[i].load(Ordering::Relaxed)
             );
         }
         let count = op.count.load(Ordering::Relaxed);
         let _ = writeln!(
             body,
-            "brrtrouter_sse_duration_seconds_bucket{{operation=\"{n}\",le=\"+Inf\"}} {count}"
+            "brrtrouter_sse_duration_seconds_bucket{{handler=\"{n}\",le=\"+Inf\"}} {count}"
         );
         #[allow(clippy::cast_precision_loss)]
         let sum = op.sum_micros.load(Ordering::Relaxed) as f64 / 1e6;
         let _ = writeln!(
             body,
-            "brrtrouter_sse_duration_seconds_sum{{operation=\"{n}\"}} {sum}"
+            "brrtrouter_sse_duration_seconds_sum{{handler=\"{n}\"}} {sum}"
         );
         let _ = writeln!(
             body,
-            "brrtrouter_sse_duration_seconds_count{{operation=\"{n}\"}} {count}"
+            "brrtrouter_sse_duration_seconds_count{{handler=\"{n}\"}} {count}"
         );
     }
 }
 
 #[cfg(test)]
 mod tests {
+    //! Coverage: the recording model of this module on its own, without a proxy.
+    //!
+    //! - Churn: many streams opened and closed (and some dropped without a close, the `error` path) by several
+    //!   principals leave the streams and principals gauges at 0 and count every open and close once.
+    //! - Bounds: the label set never grows past [`MAX_OPERATIONS`]; an empty handler is `_unmatched`, the rest fold
+    //!   into `_other`. Run on a local table (`operation_in`) so the process-wide one is not filled up.
+    //!
+    //! Each test uses its own handler name, so tests running in parallel never share a series. The relay's own reasons
+    //! (and a client that goes away while the downstream is silent) are covered in `proxy.rs`.
     use super::*;
 
     fn snapshot(name: &str) -> (i64, usize, u64) {
@@ -357,13 +368,12 @@ mod tests {
         }
         let mut text = String::new();
         render_prometheus(&mut text);
-        assert!(text.contains("brrtrouter_sse_streams{operation=\"__test_churn\"} 0"));
-        assert!(text.contains("brrtrouter_sse_principals{operation=\"__test_churn\"} 0"));
-        assert!(text.contains(
-            "brrtrouter_sse_closed_total{operation=\"__test_churn\",reason=\"error\"} 50"
-        ));
+        assert!(text.contains("brrtrouter_sse_streams{handler=\"__test_churn\"} 0"));
+        assert!(text.contains("brrtrouter_sse_principals{handler=\"__test_churn\"} 0"));
+        assert!(text
+            .contains("brrtrouter_sse_closed_total{handler=\"__test_churn\",reason=\"error\"} 50"));
         assert!(
-            text.contains("brrtrouter_sse_duration_seconds_count{operation=\"__test_churn\"} 200")
+            text.contains("brrtrouter_sse_duration_seconds_count{handler=\"__test_churn\"} 200")
         );
     }
 

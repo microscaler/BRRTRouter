@@ -1204,7 +1204,7 @@ fn proxy_sse_inner(
         may::coroutine::Builder::new()
             .name("brrtr-proxy-sse".to_owned())
             .stack_size(0x10000)
-            .spawn(move || stream.close(relay_sse(client, rsp, &tx)))
+            .spawn(move || stream.close(supervise_relay(client, rsp, tx)))
     };
     if spawned.is_err() {
         return Err(classify_transport_error(
@@ -1216,6 +1216,56 @@ fn proxy_sse_inner(
     out.status = status;
     out.headers.extend(headers);
     Ok(out)
+}
+
+/// How often the supervisor checks whether the client has gone while the relay waits on the downstream.
+const RELAY_CLIENT_CHECK: Duration = Duration::from_secs(1);
+
+/// Run the relay on a coroutine of its own and end it as soon as the client goes away.
+///
+/// The relay spends most of its life blocked in a downstream read. A client that disconnects while the downstream
+/// is silent is only noticed there when the next frame fails to queue: up to the idle timeout later, and then
+/// reported as `idle_timeout`. The supervisor checks the receiver every [`RELAY_CLIENT_CHECK`] instead and, once it
+/// has gone, cancels the reading coroutine (may unwinds it at its blocking read, dropping the downstream
+/// connection) and reports `client_closed`. A relay that panics is reported as `error`.
+fn supervise_relay(
+    client: HttpClient,
+    rsp: DownstreamResponse,
+    tx: crate::sse::SseSender,
+) -> super::sse_metrics::CloseReason {
+    let watch = tx.clone();
+    // SAFETY: the reading coroutine owns the connection, the response and its sender clone, touches no
+    // thread-local state, and is joined (or cancelled, then joined) by `supervise` on every path.
+    let reader = unsafe {
+        may::coroutine::Builder::new()
+            .name("brrtr-proxy-sse-read".to_owned())
+            .stack_size(0x10000)
+            .spawn(move || relay_sse(client, rsp, &tx))
+    };
+    match reader {
+        Ok(reader) => supervise(reader, &watch, RELAY_CLIENT_CHECK),
+        Err(_) => super::sse_metrics::CloseReason::Error,
+    }
+}
+
+/// Wait for `reader` to finish, cancelling it when the client behind `tx` goes away first.
+fn supervise(
+    reader: may::coroutine::JoinHandle<super::sse_metrics::CloseReason>,
+    tx: &crate::sse::SseSender,
+    check: Duration,
+) -> super::sse_metrics::CloseReason {
+    use super::sse_metrics::CloseReason;
+    while !reader.is_done() {
+        if tx.is_closed() {
+            // SAFETY: `reader` is joined right after; cancelling unwinds it at its next blocking point and runs
+            // every destructor (the downstream connection is closed, not returned to a pool).
+            unsafe { reader.coroutine().cancel() };
+            let _ = reader.join();
+            return CloseReason::ClientClosed;
+        }
+        may::coroutine::sleep(check);
+    }
+    reader.join().unwrap_or(CloseReason::Error)
 }
 
 /// Read the downstream stream and queue each complete event frame, until the
@@ -2949,15 +2999,85 @@ mod tests {
         let mut text = String::new();
         render_prometheus(&mut text);
         assert!(
-            text.contains("brrtrouter_sse_streams{operation=\"__test_relay_churn\"} 0"),
+            text.contains("brrtrouter_sse_streams{handler=\"__test_relay_churn\"} 0"),
             "{text}"
         );
         assert!(
-            text.contains("brrtrouter_sse_principals{operation=\"__test_relay_churn\"} 0"),
+            text.contains("brrtrouter_sse_principals{handler=\"__test_relay_churn\"} 0"),
             "{text}"
         );
-        assert!(text.contains("brrtrouter_sse_opened_total{operation=\"__test_relay_churn\"} 80"));
-        assert!(text.contains("brrtrouter_sse_closed_total{operation=\"__test_relay_churn\",reason=\"client_closed\"} 20"));
+        assert!(text.contains("brrtrouter_sse_opened_total{handler=\"__test_relay_churn\"} 80"));
+        assert!(text.contains("brrtrouter_sse_closed_total{handler=\"__test_relay_churn\",reason=\"client_closed\"} 20"));
+    }
+
+    /// A downstream that never sends a byte (a quiet stream between pings): reads block until cancelled.
+    struct Silent;
+    impl std::io::Read for Silent {
+        fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+            loop {
+                may::coroutine::sleep(Duration::from_secs(3600));
+            }
+        }
+    }
+
+    fn spawn_reader(
+        f: impl FnOnce() -> super::super::sse_metrics::CloseReason + Send + 'static,
+    ) -> may::coroutine::JoinHandle<super::super::sse_metrics::CloseReason> {
+        // SAFETY: test coroutine; owns everything it touches.
+        unsafe { may::coroutine::Builder::new().stack_size(0x10000).spawn(f) }.unwrap()
+    }
+
+    #[test]
+    fn a_client_that_leaves_a_silent_stream_is_closed_promptly() {
+        use super::super::sse_metrics::CloseReason;
+        let (tx, rx) = crate::sse::channel_limited(16, usize::MAX);
+        let relay_tx = tx.clone();
+        let reader = spawn_reader(move || relay_frames(&mut Silent, &relay_tx));
+        let started = Instant::now();
+        let dropper = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(100));
+            drop(rx);
+        });
+        let reason = supervise(reader, &tx, Duration::from_millis(20));
+        dropper.join().unwrap();
+        assert_eq!(reason, CloseReason::ClientClosed);
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "{:?}",
+            started.elapsed()
+        );
+    }
+
+    #[test]
+    fn the_supervisor_passes_the_relay_reason_through() {
+        use super::super::sse_metrics::CloseReason;
+        let (tx, _rx) = crate::sse::channel_limited(16, usize::MAX);
+        let relay_tx = tx.clone();
+        let reader =
+            spawn_reader(move || relay_frames(&mut Chunks(vec![b"data: a\n\n"]), &relay_tx));
+        assert_eq!(
+            supervise(reader, &tx, Duration::from_millis(5)),
+            CloseReason::DownstreamEnded
+        );
+    }
+
+    #[test]
+    fn a_relay_that_panics_is_an_error() {
+        use super::super::sse_metrics::CloseReason;
+        let (tx, _rx) = crate::sse::channel_limited(16, usize::MAX);
+        let reader = spawn_reader(|| panic!("relay failed"));
+        assert_eq!(
+            supervise(reader, &tx, Duration::from_millis(5)),
+            CloseReason::Error
+        );
+    }
+
+    #[test]
+    fn the_receiver_says_when_it_is_gone() {
+        let (tx, rx) = crate::sse::channel();
+        assert!(!tx.is_closed());
+        drop(rx);
+        assert!(tx.is_closed());
     }
 
     fn relayed(chunks: Vec<&'static [u8]>) -> Vec<String> {
