@@ -1192,13 +1192,19 @@ fn proxy_sse_inner(
     client.set_timeout(Some(proxy_sse_idle()));
     let (tx, rx) =
         crate::sse::channel_limited(crate::sse::queue_bound_from_env(), MAX_SSE_QUEUED_BYTES);
+    // Counted from here until the relay ends (super::sse_metrics). The principal is the subject the router verified
+    // for this request (jwt_claims), never a token decoded here; without one the stream counts, the principal not.
+    let stream = super::sse_metrics::opened(
+        &req.handler_name,
+        super::sse_metrics::principal_key(req.jwt_claims.as_ref()),
+    );
     // SAFETY: the coroutine owns the connection, the response and the sender,
     // touches no thread-local state, and ends when either side closes.
     let spawned = unsafe {
         may::coroutine::Builder::new()
             .name("brrtr-proxy-sse".to_owned())
             .stack_size(0x10000)
-            .spawn(move || relay_sse(client, rsp, &tx))
+            .spawn(move || stream.close(supervise_relay(client, rsp, tx)))
     };
     if spawned.is_err() {
         return Err(classify_transport_error(
@@ -1212,15 +1218,74 @@ fn proxy_sse_inner(
     Ok(out)
 }
 
+/// How often the supervisor checks whether the client has gone while the relay waits on the downstream.
+const RELAY_CLIENT_CHECK: Duration = Duration::from_secs(1);
+
+/// Run the relay on a coroutine of its own and end it as soon as the client goes away.
+///
+/// The relay spends most of its life blocked in a downstream read. A client that disconnects while the downstream
+/// is silent is only noticed there when the next frame fails to queue: up to the idle timeout later, and then
+/// reported as `idle_timeout`. The supervisor checks the receiver every [`RELAY_CLIENT_CHECK`] instead and, once it
+/// has gone, cancels the reading coroutine (may unwinds it at its blocking read, dropping the downstream
+/// connection) and reports `client_closed`. A relay that panics is reported as `error`.
+fn supervise_relay(
+    client: HttpClient,
+    rsp: DownstreamResponse,
+    tx: crate::sse::SseSender,
+) -> super::sse_metrics::CloseReason {
+    let watch = tx.clone();
+    // SAFETY: the reading coroutine owns the connection, the response and its sender clone, touches no
+    // thread-local state, and is joined (or cancelled, then joined) by `supervise` on every path.
+    let reader = unsafe {
+        may::coroutine::Builder::new()
+            .name("brrtr-proxy-sse-read".to_owned())
+            .stack_size(0x10000)
+            .spawn(move || relay_sse(client, rsp, &tx))
+    };
+    match reader {
+        Ok(reader) => supervise(reader, &watch, RELAY_CLIENT_CHECK),
+        Err(_) => super::sse_metrics::CloseReason::Error,
+    }
+}
+
+/// Wait for `reader` to finish, cancelling it when the client behind `tx` goes away first.
+fn supervise(
+    reader: may::coroutine::JoinHandle<super::sse_metrics::CloseReason>,
+    tx: &crate::sse::SseSender,
+    check: Duration,
+) -> super::sse_metrics::CloseReason {
+    use super::sse_metrics::CloseReason;
+    while !reader.is_done() {
+        if tx.is_closed() {
+            // SAFETY: `reader` is joined right after; cancelling unwinds it at its next blocking point and runs
+            // every destructor (the downstream connection is closed, not returned to a pool).
+            unsafe { reader.coroutine().cancel() };
+            let _ = reader.join();
+            return CloseReason::ClientClosed;
+        }
+        may::coroutine::sleep(check);
+    }
+    reader.join().unwrap_or(CloseReason::Error)
+}
+
 /// Read the downstream stream and queue each complete event frame, until the
 /// downstream closes or goes quiet, or the client goes away or falls too far
 /// behind.
-fn relay_sse(client: HttpClient, mut rsp: DownstreamResponse, tx: &crate::sse::SseSender) {
+fn relay_sse(
+    client: HttpClient,
+    mut rsp: DownstreamResponse,
+    tx: &crate::sse::SseSender,
+) -> super::sse_metrics::CloseReason {
     let _connection = client;
-    relay_frames(&mut rsp, tx);
+    relay_frames(&mut rsp, tx)
 }
 
-fn relay_frames(body: &mut impl Read, tx: &crate::sse::SseSender) {
+/// Relay frames until one side ends, and say which (the `reason` of `brrtrouter_sse_closed_total`).
+fn relay_frames(
+    body: &mut impl Read,
+    tx: &crate::sse::SseSender,
+) -> super::sse_metrics::CloseReason {
+    use super::sse_metrics::CloseReason;
     let mut chunk = vec![0u8; 8192];
     let mut pending: Vec<u8> = Vec::new();
     // A frame that ended on a CR at the end of what had arrived: if the next byte
@@ -1228,7 +1293,16 @@ fn relay_frames(body: &mut impl Read, tx: &crate::sse::SseSender) {
     let mut skip_lf = false;
     loop {
         let n = match body.read(&mut chunk) {
-            Ok(0) | Err(_) => return,
+            Ok(0) => return CloseReason::DownstreamEnded,
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
+                ) =>
+            {
+                return CloseReason::IdleTimeout
+            }
+            Err(_) => return CloseReason::Error,
             Ok(n) => n,
         };
         let mut new = &chunk[..n];
@@ -1239,15 +1313,14 @@ fn relay_frames(body: &mut impl Read, tx: &crate::sse::SseSender) {
         while let Some(end) = sse_frame_end(&pending) {
             let frame: Vec<u8> = pending.drain(..end).collect();
             skip_lf = pending.is_empty() && frame.last() == Some(&b'\r');
-            if tx
-                .send_frame(String::from_utf8_lossy(&frame).into_owned())
-                .is_err()
-            {
-                return;
+            match tx.send_frame_checked(String::from_utf8_lossy(&frame).into_owned()) {
+                Ok(()) => {}
+                Err(crate::sse::SendError::Full) => return CloseReason::SlowClient,
+                Err(crate::sse::SendError::Closed) => return CloseReason::ClientClosed,
             }
         }
         if pending.len() > MAX_SSE_FRAME_BYTES {
-            return;
+            return CloseReason::Error;
         }
     }
 }
@@ -2871,9 +2944,145 @@ mod tests {
         }
     }
 
+    #[test]
+    fn the_relay_says_why_it_ended() {
+        use crate::http::sse_metrics::CloseReason;
+        let (tx, rx) = crate::sse::channel();
+        assert_eq!(
+            relay_frames(&mut Chunks(vec![b"data: a\n\n"]), &tx),
+            CloseReason::DownstreamEnded
+        );
+        drop(rx);
+        assert_eq!(
+            relay_frames(&mut Chunks(vec![b"data: b\n\n"]), &tx),
+            CloseReason::ClientClosed
+        );
+        let (tx, _rx) = crate::sse::channel_limited(1, usize::MAX);
+        assert_eq!(
+            relay_frames(&mut Chunks(vec![b"data: 1\n\ndata: 2\n\n"]), &tx),
+            CloseReason::SlowClient
+        );
+    }
+
+    /// Streams that open and end every way, clients dropping mid-stream included: the open and principal gauges
+    /// come back to zero.
+    #[test]
+    fn principals_return_to_zero_after_relay_churn() {
+        use crate::http::sse_metrics::{opened, principal_key, render_prometheus};
+        let claims = serde_json::json!({ "sub": "relay-churn-user" });
+        for _ in 0..20 {
+            let mut ended = Vec::new();
+            for case in 0..4 {
+                let stream = opened("__test_relay_churn", principal_key(Some(&claims)));
+                let (tx, rx) = crate::sse::channel_limited(4, usize::MAX);
+                let chunks: Vec<&'static [u8]> =
+                    vec![b"data: 1\n\n", b"data: 2\n\n", b"data: 3\n\n"];
+                match case {
+                    // the client drops after the first frame: the next one finds it gone
+                    0 => {
+                        let mut first = Chunks(vec![chunks[0]]);
+                        let _ = relay_frames(&mut first, &tx);
+                        assert!(rx.recv_frame().is_some());
+                        drop(rx);
+                        ended.push(relay_frames(&mut Chunks(chunks[1..].to_vec()), &tx));
+                        stream.close(*ended.last().unwrap());
+                    }
+                    1 => {
+                        ended.push(relay_frames(&mut Chunks(chunks), &tx));
+                        stream.close(*ended.last().unwrap());
+                    }
+                    // a relay that never reported (its coroutine failed to start)
+                    _ => drop(stream),
+                }
+            }
+        }
+        let mut text = String::new();
+        render_prometheus(&mut text);
+        assert!(
+            text.contains("brrtrouter_sse_streams{handler=\"__test_relay_churn\"} 0"),
+            "{text}"
+        );
+        assert!(
+            text.contains("brrtrouter_sse_principals{handler=\"__test_relay_churn\"} 0"),
+            "{text}"
+        );
+        assert!(text.contains("brrtrouter_sse_opened_total{handler=\"__test_relay_churn\"} 80"));
+        assert!(text.contains("brrtrouter_sse_closed_total{handler=\"__test_relay_churn\",reason=\"client_closed\"} 20"));
+    }
+
+    /// A downstream that never sends a byte (a quiet stream between pings): reads block until cancelled.
+    struct Silent;
+    impl std::io::Read for Silent {
+        fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+            loop {
+                may::coroutine::sleep(Duration::from_secs(3600));
+            }
+        }
+    }
+
+    fn spawn_reader(
+        f: impl FnOnce() -> super::super::sse_metrics::CloseReason + Send + 'static,
+    ) -> may::coroutine::JoinHandle<super::super::sse_metrics::CloseReason> {
+        // SAFETY: test coroutine; owns everything it touches.
+        unsafe { may::coroutine::Builder::new().stack_size(0x10000).spawn(f) }.unwrap()
+    }
+
+    #[test]
+    fn a_client_that_leaves_a_silent_stream_is_closed_promptly() {
+        use super::super::sse_metrics::CloseReason;
+        let (tx, rx) = crate::sse::channel_limited(16, usize::MAX);
+        let relay_tx = tx.clone();
+        let reader = spawn_reader(move || relay_frames(&mut Silent, &relay_tx));
+        let started = Instant::now();
+        let dropper = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(100));
+            drop(rx);
+        });
+        let reason = supervise(reader, &tx, Duration::from_millis(20));
+        dropper.join().unwrap();
+        assert_eq!(reason, CloseReason::ClientClosed);
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "{:?}",
+            started.elapsed()
+        );
+    }
+
+    #[test]
+    fn the_supervisor_passes_the_relay_reason_through() {
+        use super::super::sse_metrics::CloseReason;
+        let (tx, _rx) = crate::sse::channel_limited(16, usize::MAX);
+        let relay_tx = tx.clone();
+        let reader =
+            spawn_reader(move || relay_frames(&mut Chunks(vec![b"data: a\n\n"]), &relay_tx));
+        assert_eq!(
+            supervise(reader, &tx, Duration::from_millis(5)),
+            CloseReason::DownstreamEnded
+        );
+    }
+
+    #[test]
+    fn a_relay_that_panics_is_an_error() {
+        use super::super::sse_metrics::CloseReason;
+        let (tx, _rx) = crate::sse::channel_limited(16, usize::MAX);
+        let reader = spawn_reader(|| panic!("relay failed"));
+        assert_eq!(
+            supervise(reader, &tx, Duration::from_millis(5)),
+            CloseReason::Error
+        );
+    }
+
+    #[test]
+    fn the_receiver_says_when_it_is_gone() {
+        let (tx, rx) = crate::sse::channel();
+        assert!(!tx.is_closed());
+        drop(rx);
+        assert!(tx.is_closed());
+    }
+
     fn relayed(chunks: Vec<&'static [u8]>) -> Vec<String> {
         let (tx, rx) = crate::sse::channel();
-        relay_frames(&mut Chunks(chunks), &tx);
+        let _ = relay_frames(&mut Chunks(chunks), &tx);
         drop(tx);
         std::iter::from_fn(|| rx.recv_frame()).collect()
     }

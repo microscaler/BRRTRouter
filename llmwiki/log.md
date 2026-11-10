@@ -489,3 +489,11 @@ Hauliage Phase 3 unblockers for Vite dev proxy and frontend-aligned BFF routes.
 ## [2026-11-06] feature | Access log sampling and lean request span
 
 - New [`topics/access-log-and-span-toggles.md`](./topics/access-log-and-span-toggles.md): `BRRTR_ACCESS_LOG`, `BRRTR_ACCESS_LOG_SLOW_MS`, `BRRTR_REQUEST_SPAN`; defaults unchanged; bench cost per mode.
+
+## [2026-11-10] feature | Relayed event-stream metrics at the proxy
+
+- `brrtrouter_sse_{streams,opened_total,closed_total,duration_seconds,principals}{handler[,reason]}`, recorded at open
+  and close of each `proxy_sse` relay; principals from verified claims only, held as hashes.
+- A client that leaves a silent stream is closed within a second (`supervise_relay`, `SseSender::is_closed`) instead
+  of at the idle timeout.
+- [`topics/relayed-sse-stream-metrics.md`](./topics/relayed-sse-stream-metrics.md).

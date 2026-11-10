@@ -31,6 +31,7 @@
 
 - [`topics/off-coroutine-io.md`](./topics/off-coroutine-io.md) — may I/O from plain OS threads: why it can hang, `brrtrouter_off_coroutine_io_total`, off-coroutine `net::resolve`, no `join` in handlers.
 - [`topics/http-server-metrics.md`](./topics/http-server-metrics.md) — `/metrics`: OpenTelemetry HTTP server histogram, process collector, recording model.
+- [`topics/relayed-sse-stream-metrics.md`](./topics/relayed-sse-stream-metrics.md) — `brrtrouter_sse_*{handler}`: relayed streams open, opened/closed by reason, lifetime, verified principals; prompt close of a client that leaves a silent stream.
 - [`topics/access-log-and-span-toggles.md`](./topics/access-log-and-span-toggles.md) — `BRRTR_ACCESS_LOG` (full / sample / off; 5xx, 429 and slow requests always logged), `BRRTR_REQUEST_SPAN=lean`, cost per request.
 - [`topics/request-path-copies.md`](./topics/request-path-copies.md) — copies/allocations per request: how to measure (`benches/request_path.rs`), invariants (no request deep copy, token-keyed claims cache, per-route validators, boxed reply channel), open items.
 - [`topics/handler-stack-memory.md`](./topics/handler-stack-memory.md) — per-handler stack probe (`brrtrouter_handler_stack_used_bytes`), coroutine names, stack units, coroutine pool, boxed handler channels.

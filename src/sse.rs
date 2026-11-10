@@ -23,7 +23,7 @@
 //! disconnects cleanly — no unbounded RAM).
 
 use may::sync::mpsc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 /// Default bound for [`channel_bounded`] (NFR-1).
@@ -74,6 +74,8 @@ struct Backlog {
     bytes: AtomicUsize,
     max_frames: usize,
     max_bytes: usize,
+    /// Set when the [`SseReceiver`] is dropped (the client has gone), so a producer can stop without sending.
+    receiver_gone: AtomicBool,
 }
 
 impl Backlog {
@@ -87,6 +89,7 @@ impl Backlog {
             bytes: AtomicUsize::new(0),
             max_frames,
             max_bytes,
+            receiver_gone: AtomicBool::new(false),
         })
     }
 
@@ -105,6 +108,15 @@ impl Backlog {
         self.frames.fetch_sub(1, Ordering::AcqRel);
         self.bytes.fetch_sub(len, Ordering::AcqRel);
     }
+}
+
+/// Why a frame could not be queued ([`SseSender::send_frame_checked`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SendError {
+    /// A [`channel_limited`] queue is full: the client reads slower than the producer writes.
+    Full,
+    /// The client has gone (the receiver was dropped).
+    Closed,
 }
 
 /// Sender side of an SSE channel.
@@ -146,10 +158,29 @@ impl SseSender {
         self.queue(Event::Frame(frame.into()))
     }
 
+    /// [`Self::send_frame`], saying why a frame was not queued: the queue is full, or the client has gone.
+    ///
+    /// # Errors
+    ///
+    /// [`SendError::Full`] when a [`channel_limited`] queue is full, [`SendError::Closed`] when the client has gone.
+    pub fn send_frame_checked(&self, frame: impl Into<String>) -> Result<(), SendError> {
+        self.queue_checked(Event::Frame(frame.into()))
+    }
+
+    /// True once the receiving side has been dropped: the client has gone and nothing sent now is read. A producer
+    /// that waits on something other than this sender (a downstream read, a timer) checks it to stop promptly.
+    pub fn is_closed(&self) -> bool {
+        self.backlog.receiver_gone.load(Ordering::Acquire)
+    }
+
     fn queue(&self, event: Event) -> Result<(), ()> {
+        self.queue_checked(event).map_err(|_| ())
+    }
+
+    fn queue_checked(&self, event: Event) -> Result<(), SendError> {
         let len = event.len();
         if !self.backlog.reserve(len, true) {
-            return Err(());
+            return Err(SendError::Full);
         }
         match self.tx.send(event) {
             Ok(()) => {
@@ -160,7 +191,7 @@ impl SseSender {
             }
             Err(_) => {
                 self.backlog.release(len);
-                Err(())
+                Err(SendError::Closed)
             }
         }
     }
@@ -175,6 +206,12 @@ pub struct SseReceiver {
 impl std::fmt::Debug for SseReceiver {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("SseReceiver { .. }")
+    }
+}
+
+impl Drop for SseReceiver {
+    fn drop(&mut self) {
+        self.backlog.receiver_gone.store(true, Ordering::Release);
     }
 }
 

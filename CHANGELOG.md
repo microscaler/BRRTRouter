@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added (observability: relayed event streams)
+
+- **Relayed event-stream metrics** (`src/http/sse_metrics.rs`), recorded by `proxy_sse` at open and close only (relaying
+  a frame costs nothing): `brrtrouter_sse_streams{handler}` (open now: at a BFF, one per browser stream),
+  `brrtrouter_sse_opened_total{handler}`, `brrtrouter_sse_closed_total{handler,reason}` (`client_closed`,
+  `slow_client`, `downstream_ended`, `idle_timeout`, `error`), `brrtrouter_sse_duration_seconds{handler}` and
+  `brrtrouter_sse_principals{handler}`, the distinct verified subjects holding a stream. Principals come only from
+  the claims the router verified for the request (`jwt_claims`); a stream without one counts as a stream, not as a
+  principal. A principal is kept as a hash of its `sub` with a count of its streams, never exported or used as a
+  label. `handler` is the route's handler name as the router resolved it (its `operationId`, or an `x-handler`
+  extension), as in `brrtrouter_worker_pool_*{handler}`; folded into `_other` past 128 values (`_unmatched` when empty).
+- A client that leaves a silent stream is closed within a second (`client_closed`), not at the idle timeout: the
+  relay reads on its own coroutine and is cancelled once the receiver is gone.
+- `SseSender::send_frame_checked`: why a frame was not queued (`SendError::Full` or `SendError::Closed`).
+- `SseSender::is_closed`: the receiving side has been dropped (the client has gone).
+
 ### Added (observability: access log and span toggles)
 
 - **`BRRTR_ACCESS_LOG=full|sample:<rate>|off`** (default `full`, unchanged behaviour): which requests the INFO
