@@ -929,15 +929,15 @@ pub(crate) fn detect_workspace_dependencies(output_dir: &Path) -> HashSet<String
 /// Only the nearest `[workspace]` root counts, as with [`detect_workspace_with_brrtrouter_deps`]. Generated
 /// impl crates opt into the workspace lints only when this is true.
 pub(crate) fn detect_workspace_lints(output_dir: &Path) -> bool {
-    // The nearest Cargo.toml with a [workspace] table is the workspace root; look no further than it.
+    // Parse each manifest rather than match lines, so `[workspace] # comment`, dotted keys and inline tables count.
+    // The nearest manifest with a `workspace` table is the root; the answer comes from it alone.
     let mut current = Some(output_dir);
     while let Some(dir) = current {
         if let Ok(contents) = std::fs::read_to_string(dir.join("Cargo.toml")) {
-            if contents.lines().any(|line| line.trim() == "[workspace]") {
-                return contents.lines().any(|line| {
-                    let line = line.trim();
-                    line == "[workspace.lints]" || line.starts_with("[workspace.lints.")
-                });
+            if let Ok(manifest) = contents.parse::<toml::Table>() {
+                if let Some(workspace) = manifest.get("workspace").and_then(toml::Value::as_table) {
+                    return workspace.contains_key("lints");
+                }
             }
         }
         current = dir.parent();
