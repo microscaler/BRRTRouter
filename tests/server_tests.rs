@@ -417,6 +417,29 @@ fn test_response_carries_server_timing() {
 }
 
 #[test]
+fn test_unhandled_responses_carry_total_timing() {
+    // A routing 404 and an auth refusal never reach a handler; they still report the service's time as
+    // `Server-Timing: total;dur=<ms>`.
+    let server = PetStoreTestServer::new();
+    for raw in [
+        "GET /nope HTTP/1.1\r\nHost: localhost\r\n\r\n",
+        "GET /pets HTTP/1.1\r\nHost: localhost\r\n\r\n",
+    ] {
+        let resp = send_request(&server.addr(), raw);
+        let head = resp
+            .split("\r\n\r\n")
+            .next()
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        assert!(
+            head.lines()
+                .any(|l| l.starts_with("server-timing:") && l.contains("total;dur=")),
+            "no total timing in: {head}"
+        );
+    }
+}
+
+#[test]
 fn test_route_404() {
     // Setup happens automatically
     let server = PetStoreTestServer::new();

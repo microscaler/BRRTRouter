@@ -1001,6 +1001,23 @@ pub fn swagger_ui_endpoint(res: &mut Response, docs: &StaticFiles) -> io::Result
 /// - Dispatched requests: ~500µs + handler time
 /// - Security validation: ~50µs (simple) to ~500ms (remote)
 impl HttpService for AppService {
+    /// Handle one request ([`AppService::serve`]). Every response that is not streamed also carries
+    /// `Server-Timing: total;dur=<ms>`, the service's whole time on it, so responses that never reach a handler
+    /// (health, static files, a routing 404, an auth or validation refusal) are timed too.
+    fn call(&mut self, req: Request, res: &mut Response) -> io::Result<()> {
+        let started = std::time::Instant::now();
+        let out = self.serve(req, res);
+        if super::server_timing::enabled() && !res.is_streamed() {
+            res.header_kv(
+                super::server_timing::HEADER,
+                &super::server_timing::entry("total", started.elapsed()),
+            );
+        }
+        out
+    }
+}
+
+impl AppService {
     /// Handle an incoming HTTP request and write the response
     ///
     /// This is the main entry point called by `may_minihttp` for every request.
@@ -1020,7 +1037,7 @@ impl HttpService for AppService {
     ///
     /// This method is called from multiple coroutines concurrently.
     /// All shared state (Router, Dispatcher, etc.) uses Arc + Mutex/RwLock.
-    fn call(&mut self, req: Request, res: &mut Response) -> io::Result<()> {
+    fn serve(&mut self, req: Request, res: &mut Response) -> io::Result<()> {
         use tracing::{debug, error, info, info_span, warn, Span};
 
         /// Helper struct that logs request completion when dropped

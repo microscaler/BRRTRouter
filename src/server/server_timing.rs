@@ -1,6 +1,8 @@
-//! `Server-Timing` on every response (W3C Server Timing), so a browser can split a request into server and network
+//! `Server-Timing` on responses (W3C Server Timing), so a browser can split a request into server and network
 //! time with the Resource Timing API.
 //!
+//! * `total;dur=<ms>`: on every response that is not streamed, the service's whole time on the request (parse,
+//!   route, auth, validation, handler, response build). Responses that never reach a handler carry only this.
 //! * `app;dur=<ms>`: the handler's own time, from dispatch to the response being built.
 //! * `upstream;dur=<ms>`: on a proxied route, the time spent on the downstream call (for an event stream, to the
 //!   downstream's response head). The service's own work is `app - upstream`.
