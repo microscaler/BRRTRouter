@@ -1192,13 +1192,19 @@ fn proxy_sse_inner(
     client.set_timeout(Some(proxy_sse_idle()));
     let (tx, rx) =
         crate::sse::channel_limited(crate::sse::queue_bound_from_env(), MAX_SSE_QUEUED_BYTES);
+    // Counted from here until the relay ends (super::sse_metrics). The principal is the subject the router verified
+    // for this request (jwt_claims), never a token decoded here; without one the stream counts, the principal not.
+    let stream = super::sse_metrics::opened(
+        &req.handler_name,
+        super::sse_metrics::principal_key(req.jwt_claims.as_ref()),
+    );
     // SAFETY: the coroutine owns the connection, the response and the sender,
     // touches no thread-local state, and ends when either side closes.
     let spawned = unsafe {
         may::coroutine::Builder::new()
             .name("brrtr-proxy-sse".to_owned())
             .stack_size(0x10000)
-            .spawn(move || relay_sse(client, rsp, &tx))
+            .spawn(move || stream.close(relay_sse(client, rsp, &tx)))
     };
     if spawned.is_err() {
         return Err(classify_transport_error(
@@ -1215,12 +1221,21 @@ fn proxy_sse_inner(
 /// Read the downstream stream and queue each complete event frame, until the
 /// downstream closes or goes quiet, or the client goes away or falls too far
 /// behind.
-fn relay_sse(client: HttpClient, mut rsp: DownstreamResponse, tx: &crate::sse::SseSender) {
+fn relay_sse(
+    client: HttpClient,
+    mut rsp: DownstreamResponse,
+    tx: &crate::sse::SseSender,
+) -> super::sse_metrics::CloseReason {
     let _connection = client;
-    relay_frames(&mut rsp, tx);
+    relay_frames(&mut rsp, tx)
 }
 
-fn relay_frames(body: &mut impl Read, tx: &crate::sse::SseSender) {
+/// Relay frames until one side ends, and say which (the `reason` of `brrtrouter_sse_closed_total`).
+fn relay_frames(
+    body: &mut impl Read,
+    tx: &crate::sse::SseSender,
+) -> super::sse_metrics::CloseReason {
+    use super::sse_metrics::CloseReason;
     let mut chunk = vec![0u8; 8192];
     let mut pending: Vec<u8> = Vec::new();
     // A frame that ended on a CR at the end of what had arrived: if the next byte
@@ -1228,7 +1243,16 @@ fn relay_frames(body: &mut impl Read, tx: &crate::sse::SseSender) {
     let mut skip_lf = false;
     loop {
         let n = match body.read(&mut chunk) {
-            Ok(0) | Err(_) => return,
+            Ok(0) => return CloseReason::DownstreamEnded,
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
+                ) =>
+            {
+                return CloseReason::IdleTimeout
+            }
+            Err(_) => return CloseReason::Error,
             Ok(n) => n,
         };
         let mut new = &chunk[..n];
@@ -1239,15 +1263,14 @@ fn relay_frames(body: &mut impl Read, tx: &crate::sse::SseSender) {
         while let Some(end) = sse_frame_end(&pending) {
             let frame: Vec<u8> = pending.drain(..end).collect();
             skip_lf = pending.is_empty() && frame.last() == Some(&b'\r');
-            if tx
-                .send_frame(String::from_utf8_lossy(&frame).into_owned())
-                .is_err()
-            {
-                return;
+            match tx.send_frame_checked(String::from_utf8_lossy(&frame).into_owned()) {
+                Ok(()) => {}
+                Err(crate::sse::SendError::Full) => return CloseReason::SlowClient,
+                Err(crate::sse::SendError::Closed) => return CloseReason::ClientClosed,
             }
         }
         if pending.len() > MAX_SSE_FRAME_BYTES {
-            return;
+            return CloseReason::Error;
         }
     }
 }
@@ -2871,9 +2894,75 @@ mod tests {
         }
     }
 
+    #[test]
+    fn the_relay_says_why_it_ended() {
+        use crate::http::sse_metrics::CloseReason;
+        let (tx, rx) = crate::sse::channel();
+        assert_eq!(
+            relay_frames(&mut Chunks(vec![b"data: a\n\n"]), &tx),
+            CloseReason::DownstreamEnded
+        );
+        drop(rx);
+        assert_eq!(
+            relay_frames(&mut Chunks(vec![b"data: b\n\n"]), &tx),
+            CloseReason::ClientClosed
+        );
+        let (tx, _rx) = crate::sse::channel_limited(1, usize::MAX);
+        assert_eq!(
+            relay_frames(&mut Chunks(vec![b"data: 1\n\ndata: 2\n\n"]), &tx),
+            CloseReason::SlowClient
+        );
+    }
+
+    /// Streams that open and end every way, clients dropping mid-stream included: the open and principal gauges
+    /// come back to zero.
+    #[test]
+    fn principals_return_to_zero_after_relay_churn() {
+        use crate::http::sse_metrics::{opened, principal_key, render_prometheus};
+        let claims = serde_json::json!({ "sub": "relay-churn-user" });
+        for _ in 0..20 {
+            let mut ended = Vec::new();
+            for case in 0..4 {
+                let stream = opened("__test_relay_churn", principal_key(Some(&claims)));
+                let (tx, rx) = crate::sse::channel_limited(4, usize::MAX);
+                let chunks: Vec<&'static [u8]> =
+                    vec![b"data: 1\n\n", b"data: 2\n\n", b"data: 3\n\n"];
+                match case {
+                    // the client drops after the first frame: the next one finds it gone
+                    0 => {
+                        let mut first = Chunks(vec![chunks[0]]);
+                        let _ = relay_frames(&mut first, &tx);
+                        assert!(rx.recv_frame().is_some());
+                        drop(rx);
+                        ended.push(relay_frames(&mut Chunks(chunks[1..].to_vec()), &tx));
+                        stream.close(*ended.last().unwrap());
+                    }
+                    1 => {
+                        ended.push(relay_frames(&mut Chunks(chunks), &tx));
+                        stream.close(*ended.last().unwrap());
+                    }
+                    // a relay that never reported (its coroutine failed to start)
+                    _ => drop(stream),
+                }
+            }
+        }
+        let mut text = String::new();
+        render_prometheus(&mut text);
+        assert!(
+            text.contains("brrtrouter_sse_streams{operation=\"__test_relay_churn\"} 0"),
+            "{text}"
+        );
+        assert!(
+            text.contains("brrtrouter_sse_principals{operation=\"__test_relay_churn\"} 0"),
+            "{text}"
+        );
+        assert!(text.contains("brrtrouter_sse_opened_total{operation=\"__test_relay_churn\"} 80"));
+        assert!(text.contains("brrtrouter_sse_closed_total{operation=\"__test_relay_churn\",reason=\"client_closed\"} 20"));
+    }
+
     fn relayed(chunks: Vec<&'static [u8]>) -> Vec<String> {
         let (tx, rx) = crate::sse::channel();
-        relay_frames(&mut Chunks(chunks), &tx);
+        let _ = relay_frames(&mut Chunks(chunks), &tx);
         drop(tx);
         std::iter::from_fn(|| rx.recv_frame()).collect()
     }

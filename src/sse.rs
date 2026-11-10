@@ -107,6 +107,15 @@ impl Backlog {
     }
 }
 
+/// Why a frame could not be queued ([`SseSender::send_frame_checked`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SendError {
+    /// A [`channel_limited`] queue is full: the client reads slower than the producer writes.
+    Full,
+    /// The client has gone (the receiver was dropped).
+    Closed,
+}
+
 /// Sender side of an SSE channel.
 #[derive(Clone)]
 pub struct SseSender {
@@ -146,10 +155,23 @@ impl SseSender {
         self.queue(Event::Frame(frame.into()))
     }
 
+    /// [`Self::send_frame`], saying why a frame was not queued: the queue is full, or the client has gone.
+    ///
+    /// # Errors
+    ///
+    /// [`SendError::Full`] when a [`channel_limited`] queue is full, [`SendError::Closed`] when the client has gone.
+    pub fn send_frame_checked(&self, frame: impl Into<String>) -> Result<(), SendError> {
+        self.queue_checked(Event::Frame(frame.into()))
+    }
+
     fn queue(&self, event: Event) -> Result<(), ()> {
+        self.queue_checked(event).map_err(|_| ())
+    }
+
+    fn queue_checked(&self, event: Event) -> Result<(), SendError> {
         let len = event.len();
         if !self.backlog.reserve(len, true) {
-            return Err(());
+            return Err(SendError::Full);
         }
         match self.tx.send(event) {
             Ok(()) => {
@@ -160,7 +182,7 @@ impl SseSender {
             }
             Err(_) => {
                 self.backlog.release(len);
-                Err(())
+                Err(SendError::Closed)
             }
         }
     }

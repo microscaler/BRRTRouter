@@ -736,6 +736,7 @@ pub fn metrics_endpoint(
     crate::security::telemetry::render_jwks_prometheus(&mut body);
     // A BFF's calls to its downstream services (nothing until the first proxied call).
     crate::http::client_metrics::render_prometheus(&mut body);
+    crate::http::sse_metrics::render_prometheus(&mut body);
     // Responses checked against their schema, by result, and those the validation mode skipped.
     super::response_validation::render_prometheus(&mut body);
 
