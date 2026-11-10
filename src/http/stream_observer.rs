@@ -21,8 +21,14 @@
 //! **Cost.** With no observer registered, a stream pays one atomic load at open and nothing after. With one, the
 //! calls above and nothing per frame.
 //!
-//! **Failures.** A panic in `opened` or `alive` is caught: the stream goes on (without a lease, if `opened`
-//! panicked). `closed` is called from a destructor when the relay unwinds, so it must not panic.
+//! **Failures.** A panic in `opened`, `alive` or `closed` is caught: the stream goes on (without a lease, if `opened`
+//! panicked). `closed` can run from a destructor while the relay unwinds, where a second panic aborts the process,
+//! so it must not panic.
+//!
+//! **Blocking.** The callbacks run on may coroutines: `opened` on the request's, `alive` and `closed` on the relay's
+//! supervisor. They must return quickly and never block the OS thread (no `std` sockets, locks held across I/O or
+//! sleeps). may I/O parks only that coroutine, but while `alive` waits the supervisor does not check whether the
+//! client has gone; keep any call short and bounded by a timeout, or hand the work to another thread.
 //!
 //! **Scope.** Streams relayed by the proxy. An in-process event stream handler sees its own end (its sender reports
 //! the client gone) and needs no hook.
@@ -200,7 +206,9 @@ impl Lease {
 impl Drop for Lease {
     fn drop(&mut self) {
         if let Some(inner) = self.inner.take() {
-            inner.closed(CloseReason::Error);
+            // Isolated like `close`: a panicking observer must not escape a destructor (while unwinding, a second
+            // panic aborts regardless, hence the rule that `closed` must not panic).
+            let _ = catch_unwind(AssertUnwindSafe(move || inner.closed(CloseReason::Error)));
         }
     }
 }
