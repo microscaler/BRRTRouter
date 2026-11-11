@@ -64,11 +64,11 @@ minijinja = { version = "3", features = ["serde"] }
 tracing = "0.1"
 # Coroutine-scoped span context (ADR-0001/0002): the request span is the may coroutine's
 # context, never entered on a thread.
-may_tracing = { git = "https://github.com/microscaler/may_tracing.git", tag = "v0.1.1", features = ["otel"] }
-opentelemetry = { version = "0.31", features = ["metrics", "trace"] }
-opentelemetry_sdk = { version = "0.31", features = ["metrics", "trace"] }
-opentelemetry-semantic-conventions = "0.31"
-tracing-opentelemetry = "0.32"
+may_tracing = { git = "https://github.com/microscaler/may_tracing.git", tag = "v0.1.2", features = ["otel"] }
+opentelemetry = { version = "0.33", features = ["metrics", "trace"] }
+opentelemetry_sdk = { version = "0.33", features = ["metrics", "trace"] }
+opentelemetry-semantic-conventions = "0.33"
+tracing-opentelemetry = "0.34"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-appender = "0.2"
 
@@ -78,7 +78,7 @@ tracing-appender = "0.2"
 # ~/Workspace/remote/microscaler/.cargo/config.toml (ancestor config, never committed) — see
 # docs: OCTOPILOT-DEPENDENCY-RESOLUTION.
 # Feature cloud-profiler: the Google Cloud Profiler agent, inert unless MICROSCALER_CLOUD_PROFILER=1 (pp only, ADR 005).
-microscaler-observability = { git = "https://github.com/microscaler/microscaler-observability.git", rev = "65991efe24c94001e71ec8cad7a1a7304ececfbd", features = ["cloud-profiler"] }
+microscaler-observability = { git = "https://github.com/microscaler/microscaler-observability.git", rev = "9d908cd53fed70b3140820a2a66523fcf48ba478", features = ["cloud-profiler"] }
 # op_duration_seconds{component,op,outcome} (src/timing.rs): queue wait, handler time, the outbound client's phases and
 # DNS, rendered on /metrics with whatever the service times itself. Zero dependencies, lock-free. Same spec in every crate
 # of a binary (one copy = one registry): branch main, not a rev.
@@ -262,10 +262,3 @@ large_stack_arrays = "warn"   # Stack arrays that may overflow
 # Override generator-rs with our fork that fixes Rust 1.90+ macOS thread-local bug
 [patch.crates-io]
 generator = { git = "https://github.com/microscaler/generator-rs.git", branch = "fix/rust-1.90-thread-local-macos" }
-# Patch the full OTLP stack together so the adapter and host share one coherent revision.
-# The revision is pinned for reproducible builds; advance it intentionally.
-opentelemetry = { git = "https://github.com/open-telemetry/opentelemetry-rust", rev = "965078315b58ae14725721735f1c8e2bc2d3b445" }
-opentelemetry_sdk = { git = "https://github.com/open-telemetry/opentelemetry-rust", rev = "965078315b58ae14725721735f1c8e2bc2d3b445" }
-opentelemetry-otlp = { git = "https://github.com/open-telemetry/opentelemetry-rust", rev = "965078315b58ae14725721735f1c8e2bc2d3b445" }
-opentelemetry-proto = { git = "https://github.com/open-telemetry/opentelemetry-rust", rev = "965078315b58ae14725721735f1c8e2bc2d3b445" }
-opentelemetry-semantic-conventions = { git = "https://github.com/open-telemetry/opentelemetry-rust", rev = "965078315b58ae14725721735f1c8e2bc2d3b445" }
