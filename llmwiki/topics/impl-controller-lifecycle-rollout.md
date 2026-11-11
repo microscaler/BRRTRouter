@@ -49,6 +49,24 @@ All **17** hauliage impl services use `RunAppBuilder` (~57–78 lines). Bidding 
 brrtrouter-gen migrate-main --output hauliage/microservices/<svc>/impl --apply
 ```
 
+## Controller kinds in `impl_registry.rs` (2026-11-11)
+
+`detect_controller_kind` reads each controller file on disk:
+
+| The module has | Registered with |
+|----------------|-----------------|
+| `pub fn handle_raw(req: HandlerRequest) -> HandlerResponse` | `spawn_untyped_with_stack_size_and_name(<module>::handle_raw, …)`, even next to a typed `#[handler]` |
+| `HandlerRequest` and `HandlerResponse`, no `#[handler]` | the untyped path with `handle_untyped`, else `handle` |
+| `#[handler(Struct)]` | `spawn_typed_with_stack_size_and_name(Struct, …)` |
+
+`handle_raw` is for a handler that builds its own response, e.g. a pre-serialised JSON body
+(`RAW_BODY_ENCODING_HEADER`), which the typed path cannot carry.
+
+Every untyped arm is now `let tx = match spawn_untyped_…(…) { Ok(tx) => tx, Err(e) => panic!("<handler>: cannot start
+its handler: {e}") };`. Until 2026-11-11 the template emitted `if let Ok(tx) = …`, which dropped the route silently
+when its handler could not start (the gen crate's mock kept answering); the typed arm already failed loudly.
+Regenerating changes every consumer's untyped arms once, from `if let` to `match`.
+
 ## Fix B — `run_app()` (BRRTRouter library)
 
 | Module | Status |

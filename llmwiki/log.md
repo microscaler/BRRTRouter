@@ -505,3 +505,8 @@ Hauliage Phase 3 unblockers for Vite dev proxy and frontend-aligned BFF routes.
 - `stream_sse` peeks at the client socket between frames and drops the receiver on end of stream;
   `SseReceiver::recv_frame_timeout`.
 - [`topics/relayed-sse-stream-metrics.md`](./topics/relayed-sse-stream-metrics.md#stream-observer-stream_observer).
+
+## [2026-11-11] feature | impl registry: handle_raw controllers; untyped arms fail loudly
+- `detect_controller_kind`: a module with `pub fn handle_raw(HandlerRequest) -> HandlerResponse` is registered
+  untyped with `handle_raw`; untyped arms call the function directly and panic when the handler cannot start.
+- [`topics/impl-controller-lifecycle-rollout.md`](./topics/impl-controller-lifecycle-rollout.md#controller-kinds-in-impl_registryrs-2026-11-11).

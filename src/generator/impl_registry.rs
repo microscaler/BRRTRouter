@@ -66,7 +66,14 @@ pub fn discover_impl_controllers(controllers_dir: &Path) -> anyhow::Result<Vec<S
 }
 
 /// Detect typed vs untyped controller and resolve the struct name for typed handlers.
+///
+/// A module that defines `pub fn handle_raw(req: HandlerRequest) -> HandlerResponse` is registered on the untyped path
+/// with `handle_raw`, even when it also has a typed `#[handler]`: a raw handler builds its own response (for example a
+/// pre-serialised JSON body), which the typed path cannot carry.
 pub fn detect_controller_kind(content: &str, handler: &str) -> (bool, String) {
+    if content.contains("pub fn handle_raw(") && content.contains("HandlerRequest") {
+        return (true, "handle_raw".to_string());
+    }
     let is_untyped = content.contains("HandlerRequest")
         && content.contains("HandlerResponse")
         && !content.contains("#[handler");
@@ -417,6 +424,82 @@ mod tests {
         let (untyped, name) = detect_controller_kind(content, "list_vehicles");
         assert!(!untyped);
         assert_eq!(name, "ListVehiclesController");
+    }
+
+    #[test]
+    fn detect_raw_controller() {
+        let raw = "use brrtrouter::dispatcher::{HandlerRequest, HandlerResponse};\n\
+                   pub fn handle_raw(req: HandlerRequest) -> HandlerResponse { todo!() }";
+        assert_eq!(
+            detect_controller_kind(raw, "list_reports"),
+            (true, "handle_raw".to_string())
+        );
+        // a raw handler wins over a typed one in the same module
+        let both = format!(
+            "#[handler(ListReportsController)]\npub fn handle(_req: TypedHandlerRequest<Request>) -> Response {{}}\n{raw}"
+        );
+        assert_eq!(
+            detect_controller_kind(&both, "list_reports"),
+            (true, "handle_raw".to_string())
+        );
+    }
+
+    #[test]
+    fn untyped_arms_register_the_function_and_panic_when_it_cannot_start() {
+        let base = std::env::temp_dir().join(format!(
+            "impl_raw_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let impl_src = base.join("src");
+        let controllers = impl_src.join("controllers");
+        fs::create_dir_all(&controllers).unwrap();
+        fs::write(
+            controllers.join("list_reports.rs"),
+            "pub fn handle_raw(req: HandlerRequest) -> HandlerResponse { todo!() }",
+        )
+        .unwrap();
+        fs::write(
+            controllers.join("get_report.rs"),
+            "pub fn handle(req: HandlerRequest) -> HandlerResponse { todo!() }",
+        )
+        .unwrap();
+        fs::write(
+            controllers.join("add_report.rs"),
+            "#[handler(AddReportController)]\npub fn handle(_req: TypedHandlerRequest<Request>) -> Response {}",
+        )
+        .unwrap();
+        let routes = vec![
+            route("list_reports", Some(true)),
+            route("get_report", Some(true)),
+            route("add_report", Some(true)),
+        ];
+        write_impl_registry_rs(&impl_src, &routes).unwrap();
+        let registry = fs::read_to_string(impl_src.join("impl_registry.rs")).unwrap();
+        assert!(
+            registry.contains("crate::controllers::list_reports::handle_raw,"),
+            "{registry}"
+        );
+        assert!(
+            registry.contains("crate::controllers::get_report::handle,"),
+            "{registry}"
+        );
+        assert!(
+            registry
+                .contains(r#"Err(e) => panic!("list_reports: cannot start its handler: {e}"),"#),
+            "{registry}"
+        );
+        assert!(
+            registry.contains(r#"Err(e) => panic!("get_report: cannot start its handler: {e}"),"#),
+            "{registry}"
+        );
+        // a route is never dropped silently
+        assert!(!registry.contains("if let Ok(tx)"), "{registry}");
+        assert!(registry.contains("AddReportController"), "{registry}");
+        let _ = fs::remove_dir_all(&base);
     }
 
     #[test]
