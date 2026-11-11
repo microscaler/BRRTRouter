@@ -26,6 +26,12 @@ Resolved at runtime from the spec the service loaded (no code generation needed)
 3. `x-brrtrouter-stack-size` at the spec root (spec-wide default)
 4. `FALLBACK` (256 KiB), or the generator's estimate if larger
 
+A BFF spec is a merge of many sub-specs under one root, so step 3 would only ever see the BFF's root. Both BFF
+merge paths (`bff/merge.py` and `workspace/bff/generate_system.py`, via `with_document_stack_size`) therefore copy
+each sub-spec's root `x-brrtrouter-stack-size` onto that sub-spec's operations unless an operation sets its own, so
+the value lands at step 2 in the merged spec. A sub-spec's root value thus beats the BFF root for its operations
+(11 Nov 2026); see [BFF merge](./bff-gateway-merge-and-proxy-headers.md#handler-stack-size-through-the-merge-2026-11-11).
+
 Clamped to `BRRTR_STACK_MIN_BYTES`..`BRRTR_STACK_MAX_BYTES` (16..256 KiB). Values: bytes, `0x` hex, `48KiB`/`48K`,
 `1MiB`, `small`/`medium`/`large`. Sizes are **bytes** since 24 Oct 2026 (`handler_stack::words` converts for `may`);
 before, every handler stack was 8x its setting. Applies to typed, untyped, `register_handler` and worker pools.

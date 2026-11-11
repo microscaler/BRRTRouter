@@ -271,3 +271,61 @@ class TestGenerateSystemBffSpec:
         assert (
             gateway_public_path("/api/v1/reviews", "/", gateway_path_style="prefixed") == "/reviews"
         )
+
+
+class TestGenerateSystemStackSize:
+    """Discovery merge (no suite config) carries each sub-spec's root x-brrtrouter-stack-size onto its operations."""
+
+    def test_document_stack_size_reaches_operations(self, tmp_path: Path) -> None:
+        import yaml
+
+        from brrtrouter_tooling.workspace.bff.generate_system import generate_system_bff_spec
+
+        ok = {"200": {"description": "ok"}}
+        a = {
+            "openapi": "3.1.0",
+            "info": {"title": "A", "version": "1.0"},
+            "x-brrtrouter-stack-size": "64KiB",
+            "paths": {
+                "/plain": {"get": {"responses": ok}},
+                "/deep": {"get": {"x-brrtrouter-stack-size": "192KiB", "responses": ok}},
+            },
+        }
+        b = {
+            "openapi": "3.1.0",
+            "info": {"title": "B", "version": "1.0"},
+            "paths": {"/other": {"get": {"responses": ok}}},
+        }
+        for name, spec in (("a", a), ("b", b)):
+            (tmp_path / name).mkdir()
+            (tmp_path / name / "openapi.yaml").write_text(yaml.dump(spec, sort_keys=False))
+        out = tmp_path / "openapi_bff.yaml"
+        generate_system_bff_spec(tmp_path, "sys", output_path=out)
+        paths = yaml.safe_load(out.read_text())["paths"]
+        assert paths["/plain"]["get"]["x-brrtrouter-stack-size"] == "64KiB"
+        assert paths["/deep"]["get"]["x-brrtrouter-stack-size"] == "192KiB"
+        assert "x-brrtrouter-stack-size" not in paths["/other"]["get"]
+
+    def test_query_operations_get_the_document_stack_size(self, tmp_path: Path) -> None:
+        import yaml
+
+        from brrtrouter_tooling.workspace.bff.generate_system import generate_system_bff_spec
+
+        ok = {"200": {"description": "ok"}}
+        spec = {
+            "openapi": "3.2.0",
+            "info": {"title": "Q", "version": "1.0"},
+            "x-brrtrouter-stack-size": "96KiB",
+            "paths": {
+                "/search": {"query": {"responses": ok}},
+                "/legacy": {"x-brrtrouter-query": {"responses": ok}},
+            },
+        }
+        (tmp_path / "q").mkdir()
+        (tmp_path / "q" / "openapi.yaml").write_text(yaml.dump(spec, sort_keys=False))
+        out = tmp_path / "openapi_bff.yaml"
+        generate_system_bff_spec(tmp_path, "sys", output_path=out)
+        paths = yaml.safe_load(out.read_text())["paths"]
+        assert paths["/search"]["query"]["x-brrtrouter-stack-size"] == "96KiB"
+        assert paths["/legacy"]["x-brrtrouter-query"]["x-brrtrouter-stack-size"] == "96KiB"
+        assert paths["/search"]["query"]["x-service"] == "q"
