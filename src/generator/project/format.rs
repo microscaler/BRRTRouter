@@ -47,8 +47,9 @@ pub fn format_file(file: &Path, edition: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The Rust edition of the crate in `crate_dir`: its `package.edition`, or, when it inherits it, the nearest
-/// ancestor's `workspace.package.edition`; 2021 when neither says.
+/// The Rust edition of the crate in `crate_dir`, as Cargo reads it: its `package.edition`; with
+/// `edition.workspace = true`, the nearest `workspace.package.edition` from the crate's own manifest (a workspace
+/// root can be a package too) upwards; with no edition at all, Cargo's default, 2015.
 #[must_use]
 pub fn crate_edition(crate_dir: &Path) -> String {
     fn manifest(dir: &Path) -> Option<toml::Value> {
@@ -57,26 +58,24 @@ pub fn crate_edition(crate_dir: &Path) -> String {
     let dir = crate_dir
         .canonicalize()
         .unwrap_or_else(|_| crate_dir.to_path_buf());
-    if let Some(e) = manifest(&dir).as_ref().and_then(|m| {
-        m.get("package")?
-            .get("edition")?
-            .as_str()
-            .map(str::to_string)
-    }) {
-        return e;
+    let own = manifest(&dir);
+    match own.as_ref().and_then(|m| m.get("package")?.get("edition")) {
+        Some(toml::Value::String(edition)) => edition.clone(),
+        Some(inherit) if inherit.get("workspace").and_then(toml::Value::as_bool) == Some(true) => {
+            dir.ancestors()
+                .find_map(|d| {
+                    manifest(d).and_then(|m| {
+                        m.get("workspace")?
+                            .get("package")?
+                            .get("edition")?
+                            .as_str()
+                            .map(str::to_string)
+                    })
+                })
+                .unwrap_or_else(|| "2015".to_string())
+        }
+        _ => "2015".to_string(),
     }
-    dir.ancestors()
-        .skip(1)
-        .find_map(|d| {
-            manifest(d).and_then(|m| {
-                m.get("workspace")?
-                    .get("package")?
-                    .get("edition")?
-                    .as_str()
-                    .map(str::to_string)
-            })
-        })
-        .unwrap_or_else(|| "2021".to_string())
 }
 
 #[cfg(test)]
@@ -195,9 +194,17 @@ mod tests {
         )
         .unwrap();
         assert_eq!(crate_edition(&member), "2018");
-        fs::remove_file(base.join("Cargo.toml")).unwrap();
+        // no edition: Cargo's default, even under a workspace that names one
         fs::write(member.join("Cargo.toml"), "[package]\nname = \"m\"\n").unwrap();
-        assert_eq!(crate_edition(&member), "2021");
+        assert_eq!(crate_edition(&member), "2015");
+        // a workspace root that is also the package inherits from its own manifest
+        fs::write(
+            base.join("Cargo.toml"),
+            "[package]\nname = \"root\"\nedition.workspace = true\n[workspace]\n[workspace.package]\nedition = \"2024\"\n",
+        )
+        .unwrap();
+        assert_eq!(crate_edition(&base), "2024");
+        fs::remove_file(base.join("Cargo.toml")).unwrap();
         let _ = fs::remove_dir_all(&base);
     }
 

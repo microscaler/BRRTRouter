@@ -14,11 +14,10 @@ from pathlib import Path
 
 GIT_URL = "https://github.com/microscaler/BRRTRouter.git"
 
-# `brrtrouter = { git = "…/BRRTRouter.git", rev = "<sha>" … }` in a consumer's Cargo.toml
-_PIN = re.compile(
-    r'^brrtrouter\s*=\s*\{[^}\n]*git\s*=\s*"[^"]*/BRRTRouter(?:\.git)?"[^}\n]*rev\s*=\s*"([0-9a-f]{7,40})"',
-    re.MULTILINE,
-)
+# `brrtrouter = { git = "<url>", rev = "<sha>", … }` in a consumer's Cargo.toml, keys in any order
+_PIN_LINE = re.compile(r"^brrtrouter\s*=\s*\{([^}\n]*)\}", re.MULTILINE)
+_PIN_GIT = re.compile(r'\bgit\s*=\s*"([^"]+)"')
+_PIN_REV = re.compile(r'\brev\s*=\s*"([0-9a-fA-F]{7,40})"')
 
 
 def find_brrtrouter(project_root: Path, brrtrouter_path: Path | None = None) -> tuple[Path, Path]:
@@ -40,14 +39,27 @@ def find_brrtrouter(project_root: Path, brrtrouter_path: Path | None = None) -> 
     return brrtrouter_bin, manifest
 
 
-def pinned_rev(project_root: Path) -> str | None:
-    """The BRRTRouter rev the consumer's services build against (its Cargo.toml, or microservices/Cargo.toml)."""
+def pinned_source(project_root: Path) -> tuple[str, str] | None:
+    """The git URL and rev of the BRRTRouter the consumer's services build against.
+
+    Read from ``brrtrouter = { git = …, rev = … }`` in the consumer's Cargo.toml or microservices/Cargo.toml; the
+    keys may come in any order, and the URL may be a fork.
+    """
     for manifest in (project_root / "Cargo.toml", project_root / "microservices" / "Cargo.toml"):
-        if manifest.exists():
-            m = _PIN.search(manifest.read_text())
-            if m:
-                return m.group(1)
+        if not manifest.exists():
+            continue
+        for line in _PIN_LINE.finditer(manifest.read_text()):
+            git = _PIN_GIT.search(line.group(1))
+            rev = _PIN_REV.search(line.group(1))
+            if git and rev:
+                return git.group(1), rev.group(1).lower()
     return None
+
+
+def pinned_rev(project_root: Path) -> str | None:
+    """The BRRTRouter rev the consumer's services build against (see :func:`pinned_source`)."""
+    source = pinned_source(project_root)
+    return source[1] if source else None
 
 
 def _checkout_head(path: Path) -> str | None:
@@ -72,7 +84,8 @@ def generator_command(project_root: Path, brrtrouter_path: Path | None = None) -
        - ``brrtrouter-gen`` installed at that rev under ``BRRTROUTER_GEN_CACHE`` (default
          ``~/.cache/brrtrouter-gen``)/<rev>, as a consumer's spec-lint script installs it;
        - else the local checkout, when its HEAD is that rev;
-       - else it is installed there now (``cargo install --locked --git … --rev …``), and refused with an
+       - else it is installed there now from the pinned URL (``cargo install --locked --git … --rev …``), and
+         refused with an
          explanation when that fails.
     4. No pin (a path dependency, or no Cargo.toml): the local checkout, as before.
     """
@@ -80,7 +93,8 @@ def generator_command(project_root: Path, brrtrouter_path: Path | None = None) -
     if explicit:
         return [explicit]
     local = brrtrouter_path or project_root.parent / "BRRTRouter"
-    rev = pinned_rev(project_root)
+    source = pinned_source(project_root)
+    git_url, rev = source if source else (GIT_URL, None)
     if os.environ.get("BRRTROUTER_GEN_LOCAL") == "1" or rev is None:
         _bin, manifest = find_brrtrouter(project_root, local)
         return _cargo_run(manifest)
@@ -104,7 +118,7 @@ def generator_command(project_root: Path, brrtrouter_path: Path | None = None) -
             "--quiet",
             "--locked",
             "--git",
-            GIT_URL,
+            git_url,
             "--rev",
             rev,
             "--bin",

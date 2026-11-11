@@ -267,3 +267,36 @@ class TestGeneratorCommand:
             )
             cmd = run.call_args[0][0]
         assert cmd[:2] == [str(installed), "generate"]
+
+    def test_reads_the_pin_with_keys_in_any_order(self, tmp_path: Path) -> None:
+        from brrtrouter_tooling.gen.brrtrouter import pinned_source
+
+        root = tmp_path / "consumer"
+        root.mkdir()
+        (root / "Cargo.toml").write_text(
+            "[dependencies]\n"
+            'brrtrouter = { rev = "ABCDEF1234567", default-features = false, '
+            'git = "https://github.com/someone/brrtrouter" }\n'
+        )
+        assert pinned_source(root) == ("https://github.com/someone/brrtrouter", "abcdef1234567")
+
+    def test_installs_from_the_pinned_git_url(self, tmp_path: Path) -> None:
+        from brrtrouter_tooling.gen.brrtrouter import generator_command
+
+        root = tmp_path / "consumer"
+        root.mkdir()
+        fork = "https://github.com/someone/BRRTRouter.git"
+        (root / "Cargo.toml").write_text(
+            f'[dependencies]\nbrrtrouter = {{ git = "{fork}", rev = "{PIN}" }}\n'
+        )
+        installed = self._installed(tmp_path)
+
+        def fake(cmd: list[str], **_kw: object) -> MagicMock:
+            assert cmd[:2] == ["cargo", "install"]
+            assert cmd[cmd.index("--git") + 1] == fork
+            installed.parent.mkdir(parents=True)
+            installed.touch()
+            return MagicMock(returncode=0)
+
+        with patch("brrtrouter_tooling.gen.brrtrouter.subprocess.run", side_effect=fake):
+            assert generator_command(root) == [str(installed)]
