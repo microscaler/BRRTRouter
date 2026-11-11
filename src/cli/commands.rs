@@ -199,6 +199,49 @@ pub enum Commands {
         #[arg(long, default_value_t = false)]
         errors_only: bool,
     },
+    /// Suggest each handler's `x-brrtrouter-stack-size` from measured peak stack use (and write it with --write)
+    ///
+    /// Input, for one service: `[{"handler": "list_a", "peak_bytes": 65536, "samples": 1000}]`. Output: a table
+    /// and a unified diff.
+    StackSizes {
+        /// Measurements: a JSON array of objects with `handler`, `peak_bytes` and `samples`, one per handler
+        #[arg(long)]
+        measurements: PathBuf,
+        /// The service's OpenAPI spec (for `--target suite-config`, the generated BFF spec)
+        #[arg(long)]
+        spec: PathBuf,
+        /// Factor over the peak
+        #[arg(long, default_value_t = 1.5)]
+        safety: f64,
+        /// Factor over the peak for handlers with fewer than --min-samples samples
+        #[arg(long, default_value_t = 2.0)]
+        low_sample_safety: f64,
+        /// Samples needed to trust a peak, and to lower a size
+        #[arg(long, default_value_t = 1000)]
+        min_samples: u64,
+        /// Smallest size suggested
+        #[arg(long, default_value = "64KiB")]
+        floor: String,
+        /// Round sizes up to a multiple of this
+        #[arg(long, default_value = "16KiB")]
+        round: String,
+        /// Largest planned size (default: this shell's `BRRTR_STACK_MAX_BYTES`, else 256KiB); match it to the
+        /// deployed runtime's `BRRTR_STACK_MAX_BYTES`, which clamps every handler
+        #[arg(long)]
+        max: Option<String>,
+        /// Relative change below which a size is kept
+        #[arg(long, default_value_t = 0.25)]
+        hysteresis: f64,
+        /// Where --write puts the sizes
+        #[arg(long, value_enum, default_value_t = crate::generator::measured_stacks::StackSizeTarget::Spec)]
+        target: crate::generator::measured_stacks::StackSizeTarget,
+        /// BFF suite config (for --target suite-config); its paths are relative to the current directory
+        #[arg(long)]
+        suite_config: Option<PathBuf>,
+        /// Write the sizes (default: print the table and the diff only)
+        #[arg(long, default_value_t = false)]
+        write: bool,
+    },
     /// Run the server for a spec using echo handlers
     Serve {
         /// Path to the OpenAPI specification file (YAML or JSON)
@@ -379,6 +422,55 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
             )?;
             if *apply {
                 crate::generator::format_project(output.as_path())?;
+            }
+            Ok(())
+        }
+        Commands::StackSizes {
+            measurements,
+            spec,
+            safety,
+            low_sample_safety,
+            min_samples,
+            floor,
+            round,
+            max,
+            hysteresis,
+            target,
+            suite_config,
+            write,
+        } => {
+            use crate::generator::measured_stacks::{plan, size_arg, Measurement, Rules};
+            let max = match max {
+                Some(m) => size_arg("max", m)?,
+                None => std::env::var("BRRTR_STACK_MAX_BYTES")
+                    .ok()
+                    .and_then(|v| crate::handler_stack::parse_size(&v))
+                    .unwrap_or(256 * 1024),
+            };
+            let rules = Rules {
+                safety: *safety,
+                low_sample_safety: *low_sample_safety,
+                min_samples: *min_samples,
+                floor: size_arg("floor", floor)?,
+                round: size_arg("round", round)?,
+                max,
+                hysteresis: *hysteresis,
+            };
+            rules.validate()?;
+            let ms: Vec<Measurement> =
+                serde_json::from_str(&std::fs::read_to_string(measurements)?)?;
+            let cwd = std::env::current_dir()?;
+            let report = plan(
+                &ms,
+                spec,
+                &rules,
+                *target,
+                suite_config.as_deref().map(|c| (c, cwd.as_path())),
+            )?;
+            print!("{}", report.render());
+            if *write {
+                report.write()?;
+                println!("wrote {} file(s)", report.edits.len());
             }
             Ok(())
         }

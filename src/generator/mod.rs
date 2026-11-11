@@ -112,6 +112,7 @@
 
 mod dependencies_config;
 mod impl_registry;
+pub mod measured_stacks;
 mod migrate_main;
 mod migrate_registration;
 mod project;
