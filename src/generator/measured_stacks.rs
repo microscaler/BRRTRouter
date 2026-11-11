@@ -252,9 +252,29 @@ fn trailing_comment(value: &str) -> Option<&str> {
         .map(|(j, _)| &rest[j..])
 }
 
+/// The key of a block-style `key:` line (no value, an optional `# comment`), if it is one.
+fn bare_key(line: &str) -> Option<&str> {
+    let t = line.trim();
+    let t = t.find(" #").map_or(t, |i| t[..i].trim_end());
+    t.strip_suffix(':')
+        .filter(|k| !k.is_empty() && !k.contains(": "))
+}
+
+/// The nearest line before `i` with less indentation (blank and comment lines skipped).
+fn parent_of(lines: &[&str], i: usize) -> Option<usize> {
+    let ind = indent(lines[i]);
+    (0..i).rev().find(|&j| {
+        let t = lines[j].trim();
+        !t.is_empty() && !t.starts_with('#') && indent(lines[j]) < ind
+    })
+}
+
 /// The lines of the top-level `paths:` block, as a range of line indexes.
 fn paths_block(lines: &[&str]) -> Option<std::ops::Range<usize>> {
-    let start = lines.iter().position(|l| l.trim_end() == "paths:")? + 1;
+    let start = lines
+        .iter()
+        .position(|l| indent(l) == 0 && bare_key(l) == Some("paths"))?
+        + 1;
     let len = lines[start..]
         .iter()
         .take_while(|l| l.trim().is_empty() || indent(l) > 0 || l.starts_with('#'))
@@ -286,16 +306,30 @@ fn plain_scalar(value: &str) -> &str {
 pub fn set_in_text(text: &str, op_id: &str, value: &str) -> Option<String> {
     let lines: Vec<&str> = text.lines().collect();
     let block = paths_block(&lines)?;
+    // An operation's own `operationId`: its parent is a method key, whose parent is a path key directly under
+    // `paths:`. Anything deeper (an example in a response, say) is not an operation.
+    let is_operation = |at: usize| {
+        let Some(method) = parent_of(&lines, at) else {
+            return false;
+        };
+        let Some(path) = parent_of(&lines, method) else {
+            return false;
+        };
+        bare_key(lines[method]).is_some_and(|m| METHODS.contains(&m))
+            && bare_key(lines[path]).is_some_and(|p| p.starts_with('/'))
+            && parent_of(&lines, path) == Some(block.start - 1)
+    };
     let mut found = lines
         .iter()
         .enumerate()
         .skip(block.start)
         .take(block.len())
-        .filter(|(_, l)| {
+        .filter(|&(i, l)| {
             l.trim_start()
                 .strip_prefix("operationId:")
                 .map(plain_scalar)
                 == Some(op_id)
+                && is_operation(i)
         });
     let (at, _) = found.next()?;
     if found.next().is_some() {
@@ -576,26 +610,23 @@ impl Report {
     ///
     /// A file cannot be written or renamed.
     pub fn write(&self) -> anyhow::Result<()> {
-        let mut staged: Vec<(PathBuf, &Path)> = Vec::new();
+        let mut staged: Vec<(PathBuf, PathBuf)> = Vec::new();
         let result = (|| -> anyhow::Result<()> {
             for (path, (_, new)) in &self.edits {
-                use std::io::Write as _;
-                let mut name = path.file_name().unwrap_or_default().to_os_string();
+                // A symlinked spec: write its target, and leave the link in place.
+                let dest = std::fs::canonicalize(path).unwrap_or_else(|_| path.clone());
+                let mut name = dest.file_name().unwrap_or_default().to_os_string();
                 let nanos = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .map_or(0, |d| d.as_nanos());
                 name.push(format!(".stack-sizes.{}.{nanos}.tmp", std::process::id()));
-                let tmp = path.with_file_name(name);
-                // create_new: never truncate or follow an existing file (or symlink) at that path.
-                let mut f = std::fs::OpenOptions::new()
-                    .write(true)
-                    .create_new(true)
-                    .open(&tmp)
-                    .map_err(|e| anyhow::anyhow!("{}: {e}", tmp.display()))?;
-                staged.push((tmp.clone(), path));
-                f.write_all(new.as_bytes())
-                    .and_then(|()| f.sync_all())
-                    .map_err(|e| anyhow::anyhow!("{}: {e}", tmp.display()))?;
+                let tmp = dest.with_file_name(name);
+                stage(&tmp, new).map_err(|e| anyhow::anyhow!("{}: {e}", tmp.display()))?;
+                staged.push((tmp.clone(), dest.clone()));
+                if let Ok(meta) = std::fs::metadata(&dest) {
+                    std::fs::set_permissions(&tmp, meta.permissions())
+                        .map_err(|e| anyhow::anyhow!("{}: {e}", tmp.display()))?;
+                }
             }
             Ok(())
         })();
@@ -619,6 +650,19 @@ impl Report {
         }
         Ok(())
     }
+}
+
+/// Write `contents` to a new file at `tmp`: created exclusively (an existing file or symlink there is an error and
+/// is left alone), owner-only until the destination's permissions are copied over, and synced.
+fn stage(tmp: &Path, contents: &str) -> std::io::Result<()> {
+    use std::io::Write as _;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+    let mut f = options.open(tmp)?;
+    f.write_all(contents.as_bytes())?;
+    f.sync_all()
 }
 
 /// A size option (`64KiB`, `65536`, ...) in bytes.
@@ -845,6 +889,66 @@ paths:
         report.write().unwrap();
         assert_eq!(std::fs::read_to_string(&a).unwrap(), "new a\n");
         assert_eq!(std::fs::read_dir(&d).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn edits_bind_to_operations_and_paths_may_carry_a_comment() {
+        let nested = "paths: # service routes\n  /a:\n    get: { operationId: list_a, responses: {} }\n  /b:\n    get:\n      operationId: list_b\n      responses:\n        '200':\n          content:\n            application/json:\n              example:\n                operationId: list_a\n";
+        assert!(
+            set_in_text(nested, "list_a", "96KiB").is_none(),
+            "an example is not an operation"
+        );
+        let out = set_in_text(nested, "list_b", "96KiB").unwrap();
+        assert!(
+            out.contains("      operationId: list_b\n      x-brrtrouter-stack-size: \"96KiB\"\n"),
+            "{out}"
+        );
+        let commented = SPEC.replace("paths:\n", "paths: # routes\n");
+        assert!(set_in_text(&commented, "list_a", "96KiB").is_some());
+    }
+
+    #[test]
+    fn staging_never_touches_an_existing_file_or_symlink() {
+        let d = temp("stage");
+        let victim = d.join("victim.yaml");
+        std::fs::write(&victim, "keep\n").unwrap();
+        let taken = d.join("taken.tmp");
+        std::fs::write(&taken, "keep\n").unwrap();
+        assert!(stage(&taken, "new\n").is_err());
+        assert_eq!(std::fs::read_to_string(&taken).unwrap(), "keep\n");
+        #[cfg(unix)]
+        {
+            let link = d.join("link.tmp");
+            std::os::unix::fs::symlink(&victim, &link).unwrap();
+            assert!(stage(&link, "new\n").is_err());
+            assert_eq!(std::fs::read_to_string(&victim).unwrap(), "keep\n");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_keeps_permissions_and_writes_through_a_symlinked_spec() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let d = temp("perm");
+        let real = d.join("real.yaml");
+        std::fs::write(&real, "old\n").unwrap();
+        std::fs::set_permissions(&real, std::fs::Permissions::from_mode(0o640)).unwrap();
+        let link = d.join("spec.yaml");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        let mut report = Report::default();
+        report
+            .edits
+            .insert(link.clone(), ("old\n".into(), "new\n".into()));
+        report.write().unwrap();
+        assert!(std::fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert_eq!(std::fs::read_to_string(&real).unwrap(), "new\n");
+        assert_eq!(
+            std::fs::metadata(&real).unwrap().permissions().mode() & 0o777,
+            0o640
+        );
     }
 
     fn temp(name: &str) -> PathBuf {
