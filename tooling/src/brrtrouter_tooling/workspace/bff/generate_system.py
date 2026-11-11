@@ -13,6 +13,7 @@ from typing import Any
 import yaml
 
 from brrtrouter_tooling.bff.merge import (
+    _HTTP_OPERATION_KEYS,
     PREFIXED_COMPONENT_KINDS,
     merge_named_components,
     prefix_named_components,
@@ -211,16 +212,7 @@ def _merge_one_sub_service(
         for path, path_def in spec["paths"].items():
             if isinstance(path_def, dict):
                 for m in list(path_def.keys()):
-                    if m in (
-                        "get",
-                        "post",
-                        "put",
-                        "patch",
-                        "delete",
-                        "options",
-                        "head",
-                        "trace",
-                    ):
+                    if m in _HTTP_OPERATION_KEYS:
                         op = path_def[m]
                         if isinstance(op, dict):
                             op = path_def[m] = with_document_stack_size(op, spec)

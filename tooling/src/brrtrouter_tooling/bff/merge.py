@@ -408,7 +408,8 @@ def with_document_stack_size(op: dict[str, Any], spec: dict[str, Any]) -> dict[s
     ``workspace.bff.generate_system`` (discovery without a suite config).
     """
     size = spec.get(STACK_SIZE_KEY)
-    if size is None or STACK_SIZE_KEY in op:
+    # an explicit null is no size (the runtime ignores it), so the document size still applies
+    if size is None or op.get(STACK_SIZE_KEY) is not None:
         return op
     return {**op, STACK_SIZE_KEY: size}
 

@@ -1175,3 +1175,9 @@ def test_merge_keeps_each_sub_specs_stack_size_apart(tmp_path: Path) -> None:
     assert _op(bff, "/from_a")["x-brrtrouter-stack-size"] == "64KiB"
     assert _op(bff, "/from_b")["x-brrtrouter-stack-size"] == "192KiB"
     assert "x-brrtrouter-stack-size" not in _op(bff, "/from_c")
+
+
+def test_merge_treats_a_null_operation_stack_size_as_absent(tmp_path: Path) -> None:
+    spec = _stack_spec(tmp_path / "a.yaml", "128KiB", {"nulled": "null"})
+    bff = merge_sub_service_specs({"a": {"base_path": "/api/a", "spec_path": spec}})
+    assert _op(bff, "/nulled")["x-brrtrouter-stack-size"] == "128KiB"
