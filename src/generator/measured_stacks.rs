@@ -1,6 +1,6 @@
 //! `brrtrouter-gen stack-sizes`: each handler's `x-brrtrouter-stack-size` from measured peak stack use.
 //!
-//! Input is one service's measurements, `[{"handler": "...", "peak_bytes": N, "samples": N}, ...]`, for example
+//! Input is one service's measurements, e.g. `[{"handler": "list_a", "peak_bytes": 65536, "samples": 1000}]`, for example
 //! from Prometheus: `max_over_time(brrtrouter_handler_stack_peak_bytes[14d])` for the peak and
 //! `increase(brrtrouter_handler_stack_used_bytes_count[14d])` for the samples (14 days: older peaks may predate a
 //! probe fix). The command needs no metrics credentials; it reads the file.
@@ -11,11 +11,13 @@
 //!   for a handler with fewer than `--min-samples` samples;
 //! - the size changes only when `|suggested − current| > hysteresis × current`, or when `current / peak < 1.5`;
 //! - a handler below `--min-samples` is never lowered, and an operation without measurements is left alone;
-//! - a suggestion at `--max` (default `BRRTR_STACK_MAX_BYTES`, else 256 KiB) is flagged: the runtime clamps to that
-//!   maximum, so it must be raised first.
+//! - a suggestion at `--max` is flagged: the runtime clamps to its `BRRTR_STACK_MAX_BYTES`, so it must be raised
+//!   first. `--max` defaults to this shell's `BRRTR_STACK_MAX_BYTES`, else 256 KiB; it must match the deployed one.
 //!
-//! `current` is what the runtime resolves from the spec: the operation's value, else the spec root's, else the
-//! 256 KiB fallback, clamped to `--max`. Without `--write` the command prints a table and a unified diff; with it, it
+//! `current` is what the runtime resolves from the spec: the operation's value (`x-brrtrouter-stack-size`, else the
+//! `x-stack-size` and `x-x-brrtrouter-stack-size` spellings the runtime also reads), else the spec root's, else the
+//! 256 KiB fallback, clamped to `--max`. A `BRRTR_STACK_SIZE__<HANDLER>` override in the deployed environment wins
+//! over the spec and is not visible here; one set in this shell is reported. Without `--write` the command prints a table and a unified diff; with it, it
 //! sets `x-brrtrouter-stack-size: "<n>KiB"` on each changed operation, editing the YAML text in place so comments
 //! and layout are kept. `--target suite-config` writes into the sub-specs a BFF spec was merged from (the
 //! operation's `x-service`, mapped through the BFF suite config) instead of the generated BFF spec.
@@ -56,6 +58,41 @@ pub struct Rules {
     pub max: usize,
     /// Relative change below which a size is kept.
     pub hysteresis: f64,
+}
+
+impl Rules {
+    /// Check the rules make sense: factors at least 1 (a smaller one could size a stack below its peak),
+    /// `low_sample_safety >= safety`, hysteresis finite and not negative, `round > 0`, `floor <= max`.
+    ///
+    /// # Errors
+    ///
+    /// The first rule that does not hold.
+    pub fn validate(&self) -> anyhow::Result<()> {
+        let factor_ok = |f: f64| f.is_finite() && f >= 1.0;
+        anyhow::ensure!(
+            factor_ok(self.safety),
+            "--safety must be a number >= 1, got {}",
+            self.safety
+        );
+        anyhow::ensure!(
+            factor_ok(self.low_sample_safety) && self.low_sample_safety >= self.safety,
+            "--low-sample-safety must be a number >= --safety, got {}",
+            self.low_sample_safety
+        );
+        anyhow::ensure!(
+            self.hysteresis.is_finite() && self.hysteresis >= 0.0,
+            "--hysteresis must be a number >= 0, got {}",
+            self.hysteresis
+        );
+        anyhow::ensure!(self.round > 0, "--round must be more than 0");
+        anyhow::ensure!(
+            self.floor <= self.max,
+            "--floor ({}) must not exceed --max ({})",
+            self.floor,
+            self.max
+        );
+        Ok(())
+    }
 }
 
 /// Where `--write` puts the sizes.
@@ -166,7 +203,13 @@ fn json(v: &serde_yaml::Value) -> serde_json::Value {
 
 /// The spec's operations and its root size.
 fn operations(spec: &serde_yaml::Value) -> (Vec<Operation>, Option<usize>) {
-    let root = spec.get(KEY).and_then(|v| size_from_value(&json(v)));
+    // The keys the runtime reads, in its order (`spec::build`: oas3 strips one `x-` from extension names).
+    let size = |v: &serde_yaml::Value, keys: &[&str]| {
+        keys.iter()
+            .find_map(|k| v.get(*k))
+            .and_then(|v| size_from_value(&json(v)))
+    };
+    let root = size(spec, &[KEY, "x-x-brrtrouter-stack-size"]);
     let mut ops = Vec::new();
     if let Some(paths) = spec.get("paths").and_then(serde_yaml::Value::as_mapping) {
         for item in paths.values() {
@@ -177,7 +220,7 @@ fn operations(spec: &serde_yaml::Value) -> (Vec<Operation>, Option<usize>) {
                 };
                 ops.push(Operation {
                     handler: id.to_string(),
-                    own: op.get(KEY).and_then(|v| size_from_value(&json(v))),
+                    own: size(op, &[KEY, "x-stack-size", "x-x-brrtrouter-stack-size"]),
                     service: op
                         .get("x-service")
                         .and_then(serde_yaml::Value::as_str)
@@ -209,17 +252,22 @@ fn plain_scalar(value: &str) -> &str {
 }
 
 /// Set `x-brrtrouter-stack-size: <value>` on the operation whose `operationId` is `op_id`, editing the YAML text so
-/// comments and layout are kept: the key is replaced when the operation has it, else added after `operationId`.
-/// `None` when no block-style `operationId: <op_id>` line is found.
+/// comments and layout are kept: the key is replaced when the operation has it (keeping a trailing comment), else
+/// added after `operationId`. `None` unless exactly one block-style `operationId: <op_id>` line is found: a second
+/// one (an example under `components`, say) would make the edit ambiguous.
 #[must_use]
 pub fn set_in_text(text: &str, op_id: &str, value: &str) -> Option<String> {
     let lines: Vec<&str> = text.lines().collect();
-    let at = lines.iter().position(|l| {
+    let mut found = lines.iter().enumerate().filter(|(_, l)| {
         l.trim_start()
             .strip_prefix("operationId:")
             .map(plain_scalar)
             == Some(op_id)
-    })?;
+    });
+    let (at, _) = found.next()?;
+    if found.next().is_some() {
+        return None;
+    }
     let ind = indent(lines[at]);
     let in_block = |l: &str| l.trim().is_empty() || indent(l) >= ind;
     let start = at - lines[..at].iter().rev().take_while(|l| in_block(l)).count();
@@ -227,9 +275,21 @@ pub fn set_in_text(text: &str, op_id: &str, value: &str) -> Option<String> {
     let pad = " ".repeat(ind);
     let new_line = format!("{pad}{KEY}: \"{value}\"");
     let mut out: Vec<String> = lines.iter().map(|l| (*l).to_string()).collect();
-    match (start..end).find(|&i| indent(lines[i]) == ind && lines[i].trim_start().starts_with(KEY))
+    let key = format!("{KEY}:");
+    match (start..end).find(|&i| indent(lines[i]) == ind && lines[i].trim_start().starts_with(&key))
     {
-        Some(i) => out[i] = new_line,
+        Some(i) => {
+            let old = lines[i].trim_start()[key.len()..].trim_start();
+            let comment = (!old.starts_with(['"', '\''])).then(|| {
+                old.char_indices()
+                    .find(|&(j, c)| c == '#' && old[..j].ends_with([' ', '\t']))
+                    .map(|(j, _)| &old[j..])
+            });
+            out[i] = match comment.flatten() {
+                Some(c) => format!("{new_line} {c}"),
+                None => new_line,
+            };
+        }
         None => out.insert(at + 1, new_line),
     }
     let mut s = out.join("\n");
@@ -352,12 +412,17 @@ pub fn plan(
     target: StackSizeTarget,
     suite: Option<(&Path, &Path)>,
 ) -> anyhow::Result<Report> {
+    rules.validate()?;
+    let mut by_handler: BTreeMap<&str, &Measurement> = BTreeMap::new();
+    for m in measurements {
+        anyhow::ensure!(
+            by_handler.insert(m.handler.as_str(), m).is_none(),
+            "{}: more than one measurement; give one record per handler",
+            m.handler
+        );
+    }
     let spec_value: serde_yaml::Value = serde_yaml::from_str(&std::fs::read_to_string(spec)?)?;
     let (ops, root) = operations(&spec_value);
-    let by_handler: BTreeMap<&str, &Measurement> = measurements
-        .iter()
-        .map(|m| (m.handler.as_str(), m))
-        .collect();
     let sources = match (target, suite) {
         (StackSizeTarget::Spec, _) => BTreeMap::new(),
         (StackSizeTarget::SuiteConfig, Some((config, base))) => suite_specs(config, base)?,
@@ -371,6 +436,13 @@ pub fn plan(
         let m = by_handler.get(op.handler.as_str()).copied();
         let (suggested, action) = decide(current, m, rules);
         let at_max = suggested == Some(rules.max);
+        let env = format!("BRRTR_STACK_SIZE__{}", op.handler.to_uppercase());
+        if std::env::var_os(&env).is_some() {
+            report.warnings.push(format!(
+                "{}: {env} is set in this shell; where it is set at runtime it overrides the spec size",
+                op.handler
+            ));
+        }
         if at_max {
             report.warnings.push(format!(
                 "{}: the suggestion is the maximum ({}); raise BRRTR_STACK_MAX_BYTES before relying on it",
@@ -401,7 +473,7 @@ pub fn plan(
             };
             entry.1 = set_in_text(&entry.1, &op.handler, &kib(bytes)).ok_or_else(|| {
                 anyhow::anyhow!(
-                    "{}: no block-style `operationId: {}` in {}",
+                    "{}: not exactly one block-style `operationId: {}` in {}",
                     op.handler,
                     op.handler,
                     file.display()
@@ -468,14 +540,42 @@ impl Report {
         out
     }
 
-    /// Write the edited files.
+    /// Write the edited files: each is first written in full beside its destination, and only once all are
+    /// written are they renamed over the originals, so a failed write leaves every spec as it was. A failure
+    /// between two renames can still leave some files updated and others not; the error names the file.
     ///
     /// # Errors
     ///
-    /// A file cannot be written.
+    /// A file cannot be written or renamed.
     pub fn write(&self) -> anyhow::Result<()> {
-        for (path, (_, new)) in &self.edits {
-            std::fs::write(path, new)?;
+        let mut staged: Vec<(PathBuf, &Path)> = Vec::new();
+        let result = (|| -> anyhow::Result<()> {
+            for (path, (_, new)) in &self.edits {
+                let mut name = path.file_name().unwrap_or_default().to_os_string();
+                name.push(".stack-sizes.tmp");
+                let tmp = path.with_file_name(name);
+                std::fs::write(&tmp, new).map_err(|e| anyhow::anyhow!("{}: {e}", tmp.display()))?;
+                staged.push((tmp, path));
+            }
+            Ok(())
+        })();
+        if let Err(e) = result {
+            for (tmp, _) in &staged {
+                let _ = std::fs::remove_file(tmp);
+            }
+            return Err(e);
+        }
+        for (i, (tmp, path)) in staged.iter().enumerate() {
+            if let Err(e) = std::fs::rename(tmp, path) {
+                for (tmp, _) in &staged[i..] {
+                    let _ = std::fs::remove_file(tmp);
+                }
+                anyhow::bail!(
+                    "{}: {e}; {i} of {} file(s) were already updated",
+                    path.display(),
+                    staged.len()
+                );
+            }
         }
         Ok(())
     }
@@ -580,8 +680,7 @@ paths:
         ));
         assert!(added.contains("      # the list\n"));
         let replaced = set_in_text(SPEC, "make_b", "128KiB").unwrap();
-        assert!(replaced.contains("      x-brrtrouter-stack-size: \"128KiB\"\n"));
-        assert!(!replaced.contains("64KiB # hand-set"));
+        assert!(replaced.contains("      x-brrtrouter-stack-size: \"128KiB\" # hand-set\n"));
         assert_eq!(replaced.lines().count(), SPEC.lines().count());
         assert!(set_in_text(SPEC, "nope", "1KiB").is_none());
         let diff = unified_diff(Path::new("s.yaml"), SPEC, &added);
@@ -607,6 +706,34 @@ paths:
         assert!(diff.contains("@@ -7,8 +7,9 @@\n"), "{diff}");
         let body: Vec<&str> = diff.lines().skip(2).collect();
         assert_eq!(body.len(), 11, "{diff}");
+    }
+
+    #[test]
+    fn rules_duplicates_ambiguous_ids_and_other_size_keys() {
+        let mut r = rules();
+        assert!(r.validate().is_ok());
+        r.safety = -1.0;
+        assert!(r.validate().is_err());
+        let mut r = rules();
+        r.round = 0;
+        assert!(r.validate().is_err());
+        let twice = format!("{SPEC}components:\n  examples:\n    x:\n      operationId: list_a\n");
+        assert!(set_in_text(&twice, "list_a", "96KiB").is_none());
+        let other = SPEC.replace(
+            "x-brrtrouter-stack-size: 64KiB # hand-set",
+            "x-stack-size: 80KiB",
+        );
+        let (ops, root) = operations(&serde_yaml::from_str(&other).unwrap());
+        assert_eq!(root, Some(256 * 1024));
+        assert_eq!(
+            ops.iter().find(|o| o.handler == "make_b").unwrap().own,
+            Some(80 * 1024)
+        );
+        let spec = temp("dup").join("s.yaml");
+        std::fs::write(&spec, SPEC).unwrap();
+        let ms = [m("list_a", 1, 1), m("list_a", 2, 2)];
+        let err = plan(&ms, &spec, &rules(), StackSizeTarget::Spec, None).unwrap_err();
+        assert!(err.to_string().contains("more than one"), "{err}");
     }
 
     fn temp(name: &str) -> PathBuf {

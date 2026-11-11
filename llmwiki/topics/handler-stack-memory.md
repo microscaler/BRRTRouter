@@ -46,16 +46,18 @@ is left alone.
 
 `brrtrouter-gen stack-sizes --measurements m.json --spec openapi.yaml [--write]` turns measured peaks into
 `x-brrtrouter-stack-size` per operation (`src/generator/measured_stacks.rs`). Input is one service's
-`[{"handler", "peak_bytes", "samples"}]`, e.g. `max_over_time(brrtrouter_handler_stack_peak_bytes[14d])` and
+`[{"handler": "list_a", "peak_bytes": 65536, "samples": 1000}]` (one record per handler), from e.g. `max_over_time(brrtrouter_handler_stack_peak_bytes[14d])` and
 `increase(brrtrouter_handler_stack_used_bytes_count[14d])`; the command reads only the file.
 
 - `suggested = clamp(round_up(peak × k, --round 16KiB), --floor 64KiB, --max)`, `k` = `--safety 1.5`, or
   `--low-sample-safety 2.0` below `--min-samples 1000`;
 - changed only when `|suggested − current| > --hysteresis 0.25 × current` or `current / peak < 1.5`; never lowered
-  below `--min-samples`; operations without measurements are left alone; a suggestion at `--max` (default
-  `BRRTR_STACK_MAX_BYTES`, else 256 KiB) is flagged, since the runtime clamps to it;
-- `current` is what `handler_stack::resolve` would take from the spec (operation, root, else 256 KiB);
-- without `--write`: a table and a unified diff; with it, the YAML text is edited in place (comments kept);
+  below `--min-samples`; operations without measurements are left alone; a suggestion at `--max` is flagged, since the runtime clamps to its
+  `BRRTR_STACK_MAX_BYTES` (`--max` defaults to this shell's, else 256 KiB, and must match the deployed one);
+- `current` is what `handler_stack::resolve` would take from the spec (operation, root, else 256 KiB; every key
+  spelling the runtime reads); a deployed `BRRTR_STACK_SIZE__<HANDLER>` overrides it and is not visible to the
+  command (one set in its shell is reported);
+- without `--write`: a table and a unified diff; with it, the YAML text is edited in place (comments kept), each file staged beside the original then renamed over it;
 - `--target suite-config --suite-config bff-suite-config.yaml`: for a generated BFF spec, writes into the sub-spec
   each operation came from (`x-service` → the suite config's `spec_path`), since the BFF spec is regenerated.
 

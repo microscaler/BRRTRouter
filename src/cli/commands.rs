@@ -201,9 +201,10 @@ pub enum Commands {
     },
     /// Suggest each handler's `x-brrtrouter-stack-size` from measured peak stack use (and write it with --write)
     ///
-    /// Input: `[{"handler", "peak_bytes", "samples"}]` for one service. Output: a table and a unified diff.
+    /// Input, for one service: `[{"handler": "list_a", "peak_bytes": 65536, "samples": 1000}]`. Output: a table
+    /// and a unified diff.
     StackSizes {
-        /// Measurements (JSON array of `{handler, peak_bytes, samples}`)
+        /// Measurements: a JSON array of `{"handler", "peak_bytes", "samples"}` objects, one per handler
         #[arg(long)]
         measurements: PathBuf,
         /// The service's OpenAPI spec (for `--target suite-config`, the generated BFF spec)
@@ -224,7 +225,8 @@ pub enum Commands {
         /// Round sizes up to a multiple of this
         #[arg(long, default_value = "16KiB")]
         round: String,
-        /// Largest size (default: `BRRTR_STACK_MAX_BYTES`, else 256KiB)
+        /// Largest planned size (default: this shell's `BRRTR_STACK_MAX_BYTES`, else 256KiB); match it to the
+        /// deployed runtime's `BRRTR_STACK_MAX_BYTES`, which clamps every handler
         #[arg(long)]
         max: Option<String>,
         /// Relative change below which a size is kept
@@ -454,6 +456,7 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
                 max,
                 hysteresis: *hysteresis,
             };
+            rules.validate()?;
             let ms: Vec<Measurement> =
                 serde_json::from_str(&std::fs::read_to_string(measurements)?)?;
             let cwd = std::env::current_dir()?;
