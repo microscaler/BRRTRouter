@@ -3,7 +3,7 @@
 - **Status**: `active`
 - **Code anchors**: `tooling/src/brrtrouter_tooling/bff/merge.py`, `tooling/src/brrtrouter_tooling/helpers.py`, `tooling/src/brrtrouter_tooling/workspace/bff/generate_system.py`, `src/http/proxy.rs`, `src/server/response.rs`
 - **Sibling**: Hauliage [`docs/llmwiki/topics/k8s-native-bff-routing.md`](../../../../hauliage/docs/llmwiki/topics/k8s-native-bff-routing.md)
-- **Last updated**: 2026-10-25
+- **Last updated**: 2026-11-11
 
 ## Gateway public paths (suite config merge)
 
@@ -32,6 +32,21 @@ servers:
 ```
 
 Do not use bare `http://localhost:8080` as the first server — routes would register without the `/api/v1` prefix.
+
+## Handler stack size through the merge (2026-11-11)
+
+`x-brrtrouter-stack-size` at a sub-spec's root is that service's default handler stack. The runtime reads the
+operation first and the spec root second ([handler stacks](./handler-stack-memory.md#sizing-handlers-from-the-spec-srchandler_stackrs)),
+and a merged BFF has only its own root, so both merge paths copy each sub-spec's root value onto its operations
+(`with_document_stack_size` in `bff/merge.py`, also used by `workspace/bff/generate_system.py`):
+
+- an operation that sets its own `x-brrtrouter-stack-size` keeps it;
+- a sub-spec without a root value adds nothing, so its operations still fall back to the BFF root, then the runtime default;
+- the BFF root (or a suite config's `metadata.extensions`) no longer applies to operations of a sub-spec that sets
+  its own root value. That is a behaviour change for a BFF whose root was meant to override its services.
+
+Tests: `tooling/tests/test_bff.py` (`test_merge_*stack_size*`), `tooling/tests/workspace/test_bff_generate_system.py`
+(`TestGenerateSystemStackSize`).
 
 ## Proxy response headers (duplicate Content-Length)
 

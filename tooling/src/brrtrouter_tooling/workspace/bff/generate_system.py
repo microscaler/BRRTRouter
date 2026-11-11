@@ -16,6 +16,7 @@ from brrtrouter_tooling.bff.merge import (
     PREFIXED_COMPONENT_KINDS,
     merge_named_components,
     prefix_named_components,
+    with_document_stack_size,
 )
 
 
@@ -221,6 +222,8 @@ def _merge_one_sub_service(
                         "trace",
                     ):
                         op = path_def[m]
+                        if isinstance(op, dict):
+                            op = path_def[m] = with_document_stack_size(op, spec)
                         if isinstance(op, dict) and "x-service" not in op:
                             op["x-service"] = sname
                             op["x-service-base-path"] = cfg["base_path"]

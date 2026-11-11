@@ -510,3 +510,9 @@ Hauliage Phase 3 unblockers for Vite dev proxy and frontend-aligned BFF routes.
 - `detect_controller_kind`: a module with `pub fn handle_raw(HandlerRequest) -> HandlerResponse` is registered
   untyped with `handle_raw`; untyped arms call the function directly and panic when the handler cannot start.
 - [`topics/impl-controller-lifecycle-rollout.md`](./topics/impl-controller-lifecycle-rollout.md#controller-kinds-in-impl_registryrs-2026-11-11).
+
+## [2026-11-11] feature | BFF merge carries sub-spec stack sizes onto operations
+- `bff.merge.with_document_stack_size`: a sub-spec's root `x-brrtrouter-stack-size` is copied onto its operations
+  in both merge paths (suite config and `workspace/bff/generate_system.py`); an operation's own value wins.
+- [`topics/bff-gateway-merge-and-proxy-headers.md`](./topics/bff-gateway-merge-and-proxy-headers.md#handler-stack-size-through-the-merge-2026-11-11),
+  [`topics/handler-stack-memory.md`](./topics/handler-stack-memory.md#sizing-handlers-from-the-spec-srchandler_stackrs).
