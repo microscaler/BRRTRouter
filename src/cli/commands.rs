@@ -204,7 +204,7 @@ pub enum Commands {
     /// Input, for one service: `[{"handler": "list_a", "peak_bytes": 65536, "samples": 1000}]`. Output: a table
     /// and a unified diff.
     StackSizes {
-        /// Measurements: a JSON array of `{"handler", "peak_bytes", "samples"}` objects, one per handler
+        /// Measurements: a JSON array of objects with `handler`, `peak_bytes` and `samples`, one per handler
         #[arg(long)]
         measurements: PathBuf,
         /// The service's OpenAPI spec (for `--target suite-config`, the generated BFF spec)

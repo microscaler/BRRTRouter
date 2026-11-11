@@ -236,6 +236,32 @@ fn indent(line: &str) -> usize {
     line.len() - line.trim_start().len()
 }
 
+/// The `# comment` after the scalar on a block-style `key: value` line (from `#`), if any; a quoted scalar is
+/// skipped first, so a `#` inside it is not a comment.
+fn trailing_comment(value: &str) -> Option<&str> {
+    let v = value.trim_start();
+    let rest = ['"', '\'']
+        .into_iter()
+        .find_map(|q| {
+            let inner = v.strip_prefix(q)?;
+            Some(inner.find(q).map_or("", |end| &inner[end + 1..]))
+        })
+        .map_or(v, |rest| rest);
+    rest.char_indices()
+        .find(|&(j, c)| c == '#' && rest[..j].ends_with([' ', '\t']))
+        .map(|(j, _)| &rest[j..])
+}
+
+/// The lines of the top-level `paths:` block, as a range of line indexes.
+fn paths_block(lines: &[&str]) -> Option<std::ops::Range<usize>> {
+    let start = lines.iter().position(|l| l.trim_end() == "paths:")? + 1;
+    let len = lines[start..]
+        .iter()
+        .take_while(|l| l.trim().is_empty() || indent(l) > 0 || l.starts_with('#'))
+        .count();
+    Some(start..start + len)
+}
+
 /// The scalar on a block-style `key: value` line: quoted (`"a"`, `'a'`) or plain, without a trailing `# comment`.
 fn plain_scalar(value: &str) -> &str {
     let v = value.trim_start();
@@ -253,17 +279,24 @@ fn plain_scalar(value: &str) -> &str {
 
 /// Set `x-brrtrouter-stack-size: <value>` on the operation whose `operationId` is `op_id`, editing the YAML text so
 /// comments and layout are kept: the key is replaced when the operation has it (keeping a trailing comment), else
-/// added after `operationId`. `None` unless exactly one block-style `operationId: <op_id>` line is found: a second
-/// one (an example under `components`, say) would make the edit ambiguous.
+/// added after `operationId`. Only the top-level `paths:` block is searched, so an example elsewhere (under
+/// `components`, say) is never edited. `None` unless exactly one block-style `operationId: <op_id>` line is found
+/// there: none (a flow-style operation, `get: { operationId: ... }`) or several would make the edit unsafe.
 #[must_use]
 pub fn set_in_text(text: &str, op_id: &str, value: &str) -> Option<String> {
     let lines: Vec<&str> = text.lines().collect();
-    let mut found = lines.iter().enumerate().filter(|(_, l)| {
-        l.trim_start()
-            .strip_prefix("operationId:")
-            .map(plain_scalar)
-            == Some(op_id)
-    });
+    let block = paths_block(&lines)?;
+    let mut found = lines
+        .iter()
+        .enumerate()
+        .skip(block.start)
+        .take(block.len())
+        .filter(|(_, l)| {
+            l.trim_start()
+                .strip_prefix("operationId:")
+                .map(plain_scalar)
+                == Some(op_id)
+        });
     let (at, _) = found.next()?;
     if found.next().is_some() {
         return None;
@@ -279,13 +312,7 @@ pub fn set_in_text(text: &str, op_id: &str, value: &str) -> Option<String> {
     match (start..end).find(|&i| indent(lines[i]) == ind && lines[i].trim_start().starts_with(&key))
     {
         Some(i) => {
-            let old = lines[i].trim_start()[key.len()..].trim_start();
-            let comment = (!old.starts_with(['"', '\''])).then(|| {
-                old.char_indices()
-                    .find(|&(j, c)| c == '#' && old[..j].ends_with([' ', '\t']))
-                    .map(|(j, _)| &old[j..])
-            });
-            out[i] = match comment.flatten() {
+            out[i] = match trailing_comment(&lines[i].trim_start()[key.len()..]) {
                 Some(c) => format!("{new_line} {c}"),
                 None => new_line,
             };
@@ -540,7 +567,8 @@ impl Report {
         out
     }
 
-    /// Write the edited files: each is first written in full beside its destination, and only once all are
+    /// Write the edited files: each is first written in full to a new uniquely named file beside its destination
+    /// (created exclusively, so nothing existing is truncated), and only once all are
     /// written are they renamed over the originals, so a failed write leaves every spec as it was. A failure
     /// between two renames can still leave some files updated and others not; the error names the file.
     ///
@@ -551,11 +579,23 @@ impl Report {
         let mut staged: Vec<(PathBuf, &Path)> = Vec::new();
         let result = (|| -> anyhow::Result<()> {
             for (path, (_, new)) in &self.edits {
+                use std::io::Write as _;
                 let mut name = path.file_name().unwrap_or_default().to_os_string();
-                name.push(".stack-sizes.tmp");
+                let nanos = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0, |d| d.as_nanos());
+                name.push(format!(".stack-sizes.{}.{nanos}.tmp", std::process::id()));
                 let tmp = path.with_file_name(name);
-                std::fs::write(&tmp, new).map_err(|e| anyhow::anyhow!("{}: {e}", tmp.display()))?;
-                staged.push((tmp, path));
+                // create_new: never truncate or follow an existing file (or symlink) at that path.
+                let mut f = std::fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(&tmp)
+                    .map_err(|e| anyhow::anyhow!("{}: {e}", tmp.display()))?;
+                staged.push((tmp.clone(), path));
+                f.write_all(new.as_bytes())
+                    .and_then(|()| f.sync_all())
+                    .map_err(|e| anyhow::anyhow!("{}: {e}", tmp.display()))?;
             }
             Ok(())
         })();
@@ -717,8 +757,15 @@ paths:
         let mut r = rules();
         r.round = 0;
         assert!(r.validate().is_err());
-        let twice = format!("{SPEC}components:\n  examples:\n    x:\n      operationId: list_a\n");
+        let twice = format!("{SPEC}  /c:\n    get:\n      operationId: list_a\n");
         assert!(set_in_text(&twice, "list_a", "96KiB").is_none());
+        let example =
+            format!("{SPEC}components:\n  examples:\n    x:\n      operationId: list_a\n");
+        let out = set_in_text(&example, "list_a", "96KiB").unwrap();
+        assert!(
+            out.ends_with("    x:\n      operationId: list_a\n"),
+            "{out}"
+        );
         let other = SPEC.replace(
             "x-brrtrouter-stack-size: 64KiB # hand-set",
             "x-stack-size: 80KiB",
@@ -734,6 +781,70 @@ paths:
         let ms = [m("list_a", 1, 1), m("list_a", 2, 2)];
         let err = plan(&ms, &spec, &rules(), StackSizeTarget::Spec, None).unwrap_err();
         assert!(err.to_string().contains("more than one"), "{err}");
+    }
+
+    #[test]
+    fn comments_after_quoted_values_flow_style_and_key_precedence() {
+        for (old, comment) in [
+            ("\"64KiB\" # hand-set", Some("# hand-set")),
+            ("'64KiB' # hand-set", Some("# hand-set")),
+            ("\"a#b\"", None),
+            ("64KiB # hand-set", Some("# hand-set")),
+            ("64KiB", None),
+        ] {
+            assert_eq!(trailing_comment(old), comment, "{old}");
+        }
+        let quoted = SPEC.replace("64KiB # hand-set", "\"64KiB\" # hand-set");
+        let out = set_in_text(&quoted, "make_b", "128KiB").unwrap();
+        assert!(
+            out.contains("      x-brrtrouter-stack-size: \"128KiB\" # hand-set\n"),
+            "{out}"
+        );
+        let flow = "openapi: 3.1.0\ncomponents:\n  examples:\n    e:\n      value:\n        operationId: list_a\npaths:\n  /a:\n    get: { operationId: list_a, responses: {} }\n";
+        assert!(set_in_text(flow, "list_a", "96KiB").is_none());
+        let both = SPEC.replace(
+            "x-brrtrouter-stack-size: 64KiB # hand-set",
+            "x-x-brrtrouter-stack-size: 96KiB\n      x-stack-size: 80KiB",
+        );
+        let (ops, _) = operations(&serde_yaml::from_str(&both).unwrap());
+        assert_eq!(
+            ops.iter().find(|o| o.handler == "make_b").unwrap().own,
+            Some(80 * 1024)
+        );
+        let xx = SPEC.replace(
+            "x-brrtrouter-stack-size: 64KiB # hand-set",
+            "x-x-brrtrouter-stack-size: 96KiB",
+        );
+        let (ops, _) = operations(&serde_yaml::from_str(&xx).unwrap());
+        assert_eq!(
+            ops.iter().find(|o| o.handler == "make_b").unwrap().own,
+            Some(96 * 1024)
+        );
+    }
+
+    #[test]
+    fn write_stages_new_files_and_a_failed_stage_changes_nothing() {
+        let d = temp("write");
+        let a = d.join("a.yaml");
+        std::fs::write(&a, "old a\n").unwrap();
+        let mut report = Report::default();
+        report
+            .edits
+            .insert(a.clone(), ("old a\n".into(), "new a\n".into()));
+        report
+            .edits
+            .insert(d.join("missing/b.yaml"), (String::new(), "new b\n".into()));
+        assert!(report.write().is_err());
+        assert_eq!(std::fs::read_to_string(&a).unwrap(), "old a\n");
+        let names: Vec<_> = std::fs::read_dir(&d)
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(names.len(), 1, "{names:?}");
+        report.edits.remove(&d.join("missing/b.yaml"));
+        report.write().unwrap();
+        assert_eq!(std::fs::read_to_string(&a).unwrap(), "new a\n");
+        assert_eq!(std::fs::read_dir(&d).unwrap().count(), 1);
     }
 
     fn temp(name: &str) -> PathBuf {
