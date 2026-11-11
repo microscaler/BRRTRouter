@@ -708,39 +708,45 @@ fn lint_schema_ref(
     spec: &OpenApiV3Spec,
     issues: &mut Vec<LintIssue>,
     location: &str,
-    schema_ref: &oas3::spec::ObjectOrReference<oas3::spec::ObjectSchema>,
+    schema_ref: &oas3::spec::Schema,
     defined_schemas: &HashSet<String>,
 ) {
     match schema_ref {
-        oas3::spec::ObjectOrReference::Object(schema) => {
-            lint_schema_object(spec, issues, location, schema, defined_schemas);
+        oas3::spec::Schema::Boolean(b) => {
+            // a boolean schema (true/false) has nothing to lint
+            let _ = b;
         }
-        oas3::spec::ObjectOrReference::Ref { ref_path, .. } => {
-            // Check if $ref resolves
-            if let Some(name) = ref_path.strip_prefix("#/components/schemas/") {
-                if !defined_schemas.contains(name) {
-                    issues.push(
-                        LintIssue::new(
-                            location,
-                            LintSeverity::Error,
-                            "missing_schema_ref",
-                            format!(
-                                "Schema reference '{}' not found in components.schemas",
-                                name
-                            ),
-                        )
-                        .with_suggestion(format!("Add '{}' to components.schemas", name)),
-                    );
-                }
-            } else {
-                issues.push(LintIssue::new(
-                    location,
-                    LintSeverity::Error,
-                    "invalid_schema_ref",
-                    format!("Invalid schema $ref path: {}", ref_path),
-                ));
+        oas3::spec::Schema::Object(o) => match o.as_ref() {
+            oas3::spec::ObjectOrReference::Object(schema) => {
+                lint_schema_object(spec, issues, location, schema, defined_schemas);
             }
-        }
+            oas3::spec::ObjectOrReference::Ref { ref_path, .. } => {
+                // Check if $ref resolves
+                if let Some(name) = ref_path.strip_prefix("#/components/schemas/") {
+                    if !defined_schemas.contains(name) {
+                        issues.push(
+                            LintIssue::new(
+                                location,
+                                LintSeverity::Error,
+                                "missing_schema_ref",
+                                format!(
+                                    "Schema reference '{}' not found in components.schemas",
+                                    name
+                                ),
+                            )
+                            .with_suggestion(format!("Add '{}' to components.schemas", name)),
+                        );
+                    }
+                } else {
+                    issues.push(LintIssue::new(
+                        location,
+                        LintSeverity::Error,
+                        "invalid_schema_ref",
+                        format!("Invalid schema $ref path: {}", ref_path),
+                    ));
+                }
+            }
+        },
     }
 }
 
@@ -749,19 +755,25 @@ fn lint_schema(
     spec: &OpenApiV3Spec,
     issues: &mut Vec<LintIssue>,
     schema_name: &str,
-    schema_ref: &oas3::spec::ObjectOrReference<oas3::spec::ObjectSchema>,
+    schema_ref: &oas3::spec::Schema,
     defined_schemas: &HashSet<String>,
 ) {
     // For schemas defined in components, we don't have path context
     // but we can still show it's a schema definition issue
     let location = format!("schema:{} (components.schemas)", schema_name);
     match schema_ref {
-        oas3::spec::ObjectOrReference::Object(schema) => {
-            lint_schema_object(spec, issues, &location, schema, defined_schemas);
+        oas3::spec::Schema::Boolean(b) => {
+            // a boolean schema (true/false) has nothing to lint
+            let _ = b;
         }
-        oas3::spec::ObjectOrReference::Ref { ref_path: _, .. } => {
-            lint_schema_ref(spec, issues, &location, schema_ref, defined_schemas);
-        }
+        oas3::spec::Schema::Object(o) => match o.as_ref() {
+            oas3::spec::ObjectOrReference::Object(schema) => {
+                lint_schema_object(spec, issues, &location, schema, defined_schemas);
+            }
+            oas3::spec::ObjectOrReference::Ref { ref_path: _, .. } => {
+                lint_schema_ref(spec, issues, &location, schema_ref, defined_schemas);
+            }
+        },
     }
 }
 

@@ -779,21 +779,13 @@ fn collect_referenced_types(
                 if let Some(components) = spec.components.as_ref() {
                     if let Some(schema_obj) = components.schemas.get(schema_name) {
                         match schema_obj {
-                            oas3::spec::ObjectOrReference::Object(obj) => {
-                                let json = serde_json::to_value(obj).unwrap_or_default();
-                                process_schema_type_with_spec(
-                                    schema_name,
-                                    &json,
-                                    types,
-                                    Some(spec),
-                                );
+                            oas3::spec::Schema::Boolean(b) => {
+                                // a boolean schema (true/false) has no Rust type to generate
+                                let _ = b;
                             }
-                            oas3::spec::ObjectOrReference::Ref {
-                                ref_path: nested_ref,
-                                ..
-                            } => {
-                                if let Some(resolved) = resolve_schema_ref(spec, nested_ref) {
-                                    let json = serde_json::to_value(resolved).unwrap_or_default();
+                            oas3::spec::Schema::Object(o) => match o.as_ref() {
+                                oas3::spec::ObjectOrReference::Object(obj) => {
+                                    let json = serde_json::to_value(obj).unwrap_or_default();
                                     process_schema_type_with_spec(
                                         schema_name,
                                         &json,
@@ -801,7 +793,22 @@ fn collect_referenced_types(
                                         Some(spec),
                                     );
                                 }
-                            }
+                                oas3::spec::ObjectOrReference::Ref {
+                                    ref_path: nested_ref,
+                                    ..
+                                } => {
+                                    if let Some(resolved) = resolve_schema_ref(spec, nested_ref) {
+                                        let json =
+                                            serde_json::to_value(resolved).unwrap_or_default();
+                                        process_schema_type_with_spec(
+                                            schema_name,
+                                            &json,
+                                            types,
+                                            Some(spec),
+                                        );
+                                    }
+                                }
+                            },
                         }
                     }
                 }
@@ -1236,18 +1243,24 @@ pub fn collect_component_schemas(
     if let Some(components) = spec.components.as_ref() {
         for (name, schema) in &components.schemas {
             match schema {
-                oas3::spec::ObjectOrReference::Object(obj) => {
-                    let json = serde_json::to_value(obj).unwrap_or_default();
-                    // Pass spec context to recursively collect referenced types
-                    process_schema_type_with_spec(name, &json, &mut types, Some(&spec));
+                oas3::spec::Schema::Boolean(b) => {
+                    // a boolean schema (true/false) has no Rust type to generate
+                    let _ = b;
                 }
-                oas3::spec::ObjectOrReference::Ref { ref_path, .. } => {
-                    if let Some(resolved) = resolve_schema_ref(&spec, ref_path) {
-                        let json = serde_json::to_value(resolved).unwrap_or_default();
+                oas3::spec::Schema::Object(o) => match o.as_ref() {
+                    oas3::spec::ObjectOrReference::Object(obj) => {
+                        let json = serde_json::to_value(obj).unwrap_or_default();
                         // Pass spec context to recursively collect referenced types
                         process_schema_type_with_spec(name, &json, &mut types, Some(&spec));
                     }
-                }
+                    oas3::spec::ObjectOrReference::Ref { ref_path, .. } => {
+                        if let Some(resolved) = resolve_schema_ref(&spec, ref_path) {
+                            let json = serde_json::to_value(resolved).unwrap_or_default();
+                            // Pass spec context to recursively collect referenced types
+                            process_schema_type_with_spec(name, &json, &mut types, Some(&spec));
+                        }
+                    }
+                },
             }
         }
     }

@@ -40,8 +40,15 @@ pub fn resolve_schema_ref<'a>(
             .schemas
             .get(name)
             .and_then(|schema_ref| match schema_ref {
-                ObjectOrReference::Object(schema) => Some(schema),
-                _ => None,
+                oas3::spec::Schema::Boolean(b) => {
+                    // a boolean schema is not an object schema
+                    let _ = b;
+                    None
+                }
+                oas3::spec::Schema::Object(o) => match o.as_ref() {
+                    ObjectOrReference::Object(schema) => Some(schema),
+                    _ => None,
+                },
             })
     } else {
         None
@@ -382,28 +389,31 @@ pub fn extract_request_body_details(
             .content
             .get("application/json")
             .and_then(|media| match media.schema.as_ref()? {
-                ObjectOrReference::Object(schema_obj) => serde_json::to_value(schema_obj).ok(),
-                ObjectOrReference::Ref { ref_path, .. } => {
-                    if ref_path.starts_with("http://") || ref_path.starts_with("https://") {
-                        issues.push(ValidationIssue::new(
-                            "requestBody.schema".to_string(),
-                            "UnsupportedExternalRef",
-                            format!("external schema $ref is unsupported: {ref_path}"),
-                        ));
-                        return None;
-                    }
-                    match resolve_schema_ref(spec, ref_path) {
-                        Some(s) => serde_json::to_value(s).ok(),
-                        None => {
+                oas3::spec::Schema::Boolean(b) => Some(serde_json::Value::Bool(b.0)),
+                oas3::spec::Schema::Object(o) => match o.as_ref() {
+                    ObjectOrReference::Object(schema_obj) => serde_json::to_value(schema_obj).ok(),
+                    ObjectOrReference::Ref { ref_path, .. } => {
+                        if ref_path.starts_with("http://") || ref_path.starts_with("https://") {
                             issues.push(ValidationIssue::new(
                                 "requestBody.schema".to_string(),
-                                "UnresolvableSchemaRef",
-                                format!("dangling schema $ref: {ref_path}"),
+                                "UnsupportedExternalRef",
+                                format!("external schema $ref is unsupported: {ref_path}"),
                             ));
-                            None
+                            return None;
+                        }
+                        match resolve_schema_ref(spec, ref_path) {
+                            Some(s) => serde_json::to_value(s).ok(),
+                            None => {
+                                issues.push(ValidationIssue::new(
+                                    "requestBody.schema".to_string(),
+                                    "UnresolvableSchemaRef",
+                                    format!("dangling schema $ref: {ref_path}"),
+                                ));
+                                None
+                            }
                         }
                     }
-                }
+                },
             });
     if let Some(ref mut val) = schema {
         expand_schema_refs(spec, val);
@@ -521,11 +531,14 @@ pub fn extract_response_schema_and_example_with_issues(
                     None => None,
                 };
 
-                let mut schema = match media.schema.as_ref() {
-                    Some(ObjectOrReference::Object(schema_obj)) => {
+                let mut schema = match media.schema.as_ref().map(|s| match s {
+                    oas3::spec::Schema::Object(o) => Ok(o.as_ref()),
+                    oas3::spec::Schema::Boolean(b) => Err(b.0),
+                }) {
+                    Some(Ok(ObjectOrReference::Object(schema_obj))) => {
                         serde_json::to_value(schema_obj).ok()
                     }
-                    Some(ObjectOrReference::Ref { ref_path, .. }) => {
+                    Some(Ok(ObjectOrReference::Ref { ref_path, .. })) => {
                         match resolve_schema_ref(spec, ref_path) {
                             Some(s) => serde_json::to_value(s).ok(),
                             None => {
@@ -538,6 +551,7 @@ pub fn extract_response_schema_and_example_with_issues(
                             }
                         }
                     }
+                    Some(Err(b)) => Some(serde_json::Value::Bool(b)),
                     None => None,
                 };
                 if let Some(ref mut val) = schema {
@@ -713,9 +727,12 @@ pub fn extract_parameters_with_issues(
 
         if let Some(param) = resolved {
             let schema = param.schema.as_ref().and_then(|s| match s {
-                ObjectOrReference::Object(obj) => serde_json::to_value(obj).ok(),
-                ObjectOrReference::Ref { ref_path, .. } => resolve_schema_ref(spec, ref_path)
-                    .and_then(|sch| serde_json::to_value(sch).ok()),
+                oas3::spec::Schema::Boolean(b) => Some(serde_json::Value::Bool(b.0)),
+                oas3::spec::Schema::Object(o) => match o.as_ref() {
+                    ObjectOrReference::Object(obj) => serde_json::to_value(obj).ok(),
+                    ObjectOrReference::Ref { ref_path, .. } => resolve_schema_ref(spec, ref_path)
+                        .and_then(|sch| serde_json::to_value(sch).ok()),
+                },
             });
 
             out.push(ParameterMeta {
