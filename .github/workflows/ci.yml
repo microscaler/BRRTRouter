@@ -303,18 +303,20 @@ jobs:
           mkdir -p build_artifacts
           cp target/x86_64-unknown-linux-musl/release/pet_store build_artifacts/
 
+      # Corepack first: setup-node cache yarn runs yarn cache dir, which fails under the runner global
+      # Yarn 1.22 once sample-ui/package.json pins packageManager yarn@4.4.1.
+      - name: Enable Corepack and use project Yarn version
+        run: |
+          corepack enable
+          corepack prepare yarn@4.4.1 --activate
+          yarn --version
+
       - name: Setup Node.js and Yarn
         uses: actions/setup-node@v7
         with:
           node-version: '22'
           cache: 'yarn'
           cache-dependency-path: 'sample-ui/yarn.lock'
-
-      - name: Enable Corepack and use project Yarn version
-        run: |
-          corepack enable
-          corepack prepare yarn@4.4.1 --activate
-          yarn --version
 
       - name: Build sample UI (if exists)
         run: |
