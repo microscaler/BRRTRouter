@@ -42,6 +42,23 @@ PriceWhisperer's market wedge (30 Aug 2026) was a connection coroutine overflowi
 64-slot block of unboxed `HandlerRequest`s on its stack (gone with the boxed channels, but unmeasured), so its value
 is left alone.
 
+## Sizes from measurements: `brrtrouter-gen stack-sizes` (2026-11-11)
+
+`brrtrouter-gen stack-sizes --measurements m.json --spec openapi.yaml [--write]` turns measured peaks into
+`x-brrtrouter-stack-size` per operation (`src/generator/measured_stacks.rs`). Input is one service's
+`[{"handler", "peak_bytes", "samples"}]`, e.g. `max_over_time(brrtrouter_handler_stack_peak_bytes[14d])` and
+`increase(brrtrouter_handler_stack_used_bytes_count[14d])`; the command reads only the file.
+
+- `suggested = clamp(round_up(peak × k, --round 16KiB), --floor 64KiB, --max)`, `k` = `--safety 1.5`, or
+  `--low-sample-safety 2.0` below `--min-samples 1000`;
+- changed only when `|suggested − current| > --hysteresis 0.25 × current` or `current / peak < 1.5`; never lowered
+  below `--min-samples`; operations without measurements are left alone; a suggestion at `--max` (default
+  `BRRTR_STACK_MAX_BYTES`, else 256 KiB) is flagged, since the runtime clamps to it;
+- `current` is what `handler_stack::resolve` would take from the spec (operation, root, else 256 KiB);
+- without `--write`: a table and a unified diff; with it, the YAML text is edited in place (comments kept);
+- `--target suite-config --suite-config bff-suite-config.yaml`: for a generated BFF spec, writes into the sub-spec
+  each operation came from (`x-service` → the suite config's `spec_path`), since the BFF spec is regenerated.
+
 ## Coroutine names
 
 Every handler coroutine is named after its handler (`register_handler` and `spawn_typed` used to spawn unnamed

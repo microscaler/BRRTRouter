@@ -522,3 +522,8 @@ Hauliage Phase 3 unblockers for Vite dev proxy and frontend-aligned BFF routes.
   sibling checkout at that rev); `BRRTROUTER_GEN` / `BRRTROUTER_GEN_LOCAL=1` for deliberate local builds.
 - `regen-impl-registry --apply`: `rustfmt --edition` on the written files, no workspace needed.
 - [`topics/generator-cli-and-askama.md`](./topics/generator-cli-and-askama.md#which-generator-runs-and-formatting-2026-11-11).
+
+## [2026-11-11] feature | brrtrouter-gen stack-sizes: handler stack sizes from measured peaks
+- `generator::measured_stacks`: suggestion, hysteresis and low-sample rules, in-place YAML edits, unified diff,
+  `--target suite-config` for BFF sub-specs.
+- [`topics/handler-stack-memory.md`](./topics/handler-stack-memory.md#sizes-from-measurements-brrtrouter-gen-stack-sizes-2026-11-11).
