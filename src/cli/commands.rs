@@ -326,7 +326,17 @@ pub fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
                 !apply,
             )?;
             if *apply {
-                crate::generator::format_project(output.as_path())?;
+                // rustfmt the files written, at the crate's edition: `cargo fmt` needs the crate inside its
+                // workspace, and left the registry unformatted when it was not
+                let edition = crate::generator::crate_edition(output.as_path());
+                let src = output.join("src");
+                crate::generator::format_file(&src.join("impl_registry.rs"), &edition)?;
+                if *regen_mod {
+                    crate::generator::format_file(
+                        &src.join("controllers").join("mod.rs"),
+                        &edition,
+                    )?;
+                }
                 println!(
                     "✅ regen-impl-registry applied ({} controller(s))",
                     plan.registry_entries.len()

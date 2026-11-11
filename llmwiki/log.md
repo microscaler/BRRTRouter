@@ -516,3 +516,9 @@ Hauliage Phase 3 unblockers for Vite dev proxy and frontend-aligned BFF routes.
   in both merge paths (suite config and `workspace/bff/generate_system.py`); an operation's own value wins.
 - [`topics/bff-gateway-merge-and-proxy-headers.md`](./topics/bff-gateway-merge-and-proxy-headers.md#handler-stack-size-through-the-merge-2026-11-11),
   [`topics/handler-stack-memory.md`](./topics/handler-stack-memory.md#sizing-handlers-from-the-spec-srchandler_stackrs).
+
+## [2026-11-11] feature | tooling generates with the pinned brrtrouter-gen; regen-impl-registry rustfmt
+- `gen.brrtrouter.generator_command`: the generator at the consumer's pinned BRRTRouter rev (cached install, or the
+  sibling checkout at that rev); `BRRTROUTER_GEN` / `BRRTROUTER_GEN_LOCAL=1` for deliberate local builds.
+- `regen-impl-registry --apply`: `rustfmt --edition` on the written files, no workspace needed.
+- [`topics/generator-cli-and-askama.md`](./topics/generator-cli-and-askama.md#which-generator-runs-and-formatting-2026-11-11).
