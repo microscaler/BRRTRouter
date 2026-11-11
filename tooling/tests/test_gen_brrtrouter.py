@@ -142,3 +142,128 @@ class TestCallBrrtrouterGenerate:
             cmd = run.call_args[0][0]
             assert "--package-name" in cmd
             assert "acme_accounting_financial_reports_gen" in cmd
+
+
+PIN = "0123456789abcdef0123456789abcdef01234567"
+
+
+def _consumer(base: Path, rev: str | None = PIN) -> Path:
+    """A consumer project whose microservices/Cargo.toml pins BRRTRouter at `rev`."""
+    root = base / "consumer"
+    (root / "microservices").mkdir(parents=True)
+    if rev:
+        (root / "microservices" / "Cargo.toml").write_text(
+            "[workspace.dependencies]\n"
+            f'brrtrouter = {{ git = "https://github.com/microscaler/BRRTRouter.git", rev = "{rev}" }}\n'
+        )
+    return root
+
+
+def _checkout(base: Path) -> Path:
+    """A sibling BRRTRouter git checkout."""
+    co = base / "BRRTRouter"
+    (co / ".git").mkdir(parents=True)
+    (co / "Cargo.toml").write_text("[package]\n")
+    return co
+
+
+class TestGeneratorCommand:
+    """generator_command: the generator at the consumer's pinned BRRTRouter rev."""
+
+    @pytest.fixture(autouse=True)
+    def _env(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        for k in ("BRRTROUTER_GEN", "BRRTROUTER_GEN_LOCAL"):
+            monkeypatch.delenv(k, raising=False)
+        monkeypatch.setenv("BRRTROUTER_GEN_CACHE", str(tmp_path / "cache"))
+
+    def _installed(self, tmp_path: Path) -> Path:
+        return tmp_path / "cache" / PIN / "bin" / "brrtrouter-gen"
+
+    def test_reads_the_pinned_rev(self, tmp_path: Path) -> None:
+        from brrtrouter_tooling.gen.brrtrouter import pinned_rev
+
+        assert pinned_rev(_consumer(tmp_path)) == PIN
+        assert pinned_rev(_consumer(tmp_path / "unpinned", rev=None)) is None
+
+    def test_uses_the_generator_installed_at_the_pin(self, tmp_path: Path) -> None:
+        from brrtrouter_tooling.gen.brrtrouter import generator_command
+
+        installed = self._installed(tmp_path)
+        installed.parent.mkdir(parents=True)
+        installed.touch()
+        with patch("brrtrouter_tooling.gen.brrtrouter.subprocess.run") as run:
+            assert generator_command(_consumer(tmp_path)) == [str(installed)]
+            run.assert_not_called()
+
+    def test_uses_the_checkout_when_it_is_at_the_pin(self, tmp_path: Path) -> None:
+        from brrtrouter_tooling.gen.brrtrouter import generator_command
+
+        co = _checkout(tmp_path)
+        with patch("brrtrouter_tooling.gen.brrtrouter.subprocess.run") as run:
+            run.return_value = MagicMock(returncode=0, stdout=PIN + "\n")
+            cmd = generator_command(_consumer(tmp_path))
+        assert cmd[:2] == ["cargo", "run"]
+        assert str(co / "Cargo.toml") in cmd
+
+    def test_installs_at_the_pin_when_the_checkout_is_at_another_rev(self, tmp_path: Path) -> None:
+        from brrtrouter_tooling.gen.brrtrouter import generator_command
+
+        _checkout(tmp_path)
+        installed = self._installed(tmp_path)
+
+        def fake(cmd: list[str], **_kw: object) -> MagicMock:
+            if cmd[0] == "git":
+                return MagicMock(returncode=0, stdout="f" * 40)
+            assert cmd[:2] == ["cargo", "install"]
+            assert cmd[cmd.index("--rev") + 1] == PIN
+            installed.parent.mkdir(parents=True)
+            installed.touch()
+            return MagicMock(returncode=0)
+
+        with patch("brrtrouter_tooling.gen.brrtrouter.subprocess.run", side_effect=fake):
+            assert generator_command(_consumer(tmp_path)) == [str(installed)]
+
+    def test_refuses_another_rev_when_it_cannot_install(self, tmp_path: Path) -> None:
+        from brrtrouter_tooling.gen.brrtrouter import generator_command
+
+        _checkout(tmp_path)
+
+        def fake(cmd: list[str], **_kw: object) -> MagicMock:
+            if cmd[0] == "git":
+                return MagicMock(returncode=0, stdout="f" * 40)
+            return MagicMock(returncode=101)
+
+        with (
+            patch("brrtrouter_tooling.gen.brrtrouter.subprocess.run", side_effect=fake),
+            pytest.raises(RuntimeError, match="BRRTROUTER_GEN_LOCAL"),
+        ):
+            generator_command(_consumer(tmp_path))
+
+    def test_the_local_override_uses_the_checkout_at_any_rev(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from brrtrouter_tooling.gen.brrtrouter import generator_command
+
+        co = _checkout(tmp_path)
+        monkeypatch.setenv("BRRTROUTER_GEN_LOCAL", "1")
+        with patch("brrtrouter_tooling.gen.brrtrouter.subprocess.run") as run:
+            cmd = generator_command(_consumer(tmp_path))
+            run.assert_not_called()
+        assert cmd[:2] == ["cargo", "run"]
+        assert str(co / "Cargo.toml") in cmd
+
+    def test_generate_runs_the_pinned_generator(self, tmp_path: Path) -> None:
+        from brrtrouter_tooling.gen.brrtrouter import call_brrtrouter_generate
+
+        installed = self._installed(tmp_path)
+        installed.parent.mkdir(parents=True)
+        installed.touch()
+        with patch("brrtrouter_tooling.gen.brrtrouter.subprocess.run") as run:
+            run.return_value = MagicMock(returncode=0)
+            call_brrtrouter_generate(
+                spec_path=tmp_path / "openapi.yaml",
+                output_dir=tmp_path / "gen",
+                project_root=_consumer(tmp_path),
+            )
+            cmd = run.call_args[0][0]
+        assert cmd[:2] == [str(installed), "generate"]

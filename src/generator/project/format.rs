@@ -27,6 +27,58 @@ pub fn format_project(dir: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Format one generated file with `rustfmt --edition <edition>`. Unlike [`format_project`] this needs no Cargo
+/// workspace around the file, so the output is the same wherever the crate sits (outside its workspace `cargo fmt`
+/// failed and the file was left unformatted).
+///
+/// # Errors
+///
+/// Returns an error if `rustfmt` fails or is not installed.
+pub fn format_file(file: &Path, edition: &str) -> anyhow::Result<()> {
+    let rustfmt = std::env::var("BRRTR_RUSTFMT_BIN").unwrap_or_else(|_| "rustfmt".to_string());
+    let status = Command::new(rustfmt)
+        .arg("--edition")
+        .arg(edition)
+        .arg(file)
+        .status()?;
+    if !status.success() {
+        anyhow::bail!("rustfmt failed on {}", file.display());
+    }
+    Ok(())
+}
+
+/// The Rust edition of the crate in `crate_dir`: its `package.edition`, or, when it inherits it, the nearest
+/// ancestor's `workspace.package.edition`; 2021 when neither says.
+#[must_use]
+pub fn crate_edition(crate_dir: &Path) -> String {
+    fn manifest(dir: &Path) -> Option<toml::Value> {
+        toml::from_str(&std::fs::read_to_string(dir.join("Cargo.toml")).ok()?).ok()
+    }
+    let dir = crate_dir
+        .canonicalize()
+        .unwrap_or_else(|_| crate_dir.to_path_buf());
+    if let Some(e) = manifest(&dir).as_ref().and_then(|m| {
+        m.get("package")?
+            .get("edition")?
+            .as_str()
+            .map(str::to_string)
+    }) {
+        return e;
+    }
+    dir.ancestors()
+        .skip(1)
+        .find_map(|d| {
+            manifest(d).and_then(|m| {
+                m.get("workspace")?
+                    .get("package")?
+                    .get("edition")?
+                    .as_str()
+                    .map(str::to_string)
+            })
+        })
+        .unwrap_or_else(|| "2021".to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -106,5 +158,67 @@ mod tests {
         // Clean up
         let _ = std::fs::remove_dir_all(&dir);
         assert!(res.is_err());
+    }
+
+    fn temp(name: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!(
+            "brrtr_{name}_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    #[test]
+    fn crate_edition_reads_the_package_then_the_workspace() {
+        let base = temp("edition");
+        let member = base.join("member");
+        fs::create_dir_all(&member).unwrap();
+        fs::write(
+            base.join("Cargo.toml"),
+            "[workspace]\nmembers = [\"member\"]\n[workspace.package]\nedition = \"2024\"\n",
+        )
+        .unwrap();
+        fs::write(
+            member.join("Cargo.toml"),
+            "[package]\nname = \"m\"\nedition.workspace = true\n",
+        )
+        .unwrap();
+        assert_eq!(crate_edition(&member), "2024");
+        fs::write(
+            member.join("Cargo.toml"),
+            "[package]\nname = \"m\"\nedition = \"2018\"\n",
+        )
+        .unwrap();
+        assert_eq!(crate_edition(&member), "2018");
+        fs::remove_file(base.join("Cargo.toml")).unwrap();
+        fs::write(member.join("Cargo.toml"), "[package]\nname = \"m\"\n").unwrap();
+        assert_eq!(crate_edition(&member), "2021");
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn format_file_formats_one_file_outside_any_workspace() {
+        let has_rustfmt = Command::new("rustfmt")
+            .arg("--version")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+        if !has_rustfmt {
+            return;
+        }
+        let dir = temp("format_file");
+        let file = dir.join("impl_registry.rs");
+        fs::write(&file, "fn  main( ){let x=1;}").unwrap();
+        format_file(&file, "2021").unwrap();
+        assert_eq!(
+            fs::read_to_string(&file).unwrap(),
+            "fn main() {\n    let x = 1;\n}\n"
+        );
+        let _ = fs::remove_dir_all(&dir);
     }
 }

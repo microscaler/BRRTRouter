@@ -3,7 +3,7 @@
 - **Status**: `verified`
 - **Source docs**: [`flows/code-generation-flow.md`](../flows/code-generation-flow.md)
 - **Code anchors**: `src/bin/brrtrouter_gen.rs`, `src/generator/`, `src/generator/templates.rs`, `templates/*.txt` (Askama templates for gen crates)
-- **Last updated**: 2026-07-14
+- **Last updated**: 2026-11-11
 
 ## Tier 1 impl commands (2026-07-08)
 
@@ -15,6 +15,25 @@
 | `migrate-main [--apply]` | Collapse legacy `main.rs` to Fix B `RunAppBuilder` |
 
 See [`topics/impl-controller-lifecycle-rollout.md`](../topics/impl-controller-lifecycle-rollout.md) — Fix B complete on all hauliage impls.
+
+## Which generator runs, and formatting (2026-11-11)
+
+`brrtrouter_tooling.gen.brrtrouter.generator_command` picks the `brrtrouter-gen` the tooling runs:
+
+1. `BRRTROUTER_GEN=<binary>`: a deliberate local build.
+2. `BRRTROUTER_GEN_LOCAL=1`: the sibling checkout (`cargo run`), whatever its rev.
+3. The consumer pins `brrtrouter = { git = …, rev = … }` (its `Cargo.toml` or `microservices/Cargo.toml`): the binary
+   at that rev under `BRRTROUTER_GEN_CACHE` (default `~/.cache/brrtrouter-gen/<rev>`); else the sibling checkout when
+   its HEAD is that rev; else `cargo install --locked --git … --rev <rev>` into the cache, refused with an explanation
+   when that fails.
+4. No pin: the sibling checkout, as before.
+
+Until 2026-11-11 the tooling always ran the sibling checkout, so generated code followed whatever that checkout held
+rather than the rev the services compile against.
+
+`regen-impl-registry --apply` formats the files it writes with `rustfmt --edition <crate edition>`
+(`generator::format_file`, `generator::crate_edition`) instead of `cargo fmt`, which needs the crate inside its
+workspace and otherwise left the registry unformatted.
 
 ## What it is
 
