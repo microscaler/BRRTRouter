@@ -395,6 +395,23 @@ def _proxy_operation(
     return op
 
 
+STACK_SIZE_KEY = "x-brrtrouter-stack-size"
+
+
+def _with_document_stack_size(op: dict[str, Any], spec: dict[str, Any]) -> dict[str, Any]:
+    """Carry the sub-spec's document-level handler stack size onto one of its operations.
+
+    BRRTRouter reads ``x-brrtrouter-stack-size`` from the operation first and the spec root second. A BFF
+    merges many sub-specs under one root, so a sub-spec's own root value would otherwise be lost and its
+    operations would fall back to the BFF's root (or the runtime default). An operation that sets its own
+    value keeps it.
+    """
+    size = spec.get(STACK_SIZE_KEY)
+    if size is None or STACK_SIZE_KEY in op:
+        return op
+    return {**op, STACK_SIZE_KEY: size}
+
+
 def _merge_paths(
     sname: str,
     spec: dict[str, Any],
@@ -430,6 +447,7 @@ def _merge_paths(
             op = _proxy_operation(
                 ops[method], sname, base_path, path, downstream_base_path, bff_impl_operations
             )
+            op = _with_document_stack_size(op, spec)
             _register_operation_id(operation_origin, op.get("operationId"), sname, path, method)
             if method in existing:
                 existing_service = (existing.get(method) or {}).get("x-service")

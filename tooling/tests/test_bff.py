@@ -1124,3 +1124,54 @@ def test_openapi31_specs_are_not_rewritten(tmp_path: Path) -> None:
     bff = merge_sub_service_specs({"x": {"base_path": "/api/v1/x", "spec_path": p}})
     # A 3.1 spec is the lint's business (brrtrouter-gen lint flags it), not rewritten silently.
     assert bff["components"]["schemas"]["XA"] == {"type": "string", "nullable": True}
+
+
+def _stack_spec(path: Path, root_size: str | None, ops: dict[str, str | None]) -> Path:
+    """A sub-spec with an optional root x-brrtrouter-stack-size and one GET per entry of ops."""
+    lines = ["openapi: 3.1.0", "info: { title: S, version: 1.0 }"]
+    if root_size is not None:
+        lines.append(f"x-brrtrouter-stack-size: {root_size}")
+    lines.append("paths:")
+    for op_id, size in ops.items():
+        lines += [f"  /{op_id}:", "    get:", f"      operationId: {op_id}"]
+        if size is not None:
+            lines.append(f"      x-brrtrouter-stack-size: {size}")
+        lines.append("      responses: { '200': { description: OK } }")
+    path.write_text("\n".join(lines) + "\n")
+    return path
+
+
+def _op(bff: dict, path: str) -> dict:
+    return bff["paths"][path]["get"]
+
+
+def test_merge_carries_the_document_stack_size_onto_operations(tmp_path: Path) -> None:
+    """A sub-spec's root stack size reaches each of its operations in the BFF; an operation's own value wins."""
+    spec = _stack_spec(tmp_path / "a.yaml", "128KiB", {"plain": None, "deep": "512KiB"})
+    bff = merge_sub_service_specs({"a": {"base_path": "/api/a", "spec_path": spec}})
+    assert _op(bff, "/plain")["x-brrtrouter-stack-size"] == "128KiB"
+    assert _op(bff, "/deep")["x-brrtrouter-stack-size"] == "512KiB"
+    assert "x-brrtrouter-stack-size" not in bff
+
+
+def test_merge_adds_no_stack_size_when_the_sub_spec_has_none(tmp_path: Path) -> None:
+    spec = _stack_spec(tmp_path / "a.yaml", None, {"plain": None, "own": "64KiB"})
+    bff = merge_sub_service_specs({"a": {"base_path": "/api/a", "spec_path": spec}})
+    assert "x-brrtrouter-stack-size" not in _op(bff, "/plain")
+    assert _op(bff, "/own")["x-brrtrouter-stack-size"] == "64KiB"
+
+
+def test_merge_keeps_each_sub_specs_stack_size_apart(tmp_path: Path) -> None:
+    a = _stack_spec(tmp_path / "a.yaml", "64KiB", {"from_a": None})
+    b = _stack_spec(tmp_path / "b.yaml", "192KiB", {"from_b": None})
+    c = _stack_spec(tmp_path / "c.yaml", None, {"from_c": None})
+    bff = merge_sub_service_specs(
+        {
+            "a": {"base_path": "/api/a", "spec_path": a},
+            "b": {"base_path": "/api/b", "spec_path": b},
+            "c": {"base_path": "/api/c", "spec_path": c},
+        }
+    )
+    assert _op(bff, "/from_a")["x-brrtrouter-stack-size"] == "64KiB"
+    assert _op(bff, "/from_b")["x-brrtrouter-stack-size"] == "192KiB"
+    assert "x-brrtrouter-stack-size" not in _op(bff, "/from_c")
