@@ -193,6 +193,21 @@ fn indent(line: &str) -> usize {
     line.len() - line.trim_start().len()
 }
 
+/// The scalar on a block-style `key: value` line: quoted (`"a"`, `'a'`) or plain, without a trailing `# comment`.
+fn plain_scalar(value: &str) -> &str {
+    let v = value.trim_start();
+    for q in ['"', '\''] {
+        if let Some(rest) = v.strip_prefix(q) {
+            return rest.find(q).map_or(rest, |end| &rest[..end]);
+        }
+    }
+    let end = v
+        .char_indices()
+        .find(|&(i, c)| c == '#' && v[..i].ends_with([' ', '\t']))
+        .map_or(v.len(), |(i, _)| i);
+    v[..end].trim()
+}
+
 /// Set `x-brrtrouter-stack-size: <value>` on the operation whose `operationId` is `op_id`, editing the YAML text so
 /// comments and layout are kept: the key is replaced when the operation has it, else added after `operationId`.
 /// `None` when no block-style `operationId: <op_id>` line is found.
@@ -202,7 +217,7 @@ pub fn set_in_text(text: &str, op_id: &str, value: &str) -> Option<String> {
     let at = lines.iter().position(|l| {
         l.trim_start()
             .strip_prefix("operationId:")
-            .map(|v| v.trim().trim_matches(|c| c == '"' || c == '\''))
+            .map(plain_scalar)
             == Some(op_id)
     })?;
     let ind = indent(lines[at]);
@@ -224,55 +239,59 @@ pub fn set_in_text(text: &str, op_id: &str, value: &str) -> Option<String> {
     Some(s)
 }
 
-/// A unified diff of `old` → `new` for edits that replace or insert single lines (what [`set_in_text`] does).
+/// A unified diff of `old` → `new` for edits that replace or insert single lines (what [`set_in_text`] does), with
+/// two lines of context; changes whose context overlaps share a hunk, so `git apply` accepts the result.
 #[must_use]
 pub fn unified_diff(path: &Path, old: &str, new: &str) -> String {
+    const CTX: usize = 2;
     let (a, b): (Vec<&str>, Vec<&str>) = (old.lines().collect(), new.lines().collect());
-    // (old index, new index, removed, added)
-    let mut changes: Vec<(usize, usize, Option<&str>, &str)> = Vec::new();
+    // The aligned lines: ' ' kept, '-' removed, '+' added.
+    let mut ops: Vec<(char, &str)> = Vec::new();
     let (mut i, mut j) = (0, 0);
     while j < b.len() {
         if i < a.len() && a[i] == b[j] {
+            ops.push((' ', a[i]));
             i += 1;
-            j += 1;
         } else if i < a.len() && b.get(j + 1) == Some(&a[i]) {
-            changes.push((i, j, None, b[j]));
-            j += 1;
+            ops.push(('+', b[j]));
         } else {
-            changes.push((i, j, a.get(i).copied(), b[j]));
-            i += 1;
-            j += 1;
+            if let Some(r) = a.get(i).copied() {
+                ops.push(('-', r));
+                i += 1;
+            }
+            ops.push(('+', b[j]));
+        }
+        j += 1;
+    }
+    ops.extend(a[i.min(a.len())..].iter().map(|l| ('-', *l)));
+    // Hunks: ranges of `ops` around the changes, merged when they touch.
+    let mut hunks: Vec<(usize, usize)> = Vec::new();
+    for k in (0..ops.len()).filter(|&k| ops[k].0 != ' ') {
+        let (lo, hi) = (k.saturating_sub(CTX), (k + CTX + 1).min(ops.len()));
+        match hunks.last_mut() {
+            Some(last) if lo <= last.1 => last.1 = hi,
+            _ => hunks.push((lo, hi)),
         }
     }
-    if changes.is_empty() {
+    if hunks.is_empty() {
         return String::new();
     }
+    let count = |ops: &[(char, &str)], side: char| {
+        ops.iter().filter(|(t, _)| *t == ' ' || *t == side).count()
+    };
     let mut out = format!("--- {0}\n+++ {0}\n", path.display());
-    for (i, j, removed, added) in changes {
-        let ctx = 2;
-        let from = i.saturating_sub(ctx);
-        let before = &a[from..i];
-        let after_start = i + usize::from(removed.is_some());
-        let after = &a[after_start.min(a.len())..(after_start + ctx).min(a.len())];
-        let old_len = before.len() + usize::from(removed.is_some()) + after.len();
-        let new_len = before.len() + 1 + after.len();
+    for (lo, hi) in hunks {
+        let (old_len, new_len) = (count(&ops[lo..hi], '-'), count(&ops[lo..hi], '+'));
+        // An empty side starts at the line before (0 at the top), as diff writes it.
+        let start = |side: char, len: usize| count(&ops[..lo], side) + usize::from(len > 0);
         let _ = writeln!(
             out,
-            "@@ -{},{} +{},{} @@",
-            from + 1,
-            old_len,
-            j - before.len() + 1,
-            new_len
+            "@@ -{},{old_len} +{},{new_len} @@",
+            start('-', old_len),
+            start('+', new_len)
         );
-        for l in before {
-            let _ = writeln!(out, " {l}");
-        }
-        if let Some(r) = removed {
-            let _ = writeln!(out, "-{r}");
-        }
-        let _ = writeln!(out, "+{added}");
-        for l in after {
-            let _ = writeln!(out, " {l}");
+        for (t, l) in &ops[lo..hi] {
+            let _ = writeln!(out, "{t}{l}");
         }
     }
     out
@@ -567,6 +586,27 @@ paths:
         assert!(set_in_text(SPEC, "nope", "1KiB").is_none());
         let diff = unified_diff(Path::new("s.yaml"), SPEC, &added);
         assert!(diff.contains("+      x-brrtrouter-stack-size: \"96KiB\""));
+    }
+
+    #[test]
+    fn operation_ids_with_comments_match_and_nearby_changes_share_a_hunk() {
+        assert_eq!(plain_scalar(" list_a # why"), "list_a");
+        assert_eq!(plain_scalar(" 'a#b' # why"), "a#b");
+        assert_eq!(plain_scalar(" \"make_b\""), "make_b");
+        assert_eq!(plain_scalar(" a#b"), "a#b");
+        let commented = SPEC.replace("operationId: list_a", "operationId: list_a # the list op");
+        assert!(set_in_text(&commented, "list_a", "96KiB").is_some());
+        let both = set_in_text(
+            &set_in_text(SPEC, "list_a", "96KiB").unwrap(),
+            "make_b",
+            "128KiB",
+        )
+        .unwrap();
+        let diff = unified_diff(Path::new("s.yaml"), SPEC, &both);
+        assert_eq!(diff.matches("@@ ").count(), 1, "{diff}");
+        assert!(diff.contains("@@ -7,8 +7,9 @@\n"), "{diff}");
+        let body: Vec<&str> = diff.lines().skip(2).collect();
+        assert_eq!(body.len(), 11, "{diff}");
     }
 
     fn temp(name: &str) -> PathBuf {
