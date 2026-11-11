@@ -58,7 +58,7 @@ impl ValidationResult {
 
 /// A single validation error
 #[derive(Serialize, Deserialize, Debug, Clone)]
-#[pyclass]
+#[pyclass(from_py_object)]
 pub struct ValidationError {
     /// Location in the spec where the error occurred (e.g., "/paths/pets/{id}")
     #[pyo3(get)]
