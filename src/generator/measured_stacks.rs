@@ -613,8 +613,10 @@ impl Report {
         let mut staged: Vec<(PathBuf, PathBuf)> = Vec::new();
         let result = (|| -> anyhow::Result<()> {
             for (path, (_, new)) in &self.edits {
-                // A symlinked spec: write its target, and leave the link in place.
-                let dest = std::fs::canonicalize(path).unwrap_or_else(|_| path.clone());
+                // A symlinked spec: write its target, and leave the link in place. Every edited file was read
+                // while planning, so one that no longer resolves (a dangling link, say) is an error.
+                let dest = std::fs::canonicalize(path)
+                    .map_err(|e| anyhow::anyhow!("{}: {e}", path.display()))?;
                 let mut name = dest.file_name().unwrap_or_default().to_os_string();
                 let nanos = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
@@ -949,6 +951,14 @@ paths:
             std::fs::metadata(&real).unwrap().permissions().mode() & 0o777,
             0o640
         );
+        // The target gone after planning: an error, and the link is not replaced.
+        std::fs::remove_file(&real).unwrap();
+        assert!(report.write().is_err());
+        assert!(std::fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert!(!real.exists());
     }
 
     fn temp(name: &str) -> PathBuf {
