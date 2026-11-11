@@ -8,7 +8,7 @@ pub struct RequestId(pub ulid::Ulid);
 
 impl RequestId {
     pub fn new() -> Self {
-        Self(ulid::Ulid::new())
+        Self(ulid::Ulid::generate())
     }
 
     pub fn from_ulid(id: ulid::Ulid) -> Self {
