@@ -25,13 +25,15 @@ pub unsafe fn register_impl(dispatcher: &mut Dispatcher, routes: &[RouteMeta]) {
             {% for entry in entries -%}
             "{{ entry.name }}" => {
                 {% if entry.is_untyped %}
-                if let Ok(tx) = brrtrouter::dispatcher::spawn_untyped_with_stack_size_and_name(
-                    |req| {{ controller_prefix }}::{{ entry.name }}::{{ entry.controller_struct }}(req),
+                let tx = match brrtrouter::dispatcher::spawn_untyped_with_stack_size_and_name(
+                    {{ controller_prefix }}::{{ entry.name }}::{{ entry.controller_struct }},
                     {{ entry.stack_size_bytes }},
                     Some(route.handler_name.as_ref()),
                 ) {
-                    dispatcher.add_route(route.clone(), tx);
-                }
+                    Ok(tx) => tx,
+                    Err(e) => panic!("{{ entry.name }}: cannot start its handler: {e}"),
+                };
+                dispatcher.add_route(route.clone(), tx);
                 {% else %}
                 let tx = spawn_typed_with_stack_size_and_name(
                     {{ controller_prefix }}::{{ entry.name }}::{{ entry.controller_struct }},
