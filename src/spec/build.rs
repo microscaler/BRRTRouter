@@ -61,6 +61,12 @@ pub fn resolve_schema_ref<'a>(
 /// resolved schema definitions from the OpenAPI spec. Adds an `x-ref-name` field
 /// to track the original reference name.
 ///
+/// A component referenced more than once (two properties, a property and array
+/// `items`, several nested schemas) is expanded at every use. Only a reference that
+/// occurs inside its own expansion (a recursive schema) is left as a `$ref`, which a
+/// validator compiled from the expanded fragment cannot resolve; rewriting recursive
+/// schemas into `$defs` is a separate change.
+///
 /// # Arguments
 ///
 /// * `spec` - The OpenAPI specification
@@ -79,12 +85,16 @@ fn expand_schema_refs_inner(
         Value::Object(obj) => {
             if let Some(ref_path) = obj.get("$ref").and_then(|v| v.as_str()).map(str::to_string) {
                 // Story 12.3 N3: fail closed on cycles (no infinite expand / panic).
-                if !visited.insert(ref_path.clone()) {
+                // `visited` holds the refs on the path from the root to here, not every
+                // ref expanded so far: a sibling use of the same component is not a cycle.
+                if visited.contains(&ref_path) {
                     return;
                 }
                 if let Some(schema) = resolve_schema_ref(spec, &ref_path) {
                     if let Ok(mut new_val) = serde_json::to_value(schema) {
+                        visited.insert(ref_path.clone());
                         expand_schema_refs_inner(spec, &mut new_val, visited);
+                        visited.remove(&ref_path);
                         if let Some(name) = ref_path.strip_prefix("#/components/schemas/") {
                             if let Value::Object(o) = &mut new_val {
                                 o.insert("x-ref-name".to_string(), Value::String(name.to_string()));
@@ -1292,5 +1302,89 @@ mod tests {
         assert!(size.is_some());
         // Should not panic or overflow
         assert!(size.unwrap() > 0);
+    }
+}
+
+#[cfg(test)]
+mod ref_expansion_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn spec() -> OpenApiV3Spec {
+        serde_json::from_value(json!({
+            "openapi": "3.1.0",
+            "info": { "title": "refs", "version": "1" },
+            "paths": {},
+            "components": { "schemas": {
+                "Target": { "type": "object", "properties": { "plan": { "type": "string" } }, "required": ["plan"] },
+                "Change": { "type": "object", "properties": {
+                    "from": { "$ref": "#/components/schemas/Target" },
+                    "to": { "$ref": "#/components/schemas/Target" }
+                } },
+                "Node": { "type": "object", "properties": {
+                    "children": { "type": "array", "items": { "$ref": "#/components/schemas/Node" } }
+                } }
+            } }
+        }))
+        .expect("test spec")
+    }
+
+    fn refs(v: &Value, out: &mut Vec<String>) {
+        match v {
+            Value::Object(o) => {
+                if let Some(r) = o.get("$ref").and_then(Value::as_str) {
+                    out.push(r.to_string());
+                }
+                o.values().for_each(|x| refs(x, out));
+            }
+            Value::Array(a) => a.iter().for_each(|x| refs(x, out)),
+            _ => {}
+        }
+    }
+
+    fn remaining_refs(v: &Value) -> Vec<String> {
+        let mut out = Vec::new();
+        refs(v, &mut out);
+        out
+    }
+
+    #[test]
+    fn sibling_refs_to_one_component_are_all_expanded() {
+        let mut v = json!({ "$ref": "#/components/schemas/Change" });
+        expand_schema_refs(&spec(), &mut v);
+        assert_eq!(remaining_refs(&v), Vec::<String>::new(), "{v:#}");
+        assert_eq!(v["properties"]["from"]["x-ref-name"], "Target");
+        assert_eq!(v["properties"]["to"]["x-ref-name"], "Target");
+        let validator = jsonschema::validator_for(&v).expect("the expanded schema compiles");
+        assert!(validator.is_valid(&json!({ "from": { "plan": "a" }, "to": { "plan": "b" } })));
+        assert!(!validator.is_valid(&json!({ "from": { "plan": "a" }, "to": {} })));
+    }
+
+    #[test]
+    fn a_component_in_a_property_and_in_array_items_is_expanded_both_times() {
+        let mut v = json!({ "type": "object", "properties": {
+            "one": { "$ref": "#/components/schemas/Target" },
+            "many": { "type": "array", "items": { "$ref": "#/components/schemas/Target" } },
+            "changes": { "type": "array", "items": { "$ref": "#/components/schemas/Change" } }
+        } });
+        expand_schema_refs(&spec(), &mut v);
+        assert_eq!(remaining_refs(&v), Vec::<String>::new(), "{v:#}");
+        assert_eq!(v["properties"]["many"]["items"]["x-ref-name"], "Target");
+        assert_eq!(
+            v["properties"]["changes"]["items"]["properties"]["to"]["x-ref-name"],
+            "Target"
+        );
+        assert!(jsonschema::validator_for(&v).is_ok());
+    }
+
+    #[test]
+    fn a_recursive_schema_stops_and_keeps_its_inner_ref() {
+        let mut v = json!({ "$ref": "#/components/schemas/Node" });
+        expand_schema_refs(&spec(), &mut v);
+        assert_eq!(
+            remaining_refs(&v),
+            vec!["#/components/schemas/Node".to_string()]
+        );
+        assert_eq!(v["x-ref-name"], "Node");
     }
 }

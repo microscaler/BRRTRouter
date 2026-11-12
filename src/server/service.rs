@@ -792,6 +792,8 @@ pub fn metrics_endpoint(
     crate::http::sse_metrics::render_prometheus(&mut body);
     // Responses checked against their schema, by result, and those the validation mode skipped.
     super::response_validation::render_prometheus(&mut body);
+    // Schema lookups that found no validator because the schema does not compile.
+    crate::validator_cache::render_prometheus(&mut body);
 
     body.push_str(
         "# HELP brrtrouter_cors_origin_rejections_total CORS rejections: Origin not allowed (403)\n",
