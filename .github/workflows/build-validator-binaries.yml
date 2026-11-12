@@ -7,9 +7,8 @@ on:
         description: 'Version tag (e.g., v0.1.0)'
         required: false
         type: string
-  push:
-    tags:
-      - 'v*'
+  # A release (Release workflow, or by hand) builds and attaches the binaries. Not on the tag push as well: the
+  # release publishes the tag, so that would build twice.
   release:
     types: [published]
 
@@ -303,7 +302,9 @@ jobs:
 
       - name: Create release
         uses: softprops/action-gh-release@v3
-        if: startsWith(github.ref, 'refs/tags/v')
+        # Manual runs only: on a release event the release already exists with its notes, and this step's fixed
+        # name and body would replace them. The next step attaches the binaries to it instead.
+        if: github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/tags/v')
         with:
           tag_name: ${{ steps.version.outputs.version }}
           name: BRRTRouter Validator ${{ steps.version.outputs.version }}
