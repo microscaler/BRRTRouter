@@ -87,7 +87,8 @@
 use jsonschema::Validator;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock, Weak};
 use tracing::{debug, info};
 /// Version identifier for an OpenAPI specification
@@ -234,6 +235,68 @@ pub struct ValidatorCache {
     /// Hot-path memo for [`Self::get_or_compile_for_route`]: (address of the schema inside its
     /// route, status or 0 for a request body) → (that route, its validator). See there.
     route_memo: Arc<RwLock<HashMap<(usize, u16), RouteMemoEntry>>>,
+    /// Cache keys whose schema failed to compile. A schema that does not compile fails the
+    /// same way every time, so it is not compiled (or logged) again until the spec changes.
+    failed: Arc<RwLock<HashSet<String>>>,
+}
+
+/// Lookups that found no validator because the schema does not compile, by (handler, kind).
+static COMPILE_FAILURES: RwLock<BTreeMap<(String, String), Arc<AtomicU64>>> =
+    RwLock::new(BTreeMap::new());
+
+fn record_compile_failure(handler_name: &str, kind: &str) {
+    let key = (handler_name.to_string(), kind.to_string());
+    let existing = COMPILE_FAILURES
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .get(&key)
+        .cloned();
+    let counter = match existing {
+        Some(c) => c,
+        None => Arc::clone(
+            COMPILE_FAILURES
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .entry(key)
+                .or_default(),
+        ),
+    };
+    counter.fetch_add(1, Ordering::Relaxed);
+}
+
+/// Total of [`record_compile_failure`] for one handler and kind (tests and diagnostics).
+pub fn compile_failures(handler_name: &str, kind: &str) -> u64 {
+    COMPILE_FAILURES
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .get(&(handler_name.to_string(), kind.to_string()))
+        .map_or(0, |c| c.load(Ordering::Relaxed))
+}
+
+/// Append `brrtrouter_schema_compile_failures_total{handler,kind}` in Prometheus text format:
+/// lookups that found no validator because the schema does not compile. A request schema
+/// that does not compile answers 500; a response schema that does not compile is not checked.
+/// Nothing is written before the first failure.
+pub fn render_prometheus(body: &mut String) {
+    use std::fmt::Write as _;
+    let m = COMPILE_FAILURES
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if m.is_empty() {
+        return;
+    }
+    body.push_str("# HELP brrtrouter_schema_compile_failures_total Schema lookups that found no validator because the schema does not compile\n");
+    body.push_str("# TYPE brrtrouter_schema_compile_failures_total counter\n");
+    let esc = |s: &str| s.replace('\\', "\\\\").replace('"', "\\\"");
+    for ((handler, kind), n) in m.iter() {
+        let _ = writeln!(
+            body,
+            "brrtrouter_schema_compile_failures_total{{handler=\"{}\",kind=\"{}\"}} {}",
+            esc(handler),
+            esc(kind),
+            n.load(Ordering::Relaxed)
+        );
+    }
 }
 
 /// One [`ValidatorCache::get_or_compile_for_route`] memo entry.
@@ -267,6 +330,7 @@ impl ValidatorCache {
             schema_digests: Arc::new(RwLock::new(HashMap::with_capacity(256))),
             stable_suffixes: Arc::new(RwLock::new(HashMap::with_capacity(256))),
             route_memo: Arc::new(RwLock::new(HashMap::with_capacity(256))),
+            failed: Arc::new(RwLock::new(HashSet::new())),
         }
     }
 
@@ -411,7 +475,21 @@ impl ValidatorCache {
     ) -> Option<Arc<Validator>> {
         // If cache is disabled, compile on-demand without caching
         if !self.enabled {
-            return jsonschema::validator_for(schema).map(Arc::new).ok();
+            return match jsonschema::validator_for(schema) {
+                Ok(v) => Some(Arc::new(v)),
+                Err(e) => {
+                    // No cache, so nothing to remember the failure in: count and log every time.
+                    record_compile_failure(handler_name, kind);
+                    tracing::error!(
+                        handler_name = handler_name,
+                        kind = kind,
+                        status = status,
+                        error = %e,
+                        "Failed to compile JSON Schema (schema cache disabled)"
+                    );
+                    None
+                }
+            };
         }
 
         let spec_version = self
@@ -470,6 +548,18 @@ impl ValidatorCache {
             }
         }
 
+        // A schema that failed to compile before fails again: answer from the failure set
+        // instead of recompiling and logging on every request.
+        if self
+            .failed
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .contains(&key)
+        {
+            record_compile_failure(handler_name, kind);
+            return None;
+        }
+
         // Slow path: Compile and cache the validator (write lock required)
         match jsonschema::validator_for(schema) {
             Ok(compiled) => {
@@ -504,15 +594,23 @@ impl ValidatorCache {
                 Some(validator)
             }
             Err(e) => {
-                tracing::error!(
-                    handler_name = handler_name,
-                    kind = kind,
-                    status = status,
-                    spec_version = spec_version.version,
-                    spec_hash = %spec_version.hash,
-                    error = %e,
-                    "Failed to compile JSON Schema"
-                );
+                let first = self
+                    .failed
+                    .write()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .insert(key);
+                record_compile_failure(handler_name, kind);
+                if first {
+                    tracing::error!(
+                        handler_name = handler_name,
+                        kind = kind,
+                        status = status,
+                        spec_version = spec_version.version,
+                        spec_hash = %spec_version.hash,
+                        error = %e,
+                        "Failed to compile JSON Schema (logged once per schema; brrtrouter_schema_compile_failures_total counts each lookup)"
+                    );
+                }
                 None
             }
         }
@@ -554,6 +652,9 @@ impl ValidatorCache {
         cache.clear();
         if let Ok(mut memo) = self.route_memo.write() {
             memo.clear();
+        }
+        if let Ok(mut failed) = self.failed.write() {
+            failed.clear();
         }
         self.schema_digests
             .write()
@@ -609,6 +710,9 @@ impl ValidatorCache {
         cache.clear();
         if let Ok(mut memo) = self.route_memo.write() {
             memo.clear();
+        }
+        if let Ok(mut failed) = self.failed.write() {
+            failed.clear();
         }
 
         info!(
@@ -860,6 +964,56 @@ mod tests {
         let result = cache.get_or_compile("test", "request", None, &invalid_schema);
         assert!(result.is_none());
         assert_eq!(cache.size(), 0);
+    }
+
+    #[test]
+    fn test_compile_failure_is_cached_and_counted() {
+        let cache = ValidatorCache::new(true);
+        let dangling = json!({"type": "object", "properties": {"t": {"$ref": "#/components/schemas/Missing"}}});
+        let h = "compile_failure_cached";
+        assert!(cache
+            .get_or_compile(h, "response", Some(200), &dangling)
+            .is_none());
+        assert_eq!(cache.failed.read().unwrap().len(), 1);
+        assert!(cache
+            .get_or_compile(h, "response", Some(200), &dangling)
+            .is_none());
+        assert!(cache
+            .get_or_compile(h, "response", Some(200), &dangling)
+            .is_none());
+        assert_eq!(
+            cache.failed.read().unwrap().len(),
+            1,
+            "one entry per schema"
+        );
+        assert_eq!(compile_failures(h, "response"), 3, "every lookup counts");
+        assert_eq!(cache.size(), 0);
+
+        let mut body = String::new();
+        render_prometheus(&mut body);
+        assert!(body.contains(&format!(
+            "brrtrouter_schema_compile_failures_total{{handler=\"{h}\",kind=\"response\"}} 3"
+        )));
+
+        cache.clear();
+        assert!(
+            cache.failed.read().unwrap().is_empty(),
+            "a reload retries the schema"
+        );
+    }
+
+    #[test]
+    fn test_compile_failure_counted_with_cache_disabled() {
+        let cache = ValidatorCache::new(false);
+        let dangling = json!({"$ref": "#/components/schemas/Missing"});
+        let h = "compile_failure_uncached";
+        assert!(cache
+            .get_or_compile(h, "request", None, &dangling)
+            .is_none());
+        assert!(cache
+            .get_or_compile(h, "request", None, &dangling)
+            .is_none());
+        assert_eq!(compile_failures(h, "request"), 2);
     }
 
     #[test]

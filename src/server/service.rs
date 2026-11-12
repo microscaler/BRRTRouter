@@ -792,6 +792,8 @@ pub fn metrics_endpoint(
     crate::http::sse_metrics::render_prometheus(&mut body);
     // Responses checked against their schema, by result, and those the validation mode skipped.
     super::response_validation::render_prometheus(&mut body);
+    // Schema lookups that found no validator because the schema does not compile.
+    crate::validator_cache::render_prometheus(&mut body);
 
     body.push_str(
         "# HELP brrtrouter_cors_origin_rejections_total CORS rejections: Origin not allowed (403)\n",
@@ -2234,8 +2236,10 @@ impl AppService {
                 ) {
                     Some(v) => v,
                     None => {
-                        // Schema compilation failed - this is a server configuration error
-                        tracing::error!(handler = %route_match.handler_name, "Failed to compile request schema");
+                        // Schema compilation failed - a server configuration error. The validator
+                        // cache logs it once per schema and counts every lookup
+                        // (brrtrouter_schema_compile_failures_total), so not at ERROR per request.
+                        debug!(handler = %route_match.handler_name, "Request schema does not compile; answering 500");
                         _request_logger.respond_json_error(
                             res,
                             500,
