@@ -2236,8 +2236,10 @@ impl AppService {
                 ) {
                     Some(v) => v,
                     None => {
-                        // Schema compilation failed - this is a server configuration error
-                        tracing::error!(handler = %route_match.handler_name, "Failed to compile request schema");
+                        // Schema compilation failed - a server configuration error. The validator
+                        // cache logs it once per schema and counts every lookup
+                        // (brrtrouter_schema_compile_failures_total), so not at ERROR per request.
+                        debug!(handler = %route_match.handler_name, "Request schema does not compile; answering 500");
                         _request_logger.respond_json_error(
                             res,
                             500,

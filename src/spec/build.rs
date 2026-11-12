@@ -71,16 +71,47 @@ pub fn resolve_schema_ref<'a>(
 ///
 /// * `spec` - The OpenAPI specification
 /// * `value` - The JSON value to process (modified in-place)
-pub fn expand_schema_refs(spec: &OpenApiV3Spec, value: &mut Value) {
+///
+/// Expansion is bounded: a schema whose inlined form needs more than
+/// [`MAX_SCHEMA_REF_EXPANSIONS`] reference expansions (a compact chain of components that each
+/// use the next one several times grows exponentially) stops there and returns
+/// [`SchemaRefExpansionLimit`]; the refs not yet expanded stay `$ref`s.
+pub fn expand_schema_refs(
+    spec: &OpenApiV3Spec,
+    value: &mut Value,
+) -> Result<(), SchemaRefExpansionLimit> {
     let mut visited = HashSet::new();
-    expand_schema_refs_inner(spec, value, &mut visited);
+    let mut budget = MAX_SCHEMA_REF_EXPANSIONS;
+    expand_schema_refs_inner(spec, value, &mut visited, &mut budget)
+}
+
+/// Reference expansions allowed when inlining one schema.
+pub const MAX_SCHEMA_REF_EXPANSIONS: usize = 10_000;
+
+/// [`expand_schema_refs`] stopped after [`MAX_SCHEMA_REF_EXPANSIONS`] expansions.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SchemaRefExpansionLimit {
+    /// The reference that would have exceeded the budget.
+    pub ref_path: String,
+}
+
+impl std::fmt::Display for SchemaRefExpansionLimit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "inlining this schema needs more than {MAX_SCHEMA_REF_EXPANSIONS} $ref expansions (stopped at {}); \
+             a component used several times at every level of a deep chain grows exponentially",
+            self.ref_path
+        )
+    }
 }
 
 fn expand_schema_refs_inner(
     spec: &OpenApiV3Spec,
     value: &mut Value,
     visited: &mut HashSet<String>,
-) {
+    budget: &mut usize,
+) -> Result<(), SchemaRefExpansionLimit> {
     match value {
         Value::Object(obj) => {
             if let Some(ref_path) = obj.get("$ref").and_then(|v| v.as_str()).map(str::to_string) {
@@ -88,34 +119,40 @@ fn expand_schema_refs_inner(
                 // `visited` holds the refs on the path from the root to here, not every
                 // ref expanded so far: a sibling use of the same component is not a cycle.
                 if visited.contains(&ref_path) {
-                    return;
+                    return Ok(());
+                }
+                if *budget == 0 {
+                    return Err(SchemaRefExpansionLimit { ref_path });
                 }
                 if let Some(schema) = resolve_schema_ref(spec, &ref_path) {
                     if let Ok(mut new_val) = serde_json::to_value(schema) {
+                        *budget -= 1;
                         visited.insert(ref_path.clone());
-                        expand_schema_refs_inner(spec, &mut new_val, visited);
+                        let inner = expand_schema_refs_inner(spec, &mut new_val, visited, budget);
                         visited.remove(&ref_path);
+                        inner?;
                         if let Some(name) = ref_path.strip_prefix("#/components/schemas/") {
                             if let Value::Object(o) = &mut new_val {
                                 o.insert("x-ref-name".to_string(), Value::String(name.to_string()));
                             }
                         }
                         *value = new_val;
-                        return;
+                        return Ok(());
                     }
                 }
             }
             for v in obj.values_mut() {
-                expand_schema_refs_inner(spec, v, visited);
+                expand_schema_refs_inner(spec, v, visited, budget)?;
             }
         }
         Value::Array(arr) => {
             for v in arr.iter_mut() {
-                expand_schema_refs_inner(spec, v, visited);
+                expand_schema_refs_inner(spec, v, visited, budget)?;
             }
         }
         _ => {}
     }
+    Ok(())
 }
 
 /// Resolve a local `#/components/pathItems/{name}` (or nested PathItem.`$ref`).
@@ -426,7 +463,13 @@ pub fn extract_request_body_details(
                 },
             });
     if let Some(ref mut val) = schema {
-        expand_schema_refs(spec, val);
+        if let Err(e) = expand_schema_refs(spec, val) {
+            issues.push(ValidationIssue::new(
+                "requestBody.schema".to_string(),
+                "SchemaRefExpansionLimit",
+                e.to_string(),
+            ));
+        }
     }
     (schema, required, content_types, issues)
 }
@@ -565,7 +608,13 @@ pub fn extract_response_schema_and_example_with_issues(
                     None => None,
                 };
                 if let Some(ref mut val) = schema {
-                    expand_schema_refs(spec, val);
+                    if let Err(e) = expand_schema_refs(spec, val) {
+                        issues.push(ValidationIssue::new(
+                            format!("responses.{status}.{mt}.schema"),
+                            "SchemaRefExpansionLimit",
+                            e.to_string(),
+                        ));
+                    }
                 }
 
                 all.entry(status).or_default().insert(
@@ -1351,7 +1400,7 @@ mod ref_expansion_tests {
     #[test]
     fn sibling_refs_to_one_component_are_all_expanded() {
         let mut v = json!({ "$ref": "#/components/schemas/Change" });
-        expand_schema_refs(&spec(), &mut v);
+        expand_schema_refs(&spec(), &mut v).expect("within budget");
         assert_eq!(remaining_refs(&v), Vec::<String>::new(), "{v:#}");
         assert_eq!(v["properties"]["from"]["x-ref-name"], "Target");
         assert_eq!(v["properties"]["to"]["x-ref-name"], "Target");
@@ -1367,7 +1416,7 @@ mod ref_expansion_tests {
             "many": { "type": "array", "items": { "$ref": "#/components/schemas/Target" } },
             "changes": { "type": "array", "items": { "$ref": "#/components/schemas/Change" } }
         } });
-        expand_schema_refs(&spec(), &mut v);
+        expand_schema_refs(&spec(), &mut v).expect("within budget");
         assert_eq!(remaining_refs(&v), Vec::<String>::new(), "{v:#}");
         assert_eq!(v["properties"]["many"]["items"]["x-ref-name"], "Target");
         assert_eq!(
@@ -1378,9 +1427,42 @@ mod ref_expansion_tests {
     }
 
     #[test]
+    fn a_chain_that_doubles_at_every_level_stops_at_the_budget() {
+        // C0 is a string; Cn has two properties that are both C(n-1). Fully inlined, C24 would
+        // need 2^25 - 2 expansions.
+        let mut schemas = serde_json::Map::new();
+        schemas.insert("C0".into(), json!({ "type": "string" }));
+        for n in 1..=24 {
+            let prev = format!("#/components/schemas/C{}", n - 1);
+            schemas.insert(
+                format!("C{n}"),
+                json!({ "type": "object", "properties": { "a": { "$ref": prev }, "b": { "$ref": prev } } }),
+            );
+        }
+        let spec: OpenApiV3Spec = serde_json::from_value(json!({
+            "openapi": "3.1.0",
+            "info": { "title": "chain", "version": "1" },
+            "paths": {},
+            "components": { "schemas": schemas }
+        }))
+        .expect("chain spec");
+        let mut v = json!({ "$ref": "#/components/schemas/C24" });
+        let err = expand_schema_refs(&spec, &mut v).expect_err("over budget");
+        assert!(err.ref_path.starts_with("#/components/schemas/C"), "{err}");
+        assert!(err
+            .to_string()
+            .contains(&MAX_SCHEMA_REF_EXPANSIONS.to_string()));
+
+        // A small chain of the same shape is well inside the budget and fully inlined.
+        let mut small = json!({ "$ref": "#/components/schemas/C6" });
+        expand_schema_refs(&spec, &mut small).expect("within budget");
+        assert_eq!(remaining_refs(&small), Vec::<String>::new());
+    }
+
+    #[test]
     fn a_recursive_schema_stops_and_keeps_its_inner_ref() {
         let mut v = json!({ "$ref": "#/components/schemas/Node" });
-        expand_schema_refs(&spec(), &mut v);
+        expand_schema_refs(&spec(), &mut v).expect("within budget");
         assert_eq!(
             remaining_refs(&v),
             vec!["#/components/schemas/Node".to_string()]

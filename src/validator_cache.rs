@@ -475,7 +475,21 @@ impl ValidatorCache {
     ) -> Option<Arc<Validator>> {
         // If cache is disabled, compile on-demand without caching
         if !self.enabled {
-            return jsonschema::validator_for(schema).map(Arc::new).ok();
+            return match jsonschema::validator_for(schema) {
+                Ok(v) => Some(Arc::new(v)),
+                Err(e) => {
+                    // No cache, so nothing to remember the failure in: count and log every time.
+                    record_compile_failure(handler_name, kind);
+                    tracing::error!(
+                        handler_name = handler_name,
+                        kind = kind,
+                        status = status,
+                        error = %e,
+                        "Failed to compile JSON Schema (schema cache disabled)"
+                    );
+                    None
+                }
+            };
         }
 
         let spec_version = self
@@ -539,7 +553,7 @@ impl ValidatorCache {
         if self
             .failed
             .read()
-            .expect("failed schema lock poisoned")
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .contains(&key)
         {
             record_compile_failure(handler_name, kind);
@@ -583,7 +597,7 @@ impl ValidatorCache {
                 let first = self
                     .failed
                     .write()
-                    .expect("failed schema lock poisoned")
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
                     .insert(key);
                 record_compile_failure(handler_name, kind);
                 if first {
@@ -986,6 +1000,20 @@ mod tests {
             cache.failed.read().unwrap().is_empty(),
             "a reload retries the schema"
         );
+    }
+
+    #[test]
+    fn test_compile_failure_counted_with_cache_disabled() {
+        let cache = ValidatorCache::new(false);
+        let dangling = json!({"$ref": "#/components/schemas/Missing"});
+        let h = "compile_failure_uncached";
+        assert!(cache
+            .get_or_compile(h, "request", None, &dangling)
+            .is_none());
+        assert!(cache
+            .get_or_compile(h, "request", None, &dangling)
+            .is_none());
+        assert_eq!(compile_failures(h, "request"), 2);
     }
 
     #[test]
