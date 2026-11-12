@@ -1,0 +1,36 @@
+name: Release
+
+# Tags a commit on main that has passed CI as vX.Y.Z and creates its GitHub Release. See RELEASING.md.
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: patch, minor or major (the first release takes the version in Cargo.toml)
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+      ref:
+        description: Commit to release (default the head of main)
+        type: string
+        default: ""
+      version:
+        description: Exact version instead of a bump (X.Y.Z)
+        type: string
+        default: ""
+
+permissions:
+  contents: write
+  checks: read
+  statuses: read
+
+jobs:
+  release:
+    uses: octopilot/actions/.github/workflows/library-release.yml@main
+    with:
+      branch: main
+      bump: ${{ inputs.bump }}
+      ref: ${{ inputs.ref }}
+      version: ${{ inputs.version }}
+    secrets:
+      REPO_TOKEN: ${{ secrets.REPO_PAT }}
+      RELEASE_NOTES_API_KEY: ${{ secrets.RELEASE_NOTES_API_KEY }}
