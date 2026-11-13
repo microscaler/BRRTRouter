@@ -97,7 +97,8 @@ pub fn analyze_main_rs(
             .unwrap_or_else(|| "../gen/doc".into()),
         config_default: extract_clap_default(main_content, "config")
             .unwrap_or_else(|| "./config/config.yaml".into()),
-        already_migrated: main_content.contains("RunAppBuilder"),
+        // The builder call, not the word: comments and allow reasons in a legacy main may mention RunAppBuilder.
+        already_migrated: main_content.contains("RunAppBuilder::new("),
     })
 }
 
@@ -335,6 +336,23 @@ fn main() {
         assert!(plan.has_db_warm);
         assert!(plan.has_mod_controllers);
         assert_eq!(plan.gen_crate_ident, "acme_customs_gen");
+    }
+
+    #[test]
+    fn a_mention_of_run_app_builder_is_not_a_migration() {
+        let cargo = "[package]\nname = \"acme_customs\"\n";
+        let mentioned = format!("// TODO: replace with RunAppBuilder\n{LEGACY_MAIN}");
+        assert!(
+            !analyze_main_rs(&mentioned, cargo, "")
+                .unwrap()
+                .already_migrated
+        );
+        let migrated = "fn main() { RunAppBuilder::new().run() }";
+        assert!(
+            analyze_main_rs(migrated, cargo, "")
+                .unwrap()
+                .already_migrated
+        );
     }
 
     #[test]

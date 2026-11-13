@@ -13,11 +13,11 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     //   "name": "John"
     // }
     match serde_json::from_str::<Response>(
-        r###"{
+        r#"{
   "email": "john@example.com",
   "id": "abc-123",
   "name": "John"
-}"###,
+}"#,
     ) {
         Ok(parsed) => return parsed,
         Err(e) => {

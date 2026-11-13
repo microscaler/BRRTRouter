@@ -11,9 +11,9 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     //   "allow": "GET,HEAD,OPTIONS"
     // }
     match serde_json::from_str::<Response>(
-        r###"{
+        r#"{
   "allow": "GET,HEAD,OPTIONS"
-}"###,
+}"#,
     ) {
         Ok(parsed) => return parsed,
         Err(e) => {

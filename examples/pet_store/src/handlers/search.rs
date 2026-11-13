@@ -28,7 +28,6 @@ pub struct Request {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-
 pub struct Response {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "results")]
@@ -124,7 +123,7 @@ impl TryFrom<HandlerRequest> for Request {
     }
 }
 
-#[allow(dead_code)]
+#[allow(dead_code, reason = "called through the dispatcher registry")]
 pub fn handler(req: TypedHandlerRequest<Request>) -> Response {
     crate::controllers::search::handle(req)
 }

@@ -93,7 +93,7 @@ pub struct GetPetResponse {
 
     pub breed: String,
 
-    pub id: i32,
+    pub id: i64,
 
     pub name: String,
 
@@ -167,7 +167,7 @@ pub struct Pet {
 
     pub breed: String,
 
-    pub id: i32,
+    pub id: i64,
 
     pub name: String,
 

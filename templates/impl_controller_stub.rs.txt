@@ -19,7 +19,7 @@ use brrtrouter::typed::TypedHandlerRequest;
 {% if sse %}use brrtrouter::sse;{% endif %}
 {% if imports.len() > 0 %}
 {% for import in imports -%}
-#[allow(unused_imports)]
+#[allow(unused_imports, reason = "generated stub: imports every schema type the handler may use")]
 use {{ rust_crate_ident }}::handlers::types::{{ import }};
 {% endfor %}
 {% endif %}
@@ -37,16 +37,18 @@ pub fn handle(req: TypedHandlerRequest<Request>) -> {% if uses_http_no_content %
     // let result = your_service.process(&req.inner)?;
     //
     // Example: Return response
+    let _ = req; // remove once the handler reads the request
     {% if uses_http_no_content %}
-    let _ = req;
     HttpNoContent
     {% elif sse %}
-    // TODO: Implement Server-Sent Events logic
-    let (tx, rx) = sse::channel();
-    // Your SSE implementation here
-    // Example: tx.send("data".to_string());
-    drop(tx);
-    Response(rx.collect())
+    // TODO: Implement Server-Sent Events logic. Send frames from a coroutine: the service flushes each frame as
+    // it is sent and closes the stream when `tx` is dropped (Epic 13.7).
+    let (tx, rx) = sse::channel_bounded(sse::queue_bound_from_env());
+    may::go!(move || {
+        // Example: tx.send("data".to_string());
+        drop(tx);
+    });
+    Response::new(rx)
     {% elif response_is_array %}
     // TODO: Return array of items from your business logic
     {% if uses_multi_status %}ApiResponse::{{ default_variant }}({% else if uses_http_json %}HttpJson::ok({% endif %}Response({{ response_array_literal }}){% if uses_multi_status || uses_http_json %}){% endif %}

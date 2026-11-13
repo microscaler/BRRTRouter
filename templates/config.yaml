@@ -55,9 +55,11 @@ http:
   max_requests: 5000
   # Handler wait deadline in ms (Epic 13.6). Omit / 0 = disabled (legacy wait).
   # Env override when unset here: BRRTR_HANDLER_DEADLINE_MS. See docs/HANDLER_DEADLINES.md.
+  # Read by RunAppBuilder mains (generated impl crates); the gen crate's own main honours only the env var.
   # handler_deadline_ms: 5000
 
 # Rate limiting (Epic 13.2) — omitted / enabled: false → no-op (safe default).
+# Read by RunAppBuilder mains (generated impl crates); the gen crate's own main ignores it.
 # rate_limit:
 #   enabled: true
 #   requests: 100          # tokens per window (global)
@@ -69,6 +71,7 @@ http:
 #     list_pets: 20        # optional per-handler tighter limit
 
 # Response gzip (Epic 13.8) — omitted / enabled: false → identity (safe default).
+# Read by RunAppBuilder mains (generated impl crates); the gen crate's own main ignores it.
 # compression:
 #   enabled: true
 #   min_bytes: 256         # skip smaller bodies
