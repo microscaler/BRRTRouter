@@ -183,8 +183,13 @@ pub fn generate_project_with_options(
     if scope.docs {
         let source_canon = fs::canonicalize(spec_path)
             .with_context(|| format!("Failed to canonicalize spec source: {spec_path:?}"))?;
-        let doc_dir_canon = fs::canonicalize(&doc_dir)
-            .with_context(|| format!("Failed to canonicalize doc dir: {doc_dir:?}"))?;
+        // A dry run creates nothing, so the doc dir may not exist yet: compare against its plain path then.
+        let doc_dir_canon = if dry_run && !doc_dir.exists() {
+            doc_dir.clone()
+        } else {
+            fs::canonicalize(&doc_dir)
+                .with_context(|| format!("Failed to canonicalize doc dir: {doc_dir:?}"))?
+        };
         let dest_path = doc_dir_canon.join("openapi.yaml");
 
         if source_canon == dest_path {
@@ -254,12 +259,17 @@ pub fn generate_project_with_options(
         if let Some(ref default_path) =
             crate::generator::dependencies_config::default_config_path(spec_path)
         {
-            write_brrtrouter_dependencies_starter(
-                default_path,
-                true, // starter includes rust_decimal when spec uses decimal/money
-            )?;
-            println!("✅ Created brrtrouter-dependencies.toml (spec uses decimal/money)");
-            config_path = Some(default_path.clone());
+            if dry_run {
+                println!("🔎 Dry-run: would create {default_path:?} (spec uses decimal/money)");
+                created.push(format!("dependencies config: {default_path:?}"));
+            } else {
+                write_brrtrouter_dependencies_starter(
+                    default_path,
+                    true, // starter includes rust_decimal when spec uses decimal/money
+                )?;
+                println!("✅ Created brrtrouter-dependencies.toml (spec uses decimal/money)");
+                config_path = Some(default_path.clone());
+            }
         }
     }
     let deps_config = if let Some(ref path) = config_path {
@@ -618,15 +628,26 @@ pub fn generate_project_with_options(
     } else {
         println!("🔎 Dry-run/only: skipping lib.rs generation");
     }
-    write_mod_rs(
-        &handler_dir,
-        &["types".to_string()]
-            .into_iter()
-            .chain(modules_handlers.clone())
-            .collect::<Vec<_>>(),
-        "handlers",
-    )?;
-    write_mod_rs(&controller_dir, &modules_controllers, "controllers")?;
+    if dry_run {
+        // --dry-run writes nothing: the mod.rs files are reported like every other file
+        for mod_path in [handler_dir.join("mod.rs"), controller_dir.join("mod.rs")] {
+            if mod_path.exists() {
+                updated.push(format!("mod: {mod_path:?}"));
+            } else {
+                created.push(format!("mod: {mod_path:?}"));
+            }
+        }
+    } else {
+        write_mod_rs(
+            &handler_dir,
+            &["types".to_string()]
+                .into_iter()
+                .chain(modules_handlers.clone())
+                .collect::<Vec<_>>(),
+            "handlers",
+        )?;
+        write_mod_rs(&controller_dir, &modules_controllers, "controllers")?;
+    }
 
     // Human-readable summary
     println!("\n──────────────── Generation Summary ────────────────");
