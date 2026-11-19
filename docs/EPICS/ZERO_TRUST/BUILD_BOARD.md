@@ -1,7 +1,8 @@
 # Zero Trust — Build Board
 
 **Theme:** Epic 14  
-**Testing:** [`TESTING_STANDARD.md`](TESTING_STANDARD.md)
+**Testing:** [`TESTING_STANDARD.md`](TESTING_STANDARD.md)  
+**Work package (19 Nov 2026):** [`WORK_PACKAGE-SPIFFE-mTLS.md`](WORK_PACKAGE-SPIFFE-mTLS.md): streams, order, decisions, cross-repo (may_minihttp, Lifeguard, PriceWhisperer)
 
 ## Now / next
 
