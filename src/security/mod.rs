@@ -440,6 +440,7 @@ pub use spiffe::{
     InMemoryRevocationChecker, NoOpRevocationChecker, RevocationChecker, SpiffeConfigError,
     SpiffeProvider,
 };
+pub use static_api_key::{api_key_from_env, constant_time_eq, StaticApiKeyProvider};
 
 // Decision types (Story 9.4 — shadow decision observability)
 pub mod decision;
@@ -456,6 +457,7 @@ mod oauth2;
 mod remote_api_key;
 pub mod set_cookie;
 mod spiffe;
+mod static_api_key;
 
 #[cfg(test)]
 mod jwks_timeout_config_tests {

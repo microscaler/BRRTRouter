@@ -302,6 +302,33 @@ fn test_parameter_to_field() {
 }
 
 #[test]
+fn test_parameter_to_field_escapes_keywords() {
+    use crate::spec::{ParameterLocation, ParameterMeta};
+
+    for (wire, field) in [
+        ("ref", "r#ref"),
+        ("type", "r#type"),
+        ("self", "self_"),
+        ("match", "r#match"),
+    ] {
+        let param = ParameterMeta {
+            name: wire.to_string(),
+            location: ParameterLocation::Path,
+            required: true,
+            schema: Some(json!({"type": "string"})),
+            style: None,
+            explode: None,
+        };
+        let f = parameter_to_field(&param);
+        assert_eq!(f.name, field, "{wire}");
+        assert_eq!(
+            f.original_name, wire,
+            "the wire name stays for serde rename and get_path_param"
+        );
+    }
+}
+
+#[test]
 fn test_parameter_to_field_optional() {
     use crate::spec::{ParameterLocation, ParameterMeta};
 
