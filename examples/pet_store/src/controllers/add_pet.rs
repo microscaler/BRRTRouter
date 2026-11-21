@@ -12,10 +12,10 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     //   "status": "success"
     // }
     match serde_json::from_str::<Response>(
-        r###"{
+        r#"{
   "id": 67890,
   "status": "success"
-}"###,
+}"#,
     ) {
         Ok(parsed) => return parsed,
         Err(e) => {
@@ -25,7 +25,7 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     }
 
     Response {
-        id: Some(67890),
+        id: Some(67_890),
         status: Some("success".to_string()),
     }
 }

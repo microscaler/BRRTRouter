@@ -3,7 +3,7 @@
 // ⚠️ DO NOT MODIFY - Changes will be overwritten on next generation
 // ⚠️ To modify API behavior, edit the OpenAPI spec and regenerate
 // ⚠️ To implement business logic, edit the corresponding controller file
-#![allow(clippy::uninlined_format_args)]
+#![allow(clippy::uninlined_format_args, reason = "generated code")]
 use brrtrouter::dispatcher::Dispatcher;
 use brrtrouter::middleware::MetricsMiddleware;
 use brrtrouter::{BearerJwtProvider, OAuth2Provider, SecurityProvider, SecurityRequest};
@@ -312,6 +312,8 @@ fn main() -> io::Result<()> {
     if let Some(ref cors) = cors_middleware {
         dispatcher.add_middleware(cors.clone());
     }
+    // SAFETY: register_from_spec spawns handler coroutines; the may runtime was configured above and the server
+    // has not started.
     unsafe {
         registry::register_from_spec(&mut dispatcher, &routes);
     }

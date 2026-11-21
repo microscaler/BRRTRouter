@@ -8,11 +8,15 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 fn temp_dir() -> PathBuf {
+    // Tests run in parallel and the clock can repeat: the counter keeps two tests from sharing (and deleting)
+    // one directory.
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let dir = std::env::temp_dir().join(format!("gen_test_{}_{}", std::process::id(), nanos));
+    let dir = std::env::temp_dir().join(format!("gen_test_{}_{}_{n}", std::process::id(), nanos));
     fs::create_dir_all(&dir).unwrap();
     dir
 }
@@ -1458,7 +1462,7 @@ fn test_example_literal_checked_drops_a_mismatched_value() {
     let field = example_field("i32", true);
     assert_eq!(
         example_literal_checked(&field, &json!(1_736_934_600)).as_deref(),
-        Some("Some(1736934600)")
+        Some("Some(1_736_934_600)")
     );
     assert_eq!(
         example_literal_checked(&field, &json!("2025-01-15T10:30:00Z")),
@@ -1547,4 +1551,137 @@ fn test_raw_string_literal_falls_back_past_255_hashes() {
     let text = format!("\"{}", "#".repeat(255));
     let literal = raw_string_literal(&text);
     assert!(literal.starts_with('"'), "{literal}");
+}
+
+#[test]
+fn test_rust_number_literal_groups_digits_only_in_long_numbers() {
+    assert_eq!(rust_number_literal("600"), "600");
+    assert_eq!(rust_number_literal("1200"), "1200");
+    assert_eq!(rust_number_literal("12000"), "12_000");
+    assert_eq!(rust_number_literal("412000"), "412_000");
+    assert_eq!(rust_number_literal("-1234567"), "-1_234_567");
+    assert_eq!(rust_number_literal("1234567.5"), "1_234_567.5");
+    assert_eq!(rust_number_literal("0.123456"), "0.123_456");
+    assert_eq!(rust_number_literal("12345.0"), "12_345.0");
+    assert_eq!(rust_number_literal("1.5e10"), "1.5e10");
+    assert_eq!(rust_number_literal("123456e-3"), "123_456e-3");
+    // Not a plain decimal literal: left alone.
+    assert_eq!(rust_number_literal("0x1F"), "0x1F");
+    assert_eq!(rust_number_literal(""), "");
+}
+
+#[test]
+fn test_json_macro_tokens_matches_compact_json_except_numbers() {
+    let value = json!({"created_at": "2026-11-05T16:00:00Z", "size_bytes": 412000, "width": 1200,
+                       "ratio": 0.5, "tags": ["a", "b\"c"], "nested": {"n": -98765}, "none": null, "ok": true});
+    let tokens = json_macro_tokens(&value);
+    let compact = serde_json::to_string(&value).unwrap();
+    assert_eq!(
+        tokens,
+        compact
+            .replace("412000", "412_000")
+            .replace("-98765", "-98_765"),
+        "only numbers may differ from serde_json::to_string"
+    );
+}
+
+#[test]
+fn test_json_macro_tokens_suffixes_integers_outside_i32() {
+    // json! infers an unsuffixed integer as i32, so these would not compile without a suffix.
+    assert_eq!(json_macro_tokens(&json!(2_147_483_647)), "2_147_483_647");
+    assert_eq!(
+        json_macro_tokens(&json!(-2_147_483_648_i64)),
+        "-2_147_483_648"
+    );
+    assert_eq!(
+        json_macro_tokens(&json!(3_000_000_000_u64)),
+        "3_000_000_000_i64"
+    );
+    assert_eq!(
+        json_macro_tokens(&json!(-3_000_000_000_i64)),
+        "-3_000_000_000_i64"
+    );
+    assert_eq!(
+        json_macro_tokens(&json!(u64::MAX)),
+        "18_446_744_073_709_551_615_u64"
+    );
+    assert_eq!(
+        json_macro_tokens(&json!(3_000_000_000.5)),
+        "3_000_000_000.5"
+    );
+    // The suffixed tokens are what the generated code compiles: they must round-trip to the same value.
+    assert_eq!(
+        serde_json::json!(3_000_000_000_i64),
+        json!(3_000_000_000_u64)
+    );
+}
+
+#[test]
+fn test_detect_workspace_lints() {
+    use super::templates::detect_workspace_lints;
+
+    let with = temp_dir();
+    fs::write(
+        with.join("Cargo.toml"),
+        "[workspace]\nmembers = []\n\n[workspace.lints.clippy]\npedantic = \"warn\"\n",
+    )
+    .unwrap();
+    let sub = with.join("svc").join("impl");
+    fs::create_dir_all(&sub).unwrap();
+    assert!(detect_workspace_lints(&sub));
+
+    let without = temp_dir();
+    fs::write(
+        without.join("Cargo.toml"),
+        "[workspace]\nmembers = []\n\n[workspace.dependencies]\nserde = \"1\"\n",
+    )
+    .unwrap();
+    let sub = without.join("impl");
+    fs::create_dir_all(&sub).unwrap();
+    assert!(!detect_workspace_lints(&sub));
+
+    // A trailing comment or a dotted key is still a workspace root that declares lints.
+    let commented = temp_dir();
+    fs::write(
+        commented.join("Cargo.toml"),
+        "[workspace] # the services\nmembers = []\nlints.clippy.pedantic = \"warn\"\n",
+    )
+    .unwrap();
+    fs::create_dir_all(commented.join("impl")).unwrap();
+    assert!(detect_workspace_lints(&commented.join("impl")));
+    fs::remove_dir_all(&commented).unwrap();
+
+    // A nested workspace is its own boundary: an outer [workspace.lints] does not leak into it.
+    let inner = with.join("nested");
+    fs::create_dir_all(inner.join("impl")).unwrap();
+    fs::write(inner.join("Cargo.toml"), "[workspace]\nmembers = []\n").unwrap();
+    assert!(!detect_workspace_lints(&inner.join("impl")));
+
+    fs::remove_dir_all(&with).unwrap();
+    fs::remove_dir_all(&without).unwrap();
+}
+
+#[test]
+fn test_impl_cargo_toml_opts_into_workspace_lints_only_when_declared() {
+    use askama::Template;
+    let render = |use_workspace_lints| {
+        ImplCargoTomlTemplateData {
+            impl_crate_name: "svc_impl".into(),
+            crate_name: "svc".into(),
+            use_workspace_deps: true,
+            brrtrouter_path: String::new(),
+            brrtrouter_macros_path: String::new(),
+            use_workspace_lints,
+        }
+        .render()
+        .unwrap()
+    };
+    let with = render(true);
+    assert!(with.contains("\n[lints]\nworkspace = true"), "{with}");
+    let without = render(false);
+    assert!(!without.contains("[lints]"), "{without}");
+    assert!(
+        with.starts_with(without.trim_end()),
+        "the lints table is only appended"
+    );
 }

@@ -3,14 +3,15 @@
 // ⚠️ To modify API behavior, edit the OpenAPI spec and regenerate
 // ⚠️ To implement business logic, edit the corresponding controller file
 use brrtrouter::dispatcher::HandlerRequest;
-use brrtrouter::typed::{HttpSse, TypedHandlerRequest};
+use brrtrouter::typed::HttpSse;
+use brrtrouter::typed::TypedHandlerRequest;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Request {}
 
-/// SSE live response (Epic 13.7) — not a JSON DTO.
+/// SSE live response (Epic 13.7): frames are flushed as they are produced; not a JSON DTO.
 pub type Response = HttpSse;
 
 impl TryFrom<HandlerRequest> for Request {
@@ -38,7 +39,7 @@ impl TryFrom<HandlerRequest> for Request {
     }
 }
 
-#[allow(dead_code)]
+#[allow(dead_code, reason = "called through the dispatcher registry")]
 pub fn handler(req: TypedHandlerRequest<Request>) -> Response {
     crate::controllers::stream_events::handle(req)
 }

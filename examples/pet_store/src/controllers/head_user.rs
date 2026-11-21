@@ -11,9 +11,9 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     //   "exists": true
     // }
     match serde_json::from_str::<Response>(
-        r###"{
+        r#"{
   "exists": true
-}"###,
+}"#,
     ) {
         Ok(parsed) => return parsed,
         Err(e) => {

@@ -14,12 +14,12 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     //   }
     // }
     match serde_json::from_str::<Response>(
-        r###"{
+        r#"{
   "feature_flags": {
     "analytics": false,
     "beta": true
   }
-}"###,
+}"#,
     ) {
         Ok(parsed) => return parsed,
         Err(e) => {
@@ -29,6 +29,9 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     }
 
     Response {
-        feature_flags: Some(serde_json::json!({"analytics":false,"beta":true})),
+        feature_flags: Some(
+            serde_json::from_str::<serde_json::Value>(r#"{"analytics":false,"beta":true}"#)
+                .unwrap_or(serde_json::Value::Null),
+        ),
     }
 }

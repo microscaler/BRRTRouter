@@ -15,7 +15,10 @@ use brrtrouter::typed::spawn_typed_with_stack_size_and_name;
 ///
 /// # Safety
 /// Spawns handler coroutines. Callers must ensure coroutine runtime is set up.
-#[allow(dead_code)]
+#[allow(
+    dead_code,
+    reason = "kept for callers that register without a route list"
+)]
 pub unsafe fn register_all(dispatcher: &mut Dispatcher) {
     dispatcher.register_typed_with_stack_size(
         "admin_settings",

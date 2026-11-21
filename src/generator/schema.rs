@@ -349,29 +349,38 @@ pub fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
                         let mantissa = format!("{}{}", integer, decimal)
                             .parse::<i64>()
                             .unwrap_or(0);
-                        format!("rust_decimal::Decimal::new({}, {})", mantissa, scale)
+                        format!(
+                            "rust_decimal::Decimal::new({}, {scale})",
+                            rust_number_literal(&mantissa.to_string())
+                        )
                     } else {
                         // Integer: 123 → Decimal::new(123, 0)
                         let mantissa = n.as_i64().unwrap_or(0);
-                        format!("rust_decimal::Decimal::new({}, 0)", mantissa)
+                        format!(
+                            "rust_decimal::Decimal::new({}, 0)",
+                            rust_number_literal(&mantissa.to_string())
+                        )
                     }
                 } else {
                     // Fallback for other number types
                     let mantissa = n.as_i64().unwrap_or(0);
-                    format!("rust_decimal::Decimal::new({}, 0)", mantissa)
+                    format!(
+                        "rust_decimal::Decimal::new({}, 0)",
+                        rust_number_literal(&mantissa.to_string())
+                    )
                 }
             }
             // If field type is f64 but number is integer, add .0 to make it a float literal
             else if field.ty == "f64" || field.ty == "Option<f64>" {
                 if let Some(i) = n.as_i64() {
-                    format!("{}.0", i)
+                    rust_number_literal(&format!("{i}.0"))
                 } else if let Some(u) = n.as_u64() {
-                    format!("{}.0", u)
+                    rust_number_literal(&format!("{u}.0"))
                 } else {
-                    n.to_string()
+                    rust_number_literal(&n.to_string())
                 }
             } else {
-                n.to_string()
+                rust_number_literal(&n.to_string())
             }
         }
         Value::Bool(b) => b.to_string(),
@@ -423,26 +432,29 @@ pub fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
                                     let decimal = parts.get(1).unwrap_or(&"0");
                                     let scale = decimal.len() as u32;
                                     let mantissa = format!("{}{}", integer, decimal).parse::<i64>().unwrap_or(0);
-                                    format!("rust_decimal::Decimal::new({}, {})", mantissa, scale)
+                                    format!(
+                            "rust_decimal::Decimal::new({}, {scale})",
+                            rust_number_literal(&mantissa.to_string())
+                        )
                                 } else {
                                     let mantissa = n.as_i64().unwrap_or(0);
-                                    format!("rust_decimal::Decimal::new({}, 0)", mantissa)
+                                    format!("rust_decimal::Decimal::new({}, 0)", rust_number_literal(&mantissa.to_string()))
                                 }
                             }
                             // If array element type is f64 but number is integer, add .0
                             else if inner_ty == "f64" {
                                 if let Some(i) = n.as_i64() {
-                                    format!("{}.0", i)
+                                    rust_number_literal(&format!("{i}.0"))
                                 } else if let Some(u) = n.as_u64() {
-                                    format!("{}.0", u)
+                                    rust_number_literal(&format!("{u}.0"))
                                 } else {
-                                    n.to_string()
+                                    rust_number_literal(&n.to_string())
                                 }
                             } else {
-                                n.to_string()
+                                rust_number_literal(&n.to_string())
                             }
                         } else {
-                            n.to_string()
+                            rust_number_literal(&n.to_string())
                         }
                     },
                     Value::Bool(b) => b.to_string(),
@@ -455,7 +467,7 @@ pub fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
                                 format!("serde_json::from_str::<serde_json::Value>({}).unwrap_or(serde_json::Value::Null)", raw_string_literal(&json))
                             } else if is_named_type(inner_ty) {
                                 // Target is Vec<CustomType>, deserialize with fallback
-                                let json = serde_json::to_string(item).unwrap_or_else(|_| "null".to_string());
+                                let json = json_macro_tokens(item);
                                 format!(
                                     "serde_json::from_value::<{inner_ty}>(serde_json::json!({json})).unwrap_or_default()"
                                 )
@@ -493,6 +505,7 @@ pub fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
                     raw_string_literal(&json)
                 )
             } else if is_named_type(&field.ty) {
+                let json = json_macro_tokens(example);
                 format!(
                     "serde_json::from_value::<{}>(serde_json::json!({json})).unwrap_or_default()",
                     field.ty
@@ -517,6 +530,95 @@ pub fn rust_literal_for_example(field: &FieldDef, example: &Value) -> String {
         format!("Some({literal})")
     } else {
         literal
+    }
+}
+
+/// A JSON number as a Rust numeric literal with `_` digit separators (`412000` → `412_000`, `1234567.5` →
+/// `1_234_567.5`), so generated examples pass `clippy::unreadable_literal`. The value is unchanged. Only for
+/// Rust numeric tokens: never use it inside a string, a raw-string JSON document or a `"…".parse()` call.
+/// Anything that is not a plain decimal literal (sign, digits, optional fraction and exponent) is returned as is.
+pub(crate) fn rust_number_literal(literal: &str) -> String {
+    fn group_from_right(digits: &str) -> String {
+        if digits.len() < 5 {
+            return digits.to_string();
+        }
+        let mut out = String::with_capacity(digits.len() + digits.len() / 3);
+        for (i, c) in digits.chars().enumerate() {
+            if i > 0 && (digits.len() - i) % 3 == 0 {
+                out.push('_');
+            }
+            out.push(c);
+        }
+        out
+    }
+    fn group_from_left(digits: &str) -> String {
+        if digits.len() < 5 {
+            return digits.to_string();
+        }
+        let mut out = String::with_capacity(digits.len() + digits.len() / 3);
+        for (i, c) in digits.chars().enumerate() {
+            if i > 0 && i % 3 == 0 {
+                out.push('_');
+            }
+            out.push(c);
+        }
+        out
+    }
+    let (sign, unsigned) = match literal.strip_prefix('-') {
+        Some(rest) => ("-", rest),
+        None => ("", literal),
+    };
+    let (mantissa, exponent) = match unsigned.find(['e', 'E']) {
+        Some(i) => unsigned.split_at(i),
+        None => (unsigned, ""),
+    };
+    let (integer, fraction) = match mantissa.split_once('.') {
+        Some((i, f)) => (i, Some(f)),
+        None => (mantissa, None),
+    };
+    let all_digits = |s: &str| s.bytes().all(|b| b.is_ascii_digit());
+    if integer.is_empty() || !all_digits(integer) || !fraction.is_none_or(all_digits) {
+        return literal.to_string();
+    }
+    let mut out = format!("{sign}{}", group_from_right(integer));
+    if let Some(fraction) = fraction {
+        out.push('.');
+        out.push_str(&group_from_left(fraction));
+    }
+    out.push_str(exponent);
+    out
+}
+
+/// Rust tokens for `serde_json::json!(…)` holding `value`: the same compact JSON text `serde_json::to_string`
+/// writes, except numbers carry digit separators ([`rust_number_literal`]) and strings are Rust string literals
+/// (`{:?}`), which accept every value JSON escaping can produce.
+pub(crate) fn json_macro_tokens(value: &Value) -> String {
+    match value {
+        Value::Null => "null".to_string(),
+        Value::Bool(b) => b.to_string(),
+        Value::Number(n) => {
+            // `json!` hands an unsuffixed integer to `to_value`, which infers i32: anything outside i32 needs a
+            // suffix or it does not compile (overflowing literal). Floats infer f64 and need none.
+            let literal = rust_number_literal(&n.to_string());
+            match (n.as_i64(), n.as_u64()) {
+                (Some(i), _) if i32::try_from(i).is_ok() => literal,
+                (Some(_), _) => format!("{literal}_i64"),
+                (None, Some(_)) => format!("{literal}_u64"),
+                _ => literal,
+            }
+        }
+        Value::String(s) => format!("{s:?}"),
+        Value::Array(items) => {
+            let inner: Vec<String> = items.iter().map(json_macro_tokens).collect();
+            format!("[{}]", inner.join(","))
+        }
+        Value::Object(map) => {
+            let inner: Vec<String> = map
+                .iter()
+                .map(|(k, v)| format!("{k:?}:{}", json_macro_tokens(v)))
+                .collect();
+            format!("{{{}}}", inner.join(","))
+        }
     }
 }
 

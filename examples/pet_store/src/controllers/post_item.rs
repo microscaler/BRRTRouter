@@ -12,10 +12,10 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> ApiResponse {
     //   "name": "New Item"
     // }
     match serde_json::from_str::<Response>(
-        r###"{
+        r#"{
   "id": "item-001",
   "name": "New Item"
-}"###,
+}"#,
     ) {
         Ok(parsed) => return ApiResponse::Ok(parsed),
         Err(e) => {
