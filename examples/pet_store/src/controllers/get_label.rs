@@ -11,9 +11,9 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     //   "color": "red"
     // }
     match serde_json::from_str::<Response>(
-        r###"{
+        r#"{
   "color": "red"
-}"###,
+}"#,
     ) {
         Ok(parsed) => return parsed,
         Err(e) => {

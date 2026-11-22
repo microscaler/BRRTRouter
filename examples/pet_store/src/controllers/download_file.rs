@@ -12,10 +12,10 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     //   "url": "https://cdn.example.com/abc"
     // }
     match serde_json::from_str::<Response>(
-        r###"{
+        r#"{
   "id": "abc",
   "url": "https://cdn.example.com/abc"
-}"###,
+}"#,
     ) {
         Ok(parsed) => return parsed,
         Err(e) => {

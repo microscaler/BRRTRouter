@@ -15,13 +15,13 @@ pub fn handle(_req: TypedHandlerRequest<Request>) -> Response {
     //   ]
     // }
     match serde_json::from_str::<Response>(
-        r###"{
+        r#"{
   "coords": [
     1,
     2,
     3
   ]
-}"###,
+}"#,
     ) {
         Ok(parsed) => return parsed,
         Err(e) => {

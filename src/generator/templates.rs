@@ -924,6 +924,27 @@ pub(crate) fn detect_workspace_dependencies(output_dir: &Path) -> HashSet<String
     deps
 }
 
+/// Whether the workspace enclosing `output_dir` declares `[workspace.lints]` (any `[workspace.lints.*]` table).
+///
+/// Only the nearest `[workspace]` root counts, as with [`detect_workspace_with_brrtrouter_deps`]. Generated
+/// impl crates opt into the workspace lints only when this is true.
+pub(crate) fn detect_workspace_lints(output_dir: &Path) -> bool {
+    // Parse each manifest rather than match lines, so `[workspace] # comment`, dotted keys and inline tables count.
+    // The nearest manifest with a `workspace` table is the root; the answer comes from it alone.
+    let mut current = Some(output_dir);
+    while let Some(dir) = current {
+        if let Ok(contents) = std::fs::read_to_string(dir.join("Cargo.toml")) {
+            if let Ok(manifest) = contents.parse::<toml::Table>() {
+                if let Some(workspace) = manifest.get("workspace").and_then(toml::Value::as_table) {
+                    return workspace.contains_key("lints");
+                }
+            }
+        }
+        current = dir.parent();
+    }
+    false
+}
+
 /// Detect if output directory is in a workspace that has brrtrouter in workspace.dependencies
 ///
 /// This function handles two scenarios:
@@ -1365,6 +1386,9 @@ pub struct ImplCargoTomlTemplateData {
     pub brrtrouter_path: String,
     /// Relative path to brrtrouter_macros (only used when use_workspace_deps is false)
     pub brrtrouter_macros_path: String,
+    /// Whether the enclosing workspace declares `[workspace.lints]`; if so the impl crate opts in with
+    /// `[lints] workspace = true` (an opt-in without the table is a hard cargo error, so it is never unconditional).
+    pub use_workspace_lints: bool,
 }
 
 /// Template data for generating implementation crate main.rs
@@ -1552,6 +1576,7 @@ pub fn write_impl_cargo_toml(impl_output_dir: &Path, component_name: &str) -> an
         use_workspace_deps,
         brrtrouter_path,
         brrtrouter_macros_path,
+        use_workspace_lints: detect_workspace_lints(impl_output_dir),
     };
 
     let rendered = template_data.render()?;

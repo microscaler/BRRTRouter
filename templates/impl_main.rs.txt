@@ -2,6 +2,7 @@
 // Implementation crate main entry point
 // Generated starting point — safe to customize; not auto-regenerated on stub regen.
 
+mod controllers;
 mod impl_registry;
 
 use {{ rust_crate_ident }}::registry as gen_registry;
@@ -49,6 +50,8 @@ fn main() -> io::Result<()> {
             default_port: 8081,
             service_name: "{{ rust_crate_ident }}".into(),
         })
+        // SAFETY: both registries spawn handler coroutines; RunAppBuilder calls this after configuring the may
+        // runtime and before the server starts.
         .register(|dispatcher, routes| unsafe {
             gen_registry::register_from_spec(dispatcher, routes);
             impl_registry::register_impl(dispatcher, routes);
