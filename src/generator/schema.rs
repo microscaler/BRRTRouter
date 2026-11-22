@@ -136,15 +136,21 @@ pub fn is_named_type(ty: &str) -> bool {
 /// assert_eq!(sanitize_rust_identifier("type"), "r#type");
 /// assert_eq!(sanitize_rust_identifier("user_id"), "user_id");
 /// ```
-#[allow(dead_code)]
 fn sanitize_rust_identifier(name: &str) -> String {
+    // Strict and reserved keywords (2018+ editions), all valid as raw identifiers.
     const KEYWORDS: &[&str] = &[
-        "as", "break", "const", "continue", "crate", "else", "enum", "extern", "false", "fn",
-        "for", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub", "ref",
-        "return", "self", "Self", "static", "struct", "super", "trait", "true", "type", "unsafe",
-        "use", "where", "while", "async", "await", "dyn",
+        "as", "break", "const", "continue", "else", "enum", "extern", "false", "fn", "for", "if",
+        "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub", "ref", "return",
+        "static", "struct", "trait", "true", "type", "unsafe", "use", "where", "while", "async",
+        "await", "dyn", "abstract", "become", "box", "do", "final", "gen", "macro", "override",
+        "priv", "try", "typeof", "unsized", "virtual", "yield",
     ];
-    if KEYWORDS.contains(&name) {
+    // These cannot be raw identifiers (`r#self` is an error): suffix them instead. Serde keeps the
+    // wire name through `original_name`.
+    const NOT_RAW: &[&str] = &["self", "Self", "super", "crate"];
+    if NOT_RAW.contains(&name) {
+        format!("{name}_")
+    } else if KEYWORDS.contains(&name) {
         format!("r#{name}")
     } else {
         name.to_string()
@@ -1205,7 +1211,9 @@ pub fn parameter_to_field(param: &ParameterMeta) -> FieldDef {
         .map(|v| if optional { format!("Some({v})") } else { v })
         .unwrap_or_else(|_| "Default::default()".to_string());
     FieldDef {
-        name: sanitize_field_name(&param.name),
+        // a parameter named `ref`, `type`, `self`... must still be a valid field (PriceWhisperer paper-broker's
+        // `/orders-by-ref/{ref}` generated `pub ref: String`, 19 Nov 2026)
+        name: sanitize_rust_identifier(&sanitize_field_name(&param.name)),
         original_name: param.name.clone(),
         ty,
         optional,

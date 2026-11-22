@@ -455,83 +455,54 @@ impl AppService {
     /// This wires ApiKey, Bearer, and OAuth2 providers using environment variables or a
     /// provided test key for development. For ApiKey schemes, the following configuration
     /// is used (in order): per-scheme env `BRRTR_API_KEY__<SCHEME_NAME>`, global env
-    /// `BRRTR_API_KEY`, then `test_api_key` argument, then fallback `"test123"`.
+    /// `BRRTR_API_KEY`, then the `test_api_key` argument. With none of them the scheme is not
+    /// registered and requests that need it are refused: there is no default key. Keys are
+    /// compared in constant time ([`crate::security::StaticApiKeyProvider`]).
     pub fn register_default_security_providers_from_env(&mut self, test_api_key: Option<String>) {
         use std::sync::Arc as SyncArc;
-
-        struct ApiKeyProvider {
-            key: String,
-        }
-        impl SecurityProvider for ApiKeyProvider {
-            fn validate(
-                &self,
-                scheme: &SecurityScheme,
-                _scopes: &[String],
-                req: &SecurityRequest,
-            ) -> bool {
-                match scheme {
-                    SecurityScheme::ApiKey { name, location, .. } => match location.as_str() {
-                        "header" => {
-                            // Accept either the named header or Authorization: Bearer <key> for migration convenience
-                            let header_ok = req
-                                .get_header(&name.to_ascii_lowercase())
-                                .map(|v| v == self.key)
-                                .unwrap_or(false);
-                            let auth_ok = req
-                                .get_header("authorization")
-                                .and_then(|h| h.strip_prefix("Bearer "))
-                                .map(|v| v == self.key)
-                                .unwrap_or(false);
-                            header_ok || auth_ok
-                        }
-                        "query" => req.get_query(name).map(|v| v == self.key).unwrap_or(false),
-                        "cookie" => req.get_cookie(name).map(|v| v == self.key).unwrap_or(false),
-                        _ => false,
-                    },
-                    _ => false,
-                }
-            }
-        }
 
         for (scheme_name, scheme) in self.security_schemes.clone() {
             match scheme {
                 SecurityScheme::ApiKey { .. } => {
-                    // Per-scheme env: BRRTR_API_KEY__<SCHEME_NAME>
-                    let env_key_name = format!(
-                        "BRRTR_API_KEY__{}",
-                        scheme_name
-                            .chars()
-                            .map(|c| if c.is_ascii_alphanumeric() {
-                                c.to_ascii_uppercase()
-                            } else {
-                                '_'
-                            })
-                            .collect::<String>()
-                    );
-                    let key = std::env::var(&env_key_name)
-                        .ok()
-                        .or_else(|| std::env::var("BRRTR_API_KEY").ok())
-                        .or_else(|| test_api_key.clone())
-                        .unwrap_or_else(|| "test123".to_string());
-                    self.register_security_provider(
-                        &scheme_name,
-                        SyncArc::new(ApiKeyProvider { key }),
-                    );
+                    // BRRTR_API_KEY__<SCHEME_NAME>, BRRTR_API_KEY, then test_api_key - and nothing else. A scheme
+                    // with no key is left unregistered, so its requests are refused (it used to default to
+                    // "test123"). Authorization: Bearer <key> is accepted too, for migration convenience.
+                    match crate::security::api_key_from_env(&scheme_name, test_api_key.as_deref()) {
+                        Some(key) => self.register_security_provider(
+                            &scheme_name,
+                            SyncArc::new(
+                                crate::security::StaticApiKeyProvider::new(key).accept_bearer(true),
+                            ),
+                        ),
+                        None => println!(
+                            "[auth] scheme={scheme_name} has no key configured (BRRTR_API_KEY): not registered, requests using it are refused"
+                        ),
+                    }
                 }
                 SecurityScheme::Http { ref scheme, .. }
                     if scheme.eq_ignore_ascii_case("bearer") =>
                 {
-                    // Simple development bearer provider; real validation can be plugged in by user
-                    let provider = crate::security::BearerJwtProvider::new(
-                        std::env::var("BRRTR_BEARER_SIGNATURE").unwrap_or_else(|_| "sig".into()),
-                    );
-                    self.register_security_provider(&scheme_name, SyncArc::new(provider));
+                    // Development bearer provider, only when BRRTR_BEARER_SIGNATURE is set (no "sig" default)
+                    match std::env::var("BRRTR_BEARER_SIGNATURE").ok().filter(|s| !s.is_empty()) {
+                        Some(sig) => self.register_security_provider(
+                            &scheme_name,
+                            SyncArc::new(crate::security::BearerJwtProvider::new(sig)),
+                        ),
+                        None => println!(
+                            "[auth] scheme={scheme_name}: no BRRTR_BEARER_SIGNATURE; not registered, requests using it are refused"
+                        ),
+                    }
                 }
                 SecurityScheme::OAuth2 { .. } => {
-                    let provider = crate::security::OAuth2Provider::new(
-                        std::env::var("BRRTR_OAUTH2_SIGNATURE").unwrap_or_else(|_| "sig".into()),
-                    );
-                    self.register_security_provider(&scheme_name, SyncArc::new(provider));
+                    match std::env::var("BRRTR_OAUTH2_SIGNATURE").ok().filter(|s| !s.is_empty()) {
+                        Some(sig) => self.register_security_provider(
+                            &scheme_name,
+                            SyncArc::new(crate::security::OAuth2Provider::new(sig)),
+                        ),
+                        None => println!(
+                            "[auth] scheme={scheme_name}: no BRRTR_OAUTH2_SIGNATURE; not registered, requests using it are refused"
+                        ),
+                    }
                 }
                 _ => {}
             }

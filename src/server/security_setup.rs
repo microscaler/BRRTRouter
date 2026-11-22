@@ -2,36 +2,14 @@
 
 use std::sync::Arc;
 
-use crate::security::{JwksBearerProvider, RemoteApiKeyProvider};
+use crate::security::{
+    api_key_from_env, JwksBearerProvider, RemoteApiKeyProvider, StaticApiKeyProvider,
+};
 use crate::spec::SecurityScheme;
-use crate::{BearerJwtProvider, OAuth2Provider, SecurityProvider, SecurityRequest};
+use crate::{BearerJwtProvider, OAuth2Provider};
 
 use super::app_config::AppConfig;
 use super::service::AppService;
-
-struct StaticApiKeyProvider {
-    key: String,
-    header_override: Option<String>,
-}
-
-impl SecurityProvider for StaticApiKeyProvider {
-    fn validate(&self, scheme: &SecurityScheme, _scopes: &[String], req: &SecurityRequest) -> bool {
-        match scheme {
-            SecurityScheme::ApiKey { name, location, .. } => match location.as_str() {
-                "header" => {
-                    let target = self.header_override.as_deref().unwrap_or(name);
-                    req.get_header(&target.to_ascii_lowercase())
-                        .map(|v| v == self.key)
-                        .unwrap_or(false)
-                }
-                "query" => req.get_query(name).map(|v| v == self.key).unwrap_or(false),
-                "cookie" => req.get_cookie(name).map(|v| v == self.key).unwrap_or(false),
-                _ => false,
-            },
-            _ => false,
-        }
-    }
-}
 
 /// Register auth providers for each OpenAPI security scheme on the service.
 pub fn register_security_from_config(
@@ -97,10 +75,9 @@ fn register_api_key(
                     );
                     service.register_security_provider(
                         scheme_name,
-                        Arc::new(StaticApiKeyProvider {
-                            key,
-                            header_override: cfg.header_name.clone(),
-                        }),
+                        Arc::new(
+                            StaticApiKeyProvider::new(key).header_override(cfg.header_name.clone()),
+                        ),
                     );
                     registered = true;
                 }
@@ -108,21 +85,20 @@ fn register_api_key(
         }
     }
     if !registered {
-        let fallback = std::env::var("BRRTR_API_KEY")
-            .ok()
-            .or_else(|| test_api_key.map(str::to_string))
-            .unwrap_or_else(|| "test123".to_string());
-        println!(
-            "[auth] register StaticApiKeyProvider scheme={scheme_name} from=fallback key_len={}",
-            fallback.len()
-        );
-        service.register_security_provider(
-            scheme_name,
-            Arc::new(StaticApiKeyProvider {
-                key: fallback,
-                header_override: None,
-            }),
-        );
+        // The environment or the --test-api-key flag, and nothing else: a scheme nobody configured a key for is
+        // left unregistered, so requests that need it are refused. It used to default to "test123".
+        match api_key_from_env(scheme_name, test_api_key) {
+            Some(key) => {
+                println!(
+                    "[auth] register StaticApiKeyProvider scheme={scheme_name} from=fallback key_len={}",
+                    key.len()
+                );
+                service.register_security_provider(scheme_name, Arc::new(StaticApiKeyProvider::new(key)));
+            }
+            None => println!(
+                "[auth] scheme={scheme_name} has no key configured (config api_keys / BRRTR_API_KEY): not registered, requests using it are refused"
+            ),
+        }
     }
 }
 
@@ -137,11 +113,20 @@ fn register_bearer(
     if register_jwks_per_scheme(service, sec_cfg, scheme_name) {
         return;
     }
-    let sig = sec_cfg
+    // The mock signature only when someone set one (config bearer.signature or BRRTR_BEARER_SIGNATURE): a scheme
+    // with no JWKS and no signature is left unregistered, so its requests are refused. It used to
+    // default to "sig", which accepted any token ending in ".sig".
+    let Some(sig) = sec_cfg
         .and_then(|s| s.bearer.as_ref())
         .and_then(|b| b.signature.clone())
         .or_else(|| std::env::var("BRRTR_BEARER_SIGNATURE").ok())
-        .unwrap_or_else(|| "sig".into());
+        .filter(|s| !s.is_empty())
+    else {
+        println!(
+            "[auth] scheme={scheme_name} has no JWKS and no mock signature configured: not registered, requests using it are refused"
+        );
+        return;
+    };
     let sig_len = sig.len();
     let mut p = BearerJwtProvider::new(sig);
     let cookie_opt = sec_cfg
@@ -167,11 +152,20 @@ fn register_oauth2(
     if register_jwks_per_scheme(service, sec_cfg, scheme_name) {
         return;
     }
-    let sig = sec_cfg
+    // The mock signature only when someone set one (config oauth2.signature or BRRTR_OAUTH2_SIGNATURE): a scheme
+    // with no JWKS and no signature is left unregistered, so its requests are refused. It used to
+    // default to "sig", which accepted any token ending in ".sig".
+    let Some(sig) = sec_cfg
         .and_then(|s| s.oauth2.as_ref())
         .and_then(|b| b.signature.clone())
         .or_else(|| std::env::var("BRRTR_OAUTH2_SIGNATURE").ok())
-        .unwrap_or_else(|| "sig".into());
+        .filter(|s| !s.is_empty())
+    else {
+        println!(
+            "[auth] scheme={scheme_name} has no JWKS and no mock signature configured: not registered, requests using it are refused"
+        );
+        return;
+    };
     let sig_len = sig.len();
     let mut p = OAuth2Provider::new(sig);
     let cookie_opt = sec_cfg
